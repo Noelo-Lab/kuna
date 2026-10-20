@@ -5,7 +5,7 @@ use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
 pub(crate) fn nonprinting(fd: &Funcdata, id: OpId) -> bool {
-    if !fd.get_arch().stack_views {
+    if !crate::kuna_stackviews::enabled(fd) {
         return false;
     }
     if physical_effect(fd, id) {

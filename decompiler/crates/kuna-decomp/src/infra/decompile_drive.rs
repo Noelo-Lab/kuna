@@ -1956,6 +1956,10 @@ pub struct VarInfo {
     pub line_numbers: Vec<usize>,
     /// Machine instruction addresses associated with those pseudocode lines.
     pub addresses: Vec<u64>,
+    /// (kuna `slotsplit`) A piece `slotsplit` cut from a wider frame row, other
+    /// than the first piece of that row: the rows without it are the rows
+    /// reported before the split.
+    pub split_piece: bool,
 }
 
 impl VarInfo {
@@ -2536,11 +2540,13 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
             arg_index: Some(arg_pos),
             line_numbers: Vec::new(),
             addresses: Vec::new(),
+            split_piece: false,
         });
         arg_pos += 1;
     }
 
     let declared_slots = crate::kuna_slotreport::DeclaredSlots::of(arch, fd);
+    let typed_slots = declared_slots.as_ref().filter(|_| arch.slot_report);
     // 2) Stack locals, off the ScopeLocal (NO_CATEGORY symbols only).
     if let Some(sl) = fd.get_scope_local() {
         let space = sl.get_space_id();
@@ -2558,8 +2564,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
                 .find(|a| a.shown && a.number == name)
                 .map_or(name, |a| a.alias.clone());
             let offset = signed_space_offset(space, addr.get_offset());
-            let type_name = declared_slots
-                .as_ref()
+            let type_name = typed_slots
                 .filter(|_| crate::kuna_slotreport::uncommitted(&ct))
                 .and_then(|slots| slots.declared_type(&name, offset, ct.get_size() as i64))
                 .unwrap_or_else(|| crate::kuna_bytehonest::exported_type_name(arch, &ct));
@@ -2572,6 +2577,7 @@ pub fn extract_variables(arch: &Architecture, fd: &Funcdata) -> Vec<VarInfo> {
                 arg_index: None,
                 line_numbers: Vec::new(),
                 addresses: Vec::new(),
+                split_piece: false,
             });
         }
     }
@@ -2611,6 +2617,7 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
             out.iter().filter_map(|v| v.stack_offset).collect();
         let first_slot = out.len();
         let mut declared = Vec::new();
+        let mut width_only = Vec::new();
         for (off, slot) in fd.frame_slots() {
             if covered.contains(&off) {
                 continue;
@@ -2627,12 +2634,17 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
             } else {
                 slot.name
             };
-            let type_name = match declared_slots.as_ref().and_then(|slots| slots.covering_type(off, slot.size as i64)) {
+            let type_name = match typed_slots.and_then(|slots| slots.covering_type(off, slot.size as i64)) {
                 Some(declared_type) => {
                     declared.push(out.len());
                     declared_type
                 }
-                None => frame_slot_type_name(arch, &slot.dtype),
+                None => {
+                    if crate::kuna_slotreport::uncommitted(&slot.dtype) {
+                        width_only.push(out.len());
+                    }
+                    frame_slot_type_name(arch, &slot.dtype)
+                }
             };
             out.push(VarInfo {
                 name,
@@ -2643,10 +2655,15 @@ fn frame_slot_type_name(arch: &Architecture, dt: &std::rc::Rc<crate::dtype::Data
                 arg_index: None,
                 line_numbers: Vec::new(),
                 addresses: Vec::new(),
+                split_piece: false,
             });
         }
         if arch.slot_ptr {
-            type_filler_slots_from_stores(arch, fd, &mut out, first_slot, &declared);
+            let typed = type_filler_slots_from_stores(arch, fd, &mut out, first_slot, &declared);
+            width_only.retain(|i| !typed.contains(i));
+        }
+        if let Some(slots) = declared_slots.as_ref().filter(|_| arch.slot_split) {
+            crate::kuna_slotsplit::split_rows(slots, &mut out, &width_only);
         }
     }
 
@@ -2668,7 +2685,8 @@ fn type_filler_slots_from_stores(
     out: &mut [VarInfo],
     first_slot: usize,
     declared: &[usize],
-) {
+) -> Vec<usize> {
+    let mut typed = Vec::new();
     let ranges: Vec<(i64, i64)> = out
         .iter()
         .map(|v| v.stack_offset.map(|o| (o, o + v.size.max(1))).unwrap_or((0, 0)))
@@ -2687,8 +2705,10 @@ fn type_filler_slots_from_stores(
         }
         if let Ok(ty) = crate::kuna_slotptr::slot_pointer_type(fd, arch, lo, out[i].size as int4) {
             out[i].type_name = crate::printc::type_to_c_string(arch, &ty);
+            typed.push(i);
         }
     }
+    typed
 }
 
 /// Emit an injection payload's p-code (C++ `InjectPayloadSleigh::inject` vs

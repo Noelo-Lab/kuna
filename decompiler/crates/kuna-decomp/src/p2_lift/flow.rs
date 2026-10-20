@@ -3868,6 +3868,7 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
             }
             i += 1;
         }
+        crate::kuna_localstackviews::record_native(self.fd, op);
         self.emitted.push(op);
     }
 }

@@ -292,9 +292,22 @@ impl IfaceDecompData {
     }
 
     /// C++ `IfaceDecompData::clearArchitecture()`.
+    ///
+    /// Upstream keeps prototypes, overrides and storage locks on the
+    /// Architecture's symbols, so deleting `conf` drops them; the console
+    /// stashes they live in here are keyed by name or address and would
+    /// otherwise land on whatever the next image has at that name or address.
     pub fn clear_architecture(&mut self) {
         self.conf = None;
         self.fd = None;
+        self.pending_prototypes.clear();
+        self.pending_prototype_entries.clear();
+        self.pending_flow_overrides.clear();
+        self.pending_proto_overrides.clear();
+        self.pending_param_maps.clear();
+        self.pristine_flow = None;
+        self.pending_local_checks.clear();
+        self.printed_checks = None;
     }
 }
 
@@ -2035,10 +2048,10 @@ decomp_command!(
         let command_seq = status.command_seq;
         // Read the per-function values + take the program out so the engine work
         // borrows neither `status` nor `dcp` while the console output is written.
-        let mapped_before: Vec<kuna_base::address::Address> = dcp_mut(status)?
+        let mapped_before: Vec<(kuna_base::address::Address, int4)> = dcp_mut(status)?
             .fd
             .as_ref()
-            .map(|fd| fd.mapped_symbol_specs().into_iter().map(|(_, _, addr, _)| addr).collect())
+            .map(|fd| fd.mapped_symbol_specs().into_iter().map(|(_, ty, addr, _)| (addr, ty.get_size())).collect())
             .unwrap_or_default();
         let (name, has_no_code, proc_started, entry, size, mut mapped_symbols, usepoint_symbols, dynamic_symbols, object_assertions, pending_proto, all_pending_protos, mut prog) = {
             let dcp = dcp_mut(status)?;
@@ -2094,9 +2107,19 @@ decomp_command!(
         // (`add_symbol`'s overlap arm), and the hand-mapped symbols come first.
         // A DWARF local the previous decompile already mapped stays as a
         // directive left it: carried as a Symbol, or as a name and type.
-        mapped_symbols.extend(
-            prog.dwarf_locals_for(entry.get_offset()).into_iter().filter(|(_, _, addr, _)| !mapped_before.contains(addr)),
-        );
+        let dwarf_locals = prog.dwarf_locals_for(entry.get_offset());
+        let reserved_names = dwarf_locals.iter().map(|(name, _, _, _)| name.clone()).collect();
+        let mut mapped_names = mapped_symbols.iter().map(|(name, _, _, _)| name.clone()).collect();
+        for (mut name, ty, addr, flags) in dwarf_locals {
+            if mapped_before.iter().any(|(mapped, size)| crate::kuna_dwarfstack::overlaps(&addr, ty.get_size(), mapped, *size)) {
+                continue;
+            }
+            if ty.get_name().starts_with("dwarf_stack_") {
+                name = crate::kuna_dwarfstack::local_name(&name, &mapped_names, &reserved_names);
+            }
+            mapped_names.insert(name.clone());
+            mapped_symbols.push((name, ty, addr, flags));
+        }
         // Re-park every parsed callee prototype on its global FunctionSymbol so the
         // pipeline's `ActionDefaultParams` copies the locked callee proto into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).

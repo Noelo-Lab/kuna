@@ -809,6 +809,9 @@ pub struct ArchContext {
     /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane) can
     /// name a CALLOTHER without reaching the full `Architecture`.
     pub simd_shuffle_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna) CALLOTHER ids of the x87 integer conversions read by
+    /// [`RuleX87Truncate`](crate::kuna_x87truncate::RuleX87Truncate).
+    pub x87_float_to_int_userops: Vec<kuna_base::types::uint4>,
     /// (kuna) GH-1276/8777: fold flag-modelled comparison idioms (C++
     /// `fold_flag_compare`, DIV-3 default-on).  Read by
     /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
@@ -1082,6 +1085,7 @@ pub struct ArchContext {
     /// Read by `Heritage::guard_calls` through
     /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
     pub callee_preserves: bool,
+    pub global_call_ranges: bool,
     /// (kuna) let the callee's decoded body answer for the call's RETURN
     /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
     /// through
@@ -1229,6 +1233,8 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// Bounded native local storage and declared pointer views.
+    pub local_stack_views: bool,
     /// (kuna `libcnames`) Name locals from the library calls they meet.
     /// See [`crate::kuna_libcnames`].
     pub libc_names: bool,
@@ -1811,6 +1817,7 @@ impl ArchContext {
             const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
             drop_call_push: false,        // callpush (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
+            x87_float_to_int_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
             ov_less_simplify: false,     // GH-7190 ovlesssimplify
@@ -1903,6 +1910,7 @@ impl ArchContext {
             zero_fill_return: true,
             zero_call_regs: true,
             callee_preserves: true,
+            global_call_ranges: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)
@@ -1931,6 +1939,7 @@ impl ArchContext {
             array_extent: 0,             // arrayextent (Architecture::reset_defaults sets the shipped default)
             array_size: 0,               // arraysize (Architecture::reset_defaults sets the shipped default)
             stack_alias_deadstore: false,
+            local_stack_views: true,
             stack_views: false, // stackviews (opt-in)
             libc_names: false, // libcnames (opt-in)
             guarded_read_trim: false,

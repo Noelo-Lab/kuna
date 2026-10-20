@@ -277,12 +277,12 @@ pub struct Funcdata {
     /// Container of Varnode objects for \b this function (C++ `vbank`)
     vbank: VarnodeBank,
     /// Machine homes retained when equivalent values replace their Varnodes.
-    kuna_storage_sources: std::collections::HashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
+    kuna_storage_sources: crate::kuna_fasthash::FxHashMap<VarnodeId, Vec<crate::kuna_varsources::StorageSource>>,
     pub(crate) kuna_guarded_reads: crate::p3_dataflow::kuna_stackreadscope::ReadScopes,
-    kuna_call_transport: std::collections::HashSet<VarnodeId>,
-    kuna_call_transport_projections: std::collections::HashMap<VarnodeId, int4>,
-    kuna_denied_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
-    kuna_meaningful_storage_writes: std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_call_transport: crate::kuna_fasthash::FxHashSet<VarnodeId>,
+    kuna_call_transport_projections: crate::kuna_fasthash::FxHashMap<VarnodeId, int4>,
+    kuna_denied_storage_writes: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+    kuna_meaningful_storage_writes: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
     /// Container of PcodeOp objects for \b this function (C++ `obank`)
     obank: PcodeOpBank,
     /// Unstructured basic blocks (C++ `bblocks`)
@@ -351,6 +351,8 @@ pub struct Funcdata {
         crate::unionresolve::ResolvedUnion,
     >,
     pub(crate) stack_write_views: std::collections::BTreeMap<OpId, crate::kuna_stackviews::StorageView>,
+    pub(crate) local_stack_views: crate::kuna_localstackviews::LocalStackViews,
+    pub(crate) stack_parameter_store_extents: std::collections::BTreeMap<u64, i32>,
     pub(crate) stack_objects: Vec<crate::kuna_stackobjects::StackObject>,
     pub(crate) stack_object_assertions: Vec<crate::kuna_stackobjectasserts::ObjectAssertion>,
     pub(crate) stack_object_bound_uses: std::collections::BTreeSet<(crate::kuna_stackobjects::SourcePoint, i32)>,
@@ -747,12 +749,12 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             jumpvec: Vec::new(),
             vbank,
-            kuna_storage_sources: std::collections::HashMap::new(),
+            kuna_storage_sources: Default::default(),
             kuna_guarded_reads: Default::default(),
-            kuna_call_transport: std::collections::HashSet::new(),
-            kuna_call_transport_projections: std::collections::HashMap::new(),
-            kuna_denied_storage_writes: std::collections::HashMap::new(),
-            kuna_meaningful_storage_writes: std::collections::HashMap::new(),
+            kuna_call_transport: Default::default(),
+            kuna_call_transport_projections: Default::default(),
+            kuna_denied_storage_writes: Default::default(),
+            kuna_meaningful_storage_writes: Default::default(),
             obank: PcodeOpBank::new(),
             bblocks,
             sblocks,
@@ -764,6 +766,8 @@ impl Funcdata {
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
             stack_write_views: std::collections::BTreeMap::new(),
+            local_stack_views: Default::default(),
+            stack_parameter_store_extents: std::collections::BTreeMap::new(),
             stack_objects: Vec::new(),
             stack_object_assertions: Vec::new(),
             stack_object_bound_uses: std::collections::BTreeSet::new(),
@@ -3341,7 +3345,7 @@ impl Funcdata {
     }
 
     fn kuna_storage_write_matches(
-        denied: &std::collections::HashMap<(int4, u64, int4), Vec<(u64, int4)>>,
+        denied: &crate::kuna_fasthash::FxHashMap<(int4, u64, int4), Vec<(u64, int4)>>,
         source: &crate::kuna_varsources::StorageSource,
     ) -> bool {
         let Some(pc) = source.write_address.as_ref() else {
@@ -4072,6 +4076,8 @@ impl Funcdata {
         // unionMap.clear() (funcdata.cc:90): drop the union-field resolution cache.
         self.union_map.clear();
         self.stack_write_views.clear();
+        self.local_stack_views = Default::default();
+        self.stack_parameter_store_extents.clear();
         self.stack_objects.clear();
         self.stack_object_bound_uses.clear();
         self.stack_alias_holds = None;

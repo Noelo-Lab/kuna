@@ -2354,6 +2354,7 @@ mod provenance_json_tests {
             code: Some("int f(int x)\n{\n  return x;\n}".into()),
             error: None,
             proto: None,
+            call_declarations: Vec::new(),
             variables: vec![VarInfo {
                 name: "x".into(),
                 type_name: "int".into(),
@@ -2363,6 +2364,7 @@ mod provenance_json_tests {
                 arg_index: Some(0),
                 line_numbers: vec![3],
                 addresses: vec![0x401004],
+                split_piece: false,
             }],
             types: vec![TypeInfo {
                 name: "mystruct".into(),

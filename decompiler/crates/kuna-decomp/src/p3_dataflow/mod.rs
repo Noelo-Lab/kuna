@@ -5,6 +5,7 @@
 
 pub mod heritage;
 mod kuna_leafmemory;
+pub(crate) mod kuna_globalcallranges;
 pub mod subflow;
 mod kuna_constantbytes;
 pub mod condexe;
@@ -50,6 +51,7 @@ pub mod kuna_splitstorekeep;
 pub mod kuna_pointeestorekeep;
 pub mod kuna_constspaceload;
 pub mod kuna_simdlane;
+pub mod kuna_x87truncate;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
 pub mod kuna_devectorize;

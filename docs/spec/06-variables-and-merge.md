@@ -489,7 +489,7 @@ that write:
 `dat_e10 = a0[3]; dat_e1c = a0[0xf]; dat_e10 = dat_e10 * 0.017453292;` where
 the binary loads `a0[3]` into a register and stores `dat_e10` once, after
 `dat_e1c`; kept apart it prints `v1 = a0[3]; dat_e1c = a0[0xf];
-dat_e10 = v1 * 0.017453292;`.
+dat_e10 = v1 * 0.017453292f;`.
 
 A computed value stored to a guarded global keeps a separate HighVariable
 when joining them would move its write ahead of an observation or onto another
@@ -1134,7 +1134,14 @@ affine by `ActionStackPtrFlow` (§6.5). Everything below consumes the
 in `mainloop`). Stack storage that belongs to someone else is marked
 *not-mapped* before layout ever runs: the stack homes of locked parameters of
 every sub-call (they are the callee's), and saved-register COPYs of unaffected
-registers (calling-convention bookkeeping, not a variable). The same
+registers (calling-convention bookkeeping, not a variable). The exclusion
+covers the slot for the whole function, so it is skipped when the unaffected
+register overlaps one of the function's own declared parameters, directly or
+as a piece of joined storage: that COPY is a parameter spill, and the slot may
+have its address taken or later hold another value, and an excluded slot loses
+both its declaration and its stores. The cost is that a function which
+also pushes such a register to save it, and whose frame escapes, can keep the
+push slot as a dead local assignment of the parameter. The same
 mechanism (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 (ScopeLocal::mark_not_mapped)`) later excludes an unaliased return-value
 staging slot (`funcdata_spacebase.rs (Funcdata::check_unaliased_return)`).
@@ -1403,6 +1410,64 @@ stack-local matches from wrong to right, most of them a `float` or a pointer
 that `undefinedN` cannot match by width; 10 functions reach a perfect score and
 2 leave it, 327 improve and 13 get worse, each of the worse a slot the C
 declares a pointer where the source has an integer.
+
+**Splitting a frame row at the locals the C declares inside it (`option
+slotsplit`).** `framelayout` reports a slot at the width an early pass saw,
+and a span that layout merged (several spills side by side, or a buffer and
+what follows it) reaches the rows as one `undefinedN`: `local_18 undefined12`
+although the C declares `double v1; // stack - 0x18 | ...` at its start. Under
+`option slotsplit` (default ON) such a row is cut at the homes of the printed
+declarations lying wholly inside it, from
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotsplit.rs
+(split_rows)`. The homes are the `DeclaredSlots` index `slotreport` builds
+(`kuna_slotreport.rs (homes_within)`): a declaration's stack homes at its
+declared width, over its high and the highs declared through it. Each declared
+piece takes the type its declarations spell (`kuna_slotreport.rs
+(piece_type)`): their common type, `undefined1` for one-byte integers or
+`bool` (the `bytehonest` reasoning), `undefinedN` when they disagree. Each gap
+between pieces stays `undefinedK` at its own offset and width; the piece at
+the row's start keeps the row's name, the others take the frame's name for
+their offset. A row of a scalar's width (1, 2, 4 or 8 bytes) may be one value
+the type system narrowed, an `int` spilled whole and printed as `unsigned
+short`, so it splits only at a pointer or floating-point declaration; a row of
+any other width is never one scalar's slot and splits at every declaration
+inside. Splitting the scalar-width rows at their narrower integers too was
+measured: it turned 159 more matches right and 119 that were right wrong, the
+width-only row having matched a source `int` or `long` the C narrowed. A row
+is left whole when two of its pieces would overlap. The rows are cut in order,
+and the offsets every row starts at, and every piece already cut, are taken: no
+piece or gap starts at a taken offset, and a gap ends at the first taken
+offset inside it, so two overlapping width-only rows never both report a piece
+at one offset and a gap never runs over a row that starts inside it (it can
+still run over one that starts before it, such as a `struct stat` Symbol
+spanning the filler row). When a gap stops at a taken offset, the bytes past
+the row that starts there are no longer reported: dexter -O2 `_entryPoint`
+reports 172 bytes of its frame instead of 196. Only rows still
+width-only are split: a row `slotreport` or `slotptr` typed keeps its type.
+The pieces are ordinary frame rows, so the use evidence of the storage they
+now name (`CodeProvenance::apply_to_variables`) attaches to them as it does to
+any stack row. Every piece after a row's first is marked `split_piece`. The
+callee-vote redo check keeps a redo only when its frame rows match the first
+decompile's by count
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (same_arity)`),
+and it counts rows without the mark, so the split, which follows the declared
+types a redo may change, never decides which C is kept. The option changes no
+p-code and no emitted C; the rows reach the same surfaces as `slotreport`'s
+(`--json`, the browser decompiler, the `; stack:` lines of
+`decompile-project`'s `.asm`). Over the four decbench sets of the type
+campaign it turns a net 738 stack-local matches from wrong to right: 503 to a
+typed piece and 240 to a width-only gap the metric credits by width, against
+5 it turns wrong. 125 functions reach a perfect score and none leave it, 711
+improve and 4 get worse. In two of those (`sshsk_load_resident` in ssh and
+ssh-add) the matcher pairs a source `long` with an `int *` piece that comes
+from a printed declaration's stack home, a claim already wrong without the
+split; in u-boot `ubi_resize_volume` it pairs a 4-byte `int` with an 8-byte
+width-only gap; in u-boot `fdt_setprop` it pairs a register local, matched
+right before, with an `unsigned int *` piece by address overlap. The fifth
+wrong match (u-boot `erase_worker`, again an `int` paired with an 8-byte gap)
+is in a function that improves overall. Against main, it costs +0.86% CPU and +0.47%
+wall time with `--json` and -0.28% wall time in text mode, where a separately
+built copy of main measured +1.01%, -0.93% and -1.21%.
 
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
@@ -3206,6 +3271,80 @@ check is insufficient. Known frame ranges use byte overlap; unresolved pointers
 may observe locally aliased storage, while literal global addresses cannot name
 this frame. Marker versions are not writes. The check is enabled by stackviews.
 
+`localstackviews` is the default-on bounded local policy in
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews.rs`.
+Full `stackviews` takes precedence: the bounded local policy records no evidence
+and supplies no preservation, publication or mapping facts while that broader
+option is enabled. Its existing view collection remains authoritative.
+Combining independently admitted scalar footprints with the full policy could
+otherwise seed an unproved union and retype a merged loop counter.
+Original lifted persistent COPY and STORE identities are recorded before
+optimization. Only a captured STORE may contribute its full physical extent
+at `RuleStoreVarnode`; a reconstructed same-address COPY is not native evidence.
+The state resets with function analysis. Provenance and operation scans are
+limited to 4096 records, footprints and their distinct views to 32; exceeding
+any limit invalidates the local candidate rather than admitting a prefix.
+
+A positive footprint has a fixed byte-addressed architectural stack address,
+full pointer width, a nonwrapping extent of 1..256 bytes in the prototype's
+local range, and no overlap with incoming formals. Its declared evidence is
+unavailable when the function has no attached parameter store, so that case
+declines local evidence before querying formal storage. Its positive trigger is
+one locked persistent pointer receiver, or at least two distinct complete
+nominal struct/union pointee contracts of the same size at the same start.
+Native writes must intersect that footprint. Pointer declarations imply neither
+read-only behavior nor noescape. Relevant fixed-frame aggregate contracts must
+have stable ASCII C identifier names. A qualified or otherwise unrepresentable
+nominal name declines the entire early collection, preserving the prior layout
+rather than introducing mismatched shared-view member names. Admission is decided in the first local native
+STORE-lowering heritage window, before preservation can change allocation. Every
+live STORE or LOAD must have a contained or disjoint bounded frame extent,
+using the stored input width or the actual LOAD output width. A declared
+four-byte pointee does not bound a native eight-byte read. Reads only supply
+negative admission evidence; they create no native-write identity or backing
+extent. A raw saved
+receiver read may supply a constant byte displacement only when the original
+publication reaches that read in the same basic block without an intervening
+call, overlapping receiver write or unresolved STORE. A possible receiver use can
+refuse crossing, but cannot alone prove containment. Crossing, unavailable early
+evidence and overlapping locked layouts refuse the entire footprint, including
+nominal aggregate candidates. Refusal persists for the analysis; later P6 facts
+cannot reopen it. The chosen physical component must contain every overlapping
+validated declared candidate extent, even when that other candidate was itself
+refused; preserving a nested or shifted fragment cannot split the larger
+declared object's storage. Candidate contracts are collected once in that window, so a
+later scan cannot withdraw preservation after it has changed the IR. Original
+STORE extents only grow within the bounded captured-native identity set;
+duplicate records do not consume capacity. Live publication queries continue to
+revalidate their exact operation and receiver contracts. Jump-table partials use
+a fresh function state, and ordinary reflow clears this state before relifting.
+
+The existing byte/observer-aware alias policy retains overlapping native writes
+in positive ranges. A captured native publication is kept at its original
+operation, including through INDIRECT and MULTIEQUAL readers, only while its
+live COPY, receiver storage and width, locked pointee contract and fixed input
+still match the record. This prevents memory-SSA merges from replacing the
+publication with assignments on other paths or after observers. Unrelated
+pointer copies and synthesized operations receive no publication privilege.
+A native raw STORE to a literal, full-width default-data-space destination can
+record the same locked receiver contract before STORE lowering. The original
+operation, storage width and source point must match, and the resulting COPY is
+revalidated against that record. A known frame-address publication without an
+exact native receiver and complete locked contract refuses early admission;
+aggregate views cannot bypass this missing correspondence.
+
+An exact component with two equal-size nominal contracts can receive automatic
+shared backing. A published scalar can instead use the existing scalar/byte
+mapping for an exact extent or one captured full physical STORE of 1, 2, 4 or 8
+bytes containing its declared subrange. Adjacent writes are not coalesced into
+that scalar component; wider native writes or crossing/uncertain hazards refuse
+it. Existing full-coverage, locked-layout, unresolved-index and view-count gates
+remain required. A native scalar publication contained in an admitted aggregate
+retains its exact receiver contract even when the smaller standalone footprint
+was refused. Existing object-family recovery and typed address binding consume
+the same backing, preserving saved and simultaneous aliases. Narrow-formal
+eligibility is unchanged.
+
 `stackviews on` collects distinct complete, declared pointee types before
 spatial stack hints are reconciled. Direct calls, typed indirect calls and
 call-site prototype overrides contribute the same locked parameter types;
@@ -3224,7 +3363,8 @@ integer member; address-valued writes select a pointer member. They must not be 
 aggregate just because a later call views those same bytes as a struct.
 
 With `stackviews` disabled, type-facing queries skip view lookup and the extra
-varnode, operation and input-slot queries it needs.
+varnode, operation and input-slot queries it needs, unless the function
+recovered the narrow-parameter backing described below.
 
 The backing object preserves physical address identity: passing the address as
 two types never creates two independent addresses. An earlier escaped pointer
@@ -3245,6 +3385,23 @@ not grouped as a field of the later local. Full-width symbol lookups let ordinar
 and logical naming assertions select that local without falling back to the
 smaller parameter entry. Escaped addresses, partial or unknown pointee uses,
 incoming bytes and multiple surviving value identities decline this shortcut.
+
+With `stackviews off`, a declared boolean or integer stack parameter that has a
+wider physical write of two or four bytes also receives shared backing at that
+slot. The formal parameter retains its incoming type and initializes the matching backing member;
+later writes and escaped addresses use the same wider object. This is storage
+reconstruction, not the closed scalar shortcut: unknown pointer aliases do not
+disable it. Other frame components require either the bounded local policy above or explicit full-view recovery.
+
+The physical store extent is recorded when a native STORE becomes a stack COPY,
+before early removal can discard a register-carried value. Only writes intersecting
+that recorded parameter extent receive the existing alias-preservation policy;
+unrelated frame stores retain their ordinary policy. A store crossing another
+incoming parameter is excluded. A larger native store overlapping the candidate
+four-byte extent excludes the slot from default recovery, including mixed narrow
+and vector writes. The optional full-view policy retains its existing coverage.
+The evidence resets with function analysis and still observes proved non-aliasing
+and overwrite checks.
 
 Aggregate, floating-point and pointer views in the parameter area instead use
 the same union backing as ordinary frame objects. Scalar views also need this

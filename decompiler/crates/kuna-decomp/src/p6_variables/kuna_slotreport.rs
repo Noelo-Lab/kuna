@@ -62,13 +62,15 @@ struct Declared {
     name: String,
     /// The declared type's spelling, `None` for a one-byte integer or `bool`.
     type_name: Option<String>,
+    /// Is the declared type a pointer or a floating-point type?
+    pointer_or_float: bool,
 }
 
 impl DeclaredSlots {
-    /// The declarations `fd`'s printed C places in frame slots; `None` with the
-    /// option off.
+    /// The declarations `fd`'s printed C places in frame slots; `None` with
+    /// both `slotreport` and `slotsplit` off.
     pub fn of(arch: &Architecture, fd: &Funcdata) -> Option<Self> {
-        if !arch.slot_report {
+        if !arch.slot_report && !arch.slot_split {
             return None;
         }
         let print = arch.print();
@@ -89,10 +91,15 @@ impl DeclaredSlots {
             homes.sort_unstable();
             homes.dedup();
             let type_name = (!byte_scalar(ty)).then(|| crate::kuna_bytehonest::exported_type_name(arch, ty));
+            let pointer_or_float = {
+                use crate::dtype::type_metatype::{TYPE_FLOAT, TYPE_PTR, TYPE_PTRREL};
+                matches!(ty.get_metatype(), TYPE_PTR | TYPE_PTRREL | TYPE_FLOAT)
+            };
             for off in homes {
                 slots.entry((off, size)).or_default().push(Declared {
                     name: local.name.clone(),
                     type_name: type_name.clone(),
+                    pointer_or_float,
                 });
             }
         }
@@ -115,6 +122,58 @@ impl DeclaredSlots {
     pub fn declared_type(&self, name: &str, off: i64, size: i64) -> Option<String> {
         self.slots.get(&(off, size))?.iter().find(|d| d.name == name)?.type_name.clone()
     }
+
+    /// An index of the given `(offset, width)` homes, each with its
+    /// declarations' names, spellings and pointer-or-float flags.
+    #[cfg(test)]
+    pub(crate) fn for_test(entries: &[((i64, i64), &[(&str, Option<&str>, bool)])]) -> Self {
+        let slots = entries
+            .iter()
+            .map(|(home, decls)| {
+                let decls = decls
+                    .iter()
+                    .map(|&(name, ty, pointer_or_float)| Declared {
+                        name: name.to_string(),
+                        type_name: ty.map(str::to_string),
+                        pointer_or_float,
+                    })
+                    .collect();
+                (*home, decls)
+            })
+            .collect();
+        DeclaredSlots { slots }
+    }
+
+    /// The `(offset, width)` homes of declarations lying wholly inside
+    /// `[lo, hi)` and narrower than it, in offset order.
+    pub fn homes_within(&self, lo: i64, hi: i64) -> Vec<(i64, i64)> {
+        let mut homes: Vec<(i64, i64)> = self
+            .slots
+            .keys()
+            .filter(|&&(off, size)| lo <= off && off + size <= hi && size < hi - lo)
+            .copied()
+            .collect();
+        homes.sort_unstable();
+        homes
+    }
+
+    /// How the declarations living at `(off, size)` spell that piece of a wider
+    /// frame row: their common type, `undefined1` when they are one-byte
+    /// integers or `bool`, `undefinedN` when they disagree.  With
+    /// `committed_only`, only a common pointer or floating-point type.
+    pub fn piece_type(&self, off: i64, size: i64, committed_only: bool) -> Option<String> {
+        let (first, rest) = self.slots.get(&(off, size))?.split_first()?;
+        let agree = rest.iter().all(|d| d.type_name == first.type_name);
+        if committed_only {
+            let pointer_or_float = first.pointer_or_float && rest.iter().all(|d| d.pointer_or_float);
+            return first.type_name.clone().filter(|_| agree && pointer_or_float);
+        }
+        match &first.type_name {
+            _ if !agree => Some(format!("undefined{size}")),
+            Some(type_name) => Some(type_name.clone()),
+            None => Some("undefined1".to_string()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -124,7 +183,11 @@ mod tests {
     fn slots(entries: &[(&str, Option<&str>)]) -> DeclaredSlots {
         let declared = entries
             .iter()
-            .map(|(name, ty)| Declared { name: name.to_string(), type_name: ty.map(str::to_string) })
+            .map(|(name, ty)| Declared {
+                name: name.to_string(),
+                type_name: ty.map(str::to_string),
+                pointer_or_float: ty.is_some_and(|t| t.ends_with('*') || t == "double"),
+            })
             .collect();
         DeclaredSlots { slots: HashMap::from([((-0x18, 8), declared)]) }
     }

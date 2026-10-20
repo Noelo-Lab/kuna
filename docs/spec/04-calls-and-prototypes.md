@@ -3000,6 +3000,20 @@ the model states no extrapop of its own; a model that states one already has the
 exact value and is left alone, so `__cdecl`, x86-64 and every RISC spec are
 inert.
 
+A call to a function whose symbol carries a whole declaration (a `prototype`
+directive, `parse line extern`, a demangled or host-declared signature) never
+reaches the arm that rebuilds a prototype from parked pieces: the flow has
+already copied the declaration into the call. `ActionDefaultParams` resolves
+such a copied prototype too, but only when the declaration named its convention
+(`ArchContext::callee_proto_model` answers for the callee). A declaration that
+names none is laid out under the default model, which on x86 Windows is
+`__stdcall`, yet the convention MSVC gives an undecorated helper is `__cdecl`;
+reading that arity as bytes the callee pops would move every later stack
+reference in the caller, so the solver keeps such a call. A call to
+`void __stdcall fill(pair *p)` takes the callee's `ret 4` from the declaration;
+a call to `void observe(float,float)` keeps the cleanup the solver reads off the
+caller.
+
 The same park is read a second time, at de-indirection. `ActionDefaultParams`
 runs once at the head of the function, when a `call dword ptr [IAT slot]` is
 still a CALLIND with no callee to ask about, so a parked signature reached such a
@@ -4589,7 +4603,7 @@ is refused outright wherever the caller holds evidence the fold cannot weigh
   elsewhere, and the printer bridges a float to an integer there with a value
   conversion; a float register is itself the float declaration, so `s0` on
   hard-float ARM or `xmm0` on x86-64 keeps the vote (the fixture
-  `protoorder_floatreg_armhf.o` prints `1000.0`, not its bits `0x447a0000`).
+  `protoorder_floatreg_armhf.o` prints `1000.0f`, not its bits `0x447a0000`).
   The case is an ABI that
   passes a float in a general register (MIPS
   o32, ARM soft-float, RISC-V ilp32): the caller hands a word's bits to a

@@ -3341,7 +3341,7 @@ fn a_float_bit_helper_round_trips() {
             "float fb_copysignf(float a0,float a1)",
             "bool fb_isnanf(float a0)",
             "v1 = fb_fabsf(a0 - a1);",
-            "v3 = fb_copysignf(3.0,a0);",
+            "v3 = fb_copysignf(3.0f,a0);",
             "*a1 = ((union { float from; int to; }){ .from = fb_fabsf(a0) }).to + 1;",
             "int fb_bump(int a0)",
             "void fb_store(unsigned int a0,unsigned int *a1)",

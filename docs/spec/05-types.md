@@ -3056,14 +3056,15 @@ is walked on in turn. The cast pass reinterprets the float for an ordered
 comparison, and for an `==` or `!=` too except against such a constant
 (chapter 09, *Integer equality on float bits*), where the float comparison
 holds for exactly the bits the binary tests (`ABS(a0) == INFINITY`, `a0 ==
-1.0`, `a0 == 16777218.0`), while `-0.0` equals `0.0`, a NaN equals nothing,
+1.0f`, `a0 == 16777218.0f`), while `-0.0` equals `0.0`, a NaN equals nothing,
 and a flushed denormal equals zero. The refusals below predate that cast and
 are kept: an accepted input against any other constant would now print as
-the union reinterpretation of its bits rather than a wrong float comparison. The printer writes a float
-constant by its shortest digits with no `f` suffix, which C reads as a
-`double`, so `0.1f` prints `0.1`, another value, and `a0 == 0.1` is false for
-`a0 = 0.1f`; the literal is printed (`FloatFormat::print_decimal`, in both
-notations) and read back as a `double`, which must be the constant's value. So
+the union reinterpretation of its bits rather than a wrong float comparison. The
+test predates the `f` suffix the C printer now puts on a 4-byte constant
+(chapter 09) and still reads the constant's shortest digits
+(`FloatFormat::print_decimal`, in both notations) back as a `double`, which must
+be the constant's value: `0.1f` prints `0.1`, another double, so it is refused
+even though `a0 == 0.1f` would now compare exactly. So
 an `==` or `!=` with zero, a NaN pattern, a denormal, `0.1f`, `FLT_MAX` or
 another value refuses the input (`v.u == 0`, `(v.u & 0x7fffffff) ==
 0x7fc00000`, `x.u == y.u`, `v.u == 0x3dcccccd`). Anything else refuses the input as well:

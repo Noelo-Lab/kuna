@@ -273,7 +273,7 @@ pub(crate) fn moved_as_a_float_here(data: &Funcdata, addr: &Address, size: int4)
     moved
 }
 
-type MovedMemo = std::collections::HashMap<(u64, int4), bool>;
+type MovedMemo = crate::kuna_fasthash::FxHashMap<(u64, int4), bool>;
 
 thread_local! {
     static MOVED: std::cell::RefCell<Option<MovedMemo>> = const { std::cell::RefCell::new(None) };
@@ -289,7 +289,7 @@ pub(crate) fn with_moved_memo<T>(f: impl FnOnce() -> T) -> T {
             MOVED.with(|m| *m.borrow_mut() = self.0.take());
         }
     }
-    let _restore = Restore(MOVED.with(|m| m.borrow_mut().replace(MovedMemo::new())));
+    let _restore = Restore(MOVED.with(|m| m.borrow_mut().replace(MovedMemo::default())));
     f()
 }
 
@@ -358,7 +358,7 @@ fn moved_by(data: &Funcdata, o: &crate::op::PcodeOp, v: VarnodeId) -> Option<Opt
 fn used_as_an_address(data: &Funcdata, vn: VarnodeId, (lo, hi): (u64, u64), indexable: bool, own: bool) -> bool {
     let start = data.vbank().get(vn).map(|n| n.get_offset());
     let mut work = vec![(vn, start, own)];
-    let mut seen: std::collections::HashMap<VarnodeId, (Option<u64>, bool)> = std::collections::HashMap::new();
+    let mut seen: crate::kuna_fasthash::FxHashMap<VarnodeId, (Option<u64>, bool)> = crate::kuna_fasthash::FxHashMap::default();
     while let Some((v, at, kept)) = work.pop() {
         let (at, kept) = match seen.get(&v) {
             None => (at, kept),
@@ -425,7 +425,7 @@ fn used_as_an_address(data: &Funcdata, vn: VarnodeId, (lo, hi): (u64, u64), inde
 fn written_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
     let proto = data.get_func_proto();
     let mut work = vec![vn];
-    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
+    let mut seen: crate::kuna_fasthash::FxHashSet<VarnodeId> = crate::kuna_fasthash::FxHashSet::default();
     while let Some(v) = work.pop() {
         if !seen.insert(v) {
             continue;
@@ -472,7 +472,7 @@ fn written_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
 fn read_as_a_float(data: &Funcdata, vn: VarnodeId) -> bool {
     let proto = data.get_func_proto();
     let mut work = vec![vn];
-    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::new();
+    let mut seen: crate::kuna_fasthash::FxHashSet<VarnodeId> = crate::kuna_fasthash::FxHashSet::default();
     while let Some(v) = work.pop() {
         if !seen.insert(v) {
             continue;

@@ -85,7 +85,7 @@ fn provisional_effects_do_not_supply_unknown_stack_pointer_provenance() {
         4,
         &[store],
         &[],
-        &HashMap::new(),
+        &std::collections::HashMap::new(),
         &mut guards,
         &mut writes,
     );
@@ -94,7 +94,7 @@ fn provisional_effects_do_not_supply_unknown_stack_pointer_provenance() {
     let pointer = writes[0];
     let unknown = data.obank().get(indirect).unwrap().get_in(0).unwrap();
     assert!(data.vbank().get(unknown).unwrap().is_free());
-    let mut memo = HashMap::new();
+    let mut memo = FxHashMap::default();
     assert!(!from_input(&data, pointer, &mut memo));
     assert!(!from_input(&data, pointer, &mut memo));
     let (phi, cycle) = operation(&mut data, OpCode::CPUI_MULTIEQUAL, &[pointer, pointer]);
@@ -112,9 +112,9 @@ fn provisional_effects_do_not_supply_unknown_stack_pointer_provenance() {
     let base = data.set_input_varnode(base).unwrap();
     data.vbank_mut().get_mut(base).unwrap().set_spacebase();
     data.op_set_input(indirect, base, 0).unwrap();
-    assert!(!from_input(&data, cycle, &mut HashMap::new()));
+    assert!(!from_input(&data, cycle, &mut FxHashMap::default()));
     data.op_set_input(indirect, argument, 0).unwrap();
-    assert!(from_input(&data, cycle, &mut HashMap::new()));
+    assert!(from_input(&data, cycle, &mut FxHashMap::default()));
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn data_inputs_include_stack_arguments_but_exclude_spacebases() {
     let (phi, cycle) = operation(&mut data, OpCode::CPUI_MULTIEQUAL, &[copied, copied]);
     let next = operation(&mut data, OpCode::CPUI_INT_ADD, &[cycle, argument]).1;
     data.op_set_input(phi, next, 1).unwrap();
-    let mut memo = HashMap::new();
+    let mut memo = FxHashMap::default();
     for root in [
         base,
         frame_pointer,
@@ -176,7 +176,7 @@ fn repeated_memory_and_call_roots_do_not_reuse_positive_memo_entries() {
     let load = operation(&mut data, OpCode::CPUI_LOAD, &[space, argument]).1;
     let call = operation(&mut data, OpCode::CPUI_CALL, &[argument]).1;
     let other = operation(&mut data, OpCode::CPUI_CALLOTHER, &[userop, argument]).1;
-    let mut memo = HashMap::new();
+    let mut memo = FxHashMap::default();
     for root in [load, call, other, load, call, other] {
         assert!(!from_input(&data, root, &mut memo));
     }

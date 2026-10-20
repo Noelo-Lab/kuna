@@ -4868,7 +4868,7 @@ impl PrintC {
 
     fn needs_storage_assignment(&self, fd: &Funcdata, op: OpId) -> bool {
         self.out_lang == crate::kuna_lang::OutLang::C
-            && fd.get_arch().stack_views
+            && crate::kuna_stackviews::enabled(fd)
             && (crate::kuna_stackbytes::assignment(fd, op).is_some()
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
     }
@@ -6698,6 +6698,8 @@ impl PrintC {
         static RUST_BITS: OpToken = op_token("(", ").to_bits()", 2, 66, false, TokenType::Postsurround, 0, 0);
         let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
         let signed = transfer.target.get_metatype() == type_metatype::TYPE_INT;
+        let pointer = transfer.target.get_metatype() == type_metatype::TYPE_PTR;
+        if pointer { self.push_cast_open(&transfer.target, op); }
         let input = fd.vbank().get(transfer.input).unwrap();
         let bits = if transfer.size == 4 { "u32" } else { "u64" };
         let literal = |v: &crate::varnode::Varnode| {
@@ -6743,8 +6745,14 @@ impl PrintC {
             self.push_op(&C_BITS, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
                 TagType::TypeToken, SyntaxHighlight::type_color));
+            let source_word = transfer.source_pointer.then(|| {
+                arch.types().get_base(transfer.size, type_metatype::TYPE_UINT).unwrap()
+            });
+            if let Some(word) = &source_word { self.push_cast_open(word, op); }
             self.push_vn_ir_body(fd, arch, transfer.input, op);
+            if let Some(word) = &source_word { self.push_cast_close(word); }
         }
+        if pointer { self.push_cast_close(&transfer.target); }
     }
 
     /// Does C's arithmetic conversion already perform this float widening?
@@ -7307,6 +7315,7 @@ impl PrintC {
                     target: slice.source_word,
                     size: 8,
                     to_float: false,
+                    source_pointer: false,
                 },
             );
         } else {
@@ -10866,7 +10875,9 @@ impl PrintC {
     /// through `glb->translate->getFloatFormat(sz)`
     /// ([`FloatFormat::get_host_float`]/`extract_sign`/`print_decimal`) and emits
     /// the `INFINITY`/`NAN`/decimal token via [`format_float_token`].  When there
-    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.
+    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.  (kuna) A
+    /// finite 4-byte constant in C output takes an `f` suffix where `float` is
+    /// 4 bytes, since an unsuffixed literal is a `double`.
     fn push_float_ir(&mut self, arch: &Architecture, val: uintb, sz: int4, op: OpId) {
         use kuna_num::float::floatclass;
         let force_scinote = self.context.is_set(modifiers::FORCE_SCINOTE);
@@ -10886,7 +10897,13 @@ impl PrintC {
                     // path (C++ `push_float` else-branch).
                     _ => {
                         let decimal = format.print_decimal(floatval, force_scinote);
-                        format_float_token(FloatClass::Normal, sign, &decimal, force_scinote)
+                        let mut token = format_float_token(FloatClass::Normal, sign, &decimal, force_scinote);
+                        if self.out_lang == crate::kuna_lang::OutLang::C
+                            && sz == 4 && arch.types().get_size_of_float() == 4
+                        {
+                            token.push('f');
+                        }
+                        token
                     }
                 }
             }
