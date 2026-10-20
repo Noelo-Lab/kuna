@@ -880,6 +880,9 @@ kuna_options! { self, p1;
     "thumbswitch" => {
         on_off!(analysis_thumbswitch, "Thumb tbb/tbh switch-table read in the Listing walk (GH-299)")
     },
+    "x86listingswitch" => {
+        on_off!(analysis_x86listingswitch, "Bounded i386 switch successors in the discovery Listing")
+    },
     "switchreach" => {
         on_off!(analysis_switchreach, "Register-chain jump-table reach in the reference walk")
     },

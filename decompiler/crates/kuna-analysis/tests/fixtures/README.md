@@ -1486,6 +1486,23 @@ while the signed `bge` bounds nothing and `lone3` stays a function. Regenerate f
 directory with `python3 thumbswitch_le32.py` (no cross toolchain). Used by
 `tests/stages/kuna-thumbswitch.xml`.
 
+### Bounded i386 switch coverage before AIF
+
+`x86listingswitch_i386` (8,448 bytes, stripped ELF32/i386, SHA-256
+`804262970b981f41cadc18051cf62ee812312e60cd78d936a806ec0883f9e74e`) is
+built from `x86listingswitch_i386.s` using the commands in its header. The entry
+calls 24 leaves and `dispatch` at `0x100400`, whose unsigned four-case table
+at `0x101000` is followed by an independent callback word. Case blocks at
+`0x100440`, `0x100460`, `0x1004b0`, and `0x1004d0` surround the independent
+function at `0x100480` and a gap. With `fast_funcdisc` off to isolate AIF,
+`x86listingswitch` off lists the four cases as functions and misses the helper
+at `0x100510`; on removes those case entries and discovers the helper while
+keeping the independent function. The native entry checks every case, unsigned
+out-of-range inputs, and the helper's marker write. Console tests compile the
+actual emitted dispatcher and helper at O0/O2, exercise refusal and rollback
+controls, and compare full/lean serial/parallel partitions. Used by
+`tests/stages/kuna-x86listingswitch.xml`.
+
 ### A literal pool word in front of a function
 
 `poolslide_le32` (704 bytes, ELF32/ARM, stripped, SHA-256

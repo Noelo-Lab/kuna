@@ -2100,7 +2100,7 @@ mod tests {
         // and kuna-narrowret, -x86 / a single-function decompile states no narrow call result
         // and kuna-bodyreads / a self-call keeps the register its own body reads
         // and kuna-regsigned / a register local at the width its values are sign extended from
-        assert_eq!(count, 578, "corpus file count drifted");
+        assert_eq!(count, 579, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
