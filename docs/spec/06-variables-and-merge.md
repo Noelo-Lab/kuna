@@ -3271,6 +3271,80 @@ check is insufficient. Known frame ranges use byte overlap; unresolved pointers
 may observe locally aliased storage, while literal global addresses cannot name
 this frame. Marker versions are not writes. The check is enabled by stackviews.
 
+`localstackviews` is the default-on bounded local policy in
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews.rs`.
+Full `stackviews` takes precedence: the bounded local policy records no evidence
+and supplies no preservation, publication or mapping facts while that broader
+option is enabled. Its existing view collection remains authoritative.
+Combining independently admitted scalar footprints with the full policy could
+otherwise seed an unproved union and retype a merged loop counter.
+Original lifted persistent COPY and STORE identities are recorded before
+optimization. Only a captured STORE may contribute its full physical extent
+at `RuleStoreVarnode`; a reconstructed same-address COPY is not native evidence.
+The state resets with function analysis. Provenance and operation scans are
+limited to 4096 records, footprints and their distinct views to 32; exceeding
+any limit invalidates the local candidate rather than admitting a prefix.
+
+A positive footprint has a fixed byte-addressed architectural stack address,
+full pointer width, a nonwrapping extent of 1..256 bytes in the prototype's
+local range, and no overlap with incoming formals. Its declared evidence is
+unavailable when the function has no attached parameter store, so that case
+declines local evidence before querying formal storage. Its positive trigger is
+one locked persistent pointer receiver, or at least two distinct complete
+nominal struct/union pointee contracts of the same size at the same start.
+Native writes must intersect that footprint. Pointer declarations imply neither
+read-only behavior nor noescape. Relevant fixed-frame aggregate contracts must
+have stable ASCII C identifier names. A qualified or otherwise unrepresentable
+nominal name declines the entire early collection, preserving the prior layout
+rather than introducing mismatched shared-view member names. Admission is decided in the first local native
+STORE-lowering heritage window, before preservation can change allocation. Every
+live STORE or LOAD must have a contained or disjoint bounded frame extent,
+using the stored input width or the actual LOAD output width. A declared
+four-byte pointee does not bound a native eight-byte read. Reads only supply
+negative admission evidence; they create no native-write identity or backing
+extent. A raw saved
+receiver read may supply a constant byte displacement only when the original
+publication reaches that read in the same basic block without an intervening
+call, overlapping receiver write or unresolved STORE. A possible receiver use can
+refuse crossing, but cannot alone prove containment. Crossing, unavailable early
+evidence and overlapping locked layouts refuse the entire footprint, including
+nominal aggregate candidates. Refusal persists for the analysis; later P6 facts
+cannot reopen it. The chosen physical component must contain every overlapping
+validated declared candidate extent, even when that other candidate was itself
+refused; preserving a nested or shifted fragment cannot split the larger
+declared object's storage. Candidate contracts are collected once in that window, so a
+later scan cannot withdraw preservation after it has changed the IR. Original
+STORE extents only grow within the bounded captured-native identity set;
+duplicate records do not consume capacity. Live publication queries continue to
+revalidate their exact operation and receiver contracts. Jump-table partials use
+a fresh function state, and ordinary reflow clears this state before relifting.
+
+The existing byte/observer-aware alias policy retains overlapping native writes
+in positive ranges. A captured native publication is kept at its original
+operation, including through INDIRECT and MULTIEQUAL readers, only while its
+live COPY, receiver storage and width, locked pointee contract and fixed input
+still match the record. This prevents memory-SSA merges from replacing the
+publication with assignments on other paths or after observers. Unrelated
+pointer copies and synthesized operations receive no publication privilege.
+A native raw STORE to a literal, full-width default-data-space destination can
+record the same locked receiver contract before STORE lowering. The original
+operation, storage width and source point must match, and the resulting COPY is
+revalidated against that record. A known frame-address publication without an
+exact native receiver and complete locked contract refuses early admission;
+aggregate views cannot bypass this missing correspondence.
+
+An exact component with two equal-size nominal contracts can receive automatic
+shared backing. A published scalar can instead use the existing scalar/byte
+mapping for an exact extent or one captured full physical STORE of 1, 2, 4 or 8
+bytes containing its declared subrange. Adjacent writes are not coalesced into
+that scalar component; wider native writes or crossing/uncertain hazards refuse
+it. Existing full-coverage, locked-layout, unresolved-index and view-count gates
+remain required. A native scalar publication contained in an admitted aggregate
+retains its exact receiver contract even when the smaller standalone footprint
+was refused. Existing object-family recovery and typed address binding consume
+the same backing, preserving saved and simultaneous aliases. Narrow-formal
+eligibility is unchanged.
+
 `stackviews on` collects distinct complete, declared pointee types before
 spatial stack hints are reconciled. Direct calls, typed indirect calls and
 call-site prototype overrides contribute the same locked parameter types;
@@ -3317,7 +3391,7 @@ wider physical write of two or four bytes also receives shared backing at that
 slot. The formal parameter retains its incoming type and initializes the matching backing member;
 later writes and escaped addresses use the same wider object. This is storage
 reconstruction, not the closed scalar shortcut: unknown pointer aliases do not
-disable it. Other frame components remain outside optional view recovery.
+disable it. Other frame components require either the bounded local policy above or explicit full-view recovery.
 
 The physical store extent is recorded when a native STORE becomes a stack COPY,
 before early removal can discard a register-carried value. Only writes intersecting

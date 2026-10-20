@@ -1856,6 +1856,10 @@ impl Rule for RulePropagateCopy {
             {
                 continue;
             }
+            if is_marker && crate::kuna_localstackviews::publication(data, vn)
+            {
+                continue;
+            }
             if is_marker {
                 if vn_is_constant(data, invn) {
                     continue; // Don't propagate constants into markers

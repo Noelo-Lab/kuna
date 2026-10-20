@@ -171,6 +171,8 @@ Three tiers:
 | an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject) |
 | a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject) |
 | return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject) |
+| a reused local frame slot loses an observable native store | [`localstackviews`](#localstackviews) |
+| a saved pointer names an unrelated object after stack storage reuse | [`localstackviews`](#localstackviews) |
 | a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews) |
 | two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
@@ -1617,6 +1619,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. An out-parameter local is declared the way the callee declares it -- `waitpid`'s and `wait`'s `int *` status, `pthread_setcancelstate`'s `int *` old state -- when the body reads it with bit tests and signed operators only; the call then passes `&v1` uncast and an arithmetic shift of the status reads it uncast. A status the body also shifts right logically (the -O2 form of `WEXITSTATUS`), compares unsigned or zero-extends stays unsigned. Flip OFF to see the frame layout's own reading of the slot (`unsigned int v5; waitpid(v2,(int *)&v5,0)`), for a bisect or an ablation. The flip's evidence is docs/features/castobject/default-on-evaluation.md.
 - **Where / provenance:** P6/stack-frame-layout · kuna · type-inference · kuna-castobject
 - **Example:** `option castobject on`
+
+### `localstackviews` -- on | off, default `on`
+
+- **Symptoms:** a reused local frame slot loses an observable native store; a saved pointer names an unrelated object after stack storage reuse.
+- **What it does:** Preserve bounded native local writes and typed publications before mapping shared object views.
+- **When to flip:** Default-on for a proved fixed local footprint published to a locked pointer receiver, or used through distinct complete equal-size aggregate pointer contracts. Preserves native writes and saved-pointer identity with shared backing. Explicit stackviews on takes precedence and uses the broader policy alone. Turn off to inspect the previous policy; formals, unknown or crossing effects, locked layouts and unsupported nominal names retain their prior mapping.
+- **Where / provenance:** P6/alias-facets · kuna · correctness-fix · #810
+- **Example:** `option localstackviews off`
 
 ### `stackviews` -- on | off, default `off`
 

@@ -203,6 +203,9 @@ mod limits_cli;
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
 
+#[path = "local_stack_views.rs"]
+mod local_stack_views;
+
 #[path = "library_names.rs"]
 mod library_names;
 

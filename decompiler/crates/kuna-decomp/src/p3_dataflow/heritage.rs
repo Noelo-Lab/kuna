@@ -1573,7 +1573,7 @@ impl Heritage {
                     .get_space()
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
-            let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr);
+            let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr, size);
             let mut guarded_stores = if (high_ptr_possible && level >= LEVEL_FULL) || stack_effects {
                 self.guard_stores(fd, addr, size, write, false)
             } else if high_ptr_possible && guard_stack_bytes {
@@ -1633,7 +1633,11 @@ impl Heritage {
         {
             return true;
         }
-        if fd.get_arch().stack_views || fd.get_arch().stack_alias_deadstore {
+        if fd.get_arch().stack_views || fd.get_arch().stack_alias_deadstore
+            || crate::kuna_localstackviews::preserves_range(
+                fd, &Address::new(Rc::clone(spc), offset), size,
+            )
+        {
             if !spc.stack_grows_negative() {
                 return true;
             }
@@ -2854,7 +2858,7 @@ impl Heritage {
                 fd.obank().get(op).map(|o| o.uses_spacebase_ptr()).unwrap_or(false);
             let contained =
                 container.as_ref().map(|c| Rc::ptr_eq(c, &store_space)).unwrap_or(false);
-            let escaped = crate::kuna_stackeffects::enabled_for(fd, addr)
+            let escaped = crate::kuna_stackeffects::enabled_for(fd, addr, size)
                 && self.protostack_is_aliased(fd, &spc, addr.get_offset(), size);
             let indirect_frame_store = contained && escaped && crate::kuna_stackeffects::unresolved_store(fd, op);
             if !((contained && uses_spacebase) || Rc::ptr_eq(&spc, &store_space) || indirect_frame_store) {

@@ -25,6 +25,9 @@ fn decompile(function: &str, enabled: bool) -> String {
             "--sleighpath",
         ])
         .arg(specs);
+    if !enabled {
+        command.args(["--option", "localstackviews", "off"]);
+    }
     let output = common::process::output_with_timeout(
         &mut command,
         Duration::from_secs(15),

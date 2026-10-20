@@ -2651,6 +2651,17 @@ without any restart (§0.7): the next mainloop iteration simply re-heritages
 the smaller graph.
 
 
+`localstackviews` adds only positively proved local byte ranges to
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_stackeffects.rs`.
+The native STORE hook exposes those ranges before the next heritage pass;
+waiting for dead-code preparation can incorrectly fold a later frame read
+across an escaped pointer write. Unknown pointer STOREs retain the existing
+memory-version barriers. Literal global destinations and unrelated frame ranges
+keep their existing policy, including the separate narrow-formal eligibility.
+Recorded persistent publications also refuse COPY propagation into memory-SSA
+markers while their original receiver and fixed input contracts remain valid;
+this retains the actual write rather than replaying it after a call or loop.
+
 With `stackviews on`, unresolved STOREs in the containing memory space guard
 escaped frame ranges with an INDIRECT memory version. A reloaded pointer need
 not remain syntactically derived from the stack pointer: it can still designate

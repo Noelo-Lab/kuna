@@ -344,7 +344,8 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
     let reused = if full_views { Vec::new() } else {
         crate::kuna_stackparamviews::wider_scalar_parameters(fd)
     };
-    if !full_views && reused.is_empty() {
+    let local_views = crate::kuna_localstackviews::views(fd);
+    if !full_views && reused.is_empty() && local_views.is_empty() {
         return;
     }
     let Some(factory) = fd.get_arch().types_rc() else {
@@ -358,6 +359,9 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
         .zip(checker.get_add_base().iter().copied())
         .collect();
     let mut groups: BTreeMap<uintb, Vec<Rc<Datatype>>> = BTreeMap::new();
+    for (start, datatype) in local_views {
+        insert_type(groups.entry(start).or_default(), datatype);
+    }
     for &(start, width) in &reused {
         if let Ok(datatype) = factory.get_base(width, type_metatype::TYPE_UINT) {
             insert_type(groups.entry(start).or_default(), datatype);
@@ -471,7 +475,8 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
     for (start, size, mut views) in components {
         let scalar_parameter = reused.iter()
             .any(|&(at, width)| contains(start, size, at, width));
-        if !full_views && (!scalar_parameter || size > 4) {
+        let local_backing = crate::kuna_localstackviews::backing(fd, start, size);
+        if !full_views && !local_backing && (!scalar_parameter || size > 4) {
             continue;
         }
         for assertion in crate::kuna_stackobjectasserts::specs(fd) {
@@ -495,7 +500,7 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
                 });
             }
         }
-        if !full_views && views.iter().any(|view| !matches!(
+        if !full_views && !local_backing && views.iter().any(|view| !matches!(
             view.datatype.get_metatype(), type_metatype::TYPE_BOOL
                 | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
         )) {

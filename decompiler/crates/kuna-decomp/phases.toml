@@ -2994,6 +2994,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "localstackviews"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "alias-facets"
+strength = "HARD"
+rewind = "P2"
+issue = "#810"
+summary = "Preserve bounded native local writes and typed publications before mapping shared object views."
+use_when = "Default-on for a proved fixed local footprint published to a locked pointer receiver, or used through distinct complete equal-size aggregate pointer contracts. Preserves native writes and saved-pointer identity with shared backing. Explicit stackviews on takes precedence and uses the broader policy alone. Turn off to inspect the previous policy; formals, unknown or crossing effects, locked layouts and unsupported nominal names retain their prior mapping."
+example = "option localstackviews off"
+source_decompiler = "kuna"
+inspiration = "Kuna #810 and mgostIH PR #1162: bounded local stack-object views"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "a reused local frame slot loses an observable native store|a saved pointer names an unrelated object after stack storage reuse"
+live_field = "local_stack_views"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "stackviews"
 values = "on|off"
 default = "off"

@@ -435,6 +435,9 @@ fn decompile_surface(
             "--sleighpath",
         ])
         .arg(common::repo_root().join("specs"));
+    if !enabled {
+        command.args(["--option", "localstackviews", "off"]);
+    }
     if function == "rgb_reuse" {
         command.args(["--target", "x86:LE:64:default:windows"]);
     }

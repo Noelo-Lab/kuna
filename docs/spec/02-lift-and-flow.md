@@ -2550,3 +2550,11 @@ replaces the control word defines it: `FLDCW`, `FLDENV`, `FRSTOR`,
 loads it from the first word of its area. `XRSTOR` and `XRSTORS` load it the
 same way when `EAX` bit 0 and the area's `XSTATE_BV` bit 0 are set, reset it
 to `0x037f` when only `EAX` bit 0 is set, and leave it unchanged otherwise.
+
+With `localstackviews`, the `FlowEmit::dump` seam in
+`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
+persistent memory COPY identities for the bounded P6 policy. Register COPYs do
+not contribute. Generational operation identity and original receiver storage
+are retained separately from instruction-start flags, which clones can copy.
+The callback changes neither lifted P-code nor flow; it supplies provenance
+before optimization can create indistinguishable same-address reconstructions.

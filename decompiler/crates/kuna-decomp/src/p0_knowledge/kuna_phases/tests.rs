@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_322() {
-    assert_eq!(kuna_num_settables(), 322);
-    assert_eq!(SETTABLE_TABLE.len(), 322);
+fn settable_count_is_323() {
+    assert_eq!(kuna_num_settables(), 323);
+    assert_eq!(SETTABLE_TABLE.len(), 323);
 }
 
 #[test]
-fn tier_counts_are_118_core_124_transform_80_analysis() {
+fn tier_counts_are_118_core_125_transform_80_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_118_core_124_transform_80_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (118, 124, 80));
+    assert_eq!((core, transform, analysis), (118, 125, 80));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_110() {
+fn option_values_live_value_present_for_151() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -847,7 +847,7 @@ fn option_values_live_value_present_for_110() {
     // 146 -> 147: +1 for `slotreport` (live_field = slot_report).
     // 147 -> 148: +1 for `callmechanisms` (live_field = call_mechanism_effects).
     // 148 -> 149: +1 for `slotsplit` (live_field = slot_split).
-    assert_eq!(with_live, 150);
+    assert_eq!(with_live, 151);
 }
 
 #[test]
@@ -1045,7 +1045,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 321);
+    assert_eq!(json.matches("},\n").count(), 322);
 }
 
 #[test]

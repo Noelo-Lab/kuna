@@ -3671,3 +3671,11 @@ Format-specific call arities are not declarations of the callee. When a call
 has format-derived arguments, project declarations restore its parked formal
 variadic signature. Call-only type roots are gathered only for project headers;
 ordinary per-function type inventories retain their original scope.
+
+Automatically admitted `localstackviews` backings use the same physical-version,
+byte-projection and mutable-read timing checks as explicit `stackviews`.
+Native write preservation is established before mapping; emission does not
+resurrect hidden arithmetic or mark reconstructed COPYs as physical stores.
+A surviving native persistent publication supplies its exact locked pointer
+contract to the existing typed-member address binding, so a shared union address
+is published as the declared pointee address at the original operation.

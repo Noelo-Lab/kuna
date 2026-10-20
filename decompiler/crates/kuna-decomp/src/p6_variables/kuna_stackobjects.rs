@@ -364,7 +364,9 @@ pub fn recover(fd: &mut Funcdata) {
                 fd,
                 &Address::new(Rc::clone(&space), space.wrap_offset(address.first as u64)),
                 ty.get_size(),
-            ).is_none() {
+            ).is_none() && !crate::kuna_localstackviews::mapped_range(
+                fd, space.wrap_offset(address.first as u64), ty.get_size(),
+            ) {
                 continue;
             }
             total += ty.get_size() as usize;
