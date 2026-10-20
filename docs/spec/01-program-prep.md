@@ -962,8 +962,6 @@ refusal path is unchanged and deliberately so: an image that genuinely is not pa
 still exits `1` naming that, because an `unpack` that exited `0` on everything would
 trade a right answer for a reachable one.
 
-
-
 ## 1.3 Loader markup
 
 Import naming exists because a CALL into a linkage stub carries no symbol: without

@@ -4419,15 +4419,22 @@ fn commit_analysis_output(
     };
     let out = out;
 
-    // Keep lookup identities even when richer debug information wins the map.
+    // Keep lookup identities even when richer debug information wins the map;
+    // a spelling shared by several objects resolves to its lowest address.
     let data_symbols_enabled = prog.arch().analysis_datasyms;
-    prog.data_name_aliases.extend(
-        prog.loader_data_objects.iter().filter(|_| data_symbols_enabled)
-            .map(|(address, name, _)| (name.clone(), *address))
-            .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
-            .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
-            .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
-    );
+    let aliases: Vec<(String, u64)> = prog
+        .loader_data_objects
+        .iter()
+        .filter(|_| data_symbols_enabled)
+        .map(|(address, name, _)| (name.clone(), *address))
+        .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
+        .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
+        .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
+        .collect();
+    for (name, address) in aliases {
+        let slot = prog.data_name_aliases.entry(name).or_insert(address);
+        *slot = (*slot).min(address);
+    }
 
     let mut data_names = crate::kuna_dataidentifiers::Names::new(
         prog.symbols.iter().map(|s| s.name.clone())

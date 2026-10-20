@@ -216,3 +216,68 @@ int main(int argc, char **argv) {{
         }
     }
 }
+
+#[test]
+#[cfg(target_os = "linux")]
+fn shared_data_spelling_resolves_to_its_lowest_address_in_both_modes() {
+    use object::{Object, ObjectSymbol};
+    if process::optional_output(Command::new("gcc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("shared-data-spelling", "so");
+    let mut sources = Vec::new();
+    let mut command = Command::new("gcc");
+    command.args(["-O0", "-shared", "-fPIC"]);
+    for (index, value) in [11, 22, 33].into_iter().enumerate() {
+        let source = common::scratch_file("shared-data-spelling", "c");
+        std::fs::write(
+            &source,
+            format!("static int c __asm__(\"ctr.0\") = {value};\nint f{index}(int x) {{ return c += x; }}\n"),
+        )
+        .unwrap();
+        command.arg(&source);
+        sources.push(source);
+    }
+    let built = command.arg("-o").arg(&binary).output().unwrap();
+    assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+    let image = std::fs::read(&binary).unwrap();
+    let lowest = object::File::parse(&*image)
+        .unwrap()
+        .symbols()
+        .filter(|symbol| symbol.name() == Ok("ctr.0"))
+        .map(|symbol| symbol.address())
+        .min()
+        .unwrap();
+    for mode in ["safe", "ident"] {
+        let (text, error, status) = common::run_kuna(&[
+            "read",
+            binary.to_str().unwrap(),
+            "ctr.0",
+            "--bytes",
+            "4",
+            "--option",
+            "symbolnamechars",
+            mode,
+            "--json",
+        ]);
+        assert_eq!(status, 0, "{mode}: {error}");
+        let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(document["start"].as_u64(), Some(lowest), "{mode}: {text}");
+        let (text, error, status) = common::run_kuna(&[
+            "xrefs",
+            binary.to_str().unwrap(),
+            "--to",
+            "ctr.0",
+            "--option",
+            "symbolnamechars",
+            mode,
+            "--json",
+        ]);
+        assert_eq!(status, 0, "{mode}: {error}");
+        let document: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(document["target"]["address"].as_u64(), Some(lowest), "{mode}: {text}");
+    }
+    for path in sources.into_iter().chain([binary]) {
+        std::fs::remove_file(path).unwrap();
+    }
+}

@@ -334,15 +334,15 @@ fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, Strin
             fallback: Some(spec.to_string()),
         }));
     }
-    if let Some(addr) = prog.lookup_data_alias(spec) {
-        return Ok(Resolution::Settled(TargetSpec { addr, name: Some(spec.to_string()), fallback: None }));
-    }
     if let Some((name, addr, _)) = prog
         .global_data_symbols()
         .into_iter()
         .find(|(name, _, _)| name == spec)
     {
         return Ok(Resolution::Settled(TargetSpec { addr, name: Some(name), fallback: None }));
+    }
+    if let Some(addr) = prog.lookup_data_alias(spec) {
+        return Ok(Resolution::Settled(TargetSpec { addr, name: Some(spec.to_string()), fallback: None }));
     }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
         return Ok(Resolution::Settled(TargetSpec { addr, name: None, fallback: None }));
