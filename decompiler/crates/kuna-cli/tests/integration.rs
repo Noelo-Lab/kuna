@@ -203,6 +203,9 @@ mod limits_cli;
 #[path = "local_name_batch.rs"]
 mod local_name_batch;
 
+#[path = "local_stack_views.rs"]
+mod local_stack_views;
+
 #[path = "library_names.rs"]
 mod library_names;
 
@@ -544,3 +547,5 @@ mod declared_callee_pop;
 
 #[path = "declared_pointer_frame_alias.rs"]
 mod declared_pointer_frame_alias;
+#[path = "project_function_linkage.rs"]
+mod project_function_linkage;

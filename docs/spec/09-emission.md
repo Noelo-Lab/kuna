@@ -3543,7 +3543,10 @@ pointer uses `__builtin_memcpy` and a typed C compound literal. Casting a word
 pointer over an integer local does not establish C aliasing: both GCC and clang
 can otherwise optimize a later integer read to its old initializer. The copy
 preserves the bytes and evaluates the pointer and value once. This fallback is
-C-only and bounded to scalar accesses of 2, 4 or 8 bytes.
+C-only and bounded to scalar accesses of 2, 4 or 8 bytes. With `stackviews` off,
+a function that recovered narrow-parameter backing copies only accesses that
+resolve inside that backing; other reinterpreted pointers keep their ordinary
+dereference.
 
 Bounded indexed accesses into a recovered backing object also copy their bytes,
 including one-byte loads and stores. The byte pointer starts at the whole backing
@@ -3668,3 +3671,34 @@ Format-specific call arities are not declarations of the callee. When a call
 has format-derived arguments, project declarations restore its parked formal
 variadic signature. Call-only type roots are gathered only for project headers;
 ordinary per-function type inventories retain their original scope.
+
+Automatically admitted `localstackviews` backings use the same physical-version,
+byte-projection and mutable-read timing checks as explicit `stackviews`.
+Native write preservation is established before mapping; emission does not
+resurrect hidden arithmetic or mark reconstructed COPYs as physical stores.
+A surviving native persistent publication supplies its exact locked pointer
+contract to the existing typed-member address binding, so a shared union address
+is published as the declared pointee address at the original operation.
+
+Project C exports use the exact global-scope function symbol's display name
+for a successful definition and its header prototype when both spellings are
+plain C identifiers (`decompiler/crates/kuna-console/src/kuna_projectfunctionnames.rs`).
+This aligns definitions with calls when debug information names a function
+differently from its linker symbol. Analysis, selector aliases, and standalone
+output retain their existing names. The original display is restored after
+rendering. Namespaced and nonidentifier spellings are not guessed. A separate
+optional emitted C name travels through worker records and survives stream
+compaction, so the header checks every successful prototype record, including
+streamed bodies whose text was released. Multiple entries claiming one C name
+(duplicate static functions from separate translation units, or a PLT stub
+beside the definition it reaches), or a function conflicting with a data or
+typedef declaration, are listed in address-only header comments. They are not
+fatal: the export still writes every artifact and keeps its exit status, and a
+typedef collision keeps the commented-out prototype so the header itself still
+parses. Source selection names and alias metadata retain their existing meaning.
+
+Project C emission reserves global function names before rendering local symbols.
+A colliding parameter or local receives a unique local spelling; parameter storage,
+types, and lock flags are preserved, and the prototype and body use the same name.
+This prevents a source-level parameter name from shadowing a function's emitted
+linkage identifier. The change is local to the rendered function.

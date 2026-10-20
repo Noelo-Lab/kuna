@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES09";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES10";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -265,6 +265,7 @@ impl ResultWriter {
         put_opt_str(&mut body, r.code.as_deref());
         put_opt_str(&mut body, r.error.as_deref());
         put_opt_str(&mut body, r.proto.as_deref());
+        put_opt_str(&mut body, r.emitted_c_name.as_deref());
         put_object_location(&mut body, r.object_location.as_ref());
         put_u32(&mut body, r.aliases.len() as u32);
         for a in &r.aliases {
@@ -279,7 +280,7 @@ impl ResultWriter {
         for v in &r.variables {
             put_str(&mut body, &v.name);
             put_str(&mut body, &v.type_name);
-            body.push(u8::from(v.is_param));
+            body.push(u8::from(v.is_param) | (u8::from(v.split_piece) << 1));
             match v.arg_index {
                 Some(i) => {
                     body.push(1);
@@ -409,6 +410,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     let code = r.opt_string()?;
     let error = r.opt_string()?;
     let proto = r.opt_string()?;
+    let emitted_c_name = r.opt_string()?;
     let object_location = r.object_location()?;
     let na = r.u32()? as usize;
     let mut aliases = r.sized(na);
@@ -428,7 +430,8 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     for _ in 0..nv {
         let vname = r.string()?;
         let type_name = r.string()?;
-        let is_param = r.u8()? != 0;
+        let flags = r.u8()?;
+        let (is_param, split_piece) = (flags & 1 != 0, flags & 2 != 0);
         let arg_index = match r.u8()? {
             0 => None,
             1 => Some(r.u64()? as usize),
@@ -455,6 +458,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             arg_index,
             line_numbers,
             addresses,
+            split_piece,
         });
     }
     let nt = r.u32()? as usize;
@@ -545,6 +549,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         code,
         error,
         proto,
+        emitted_c_name,
         call_declarations,
         variables,
         stack_objects,

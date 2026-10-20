@@ -633,10 +633,12 @@ fn admit_within_budget(
 
 /// (kuna `calleevote`) Does a redo keep the first decompile's parameters and
 /// frame variables (`register` rows aside), by count? A caller's vote moves
-/// types only, so a redo that moves either is not the vote's doing: decompiling a function a second time in one
-/// session can recover a stack parameter the first decompile did not (bash
-/// -O2 `sub_7ea70` gains an unused `unsigned int a6`), and such a redo keeps
-/// the first body.
+/// types only, so a redo that moves either is not the vote's doing: decompiling
+/// a function a second time in one session can recover a stack parameter the
+/// first decompile did not (bash -O2 `sub_7ea70` gains an unused `unsigned int
+/// a6`), and such a redo keeps the first body.  The pieces `slotsplit` cut
+/// from one frame row count as that row, so the split, which follows the
+/// declared types, never decides a redo.
 fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
     let params = |r: &FuncResult| r.variables.iter().filter(|v| v.is_param).count();
     let declared = |r: &FuncResult| {
@@ -655,7 +657,7 @@ fn same_arity(first: &FuncResult, again: &FuncResult) -> bool {
             inner.matches(',').count() + 1
         }
     };
-    let frame = |r: &FuncResult| r.variables.iter().filter(|v| v.kind() != "register").count();
+    let frame = |r: &FuncResult| r.variables.iter().filter(|v| v.kind() != "register" && !v.split_piece).count();
     frame(first) == frame(again)
         && params(first) == params(again)
         && declared(first) == declared(again)

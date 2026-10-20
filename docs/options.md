@@ -171,6 +171,8 @@ Three tiers:
 | an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject) |
 | a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject) |
 | return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject) |
+| a reused local frame slot loses an observable native store | [`localstackviews`](#localstackviews) |
+| a saved pointer names an unrelated object after stack storage reuse | [`localstackviews`](#localstackviews) |
 | a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews) |
 | two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
@@ -1189,6 +1191,10 @@ Three tiers:
 | the decompile-project .asm stack header types a slot undefinedN that the C declares | [`slotreport`](#slotreport) |
 | type_match pairs a stack local with an undefined row | [`slotreport`](#slotreport) |
 | a -O0 local merged with its spill is reported by width only | [`slotreport`](#slotreport) |
+| the variables array reports one undefined16 row over a pointer the C declares at its start | [`slotsplit`](#slotsplit) |
+| a local declared at stack - 0x40 has no row of its own inside a wider frame row | [`slotsplit`](#slotsplit) |
+| the decompile-project .asm stack header lists one wide undefined slot over several declared locals | [`slotsplit`](#slotsplit) |
+| type_match pairs a stack local with a wider undefined row | [`slotsplit`](#slotsplit) |
 | int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names | [`ctypes`](#ctypes) |
 | the same function mixes `unsigned int` with `int4` | [`ctypes`](#ctypes) |
 | `code *` appears as a function-pointer type | [`ctypes`](#ctypes) |
@@ -1270,6 +1276,9 @@ Three tiers:
 | a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 | an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
 | a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
+| large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
+| tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
+| a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
 
 ## Toggleable transforms
 
@@ -1610,6 +1619,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. An out-parameter local is declared the way the callee declares it -- `waitpid`'s and `wait`'s `int *` status, `pthread_setcancelstate`'s `int *` old state -- when the body reads it with bit tests and signed operators only; the call then passes `&v1` uncast and an arithmetic shift of the status reads it uncast. A status the body also shifts right logically (the -O2 form of `WEXITSTATUS`), compares unsigned or zero-extends stays unsigned. Flip OFF to see the frame layout's own reading of the slot (`unsigned int v5; waitpid(v2,(int *)&v5,0)`), for a bisect or an ablation. The flip's evidence is docs/features/castobject/default-on-evaluation.md.
 - **Where / provenance:** P6/stack-frame-layout · kuna · type-inference · kuna-castobject
 - **Example:** `option castobject on`
+
+### `localstackviews` -- on | off, default `on`
+
+- **Symptoms:** a reused local frame slot loses an observable native store; a saved pointer names an unrelated object after stack storage reuse.
+- **What it does:** Preserve bounded native local writes and typed publications before mapping shared object views.
+- **When to flip:** Default-on for a proved fixed local footprint published to a locked pointer receiver, or used through distinct complete equal-size aggregate pointer contracts. Preserves native writes and saved-pointer identity with shared backing. Explicit stackviews on takes precedence and uses the broader policy alone. Turn off to inspect the previous policy; formals, unknown or crossing effects, locked layouts and unsupported nominal names retain their prior mapping.
+- **Where / provenance:** P6/alias-facets · kuna · correctness-fix · #810
+- **Example:** `option localstackviews off`
 
 ### `stackviews` -- on | off, default `off`
 
@@ -3675,6 +3692,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P6/naming-policy · kuna · presentation-default · ty17-slotreport
 - **Example:** `option slotreport off`
 
+### `slotsplit` -- on | off, default `on`
+
+- **Symptoms:** the variables array reports one undefined16 row over a pointer the C declares at its start; a local declared at stack - 0x40 has no row of its own inside a wider frame row; the decompile-project .asm stack header lists one wide undefined slot over several declared locals; type_match pairs a stack local with a wider undefined row.
+- **What it does:** Split a width-only stack-frame row at the narrower locals the C declares inside it, on the `variables` rows (`decompile-all --json`, `decompile --json`, the browser decompiler) and in the `; stack:` header lines of `decompile-project`'s `.asm`. `framelayout` reports a frame slot at the width an early pass saw it, so a span the early layout merged reaches the rows as one `undefined16` or `undefined5` even when the C declares `char *v3; // stack - 0x40` at its start. When on, such a row is cut at the stack homes of the printed declarations lying wholly inside it (the homes their declaration comments list, at the declared width): each declared piece takes the type its declarations spell (`undefined1` for a one-byte integer or `bool`, `undefinedN` when they disagree) and each gap stays `undefinedK` at its own offset and width. A row of a scalar's width (1, 2, 4 or 8 bytes) splits only at a pointer or floating-point declaration, since a narrower integer there is usually a value the type system narrowed. A row is left whole where two pieces would overlap; no piece or gap starts where another row, or a piece already cut, starts, and a gap stops at the first such offset inside it, so the bytes past that row are no longer reported; rows `slotreport` or `slotptr` typed are not split. No p-code and no emitted C change.
+- **When to flip:** On by default. A consumer reads `variables[]` or the `.asm` `; stack:` lines as the frame the C declares, and decbench's type_match pairs a ground-truth stack local with the row starting at its frame offset. Flip OFF to get the `framelayout` rows at their early-pass widths again. The emitted C never changes either way.
+- **Where / provenance:** P6/naming-policy · kuna · presentation-default · ty17-slotsplit
+- **Example:** `option slotsplit off`
+
 ### `ctypes` -- on | off, default `off`
 
 - **Symptoms:** int4/uint1/uint4/float8/float10 appear in the emitted C instead of C type names; the same function mixes `unsigned int` with `int4`; `code *` appears as a function-pointer type; the emitted C does not compile because its type names are not C.
@@ -3842,6 +3867,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Disable when comparing legacy argument recovery; enable when a wide register temporary hides a subsequently overwritten argument slot.
 - **Where / provenance:** P3/ssa-construction · kuna · correctness-fix · GH-1070
 - **Example:** `option multiregargs off`
+
+### `globalcallranges` -- on | off, default `on`
+
+- **Symptoms:** large global initializer exhausts memory during heritage; tiny constructors cause a quadratic number of global call guards; a function with many global assignments uses gigabytes before emitting C.
+- **What it does:** Avoid a call guard for a persistent global when a complete bounded callee-body summary proves that all of the callee's memory reads and writes target disjoint constant address intervals. Reuse the frame-memory body walker and its cache, but exclude absolute memory references, direct memory input or output varnodes in any processor space, nonreturn frame accesses, opaque operations and incomplete bodies from this proof. Resolve every memory-effect root through an exact full-width register parameter and a definite constant caller argument; unknown arguments, overlaps, explicit effect overrides and wrapping arithmetic retain the guard. Seed this proof for functions with at least 16 calls and 64 direct memory writes, where the global-range by call-site cross product is material. The option removes redundant IR allocations rather than stopping a function: the CrashLogger initializer's tiny constructors each touch one 16-byte object, not every global.
+- **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
+- **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
+- **Example:** `option globalcallranges off`
 
 ## Programmatic use
 

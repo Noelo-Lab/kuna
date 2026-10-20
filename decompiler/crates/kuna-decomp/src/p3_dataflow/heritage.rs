@@ -869,6 +869,7 @@ pub struct Heritage {
     protostack_alias: Option<Option<crate::varmap::AliasChecker>>,
     /// Positive evidence of nested frame setup, retained across passes.
     protostack_frame_reload: Option<bool>,
+    global_call_ranges: super::kuna_globalcallranges::Calls,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
     store_frame_unresolved: Option<bool>,
@@ -923,6 +924,7 @@ impl Heritage {
             load_copy_ops: Vec::new(),
             protostack_alias: None,
             protostack_frame_reload: None,
+            global_call_ranges: Default::default(),
             store_frame_unresolved: None,
             store_frame_guarded: false,
             global_store_guards: 0,
@@ -1087,6 +1089,7 @@ impl Heritage {
     pub fn clear(&mut self) {
         self.disjoint.clear();
         self.globaldisjoint.clear();
+        self.global_call_ranges.clear();
         self.domchild.clear();
         self.augment.clear();
         self.flags.clear();
@@ -1574,7 +1577,7 @@ impl Heritage {
                     .get_space()
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
-            let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr);
+            let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr, size);
             let mut guarded_stores = if (high_ptr_possible && level >= LEVEL_FULL) || stack_effects {
                 self.guard_stores(fd, addr, size, write, false)
             } else if high_ptr_possible && guard_stack_bytes {
@@ -1640,7 +1643,11 @@ impl Heritage {
         {
             return true;
         }
-        if fd.get_arch().stack_views || fd.get_arch().stack_alias_deadstore {
+        if fd.get_arch().stack_views || fd.get_arch().stack_alias_deadstore
+            || crate::kuna_localstackviews::preserves_range(
+                fd, &Address::new(Rc::clone(spc), offset), size,
+            )
+        {
             if !spc.stack_grows_negative() {
                 return true;
             }
@@ -1731,7 +1738,9 @@ impl Heritage {
                         && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
                         && !self.protostack_is_aliased(fd, &spc,
                             spc.wrap_offset(addr.get_offset().wrapping_add(size.saturating_sub(1) as uintb)), 1))
-                    || crate::kuna_calleememory::preserves(fd, fc, addr, size))
+                    || crate::kuna_calleememory::preserves(fd, fc, addr, size)
+                    || ((fl & varnode_flags::persist) != 0
+                        && self.global_call_ranges.preserves(fd, fc, addr, size)))
             {
                 effecttype = effect_type::UNAFFECTED;
             }
@@ -2863,7 +2872,7 @@ impl Heritage {
                 fd.obank().get(op).map(|o| o.uses_spacebase_ptr()).unwrap_or(false);
             let contained =
                 container.as_ref().map(|c| Rc::ptr_eq(c, &store_space)).unwrap_or(false);
-            let escaped = crate::kuna_stackeffects::enabled_for(fd, addr)
+            let escaped = crate::kuna_stackeffects::enabled_for(fd, addr, size)
                 && self.protostack_is_aliased(fd, &spc, addr.get_offset(), size);
             let indirect_frame_store = contained && escaped && crate::kuna_stackeffects::unresolved_store(fd, op);
             if !((contained && uses_spacebase) || Rc::ptr_eq(&spc, &store_space) || indirect_frame_store) {
@@ -5458,6 +5467,7 @@ impl Heritage {
             self.protostack_frame_reload.unwrap_or(false)
                 || crate::kuna_calleeprotostack::rebound_frame_base(fd),
         );
+        self.global_call_ranges.clear();
         self.spill_stores.clear();
         self.spill_store_guards.clear();
         self.indexed_store_guards.clear();

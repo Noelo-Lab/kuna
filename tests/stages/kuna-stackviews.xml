@@ -20,6 +20,8 @@
 <symbol space="ram" offset="0x401795" name="publish_frame_word"/>
 </binaryimage>
 <script>
+<!-- Isolate the full stackviews ablation from the default bounded local policy. -->
+<com>option localstackviews off</com>
 <com>parse line struct LifetimePair { int4 x; int4 y; };</com>
 <com>parse line struct LifetimeHandle { int4 *value; };</com>
 <com>parse line extern int4 stack_reuse(void);</com>

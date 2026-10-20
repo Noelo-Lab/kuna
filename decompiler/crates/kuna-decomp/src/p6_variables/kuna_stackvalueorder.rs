@@ -10,7 +10,7 @@ const MAX_GUARD_SCAN_BLOCKS: usize = 256;
 const MAX_GUARD_SCAN_OPS: usize = 8192;
 
 pub(crate) fn moves_write(fd: &Funcdata, storage: HighVariableId, value: HighVariableId) -> bool {
-    if !fd.get_arch().stack_views || storage == value {
+    if !crate::kuna_stackviews::enabled(fd) || storage == value {
         return false;
     }
     let Some(stack) = fd.get_arch().manage().get_stack_space() else {

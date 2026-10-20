@@ -80,6 +80,9 @@ pub struct FuncResult {
     /// header, and `decompile-graph`'s per-function row.  Always `None` on the
     /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
+    /// Actual C identifier used by project definitions and prototypes. Selection
+    /// names and aliases retain their inventory meaning, including in streams.
+    pub emitted_c_name: Option<String>,
     /// Complete declarations for named callees, retained when bodies stream out.
     pub call_declarations: Vec<String>,
     pub variables: Vec<VarInfo>,
@@ -562,6 +565,7 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: Some(error),
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
@@ -599,6 +603,7 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: None,
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
@@ -624,6 +629,7 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
@@ -822,8 +828,19 @@ pub fn decompile_pulled(
                 }
                 // (kuna `elemptr`) Record what this function said about each global.
                 kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
+                let original_display = fd.get_display_name().to_string();
+                if header_carries_types {
+                    if let Some(display) = crate::kuna_projectfunctionnames::display(prog.arch(), &fd) {
+                        fd.set_display_name(&display);
+                    }
+                }
+                let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if header_carries_types {
+                        crate::kuna_projectfunctionnames::reserve(prog.arch(), &mut fd)
+                            .expect("project C symbol names must remain distinct");
+                    }
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
                     // `code` is byte-identical to the single-shot path.
@@ -890,6 +907,7 @@ pub fn decompile_pulled(
                         .unwrap_or_default();
                     (code, variables, types, (globals, field_calls, call_declarations), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
                 }));
+                fd.set_display_name(&original_display);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
@@ -901,6 +919,7 @@ pub fn decompile_pulled(
                         code: Some(code),
                         error: None,
                         proto,
+                        emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
                         call_declarations,
                         variables,
                         stack_objects,
@@ -924,6 +943,7 @@ pub fn decompile_pulled(
                         code: None,
                         error: Some("panic while rendering C / extracting variables".into()),
                         proto: None,
+                        emitted_c_name: None,
                         call_declarations: Vec::new(),
                         variables: Vec::new(),
                         types: Vec::new(),
@@ -948,6 +968,7 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some(e.explain().to_string()),
                 proto: None,
+                emitted_c_name: None,
                 call_declarations: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
@@ -1215,6 +1236,10 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
 /// mentions it depends on it, while the suppressed prototype is one line, still
 /// printed verbatim in the comment.
 ///
+/// A C function name claimed by several entries, or also by a data or type
+/// declaration, is listed in an address-only comment (complete records, so
+/// streamed and parallel exports report the same); the export still completes.
+///
 /// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
 /// synthesized structure the document no longer names is not declared.
 pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
@@ -1227,6 +1252,13 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     if !types.is_empty() {
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
+    }
+    let conflicts = crate::kuna_projectfunctionnames::conflicts(results, &shadowed);
+    if !conflicts.is_empty() {
+        out.push_str("\n/* C name conflicts: the generated C does not compile until these are renamed */\n");
+        for conflict in conflicts {
+            let _ = writeln!(out, "/* {conflict} */");
+        }
     }
     let globals = global_declarations(results);
     if !globals.is_empty() {
@@ -1259,7 +1291,7 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
-            (Some(proto), None) if shadowed.contains(&r.name) => {
+            (Some(proto), None) if shadowed.contains(r.emitted_c_name.as_deref().unwrap_or(&r.name)) => {
                 out.push_str(&format!(
                     "/* `{}` is a type name above; prototype omitted: {} */\n",
                     r.name,
@@ -1836,6 +1868,32 @@ mod tests {
     }
 
     #[test]
+    fn complete_project_checks_actual_c_names_after_bodies_are_streamed() {
+        let conflicts = |types: &str, records: &[FuncResult]| {
+            crate::kuna_projectfunctionnames::conflicts(records, &super::typedef_names(types)).len()
+        };
+        let mut first = streamed("void linked(void)", "int");
+        first.name = "source_one".into();
+        first.emitted_c_name = Some("linked".into());
+        first.byte_address = 0x1000;
+        let mut second = first.clone();
+        second.name = "source_two".into();
+        second.byte_address = 0x2000;
+        assert_eq!(conflicts("", &[first.clone(), first.clone()]), 0);
+        let records = [first.clone(), second];
+        assert_eq!(conflicts("", &records), 1);
+        let header = super::build_header("fresh.so", "", "", &records);
+        assert!(header.contains("/* C function name has multiple owning entries, including 0x1000 */"), "{header}");
+        assert!(!header.contains("#error"), "{header}");
+        assert_eq!(conflicts("typedef int linked;", &[first.clone()]), 1);
+        first.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "linked".into(), declaration: "int linked".into(),
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false, integer: false,
+        });
+        assert_eq!(conflicts("", &[first]), 1);
+    }
+
+    #[test]
     fn streamed_call_declarations_keep_types_and_avoid_repeating_definitions() {
         let mut result = streamed("int local(int a0);", "int");
         result.call_declarations = vec![
@@ -1864,6 +1922,7 @@ mod tests {
             code: None,
             error: None,
             proto: Some(proto.into()),
+            emitted_c_name: None,
             call_declarations: Vec::new(),
             variables: vec![super::VarInfo {
                 name: "a0".into(),
@@ -1874,6 +1933,7 @@ mod tests {
                 arg_index: Some(0),
                 line_numbers: vec![],
                 addresses: vec![],
+                split_piece: false,
             }],
             types: vec![],
             stack_objects: Vec::new(),
@@ -1900,6 +1960,7 @@ mod tests {
             arg_index: None,
             line_numbers: vec![],
             addresses: vec![],
+            split_piece: false,
         };
         let mut r = streamed("long sub_1000(long);", "long");
         r.variables.extend([row("local_18", Some(-0x18)), row("v1", None)]);
