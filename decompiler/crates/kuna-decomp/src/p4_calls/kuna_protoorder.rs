@@ -375,7 +375,7 @@ fn inside_a_frame_aggregate(
 fn loaded_through_itself(
     data: &Funcdata,
     o: &crate::op::PcodeOp,
-    members: &std::collections::HashSet<VarnodeId>,
+    members: &crate::kuna_fasthash::FxHashSet<VarnodeId>,
 ) -> bool {
     let mut at = o.get_in(1);
     for _ in 0..8 {
@@ -446,7 +446,7 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
         )
     };
     let mut family = vec![vn];
-    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::from([vn]);
+    let mut seen: crate::kuna_fasthash::FxHashSet<VarnodeId> = crate::kuna_fasthash::FxHashSet::from_iter([vn]);
     let mut at = 0;
     while at < family.len() && family.len() < 128 {
         let Some(node) = data.vbank().get(family[at]) else { break };
@@ -477,7 +477,7 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
 #[derive(Clone, Copy)]
 enum Reading<'a> {
     Argument(OpId, int4),
-    Member(&'a std::collections::HashSet<OpId>),
+    Member(&'a crate::kuna_fasthash::FxHashSet<OpId>),
     Input,
     /// An input whose other calls speak only through a declared prototype.
     DeclaredInput,
@@ -600,7 +600,7 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
     let own = |op: OpId| matches!(reading, Reading::Member(set) if set.contains(&op));
     let mut regions: Option<Vec<(i64, Option<i64>)>> = None;
     let family = value_family(data, vn);
-    let members: std::collections::HashSet<VarnodeId> = family.iter().copied().collect();
+    let members: crate::kuna_fasthash::FxHashSet<VarnodeId> = family.iter().copied().collect();
     let mut globals: Vec<(Address, int4)> = Vec::new();
     for &v in &family {
         let Some(node) = data.vbank().get(v) else { continue };
@@ -836,7 +836,7 @@ fn gcd(a: i64, b: i64) -> i64 {
 /// following constant offsets, indexing and copies, and where every address it
 /// derives points.  `None` when there are too many to follow.
 pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>)> {
-    let mut place: std::collections::HashMap<VarnodeId, (i64, i64)> =
+    let mut place: crate::kuna_fasthash::FxHashMap<VarnodeId, (i64, i64)> =
         family.iter().map(|&v| (v, (0, 0))).collect();
     let mut work: Vec<VarnodeId> = family.to_vec();
     let mut budget = 512;
@@ -1070,7 +1070,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
             Member::Exact(_) => {}
         }
     }
-    let own: std::collections::HashSet<OpId> = floats.iter().map(|(a, _)| a.op).collect();
+    let own: crate::kuna_fasthash::FxHashSet<OpId> = floats.iter().map(|(a, _)| a.op).collect();
     floats.iter().any(|(a, t)| {
         if a.store && data.vbank().get(a.value).is_some_and(|n| n.is_constant()) {
             return !prints_exactly_as_a_float(data, a.value);

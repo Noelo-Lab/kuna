@@ -73,3 +73,6 @@ mod x86_rdtsc_zero_extend;
 
 #[path = "x87_integer_rounding.rs"]
 mod x87_integer_rounding;
+
+#[path = "x86_bound.rs"]
+mod x86_bound;

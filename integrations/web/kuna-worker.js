@@ -72,6 +72,14 @@ async function dispatch(method, params) {
       };
     case 'strings':
       return { result: await requireKuna().strings(requireBinary(), session(params)) };
+    case 'data':
+      return {
+        result: await requireKuna().data(requireBinary(), params.address, params.length, session(params)),
+      };
+    case 'uses':
+      return {
+        result: await requireKuna().uses(requireBinary(), params.address, params.length, session(params)),
+      };
     case 'project': {
       const name = safeName(params.displayName || fileName);
       const project = await requireKuna().project(requireBinary(), name, {

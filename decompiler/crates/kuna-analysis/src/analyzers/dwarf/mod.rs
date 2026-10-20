@@ -124,6 +124,7 @@ mod kuna_dwarfbounds;
 mod kuna_dwarfbyref;
 mod kuna_dwarflocation;
 pub(crate) mod kuna_dwarfcomplex;
+mod kuna_dwarflinkage;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -206,6 +207,8 @@ struct DieSnap {
     tag: gimli::DwTag,
     /// `DW_AT_name`, resolved through `.debug_str`/`.debug_line_str` (may be empty).
     name: String,
+    linkage_name: String,
+    external: Option<bool>,
     /// `DW_AT_low_pc` resolved to a VMA, if present (marks a *defined* function).
     low_pc: Option<u64>,
     /// `DW_AT_type` reference (the offset of the referenced type DIE in this unit).
@@ -285,6 +288,8 @@ impl DieSnap {
         DieSnap {
             tag,
             name: String::new(),
+            linkage_name: String::new(),
+            external: None,
             low_pc: None,
             type_ref: None,
             byte_size: None,
@@ -381,6 +386,16 @@ fn snapshot_unit_for_abi(
             if let Ok(s) = dwarf.attr_string(unit, val) {
                 if let Ok(s) = std::str::from_utf8(s.slice()) {
                     snap.name = s.to_string();
+                }
+            }
+        }
+        if let Some(gimli::AttributeValue::Flag(value)) = entry.attr_value(gimli::DW_AT_external) {
+            snap.external = Some(value);
+        }
+        if let Some(val) = entry.attr_value(gimli::DW_AT_linkage_name) {
+            if let Ok(s) = dwarf.attr_string(unit, val) {
+                if let Ok(s) = std::str::from_utf8(s.slice()) {
+                    snap.linkage_name = s.to_string();
                 }
             }
         }
@@ -644,14 +659,16 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_array_type => {
             let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
-            // The length lives on a DW_TAG_subrange_type child (`kuna_dwarfbounds`);
-            // fall back to 1 for a flexible/unknown array.
+            // Flattened extent: the product of every known subrange length (`kuna_dwarfbounds`).
             let count = die
                 .children
                 .iter()
                 .filter_map(|c| dies.get(c))
-                .find(|c| c.tag == gimli::DW_TAG_subrange_type)
-                .and_then(|c| c.array_count)
+                .filter(|c| c.tag == gimli::DW_TAG_subrange_type)
+                .filter_map(|c| c.array_count)
+                .try_fold(None, |product: Option<u64>, count| {
+                    product.unwrap_or(1).checked_mul(count).map(Some)
+                })?
                 .or(die.array_count)
                 .unwrap_or(1);
             let count = i32::try_from(count).ok()?;
@@ -1117,6 +1134,8 @@ impl AnalysisPass for DwarfPass {
         let complex_max =
             kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
+        let linkage_imports = kuna_dwarflinkage::imports(ctx);
+        let linkage_definitions = kuna_dwarflinkage::definitions(ctx, &linkage_imports);
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
@@ -1151,6 +1170,7 @@ impl AnalysisPass for DwarfPass {
                             if let Some(pieces) =
                                 build_pieces(&snap.name, snap, &dies, types, word_size)
                             {
+                                kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.prototypes_at);
                                 out.prototypes.push(pieces);
                             }
                             // subtask 3: named, typed stack LOCALS. Each direct
@@ -1187,6 +1207,7 @@ impl AnalysisPass for DwarfPass {
                         if let Some(pieces) =
                             kuna_cppproto::build_pieces(&res, &dies, types, word_size)
                         {
+                            kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.cpp_dwarf.prototypes);
                             out.cpp_dwarf.prototypes.push((low_pc, pieces));
                         }
                         if res.chased {
@@ -1638,5 +1659,33 @@ mod tests {
         assert_eq!(by_name.get("binary"), Some(&(-40, -32)), "binary fbreg/offset");
         assert_eq!(by_name.get("file"), Some(&(-32, -24)), "file fbreg/offset");
         assert_eq!(by_name.get("elf_header"), Some(&(-24, -16)), "elf_header fbreg/offset");
+    }
+
+    #[test]
+    fn array_storage_includes_every_dimension_and_checks_overflow() {
+        for (dimensions, expected_bytes) in [
+            (vec![3, 7], Some(84)),
+            (vec![2, 3, 4], Some(96)),
+            (vec![u64::MAX, 2], None),
+        ] {
+            let types = factory();
+            let mut dies = BTreeMap::new();
+            let mut base = DieSnap::new(gimli::DW_TAG_base_type, 1);
+            base.byte_size = Some(4);
+            base.encoding = Some(gimli::DW_ATE_float);
+            dies.insert(1, base);
+            let mut array = DieSnap::new(gimli::DW_TAG_array_type, 1);
+            array.type_ref = Some(1);
+            for (index, count) in dimensions.into_iter().enumerate() {
+                let key = 3 + index;
+                let mut range = DieSnap::new(gimli::DW_TAG_subrange_type, 2);
+                range.array_count = Some(count);
+                dies.insert(key, range);
+                array.children.push(key);
+            }
+            dies.insert(2, array);
+            let built = build_datatype(Some(2), &dies, &types, 1, &mut TypeWalk::new(), false);
+            assert_eq!(built.map(|ty| ty.get_size()), expected_bytes);
+        }
     }
 }

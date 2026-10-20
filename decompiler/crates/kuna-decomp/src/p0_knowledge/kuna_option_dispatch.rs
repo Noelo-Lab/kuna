@@ -239,6 +239,8 @@ kuna_options! { self, p1;
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
+    "globalcallranges" => on_off!(global_call_ranges, "Global call access ranges"),
+    "localstackviews" => on_off!(local_stack_views, "Bounded local stack views"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
         self.stack_views = value;
@@ -397,6 +399,10 @@ kuna_options! { self, p1;
     "narrowret" => {
         self.narrow_ret = on_or_off(p1)?;
         Ok(format!("Narrow call result recovery turned {p1}"))
+    },
+    "regsigned" => {
+        self.narrow_signed = on_or_off(p1)?;
+        Ok(format!("Signed narrow register local recovery turned {p1}"))
     },
     "narrowext" => {
         let (mode, msg) = crate::kuna_narrowext::OptionNarrowExt.apply(p1)?;

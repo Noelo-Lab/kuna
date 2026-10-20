@@ -1,0 +1,97 @@
+{
+ "binary": "globals-stripped.elf",
+ "address": 16448,
+ "address_hex": "0x4040",
+ "start": 16384,
+ "start_hex": "0x4000",
+ "size": 136,
+ "span": 136,
+ "bytes": "000000000000000008400000000000000000000000000000000000000000000068656c6c6f2c2064617461000000000000000000000000000000000000000000020000000300000005000000070000000b0000000d000000110000001300000003000000040000000820000000000000182000000000000089110000000000004c40000000000000",
+ "pointer_size": 8,
+ "target": {
+  "archid": "x86:LE:64:default:gcc",
+  "processor": "x86",
+  "endian": "little",
+  "bits": 64
+ },
+ "section": {
+  "name": ".data",
+  "address": 16384,
+  "address_hex": "0x4000",
+  "size": 136,
+  "file_offset": 12288,
+  "file_size": 136,
+  "executable": false,
+  "writable": true
+ },
+ "items": [
+  {
+   "name": "s_4020",
+   "address": 16416,
+   "address_hex": "0x4020",
+   "size": 12,
+   "type": "char[12]",
+   "declaration": "char s_4020[12]",
+   "layout": {
+    "kind": "array",
+    "size": 12,
+    "type": "char[12]",
+    "elem": {
+     "kind": "char",
+     "size": 1,
+     "type": "char",
+     "signed": true
+    },
+    "count": 12
+   }
+  }
+ ],
+ "targets": [
+  {
+   "at": 16392,
+   "at_hex": "0x4008",
+   "to": 16392,
+   "to_hex": "0x4008",
+   "name": null,
+   "offset": 0,
+   "text": null
+  },
+  {
+   "at": 16488,
+   "at_hex": "0x4068",
+   "to": 8200,
+   "to_hex": "0x2008",
+   "name": "s_2008",
+   "offset": 0,
+   "text": "origin"
+  },
+  {
+   "at": 16496,
+   "at_hex": "0x4070",
+   "to": 8216,
+   "to_hex": "0x2018",
+   "name": "s_2018",
+   "offset": 0,
+   "text": "kuna data tab"
+  },
+  {
+   "at": 16504,
+   "at_hex": "0x4078",
+   "to": 4489,
+   "to_hex": "0x1189",
+   "name": "sub_1189",
+   "offset": 0,
+   "text": null
+  },
+  {
+   "at": 16512,
+   "at_hex": "0x4080",
+   "to": 16460,
+   "to_hex": "0x404c",
+   "name": null,
+   "offset": 0,
+   "text": null
+  }
+ ],
+ "assertions": []
+}

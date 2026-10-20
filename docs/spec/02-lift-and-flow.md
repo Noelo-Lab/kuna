@@ -2550,3 +2550,23 @@ replaces the control word defines it: `FLDCW`, `FLDENV`, `FRSTOR`,
 loads it from the first word of its area. `XRSTOR` and `XRSTORS` load it the
 same way when `EAX` bit 0 and the area's `XSTATE_BV` bit 0 are set, reset it
 to `0x037f` when only `EAX` bit 0 is set, and leave it unchanged otherwise.
+
+The x86 `BOUND` lift loads adjacent signed lower and upper limits at the
+operand width and passes the index and both limits to the side-effecting,
+outputless `x86_bound_check16` or `x86_bound_check32` user-op. Its contract is to
+continue normally exactly when `lower <= index <= upper`, with all comparisons
+signed at the named width, and otherwise raise the vector-5 bounds-range
+exception (#BR) associated with the faulting instruction. Normal completion
+preserves registers and flags. The user-op introduces no ordinary-call
+arguments, clobbers, or stack adjustment, and avoids adding control-flow
+diamonds around every check. The abstraction does not specify OS handler
+dispatch or resumable exception state. Both operand widths preserve the checks
+instead of lifting to an empty operation list.
+
+With `localstackviews`, the `FlowEmit::dump` seam in
+`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs` records original STORE and
+persistent memory COPY identities for the bounded P6 policy. Register COPYs do
+not contribute. Generational operation identity and original receiver storage
+are retained separately from instruction-start flags, which clones can copy.
+The callback changes neither lifted P-code nor flow; it supplies provenance
+before optimization can create indistinguishable same-address reconstructions.

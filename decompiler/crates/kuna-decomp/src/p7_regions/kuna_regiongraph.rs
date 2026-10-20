@@ -24,7 +24,7 @@
 //! comparator on the node's `(addr, ident)`).  Per ADR 0001 raw pointers
 //! become arena ids: a [`KunaNodeId`] (a `u32` index into a [`KunaNodePool`])
 //! replaces `KunaRegionNode *`.  Pointer identity is id equality; the
-//! "membership only" pointer sets use `HashSet<KunaNodeId>` keyed by raw id
+//! "membership only" pointer sets use `FxHashSet<KunaNodeId>` keyed by raw id
 //! (never iterated in an output-affecting way). Every
 //! container that the C++ *iterates* is keyed by the ordered [`KunaNodeKey`]
 //! `(addr, ident)`, exactly matching `KunaNodeOrder` (ADR 0002).
@@ -40,7 +40,9 @@
 //! ported, so [`KunaRegionNode::region`] is an opaque [`RegionPayloadId`]
 //! placeholder; the graph substrate never dereferences it.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::kuna_fasthash::{FxHashMap, FxHashSet};
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb, Wrap};
@@ -564,8 +566,8 @@ pub fn kuna_dfs_back_edges(
         return Ok(());
     }
     // Membership only, never iterated (C++ `set<const KunaRegionNode *>`).
-    let mut visited: HashSet<KunaNodeId> = HashSet::new();
-    let mut finished: HashSet<KunaNodeId> = HashSet::new();
+    let mut visited: FxHashSet<KunaNodeId> = FxHashSet::default();
+    let mut finished: FxHashSet<KunaNodeId> = FxHashSet::default();
     struct Frame {
         node: KunaNodeId,
         children: Vec<KunaNodeId>,
@@ -614,7 +616,7 @@ pub fn kuna_dfs_postorder_deterministic(
     source: KunaNodeId,
     res: &mut Vec<KunaNodeId>,
 ) -> KunaResult<()> {
-    let mut visited: HashSet<KunaNodeId> = HashSet::new(); // Membership only
+    let mut visited: FxHashSet<KunaNodeId> = FxHashSet::default(); // Membership only
     let mut stack: Vec<(KunaNodeId, bool)> = Vec::new(); // (node, isPreVisit)
     let mut successors = Vec::new();
     stack.push((source, true));
@@ -1250,7 +1252,8 @@ pub fn kuna_immediate_dominators(
     kuna_dfs_postorder_deterministic(pool, g, start, &mut postorder)?;
     // Reachable nodes only: node ids come from an append-only pool, so indexing
     // scratch by raw id would scale with all historical nodes, not this graph.
-    let mut po_index: HashMap<KunaNodeId, usize> = HashMap::with_capacity(postorder.len());
+    let mut po_index: FxHashMap<KunaNodeId, usize> =
+        FxHashMap::with_capacity_and_hasher(postorder.len(), Default::default());
     for (i, &n) in postorder.iter().enumerate() {
         po_index.insert(n, i);
     }

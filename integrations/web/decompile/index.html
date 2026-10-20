@@ -151,6 +151,7 @@
           <button role="tab" id="splitbtn" data-tab="split" aria-controls="pane-c pane-asm" aria-selected="false">Side by side</button>
           <button role="tab" id="tab-bytes" data-tab="bytes" aria-controls="pane-bytes" aria-selected="false">Bytes</button>
           <button role="tab" id="tab-stack" data-tab="stack" aria-controls="pane-stack" aria-selected="false">Stack</button>
+          <button role="tab" id="tab-data" data-tab="data" aria-controls="pane-data" aria-selected="false" title="The program's data. Double-click a global in the code to see it here">Data</button>
         </div>
         <span class="d2-grow"></span>
         <div class="d2-menuwrap">
@@ -163,7 +164,7 @@
       <div class="d2-codearea" id="codearea" hidden>
         <div class="d2-progress" id="progress" hidden><span></span></div>
         <div class="d2-tip" id="tip" hidden>
-          <span>Hover over a line to see the assembly it becomes. Double-click any name to rename it.</span>
+          <span>Hover over a line to see the assembly it becomes. Double-click a name to rename it, or a function or global to go to it.</span>
           <button class="d2-btn small" id="tipbtn">Got it</button>
         </div>
         <p class="d2-narrownote" id="narrownote" hidden>Side by side needs a wider window, so the views are shown one at a time.</p>
@@ -180,6 +181,10 @@
           </div>
           <div class="d2pane" id="pane-stack" role="tabpanel" aria-labelledby="tab-stack" hidden>
             <div class="d2code d2prose" id="stackframe" tabindex="0" aria-label="Stack"></div>
+          </div>
+          <div class="d2pane" id="pane-data" role="tabpanel" aria-labelledby="tab-data" hidden>
+            <div class="d2bar dv-bar" id="databar"></div>
+            <div class="d2code dv-list" id="datalist" role="listbox" tabindex="0" aria-label="Data"></div>
           </div>
         </div>
       </div>

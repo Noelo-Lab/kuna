@@ -18,7 +18,7 @@ import { createPresence, anchorAt, findAnchor } from './presence.js';
 export const PREFS_KEY = 'kuna.d2.collab';
 const STUN = 'stun:stun.cloudflare.com:3478';
 const JOIN_MS = 20000;
-const VIEW_WORDS = { c: 'Code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack' };
+const VIEW_WORDS = { c: 'Code', split: 'Side by side', asm: 'Assembly', bytes: 'Bytes', stack: 'Stack', data: 'Data' };
 const EFFORTS = { auto: 'Automatic', fast: 'Fast', reliable: 'Reliable', aggressive: 'Thorough' };
 const PEOPLE = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6" cy="5.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
   '<path d="M1.8 13.5c.5-2.4 2.2-3.7 4.2-3.7s3.7 1.3 4.2 3.7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +

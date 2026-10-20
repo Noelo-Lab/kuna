@@ -69,7 +69,8 @@
 //! Gated by [`ArchContext::elem_ptr`](crate::context::ArchContext) (option
 //! `elemptr on|off`); with the option off nothing here is reachable.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use crate::kuna_fasthash::{FxHashMap, FxHashSet};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -283,10 +284,10 @@ fn may_replace(cur: &Datatype) -> bool {
 /// every Varnode that holds it, and each of those Varnodes asks.
 #[derive(Default)]
 pub struct Cache {
-    globals: HashMap<(u64, int4), Option<Rc<Datatype>>>,
-    constants: HashMap<(u64, int4), Option<Rc<Datatype>>>,
+    globals: FxHashMap<(u64, int4), Option<Rc<Datatype>>>,
+    constants: FxHashMap<(u64, int4), Option<Rc<Datatype>>>,
     /// The addresses whose storage this pass found named directly.
-    direct: HashSet<u64>,
+    direct: FxHashSet<u64>,
 }
 
 /// The candidate `T *` for `vn`, or `None` when the rule declines.  `cur` is the
@@ -970,7 +971,7 @@ fn is_null(data: &Funcdata, x: VarnodeId) -> bool {
 /// The breadth-first walk from a non-constant candidate.  The second component
 /// of a work item is the literal byte offset of that Varnode from the base.
 fn walk(data: &Funcdata, starts: &[VarnodeId], ev: &mut Evidence) {
-    let mut seen: HashSet<VarnodeId> = HashSet::new();
+    let mut seen: FxHashSet<VarnodeId> = FxHashSet::default();
     let mut work: VecDeque<(VarnodeId, intb, usize)> = VecDeque::new();
     for &start in starts {
         if seen.insert(start) {
@@ -1221,7 +1222,7 @@ fn base_use(data: &Funcdata, op: OpId, vn: VarnodeId, off: intb, ev: &mut Eviden
 /// scaled by `scale`.  Every access through it must be one `scale`-wide
 /// element; a further literal offset must be a whole number of elements.
 fn indexed(data: &Funcdata, sum: VarnodeId, scale: intb, off: intb, ev: &mut Evidence) {
-    let mut seen: HashSet<VarnodeId> = HashSet::new();
+    let mut seen: FxHashSet<VarnodeId> = FxHashSet::default();
     let mut work: Vec<(VarnodeId, intb, usize)> = vec![(sum, off, 0)];
     seen.insert(sum);
     while let Some((vn, off, hops)) = work.pop() {
@@ -2119,7 +2120,7 @@ fn element_derived(data: &Funcdata, start: VarnodeId) -> bool {
 /// [`element_derived`], naming the source it found.
 fn element_source(data: &Funcdata, start: VarnodeId) -> Option<&'static str> {
     let mut work = vec![start];
-    let mut seen: HashSet<VarnodeId> = HashSet::new();
+    let mut seen: FxHashSet<VarnodeId> = FxHashSet::default();
     let mut elem: Option<&'static str> = None;
     while let Some(v) = work.pop() {
         if !seen.insert(v) {
@@ -2473,7 +2474,7 @@ pub struct Ledger {
     no_objects: bool,
     /// What each function decompiled so far stated for its callers
     /// ([`state`]), by entry.
-    stated: HashMap<(int4, uintb), Rc<Stated>>,
+    stated: FxHashMap<(int4, uintb), Rc<Stated>>,
     verdicts: BTreeMap<Obj, BTreeMap<u64, GlobalVerdict>>,
     blocked: BTreeMap<u64, Rc<BTreeSet<Obj>>>,
     adopt: BTreeMap<u64, Rc<Signs>>,

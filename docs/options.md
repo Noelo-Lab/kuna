@@ -171,6 +171,8 @@ Three tiers:
 | an out-parameter local is passed as (int *)&v2 to waitpid or wait | [`castobject`](#castobject) |
 | a stack local is declared unsigned int where the callee that fills it declares int * | [`castobject`](#castobject) |
 | return (int)v1 >> 8 & 0xff; over an unsigned int status filled by waitpid | [`castobject`](#castobject) |
+| a reused local frame slot loses an observable native store | [`localstackviews`](#localstackviews) |
+| a saved pointer names an unrelated object after stack storage reuse | [`localstackviews`](#localstackviews) |
 | a reused stack slot is assigned a value of an incompatible type | [`stackviews`](#stackviews) |
 | two object views of one frame address become unrelated local variables | [`stackviews`](#stackviews) |
 | spurious uninitialized local (xStack_N) returned after storing through a pointer to a local | [`stackalias`](#stackalias) |
@@ -194,6 +196,9 @@ Three tiers:
 | a uint8_t loop counter prints as unsigned int v with v = v + 1 & 0xff | [`regnarrow`](#regnarrow) |
 | a byte loaded with ldrb is declared unsigned int and used as an index | [`regnarrow`](#regnarrow) |
 | an int local prints as unsigned long on x86-64 though every value is a zero-extended 32-bit result | [`regnarrow`](#regnarrow) |
+| a signed char loaded with ldrsb is declared int | [`regsigned`](#regsigned) |
+| a short counter prints as int with (int)(short) casts at every use | [`regsigned`](#regsigned) |
+| an int local prints as long on x86-64 though every value is a movsxd | [`regsigned`](#regsigned) |
 | a FILE * or char * the caller holds becomes long at the callee's parameter | [`protoorder`](#protoorder) |
 | a function that only hands a string on to a recursive function (quotearg_buffer_restyled, a tree walk, a pair of functions calling each other) keeps an integer parameter | [`protoorder`](#protoorder) |
 | an argument is typed at one call site of a callee and not at another | [`protoorder`](#protoorder) |
@@ -1274,6 +1279,9 @@ Three tiers:
 | a call-written volatile stack local is read on the failure path | [`guardedreadtrim`](#guardedreadtrim) |
 | an overwritten register argument renders as a stale half of a previous wide value | [`multiregargs`](#multiregargs) |
 | a live entry argument disappears after a wide register read | [`multiregargs`](#multiregargs) |
+| large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
+| tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
+| a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
 
 ## Toggleable transforms
 
@@ -1615,6 +1623,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **Where / provenance:** P6/stack-frame-layout · kuna · type-inference · kuna-castobject
 - **Example:** `option castobject on`
 
+### `localstackviews` -- on | off, default `on`
+
+- **Symptoms:** a reused local frame slot loses an observable native store; a saved pointer names an unrelated object after stack storage reuse.
+- **What it does:** Preserve bounded native local writes and typed publications before mapping shared object views.
+- **When to flip:** Default-on for a proved fixed local footprint published to a locked pointer receiver, or used through distinct complete equal-size aggregate pointer contracts. Preserves native writes and saved-pointer identity with shared backing. Explicit stackviews on takes precedence and uses the broader policy alone. Turn off to inspect the previous policy; formals, unknown or crossing effects, locked layouts and unsupported nominal names retain their prior mapping.
+- **Where / provenance:** P6/alias-facets · kuna · correctness-fix · #810
+- **Example:** `option localstackviews off`
+
 ### `stackviews` -- on | off, default `off`
 
 - **Symptoms:** a reused stack slot is assigned a value of an incompatible type; two object views of one frame address become unrelated local variables.
@@ -1686,6 +1702,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. The tell it fixes is a byte or halfword local printed `unsigned int` on ARM firmware (`v = v + 1 & 0xff`, `v = (unsigned int)*p` used as an index), or an `unsigned` counter printed `unsigned long` on x86-64 whose every value is a zero-extended 32-bit result. Set it off to get the register-wide declarations back, or when a local the source declares `int` or as an enum is only ever loaded from a byte field (an enum kept in a `uint8_t`, a `numRows` read from a `uint16_t`): the binary cannot tell the two apart. The p-code computes the same values either way. Measured with decbench's published type_match: 96 ARM firmware slices 3,232 -> 3,279 perfect functions (mean .3068 -> .3105; 492 functions better, 106 worse), the 96-binary nightly optimized sample 2,315 -> 2,337, the 444-slice x86-64 set 1,903 -> 1,905; the functions that lose a perfect score declare an enum or `int` the body only loads from a byte field.
 - **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-register-locals
 - **Example:** `option regnarrow on`
+
+### `regsigned` -- on | off, default `off`
+
+- **Symptoms:** a signed char loaded with ldrsb is declared int; a short counter prints as int with (int)(short) casts at every use; an int local prints as long on x86-64 though every value is a movsxd.
+- **What it does:** Declare a register local whose every value is a sign extension at the narrow width those values are extended from. A `signed char` or `short` read with `ldrsb`/`ldrsh` or `movsx`, or an x86-64 `int` widened with `movsxd`, lives sign-extended in a whole register, so the web that becomes the variable keeps the register's width and prints as `int` or `long`. With `regnarrow` on, its pass also looks at the webs whose values the nonzero-bit masks cannot fit (their sign bits are set): when every value entering the web is a sign extension from at most 1, 2 or 4 bytes (one of them from exactly that width), a copy, a bitwise op of such values or a constant that is the sign extension of its low bytes, the web is rebuilt at that width with upstream's sign-extended `SubvariableFlow`, extended the way `regnarrow` extends the zero-extended one: a copy, a phi, a wider sign extension, a bitwise op, a constant arithmetic right shift, a truncation and a call argument whose parameter is no wider carry the narrow value, and every other reader that needs the register's width (arithmetic, a compare, an index, a call argument, a store) reads the sign extension of the narrow value, which is exactly the value it read before. A narrowed value nothing else types (or only a bitwise op's `uint`) is declared signed. A web that reaches a function input, a RETURN, an INDIRECT, a user-op operand or a switch is left alone, and so is one with a value whose definition is anything else (arithmetic, a load at the register's width, a call) or that was stored to a frame slot wider than the narrow width (the `-O0` spill of `int v = c;`), and so is a web with no phi that only widens function inputs.
+- **When to flip:** Off by default: on decbench type_match it gains only a few perfect functions (ARM firmware +4, x86-64 +0) and adds casts where a narrowed value is widened again (`(long)(int)v` on AArch64). Turn it on when a `signed char`/`short` local prints `int` on ARM firmware (`v = (int)*(char *)p`, a counter compared as `(int)(char)v`), or an x86-64 `int` prints `long` whose every value is a `movsxd`. The p-code computes the same values either way.
+- **Where / provenance:** P3/simplification-quiescence · kuna · type-inference · ty17-narrow-signed-register-locals
+- **Example:** `option regsigned on`
 
 ### `protoorder` -- off | types | cycles | lock, default `cycles`
 
@@ -3854,6 +3878,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Disable when comparing legacy argument recovery; enable when a wide register temporary hides a subsequently overwritten argument slot.
 - **Where / provenance:** P3/ssa-construction · kuna · correctness-fix · GH-1070
 - **Example:** `option multiregargs off`
+
+### `globalcallranges` -- on | off, default `on`
+
+- **Symptoms:** large global initializer exhausts memory during heritage; tiny constructors cause a quadratic number of global call guards; a function with many global assignments uses gigabytes before emitting C.
+- **What it does:** Avoid a call guard for a persistent global when a complete bounded callee-body summary proves that all of the callee's memory reads and writes target disjoint constant address intervals. Reuse the frame-memory body walker and its cache, but exclude absolute memory references, direct memory input or output varnodes in any processor space, nonreturn frame accesses, opaque operations and incomplete bodies from this proof. Resolve every memory-effect root through an exact full-width register parameter and a definite constant caller argument; unknown arguments, overlaps, explicit effect overrides and wrapping arithmetic retain the guard. Seed this proof for functions with at least 16 calls and 64 direct memory writes, where the global-range by call-site cross product is material. The option removes redundant IR allocations rather than stopping a function: the CrashLogger initializer's tiny constructors each touch one 16-byte object, not every global.
+- **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
+- **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
+- **Example:** `option globalcallranges off`
 
 ## Programmatic use
 

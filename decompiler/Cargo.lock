@@ -269,6 +269,7 @@ dependencies = [
  "kuna-base",
  "kuna-console",
  "kuna-decomp",
+ "kuna-num",
  "kuna-slacomp",
  "kuna-sleigh",
  "object",
@@ -290,6 +291,7 @@ dependencies = [
  "object",
  "regex",
  "syn 2.0.117",
+ "unicode-ident",
 ]
 
 [[package]]

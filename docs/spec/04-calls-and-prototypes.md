@@ -1866,6 +1866,18 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+After native return trials are finalized, an otherwise unknown ten-byte scalar
+result in the full x87 ST0 register receives an extended floating type when the
+active convention explicitly classifies that exact output storage as floating.
+The seed precedes normal type propagation, allowing a raw eighty-bit memory
+load's type to reach its stack argument too. Every live return must agree on an
+unknown, unlocked scalar value; explicit output declarations and typed values
+are preserved. A value a call left in ST0 (the call's output or the INDIRECT
+it creates) keeps the type its callee's prototype gives it, so a forwarding
+stub does not cast its own result. Partial register results, multiple selected outputs and SIMD
+resources do not establish this x87 scalar protocol. Value width remains ten
+bytes; stack slots retain the architecture's aligned object size.
+
 A RETURN reached only along branch edges whose conditions literals already
 decide the other way is not scored
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (never_reached)`).
@@ -3032,6 +3044,29 @@ home slot its caller allocated and passes the slot by reference (every Qt
 `connect(sender, &Class::signal, …)` does), and without that test the store
 before the call was dead. The gather is deferred and cached for the length of one heritage pass, so a function
 that never reaches the locked branch never pays for it.
+
+The alias walk is additive from the stack base. A function that saves its frame
+pointer, rebinds it to the stack pointer around a call, and restores it from
+memory gives every later `&local` a base that the walk cannot follow, and the
+floor rule would drop the guard that models a declared callee's write through
+that pointer. Heritage therefore records, at the head of every pass and before
+SSA simplification can fold the nested setup away, whether the same register
+captures the stack base more than once. The evidence is read off raw storage,
+because register reads are not yet linked when the guards are planted, and it
+is kept for the rest of the function. When it is present, the floor rule also
+asks each declared pointer argument of the call to prove it is disjoint from the
+range, and it keeps the guard when one cannot. Ordinary argument staging never
+captures the stack base twice and keeps the plain rule.
+
+`RuleIndirectCollapse` trusts a cached `nolocalalias` mark on an INDIRECT's
+output. For a call with a locked input list and a store effect, it first checks
+every declared pointer argument that normalizes to a concrete frame range. If
+the pointee's range overlaps the INDIRECT's storage, the mark is stale and the
+INDIRECT stays. This keeps `q[0] = 0` across `fgets(q, …)` when the alias mark
+missed the buffer. In a function with the rebound-frame evidence above, a
+pointer that is still an unresolved frame-derived expression keeps the INDIRECT
+too, until the merge resolves. Elsewhere such a pointer is usually a cursor into
+a local buffer, and it defers to the mark.
 
 ### (kuna) `msvcbyval` — an MSVC by-value class sized at the call
 

@@ -475,3 +475,6 @@ mod verify_w9x_arch_engine_glue;
 
 #[path = "signed_float_trunc.rs"]
 mod signed_float_trunc;
+
+#[path = "forloop_hidden_copy.rs"]
+mod forloop_hidden_copy;
