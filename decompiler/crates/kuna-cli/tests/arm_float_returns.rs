@@ -666,7 +666,7 @@ fn a_float_tail_wrapper_returns_its_callees_float() {
     let (code, err, rc) = common::run_kuna(&["decompile-all", &fixture]);
     assert_eq!(rc, 0, "{err}");
     assert!(code.contains("float wrap(float a0,float a1)"), "{code}");
-    assert!(code.contains("v1 = wrap(a0 + 1.0,a1);"), "{code}");
+    assert!(code.contains("v1 = wrap(a0 + 1.0f,a1);"), "{code}");
     assert!(!code.contains("void wrap("), "{code}");
 }
 
