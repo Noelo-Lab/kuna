@@ -752,6 +752,7 @@ pub fn build_and_follow_flow_with_override_and_protos(
     flow_overrides: &[(Address, kuna_base::types::uint4)],
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
 ) -> KunaResult<Funcdata> {
+    crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     let mut fd = arch.new_funcdata(name, entry, size)?;
     for (addr, ty) in flow_overrides {
         fd.get_override_mut().insert_flow_override(addr.clone(), *ty);
@@ -784,7 +785,6 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
-    crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this

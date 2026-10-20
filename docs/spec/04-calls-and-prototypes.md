@@ -7065,8 +7065,11 @@ On such an image the library prototypes that declare a `float` or `double`
 are parked before the first decompile
 (`kuna_armfloatreturn.rs (park_float_library_prototypes)`): the libc rows that
 x86 and AArch64 take at load, and the `<math.h>` table chapter 01 describes, on
-the names the image imports. A function that already carries a prototype from
-another source keeps it. Without them a PLT stub such as `log` or `strtod` was
+the names the image imports. They are parked before the first function's
+`Funcdata` is built, since each `Funcdata` takes its snapshot of the parked
+callee prototypes when it is created: parked any later, the first function
+decompiled (the only one, for `kuna decompile`) reads none of them. A function
+that already carries a prototype from another source keeps it. Without them a PLT stub such as `log` or `strtod` was
 recovered `void`, its first reader decompiled reading `d0` after the call, and
 the return-recovery redo then decompiled the stub and every reader again
 (`voidret`): on libmpg123 that is its largest function a second time, +18% of

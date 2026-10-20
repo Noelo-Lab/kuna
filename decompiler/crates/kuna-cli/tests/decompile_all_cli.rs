@@ -3813,6 +3813,23 @@ fn arm_images_get_no_double_libc_rows() {
     }
 }
 
+/// `kuna decompile armfloat_libm_hard mant` builds one function: the held-back
+/// `frexp` and `sin` rows must be parked before that first `Funcdata` takes its
+/// callee-prototype snapshot, or `mant` reads `frexp()` with no arguments.
+#[test]
+fn arm_library_float_rows_reach_a_single_decompile() {
+    let sp = specs();
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armfloat_libm_hard").to_str().unwrap().to_string();
+    for (func, want) in [("mant", "double mant(double a0,int *a1)"), ("mant", "v1 = frexp(a0,a1);"), ("wave", "v1 = sin(a0);")] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile", &bin, func, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile {func} failed: {stderr}");
+        assert!(stdout.contains(want), "{func}: missing `{want}`:\n{stdout}");
+    }
+    let (off, stderr, ok) = run_kuna(&["decompile", &bin, "mant", "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile mant failed: {stderr}");
+    assert!(!off.contains("frexp(a0,a1)"), "armfloatreturn off still parked frexp:\n{off}");
+}
+
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
 /// `struct M *`, and each caller writes that memory with integer bits first. A
 /// pointer vote from the callee printed those stores as value conversions

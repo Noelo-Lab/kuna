@@ -787,8 +787,8 @@ impl AnalysisPass for LibcSigsPass {
         .collect();
         seed_named_prototypes(&mut out, &imported, &complex, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, &complex, types, word_size, super::L);
-        if !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
-            let arm = ctx.arch.archid.starts_with("ARM:");
+        let arm = ctx.arch.archid.starts_with("ARM:");
+        if arm || !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
             let (float, kept): (Vec<_>, Vec<_>) =
                 std::mem::take(&mut out.prototypes).into_iter().partition(kuna_typedcallabi::declares_a_float);
             out.prototypes = kept;
