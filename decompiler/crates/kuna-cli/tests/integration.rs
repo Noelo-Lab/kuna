@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "array_record.rs"]
+mod array_record;
+
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 

@@ -75,6 +75,11 @@ first piece is declared at the piece's type, as a directly accessed piece
 already is. This corrects the declaration without extending `castobject`'s
 permission to retype escaped locals.
 
+A local mapped or declared as a struct or union keeps that whole record type
+when its storage representative is an array member. The array-declaration
+fallback must not replace the record with its first member: later field accesses
+still require the complete object, including fields after that array.
+
 With `stackviews`, a physical stack declaration can contain the scalar being
 cast rather than itself being that scalar. Bit-transfer classification descends
 through an exact member at the symbol offset and access width; a declared

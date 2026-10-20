@@ -3927,6 +3927,15 @@ impl PrintC {
             // itself, never a Symbol; declare it `<base> name [N]` instead of
             // flattening it to a scalar `undefined<N>`.
             .or_else(|| {
+                // A partial array member cannot replace the whole record that
+                // supplies the base for this variable's member accesses.
+                if declared.as_ref().is_some_and(|ty| matches!(
+                    ty.get_metatype(),
+                    crate::dtype::type_metatype::TYPE_STRUCT
+                        | crate::dtype::type_metatype::TYPE_UNION
+                )) {
+                    return None;
+                }
                 let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
                 array_decl_parts(v.get_type(), rt).map(|parts| (parts, std::rc::Rc::clone(v.get_type())))
             });
