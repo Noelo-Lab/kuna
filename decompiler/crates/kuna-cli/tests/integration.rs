@@ -69,6 +69,9 @@ mod baseline_cli;
 #[path = "broken_pipe.rs"]
 mod broken_pipe;
 
+#[path = "forloop_visible_read.rs"]
+mod forloop_visible_read;
+
 #[path = "buildstamp_cli.rs"]
 mod buildstamp_cli;
 

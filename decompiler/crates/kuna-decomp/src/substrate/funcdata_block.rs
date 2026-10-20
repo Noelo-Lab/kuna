@@ -575,6 +575,9 @@ impl Funcdata {
     /// `BlockWhileDo::testTerminal` (block.cc:3304).  Verify the statement read
     /// by `loopDef` from `slot` is an explicit, printed, last-in-block op (or
     /// can be moved to be so).  Returns the root explicit op or `None`.
+    /// When `finalOp` is a hidden COPY, the op feeding it is what the header
+    /// prints, so it must also move up to the COPY past every printed statement
+    /// between them (kuna; upstream only moves the COPY).
     fn while_test_terminal(&mut self, wd: BlockId, slot: int4) -> Option<OpId> {
         let loop_def = self.sblocks_ref().block(wd).get_loop_def()?;
         let vn = self.obank().get(loop_def).and_then(|o| o.get_in(slot))?;
@@ -613,6 +616,12 @@ impl Funcdata {
         }
         if !self.op_move_respecting_cover(final_op, last_op) {
             return None;
+        }
+        if res_op != final_op {
+            let before_copy = self.op_previous_op(final_op)?;
+            if !self.op_move_respecting_cover(res_op, before_copy) {
+                return None;
+            }
         }
         Some(res_op)
     }
