@@ -503,6 +503,8 @@ mod windows_stack_argument_alignment;
 
 #[path = "imported_data_identifiers.rs"]
 mod imported_data_identifiers;
+#[path = "dwarf_linkage_calls.rs"]
+mod dwarf_linkage_calls;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
