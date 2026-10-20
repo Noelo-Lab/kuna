@@ -584,3 +584,6 @@ mod aggregate_interior_address;
 
 #[path = "float_integer_truncation.rs"]
 mod float_integer_truncation;
+
+#[path = "intermediate_float_rounding.rs"]
+mod intermediate_float_rounding;

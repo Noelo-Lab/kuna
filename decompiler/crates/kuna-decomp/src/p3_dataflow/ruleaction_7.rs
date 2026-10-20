@@ -2135,6 +2135,9 @@ impl Rule for RuleFloatCast {
 
         if opc2 == OpCode::CPUI_FLOAT_FLOAT2FLOAT && opc1 == OpCode::CPUI_FLOAT_FLOAT2FLOAT {
             if insize1 > outsize {
+                if insize2 > insize1 {
+                    return 0;
+                }
                 // op is superfluous
                 data.op_set_input(op, vn2, 0).expect("floatcast: superfluous in0");
                 if outsize == insize2 {
