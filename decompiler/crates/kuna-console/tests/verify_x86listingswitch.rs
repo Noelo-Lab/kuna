@@ -507,6 +507,16 @@ fn initial_bypasses_and_late_edges_or_function_claims_discard_the_whole_candidat
     }
 }
 
+#[test]
+fn a_case_one_byte_into_another_cases_instruction_discards_the_whole_candidate() {
+    let mut control = PatchedFixture::new("overlapping_case");
+    control.patch(CASES[0], &[0xb8]);
+    control.relative(CASES[0] + 1, 0xe8, INDEPENDENT);
+    control.patch(CASES[0] + 6, &[0xc0, 0xc3, 0x90, 0xc3]);
+    control.word(0x101004, CASES[0] + 1);
+    assert_whole_candidate_refused(&control, &[ENTRY, DEFAULT], &[BRANCH]);
+}
+
 fn guarded_jump(
     control: &mut PatchedFixture,
     guard: u64,

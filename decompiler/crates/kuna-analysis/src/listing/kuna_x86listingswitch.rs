@@ -21,6 +21,7 @@ const WORD_LIMIT: u64 = 1u64 << 32;
 const MAX_PATH_INSNS: usize = 16;
 const MAX_PROOF_OPS: usize = 256;
 const MAX_ADDRESS_STEPS: usize = 32;
+const MAX_INSN_BYTES: u64 = 15;
 
 const MAX_RECONCILE_ROUNDS: usize = 16;
 const MAX_CANDIDATE_BYTES: u64 = 1024 * 1024 * 1024;
@@ -352,10 +353,12 @@ impl<'a> X86Tables<'a> {
             if state.funcs.contains_key(target) {
                 return None;
             }
-            if let Some((&start, insn)) = state.insns.range(..=*target).next_back() {
-                if start != *target && start.checked_add(u64::from(insn.len))? > *target {
-                    return None;
-                }
+            if state
+                .insns
+                .range(target.saturating_sub(MAX_INSN_BYTES)..*target)
+                .any(|(&start, insn)| start.saturating_add(u64::from(insn.len)) > *target)
+            {
+                return None;
             }
         }
         Some(Ok(cases))

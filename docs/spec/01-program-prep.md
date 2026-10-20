@@ -6263,7 +6263,11 @@ proof. The nearest preceding function entry supplies no ownership evidence.
 The reader takes exactly the proved number of aligned words, capped by the
 live `jumptablemax`; fewer than two entries is not a switch. Every byte read
 must belong to allocated, read-only, file-backed data, and every destination
-must be in the dispatch's executable section. An invalid in-bound word refuses
+must be in the dispatch's executable section. No destination may lie inside
+an instruction that starts in the fifteen bytes below it, even where another
+instruction also starts at it: two words of one table a byte apart decode
+both, and the overlapping decode can reach code nothing else does, so the
+re-check against the completed candidate refuses it. An invalid in-bound word refuses
 the whole table. No missing proof falls back to an unbounded pointer scan. A
 callback word immediately after a four-case table therefore stays outside its
 successors. `PoolImage::contains_bytes` enforces the complete read contract;
