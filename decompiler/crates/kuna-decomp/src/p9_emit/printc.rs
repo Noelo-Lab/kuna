@@ -472,6 +472,8 @@ pub struct PrintCOptions {
     /// function's C names ABOVE the function (`option structdefs`).  See
     /// [`crate::kuna_structdefs`].
     pub struct_defs: bool,
+    /// A project header carries the definitions omitted from each body.
+    pub header_carries_types: bool,
     /// (kuna) A pointer-typed constant that addresses program data prints as
     /// `&dat_<addr>` rather than `(T *)0x<addr>` (`option globalref`).  See
     /// [`crate::kuna_globalref`].
@@ -521,6 +523,7 @@ impl PrintCOptions {
             bytearray_c: false,
             partial_access: false,
             empty_str_const: true,   // (kuna) no upstream equivalent
+            header_carries_types: false,
             struct_defs: false,      // (kuna) no upstream equivalent; opt-in
             global_ref: true,        // (kuna) no upstream equivalent
             brace_func: BraceStyle::NextLine,   // (kuna) DIV-34; upstream Emit::skip_line
@@ -1626,6 +1629,7 @@ pub struct PrintC {
     /// the decision reads and the globals its C names. See
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
+    named_globals: crate::kuna_namedglobals::References,
 }
 
 impl Default for PrintC {
@@ -1668,6 +1672,7 @@ impl PrintC {
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
+            named_globals: crate::kuna_namedglobals::References::default(),
         }
     }
 
@@ -2608,6 +2613,7 @@ impl PrintC {
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
+        self.named_globals = crate::kuna_namedglobals::References::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -2743,6 +2749,7 @@ impl PrintC {
             return false;
         };
         if access.size == 1 {
+            self.named_globals.record(fd, arch, fd.vbank().get(vn).unwrap().get_addr(), &access.name);
             self.push_atom(&Atom::with_op_vn(
                 format!("{}[0]", access.name),
                 TagType::VarToken,
@@ -2769,6 +2776,7 @@ impl PrintC {
             };
             ty
         };
+        self.named_globals.record(fd, arch, fd.vbank().get(vn).unwrap().get_addr(), &access.name);
         self.push_cast_open(&cast, op);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         self.push_atom(&Atom::syntax(
@@ -2807,6 +2815,7 @@ impl PrintC {
         {
             return false;
         }
+        self.named_globals.record(fd, arch, fd.vbank().get(out).unwrap().get_addr(), &access.name);
         if access.size == 1 {
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
             self.push_atom(&Atom::with_op_vn(
@@ -4779,7 +4788,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -4787,7 +4796,10 @@ impl PrintC {
                 continue;
             }
             if let Some(out) = o.get_out() {
-                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
+                    && !(self.out_lang == crate::kuna_lang::OutLang::C
+                        && crate::kuna_stackbytes::assignment(fd, inst).is_some())
+                {
                     continue;
                 }
             }
@@ -4856,9 +4868,22 @@ impl PrintC {
 
     fn needs_storage_assignment(&self, fd: &Funcdata, op: OpId) -> bool {
         self.out_lang == crate::kuna_lang::OutLang::C
-            && fd.get_arch().stack_views
+            && crate::kuna_stackviews::enabled(fd)
             && (crate::kuna_stackbytes::assignment(fd, op).is_some()
                 || crate::kuna_stackassign::assignment(fd, op).is_some())
+    }
+
+    fn is_suppressed_statement(&self, fd: &Funcdata, op: OpId) -> bool {
+        let Some(operation) = fd.obank().get(op) else {
+            return true;
+        };
+        if operation.not_printed()
+            && !(self.out_lang == crate::kuna_lang::OutLang::C
+                && crate::kuna_stackbytes::assignment(fd, op).is_some())
+        {
+            return true;
+        }
+        crate::p9_emit::kuna_stackmarkers::nonprinting(fd, op)
     }
 
     /// (kuna) Is `blk` a `0`/`1` select diamond that the S8 `iteboolean` pass
@@ -5617,7 +5642,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if o.not_printed() || crate::p9_emit::kuna_stackmarkers::nonprinting(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) {
                 continue;
             }
             // (kuna `voidtailreturn`) The function's own trailing bare `return;`.
@@ -5639,7 +5664,10 @@ impl PrintC {
             }
             // Skip ops whose output is an implied varnode (inlined elsewhere).
             if let Some(out) = o.get_out() {
-                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false) {
+                if fd.vbank().get(out).map(|v| v.is_implied()).unwrap_or(false)
+                    && !(self.out_lang == crate::kuna_lang::OutLang::C
+                        && crate::kuna_stackbytes::assignment(fd, inst).is_some())
+                {
                     continue;
                 }
             }
@@ -6670,6 +6698,8 @@ impl PrintC {
         static RUST_BITS: OpToken = op_token("(", ").to_bits()", 2, 66, false, TokenType::Postsurround, 0, 0);
         let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
         let signed = transfer.target.get_metatype() == type_metatype::TYPE_INT;
+        let pointer = transfer.target.get_metatype() == type_metatype::TYPE_PTR;
+        if pointer { self.push_cast_open(&transfer.target, op); }
         let input = fd.vbank().get(transfer.input).unwrap();
         let bits = if transfer.size == 4 { "u32" } else { "u64" };
         let literal = |v: &crate::varnode::Varnode| {
@@ -6715,8 +6745,14 @@ impl PrintC {
             self.push_op(&C_BITS, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
                 TagType::TypeToken, SyntaxHighlight::type_color));
+            let source_word = transfer.source_pointer.then(|| {
+                arch.types().get_base(transfer.size, type_metatype::TYPE_UINT).unwrap()
+            });
+            if let Some(word) = &source_word { self.push_cast_open(word, op); }
             self.push_vn_ir_body(fd, arch, transfer.input, op);
+            if let Some(word) = &source_word { self.push_cast_close(word); }
         }
+        if pointer { self.push_cast_close(&transfer.target); }
     }
 
     /// Does C's arithmetic conversion already perform this float widening?
@@ -6882,7 +6918,8 @@ impl PrintC {
             fd.obank()
                 .get(op)
                 .and_then(|o| o.get_out())
-                .map(|out| fd.vn_type_def_facing(out))
+                .map(|out| crate::kuna_bitcast::array_float_conversion(fd, op)
+                    .unwrap_or_else(|| fd.vn_type_def_facing(out)))
         };
         if let Some(ct) = &cast_ty {
             self.push_cast_open(ct, op);
@@ -7278,6 +7315,7 @@ impl PrintC {
                     target: slice.source_word,
                     size: 8,
                     to_float: false,
+                    source_pointer: false,
                 },
             );
         } else {
@@ -8082,6 +8120,38 @@ impl PrintC {
         self.push_constant_ir(access.size as u64, 4, op);
     }
 
+    fn push_stackbyte_source_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        source: VarnodeId,
+        op: OpId,
+        mods: uint4,
+        read_op: Option<OpId>,
+    ) {
+        if let Some(load) = crate::kuna_stackbytes::safe_load_op(fd, source, op) {
+            // Address-tied LOAD outputs can share the destination stackview
+            // HighVariable. Expand the proved-safe read itself, bypassing that
+            // merged high's field name.
+            let saved_mods = self.context.mods();
+            self.context.set_mods(mods);
+            self.op_push_ir(fd, arch, load, Some(op));
+            self.context.set_mods(saved_mods);
+        } else if let Some(global) = crate::kuna_stackbytes::safe_global_source(
+            fd,
+            source,
+            op,
+            read_op,
+        )
+        {
+            // Render the physical data-space address, preserving storage identity
+            // even if the RAM Varnode was coalesced with the stackview HighVariable.
+            self.push_annotation_ir(fd, arch, global, op);
+        } else {
+            self.push_vn_ir_m(fd, arch, source, op, mods);
+        }
+    }
+
     fn emit_byte_assignment_ir(
         &mut self,
         fd: &Funcdata,
@@ -8095,13 +8165,60 @@ impl PrintC {
         let factory = arch.types();
         let byte_type = factory.get_base(1, type_metatype::TYPE_UINT).unwrap();
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
+        let stack_big_endian = fd
+            .get_arch()
+            .manage()
+            .get_stack_space()
+            .is_some_and(|stack| stack.is_big_endian());
         for _ in 1..assignment.ranges.len() {
             self.push_op(&tokens::COMMA, Some(op_key(op)));
         }
         for range in assignment.ranges {
             let size = range.bytes.len() as i32;
             let datatype = factory.get_type_array(size, std::rc::Rc::clone(&byte_type)).unwrap();
-            let (front, back) = declarator_parts(&datatype, self.rt_ctx);
+            let scalar_source = if matches!(size, 1 | 2 | 4 | 8) {
+                range.bytes.first().and_then(|first| match first {
+                    crate::kuna_stackbytes::Byte::Value {
+                        source,
+                        read_op,
+                        ..
+                    } => {
+                        let full_width = fd
+                            .vbank()
+                            .get(*source)
+                            .is_some_and(|value| value.get_size() == size);
+                        let complete_range = full_width
+                            && range.bytes.iter().enumerate().all(|(index, byte)| {
+                                let expected = if stack_big_endian {
+                                    size - 1 - index as i32
+                                } else {
+                                    index as i32
+                                };
+                                matches!(
+                                    byte,
+                                    crate::kuna_stackbytes::Byte::Value {
+                                        source: candidate,
+                                        byte,
+                                        read_op: candidate_read_op,
+                                    } if *candidate == *source
+                                        && *byte == expected
+                                        && *candidate_read_op == *read_op
+                                )
+                            });
+                        complete_range.then_some((*source, *read_op))
+                    }
+                    crate::kuna_stackbytes::Byte::Constant(_) => None,
+                })
+            } else {
+                None
+            };
+            let (front, back) = if let Some((source, _)) = scalar_source {
+                let source_size = fd.vbank().get(source).unwrap().get_size();
+                let datatype = factory.get_base(source_size, type_metatype::TYPE_UINT).unwrap();
+                declarator_parts(&datatype, self.rt_ctx)
+            } else {
+                declarator_parts(&datatype, self.rt_ctx)
+            };
             let access = crate::kuna_stackmem::Access {
                 pointer: assignment.output,
                 value: None,
@@ -8122,27 +8239,51 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
-            for _ in 1..range.bytes.len() {
-                self.push_op(&tokens::COMMA, Some(op_key(op)));
-            }
-            for byte in range.bytes {
-                match byte {
-                    crate::kuna_stackbytes::Byte::Constant(value) => {
-                        self.push_constant_ir(u64::from(value), 1, op);
-                    }
-                    crate::kuna_stackbytes::Byte::Value { source, byte } => {
-                        self.push_cast_open(&byte_type, op);
-                        let size = fd.vbank().get(source).unwrap().get_size();
-                        if byte > 0 {
-                            self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+            if let Some((source, read_op)) = scalar_source {
+                self.push_stackbyte_source_ir(
+                    fd,
+                    arch,
+                    source,
+                    op,
+                    mods,
+                    read_op,
+                );
+            } else {
+                for _ in 1..range.bytes.len() {
+                    self.push_op(&tokens::COMMA, Some(op_key(op)));
+                }
+                for byte in range.bytes {
+                    match byte {
+                        crate::kuna_stackbytes::Byte::Constant(value) => {
+                            self.push_constant_ir(u64::from(value), 1, op);
                         }
-                        if size > 1 {
-                            let unsigned = factory.get_base(size, type_metatype::TYPE_UINT).unwrap();
-                            self.push_cast_open(&unsigned, op);
-                        }
-                        self.push_vn_ir_m(fd, arch, source, op, mods);
-                        if byte > 0 {
-                            self.push_constant_ir((byte * 8) as u64, 4, op);
+                        crate::kuna_stackbytes::Byte::Value {
+                            source,
+                            byte,
+                            read_op,
+                        } => {
+                            self.push_cast_open(&byte_type, op);
+                            let source_size = fd.vbank().get(source).unwrap().get_size();
+                            if byte > 0 {
+                                self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+                            }
+                            if source_size > 1 {
+                                let unsigned = factory
+                                    .get_base(source_size, type_metatype::TYPE_UINT)
+                                    .unwrap();
+                                self.push_cast_open(&unsigned, op);
+                            }
+                            self.push_stackbyte_source_ir(
+                                fd,
+                                arch,
+                                source,
+                                op,
+                                mods,
+                                read_op,
+                            );
+                            if byte > 0 {
+                                self.push_constant_ir((byte * 8) as u64, 4, op);
+                            }
                         }
                     }
                 }
@@ -9410,6 +9551,29 @@ impl PrintC {
                     ));
                     return;
                 }
+                if self.out_lang == crate::kuna_lang::OutLang::C
+                    && self.options.global_ref
+                    && ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                    && ct.get_word_size() == Some(1)
+                    && ct.get_size() == arch.types().get_size_of_pointer()
+                    && ct.get_ptr_to().is_some_and(|to| {
+                        to.get_metatype() != crate::dtype::type_metatype::TYPE_CODE
+                            && (self.options.struct_defs
+                                || self.options.header_carries_types
+                                || to.get_metatype() == crate::dtype::type_metatype::TYPE_VOID)
+                    })
+                {
+                    if let Some(expression) = self.named_globals.object_address(fd, arch, off) {
+                        if !self.options.nocasts { self.push_cast_open(&ct, op); }
+                        self.push_atom(&Atom::with_op_vn(
+                            expression, TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op), vn_key(vn),
+                        ));
+                        if !self.options.nocasts { self.push_cast_close(&ct); }
+                        return;
+                    }
+                }
                 if let Some(addr) = self.globalref.decide(fd, arch, vn, op, off, &ct) {
                     self.push_global_ref_ir(arch, addr, op, vn);
                     return;
@@ -9474,6 +9638,10 @@ impl PrintC {
                     && self.push_bytearray_read(fd, arch, vn, op)
                 {
                     return;
+                }
+                if self.out_lang == crate::kuna_lang::OutLang::C {
+                    let write = fd.obank().get(op).and_then(|o| o.get_out()) == Some(vn);
+                    self.named_globals.record_named(fd, arch, vn, write, &name);
                 }
                 // Symbol-mapped struct/union member access (C++ `PrintC::
                 // pushSymbolDetail` -> `pushPartialSymbol`, printlanguage.cc:256-258
@@ -9881,6 +10049,10 @@ impl PrintC {
 
     /// (kuna `globalref`) The plan of the last function printed: the globals it
     /// names by address and the unnamed data it reads directly.
+    pub fn named_global_references(&self) -> &crate::kuna_namedglobals::References {
+        &self.named_globals
+    }
+
     pub fn globalref_plan(&self) -> &crate::kuna_globalref::Plan {
         &self.globalref
     }
@@ -10212,6 +10384,17 @@ impl PrintC {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            if self.out_lang == crate::kuna_lang::OutLang::C {
+                if let Some(address) = spacebase_unnamed_address(arch, fd, op, &ct, in1const, ptr_size) {
+                    match ptrsub_value_access(fd, op, valueon && !arrayvalue) {
+                        Some((value, write)) => {
+                            self.named_globals.record_access(fd, arch, &address, value, write, !write, &name)
+                        }
+                        None => self.named_globals.record(fd, arch, &address, &name),
                     }
                 }
             }
@@ -10692,7 +10875,9 @@ impl PrintC {
     /// through `glb->translate->getFloatFormat(sz)`
     /// ([`FloatFormat::get_host_float`]/`extract_sign`/`print_decimal`) and emits
     /// the `INFINITY`/`NAN`/decimal token via [`format_float_token`].  When there
-    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.
+    /// is no `FloatFormat` for the size, the token is `FLOAT_UNKNOWN`.  (kuna) A
+    /// finite 4-byte constant in C output takes an `f` suffix where `float` is
+    /// 4 bytes, since an unsuffixed literal is a `double`.
     fn push_float_ir(&mut self, arch: &Architecture, val: uintb, sz: int4, op: OpId) {
         use kuna_num::float::floatclass;
         let force_scinote = self.context.is_set(modifiers::FORCE_SCINOTE);
@@ -10712,7 +10897,13 @@ impl PrintC {
                     // path (C++ `push_float` else-branch).
                     _ => {
                         let decimal = format.print_decimal(floatval, force_scinote);
-                        format_float_token(FloatClass::Normal, sign, &decimal, force_scinote)
+                        let mut token = format_float_token(FloatClass::Normal, sign, &decimal, force_scinote);
+                        if self.out_lang == crate::kuna_lang::OutLang::C
+                            && sz == 4 && arch.types().get_size_of_float() == 4
+                        {
+                            token.push('f');
+                        }
+                        token
                     }
                 }
             }
@@ -11678,6 +11869,20 @@ fn kuna_global_data_name(style: crate::database::KunaNameStyle, off: u64) -> Str
         return format!("DAT_{off:08x}");
     }
     format!("dat_{off:x}")
+}
+
+/// The varnode a dereferenced `PTRSUB` reads (the `LOAD` output) or writes
+/// (the `STORE` input), and whether it is written.
+fn ptrsub_value_access(fd: &Funcdata, op: OpId, value: bool) -> Option<(VarnodeId, bool)> {
+    let out = fd.obank().get(op)?.get_out().filter(|_| value)?;
+    fd.vbank().get(out)?.descend_iter().find_map(|user| {
+        let u = fd.obank().get(user)?;
+        match u.code() {
+            OpCode::CPUI_LOAD if u.get_in(1) == Some(out) => Some((u.get_out()?, false)),
+            OpCode::CPUI_STORE if u.get_in(1) == Some(out) => Some((u.get_in(2)?, true)),
+            _ => None,
+        }
+    })
 }
 
 /// C++ `TypeSpacebase::getAddress` (type.cc:3542): the storage a

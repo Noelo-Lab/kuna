@@ -1,5 +1,6 @@
 //! Call-graph queries over the shared reference index and canonical inventory.
 
+mod arm_closure;
 mod plan;
 pub(crate) use plan::callee_first_plan;
 
@@ -303,6 +304,48 @@ impl CallGraph {
             .unwrap_or_else(|| seeds.iter().copied().collect())
     }
 
+    /// (kuna `narrowargs callers`) Every call and tail jump to each function
+    /// of a 32-bit ARM image whose callers the image lets us list, by entry:
+    /// nothing in its bytes builds or holds the address ([`arm_closure::scan`])
+    /// and the walk materializes it nowhere, every reference comes from a known
+    /// function (the function itself included), and every instruction that
+    /// decodes as a branch to it is one of those references. Nothing is closed
+    /// in an image whose dynamic relocations cannot be read (Android packed
+    /// relocations). `None` for any other image.
+    pub(crate) fn arm_closed_sites(&self, binary: &str, pref: SlicePref) -> Option<BTreeMap<u64, Vec<u64>>> {
+        let bytes = image_bytes(binary, pref).ok()?;
+        let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
+        if file.architecture() != object::Architecture::Arm
+            || file.is_64()
+            || file.kind() == object::ObjectKind::Relocatable
+        {
+            return None;
+        }
+        if !arm_closure::relocations_readable(&file) {
+            return Some(BTreeMap::new());
+        }
+        let seeds: Vec<u64> = self.entries.iter().map(|(entry, _)| *entry).collect();
+        let image = arm_closure::scan(&file, &seeds);
+        let mut out = BTreeMap::new();
+        'entry: for &entry in &seeds {
+            if image.open.contains(&entry) {
+                continue;
+            }
+            let mut sites = Vec::new();
+            for r in self.index.refs_to(entry) {
+                if !matches!(r.kind, XrefKind::Call | XrefKind::Jump) || self.owner_of(r.from).is_none() {
+                    continue 'entry;
+                }
+                sites.push(r.from);
+            }
+            let unseen = image.branches.get(&entry).is_some_and(|from| from.iter().any(|f| !sites.contains(f)));
+            if !sites.is_empty() && !unseen {
+                out.insert(entry, sites);
+            }
+        }
+        Some(out)
+    }
+
     /// Does anything CALL `vma`?  Data and branch references do not count: the
     /// question a triaging agent asks is which functions no call site reaches.
     pub(crate) fn has_caller(&self, vma: u64) -> bool {
@@ -391,7 +434,7 @@ fn open_function_entries(file: &object::File, bytes: &[u8], entries: &[u64]) -> 
 /// (kuna `calleevote`) Does the image put this section's bytes in memory? On
 /// ELF that is the `SHF_ALLOC` flag, whatever the address (firmware loads code
 /// at 0); other formats map every section they carry bytes for.
-fn image_loads(section: &object::Section) -> bool {
+pub(super) fn image_loads(section: &object::Section) -> bool {
     if section.kind() == object::SectionKind::UninitializedData {
         return false;
     }

@@ -64,6 +64,9 @@ pub struct DecompileArgs {
     /// The per-function memory limit in MiB (`0` off), handed to `decomp_dbg`
     /// as its `--max-fn-memory`; `None` hands it the cgroup default.
     pub max_fn_memory: Option<u64>,
+    /// The per-function wall-clock budget in seconds (`0` off), handed to
+    /// `decomp_dbg` as its `--max-fn-seconds`.
+    pub max_fn_seconds: u64,
 }
 
 /// A 0x-prefixed token auto-selects address mode (a bare hex-looking token is a
@@ -318,6 +321,9 @@ fn check_errors(
     // missing bytes remain selection failures.
     if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
+            if reason.contains("per-function decompile budget exceeded") {
+                return Some(format!("decompilation failed for {target} in {binary}: {reason}"));
+            }
             return Some(reason);
         }
     }
@@ -630,6 +636,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                 cmd.arg("--max-fn-memory").arg("cgroup");
             }
         }
+        if args.max_fn_seconds > 0 {
+            cmd.arg("--max-fn-seconds").arg(args.max_fn_seconds.to_string());
+        }
         cmd.env(
             kuna_buildstamp::PARENT_ENV,
             kuna_buildstamp::identity(kuna_buildstamp::ChildKind::Engine),
@@ -812,6 +821,7 @@ pub fn run(args: &DecompileArgs) -> i32 {
             let status = match out.failure {
                 Some(msg) => {
                     eprintln!("error: {msg}");
+                    note_budget_flag(&msg);
                     1
                 }
                 None if refused => 1,
@@ -825,8 +835,16 @@ pub fn run(args: &DecompileArgs) -> i32 {
         }
         Err(e) => {
             eprintln!("error: {e}");
+            note_budget_flag(&e);
             1
         }
+    }
+}
+
+/// Points a budget-stopped run at the flag that sets the budget.
+fn note_budget_flag(msg: &str) {
+    if msg.contains("per-function decompile budget exceeded") {
+        eprintln!("note: --max-fn-seconds N sets the budget (0 disables it)");
     }
 }
 
@@ -864,6 +882,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut raw_image = false;
     let mut base: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
+    let mut max_fn_seconds = kuna_console::project::DEFAULT_FN_BUDGET_SECONDS;
 
     let mut i = 0;
     while i < argv.len() {
@@ -918,6 +937,15 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
                 let value = take_value(argv, &mut i, "--max-fn-memory")?;
                 max_fn_memory = Some(decompile_all::parse_max_fn_memory(&value)?);
                 forwarded.push("--max-fn-memory".into());
+                forwarded.push(value);
+            }
+            "--max-fn-seconds" => {
+                let value = take_value(argv, &mut i, "--max-fn-seconds")?;
+                max_fn_seconds = value
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| format!("invalid --max-fn-seconds value {value:?}"))?;
+                forwarded.push("--max-fn-seconds".into());
                 forwarded.push(value);
             }
             "--engine" => engine = Some(take_value(argv, &mut i, "--engine")?),
@@ -1043,6 +1071,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         raw_image,
         base,
         max_fn_memory,
+        max_fn_seconds,
     }))
 }
 
@@ -1055,7 +1084,7 @@ fn usage() {
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
          \x20                     [--sleighpath D] [--decomp-dbg P] [--max-fn-memory MiB]\n\
-         \x20                     [--raw-image --target T --base VMA]\n\
+         \x20                     [--max-fn-seconds N] [--raw-image --target T --base VMA]\n\
          \n\
          Decompile ONE function.  The target is a name, or an address with --addr\n\
          (a `0x`-prefixed target implies it); an address inside another function is\n\
@@ -1074,6 +1103,9 @@ fn usage() {
          reports that instead of being killed by the system (omitted: under a\n\
          cgroup memory cap, once it grew by the cap's margin and the cgroup\n\
          nears its cap; 0 disables).\n\
+         --max-fn-seconds N stops the decompile once its drive has run N seconds\n\
+         and reports that, naming the pass it was in (default 120, as with\n\
+         --json; 0 disables).\n\
          \n\
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
@@ -1330,6 +1362,7 @@ mod tests {
             raw_image: false,
             base: None,
             max_fn_memory: Some(0),
+            max_fn_seconds: 0,
         }
     }
 

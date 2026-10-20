@@ -373,7 +373,7 @@ c3
 <stringmatch name="FLOATBITS #17: a != of the bits with zero keeps the integer" min="3" max="3">bool fr_ne0\(int4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #18: an == with a NaN pattern keeps the integer (a float == with NaN is never true)" min="3" max="3">bool fr_isqnan0\(uint4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #19: an == with infinity is exact as a float comparison" min="3" max="3">return ABS\(a0\) == INFINITY;</stringmatch>
-<stringmatch name="FLOATBITS #20: an == with a normal number is exact as a float comparison" min="3" max="3">return a0 == 1\.0;</stringmatch>
+<stringmatch name="FLOATBITS #20: an == with a normal number is exact as a float comparison" min="3" max="3">return a0 == 1\.0f?;</stringmatch>
 <stringmatch name="FLOATBITS #21: a NaN payload returned as the value keeps the integer" min="2" max="2">uint4 fr_sel\(uint4 a0,int4 a1\)</stringmatch>
 <stringmatch name="FLOATBITS #22: an erased-flash 0xffffffff returned as the value keeps the integer" min="2" max="2">uint4 fr_unset\(uint4 a0,int4 a1\)</stringmatch>
 <stringmatch name="FLOATBITS #23: the canonical NaN returned as the value is a float" min="2" max="2">float4 fr_canon\(float4 a0\)</stringmatch>
@@ -384,7 +384,7 @@ c3
 <stringmatch name="FLOATBITS #28: an == with FLT_MIN keeps the integer" min="3" max="3">bool fr_fmin\(int4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #29: a != with 1.0000001f keeps the integer" min="3" max="3">bool fr_onep\(int4 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #30: an == of the magnitude with 0.33333334f keeps the integer" min="3" max="3">bool fr_third\(uint4 a0\)</stringmatch>
-<stringmatch name="FLOATBITS #31: an == with a float a double literal spells exactly is a float comparison" min="3" max="3">return a0 == 16777218\.0;</stringmatch>
+<stringmatch name="FLOATBITS #31: an == with a float a double literal spells exactly is a float comparison" min="3" max="3">return a0 == 16777218\.0f?;</stringmatch>
 <stringmatch name="FLOATBITS #32: a sign flip of the second float of a struct in xmm0 keeps the integer" min="1" max="1">uint8 fr_negy\(uint8 a0\)</stringmatch>
 <stringmatch name="FLOATBITS #33: a sign flip of a _Float128's low word keeps the integer" min="1" max="1">uint8 fr_lowflip\(uint8 a0\)</stringmatch>
 </decompilertest>

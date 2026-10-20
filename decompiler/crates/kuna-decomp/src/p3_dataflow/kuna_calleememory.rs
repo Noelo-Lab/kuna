@@ -1,4 +1,4 @@
-//! Bounded, body-derived memory effects for opt-in frame lifetime recovery.
+//! Bounded, body-derived memory effects for frame recovery and global call guards.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -172,6 +172,7 @@ struct DeferredFrameEscape {
 #[derive(Clone, Debug, Default)]
 pub struct CalleeMemory {
     complete: bool,
+    global_ineligible: bool,
     frame_return_read: bool,
     reads: BTreeSet<Effect>,
     writes: BTreeSet<Effect>,
@@ -186,6 +187,22 @@ pub struct CalleeMemory {
 }
 
 impl CalleeMemory {
+    pub(super) fn uses_frame_return(&self) -> bool {
+        self.frame_return_read
+    }
+
+    pub(super) fn global_accesses(&self) -> Option<impl Iterator<Item = (i32, u64, u32, i64, u32)> + '_> {
+        if !self.complete || self.global_ineligible
+            || self.reads.iter().chain(&self.writes).any(|effect| !matches!(effect.root, Origin::Register(_)))
+        {
+            return None;
+        }
+        Some(self.reads.iter().chain(&self.writes).map(|effect| {
+            let Origin::Register(root) = effect.root else { unreachable!() };
+            (root.space, root.offset, root.size, effect.offset, effect.size)
+        }))
+    }
+
     fn note_lossy_root(&mut self, root: Origin) {
         if self.lossy_pointer_overflow || self.lossy_pointer_roots.contains(&root) {
             return;
@@ -340,6 +357,7 @@ fn memory(
     if let Value::Pointer(root, offset) = pointer {
         let end = offset.checked_add(i64::from(size))?;
         if root == Origin::Frame {
+            summary.global_ineligible |= writing || offset != 0 || size != stack.size || state.return_clobbered;
             if offset < -MAX_EXTENT || end > MAX_EXTENT {
                 return None;
             }
@@ -459,7 +477,9 @@ fn memory(
                 summary.reads.insert(effect);
             }
         }
-    } else if !matches!(pointer, Value::Constant(_)) {
+    } else if matches!(pointer, Value::Constant(_)) {
+        summary.global_ineligible = true;
+    } else {
         return None;
     }
     if writing {
@@ -518,6 +538,12 @@ fn walk(
         let mut ends = false;
         let flag_only = super::kuna_calleeflags::flag_only_results(&ops);
         for (op_index, op) in ops.into_iter().enumerate() {
+            result.global_ineligible |= op.inputs.iter().chain(op.out.iter()).any(|value| {
+                value.space.as_ref().is_none_or(|space| {
+                    space.get_index() != register
+                        && !matches!(space.get_type(), spacetype::IPTR_INTERNAL | spacetype::IPTR_CONSTANT)
+                })
+            });
             match op.code {
                 OpCode::CPUI_CALL
                 | OpCode::CPUI_CALLIND
@@ -583,6 +609,17 @@ fn walk(
                         },
                     );
                     let mut value = match op.code {
+                        OpCode::CPUI_INT_XOR
+                            if Storage::raw(op.inputs.first()?).zip(Storage::raw(op.inputs.get(1)?)).is_some_and(|(a, b)| a == b) =>
+                        {
+                            Value::Constant(0)
+                        }
+                        OpCode::CPUI_INT_ZEXT if out.size >= op.inputs.first()?.size => {
+                            match input(0)? {
+                                Value::Constant(value) => Value::Constant(value & kuna_base::address::calc_mask(op.inputs.first()?.size as i32)),
+                                _ => Value::Unknown,
+                            }
+                        }
                         OpCode::CPUI_COPY | OpCode::CPUI_CAST
                             if op.inputs.first()?.size == out.size =>
                         {
@@ -646,7 +683,7 @@ fn walk(
 }
 
 pub fn seed(arch: &mut crate::architecture::Architecture, fd: &mut Funcdata) {
-    if !arch.stack_views && !arch.stack_alias_deadstore {
+    if !arch.stack_views && !arch.stack_alias_deadstore && !(arch.global_call_ranges && super::kuna_globalcallranges::should_seed(fd)) {
         return;
     }
     let Some(stack_space) = arch.manage().get_stack_space() else {
@@ -800,7 +837,8 @@ fn for_call<'a>(
     start: u64,
     size: i32,
 ) -> Option<&'a CalleeMemory> {
-    if fd.obank().get(call.get_op())?.code() != OpCode::CPUI_CALL
+    if (!fd.get_arch().stack_views && !fd.get_arch().stack_alias_deadstore)
+        || fd.obank().get(call.get_op())?.code() != OpCode::CPUI_CALL
         || !call.proto().has_store()
         || call.proto().has_effect_override()
     {
@@ -1584,7 +1622,7 @@ mod tests {
             (-108, false),
             (-104, true),
         ] {
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let actual = fx.frame_pointer(offset);
             let call = make_call_site(&mut fx, actual);
             fx.fd
@@ -1596,7 +1634,7 @@ mod tests {
                 "actual write at {offset}"
             );
         }
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let unknown = fx
             .fd
             .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x88), None);
@@ -1639,7 +1677,7 @@ mod tests {
             (-90, false),
             (-88, true),
         ] {
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let actual = fx.frame_pointer(offset);
             let call = make_call_site(&mut fx, actual);
             fx.fd
@@ -1651,7 +1689,7 @@ mod tests {
                 "actual write at {offset}"
             );
         }
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let unknown = fx
             .fd
             .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x88), None);
@@ -1832,7 +1870,7 @@ mod tests {
             .unwrap();
         assert!(published.lossy_pointer_roots.contains(&Origin::Frame));
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = make_call_site(&mut fx, actual);
         fx.fd
@@ -2170,7 +2208,7 @@ mod tests {
 
     #[test]
     fn complete_body_without_a_parameter_store_remains_a_call_barrier() {
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = make_call_site(&mut fx, actual);
         fx.fd.callee_memory.insert((fx.reg.get_index(), 0x2000), Rc::new(CalleeMemory {
@@ -2191,17 +2229,17 @@ mod tests {
     fn home_write_conditions_are_checked_against_each_call_argument_before_use() {
         let query = (-32i64) as u64;
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let disjoint_actual = fx.frame_pointer(-64);
         let call = install_call_summary(&mut fx, disjoint_actual);
         assert!(test_call_summary_is_usable(&fx.fd, call, query, 8));
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let overlapping_actual = fx.frame_pointer(-80);
         let call = install_call_summary(&mut fx, overlapping_actual);
         assert!(!test_call_summary_is_usable(&fx.fd, call, query, 8));
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let unresolved_actual = fx
             .fd
             .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x88), None);
@@ -2213,7 +2251,7 @@ mod tests {
     fn non_win64_frame_spill_conditions_use_physical_aliasing_without_discharge() {
         let query = (-32i64) as u64;
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let disjoint_actual = fx.frame_pointer(-64);
         let call = install_call_summary_with_stack_base(&mut fx, disjoint_actual, 8);
         let index = fx.fd.get_call_specs_index(call).unwrap();
@@ -2243,12 +2281,12 @@ mod tests {
         assert!(test_call_summary_is_usable(&fx.fd, call, query, 8));
         assert_eq!(unobserved(&fx.fd, call, query, 8, 0xff), None);
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let overlapping_actual = fx.frame_pointer(-48);
         let call = install_call_summary_with_stack_base(&mut fx, overlapping_actual, 8);
         assert!(!test_call_summary_is_usable(&fx.fd, call, query, 8));
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let unresolved_actual = fx
             .fd
             .new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x88), None);
@@ -2280,21 +2318,21 @@ mod tests {
     fn unchanged_custom_output_aliasing_home_root_blocks_but_constant_output_is_safe() {
         let query = (-32i64) as u64;
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = install_call_summary(&mut fx, actual);
         set_call_output_register(&mut fx, call, 0x20);
         set_call_return_states(&mut fx, vec![State::default()]);
         assert_eq!(unobserved(&fx.fd, call, query, 8, 0xff), None);
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = install_call_summary(&mut fx, actual);
         set_call_output_register(&mut fx, call, 0x88);
         set_call_return_states(&mut fx, vec![State::default()]);
         assert_eq!(unobserved(&fx.fd, call, query, 8, 0xff), None);
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = install_call_summary(&mut fx, actual);
         set_call_output_register(&mut fx, call, 0x20);
@@ -2346,7 +2384,7 @@ mod tests {
         let p = Program::new();
         let exact = home_reload_summary(&p, 8);
         assert!(exact.lossy_pointer_roots.is_empty());
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = make_call_site(&mut fx, actual);
         fx.fd
@@ -2361,7 +2399,7 @@ mod tests {
                 .deferred_frame_escapes
                 .iter()
                 .any(|home| home.offset == 16));
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let actual = fx.frame_pointer(-64);
             let call = make_call_site(&mut fx, actual);
             fx.fd
@@ -2415,7 +2453,7 @@ mod tests {
             size: 4,
         }));
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let rcx_actual = fx.frame_pointer(-64);
         let r8_actual = fx.frame_pointer(-40);
         let call = call_with_r8_argument(&mut fx, rcx_actual, 40, r8_actual);
@@ -2424,7 +2462,7 @@ mod tests {
             .insert((fx.reg.get_index(), 0x2000), Rc::new(summary.clone()));
         assert_eq!(unobserved(&fx.fd, call, query, 8, 0xff), None);
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let rcx_actual = fx.frame_pointer(-64);
         let r8_actual = fx.constant(8, 0x8000);
         let call = call_with_r8_argument(&mut fx, rcx_actual, 40, r8_actual);
@@ -2474,7 +2512,7 @@ mod tests {
         assert!(summary.complete);
         assert!(summary.lossy_pointer_roots.contains(&root));
 
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let rcx_actual = fx.frame_pointer(-64);
         let r8_actual = fx.frame_pointer(-40);
         let call = call_with_r8_argument(&mut fx, rcx_actual, 40, r8_actual);
@@ -2501,7 +2539,7 @@ mod tests {
         assert!(summary.complete);
         assert!(summary.deferred_frame_escapes.is_empty());
         for constant_actual in [false, true] {
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let rcx_actual = fx.frame_pointer(-64);
             let r8_actual = if constant_actual {
                 fx.constant(8, 0x8000)
@@ -2543,7 +2581,7 @@ mod tests {
         assert!(summary.complete);
         assert!(summary.deferred_frame_escapes.is_empty());
         assert!(summary.lossy_pointer_roots.is_empty());
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = make_call_site(&mut fx, actual);
         fx.fd
@@ -2599,7 +2637,7 @@ mod tests {
                 size: width,
             }));
 
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let actual = fx.frame_pointer(-64);
             let call = make_call_site(&mut fx, actual);
             fx.fd
@@ -2612,7 +2650,7 @@ mod tests {
     #[test]
     fn lossy_provenance_overflow_blocks_unobserved_proofs() {
         let query = (-32i64) as u64;
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.frame_pointer(-64);
         let call = install_call_summary(&mut fx, actual);
         let key = (fx.reg.get_index(), 0x2000);
@@ -2757,7 +2795,7 @@ mod tests {
                 .any(|home| home.root == root));
             assert!(summary.lossy_pointer_roots.contains(&root));
 
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let actual = fx.frame_pointer(-64);
             let call = make_call_site(&mut fx, actual);
             fx.fd
@@ -2821,7 +2859,7 @@ mod tests {
                 .iter()
                 .any(|range| { range.space == 2 && range.offset == 0x20 && range.size == 4 }));
 
-            let mut fx = Fx::new();
+            let mut fx = Fx::with_stack_views();
             let actual = fx.frame_pointer(-64);
             let call = make_call_site(&mut fx, actual);
             fx.fd
@@ -2890,7 +2928,7 @@ mod tests {
                 .all(|home| home.root != Origin::Frame));
 
             for constant_actual in [false, true] {
-                let mut fx = Fx::new();
+                let mut fx = Fx::with_stack_views();
                 let actual = if constant_actual {
                     fx.constant(8, 0x4000)
                 } else {
@@ -2943,7 +2981,7 @@ mod tests {
         assert!(summary.complete);
         assert!(summary.deferred_frame_escapes.is_empty());
         assert!(summary.lossy_pointer_roots.contains(&Origin::Frame));
-        let mut fx = Fx::new();
+        let mut fx = Fx::with_stack_views();
         let actual = fx.constant(8, 0x4000);
         let call = make_call_site(&mut fx, actual);
         fx.fd
@@ -2983,4 +3021,170 @@ mod tests {
             .iter()
             .any(|range| { range.space == 2 && range.offset == 0x20 && range.size == 4 }));
     }
+    #[test]
+    fn global_access_proof_rejects_unrecorded_memory_and_frame_accesses() {
+        let p = Program::new();
+        let direct = p.op(OpCode::CPUI_COPY, Some(p.reg(0)), vec![p.value(&p.code, 0x8000, 8)]);
+        let absolute = p.op(OpCode::CPUI_STORE, None, vec![p.c(1), p.c(0x8000), p.c(7)]);
+        let frame = p.op(OpCode::CPUI_LOAD, Some(p.reg(0)), vec![p.c(1), p.reg(0x30)]);
+        for operation in [direct, absolute, frame] {
+            let summary = p.run(vec![vec![operation, p.ret()]]);
+            assert!(summary.is_none_or(|summary| summary.global_accesses().is_none()));
+        }
+        let mut operations = p.load(8);
+        operations.push(p.ret());
+        let summary = p.run(vec![operations]).unwrap();
+        assert_eq!(summary.global_accesses().unwrap().collect::<Vec<_>>(), vec![(2, 0x20, 8, 8, 4)]);
+    }
+
+    #[test]
+    fn global_access_proof_rejects_direct_load_outputs_and_other_processor_spaces() {
+        let p = Program::new();
+        let overlay = Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR, "overlay", false, 8, 1, 4,
+            addrspace_flags::hasphysical, 1, 1,
+        ));
+        for space in [&p.code, &overlay] {
+            let direct_output = p.op(
+                OpCode::CPUI_LOAD,
+                Some(p.value(space, 0x8000, 8)),
+                vec![p.c(1), p.reg(0x20)],
+            );
+            let substantive = p.op(OpCode::CPUI_COPY, Some(p.reg(0)), vec![p.c(7)]);
+            let summary = p.run(vec![vec![direct_output, substantive, p.ret()]]).unwrap();
+            assert!(summary.complete);
+            assert!(summary.global_accesses().is_none());
+
+            let direct_input = p.op(
+                OpCode::CPUI_COPY, Some(p.reg(0)), vec![p.value(space, 0x8000, 8)],
+            );
+            let summary = p.run(vec![vec![direct_input, p.ret()]]).unwrap();
+            assert!(summary.global_accesses().is_none());
+        }
+    }
+
+    #[test]
+    fn zero_constructor_keeps_complete_global_memory_effects() {
+        let p = Program::new();
+        let eax = p.value(&p.register, 0, 4);
+        let summary = p.run(vec![vec![
+            p.op(OpCode::CPUI_INT_XOR, Some(eax.clone()), vec![eax.clone(), eax.clone()]),
+            p.op(OpCode::CPUI_INT_ZEXT, Some(p.reg(0)), vec![eax]),
+            p.op(OpCode::CPUI_STORE, None, vec![p.c(1), p.reg(0x20), p.reg(0)]),
+            p.ret(),
+        ]]).unwrap();
+        assert_eq!(summary.global_accesses().unwrap().collect::<Vec<_>>(), vec![(2, 0x20, 8, 0, 8)]);
+    }
+
+    fn global_call_site(actual: u64, effect_offset: i64) -> (Fx, OpId) {
+        let mut fx = Fx::new();
+        let value = fx.constant(8, actual);
+        let op = make_call_site_with_stack_base(&mut fx, value, 40);
+        let root = Origin::Register(Storage { space: fx.reg.get_index(), offset: 0x20, size: 8 });
+        let mut summary = CalleeMemory { complete: true, ..Default::default() };
+        summary.writes.insert(Effect { root, offset: effect_offset, size: 16 });
+        summary.reads.insert(Effect { root, offset: 32, size: 4 });
+        fx.fd.callee_memory.insert((fx.reg.get_index(), 0x2000), Rc::new(summary));
+        (fx, op)
+    }
+
+    #[test]
+    fn global_call_intervals_preserve_overlapping_reads_and_writes() {
+        let (mut fx, op) = global_call_site(0x8000, 0);
+        let space = Rc::clone(fx.fd.get_arch().manage().get_default_data_space().unwrap());
+        let index = fx.fd.get_call_specs_index(op).unwrap();
+        let call = fx.fd.replace_call_specs(index);
+        let mut cache = super::super::kuna_globalcallranges::Calls::default();
+        for (offset, size, expected) in [(0x7000, 8, true), (0x7ff8, 8, true), (0x7ff9, 8, false),
+            (0x8000, 8, false), (0x800f, 8, false), (0x8010, 8, true), (0x8020, 4, false), (0x8024, 8, true)]
+        {
+            assert_eq!(cache.preserves(&fx.fd, &call, &Address::new(Rc::clone(&space), offset), size), expected);
+        }
+        assert!(for_call(&fx.fd, &call, (-16i64) as u64, 8).is_none(), "global seeding cannot enable frame proofs");
+        fx.fd.restore_call_specs_at(index, call);
+    }
+
+    #[test]
+    fn global_call_intervals_reject_wrapping_actuals_and_unknowns() {
+        for (actual, bias) in [(u64::MAX - 8, 0), (u64::MAX - 8, 16), (0, -1)] {
+            let (mut fx, op) = global_call_site(actual, bias);
+            let space = Rc::clone(fx.fd.get_arch().manage().get_default_data_space().unwrap());
+            let index = fx.fd.get_call_specs_index(op).unwrap();
+            let call = fx.fd.replace_call_specs(index);
+            let mut cache = super::super::kuna_globalcallranges::Calls::default();
+            assert!(!cache.preserves(&fx.fd, &call, &Address::new(space, 0x9000), 8));
+            fx.fd.restore_call_specs_at(index, call);
+        }
+        let (mut fx, op) = global_call_site(0x8000, 0);
+        let space = Rc::clone(fx.fd.get_arch().manage().get_default_data_space().unwrap());
+        let unknown = fx.fd.new_varnode(8, &Address::new(Rc::clone(&fx.reg), 0x70), None);
+        fx.fd.op_set_input(op, unknown, 1).unwrap();
+        let index = fx.fd.get_call_specs_index(op).unwrap();
+        let call = fx.fd.replace_call_specs(index);
+        let mut cache = super::super::kuna_globalcallranges::Calls::default();
+        let watched = Address::new(space, 0x9000);
+        assert!(!cache.preserves(&fx.fd, &call, &watched, 8));
+        let known = fx.constant(8, 0x8000);
+        fx.fd.op_set_input(op, known, 1).unwrap();
+        assert!(!cache.preserves(&fx.fd, &call, &watched, 8));
+        cache.clear();
+        assert!(cache.preserves(&fx.fd, &call, &watched, 8));
+        fx.fd.restore_call_specs_at(index, call);
+    }
+
+    #[test]
+    fn active_global_argument_uses_the_recorded_slot_and_rejects_synthetic_trials() {
+        for mode in 0..6 {
+            let (mut fx, op) = global_call_site(0x9000, 0);
+            let known = fx.constant(8, 0x8000);
+            fx.fd.op_insert_input(op, known, 3).unwrap();
+            let space = Rc::clone(fx.fd.get_arch().manage().get_default_data_space().unwrap());
+            let index = fx.fd.get_call_specs_index(op).unwrap();
+            let mut call = fx.fd.replace_call_specs(index);
+            call.proto_mut().clear_input();
+            call.init_active_input();
+            let active = call.get_active_input();
+            active.register_trial(&Address::new(Rc::clone(&fx.reg), 0x10), 8);
+            active.register_trial(&Address::new(Rc::clone(&fx.reg), 0x20), if mode == 2 { 4 } else { 8 });
+            let trial = active.get_trial_mut(1);
+            trial.set_slot(if mode == 1 { 99 } else { 3 });
+            match mode {
+                3 => trial.mark_unref(),
+                4 => trial.mark_no_use(),
+                5 => trial.set_ind_create_formed(),
+                _ => (),
+            }
+            let mut cache = super::super::kuna_globalcallranges::Calls::default();
+            assert_eq!(cache.preserves(&fx.fd, &call, &Address::new(space, 0x9000), 8), mode == 0, "mode {mode}");
+            fx.fd.restore_call_specs_at(index, call);
+        }
+    }
+
+
+    #[test]
+    fn global_return_memory_needs_a_solved_frame_and_effect_overrides_remain_authoritative() {
+        let (mut fx, op) = global_call_site(0x8000, 0);
+        let key = (fx.reg.get_index(), 0x2000);
+        let mut summary = fx.fd.callee_memory.get(&key).unwrap().as_ref().clone();
+        summary.frame_return_read = true;
+        fx.fd.callee_memory.insert(key, Rc::new(summary));
+        let space = Rc::clone(fx.fd.get_arch().manage().get_default_data_space().unwrap());
+        let watched = Address::new(Rc::clone(&space), 0x9000);
+        let index = fx.fd.get_call_specs_index(op).unwrap();
+        let mut call = fx.fd.replace_call_specs(index);
+        let mut cache = super::super::kuna_globalcallranges::Calls::default();
+        assert!(cache.preserves(&fx.fd, &call, &watched, 8));
+        let mut unknown_frame = crate::fspec::FuncCallSpecs::new(op, call.get_entry_address().clone());
+        unknown_frame.proto_mut().copy(call.proto());
+        cache.clear();
+        assert!(!cache.preserves(&fx.fd, &unknown_frame, &watched, 8));
+        call.proto_mut().push_effect_override(crate::fspec::EffectRecord::from_varnode(
+            VarnodeData { space: Some(space), offset: 0x9000, size: 8 },
+            crate::fspec::effect_type::UNKNOWN_EFFECT,
+        ));
+        cache.clear();
+        assert!(!cache.preserves(&fx.fd, &call, &watched, 8));
+        fx.fd.restore_call_specs_at(index, call);
+    }
+
 }

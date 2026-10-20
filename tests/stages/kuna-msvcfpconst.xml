@@ -67,7 +67,7 @@ c3
 <stringmatch name="MSVCFPCONST #1: off, both operands of _scale are opaque -- the undefined x87 COMDAT and the defined IEEE-double one alike" min="1" max="1">\(float10\)a0 \* \(float10\)dat_402000 \+ \(float10\)dat_400038;</stringmatch>
 <stringmatch name="MSVCFPCONST #2: off, both operands of _fscale are opaque too" min="1" max="1">\(float10\)dat_402010 \* \(float10\)a0 \* \(float10\)dat_400040;</stringmatch>
 <stringmatch name="MSVCFPCONST #3: on, _scale reads pi/4 from the undefined 20-hex x87 name and 0.1 from the defined 16-hex IEEE double" min="1" max="1">\(float10\)a0 \* \(float10\)0\.7853981633974483 \+ \(float10\)0\.1;</stringmatch>
-<stringmatch name="MSVCFPCONST #4: on, _fscale reads 1.0 from the 20-hex x87 name at float width and 0.5 from the defined 8-hex IEEE float, the modern MSVC spelling" min="1" max="1">\(float10\)1\.0 \* \(float10\)a0 \* \(float10\)0\.5;</stringmatch>
+<stringmatch name="MSVCFPCONST #4: on, _fscale reads 1.0 from the 20-hex x87 name at float width and 0.5 from the defined 8-hex IEEE float, the modern MSVC spelling" min="1" max="1">\(float10\)1\.0f? \* \(float10\)a0 \* \(float10\)0\.5f?;</stringmatch>
 <stringmatch name="MSVCFPCONST #5: no opaque operand survives the on pass -- every dat_ line belongs to the off one" min="2" max="2">dat_4</stringmatch>
 <stringmatch name="MSVCFPCONST #6: the recovery changes the operands only -- both passes agree on the signature" min="2" max="2">float10 _scale\(float8 a0\)</stringmatch>
 </decompilertest>

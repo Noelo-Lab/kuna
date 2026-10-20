@@ -1,0 +1,36 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1180: rejoining split conditions left an exit phi with three inputs
+    after its CFG lost one predecessor, then calc_nz_mask indexed a third edge.
+    P8 conditional joining must discover and repair every exit phi even when
+    stack analysis has rewritten an earlier phi into arithmetic in place.
+    This is an unconditional correctness fix with no P0 option.
+
+    Independently assembled 16-bit probe (nasm -f bin, org 0x1000):
+      push es; jnz join; call helper; mul bx; jbe finish
+      join: mov dl,[es:bx]; jcxz finish
+      repeat: loop repeat
+      finish: mov ax,[cs:0xba72]; ret
+      helper: ret
+    The call, stack change, shared finish and loop exercise the reported failing
+    path without bytes from Dazzle. Before the fix decompilation panics; the
+    assertions require a complete body with its loop and final memory read.
+-->
+<bytechunk space="ram" offset="0x1000">
+067507e81000f7e37607268a17e302e2fe2ea172bac3c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="late_phi"/>
+<symbol space="ram" offset="0x1016" name="helper"/>
+</binaryimage>
+<script>
+  <com>lo fu late_phi</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="nodejoin #1: shared exit emits a complete body" min="1" max="1">late_phi\(</stringmatch>
+<stringmatch name="nodejoin #2: the loop survives the shared-exit repair" min="1" max="1">for \(; v2; v2 = v2 \+ -1\)</stringmatch>
+<stringmatch name="nodejoin #3: the final memory read remains in the body" min="1" max="1">segment\(0,0xba72\)</stringmatch>
+<stringmatch name="nodejoin #4: the returned high and low words survive" min="1" max="1">return CONCAT22\(v3,\*v1\);</stringmatch>
+<stringmatch name="nodejoin #5: the pipeline does not abort" min="0" max="0">Skipping|LOSS-131</stringmatch>
+</decompilertest>
