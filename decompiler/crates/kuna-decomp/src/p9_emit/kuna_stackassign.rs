@@ -84,8 +84,11 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
         fd.vbank().get(id).is_some_and(|value| value.is_constant())
             && !crate::kuna_stackviews::pointer_origin(fd, id)
     });
-    let memory_source =
-        byte_member && operand.is_some_and(|input| loaded_bytes(fd, input).is_some());
+    let memory_source = byte_member
+        && operand
+            .and_then(|input| loaded_bytes(fd, input))
+            .or_else(|| load_pointer(fd, op))
+            .is_some();
     let datatype = if memory_source {
         // This is a raw representation, not a scalar C value. The array type
         // selects memory-source emission without imposing the member's type.
@@ -213,27 +216,35 @@ pub(super) fn loaded_bytes(fd: &Funcdata, mut input: VarnodeId) -> Option<(Varno
         let operation = fd.obank().get(definition)?;
         match operation.code() {
             OpCode::CPUI_COPY | OpCode::CPUI_CAST => input = operation.get_in(0)?,
-            OpCode::CPUI_LOAD => {
-                let space_id = fd.vbank().get(operation.get_in(0)?)?;
-                if !space_id.is_constant() {
-                    return None;
-                }
-                let space = fd
-                    .get_arch()
-                    .manage()
-                    .get_space(i32::try_from(space_id.get_offset()).ok()?)?;
-                let stack = fd.get_arch().manage().get_stack_space()?;
-                if space.get_word_size() != 1 || space.is_big_endian() != stack.is_big_endian() {
-                    return None;
-                }
-                return Some((
-                    operation.get_in(1)?,
-                    definition,
-                    space.get_addr_size() as i32,
-                ));
-            }
+            OpCode::CPUI_LOAD => return load_pointer(fd, definition),
             _ => return None,
         }
     }
     None
+}
+
+/// A LOAD can itself define the frame member after SSA coalescing.
+pub(super) fn load_pointer(fd: &Funcdata, definition: OpId) -> Option<(VarnodeId, OpId, i32)> {
+    let operation = fd.obank().get(definition)?;
+    if operation.code() != OpCode::CPUI_LOAD || fd.vbank().get(operation.get_out()?)?.is_volatile()
+    {
+        return None;
+    }
+    let space_id = fd.vbank().get(operation.get_in(0)?)?;
+    if !space_id.is_constant() {
+        return None;
+    }
+    let space = fd
+        .get_arch()
+        .manage()
+        .get_space(i32::try_from(space_id.get_offset()).ok()?)?;
+    let stack = fd.get_arch().manage().get_stack_space()?;
+    if space.get_word_size() != 1 || space.is_big_endian() != stack.is_big_endian() {
+        return None;
+    }
+    Some((
+        operation.get_in(1)?,
+        definition,
+        space.get_addr_size() as i32,
+    ))
 }

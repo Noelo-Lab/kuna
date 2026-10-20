@@ -8340,7 +8340,8 @@ impl PrintC {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
         let array_source = super::kuna_bytearrayc::byte_array(&assignment.datatype)
-            .then(|| assignment.operand.and_then(|input| crate::p9_emit::kuna_stackassign::loaded_bytes(fd, input)))
+            .then(|| assignment.operand.and_then(|input| crate::p9_emit::kuna_stackassign::loaded_bytes(fd, input))
+                .or_else(|| crate::p9_emit::kuna_stackassign::load_pointer(fd, op)))
             .flatten();
         let (front, back) = declarator_parts(&assignment.datatype, self.rt_ctx);
         let access = crate::kuna_stackmem::Access {

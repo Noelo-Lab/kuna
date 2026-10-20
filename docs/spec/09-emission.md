@@ -3643,7 +3643,8 @@ copying a float must retain its representation instead of casting it to an array
 Implied same-width CASTs to the byte-array view are peeled before selecting the
 scalar representation; numeric conversion opcodes remain part of the expression.
 A byte-array member receiving an implied nonvolatile memory read retains the
-source pointer and read context, even through same-width COPY/CAST wrappers.
+source pointer and read context, even through same-width COPY/CAST wrappers or
+when the LOAD itself defines the mapped member.
 Numeric conversions and computed expressions remain scalar transfers. For
 byte-addressed source storage with matching endianness, `__builtin_memmove`
 retains the original load-before-store behavior when addresses may overlap.
