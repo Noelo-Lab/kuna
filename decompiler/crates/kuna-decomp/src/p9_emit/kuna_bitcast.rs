@@ -24,7 +24,8 @@ pub(crate) struct Transfer {
 /// `printed` gives the type a `COPY` side prints with when no member names its bytes, which
 /// decides that side outright. A `COPY` side that is a variable of its own, not a member of a
 /// struct or union symbol, whose type is a partial struct or union is declared `undefinedN`
-/// and so is an integer, whatever union field the value resolves to.
+/// and so is an integer, whatever union field the value resolves to; a `COPY` side printed as
+/// a scalar global has that global's type.
 pub(crate) fn storage_transfer(
     fd: &Funcdata,
     decl_high_type: bool,
@@ -57,6 +58,18 @@ pub(crate) fn storage_transfer(
                     .is_some_and(|ty| !partial(&ty) && float(&ty) != float(own)))
     };
     let copy = operation.code() == OpCode::CPUI_COPY;
+    let global = |id: VarnodeId| {
+        let value = fd.vbank().get(id).filter(|v| copy && v.is_persist() && !v.is_implied())?;
+        let usepoint = kuna_base::address::Address::new_invalid();
+        let (_, offset, ty) = fd.get_arch().name_for_global_varnode(value.get_addr(), value.get_size(), &usepoint)?;
+        ty.filter(|ty| {
+            offset == 0
+                && ty.get_size() == value.get_size()
+                && !matches!(ty.get_metatype(), type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
+                    | type_metatype::TYPE_ARRAY | type_metatype::TYPE_PARTIALSTRUCT
+                    | type_metatype::TYPE_PARTIALUNION)
+        })
+    };
     let undefined = |id: VarnodeId, own: &Datatype| {
         let declared = copy
             && partial(own)
@@ -84,6 +97,7 @@ pub(crate) fn storage_transfer(
                     || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
                         | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
             })
+            .or_else(|| global(input))
             .or_else(|| undefined(input, src.get_type()))
             .unwrap_or_else(|| fd.vn_type_read_facing(input, op))
     });
@@ -96,6 +110,7 @@ pub(crate) fn storage_transfer(
                     || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
                         | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
             })
+            .or_else(|| global(out))
             .or_else(|| undefined(out, dst.get_type()))
             .unwrap_or_else(|| fd.vn_type_def_facing(out))
     });

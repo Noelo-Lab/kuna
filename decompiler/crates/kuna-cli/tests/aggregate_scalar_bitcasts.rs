@@ -220,7 +220,11 @@ int main(void){
 
 #[test]
 fn union_field_words_held_in_undefined_variables_match_native() {
-    if process::optional_output(Command::new("gcc").arg("--version")).is_none() {
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    if compilers.is_empty() {
         return;
     }
     let dir = common::scratch_file("aggregate-undefined-word-copy", "dir");
@@ -229,7 +233,7 @@ fn union_field_words_held_in_undefined_variables_match_native() {
 #include <string.h>
 typedef struct reading {float pressure,temperature,altitude;} reading;
 typedef struct sample {unsigned stamp;float distance,deviation;} sample;
-typedef struct message {int kind;union {reading weather;sample range;unsigned raw[3];} data;} message;
+typedef struct message {int kind;union {reading weather;sample range;int count[3];} data;} message;
 int next_message(message *m);
 "#;
     let original = dir.join("original.c");
@@ -238,7 +242,7 @@ int next_message(message *m);
         format!(
             r#"
 {declarations}
-reading latest;int pending;message queue[4];
+reading latest;int last_count;int pending;message queue[4];
 __attribute__((noinline)) int next_message(message *m) {{
     if (pending <= 0) return 0;
     *m = queue[--pending];return 1;
@@ -251,6 +255,14 @@ float latest_weather(void) {{
     }}
     latest = keep;return keep.pressure;
 }}
+int latest_count(void) {{
+    message m;int count = last_count;float pressure = latest.pressure;
+    while (next_message(&m)) {{
+        if (m.kind == 0) count = m.data.count[0];
+        else if (m.kind == 1) pressure = m.data.weather.pressure;
+    }}
+    last_count = count;latest.pressure = pressure;return count;
+}}
 #ifdef SAMPLE_MAIN
 int main(void) {{return 0;}}
 #endif
@@ -258,65 +270,75 @@ int main(void) {{return 0;}}
         ),
     )
     .unwrap();
-    let sample = dir.join("sample");
-    process::required_output(
-        Command::new("gcc")
-            .args([
-                "-O2",
-                "-g",
-                "-march=x86-64",
-                "-fno-tree-vectorize",
-                "-fno-pie",
-                "-no-pie",
-                "-DSAMPLE_MAIN",
-            ])
-            .arg(&original)
-            .arg("-o")
-            .arg(&sample),
-    );
-    let (printed, stderr, rc) =
-        common::run_kuna(&["decompile-all", sample.to_str().unwrap(), "--functions", "latest_weather"]);
-    assert_eq!(rc, 0, "{stderr}\n{printed}");
-    let regenerated = dir.join("regenerated.c");
-    std::fs::write(&regenerated,format!("#include <stdbool.h>\ntypedef unsigned int undefined4;\n{declarations}\nextern unsigned char latest[];\n#define latest_weather printed_latest_weather\n{printed}")).unwrap();
     let driver = dir.join("driver.c");
     std::fs::write(&driver,r#"
 #include <stdio.h>
 #include <string.h>
 typedef struct message {int kind;unsigned raw[3];} message;
-extern unsigned latest[3];extern int pending;extern message queue[4];
+extern unsigned latest[3];extern int last_count,pending;extern message queue[4];
 float latest_weather(void);float printed_latest_weather(void);
-static const unsigned words[]={0x3fc00000,0x40490fdb,0xbf000000,0x7f7fffff,1,0x80000000,0x12345678,0x447a0000};
+int latest_count(void);int printed_latest_count(void);
+static const unsigned words[]={0x3fc00000,0x40490fdb,0xbf000000,0x7f7fffff,1,0x80000000,0x12345678,0x447a0000,0x41200000};
+static unsigned stored[4];
 static void fill(int s){
  pending=4;
- for(int i=0;i<4;i++){queue[i].kind=(i+s)%3;for(int j=0;j<3;j++)queue[i].raw[j]=words[(i*3+j+s)%8];}
- for(int j=0;j<3;j++)latest[j]=words[(s+j+5)%8];
+ for(int i=0;i<4;i++){queue[i].kind=(i+s)%3;for(int j=0;j<3;j++)queue[i].raw[j]=words[(i*3+j+s)%9];}
+ for(int j=0;j<3;j++)latest[j]=words[(s+j+5)%9];
+ last_count=s;
 }
+static void keep(void){memcpy(stored,latest,12);stored[3]=last_count;}
+static int same(void){return !memcmp(stored,latest,12)&&stored[3]==(unsigned)last_count;}
 int main(void){
- for(int s=0;s<8;s++){
-  fill(s);float expected=latest_weather();unsigned stored[3];memcpy(stored,latest,sizeof stored);
+ for(int s=0;s<9;s++){
+  fill(s);float expected=latest_weather();keep();
   fill(s);float actual=printed_latest_weather();
-  if(memcmp(&expected,&actual,4)||memcmp(stored,latest,sizeof stored)){fprintf(stderr,"latest_weather seed %d\n",s);return 1;}
+  if(memcmp(&expected,&actual,4)||!same()){fprintf(stderr,"latest_weather seed %d\n",s);return 1;}
+  fill(s);int count=latest_count();keep();
+  fill(s);if(count!=printed_latest_count()||!same()){fprintf(stderr,"latest_count seed %d\n",s);return 2;}
  }
  return 0;
 }
 "#).unwrap();
-    for cc in ["clang", "gcc"] {
-        if process::optional_output(Command::new(cc).arg("--version")).is_none() {
-            continue;
-        }
-        for opt in ["-O0", "-O2"] {
-            let exe = dir.join(format!("roundtrip-{cc}-{opt}"));
-            process::required_output(
-                Command::new(cc)
-                    .args([opt, "-fno-fast-math", "-ffp-contract=off"])
-                    .arg(&original)
-                    .arg(&regenerated)
-                    .arg(&driver)
-                    .arg("-o")
-                    .arg(&exe),
-            );
-            process::required_output(&mut Command::new(exe));
+    for sample_cc in &compilers {
+        let sample = dir.join(format!("sample-{sample_cc}"));
+        process::required_output(
+            Command::new(sample_cc)
+                .args([
+                    "-O2",
+                    "-g",
+                    "-march=x86-64",
+                    "-fno-tree-vectorize",
+                    "-fno-pie",
+                    "-no-pie",
+                    "-DSAMPLE_MAIN",
+                ])
+                .arg(&original)
+                .arg("-o")
+                .arg(&sample),
+        );
+        let (printed, stderr, rc) = common::run_kuna(&[
+            "decompile-all",
+            sample.to_str().unwrap(),
+            "--functions",
+            "latest_weather,latest_count",
+        ]);
+        assert_eq!(rc, 0, "{stderr}\n{printed}");
+        let regenerated = dir.join(format!("regenerated-{sample_cc}.c"));
+        std::fs::write(&regenerated,format!("#include <stdbool.h>\ntypedef unsigned int undefined4;\n{declarations}\nextern unsigned char latest[];extern int last_count;\n#define latest_weather printed_latest_weather\n#define latest_count printed_latest_count\n{printed}")).unwrap();
+        for cc in &compilers {
+            for opt in ["-O0", "-O2"] {
+                let exe = dir.join(format!("roundtrip-{sample_cc}-{cc}-{opt}"));
+                process::required_output(
+                    Command::new(cc)
+                        .args([opt, "-fno-fast-math", "-ffp-contract=off"])
+                        .arg(&original)
+                        .arg(&regenerated)
+                        .arg(&driver)
+                        .arg("-o")
+                        .arg(&exe),
+                );
+                process::required_output(&mut Command::new(exe));
+            }
         }
     }
     std::fs::remove_dir_all(dir).unwrap();
