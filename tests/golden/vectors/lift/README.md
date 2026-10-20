@@ -20,6 +20,12 @@ consecutive captures agree, and a capture against the unpatched specs
 reproduces the previous fixture byte-for-byte. Only unique-space temporary
 offsets changed.
 
+`floatprint.txt` and `promotecompare.txt` retain the same instructions, operations,
+registers, constants, widths, and temporary aliasing after the BOUND lift gained
+operand loads. Thirteen lines change only unique-space offsets by `0xc00`.
+The refreshed runtime output uses the x86 specs independently matched against
+the pinned C++ compiler; both focused fixture replays pass.
+
 ## Regeneration
 
 ```bash

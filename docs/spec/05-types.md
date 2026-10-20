@@ -1652,6 +1652,20 @@ and COPY propagation see the declared two-byte character type. Neighboring
 data mappings and function symbols are never replaced, and no global string
 length or encoding heuristic is changed.
 
+The declaration also owns every other byte of its span. An inferred string --
+a character array whose type is locked but whose synthetic `s_<addr>` name is
+not, mapped at one address -- that shares any byte with the declared range is
+removed, whether it starts inside the range or straddles either end. Otherwise
+the narrower string wins the container lookup for an interior read (a `float
+values[3]` table whose middle bytes happen to spell text read back as
+`s_2002[2]`), and the header refuses both overlapping objects, leaving each
+name undeclared. Name-locked data, earlier explicit declarations, and symbols
+mapped at more than one address are kept. A constant pointing into the middle
+of a declared aggregate then follows the ordinary exact-hit rule above: it is
+recovered as a pointer into the declaration when its sink is typed as a
+pointer, and otherwise prints as the bare address, the same as for an
+aggregate the DWARF tier declared.
+
 Two (kuna) escapes hook exactly here, both shipped default-on (DIV-2,
 `decompiler/crates/kuna-decomp/phases.toml`):
 

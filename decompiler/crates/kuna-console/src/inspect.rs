@@ -19,11 +19,25 @@ use crate::engine::ConsoleProgram;
 pub const FUNCTION_ROW_CAP: usize = 4096;
 
 /// The token source map of one rendered function: the tokens when they rebuild
-/// the code exactly, else none and the reason.
+/// the code exactly, else none and the reason; and the global data each
+/// variable token names.
 #[derive(Debug, Clone, Default)]
 pub struct FuncDetail {
     pub tokens: Vec<CodeToken>,
     pub tokens_error: Option<String>,
+    /// The global data symbols the code names, in order of first use.
+    pub globals: Vec<GlobalRef>,
+    /// Per token, the index in `globals` of the global it names.
+    pub token_globals: Vec<Option<usize>>,
+}
+
+/// A global data symbol the code names: its name, address, size and type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlobalRef {
+    pub name: String,
+    pub address: u64,
+    pub size: u64,
+    pub type_name: String,
 }
 
 impl FuncDetail {
@@ -40,14 +54,69 @@ impl FuncDetail {
     ) -> Self {
         let mut tokens = kuna_srcmap::resolve(fd, var_refs, raw, untrimmed, variables);
         if let Err(error) = kuna_srcmap::verify(&tokens, code) {
-            return FuncDetail { tokens: Vec::new(), tokens_error: Some(error) };
+            return FuncDetail { tokens_error: Some(error), ..FuncDetail::default() };
         }
         for t in &mut tokens {
             t.address = t.address.map(|a| prog.output_code_offset(a));
             t.callee = t.callee.map(|a| prog.output_code_offset(a));
         }
-        FuncDetail { tokens, tokens_error: None }
+        let (globals, token_globals) = global_refs(prog, fd, &tokens);
+        FuncDetail { tokens, tokens_error: None, globals, token_globals }
     }
+}
+
+/// The global data symbol each variable token names: a name the function's own
+/// scope does not hold that the global scope maps, whole, in the default data
+/// space, with a type that is not code. A local with the same name shadows the
+/// global, as it does in the C.
+fn global_refs(prog: &ConsoleProgram, fd: &Funcdata, tokens: &[CodeToken]) -> (Vec<GlobalRef>, Vec<Option<usize>>) {
+    use kuna_decomp::dtype::type_metatype::TYPE_CODE;
+    use kuna_decomp::prettyprint::TokenKind;
+    let arch = prog.arch();
+    let db = &arch.symboltab;
+    let (Some(scope), Some(data_space)) = (db.get_global_scope(), arch.manage().get_default_data_space()) else {
+        return (Vec::new(), vec![None; tokens.len()]);
+    };
+    let mut globals: Vec<GlobalRef> = Vec::new();
+    let mut by_name: BTreeMap<&str, Option<usize>> = BTreeMap::new();
+    let lookup = |name: &str| -> Option<GlobalRef> {
+        if fd.get_scope_local().is_some_and(|local| !local.query_by_name(name).is_empty()) {
+            return None;
+        }
+        db.find_by_name(scope, name).into_iter().find_map(|sid| {
+            let symbol = db.symbol(sid);
+            let ct = symbol.dtype.as_ref()?;
+            if ct.get_metatype() == TYPE_CODE {
+                return None;
+            }
+            symbol.mapentry.iter().find_map(|&eref| {
+                let entry = db.entry(scope, eref);
+                let space = entry.get_addr().get_space()?;
+                (entry.get_offset() == 0 && space.get_index() == data_space.get_index()).then(|| GlobalRef {
+                    name: name.to_string(),
+                    address: entry.get_addr().get_offset(),
+                    size: u64::try_from(ct.get_size()).unwrap_or(0),
+                    type_name: kuna_decomp::printc::type_to_c_string(arch, ct),
+                })
+            })
+        })
+    };
+    let token_globals = tokens
+        .iter()
+        .map(|t| {
+            if t.kind != TokenKind::Variable || t.var.is_some() || t.decl.is_some() {
+                return None;
+            }
+            *by_name.entry(t.text.as_str()).or_insert_with(|| {
+                let found = lookup(&t.text)?;
+                Some(globals.iter().position(|g| g.address == found.address).unwrap_or_else(|| {
+                    globals.push(found);
+                    globals.len() - 1
+                }))
+            })
+        })
+        .collect();
+    (globals, token_globals)
 }
 
 /// One loaded section, for mapping an address back to the input file.
@@ -225,54 +294,22 @@ pub fn string_uses(prog: &ConsoleProgram, file: &object::File, strings: &[(u64, 
     if strings.is_empty() {
         return Vec::new();
     }
-    let names: BTreeMap<u64, String> = prog
-        .function_entries_canonical()
-        .into_iter()
-        .map(|e| (e.addr.get_offset(), e.name))
-        .collect();
-    let data: BTreeMap<u64, String> =
-        prog.global_data_symbols().into_iter().map(|(name, vma, _)| (vma, name)).collect();
-    let inventory: Vec<u64> = names.keys().copied().collect();
-    let seeds = xr::discovery_seeds(file, &inventory, prog.arch().analysis_funcstart_patterns);
-    let index = xr::build(file, prog.arch(), prog.arch().translate(), &seeds);
-    let code: Vec<(u64, u64)> = {
-        use object::{Object, ObjectSection, SectionKind};
-        file.sections()
-            .filter(|s| s.kind() == SectionKind::Text)
-            .map(|s| (s.address(), s.address().saturating_add(s.size())))
-            .collect()
-    };
-    let in_code = |addr: u64| code.iter().any(|&(lo, hi)| addr >= lo && addr < hi);
-    let pointed = strings.iter().map(|&(addr, _)| addr).filter(|&addr| addr != 0 && !in_code(addr)).collect();
+    let walk = UseWalk::build(prog, file);
+    let pointed = strings.iter().map(|&(addr, _)| addr).filter(|&addr| addr != 0 && !walk.in_code(addr)).collect();
     let slots = pointer_slots(file, &pointed);
-    let is_data = |r: &&xr::Xref| !matches!(r.kind, xr::XrefKind::Call | xr::XrefKind::Jump);
-    let is_entry = |vma: u64| names.contains_key(&vma) || (vma & 1 == 1 && names.contains_key(&(vma & !1)));
-    let use_of = |r: &xr::Xref, via: Option<u64>| {
-        let function = index.function_containing(r.from);
-        StringUse {
-            row: XrefRow {
-                name: function.and_then(|f| names.get(&f).cloned()),
-                address: function.unwrap_or(r.from),
-                site: r.from,
-                kind: r.kind.as_str(),
-                instruction: r.instruction.clone(),
-            },
-            via: via.map(|slot| (slot, data.get(&slot).cloned())),
-        }
-    };
     strings
         .iter()
         .map(|&(addr, len)| {
-            let code_text = in_code(addr);
+            let code_text = walk.in_code(addr);
             let mut uses: Vec<StringUse> = (addr..addr.saturating_add(len.max(1)))
-                .filter(|&vma| !is_entry(vma))
-                .flat_map(|vma| index.refs_to(vma))
+                .filter(|&vma| !walk.is_entry(vma))
+                .flat_map(|vma| walk.index.refs_to(vma))
                 .filter(|r| if code_text { r.kind == xr::XrefKind::Data } else { is_data(r) })
-                .map(|r| use_of(r, None))
+                .map(|r| walk.use_of(r, None))
                 .collect();
-            if !is_entry(addr) {
+            if !walk.is_entry(addr) {
                 for &slot in slots.get(&addr).into_iter().flatten() {
-                    uses.extend(index.refs_to(slot).iter().filter(is_data).map(|r| use_of(r, Some(slot))));
+                    uses.extend(walk.index.refs_to(slot).iter().filter(|r| is_data(r)).map(|r| walk.use_of(r, Some(slot))));
                 }
             }
             uses.sort_by_key(|u| (u.row.site, u.via.as_ref().map(|v| v.0)));
@@ -280,6 +317,110 @@ pub fn string_uses(prog: &ConsoleProgram, file: &object::File, strings: &[(u64, 
             uses
         })
         .collect()
+}
+
+/// The uses of the data in `[start, end)`, each with the address it names:
+/// every data reference landing inside the range, at the byte it names, and
+/// every data reference to a pointer-aligned data word whose value is one of
+/// `starts` (the items of the range) or a byte the code names directly, at
+/// that item. As for [`string_uses`], a branch, a reference to a function's
+/// entry, a word pointing into code and a load or store into code are not
+/// uses. In address, then instruction order.
+pub fn data_uses(
+    prog: &ConsoleProgram,
+    file: &object::File,
+    start: u64,
+    end: u64,
+    starts: &[u64],
+) -> Vec<(u64, StringUse)> {
+    use kuna_analysis::listing::xrefs as xr;
+    if start >= end {
+        return Vec::new();
+    }
+    let walk = UseWalk::build(prog, file);
+    let mut uses: Vec<(u64, StringUse)> = Vec::new();
+    for vma in (start..end).filter(|&vma| !walk.is_entry(vma)) {
+        let code_data = walk.in_code(vma);
+        for r in walk.index.refs_to(vma) {
+            if if code_data { r.kind == xr::XrefKind::Data } else { is_data(r) } {
+                uses.push((vma, walk.use_of(r, None)));
+            }
+        }
+    }
+    let pointed: BTreeSet<u64> = starts
+        .iter()
+        .copied()
+        .chain(uses.iter().map(|(to, _)| *to))
+        .filter(|&addr| addr != 0 && addr >= start && addr < end && !walk.in_code(addr) && !walk.is_entry(addr))
+        .collect();
+    for (&target, list) in &pointer_slots(file, &pointed) {
+        for &slot in list.iter().filter(|&&slot| slot != target) {
+            uses.extend(walk.index.refs_to(slot).iter().filter(|r| is_data(r)).map(|r| (target, walk.use_of(r, Some(slot)))));
+        }
+    }
+    uses.sort_by_key(|(to, u)| (*to, u.row.site, u.via.as_ref().map(|v| v.0)));
+    uses.dedup_by_key(|(to, u)| (*to, u.row.site, u.via.as_ref().map(|v| v.0)));
+    uses
+}
+
+fn is_data(r: &kuna_analysis::listing::xrefs::Xref) -> bool {
+    use kuna_analysis::listing::xrefs::XrefKind;
+    !matches!(r.kind, XrefKind::Call | XrefKind::Jump)
+}
+
+/// The whole-image reference walk behind [`string_uses`] and [`data_uses`],
+/// with the names of the functions and global data it reports.
+struct UseWalk {
+    names: BTreeMap<u64, String>,
+    data: BTreeMap<u64, String>,
+    index: kuna_analysis::listing::xrefs::XrefIndex,
+    code: Vec<(u64, u64)>,
+}
+
+impl UseWalk {
+    fn build(prog: &ConsoleProgram, file: &object::File) -> Self {
+        use kuna_analysis::listing::xrefs as xr;
+        use object::{Object, ObjectSection, SectionKind};
+        let names: BTreeMap<u64, String> = prog
+            .function_entries_canonical()
+            .into_iter()
+            .map(|e| (e.addr.get_offset(), e.name))
+            .collect();
+        let data: BTreeMap<u64, String> =
+            prog.global_data_symbols().into_iter().map(|(name, vma, _)| (vma, name)).collect();
+        let inventory: Vec<u64> = names.keys().copied().collect();
+        let seeds = xr::discovery_seeds(file, &inventory, prog.arch().analysis_funcstart_patterns);
+        let index = xr::build(file, prog.arch(), prog.arch().translate(), &seeds);
+        let code = file
+            .sections()
+            .filter(|s| s.kind() == SectionKind::Text)
+            .map(|s| (s.address(), s.address().saturating_add(s.size())))
+            .collect();
+        UseWalk { names, data, index, code }
+    }
+
+    fn in_code(&self, addr: u64) -> bool {
+        self.code.iter().any(|&(lo, hi)| addr >= lo && addr < hi)
+    }
+
+    /// A function's entry, or its Thumb address.
+    fn is_entry(&self, vma: u64) -> bool {
+        self.names.contains_key(&vma) || (vma & 1 == 1 && self.names.contains_key(&(vma & !1)))
+    }
+
+    fn use_of(&self, r: &kuna_analysis::listing::xrefs::Xref, via: Option<u64>) -> StringUse {
+        let function = self.index.function_containing(r.from);
+        StringUse {
+            row: XrefRow {
+                name: function.and_then(|f| self.names.get(&f).cloned()),
+                address: function.unwrap_or(r.from),
+                site: r.from,
+                kind: r.kind.as_str(),
+                instruction: r.instruction.clone(),
+            },
+            via: via.map(|slot| (slot, self.data.get(&slot).cloned())),
+        }
+    }
 }
 
 /// The pointer-aligned words of `file`'s initialized data sections whose value

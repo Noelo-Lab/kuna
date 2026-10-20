@@ -190,6 +190,20 @@ visible with cosmetic cast suppression. Rust uses the corresponding unsigned
 word casts with `from_bits` or `to_bits`. Other pointer widths and addressable
 unit sizes do not enter this path.
 
+The x87 integer conversions (`x87_float_to_int16/32/64`, chapter 02) produce
+signed integer bits of their own width (`coreaction_infertypes.rs
+(output_type_local)`), even when the memory they store to is later read as a
+float. Without that type an unknown output adopted the float reader's type and
+the store printed as an implicit numeric conversion: `*(float *)&storage[4] =
+x87_float_to_int32(..)` wrote the float `1.0f` where `FISTP` writes the word
+`1`. When such a result lands in a same-width float output, `cast_output`
+routes it through an integer temporary (`coreaction_casts.rs
+(Funcdata::cast_narrowed_call)`) so the move prints as the union
+reinterpretation above. A byte-array global's merged high type can be an
+unresolved aggregate while the store prints a scalar float view; for a
+float-typed `CAST` output, `storage_transfer` then judges by the output's own
+type instead of that aggregate, keeping the reinterpretation.
+
 A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
 storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
 The selected storage view or declared scalar member type governs this decision,
@@ -3662,7 +3676,14 @@ value's own scalar type of that width, such as a float stored in half of a
 eight-byte access crossing byte elements or covering the whole array. Floating
 transfers to and from that storage reinterpret bits rather than numerically
 converting the value or attempting an array cast. This lookup uses the exact
-global container and offset. A `FLOAT_FLOAT2FLOAT` that writes such storage
+global container and offset. When the type this lookup or the merged variable
+declares for a transfer's input is unknown or a partial aggregate, as for a
+value merged into a byte-array backing, it does not say whether the bits are a
+pointer or a float; a pointer or float read-facing type of the input decides
+instead (`kuna_bitcast.rs (storage_transfer)`). A pointer stored through
+`*(void **)&storage[8]` and moved into a `double` therefore passes through the
+unsigned word of its width and is reinterpreted, rather than printing the
+invalid `(double)` conversion of a pointer. A `FLOAT_FLOAT2FLOAT` that writes such storage
 directly keeps its numeric precision conversion, cast to the float of its output
 width rather than to the unknown type of the storage, because partial access
 prints that destination as a float.

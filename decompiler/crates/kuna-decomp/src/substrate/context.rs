@@ -812,6 +812,9 @@ pub struct ArchContext {
     /// (kuna) CALLOTHER ids of the x87 integer conversions read by
     /// [`RuleX87Truncate`](crate::kuna_x87truncate::RuleX87Truncate).
     pub x87_float_to_int_userops: Vec<kuna_base::types::uint4>,
+    /// SLEIGH FIST/FISTP conversion userops and their signed output widths.
+    /// Resolved by name once when building the architecture snapshot.
+    pub x87_integer_userops: Vec<(kuna_base::types::uint4, int4)>,
     /// (kuna) GH-1276/8777: fold flag-modelled comparison idioms (C++
     /// `fold_flag_compare`, DIV-3 default-on).  Read by
     /// [`RuleBoolSignLess`](crate::kuna_flagcompare::RuleBoolSignLess) /
@@ -1821,6 +1824,7 @@ impl ArchContext {
             drop_call_push: false,        // callpush (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
             x87_float_to_int_userops: Vec::new(),
+            x87_integer_userops: Vec::new(),
             fold_flag_compare: false,    // GH-1276/8777 flagcompare
             add_carry_chain: false,      // GH-8913 addcarrychain
             ov_less_simplify: false,     // GH-7190 ovlesssimplify

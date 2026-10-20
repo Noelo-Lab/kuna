@@ -1,6 +1,8 @@
 // make-inspect-fixtures.mjs — regenerate the study view's fixtures
 // (test/fixtures/inspect-{main,sum_to,add}.json, list-sample.json from
-// sample.elf, inspect-make_item.json from structs.elf) from the
+// sample.elf, inspect-make_item.json from structs.elf, and the Data tab's
+// data-globals*.json and inspect-globals-stripped.json from globals.elf and
+// its stripped twin) from the
 // NATIVE kuna_wasm build, so the page's pure
 // renderers are tested against exactly what the engine emits, without a wasm
 // build. The `binary` path is rewritten to the file name so the fixtures do
@@ -29,4 +31,12 @@ const write = (file, doc) => writeFileSync(join(here, 'fixtures', file), JSON.st
 for (const name of ['main', 'sum_to', 'add']) write(`inspect-${name}.json`, run('inspect', name));
 write('list-sample.json', run('list'));
 write('inspect-make_item.json', runOn('structs.elf', 'inspect', 'make_item'));
-console.log('wrote inspect-{main,sum_to,add,make_item}.json and list-sample.json from', native);
+const typed = ['data 0x4040 int primes[8]', 'data 0x4060 point origin', 'data 0x4070 char *banner',
+  'data 0x4078 int (*op)(int)', 'data 0x4080 int *favorite'].flatMap((d) => ['--assert', d]);
+write('data-globals.json', runOn('globals.elf', 'data', '0x4040'));
+write('data-globals-typed.json', runOn('globals.elf', 'data', '0x4060', ...typed));
+write('data-globals-bss.json', runOn('globals.elf', 'data', '0x40c0'));
+write('data-globals-stripped.json', runOn('globals-stripped.elf', 'data', '0x4040'));
+write('inspect-globals-stripped.json', runOn('globals-stripped.elf', 'inspect', 'main'));
+write('uses-globals.json', runOn('globals.elf', 'uses', '0x4000', '0x88'));
+console.log('wrote inspect-{main,sum_to,add,make_item,globals-stripped}.json, list-sample.json, data-globals*.json and uses-globals.json from', native);

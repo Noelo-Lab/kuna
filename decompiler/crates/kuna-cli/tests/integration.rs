@@ -535,6 +535,9 @@ mod x87_integer_conversions_native;
 #[path = "float_pointer_storage.rs"]
 mod float_pointer_storage;
 
+#[path = "stack_union_components.rs"]
+mod stack_union_components;
+
 #[path = "dwarf_overlapping_locals.rs"]
 mod dwarf_overlapping_locals;
 
@@ -550,8 +553,17 @@ mod parameter_spill_reuse;
 #[path = "declared_callee_pop.rs"]
 mod declared_callee_pop;
 
+#[path = "declared_data_range.rs"]
+mod declared_data_range;
+
 #[path = "project_function_linkage.rs"]
 mod project_function_linkage;
 
 #[path = "aggregate_storage_cast.rs"]
 mod aggregate_storage_cast;
+
+#[path = "x87_native_returns.rs"]
+mod x87_native_returns;
+
+#[path = "x86_bound_checks.rs"]
+mod x86_bound_checks;

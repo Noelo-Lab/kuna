@@ -75,6 +75,13 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
             .and_then(|v| data.vbank().get(v))
             .map(|v| v.get_offset())
             .unwrap_or(0);
+        let integer_width = arch.x87_integer_userops.iter()
+            .find_map(|&(id, width)| (u64::from(id) == in0_off).then_some(width));
+        if integer_width == Some(out_size) {
+            if let Some(Ok(ty)) = arch.types().map(|types| types.get_base(out_size, type_metatype::TYPE_INT)) {
+                return ty;
+            }
+        }
         if in0_off == crate::userop::BUILTIN_STRINGDATA as u64 {
             if let Some(out) = o.get_out().and_then(|v| data.vbank().get(v)) {
                 return Rc::clone(out.get_type());
