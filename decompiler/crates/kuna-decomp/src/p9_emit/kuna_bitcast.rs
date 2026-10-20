@@ -22,7 +22,9 @@ pub(crate) struct Transfer {
 /// float-typed output whose declared view is an unresolved aggregate (a byte-array global) is
 /// judged by its own type, so the scalar float view it prints keeps the reinterpretation.
 /// `printed` gives the type a `COPY` side prints with when no member names its bytes, which
-/// decides that side outright.
+/// decides that side outright. A `COPY` side that is a variable of its own, not a member of a
+/// struct or union symbol, whose type is a partial struct or union is declared `undefinedN`
+/// and so is an integer, whatever union field the value resolves to.
 pub(crate) fn storage_transfer(
     fd: &Funcdata,
     decl_high_type: bool,
@@ -41,19 +43,29 @@ pub(crate) fn storage_transfer(
         matches!(ty.get_metatype(), type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
     };
     let float = |ty: &Datatype| ty.get_metatype() == type_metatype::TYPE_FLOAT;
-    let member = |id: VarnodeId, own: &Datatype| {
-        let aggregate = fd
-            .vbank()
+    let aggregate = |id: VarnodeId| {
+        fd.vbank()
             .get(id)
             .and_then(|v| fd.high_bank().get(v.get_high()?))
             .and_then(|h| h.kuna_symbol_type().map(|ty| ty.get_metatype()))
-            .is_some_and(|meta| matches!(meta, type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION));
+            .is_some_and(|meta| matches!(meta, type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION))
+    };
+    let member = |id: VarnodeId, own: &Datatype| {
         partial(own)
-            || (aggregate
+            || (aggregate(id)
                 && declared_member_type(fd, decl_high_type, id)
                     .is_some_and(|ty| !partial(&ty) && float(&ty) != float(own)))
     };
     let copy = operation.code() == OpCode::CPUI_COPY;
+    let undefined = |id: VarnodeId, own: &Datatype| {
+        let declared = copy
+            && partial(own)
+            && !aggregate(id)
+            && crate::printc::declared_variable_type(fd, decl_high_type, id).is_some_and(|ty| partial(&ty));
+        declared
+            .then(|| fd.get_arch().types()?.get_base(own.get_size(), type_metatype::TYPE_UNKNOWN).ok())
+            .flatten()
+    };
     if copy && !member(input, src.get_type()) && !member(out, dst.get_type()) {
         return None;
     }
@@ -72,6 +84,7 @@ pub(crate) fn storage_transfer(
                     || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
                         | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
             })
+            .or_else(|| undefined(input, src.get_type()))
             .unwrap_or_else(|| fd.vn_type_read_facing(input, op))
     });
     let to_ty = copy.then(|| printed(out, -1)).flatten().unwrap_or_else(|| {
@@ -83,6 +96,7 @@ pub(crate) fn storage_transfer(
                     || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
                         | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
             })
+            .or_else(|| undefined(out, dst.get_type()))
             .unwrap_or_else(|| fd.vn_type_def_facing(out))
     });
     let from = from_ty.get_metatype();

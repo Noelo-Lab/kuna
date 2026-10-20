@@ -2864,6 +2864,43 @@ mod w10_printc_cast_render {
     }
 
     #[test]
+    fn an_undefined_variable_copy_keeps_its_word_when_its_union_field_is_float() {
+        use crate::dtype::TypeFactory;
+        let mut context = ContextArch::new(build_manager());
+        let types = Rc::new(crate::dtype::TypeFactoryImpl::new());
+        types.set_size_of_int(4);
+        types.set_size_of_float(4);
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.set_core_type("undefined", 1, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        types.set_core_type("undefined4", 4, type_metatype::TYPE_UNKNOWN, false).unwrap();
+        types.cache_core_types().unwrap();
+        context.types = Some(Rc::clone(&types));
+        let space = Rc::clone(context.manage().get_space_by_name("ram").unwrap());
+        let mut fd = Funcdata::new("func", "func", Rc::new(context), Address::new(Rc::clone(&space), 0x1000), 0x1000, 0x40).unwrap();
+        let mut backing = Datatype::new_with_align(4, 4, type_metatype::TYPE_UNION);
+        backing.name = "measurement_data".to_owned();
+        backing.display_name = backing.name.clone();
+        backing.id = Datatype::hash_name(&backing.name);
+        backing.flags |= crate::dtype::flags::needs_resolution;
+        backing.kind = crate::dtype::DatatypeKind::Union { field: vec![
+            crate::dtype::TypeField::new(0, 0, "word", named("unsigned int", 4, type_metatype::TYPE_UINT)),
+            crate::dtype::TypeField::new(1, 0, "floating", named("float", 4, type_metatype::TYPE_FLOAT)),
+        ] };
+        let piece = types.get_type_partial_union(Rc::new(backing), 0, 4).unwrap();
+        let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+        let source = fd.new_varnode(4, &Address::new(Rc::clone(&space), 0x400), Some(Rc::clone(&piece)));
+        fd.op_set_input(op, source, 0).unwrap();
+        let out = fd.new_varnode(4, &Address::new(space, 0x410), Some(named("unsigned int", 4, type_metatype::TYPE_UINT)));
+        fd.op_set_output(op, out).unwrap();
+        fd.set_high_level();
+        let resolution = crate::unionresolve::ResolvedUnion::new_field(Rc::clone(&piece), 1, types.as_ref()).unwrap();
+        fd.set_union_field(&piece, op, 0, resolution);
+        assert_eq!(fd.vn_type_read_facing(source, op).get_metatype(), type_metatype::TYPE_FLOAT);
+        assert!(crate::kuna_bitcast::storage_transfer(&fd, false, op, |_, _| None).is_none());
+    }
+
+    #[test]
     fn float_constant_storage_transfers_keep_nan_payloads() {
         for (size, payload) in [(4, 0xffa12345), (8, 0xfff0123456789abc)] {
             let mut fd = build_fd();
