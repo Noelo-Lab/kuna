@@ -21,10 +21,14 @@ compiler on the corrected sources, which reproduces the previous hashes on the
 unmodified sources; the `fqtox` correction was regenerated with `slacomp`,
 which reproduces those C++ digests.
 
-The x86 entries include the signed BOUND operand loads and bounds-check user-ops.
+The x86 entries include the width-specific x87 integer-conversion operations,
+the control-word writes of `FXRSTOR` and `XRSTOR`/`XRSTORS`, and the signed
+BOUND operand loads and bounds-check user-ops.
 They were regenerated with the recorded C++ compiler after checking that it
 reproduces both unmodified x86 hashes; kuna’s compiler produces the same changed
 element streams.
+The combined digests were produced with `slacomp`, which reproduces the
+pinned C++ digests for each of those changes applied alone.
 
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both

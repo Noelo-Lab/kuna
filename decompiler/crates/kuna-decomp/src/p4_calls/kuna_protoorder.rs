@@ -168,6 +168,13 @@ pub struct RecoveredTypes {
     /// [`crate::p4_calls::kuna_passthrough`] never claims it.  Recorded only when
     /// `option passthrough` is on; empty otherwise.
     pub vararg_tail: Vec<Address>,
+    /// The incoming registers the body reads, itself or through a callee it
+    /// forwards them to ([`crate::kuna_entryreads`]). Recorded only when
+    /// `option passthrough` is on; empty otherwise.
+    pub reads: Vec<(Address, int4)>,
+    /// The part of [`Self::reads`] the body reads only by handing the register
+    /// on, to a declared parameter or a callee that reads it.
+    pub passes: Vec<(Address, int4)>,
 }
 
 impl RecoveredTypes {
@@ -368,7 +375,7 @@ fn inside_a_frame_aggregate(
 fn loaded_through_itself(
     data: &Funcdata,
     o: &crate::op::PcodeOp,
-    members: &std::collections::HashSet<VarnodeId>,
+    members: &crate::kuna_fasthash::FxHashSet<VarnodeId>,
 ) -> bool {
     let mut at = o.get_in(1);
     for _ in 0..8 {
@@ -439,7 +446,7 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
         )
     };
     let mut family = vec![vn];
-    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::from([vn]);
+    let mut seen: crate::kuna_fasthash::FxHashSet<VarnodeId> = crate::kuna_fasthash::FxHashSet::from_iter([vn]);
     let mut at = 0;
     while at < family.len() && family.len() < 128 {
         let Some(node) = data.vbank().get(family[at]) else { break };
@@ -470,7 +477,7 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
 #[derive(Clone, Copy)]
 enum Reading<'a> {
     Argument(OpId, int4),
-    Member(&'a std::collections::HashSet<OpId>),
+    Member(&'a crate::kuna_fasthash::FxHashSet<OpId>),
     Input,
     /// An input whose other calls speak only through a declared prototype.
     DeclaredInput,
@@ -593,7 +600,7 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
     let own = |op: OpId| matches!(reading, Reading::Member(set) if set.contains(&op));
     let mut regions: Option<Vec<(i64, Option<i64>)>> = None;
     let family = value_family(data, vn);
-    let members: std::collections::HashSet<VarnodeId> = family.iter().copied().collect();
+    let members: crate::kuna_fasthash::FxHashSet<VarnodeId> = family.iter().copied().collect();
     let mut globals: Vec<(Address, int4)> = Vec::new();
     for &v in &family {
         let Some(node) = data.vbank().get(v) else { continue };
@@ -829,7 +836,7 @@ fn gcd(a: i64, b: i64) -> i64 {
 /// following constant offsets, indexing and copies, and where every address it
 /// derives points.  `None` when there are too many to follow.
 pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>)> {
-    let mut place: std::collections::HashMap<VarnodeId, (i64, i64)> =
+    let mut place: crate::kuna_fasthash::FxHashMap<VarnodeId, (i64, i64)> =
         family.iter().map(|&v| (v, (0, 0))).collect();
     let mut work: Vec<VarnodeId> = family.to_vec();
     let mut budget = 512;
@@ -1063,7 +1070,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
             Member::Exact(_) => {}
         }
     }
-    let own: std::collections::HashSet<OpId> = floats.iter().map(|(a, _)| a.op).collect();
+    let own: crate::kuna_fasthash::FxHashSet<OpId> = floats.iter().map(|(a, _)| a.op).collect();
     floats.iter().any(|(a, t)| {
         if a.store && data.vbank().get(a.value).is_some_and(|n| n.is_constant()) {
             return !prints_exactly_as_a_float(data, a.value);
@@ -1694,7 +1701,16 @@ pub fn park_recovered(
         } else {
             Vec::new()
         };
-        let stated = Stated { arity_sound, output, result, vararg_tail };
+        let (reads, passes) = match data.kuna_entry_reads() {
+            Some(r) if arch.pass_through => {
+                let finals = crate::kuna_entryreads::final_forwards(data);
+                crate::kuna_entryreads::reads_through(r, &finals, |c, a, s| {
+                    crate::kuna_entryreads::callee_takes(data, c, a, s, true)
+                })
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        let stated = Stated { arity_sound, output, result, vararg_tail, reads, passes };
         return state_recovered_types(arch, entry, pieces, storage, stated);
     }
     let mut trimmed = 0usize;
@@ -1789,6 +1805,8 @@ struct Stated {
     output: Option<(Address, int4, Rc<Datatype>)>,
     result: Option<(Address, int4)>,
     vararg_tail: Vec<Address>,
+    reads: Vec<(Address, int4)>,
+    passes: Vec<(Address, int4)>,
 }
 
 /// The storage of `proto`'s recovered return value, or `None` for `void`.
@@ -1855,7 +1873,7 @@ fn state_recovered_types(
     storage: Vec<(Address, int4)>,
     stated: Stated,
 ) -> Result<Recovered, Decline> {
-    let Stated { arity_sound, output, result, vararg_tail } = stated;
+    let Stated { arity_sound, output, result, vararg_tail, reads, passes } = stated;
     let inputs: Vec<(Address, int4, Rc<Datatype>)> = storage
         .iter()
         .zip(pieces.intypes.iter())
@@ -1869,7 +1887,7 @@ fn state_recovered_types(
         return Err(Decline::InvalidStorage);
     };
     arch.kuna_protoorder_types
-        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail }));
+        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail, reads, passes }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 

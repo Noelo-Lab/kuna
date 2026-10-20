@@ -28,6 +28,11 @@ pub(crate) struct StorageView {
     pub offset: i32,
 }
 
+/// Reused narrow parameter slots require physical backing even in default mode.
+pub(crate) fn enabled(fd: &Funcdata) -> bool {
+    fd.get_arch().stack_views || !fd.stack_write_views.is_empty()
+}
+
 pub struct OptionStackViews;
 
 impl OptionStackViews {
@@ -335,7 +340,12 @@ fn backing_type(
 /// conflict or intersect. Indexed references require a bounded byte extent;
 /// explicit user-locked layouts and unresolved extents remain unchanged.
 pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
-    if !fd.get_arch().stack_views {
+    let full_views = fd.get_arch().stack_views;
+    let reused = if full_views { Vec::new() } else {
+        crate::kuna_stackparamviews::wider_scalar_parameters(fd)
+    };
+    let local_views = crate::kuna_localstackviews::views(fd);
+    if !full_views && reused.is_empty() && local_views.is_empty() {
         return;
     }
     let Some(factory) = fd.get_arch().types_rc() else {
@@ -349,6 +359,14 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
         .zip(checker.get_add_base().iter().copied())
         .collect();
     let mut groups: BTreeMap<uintb, Vec<Rc<Datatype>>> = BTreeMap::new();
+    for (start, datatype) in local_views {
+        insert_type(groups.entry(start).or_default(), datatype);
+    }
+    for &(start, width) in &reused {
+        if let Ok(datatype) = factory.get_base(width, type_metatype::TYPE_UINT) {
+            insert_type(groups.entry(start).or_default(), datatype);
+        }
+    }
     let mut extents = Vec::new();
     let mut unresolved_index = false;
     for (offset, reference) in &refs {
@@ -455,6 +473,12 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
     }
     let mut recovered = Vec::new();
     for (start, size, mut views) in components {
+        let scalar_parameter = reused.iter()
+            .any(|&(at, width)| contains(start, size, at, width));
+        let local_backing = crate::kuna_localstackviews::backing(fd, start, size);
+        if !full_views && !local_backing && (!scalar_parameter || size > 4) {
+            continue;
+        }
         for assertion in crate::kuna_stackobjectasserts::specs(fd) {
             let at = assertion.address.get_offset();
             if !contains(start, size, at, assertion.size) {
@@ -476,8 +500,14 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
                 });
             }
         }
+        if !full_views && !local_backing && views.iter().any(|view| !matches!(
+            view.datatype.get_metatype(), type_metatype::TYPE_BOOL
+                | type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+        )) {
+            continue;
+        }
         let parameter = !state.covers(start, size)
-            && (views.iter().any(|view| matches!(view.datatype.get_metatype(),
+            && (scalar_parameter || views.iter().any(|view| matches!(view.datatype.get_metatype(),
                 type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION | type_metatype::TYPE_ARRAY
                 | type_metatype::TYPE_PTR | type_metatype::TYPE_FLOAT))
                 || crate::kuna_stackparamviews::needs_backing(fd, start, size))
@@ -507,6 +537,9 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
         }
     }
     for (start, union, parameter) in recovered {
+        if parameter && !crate::kuna_stackparamviews::map_backing(fd, start, Rc::clone(&union)) {
+            continue;
+        }
         let address = Address::new(Rc::clone(space), start);
         let size = union.get_size();
         state.hints_mut().retain(|h| {
@@ -514,9 +547,7 @@ pub fn gather(fd: &mut Funcdata, state: &mut MapState, space: &Rc<AddrSpace>) {
             address.overlap(0, &other, h.size) < 0 && other.overlap(0, &address, size) < 0
         });
         seed_writes(fd, space, start, &union, factory.as_ref());
-        if parameter {
-            crate::kuna_stackparamviews::map_backing(fd, start, union);
-        } else {
+        if !parameter {
             state.add_fixed_type_pub(start, union, SHARED_STORAGE, factory.as_ref());
         }
     }
@@ -627,7 +658,7 @@ fn seed_writes(
 /// Finalize write views after type propagation and symbol naming. Earlier
 /// reconstruction rounds may have seen incomplete source types.
 pub fn prepare_casts(fd: &mut Funcdata) {
-    if !fd.get_arch().stack_views {
+    if !enabled(fd) {
         return;
     }
     let Some(factory) = fd.get_arch().types_rc() else {
@@ -673,7 +704,7 @@ pub fn access_type(
     op: OpId,
     slot: i32,
 ) -> Option<Rc<Datatype>> {
-    if !fd.get_arch().stack_views {
+    if !enabled(fd) {
         return None;
     }
     let v = fd.vbank().get(vn)?;

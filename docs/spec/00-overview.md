@@ -16,6 +16,23 @@ hand-off, the front-ends, the IR containers, the knowledge plane, the two
 pipeline non-linear. The algorithms themselves live in chapters 01–09; this is how
 they are hosted, ordered, configured, and restarted.
 
+Overlapping DWARF stack locals are views of shared bytes. Before seeding local
+symbols, `kuna_dwarfstack` groups connected overlapping intervals into one union
+with an exact byte extent. Locals of one type at one offset (a compiler reusing
+a frame slot for identically typed variables) are a single view, so such a group
+stays one ordinary local under the first debug name. Each remaining view is a
+union member named after its debug local, with a numeric suffix when names
+repeat or collide with the raw `storage_bytes` member. Interior views use padded
+structures at the recorded offsets; generated layout attributes preserve
+nonnatural alignment. Adjacent objects remain separate. Synthetic types are reused only when their complete
+layouts match, and explicit console mappings take precedence over intersecting
+debug recommendations. Debug locals have no lifetime ranges here, so overlapping
+names never justify independent C objects. If a conflicting extent cannot be
+represented, its optional locks are omitted while the original debug facts remain
+available and ordinary machine storage recovery proceeds. Use `stackviews on`
+when overlapping views escape through calls so frame stores and subsequent reads
+retain their shared storage identity.
+
 C declarations supplied through the console or strict CLI assertions retain a
 `volatile` qualifier on the type layer where it was written. `const` and
 `restrict` are accepted and dropped, so they leave emitted C unchanged; the type
@@ -2786,6 +2803,21 @@ and passes that preserved offset to `transfer_varnode_properties`. Using the
 address offset here would swap the masks of a register pair and allow live
 pointer, loop-bound or floating point values to be replaced with zero. This
 applies to integer and FPU lanes.
+
+Lookup-only hash maps keyed by engine ids and image addresses (values the
+decompiler makes or reads from the binary, so they need speed rather than
+collision resistance) hash with
+`decompiler/crates/kuna-decomp/src/infra/kuna_fasthash.rs (FxHasher)`,
+rustc's xor-multiply hash, instead of the standard library's SipHash. They
+are the per-function storage-source, call-transport and storage-write maps of
+`Funcdata` (three lookups for every deleted varnode), the region graph's
+depth-first visit sets, and the visited sets and memos of the callee vote,
+element-pointer, float-register, caller-pointer, partial-global-load,
+index-alias and storage-home walks. None of them is iterated in an order that
+reaches the output (with SipHash that order already differed between runs), so
+the fixed hash changes no result. SipHash cost about 5% of a decompile's
+instructions on these maps; the xor-multiply hash costs a small fraction of
+that.
 
 Partition lookup in `decompiler/crates/kuna-base/src/partmap.rs
 (PartMap::get_value_mut)` returns the value at the greatest split point no

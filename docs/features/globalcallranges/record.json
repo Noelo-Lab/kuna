@@ -1,0 +1,124 @@
+{
+  "issue": 1034,
+  "status": "implemented",
+  "scope_review": "SMALL FEATURE via existing CalleeMemory RETURN-only walker+seed/cache, one new global-range consumer/module and named option. Avoid duplicate16insn symbolic walker. Need record or veto absolute Value::Constant memory accesses (currently ignored), resolve every nonframe memory root to exact constant callsite address, disjoint bothREAD+WRITE, failclosed on missing protoactual/partial root/addresswrap/effectoverride. Existing walker rejects allcalls/userops and only returnscomplete at RETURN, good.",
+  "baseline": {
+    "commit": "d1f98e52e",
+    "fixture_sha256": "c5ef54156f4eff3d94769dd839ca465ad5c302293d397fd452fb805f1b328122",
+    "function": "0x180005650",
+    "direct_ram_write_addresses": 22266,
+    "calls": 2325,
+    "max_rss_kib": 14168728,
+    "elapsed_seconds": 159.67,
+    "result": "150-second per-function budget exceeded in heritage"
+  },
+  "option": "globalcallranges",
+  "flag": "global_call_ranges",
+  "test_name": "kuna-globalcallranges",
+  "opportunity": "kuna-globalcallranges::initialize",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/globalcallranges_x86_64",
+  "selector": "initialize",
+  "func_addr": "0x4016c0",
+  "source_decompiler": "kuna",
+  "change_kind": "performance",
+  "inspiration": "GH-1034 bounded constructor memory effects",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "reporter": {
+    "option_off": {
+      "max_rss_kib": 4214208,
+      "seconds": 17.6,
+      "result": "4096 MiB limit, no C"
+    },
+    "option_on": {
+      "max_rss_kib": 289084,
+      "seconds": 62.07,
+      "result": "C emitted"
+    },
+    "verified_effect_events": 24591,
+    "unknown_values": 0,
+    "incorrect_values": 0,
+    "format": "json",
+    "text_off": {
+      "returncode": 1,
+      "max_rss_kib": 4217512,
+      "seconds": 18.1
+    },
+    "text_default_on": {
+      "max_rss_kib": 264856,
+      "seconds": 65.43,
+      "same_c_as_json": true
+    }
+  },
+  "healthy_functions_unchanged": 2935,
+  "independent_native_executions": 140,
+  "decisions": [
+    "Reuse the complete bounded callee-body summary and cache.",
+    "Resolve every read and write through exact caller argument storage and a definite constant actual.",
+    "Fail closed for unknown, overlapping, wrapping or opaque effects and preserve explicit overrides.",
+    "Keep frame proof activation separate from the new global proof."
+  ],
+  "speed_off_ms": 228.55,
+  "speed_on_ms": 144.91,
+  "speed_delta_pct": -36.6,
+  "speed_samples": 5,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "healthy_speed": {
+    "functions": 2935,
+    "runs": 6,
+    "median_off_seconds": 51.792203,
+    "median_on_seconds": 52.552693,
+    "delta_pct": 1.47,
+    "changed_records": 0,
+    "historical": true
+  },
+  "prerequisite_tree": "3c5ade6c30d1088bf972d5105e1b12ed2c8fa20b",
+  "built_source_tree": "a71cc656e43804f31957d21059c56204d8f00c98",
+  "engine_sha256": "a741e416ca04c11174ecafa63f98c14cd594923f18418ddcb4c85236d16670f5",
+  "composed_healthy": {
+    "prerequisite_tree": "3c5ade6c30d1088bf972d5105e1b12ed2c8fa20b",
+    "functions_unchanged": 2935,
+    "full_comparison": [
+      {
+        "label": "full-off",
+        "mode": "off",
+        "seconds": 39.02366590988822,
+        "functions": 2935
+      },
+      {
+        "label": "full-on",
+        "mode": "on",
+        "seconds": 41.169894103193656,
+        "functions": 2935
+      }
+    ],
+    "sample_functions": 16,
+    "addresses": [
+      "0x180001860",
+      "0x180050e10",
+      "0x1800922f0",
+      "0x180097040",
+      "0x18009ad70",
+      "0x1800a0f30",
+      "0x1800bb080",
+      "0x1800ce100",
+      "0x1800f32b0",
+      "0x1800f4c70",
+      "0x18010de40",
+      "0x180112db0",
+      "0x180121eb0",
+      "0x180138236",
+      "0x180141d40",
+      "0x180145760"
+    ],
+    "repeat_pairs": 5,
+    "median_off_seconds": 38.2186094080098,
+    "median_on_seconds": 38.12521795206703,
+    "delta_pct": -0.24436120881780043,
+    "budget_pct": 5,
+    "within_budget": true
+  }
+}

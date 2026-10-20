@@ -462,7 +462,7 @@ pub fn keeps_store_before_load(data: &Funcdata, op: OpId, vn: VarnodeId) -> bool
         Some(false) => {}
         None => push(start, &mut work),
     }
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = crate::kuna_fasthash::FxHashSet::default();
     while let Some(blk) = work.pop() {
         if !seen.insert(blk) {
             continue;
