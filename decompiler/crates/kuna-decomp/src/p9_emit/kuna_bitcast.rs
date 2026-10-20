@@ -19,6 +19,8 @@ pub(crate) struct Transfer {
 /// An unknown or partial aggregate type from a merged byte-array backing does not
 /// declare the scalar type of a pointer or float read through that storage, so
 /// the value's read-facing type stands in for it.
+/// A float-typed output whose declared view is an unresolved aggregate (a byte-array global)
+/// is judged by its own type, so the scalar float view it prints keeps the reinterpretation.
 pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Transfer> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_CAST {
@@ -44,6 +46,11 @@ pub(crate) fn storage_transfer(fd: &Funcdata, decl_high_type: bool, op: OpId) ->
         .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
     let to_ty = crate::kuna_stackviews::access_type(fd, out, op, -1)
         .or_else(|| declared_member_type(fd, decl_high_type, out))
+        .filter(|ty| {
+            dst.get_type_def_facing().get_metatype() != type_metatype::TYPE_FLOAT
+                || !matches!(ty.get_metatype(), type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
+        })
         .unwrap_or_else(|| fd.vn_type_def_facing(out));
     let from = from_ty.get_metatype();
     let to = to_ty.get_metatype();
