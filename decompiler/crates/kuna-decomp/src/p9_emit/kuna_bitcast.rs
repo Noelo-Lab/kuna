@@ -22,10 +22,10 @@ pub(crate) struct Transfer {
 /// float-typed output whose declared view is an unresolved aggregate (a byte-array global) is
 /// judged by its own type, so the scalar float view it prints keeps the reinterpretation.
 /// `printed` gives the type a `COPY` side prints with when no member names its bytes, which
-/// decides that side outright. A `COPY` side that is a variable of its own, not a member of a
-/// struct or union symbol, whose type is a partial struct or union is declared `undefinedN`
-/// and so is an integer, whatever union field the value resolves to; a `COPY` side printed as
-/// a scalar global has that global's type.
+/// decides that side outright. A `CAST` or `COPY` side that is a variable of its own, not a
+/// member of a struct or union symbol, whose type is a partial struct or union is declared
+/// `undefinedN` and so is an integer, whatever union field the value resolves to; a `COPY`
+/// side printed as a scalar global has that global's type.
 pub(crate) fn storage_transfer(
     fd: &Funcdata,
     decl_high_type: bool,
@@ -71,8 +71,7 @@ pub(crate) fn storage_transfer(
         })
     };
     let undefined = |id: VarnodeId, own: &Datatype| {
-        let declared = copy
-            && partial(own)
+        let declared = partial(own)
             && !aggregate(id)
             && crate::printc::declared_variable_type(fd, decl_high_type, id).is_some_and(|ty| partial(&ty));
         declared
@@ -89,6 +88,7 @@ pub(crate) fn storage_transfer(
     let slot = operation.get_slot(input);
     let from_ty = copy.then(|| printed(input, slot)).flatten().unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, input, op, slot)
+            .or_else(|| undefined(input, src.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, input))
             .filter(|ty| !partial(ty))
             .filter(|ty| {
@@ -103,6 +103,7 @@ pub(crate) fn storage_transfer(
     });
     let to_ty = copy.then(|| printed(out, -1)).flatten().unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, out, op, -1)
+            .or_else(|| undefined(out, dst.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, out))
             .filter(|ty| !partial(ty))
             .filter(|ty| {

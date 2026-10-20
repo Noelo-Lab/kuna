@@ -240,6 +240,13 @@ rather than `r.tag = x;`, and a member holding a float's bits that is copied out
 reads them back rather than converting the integer. A `COPY` whose two sides
 print the same kind is unchanged.
 
+The same `undefinedN` rule decides each side of a same-width storage `CAST`,
+ahead of the scalar piece a frame-backed declaration would resolve to. When a
+register holds both a union word and such a variable, the variable is still an
+integer, so a float-typed `CAST` between it and an integer prints as a plain
+integer conversion. Treating it as a float would convert the integer's value
+rather than keep its bits.
+
 A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
 storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
 The selected storage view or declared scalar member type governs this decision,
