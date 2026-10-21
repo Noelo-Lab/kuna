@@ -1393,7 +1393,7 @@ ELF, a flag check whose strings are used directly and through a pointer), `struc
 ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
 must not move the view), `frames-O2.elf` (x86-64 ELF built with `-O2`, whose `read_name`
 copies `RSP` into `RBP` after reserving its locals: no frame pointer), `frames-asm.elf`
-(assembled x86-64: a shrink-wrapped prologue, a stack-probe loop, a CMOV between pushes). **PE** executables were
+(assembled x86-64: shrink-wrapped prologues, a stack-probe loop, a CMOV between pushes). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

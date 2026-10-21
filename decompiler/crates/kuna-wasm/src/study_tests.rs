@@ -702,7 +702,8 @@ fn reg(register: &str, offset: i64) -> Value {
 /// stack through: RBP at the saved RBP after `PUSH RBP; MOV RBP,RSP`, also in a
 /// leaf that pops it before returning; no frame pointer when optimized code
 /// copies RSP into RBP after reserving its locals; the frame a shrink-wrapped
-/// prologue sets up after its early-exit test, and past a CMOV between pushes;
+/// prologue sets up after its early-exit test or a conditional tail call, and
+/// past a CMOV between pushes;
 /// no stack pointer once a probe loop moves it; x29 at AArch64's frame record, read through sp when the code
 /// does, and none in a leaf that keeps no record.
 #[test]
@@ -714,6 +715,7 @@ fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
     assert_eq!(frame_of("frames-asm.elf", "shrink_wrapped"), (Value::Null, reg("rsp", -0x28), sp.clone()));
     assert_eq!(frame_of("frames-asm.elf", "probed"), (Value::Null, Value::Null, Value::Null));
     assert_eq!(frame_of("frames-asm.elf", "interleaved"), (Value::Null, reg("rsp", -0x20), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "tail_first"), (Value::Null, reg("rsp", -0x28), sp.clone()));
     assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30), sp.clone()));
     assert_eq!(frame_of("sample_aarch64.o", "sum_to"), (Value::Null, reg("sp", -0x20), sp));
 }

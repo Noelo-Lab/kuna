@@ -5,8 +5,9 @@
 //! The prologue is read off the raw p-code from the entry, tracking which
 //! registers hold `SP@entry + k` and which hold constants. Until the stack
 //! pointer first moves, the run follows a forward jump and both ways of a
-//! forward conditional one (a shrink-wrapped prologue sets the frame up after
-//! an early-exit test); it ends, before the instruction that does it, at any
+//! forward conditional one, and passes any other conditional exit (a
+//! shrink-wrapped prologue sets the frame up after an early-exit test or a
+//! conditional return); it ends, before the instruction that does it, at any
 //! other control flow, a stack-pointer change that releases stack (an
 //! epilogue) and one that stores anything but a register's entry value (an
 //! argument push). The stack pointer
@@ -203,6 +204,8 @@ impl Run {
             (OpCode::CPUI_INT_ADD, Const(x), Some(Const(c))) => Some(fit(x.wrapping_add(c))),
             (OpCode::CPUI_INT_SUB, Stack(x), Some(Const(c))) => Some(Stack(x.wrapping_sub(c))),
             (OpCode::CPUI_INT_SUB, Const(x), Some(Const(c))) => Some(fit(x.wrapping_sub(c))),
+            (OpCode::CPUI_INT_MULT, Const(x), Some(Const(c))) => Some(fit(x.wrapping_mul(c))),
+            (OpCode::CPUI_INT_LEFT, Const(x), Some(Const(c))) if (0..64).contains(&c) => Some(fit(x << c)),
             (OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR, v, Some(Const(0))) => Some(v),
             (OpCode::CPUI_INT_OR | OpCode::CPUI_INT_AND, v, _) if same => Some(v),
             _ => None,
@@ -340,22 +343,33 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
             let Some((ops, len)) = decode(path.at) else { break };
             let before = path.run.stack(&sp);
             let fall = path.at.wrapping_add(len);
-            let flow = ops.iter().find(|op| leaves(op, path.at, fall));
-            let next_at = match flow {
+            let flow = ops.iter().position(|op| leaves(op, path.at, fall));
+            let skippable = flow.is_some_and(|i| {
+                ops[..i].iter().any(|(opc, _, ins)| *opc == OpCode::CPUI_CBRANCH && code_target(ins) == Some(fall))
+            });
+            let next_at = match flow.map(|i| &ops[i]) {
                 None => fall,
                 Some((opc, _, ins)) if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) => {
                     let target = code_target(ins).unwrap_or(u64::MAX);
+                    let conditional = *opc == OpCode::CPUI_CBRANCH || skippable;
                     if target <= path.at {
                         let looped = path.passed.iter().find(|(a, _)| *a == target).map(|(_, s)| *s);
                         if looped.is_some_and(|s| s != before) {
                             path.sp_frame = None;
+                            break;
                         }
+                        if !conditional || path.moved {
+                            break;
+                        }
+                        fall
+                    } else if path.moved {
                         break;
-                    }
-                    if !in_body.contains(&target) || path.moved {
-                        break;
-                    }
-                    if *opc == OpCode::CPUI_BRANCH {
+                    } else if !in_body.contains(&target) {
+                        if !conditional {
+                            break;
+                        }
+                        fall
+                    } else if !conditional {
                         target
                     } else {
                         if forks < 8 {
@@ -370,6 +384,7 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
                         fall
                     }
                 }
+                Some(_) if skippable && !path.moved => fall,
                 Some(_) => break,
             };
             let ops: Vec<Op> = ops.into_iter().filter(|op| !is_flow(op.0)).collect();

@@ -2,7 +2,8 @@
 # `shrink_wrapped` tests its argument before it saves a register and reserves
 # its locals; `probed` reserves a large frame a page at a time through a probe
 # loop, as -fstack-clash-protection does; `interleaved` puts a CMOV (a branch to
-# the next instruction in SLEIGH) between its pushes.
+# the next instruction in SLEIGH) between its pushes; `tail_first` leaves
+# through a conditional tail call before it sets its frame up.
 #
 # Rebuild:  gcc -nostdlib -static -o frames-asm.elf frames-asm.s
 	.intel_syntax noprefix
@@ -62,6 +63,21 @@ interleaved:
 	ret
 	.size interleaved, .-interleaved
 
+	.globl tail_first
+	.type tail_first, @function
+tail_first:
+	test rdi, rdi
+	jne fill
+	push rbx
+	sub rsp, 0x20
+	mov rdi, rsp
+	call fill
+	mov eax, dword ptr [rsp + 0x8]
+	add rsp, 0x20
+	pop rbx
+	ret
+	.size tail_first, .-tail_first
+
 	.globl fill
 	.type fill, @function
 fill:
@@ -77,6 +93,7 @@ _start:
 	call shrink_wrapped
 	call probed
 	call interleaved
+	call tail_first
 	mov eax, 60
 	xor edi, edi
 	syscall
