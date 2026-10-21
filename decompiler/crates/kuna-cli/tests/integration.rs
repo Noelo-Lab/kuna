@@ -590,3 +590,6 @@ mod float_integer_truncation;
 
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
+
+#[path = "usepoint_pointer_constants.rs"]
+mod usepoint_pointer_constants;
