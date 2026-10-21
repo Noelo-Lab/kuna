@@ -594,4 +594,5 @@ mod intermediate_float_rounding;
 #[path = "implied_word_casts.rs"]
 mod implied_word_casts;
 
+#[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;
