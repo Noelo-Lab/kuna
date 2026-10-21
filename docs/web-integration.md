@@ -218,7 +218,8 @@ Compact JSON, every address a number plus an `_hex` twin:
    instructions:[{address, address_hex, offset, size, bytes, mnemonic, operands, text,
                   file_offset, lines}],
    instructions_truncated,
-   frame:{frame_pointer: null | {register, offset}, stack_pointer: null | {register, offset}}},
+   frame:{frame_pointer: null | {register, offset}, stack_pointer: null | {register, offset},
+          base: "frame_pointer" | "stack_pointer" | null}},
  assertions:[…]}
 ```
 
@@ -257,18 +258,25 @@ argument set-up that was folded away maps to nothing.
 `frame` says where the function's prologue leaves its frame pointer and its stack pointer,
 each as `{register, offset}`: the register as the listing names it, lower case, and its
 value minus the stack pointer at entry, which is where every `// stack - 0x58` comment
-counts from (`kuna_console::kuna_framebase`). It is read off the raw p-code of the entry's
-straight-line run, which ends before any control flow, before an instruction that gives
-stack back and before one that moves the stack pointer while storing anything but a
-register's entry value (an argument push). `stack_pointer` is where the frame setup left
-the stack pointer (`null` once it is realigned, as `AND RSP,-16` does). `frame_pointer` is
-the target's conventional one (`rbp`/`ebp`, `x29`, `r11` or `r7`, `s8`, `s0`, `r31`, `a6`)
-only when the run sets it up in that target's frame shape — at the frame record holding
-its own saved value (x86, AArch64, ARM, 68000), as a copy of the stack pointer (MIPS,
-PowerPC, GCC's Thumb frames) or at the stack pointer at entry (RISC-V); optimized code
-that copies `RSP` into `RBP` after reserving its locals is using `RBP` as an ordinary
-register and has none. After `PUSH RBP; MOV RBP,RSP; SUB RSP,0x50` it is
-`{frame_pointer:{register:"rbp", offset:-8}, stack_pointer:{register:"rsp", offset:-88}}`.
+counts from (`kuna_console::kuna_framebase`). It is read off the raw p-code from the
+entry. Until the stack pointer first moves, the walk follows forward jumps and both ways
+of a forward conditional one, since a shrink-wrapped prologue tests its argument before
+it saves anything. It ends before any other control flow, before an instruction that
+gives stack back and before one that moves the stack pointer while storing anything but
+a register's entry value (an argument push). `stack_pointer` is the deepest place the
+frame setup leaves the stack pointer on any path, `null` once a path realigns it (`AND
+RSP,-16`) or moves it in a loop (a `-fstack-clash-protection` probe). `frame_pointer` is
+the target's conventional one (`rbp`/`ebp`, `x29`, `r11` or `r7`, `s8`, `s0`, `r31`,
+`a6`) only when the walk sets it up in that target's frame shape: at the frame record
+holding its own saved value (x86, AArch64, ARM, 68000), as a copy of the stack pointer
+(MIPS, PowerPC, GCC's Thumb frames) or at the stack pointer at entry (RISC-V). Optimized
+code that copies `RSP` into `RBP` after reserving its locals is using `RBP` as an
+ordinary register and has none. `base` names the one the code reads its stack through:
+on x86 the frame pointer whenever there is one; elsewhere whichever more of the
+function's instructions read, because clang's ARM and AArch64 frames keep a frame pointer
+but reach most locals through `sp`; `null` when neither is known. After `PUSH RBP; MOV
+RBP,RSP; SUB RSP,0x50` it is `{frame_pointer:{register:"rbp", offset:-8},
+stack_pointer:{register:"rsp", offset:-88}, base:"frame_pointer"}`.
 
 `read <0xADDR> <LEN>` returns `{binary, address, address_hex, size, bytes, file_offset,
 assertions}`: up to 64 KiB, stopping where the mapped run holding the address ends (the
@@ -632,8 +640,8 @@ assembly addresses it: the engine's `// stack - 0x58` (from the stack pointer at
 reads `// rbp - 0x50` when the function keeps a frame pointer, and `// rsp + 0x10` from
 the stack pointer after the prologue when it does not, each stack piece of a combined
 comment (`// rax | stack - 0x60`) alike (`render-c.js` `rebaseStackComments`, from
-`inspect`'s `frame`; a function with neither keeps the engine's text). Where it lives in
-words follows ("the stack, 80 bytes below RBP"). The *Download C code* files are the decompiler's own
+`inspect`'s `frame.base`; a function with neither keeps the engine's text). Where it
+lives in words follows ("the stack, 80 bytes below RBP"). The *Download C code* files are the decompiler's own
 output, as the command line writes it, and keep them. `e` opens and closes the panel. *This function*: its inputs and
 return type in words, *Calls and callers*, *Variables*, and behind disclosures the
 variables only the debug info has and the types. *Your changes*: one plain line per edit
@@ -1384,7 +1392,8 @@ ELF, a flag check whose strings are used directly and through a pointer), `struc
 (x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`), `long.elf` (x86-64
 ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
 must not move the view), `frames-O2.elf` (x86-64 ELF built with `-O2`, whose `read_name`
-copies `RSP` into `RBP` after reserving its locals: no frame pointer). **PE** executables were
+copies `RSP` into `RBP` after reserving its locals: no frame pointer), `frames-asm.elf`
+(assembled x86-64: a shrink-wrapped prologue and a stack-probe loop). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

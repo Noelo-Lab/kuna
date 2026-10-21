@@ -2,12 +2,16 @@
 //! run, as offsets from the stack pointer at entry (the origin of the
 //! decompiler's stack space, so of every `// stack - 0x58` comment).
 //!
-//! The prologue is read off the raw p-code of the entry's straight-line run,
-//! tracking which registers hold `SP@entry + k` and which hold constants. The run
-//! ends, before the instruction that does it, at any control flow, at a
-//! stack-pointer change that releases stack (an epilogue) and at one that stores
-//! anything but a register's entry value (an argument push). The stack pointer
-//! is the value the frame setup left it at.
+//! The prologue is read off the raw p-code from the entry, tracking which
+//! registers hold `SP@entry + k` and which hold constants. Until the stack
+//! pointer first moves, the run follows a forward jump and both ways of a
+//! forward conditional one (a shrink-wrapped prologue sets the frame up after
+//! an early-exit test); it ends, before the instruction that does it, at any
+//! other control flow, a stack-pointer change that releases stack (an
+//! epilogue) and one that stores anything but a register's entry value (an
+//! argument push). The stack pointer
+//! is the deepest value the frame setup leaves it at on any path, and unknown
+//! when a path realigns it (`AND RSP,-16`) or moves it in a loop (a stack probe).
 //!
 //! The frame pointer is the target's conventional one (`RBP`, `x29`, `r11`/`r7`,
 //! `s8`, `s0`, `r31`, `A6`) when the run sets it up in that target's frame
@@ -15,6 +19,11 @@
 //! AArch64, ARM, 68000), a copy of the stack pointer (MIPS, PowerPC, GCC's Thumb
 //! frames), or the stack pointer at entry (RISC-V). Optimized code that keeps a
 //! pointer to a local in the same register (`LEA RBP,[RSP + 0x30]`) has none.
+//!
+//! The base the stack is read through is the frame pointer on x86 whenever there
+//! is one. Elsewhere it is the register more of the function's instructions
+//! read: clang's ARM and AArch64 frames keep a frame pointer but reach most
+//! locals through `sp`.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
@@ -36,12 +45,30 @@ pub struct FrameRegister {
     pub offset: i64,
 }
 
-/// The frame pointer, when the function sets one up, and the stack pointer
-/// after the frame setup, when the prologue leaves it at a known offset.
+/// Which of the two registers the function's code addresses its stack through.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Base {
+    FramePointer,
+    StackPointer,
+}
+
+impl Base {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Base::FramePointer => "frame_pointer",
+            Base::StackPointer => "stack_pointer",
+        }
+    }
+}
+
+/// The frame pointer, when the function sets one up, the stack pointer after
+/// the frame setup, when the prologue leaves it at a known offset, and which of
+/// them the function addresses its stack through.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FrameBases {
     pub frame_pointer: Option<FrameRegister>,
     pub stack_pointer: Option<FrameRegister>,
+    pub base: Option<Base>,
 }
 
 type Key = (i32, u64, u32);
@@ -230,9 +257,30 @@ impl Run {
     }
 }
 
+/// Where a branch at `at` goes in the code space, when it names an address there.
+fn code_target(ins: &[VarnodeData]) -> Option<u64> {
+    let v = ins.first()?;
+    (v.space.as_ref()?.get_type() != spacetype::IPTR_CONSTANT).then_some(v.offset)
+}
+
+/// One path of the prologue run: its state, where it is, the stack pointer the
+/// frame setup has left on it (`None` once it is unknown), whether each frame
+/// pointer candidate was last written as a copy of the stack pointer, the stack
+/// pointer at each address it has passed, and whether it has moved it yet.
+#[derive(Clone)]
+struct Path {
+    run: Run,
+    at: u64,
+    sp_frame: Option<i64>,
+    copied_sp: Vec<bool>,
+    passed: Vec<(u64, Option<i64>)>,
+    moved: bool,
+}
+
 /// The frame pointer and stack pointer of the function at `entry` (an engine
-/// byte address), read off its prologue.
-pub fn frame_bases(prog: &ConsoleProgram, entry: u64) -> FrameBases {
+/// byte address), read off its prologue; `body` is the function's instruction
+/// addresses, the only places a branch in the run is followed to.
+pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBases {
     let arch = prog.arch();
     let Some(stack) = arch.manage().get_stack_space() else { return FrameBases::default() };
     let Ok(sp) = stack.get_spacebase(0) else { return FrameBases::default() };
@@ -242,6 +290,7 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64) -> FrameBases {
         return FrameBases::default();
     };
     let grows_down = stack.stack_grows_negative();
+    let deeper = |a: i64, b: i64| if grows_down { a < b } else { a > b };
     let translate = arch.translate();
     let mut fields = arch.archid.split(':');
     let processor = fields.next().unwrap_or("");
@@ -253,64 +302,155 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64) -> FrameBases {
         .map(|r| VarnodeData { space: r.space, offset: r.offset, size: r.size })
         .filter(|r| key(r).is_some_and(|k| k != sp_key))
         .collect();
-
-    let mut run = Run { known: vec![(sp_key, Val::Stack(0))], ..Run::default() };
-    let mut sp_frame = Some(0i64);
-    let mut copied_sp = vec![false; candidates.len()];
-    let mut at = entry;
-    for _ in 0..MAX_PROLOGUE {
+    let in_body: BTreeSet<u64> = body.iter().copied().collect();
+    let decode = |at: u64| {
         let mut emit = OpsEmit::default();
         let addr = Address::new(Rc::clone(&code_space), at);
         let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             translate.one_instruction(&mut emit, &addr)
         }));
-        let Ok(Ok(len)) = decoded else { break };
-        if len <= 0 || emit.ops.iter().any(|(opc, _, _)| is_flow(*opc)) {
-            break;
+        match decoded {
+            Ok(Ok(len)) if len > 0 => Some((emit.ops, len as u64)),
+            _ => None,
         }
-        let (next, entry_stores) = run.step(&emit.ops);
-        let (before, after) = (run.stack(&sp), next.stack(&sp));
-        if after != before {
-            match (before, after) {
-                (Some(b), Some(a)) if (a < b) == grows_down && entry_stores => sp_frame = Some(a),
-                (_, None) => {
-                    sp_frame = None;
-                    break;
+    };
+
+    let start = Path {
+        run: Run { known: vec![(sp_key, Val::Stack(0))], ..Run::default() },
+        at: entry,
+        sp_frame: Some(0),
+        copied_sp: vec![false; candidates.len()],
+        passed: Vec::new(),
+        moved: false,
+    };
+    let mut work = vec![start];
+    let mut ended: Vec<Path> = Vec::new();
+    let mut forks = 0;
+    while let Some(mut path) = work.pop() {
+        for _ in 0..MAX_PROLOGUE {
+            let Some((ops, len)) = decode(path.at) else { break };
+            let before = path.run.stack(&sp);
+            let flow = ops.iter().find(|(opc, _, ins)| is_flow(*opc) && (!matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) || code_target(ins).is_some()));
+            let next_at = match flow {
+                None => path.at.wrapping_add(len),
+                Some((opc, _, ins)) if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) => {
+                    let target = code_target(ins).unwrap_or(u64::MAX);
+                    if target <= path.at {
+                        let looped = path.passed.iter().find(|(a, _)| *a == target).map(|(_, s)| *s);
+                        if looped.is_some_and(|s| s != before) {
+                            path.sp_frame = None;
+                        }
+                        break;
+                    }
+                    if !in_body.contains(&target) || path.moved {
+                        break;
+                    }
+                    if *opc == OpCode::CPUI_BRANCH {
+                        target
+                    } else {
+                        if forks < 8 {
+                            forks += 1;
+                            let mut fork = path.clone();
+                            fork.at = target;
+                            fork.passed.push((path.at, before));
+                            let ops: Vec<Op> = ops.iter().filter(|op| !is_flow(op.0)).cloned().collect();
+                            fork.run = fork.run.step(&ops).0;
+                            work.push(fork);
+                        }
+                        path.at.wrapping_add(len)
+                    }
                 }
-                _ => break,
+                Some(_) => break,
+            };
+            let ops: Vec<Op> = ops.into_iter().filter(|op| !is_flow(op.0)).collect();
+            let (next, entry_stores) = path.run.step(&ops);
+            let after = next.stack(&sp);
+            if after != before {
+                path.moved = true;
+                match (before, after) {
+                    (Some(b), Some(a)) if deeper(a, b) && entry_stores => path.sp_frame = path.sp_frame.map(|_| a),
+                    (_, None) => {
+                        path.sp_frame = None;
+                        break;
+                    }
+                    _ => break,
+                }
             }
-        }
-        for (i, c) in candidates.iter().enumerate() {
-            let Some(k) = key(c) else { continue };
-            if next.written.contains(&k) && (!run.written.contains(&k) || next.val(c) != run.val(c)) {
-                let value = next.stack(c);
-                copied_sp[i] = value.is_some() && (value == before || value == after);
+            for (i, c) in candidates.iter().enumerate() {
+                let Some(k) = key(c) else { continue };
+                if next.written.contains(&k) && (!path.run.written.contains(&k) || next.val(c) != path.run.val(c)) {
+                    let value = next.stack(c);
+                    path.copied_sp[i] = value.is_some() && (value == before || value == after);
+                }
             }
+            path.passed.push((path.at, before));
+            path.run = next;
+            path.at = next_at;
         }
-        run = next;
-        at = at.wrapping_add(len as u64);
+        ended.push(path);
     }
 
     let word = sp.size as i64;
-    let set_up = |i: usize, c: &VarnodeData, fp: i64| {
-        let saved = key(c).and_then(|k| run.saved.iter().find(|(r, _)| *r == k).map(|(_, at)| *at));
-        let record = saved.is_some_and(|s| fp == s || fp == s + word);
-        match shape {
-            Shape::Record => record,
-            Shape::RecordOrSpCopy => record || copied_sp[i],
-            Shape::SpCopy => copied_sp[i],
-            Shape::EntrySp => fp == 0,
-        }
+    let frame_pointer = |path: &Path| {
+        candidates.iter().enumerate().find_map(|(i, c)| {
+            let fp = path.run.stack(c)?;
+            let saved = key(c).and_then(|k| path.run.saved.iter().find(|(r, _)| *r == k).map(|(_, at)| *at));
+            let record = saved.is_some_and(|s| fp == s || fp == s + word);
+            let set_up = match shape {
+                Shape::Record => record,
+                Shape::RecordOrSpCopy => record || path.copied_sp[i],
+                Shape::SpCopy => path.copied_sp[i],
+                Shape::EntrySp => fp == 0,
+            };
+            set_up.then_some((c, fp))
+        })
     };
+    let unknown = ended.iter().any(|p| p.sp_frame.is_none());
+    let deepest = ended
+        .iter()
+        .filter(|p| p.sp_frame.is_some())
+        .reduce(|a, b| match (a.sp_frame, b.sp_frame) {
+            (Some(x), Some(y)) if deeper(y, x) || (y == x && frame_pointer(a).is_none()) => b,
+            _ => a,
+        });
+    let chosen = deepest.filter(|_| !unknown).or_else(|| ended.iter().find(|p| frame_pointer(p).is_some()));
     let name = |v: &VarnodeData| match v.space.as_ref() {
         Some(space) => translate.get_register_name(space, v.offset, v.size as i32).to_ascii_lowercase(),
         None => String::new(),
     };
+    let fp = chosen.and_then(frame_pointer);
+    let stack_pointer = if unknown { None } else { deepest.and_then(|p| p.sp_frame) };
+    let base = match (&fp, stack_pointer) {
+        (Some((c, _)), Some(_)) if processor != "x86" => {
+            let (fp_uses, sp_uses) = uses(body, &decode, c, &sp);
+            Some(if fp_uses >= sp_uses { Base::FramePointer } else { Base::StackPointer })
+        }
+        (Some(_), _) => Some(Base::FramePointer),
+        (None, Some(_)) => Some(Base::StackPointer),
+        (None, None) => None,
+    };
     FrameBases {
-        frame_pointer: candidates.iter().enumerate().find_map(|(i, c)| {
-            let fp = run.stack(c)?;
-            set_up(i, c, fp).then(|| FrameRegister { register: name(c), offset: fp })
-        }),
-        stack_pointer: sp_frame.map(|offset| FrameRegister { register: name(&sp), offset }),
+        frame_pointer: fp.map(|(c, offset)| FrameRegister { register: name(c), offset }),
+        stack_pointer: stack_pointer.map(|offset| FrameRegister { register: name(&sp), offset }),
+        base,
     }
+}
+
+/// How many of `body`'s instructions read the frame pointer and how many the
+/// stack pointer, leaving out control flow and whatever writes either one (the
+/// prologue, the epilogue, pushes and pops).
+fn uses(body: &[u64], decode: &dyn Fn(u64) -> Option<(Vec<Op>, u64)>, fp: &VarnodeData, sp: &VarnodeData) -> (usize, usize) {
+    let (Some(fk), Some(sk)) = (key(fp), key(sp)) else { return (0, 0) };
+    let (mut fp_uses, mut sp_uses) = (0, 0);
+    for &at in body {
+        let Some((ops, _)) = decode(at) else { continue };
+        let touches = |k: Key, op: &Op| op.1.as_ref().and_then(key).is_some_and(|o| overlaps(o, k));
+        if ops.iter().any(|op| is_flow(op.0) || touches(fk, op) || touches(sk, op)) {
+            continue;
+        }
+        let reads = |k: Key| ops.iter().any(|op| op.2.iter().filter_map(key).any(|i| overlaps(i, k)));
+        fp_uses += reads(fk) as usize;
+        sp_uses += reads(sk) as usize;
+    }
+    (fp_uses, sp_uses)
 }

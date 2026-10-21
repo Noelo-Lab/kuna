@@ -93,12 +93,13 @@ export function normalizeInspect(result) {
 }
 
 /**
- * The register a function's stack locations count from: its frame pointer when
- * it sets one up, else the stack pointer once its prologue has run (`inspect`'s
- * `frame`); null when neither is known.
+ * The register a function's stack locations count from, `{register, offset}`:
+ * the one `inspect`'s `frame.base` says the code reads its stack through (on
+ * x86 the frame pointer whenever there is one, else the stack pointer once the
+ * prologue has run); null when neither is known.
  */
 export function frameBase(frame) {
-  return frame?.frame_pointer || frame?.stack_pointer || null;
+  return (frame?.base ? frame[frame.base] : frame?.frame_pointer || frame?.stack_pointer) || null;
 }
 
 /** An offset from the stack pointer at entry as `base` sees it: entry − 0x58 with RBP at entry − 8 is `rbp - 0x50`. */

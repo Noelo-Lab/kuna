@@ -836,7 +836,8 @@
    "stack_pointer": {
     "register": "rsp",
     "offset": -40
-   }
+   },
+   "base": "frame_pointer"
   }
  },
  "assertions": []

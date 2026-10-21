@@ -687,10 +687,10 @@ fn uses_names_the_instructions_that_use_the_data() {
     }
 }
 
-fn frame_of(name: &str, function: &str) -> (Value, Value) {
+fn frame_of(name: &str, function: &str) -> (Value, Value, Value) {
     let doc = run_on(name, "inspect", &[function], &[]).unwrap_or_else(|e| panic!("inspect {function}: {e}"));
     let frame = &doc["function"]["frame"];
-    (frame["frame_pointer"].clone(), frame["stack_pointer"].clone())
+    (frame["frame_pointer"].clone(), frame["stack_pointer"].clone(), frame["base"].clone())
 }
 
 fn reg(register: &str, offset: i64) -> Value {
@@ -698,15 +698,21 @@ fn reg(register: &str, offset: i64) -> Value {
 }
 
 /// `frame` says where the prologue leaves the frame pointer and the stack
-/// pointer, from the stack pointer at entry: RBP at the saved RBP after `PUSH
-/// RBP; MOV RBP,RSP`, also in a leaf that pops it before returning; no frame
-/// pointer when optimized code copies RSP into RBP after reserving its locals;
-/// x29 at AArch64's frame record, and none in a leaf that keeps no record.
+/// pointer, from the stack pointer at entry, and which one the code reads its
+/// stack through: RBP at the saved RBP after `PUSH RBP; MOV RBP,RSP`, also in a
+/// leaf that pops it before returning; no frame pointer when optimized code
+/// copies RSP into RBP after reserving its locals; the frame a shrink-wrapped
+/// prologue sets up after its early-exit test; no stack pointer once a probe
+/// loop moves it; x29 at AArch64's frame record, read through sp when the code
+/// does, and none in a leaf that keeps no record.
 #[test]
 fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
-    assert_eq!(frame_of("sample.elf", "main"), (reg("rbp", -8), reg("rsp", -0x28)));
-    assert_eq!(frame_of("sample.elf", "add"), (reg("rbp", -8), reg("rsp", -8)));
-    assert_eq!(frame_of("frames-O2.elf", "read_name"), (Value::Null, reg("rsp", -0x58)));
-    assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30)));
-    assert_eq!(frame_of("sample_aarch64.o", "sum_to"), (Value::Null, reg("sp", -0x20)));
+    let (fp, sp) = (Value::from("frame_pointer"), Value::from("stack_pointer"));
+    assert_eq!(frame_of("sample.elf", "main"), (reg("rbp", -8), reg("rsp", -0x28), fp.clone()));
+    assert_eq!(frame_of("sample.elf", "add"), (reg("rbp", -8), reg("rsp", -8), fp.clone()));
+    assert_eq!(frame_of("frames-O2.elf", "read_name"), (Value::Null, reg("rsp", -0x58), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "shrink_wrapped"), (Value::Null, reg("rsp", -0x28), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "probed"), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30), sp.clone()));
+    assert_eq!(frame_of("sample_aarch64.o", "sum_to"), (Value::Null, reg("sp", -0x20), sp));
 }

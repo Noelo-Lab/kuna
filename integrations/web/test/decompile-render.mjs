@@ -88,9 +88,10 @@ checks.push('normalizeInspect (inspect + decompile)');
 // ── stack comments against the frame base ─────────────────────────────────
 const RBP = { register: 'rbp', offset: -8 };
 const RSP = { register: 'rsp', offset: -0x68 };
-assert.equal(frameBase({ frame_pointer: RBP, stack_pointer: RSP }), RBP, 'the frame pointer when there is one');
-assert.equal(frameBase({ frame_pointer: null, stack_pointer: RSP }), RSP, 'else the stack pointer');
-assert.equal(frameBase({ frame_pointer: null, stack_pointer: null }), null);
+assert.equal(frameBase({ frame_pointer: RBP, stack_pointer: RSP, base: 'frame_pointer' }), RBP, 'the register the code reads its stack through');
+assert.equal(frameBase({ frame_pointer: RBP, stack_pointer: RSP, base: 'stack_pointer' }), RSP, 'clang\'s ARM frames keep a frame pointer but read sp');
+assert.equal(frameBase({ frame_pointer: null, stack_pointer: RSP, base: 'stack_pointer' }), RSP);
+assert.equal(frameBase({ frame_pointer: null, stack_pointer: null, base: null }), null);
 assert.equal(frameBase(undefined), null);
 assert.deepEqual([rebaseStack(-0x58, RBP), rebaseStack(-0x58, RSP), rebaseStack(0x10, RBP), rebaseStack(-8, RBP)],
   ['rbp - 0x50', 'rsp + 0x10', 'rbp + 0x18', 'rbp + 0x0']);
@@ -120,7 +121,7 @@ const sumToFx = normalizeInspect(fixture('inspect-sum_to.json'));
 const sumToRendered = renderC(sumToFx);
 assert.match(sumToRendered, /rbp - 0xc/);
 assert.doesNotMatch(sumToRendered, /stack - 0x/);
-assert.deepEqual(sumToFx.frame, { frame_pointer: RBP, stack_pointer: { register: 'rsp', offset: -8 } });
+assert.deepEqual(sumToFx.frame, { frame_pointer: RBP, stack_pointer: { register: 'rsp', offset: -8 }, base: 'frame_pointer' });
 assert.equal(normalizeInspect(fixture('inspect-add.json')).frame.frame_pointer.register, 'rbp', 'a leaf that pops RBP before RET still has its frame pointer');
 checks.push('stack comments rebased on the frame pointer, else the stack pointer');
 
