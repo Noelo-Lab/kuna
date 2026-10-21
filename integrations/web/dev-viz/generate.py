@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Export a reproducible, public development snapshot from tracked Kuna evidence.
 
-Requires Python 3.11+ and complete git history. No GitHub API, private campaign
-state, commit author emails, or local binary paths are included in the output.
-Community credits use public GitHub handles from a reviewed record file.
+Requires Python 3.11+, complete git history, and cargo (the architecture section
+reuses the observatory's atlas generator, scripts/observatory/atlas.py). No
+GitHub API, private campaign state, commit author emails, or local binary paths
+are included in the output. Community credits use public GitHub handles from a
+reviewed record file.
 """
 from __future__ import annotations
 
@@ -15,10 +17,13 @@ import math
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tomllib
 
 
 REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO))
+from scripts.observatory import atlas  # noqa: E402
 CATALOG = "decompiler/crates/kuna-decomp/phases.toml"
 PHASES = [
     ("P0", "Knowledge", "Configuration, symbols & assertions"),
@@ -143,6 +148,49 @@ def frontmatter(text: str) -> dict[str, str]:
             if (m := re.match(r"([\w-]+):\s*(.+)", line))}
 
 
+def plain(text: str | None) -> str:
+    text = (text or "").replace("`", "")
+    return text[:1].upper() + text[1:]
+
+
+def architecture(repo: Path) -> dict:
+    data = atlas.generate(root=repo)
+    phases = {}
+    for phase in data["phases"]:
+        phases[phase["id"]] = {
+            "title": phase["name"], "folder": phase["folder"], "role": plain(phase["readsAs"]),
+            "spec": phase["specChapter"], "files": phase["files"], "loc": phase["loc"],
+            "kunaLoc": sum(m["loc"] for m in phase["modules"] if m["native"]),
+            "subphases": len(phase["subphases"]),
+            "modules": [{"file": m["file"], "loc": m["loc"], "kuna": m["native"]}
+                        for m in phase["modules"] if not re.search(r"(^|/)tests?(\.rs|/)", m["file"])][:4],
+        }
+    passes, loops, open_loops = [], [], []
+    for p in data["schedule"]["passes"]:
+        while open_loops and p["depth"] <= open_loops[-1]["depth"]:
+            loop = open_loops.pop()
+            loop["end"] = len(passes)
+        if p["repeat"] and p["depth"] <= 2:
+            loop = {"name": p["name"], "depth": p["depth"], "start": len(passes)}
+            loops.append(loop)
+            open_loops.append(loop)
+        if p["kind"] in ("action", "rule") and not p["disabled"]:
+            passes.append({"name": p["name"], "kind": p["kind"], "group": p["group"],
+                           "phase": next((x for x in (p["phase"], p["folderPhase"]) if x in phases), "shared"),
+                           "file": p["definedIn"]})
+    for loop in open_loops:
+        loop["end"] = len(passes)
+    return {
+        "phases": phases,
+        "shared": [{"folder": f["folder"], "role": plain(f["readsAs"]), "spec": f["specChapter"],
+                    "files": f["files"], "loc": f["loc"]} for f in data["extraFolders"]],
+        "crates": [{"name": c["name"], "loc": c["loc"], "description": c["description"]}
+                   for c in data["crates"]],
+        "schedule": {"source": data["schedule"]["source"], "passes": passes,
+                     "loops": [l for l in loops if l["end"] - l["start"] >= 10]},
+    }
+
+
 def export(repo: Path) -> dict:
     if git(repo, "rev-parse", "--is-shallow-repository").strip() == "true":
         raise ValueError("dev-viz requires full git history (checkout fetch-depth: 0)")
@@ -159,7 +207,7 @@ def export(repo: Path) -> dict:
     lines = {m[1]: i for i, line in enumerate(text.splitlines(), 1)
              if (m := re.match(r'option = "([^"]+)"', line))}
     options = [{"name": r["option"], "phase": r["phase"], "default": r["default"],
-                "source": r["source_decompiler"], "inspiration": r["inspiration"],
+                "source": r["source_decompiler"].lower(), "inspiration": r["inspiration"],
                 "summary": r["summary"], "tier": r["tier"], "line": lines[r["option"]],
                 "decbench": "decbench:" in r["inspiration"].lower()}
                for r in rows]
@@ -231,6 +279,7 @@ def export(repo: Path) -> dict:
             "path": "docs/decbench/novel.md",
         },
         "baselines": {"upstream": baseline["data_footer"], "stages": stages["data_footer"]},
+        "architecture": architecture(repo),
     }
 
 

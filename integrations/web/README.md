@@ -7,7 +7,7 @@ upload. Three pages and a redirect, one static bundle:
 | URL | Page |
 |---|---|
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
-| `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
+| `/dev-viz/` | **Development record** — phase activity, what each phase holds and the order its passes run in, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
 | `/decompile/` | **The decompiler** — full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: open an ELF/PE/Mach-O (the *Open file* button, or drop it anywhere) and read one function as its code (C or Rust), assembly, bytes and stack frame linked line by line, double-click a global to see its data, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. *Show hints* (off by default; `?student=true` turns it on) adds the teaching notes and the hover cards that explain what the pointer rests on. *Collaborate* starts a live session with no server: up to 8 people on one program, each other's edits, pointers and pings, the program sent to whoever joins (invite link, reply link; tabs of one browser need only the invite), on one network or, with *Connect across the internet* ticked, across it through Cloudflare's STUN server. |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
@@ -77,7 +77,7 @@ asset path is relative, so a project subpath just works.
 | Path | Role |
 |---|---|
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
-| `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
+| `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`, and reuses the observatory's atlas generator (`scripts/observatory/atlas.py`, `docs/observatory.md`) for per-phase source sizes and the default pass schedule, so it needs `cargo` on the path; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
 | `decompile/` | The decompiler: `index.html` + `decompile.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the code and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, the Data tab (a global's data, decoded by type, and who uses it), instruction notes and help. `collab/` is *Working together*, loaded only when a session starts or an invite or reply link is opened: the controller and its dialogs, the group protocol, WebRTC and BroadcastChannel links, the shared registers, message checks and codes, pointers and pings. `docs/web-integration.md` §4.2 has the layout, the module table and *Working together*. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter the landing page and the decompiler use — and `js/fnfilter.js`, the DOM-free matcher behind the /decompile function search. |
@@ -90,7 +90,7 @@ asset path is relative, so a project subpath just works.
 
 The development chart spaces active UTC days equally and marks omitted dates below
 the axis. Ghidra’s two catalog source labels are combined in both the counts and
-the source filter. Community counts come from `dev-viz/community.json`: a reviewed
+the source filter, and catalog sources are compared case-insensitively. Community counts come from `dev-viz/community.json`: a reviewed
 list of merged outside PRs and merged PRs linked to outside issue reports. Each PR
 counts once, only when it appears in the checked-out commit history. The list’s
 review date is shown on the page; builds do not query GitHub. When updating it,
