@@ -1,7 +1,8 @@
 # Prologue shapes the frame walk has to read (assembled, no libc):
 # `shrink_wrapped` tests its argument before it saves a register and reserves
 # its locals; `probed` reserves a large frame a page at a time through a probe
-# loop, as -fstack-clash-protection does.
+# loop, as -fstack-clash-protection does; `interleaved` puts a CMOV (a branch to
+# the next instruction in SLEIGH) between its pushes.
 #
 # Rebuild:  gcc -nostdlib -static -o frames-asm.elf frames-asm.s
 	.intel_syntax noprefix
@@ -42,6 +43,25 @@ probed:
 	ret
 	.size probed, .-probed
 
+	.globl interleaved
+	.type interleaved, @function
+interleaved:
+	push rbx
+	cmp edi, esi
+	cmovc edi, esi
+	push rbp
+	sub rsp, 0x10
+	mov rbx, rdi
+	mov rdi, rsp
+	call fill
+	mov eax, dword ptr [rsp + 0x8]
+	add eax, ebx
+	add rsp, 0x10
+	pop rbp
+	pop rbx
+	ret
+	.size interleaved, .-interleaved
+
 	.globl fill
 	.type fill, @function
 fill:
@@ -56,6 +76,7 @@ _start:
 	xor edi, edi
 	call shrink_wrapped
 	call probed
+	call interleaved
 	mov eax, 60
 	xor edi, edi
 	syscall

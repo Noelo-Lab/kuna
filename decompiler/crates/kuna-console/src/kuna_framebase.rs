@@ -257,10 +257,19 @@ impl Run {
     }
 }
 
-/// Where a branch at `at` goes in the code space, when it names an address there.
+/// Where a branch goes in the code space, when it names an address there.
 fn code_target(ins: &[VarnodeData]) -> Option<u64> {
     let v = ins.first()?;
     (v.space.as_ref()?.get_type() != spacetype::IPTR_CONSTANT).then_some(v.offset)
+}
+
+/// Whether an op of the instruction at `at` passes control elsewhere: a branch
+/// within its own p-code, to itself or to the next instruction (`REP`,
+/// `CMOVcc`) does not.
+fn leaves((opc, _, ins): &Op, at: u64, fall: u64) -> bool {
+    is_flow(*opc)
+        && !(matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH)
+            && code_target(ins).is_none_or(|t| t == at || t == fall))
 }
 
 /// One path of the prologue run: its state, where it is, the stack pointer the
@@ -330,9 +339,10 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
         for _ in 0..MAX_PROLOGUE {
             let Some((ops, len)) = decode(path.at) else { break };
             let before = path.run.stack(&sp);
-            let flow = ops.iter().find(|(opc, _, ins)| is_flow(*opc) && (!matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) || code_target(ins).is_some()));
+            let fall = path.at.wrapping_add(len);
+            let flow = ops.iter().find(|op| leaves(op, path.at, fall));
             let next_at = match flow {
-                None => path.at.wrapping_add(len),
+                None => fall,
                 Some((opc, _, ins)) if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) => {
                     let target = code_target(ins).unwrap_or(u64::MAX);
                     if target <= path.at {
@@ -357,7 +367,7 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
                             fork.run = fork.run.step(&ops).0;
                             work.push(fork);
                         }
-                        path.at.wrapping_add(len)
+                        fall
                     }
                 }
                 Some(_) => break,
@@ -443,9 +453,9 @@ fn uses(body: &[u64], decode: &dyn Fn(u64) -> Option<(Vec<Op>, u64)>, fp: &Varno
     let (Some(fk), Some(sk)) = (key(fp), key(sp)) else { return (0, 0) };
     let (mut fp_uses, mut sp_uses) = (0, 0);
     for &at in body {
-        let Some((ops, _)) = decode(at) else { continue };
+        let Some((ops, len)) = decode(at) else { continue };
         let touches = |k: Key, op: &Op| op.1.as_ref().and_then(key).is_some_and(|o| overlaps(o, k));
-        if ops.iter().any(|op| is_flow(op.0) || touches(fk, op) || touches(sk, op)) {
+        if ops.iter().any(|op| leaves(op, at, at.wrapping_add(len)) || touches(fk, op) || touches(sk, op)) {
             continue;
         }
         let reads = |k: Key| ops.iter().any(|op| op.2.iter().filter_map(key).any(|i| overlaps(i, k)));
