@@ -5,6 +5,11 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+Typed byte-copy stores explicitly convert a pointer initializer to its declared
+pointer type. The rendered operand may carry the pointer bits through an unsigned
+integer cast; a pointer compound literal cannot accept that expression implicitly.
+The conversion preserves those bits before `__builtin_memcpy` copies the object.
+
 C declarators preserve explicit type qualification. Qualifiers on a base or a
 named typedef precede its name; qualifiers on a pointer follow its own `*`.
 The declarator walk keeps those layers through arrays and function pointers,

@@ -8112,6 +8112,18 @@ impl PrintC {
         }
     }
 
+    fn push_storage_initializer_cast(
+        &mut self,
+        datatype: &std::rc::Rc<crate::dtype::Datatype>,
+        op: OpId,
+    ) {
+        // Byte-backed pointers can render through integer carriers. The
+        // compound initializer still requires its declared pointer type.
+        if datatype.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
+            self.push_cast_open(datatype, op);
+        }
+    }
+
     fn op_storage_copy_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, access: crate::kuna_stackmem::Access) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
@@ -8133,6 +8145,7 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({ty}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_storage_initializer_cast(&access.datatype, op);
             self.push_vn_ir_m(fd, arch, value, op, mods);
         } else {
             self.push_atom(&Atom::syntax(format!("&({ty}){{0}}"), TagType::TypeToken, SyntaxHighlight::type_color));
@@ -8361,6 +8374,7 @@ impl PrintC {
         self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
         self.push_op(&COMPOUND, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+        self.push_storage_initializer_cast(&assignment.datatype, op);
         if let Some(input) = assignment.operand {
             if assignment.raw_constant {
                 self.push_constant_ir(fd.vbank().get(input).unwrap().get_offset(), assignment.size, op);

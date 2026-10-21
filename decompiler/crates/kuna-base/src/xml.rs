@@ -2101,7 +2101,8 @@ mod tests {
         // and kuna-bodyreads / a self-call keeps the register its own body reads
         // and kuna-regsigned / a register local at the width its values are sign extended from
         // and kuna-armfloat-preset / ARM hard-float VFP contracts in the aggressive preset
-        assert_eq!(count, 581, "corpus file count drifted");
+        // and kuna-pointer-storage-literal / typed pointer byte-copy initializers
+        assert_eq!(count, 582, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

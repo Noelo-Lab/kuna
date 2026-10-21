@@ -590,3 +590,6 @@ mod float_integer_truncation;
 
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
+
+#[path = "pointer_storage_literals.rs"]
+mod pointer_storage_literals;
