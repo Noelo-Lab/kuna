@@ -217,7 +217,8 @@ Compact JSON, every address a number plus an `_hex` twin:
    tokens_error: null | string,
    instructions:[{address, address_hex, offset, size, bytes, mnemonic, operands, text,
                   file_offset, lines}],
-   instructions_truncated},
+   instructions_truncated,
+   frame:{frame_pointer: null | {register, offset}, stack_pointer: null | {register, offset}}},
  assertions:[…]}
 ```
 
@@ -252,6 +253,22 @@ instruction passes control on, read from its own p-code (`ConsoleProgram::insn_f
 and calls name (`[]` when none). A branch within the instruction's own p-code is not flow. The line mappings
 are sparse — a line maps to the instructions whose p-code its tokens were printed from, so
 argument set-up that was folded away maps to nothing.
+
+`frame` says where the function's prologue leaves its frame pointer and its stack pointer,
+each as `{register, offset}`: the register as the listing names it, lower case, and its
+value minus the stack pointer at entry, which is where every `// stack - 0x58` comment
+counts from (`kuna_console::kuna_framebase`). It is read off the raw p-code of the entry's
+straight-line run, which ends before any control flow, before an instruction that gives
+stack back and before one that moves the stack pointer while storing anything but a
+register's entry value (an argument push). `stack_pointer` is where the frame setup left
+the stack pointer (`null` once it is realigned, as `AND RSP,-16` does). `frame_pointer` is
+the target's conventional one (`rbp`/`ebp`, `x29`, `r11` or `r7`, `s8`, `s0`, `r31`, `a6`)
+only when the run sets it up in that target's frame shape — at the frame record holding
+its own saved value (x86, AArch64, ARM, 68000), as a copy of the stack pointer (MIPS,
+PowerPC, GCC's Thumb frames) or at the stack pointer at entry (RISC-V); optimized code
+that copies `RSP` into `RBP` after reserving its locals is using `RBP` as an ordinary
+register and has none. After `PUSH RBP; MOV RBP,RSP; SUB RSP,0x50` it is
+`{frame_pointer:{register:"rbp", offset:-8}, stack_pointer:{register:"rsp", offset:-88}}`.
 
 `read <0xADDR> <LEN>` returns `{binary, address, address_hex, size, bytes, file_offset,
 assertions}`: up to 64 KiB, stopping where the mapped run holding the address ends (the
@@ -602,8 +619,7 @@ nothing re-renders; a script in the page's head sets that attribute before the p
 draws, so nothing flashes.
 
 **The Explain panel.** Three parts. *What is selected*: a variable (its kind, type,
-which input it is, where it lives in words — "the stack, 28 bytes below the return
-address" —, the lines that use it, *Rename* and *Change type*), an instruction ("5 bytes
+which input it is, where it lives in words — "the stack, 80 bytes below RBP" —, the lines that use it, *Rename* and *Change type*), an instruction ("5 bytes
 at 11b5, 29 bytes into main", what the mnemonic does, its C line, *Replace with NOP*,
 *Edit bytes*, *Add a note*), a C line (its instructions, and each note kuna left at its
 end — `// branch-flip`, `// no-return`, `// early-return x10` — in words, which the hover
@@ -611,7 +627,13 @@ card shows too) or a stack slot. The page keeps those notes out of the code it s
 (and so out of what is copied from it, the Assembly headings and the `x` rows): it takes
 them off each line when the function arrives and keeps them by line for these cards
 (`tags.js` `splitNotes`). Every other comment stays, such as a declaration's `// rax`
-and a note of the student's own. The *Download C code* files are the decompiler's own
+and a note of the student's own. A declaration's stack location is shown the way the
+assembly addresses it: the engine's `// stack - 0x58` (from the stack pointer at entry)
+reads `// rbp - 0x50` when the function keeps a frame pointer, and `// rsp + 0x10` from
+the stack pointer after the prologue when it does not, each stack piece of a combined
+comment (`// rax | stack - 0x60`) alike (`render-c.js` `rebaseStackComments`, from
+`inspect`'s `frame`; a function with neither keeps the engine's text). Where it lives in
+words follows ("the stack, 80 bytes below RBP"). The *Download C code* files are the decompiler's own
 output, as the command line writes it, and keep them. `e` opens and closes the panel. *This function*: its inputs and
 return type in words, *Calls and callers*, *Variables*, and behind disclosures the
 variables only the debug info has and the types. *Your changes*: one plain line per edit
@@ -1361,7 +1383,8 @@ header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `samp
 ELF, a flag check whose strings are used directly and through a pointer), `structs.elf`
 (x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`), `long.elf` (x86-64
 ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
-must not move the view). **PE** executables were
+must not move the view), `frames-O2.elf` (x86-64 ELF built with `-O2`, whose `read_name`
+copies `RSP` into `RBP` after reserving its locals: no frame pointer). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

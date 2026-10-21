@@ -4,7 +4,8 @@
 //! example (`crackme.elf`); the type definitions `inspect` prints above a
 //! function (`structs.elf`); and the globals a function names, the `data`
 //! window around one and the `uses` of it (`globals.elf`, and its stripped
-//! twin).
+//! twin); and where each function's frame pointer and stack pointer sit
+//! (`frames-O2.elf`, `sample_aarch64.o`).
 
 use std::path::PathBuf;
 
@@ -684,4 +685,28 @@ fn uses_names_the_instructions_that_use_the_data() {
         let to = u["to"].as_u64().unwrap();
         assert!((0x4040..0x4088).contains(&to), "{u:?}");
     }
+}
+
+fn frame_of(name: &str, function: &str) -> (Value, Value) {
+    let doc = run_on(name, "inspect", &[function], &[]).unwrap_or_else(|e| panic!("inspect {function}: {e}"));
+    let frame = &doc["function"]["frame"];
+    (frame["frame_pointer"].clone(), frame["stack_pointer"].clone())
+}
+
+fn reg(register: &str, offset: i64) -> Value {
+    serde_json::json!({ "register": register, "offset": offset })
+}
+
+/// `frame` says where the prologue leaves the frame pointer and the stack
+/// pointer, from the stack pointer at entry: RBP at the saved RBP after `PUSH
+/// RBP; MOV RBP,RSP`, also in a leaf that pops it before returning; no frame
+/// pointer when optimized code copies RSP into RBP after reserving its locals;
+/// x29 at AArch64's frame record, and none in a leaf that keeps no record.
+#[test]
+fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
+    assert_eq!(frame_of("sample.elf", "main"), (reg("rbp", -8), reg("rsp", -0x28)));
+    assert_eq!(frame_of("sample.elf", "add"), (reg("rbp", -8), reg("rsp", -8)));
+    assert_eq!(frame_of("frames-O2.elf", "read_name"), (Value::Null, reg("rsp", -0x58)));
+    assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30)));
+    assert_eq!(frame_of("sample_aarch64.o", "sum_to"), (Value::Null, reg("sp", -0x20)));
 }

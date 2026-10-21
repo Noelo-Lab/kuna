@@ -58,7 +58,10 @@ export function normalizeInspect(result) {
   const fn = fromInspect ? result.function : (result?.functions || [])[0];
   if (!fn) throw new Error('the engine returned no function');
   const address_hex = addrHex(fn.address_hex ?? fn.address);
-  const { code, tokens, notes } = splitNotes(fn.code ?? '', Array.isArray(fn.tokens) ? fn.tokens : []);
+  const split = splitNotes(fn.code ?? '', Array.isArray(fn.tokens) ? fn.tokens : []);
+  const frame = fn.frame || null;
+  const { code, tokens } = rebaseStackComments(split.code, split.tokens, frameBase(frame));
+  const notes = split.notes;
   return {
     source: fromInspect ? 'inspect' : 'decompile',
     name: fn.name,
@@ -84,7 +87,57 @@ export function normalizeInspect(result) {
     hasInstructions: Array.isArray(fn.instructions),
     instructions: (fn.instructions || []).map((insn) => normalizeInsn(insn, address_hex)),
     instructions_truncated: !!fn.instructions_truncated,
+    frame,
     assertions: result.assertions || [],
+  };
+}
+
+/**
+ * The register a function's stack locations count from: its frame pointer when
+ * it sets one up, else the stack pointer once its prologue has run (`inspect`'s
+ * `frame`); null when neither is known.
+ */
+export function frameBase(frame) {
+  return frame?.frame_pointer || frame?.stack_pointer || null;
+}
+
+/** An offset from the stack pointer at entry as `base` sees it: entry − 0x58 with RBP at entry − 8 is `rbp - 0x50`. */
+export function rebaseStack(entryOffset, base) {
+  const d = entryOffset - base.offset;
+  return `${base.register} ${d < 0 ? '-' : '+'} 0x${Math.abs(d).toString(16)}`;
+}
+
+const STORAGE_PIECE = String.raw`(?:[\w:]+|[\w.]+ 0x[0-9a-f]+|stack [-+] 0x[0-9a-f]+)`;
+const STORAGE_COMMENT = new RegExp(`^// ${STORAGE_PIECE}(?: \\| ${STORAGE_PIECE})*$`);
+const STACK_PIECE = /\bstack ([-+]) 0x([0-9a-f]+)\b/g;
+
+/**
+ * The declarations' storage comments with each `stack - 0x58` (from the stack
+ * pointer at entry) rewritten against `base` (`rbp - 0x50`), so they read like
+ * the assembly's operands; the comment tokens follow.
+ */
+export function rebaseStackComments(code, tokens, base) {
+  if (!base) return { code, tokens };
+  const lines = code.split('\n');
+  const edits = new Map();
+  for (const { line } of localDecls(code)) {
+    const text = lines[line - 1];
+    const at = text.indexOf('//');
+    const comment = at < 0 ? '' : text.slice(at).trimEnd();
+    if (!STORAGE_COMMENT.test(comment)) continue;
+    const next = comment.replace(STACK_PIECE, (_, sign, hex) => rebaseStack((sign === '-' ? -1 : 1) * parseInt(hex, 16), base));
+    if (next === comment) continue;
+    lines[line - 1] = text.slice(0, at) + next + text.slice(at + comment.length);
+    edits.set(line, { at, next, delta: next.length - comment.length });
+  }
+  if (!edits.size) return { code, tokens };
+  return {
+    code: lines.join('\n'),
+    tokens: tokens.map((t) => {
+      const e = edits.get(t.line);
+      if (!e || !Number.isInteger(t.col) || t.col < e.at) return t;
+      return t.col === e.at ? { ...t, text: e.next, len: e.next.length } : { ...t, col: t.col + e.delta };
+    }),
   };
 }
 

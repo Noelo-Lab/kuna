@@ -236,6 +236,20 @@ fn function_json(prog: &ConsoleProgram, f: &FuncResult, kind: &str, sections: &[
         .opt_str("tokens_error", tokens_error.as_deref())
         .raw("instructions", &instructions)
         .bool("instructions_truncated", truncated)
+        .raw("frame", &frame_json(prog, entry))
+        .end()
+}
+
+/// `{frame_pointer, stack_pointer}`: each `{register, offset}` (the register's
+/// value minus the stack pointer at entry once the prologue has run) or `null`.
+fn frame_json(prog: &ConsoleProgram, entry: u64) -> String {
+    let bases = kuna_console::kuna_framebase::frame_bases(prog, entry);
+    let reg = |r: Option<kuna_console::kuna_framebase::FrameRegister>| {
+        r.map_or_else(|| "null".to_string(), |r| Obj::new().str("register", &r.register).num("offset", r.offset).end())
+    };
+    Obj::new()
+        .raw("frame_pointer", &reg(bases.frame_pointer))
+        .raw("stack_pointer", &reg(bases.stack_pointer))
         .end()
 }
 

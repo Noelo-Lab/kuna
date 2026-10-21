@@ -1463,10 +1463,16 @@ function typeWords(type) {
   return type || '';
 }
 
-/** Where a value lives, in words: `register RAX`, `the stack, 20 bytes below the return address`. */
+/** Where a value lives, in words: `register RAX`, `the stack, 80 bytes below RBP`, `the stack, 20 bytes below the return address`. */
 function whereWords(storage, stackOffset) {
   const reg = /^([a-z][a-z0-9]*)$/i.exec((storage || '').trim());
   if (reg) return `register ${reg[1].toUpperCase()}`;
+  const based = /^(?!stack\b)([a-z][a-z0-9]*)\s*([-+])\s*(0x[0-9a-f]+)$/i.exec((storage || '').trim());
+  if (based) {
+    const n = Number(based[3]);
+    return n ? `the stack, ${n} byte${n === 1 ? '' : 's'} ${based[2] === '-' ? 'below' : 'above'} ${based[1].toUpperCase()}`
+      : `the stack, where ${based[1].toUpperCase()} points`;
+  }
   const st = /^stack\s*([-+])\s*(0x[0-9a-f]+|\d+)$/i.exec((storage || '').trim());
   const off = st ? (st[1] === '-' ? -1 : 1) * Number(st[2]) : stackOffset;
   if (Number.isInteger(off)) {
