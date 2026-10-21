@@ -2,7 +2,7 @@
 #![cfg(target_os = "linux")]
 use crate::common;
 use common::process;
-use object::Object;
+use object::{Object, ObjectSection};
 use std::{
     io::Write,
     process::{Command, Stdio},
@@ -10,13 +10,17 @@ use std::{
 
 #[test]
 fn pe32_pointer_constant() {
-    check(true);
+    check(true, false);
 }
 #[test]
 fn elf64_pointer_constant_roundtrip() {
-    check(false);
+    check(false, false);
 }
-fn check(windows: bool) {
+#[test]
+fn pe32_pointer_constant_with_entry_prefix() {
+    check(true, true);
+}
+fn check(windows: bool, entry_prefix: bool) {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
     }
@@ -42,6 +46,9 @@ __asm__("leaq blob+3(%rip),%rcx\nmovq %rcx,(%rdi)\nmovq (%rdi),%rax\nmovzbl (%ra
     let binary = root.join(if windows { "sample.dll" } else { "sample.so" });
     let mut build = Command::new("clang");
     build.args(["-O0", "-shared", "-nostdlib"]);
+    if entry_prefix {
+        build.arg("-fcf-protection=branch");
+    }
     if windows {
         build.args(["--target=i686-w64-windows-gnu", "-Wl,--entry,0"]);
     } else {
@@ -58,12 +65,35 @@ __asm__("leaq blob+3(%rip),%rcx\nmovq %rcx,(%rdi)\nmovq (%rdi),%rax\nmovzbl (%ra
         "unsigned long long"
     };
     let register = if windows { "ECX" } else { "RCX" };
-    let pc = address(b"emit") + if windows { 4 } else { 0 };
+    let entry = address(b"emit");
+    let section = image
+        .sections()
+        .find(|section| section.address() <= entry && entry < section.address() + section.size())
+        .unwrap();
+    let section_bytes = section.data().unwrap();
+    let start = (entry - section.address()) as usize;
+    let code = &section_bytes[start..section_bytes.len().min(start + 32)];
+    // Compiler-inserted entry instructions must not shift the declaration to
+    // another write. Locate the authored address instruction in the image.
+    let offset = if windows {
+        let mut instruction = vec![0xb9];
+        instruction.extend_from_slice(&((address(b"blob") + 3) as u32).to_le_bytes());
+        code.windows(instruction.len())
+            .position(|bytes| bytes == instruction)
+    } else {
+        code.windows(3)
+            .position(|bytes| bytes == [0x48, 0x8d, 0x0d])
+    }
+    .expect("authored address instruction");
+    let pc = entry + offset as u64;
     let c = root.join("body.c");
     let script=format!("load file \"{}\"\nread symbols\noption ctypes on\nmap prototype 0x{:x} unsigned int emit(volatile {} *slot)\nmap address 0x{:x} unsigned char blob[16]\nload addr 0x{:x}\ntype varnode %{}(0x{:x}) unsigned char *address\ndecompile\nopenfile write \"{}\"\nprint C\nclosefile\nquit\n",binary.display(),address(b"emit"),word,address(b"blob"),address(b"emit"),register,pc,c.display());
     render(&script);
     let body = std::fs::read_to_string(&c).unwrap();
-    assert!(body.contains("blob"), "declared address lost: {body}");
+    assert!(
+        body.contains("blob"),
+        "declared address at {pc:x} lost; bytes {code:02x?}: {body}"
+    );
     let control = root.join("integer-control.c");
     let untyped = script
         .lines()
