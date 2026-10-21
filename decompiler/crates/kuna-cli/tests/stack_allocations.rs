@@ -3,7 +3,10 @@
 use crate::common;
 use common::process;
 use object::Object;
-use std::process::Command;
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+};
 
 #[test]
 fn pe32_unoptimized_stack_allocation() {
@@ -48,6 +51,7 @@ enum Case {
     Probe,
     ProbeTwo,
     Drifting,
+    Restored,
 }
 
 #[test]
@@ -97,6 +101,16 @@ fn elf64_unknown_outgoing_stack_is_declined() {
     check_case(None, "-O0", Case::Drifting);
 }
 
+#[test]
+fn pe32_restored_frame_allocation() {
+    check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Restored);
+}
+
+#[test]
+fn elf64_restored_frame_allocation_roundtrip() {
+    check_case(None, "-O0", Case::Restored);
+}
+
 fn check(target: Option<&str>, optimization: &str, twice: bool) {
     check_case(
         target,
@@ -122,6 +136,18 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
         Case::Conditional => "char *data;volatile int choice=n&1;if(choice)data=__builtin_alloca((unsigned)n);else data=__builtin_alloca((unsigned)n+16);data[0]=7;return observe(data,n);",
         Case::Repeated => "int total=0;for(int i=0;i<3;i++){char *data=__builtin_alloca((unsigned)n+i);data[0]=7;total+=observe(data,n+i);}return total;",
         Case::Scoped => "int total=0;for(int i=0;i<3;i++){char data[n+i];data[0]=7;total+=observe(data,n+i);}return total;",
+        Case::Restored if target.is_some() => r#"__asm__(
+"pushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %edi\nsubl $8,%esp\nmovl 8(%ebp),%ebx\nmovl $31,-12(%ebp)\n"
+"movl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\nsubl %eax,%esp\nmovl %esp,%edi\nmovb $7,(%edi)\n"
+"pushl $0x13579\npushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %edi\ncalll _observe\naddl $8,%esp\npopl %ebp\naddl $4,%esp\n"
+"movl %eax,-16(%ebp)\nleal -16(%ebp),%edi\nmovl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\nsubl %eax,%edi\nmovl %edi,%esp\nmovb $7,(%edi)\npushl $0x2468a\npushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %edi\ncalll _observe\naddl $8,%esp\npopl %ebp\naddl $4,%esp\naddl -16(%ebp),%eax\naddl -12(%ebp),%eax\nleal -8(%ebp),%esp\npopl %edi\npopl %ebx\npopl %ebp\nretl\n");"#,
+        Case::Restored => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\npushq %rbx\nsubq $24,%rsp\nmovl %edi,%ebx\nmovl $31,-16(%rbp)\n"
+"movl %ebx,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\nmovl %ebx,%esi\n"
+"pushq $0x13579\npushq %rbp\nmovq %rsp,%rbp\ncall observe\npopq %rbp\naddq $8,%rsp\nmovl %eax,-24(%rbp)\n"
+"leaq -32(%rbp),%r10\nmovl %ebx,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%r10\nmovq %r10,%rsp\nmovq %r10,%rdi\nmovb $7,(%rdi)\nmovl %ebx,%esi\n"
+"pushq $0x2468a\npushq %rbp\nmovq %rsp,%rbp\ncall observe\npopq %rbp\naddq $8,%rsp\naddl -24(%rbp),%eax\naddl -16(%rbp),%eax\n"
+"leaq -8(%rbp),%rsp\npopq %rbx\npopq %rbp\nretq\n");"#,
         Case::Drifting => r#"__asm__(
 "pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovl %edi,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\nmovl %esi,%ecx\n"
 "1: subq $16,%rsp\ndecl %ecx\njnz 1b\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
@@ -159,7 +185,10 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
 "2: subq %rax,%r10\ntestl %eax,(%r10)\nmovq %r10,%rsp\nmovb $7,(%r10)\nmovq %r10,%rdi\nmovl %edx,%esi\ncall observe\n"
 "leaq -24(%rbp),%rsp\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nretq\n");"#,
     };
-    let naked = if matches!(case, Case::Probe | Case::ProbeTwo | Case::Drifting) {
+    let naked = if matches!(
+        case,
+        Case::Probe | Case::ProbeTwo | Case::Drifting | Case::Restored
+    ) {
         "__attribute__((naked)) "
     } else {
         ""
@@ -219,19 +248,34 @@ API {naked}int allocate(int n) {{{body}}}
     } else {
         "sample.so.c"
     });
+    if matches!(case, Case::Restored) {
+        map_restored_frame(
+            &binary,
+            allocate,
+            observe,
+            &root,
+            &generated,
+            target.is_some(),
+        );
+    }
     let text = std::fs::read_to_string(&generated).unwrap();
     let allocations = if matches!(case, Case::Drifting) {
         0
-    } else if matches!(case, Case::Two | Case::Conditional | Case::ProbeTwo) {
+    } else if matches!(
+        case,
+        Case::Two | Case::Conditional | Case::ProbeTwo | Case::Restored
+    ) {
         2
     } else {
         1
     };
-    assert_eq!(
-        text.matches("__builtin_alloca(").count(),
-        allocations,
-        "{text}"
-    );
+    let actual = text.matches("__builtin_alloca(").count();
+    if matches!(case, Case::Restored) {
+        // These lifetimes do not overlap: sharing proved identical storage is valid.
+        assert!((1..=2).contains(&actual), "{text}");
+    } else {
+        assert_eq!(actual, allocations, "{text}");
+    }
     if matches!(case, Case::Drifting) {
         return;
     }
@@ -251,10 +295,14 @@ API {naked}int allocate(int n) {{{body}}}
         let driver = root.join("driver.c");
         let expected = match case {
             Case::Two | Case::ProbeTwo => "n==1?36:28",
+            Case::Restored => "n==1?67:63",
             Case::Repeated | Case::Scoped => "n==1?50:48",
             _ => "n==1?18:16",
         };
-        let limit = if matches!(case, Case::Probe | Case::ProbeTwo | Case::Drifting) {
+        let limit = if matches!(
+            case,
+            Case::Probe | Case::ProbeTwo | Case::Drifting
+        ) {
             16384
         } else {
             4096
@@ -302,4 +350,66 @@ int main(void) {{for(int n=1;n<={limit};n++) {{int reference=allocate(n);if(refe
             process::required_output(&mut Command::new(&executable));
         }
     }
+}
+
+fn map_restored_frame(
+    binary: &std::path::Path,
+    allocate: u64,
+    observe: u64,
+    root: &std::path::Path,
+    generated: &std::path::Path,
+    windows: bool,
+) {
+    let mapped = root.join("mapped.c");
+    let engine = std::env::var_os("KUNA_DECOMP_DBG")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_BIN_EXE_kuna"))
+                .parent()
+                .unwrap()
+                .join("decomp_dbg")
+        });
+    // Map the complete fixed footprint declared by the authored assembly.
+    let (storage, size) = if windows {
+        ("s0xffffffec", 20)
+    } else {
+        ("s0xffffffffffffffd8", 40)
+    };
+    let convention = if windows { "__cdecl " } else { "" };
+    let script=format!("load file \"{}\"\nread symbols\noption ctypes on\noption partialaccess on\noption stackalloc on\nmap prototype 0x{allocate:x} int {convention}allocate(int n);\nmap prototype 0x{observe:x} int {convention}observe(char *data,int n);\nload addr 0x{allocate:x}\nmap address {storage} unsigned char frame[{size}]\ndecompile\nopenfile write \"{}\"\nprint C\nclosefile\nquit\n",binary.display(),mapped.display());
+    let mut child = Command::new(engine)
+        .arg("-s")
+        .arg(common::repo_root().join("specs"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(script.as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!text.contains("Execution error:"), "{text}");
+    std::fs::write(
+        generated,
+        format!(
+            "#include \"{}\"\n{}",
+            if windows {
+                "sample.dll.h"
+            } else {
+                "sample.so.h"
+            },
+            std::fs::read_to_string(mapped).unwrap()
+        ),
+    )
+    .unwrap();
 }

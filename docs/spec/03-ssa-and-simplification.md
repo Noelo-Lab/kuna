@@ -7,8 +7,11 @@ Anchors:
 
 With `stackalloc on`, runtime-sized x86 stack allocation is materialized just
 after heritage, before stack arithmetic is copied into individual accesses.
-The pass follows stack-pointer definitions through copies, casts, alignment,
-indirect call effects, and PHIs. Paired pointer/counter PHIs with equal constant
+Candidate discovery follows definitions that feed the physical stack pointer,
+including copies, casts, alignment, indirect call effects, and PHIs. Under the
+explicit ordinary-allocation model, the base may itself have been restored
+through memory; a complete provenance chain to entry SP is not required.
+Paired pointer/counter PHIs with equal constant
 steps preserve their difference, including through zero-iteration exit PHIs;
 this recovers a stack probe's original requested size without assuming a bound
 on the loop or deleting its control flow. Each allocation receives independent

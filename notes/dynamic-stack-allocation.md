@@ -4,7 +4,7 @@
 it does not model switching to an unrelated stack or coroutine context.
 
 The transformation runs after heritage, before stack expressions are distributed
-among individual loads and stores. It follows SSA definitions across basic blocks,
+among individual loads and stores. It follows definitions feeding the physical stack pointer across basic blocks,
 including allocation in conditional branches and loops. Each allocation site emits
 `__builtin_alloca` at its original execution point. Repeated execution therefore
 receives fresh storage.
@@ -37,3 +37,16 @@ A focused whole-command timing on the optimized ELF example (ten measured runs
 after two warmups) had median times of 167 ms before this change, 158 ms with
 the option off, and 162 ms with it on. These process-level measurements show no
 observed slowdown on this fixture; they do not establish a corpus-wide speed bound.
+
+A restored frame pointer can reach a later allocation through a memory load.
+The allocation is identified by its runtime subtraction feeding physical SP,
+not by requiring that the base's entire history remain visible in SSA. The
+explicit option declares ordinary stack-buffer lifetimes; it does not implement
+saved-context switching or intentional aliasing between live allocation objects.
+An isolated saved-frame fixture maps the fixed frame through the existing console
+interface, then checks that both allocations receive storage.
+
+Requiring provenance only from the subtraction's base made equivalent instruction
+orders disagree: assigning a restored base to SP before subtracting admitted it,
+while subtracting in a temporary and then assigning SP rejected it. Rooting the
+analysis at physical-SP definitions makes these orders use the same model.

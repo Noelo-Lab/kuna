@@ -3916,7 +3916,7 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 
 - **Symptoms:** runtime-sized buffer accesses below a fixed local array; dynamic stack memory is overwritten by a generated call; undeclared Stack location after variable stack subtraction.
 - **What it does:** Materialize runtime-sized x86 stack allocation as compiler-backed C storage across control flow. Follow stack adoption through copies and PHIs, recover the original size from paired pointer/counter probe loops, and bound outgoing stack accesses by SSA fixed-point analysis.
-- **When to flip:** Enable for a known runtime stack allocation that decompiles to accesses below a fixed local array or an undeclared Stack location. Handles conditional and repeated allocations, scoped variable-length arrays, and paired pointer/counter stack probes on 32- and 64-bit x86. Unproved origins, unknown stack effects, and unbounded outgoing-area cycles are declined; this does not assert an arbitrary stack switch is an allocation.
+- **When to flip:** Enable for known ordinary runtime stack-buffer lifetimes that decompile to accesses below a fixed local array or an undeclared Stack location. Handles conditional and repeated allocations, scoped variable-length arrays, paired pointer/counter stack probes, and bases restored through memory on 32- and 64-bit x86. Discovery follows subtractions feeding physical SP; unknown stack effects and unbounded outgoing-area cycles are declined. Saved-context switching is outside this allocation model.
 - **Where / provenance:** P3/stack-pointer-flow · kuna · correctness-fix · kuna-stackalloc
 - **Example:** `option stackalloc on`
 

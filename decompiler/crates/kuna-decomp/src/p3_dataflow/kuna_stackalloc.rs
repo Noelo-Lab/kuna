@@ -68,48 +68,6 @@ fn stack_register(fd: &Funcdata, value: VarnodeId) -> bool {
                 .is_some_and(|s| std::rc::Rc::ptr_eq(s, v.get_space()))
     })
 }
-fn stack_origin(fd: &Funcdata, value: VarnodeId, seen: &mut BTreeSet<VarnodeId>) -> Option<bool> {
-    let value = strip(fd, value);
-    if stack_register(fd, value) {
-        return Some(true);
-    }
-    if !seen.insert(value) {
-        return Some(false);
-    }
-    let definition = fd.vbank().get(value)?.get_def()?;
-    let op = fd.obank().get(definition)?;
-    match op.code() {
-        OpCode::CPUI_PTRSUB
-        | OpCode::CPUI_PTRADD
-        | OpCode::CPUI_INT_ADD
-        | OpCode::CPUI_INT_SUB
-        | OpCode::CPUI_INDIRECT => stack_origin(fd, op.get_in(0)?, seen),
-        OpCode::CPUI_INT_AND if alignment(fd, definition).is_some() => {
-            stack_origin(fd, op.get_in(0)?, seen)
-        }
-        OpCode::CPUI_MULTIEQUAL => {
-            let mut rooted = false;
-            for slot in 0..op.num_input() {
-                rooted |= stack_origin(fd, op.get_in(slot)?, seen)?;
-            }
-            Some(rooted)
-        }
-        OpCode::CPUI_CALLOTHER
-            if op
-                .get_in(0)
-                .and_then(|v| fd.vbank().get(v))
-                .is_some_and(|v| v.get_offset() == BUILTIN_STACK_ALLOC as u64) =>
-        {
-            Some(true)
-        }
-        _ => None,
-    }
-}
-fn stack_base(fd: &Funcdata, value: VarnodeId, seen: &mut BTreeSet<VarnodeId>) -> bool {
-    // Every incoming path must be stack-derived and at least one must reach a
-    // real stack root; an otherwise self-contained PHI cycle is not evidence.
-    stack_origin(fd, value, seen) == Some(true)
-}
 fn constant_step(fd: &Funcdata, value: VarnodeId) -> Option<(VarnodeId, i128)> {
     let op = fd.obank().get(fd.vbank().get(value)?.get_def()?)?;
     let amount = number(fd, op.get_in(1)?)?;
@@ -162,7 +120,10 @@ fn paired_origins(
             return Some(origins);
         }
     }
-    stack_base(fd, p, &mut BTreeSet::new()).then(|| BTreeSet::from([(p, n)]))
+    // Discovery starts at physical stack-pointer definitions. The opt-in
+    // allocation model also covers a base restored through memory; requiring
+    // its complete provenance would miss ordinary saved-frame allocations.
+    Some(BTreeSet::from([(p, n)]))
 }
 #[derive(Clone, Copy)]
 struct Allocation {
