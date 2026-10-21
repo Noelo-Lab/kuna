@@ -593,3 +593,5 @@ mod intermediate_float_rounding;
 
 #[path = "implied_word_casts.rs"]
 mod implied_word_casts;
+
+mod storage_load_transfers;

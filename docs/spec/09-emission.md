@@ -3818,3 +3818,11 @@ printed type before choosing a bit reinterpretation
 (`kuna_bitcast.rs (storage_transfer)`).
 Named frame members follow the `stackviews` control; resolving a named global
 member does not require that option.
+
+A statement LOAD rendered through a byte-copy helper copies directly into the
+printed destination member’s scalar type when its width matches the access.
+The helper must preserve the representation instead of numerically converting
+an integer temporary into a float member (`printc.rs (op_load_ir)`).
+A STORE helper likewise initializes its compound literal with the rendered
+source member’s same-width scalar type (`printc.rs (op_store_ir)`), preserving
+its bytes when propagated IR types disagree.

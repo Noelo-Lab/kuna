@@ -8058,7 +8058,21 @@ impl PrintC {
     /// as an explicit `*ptr`.
     fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         if self.out_lang == crate::kuna_lang::OutLang::C {
-            if let Some(access) = crate::kuna_stackmem::access(fd, op) {
+            if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
+                // A statement LOAD writes the printed member's representation.
+                // Copy directly into that scalar type instead of numerically
+                // converting a temporary with a different propagated type.
+                if self.stmt_op == Some(op) {
+                    if let Some(target) = fd.obank().get(op).and_then(|operation| operation.get_out())
+                        .and_then(|out| self.partial_piece_type(fd, arch, out, op, -1))
+                        .filter(|ty| ty.get_size() == access.size
+                            && matches!(ty.get_metatype(), crate::dtype::type_metatype::TYPE_FLOAT
+                                | crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+                                | crate::dtype::type_metatype::TYPE_UNKNOWN | crate::dtype::type_metatype::TYPE_PTR))
+                    {
+                        access.datatype = target;
+                    }
+                }
                 self.op_storage_copy_ir(fd, arch, op, access);
                 return;
             }
@@ -8082,7 +8096,16 @@ impl PrintC {
     /// notation absorbing the deref).
     fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         if self.out_lang == crate::kuna_lang::OutLang::C {
-            if let Some(access) = crate::kuna_stackmem::access(fd, op) {
+            if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
+                // The compound initializer copies the rendered source's bits.
+                if let Some(target) = access.value.and_then(|value| self.partial_piece_type(fd, arch, value, op, 2))
+                    .filter(|ty| ty.get_size() == access.size
+                        && matches!(ty.get_metatype(), crate::dtype::type_metatype::TYPE_FLOAT
+                            | crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+                            | crate::dtype::type_metatype::TYPE_UNKNOWN | crate::dtype::type_metatype::TYPE_PTR))
+                {
+                    access.datatype = target;
+                }
                 self.op_storage_copy_ir(fd, arch, op, access);
                 return;
             }
