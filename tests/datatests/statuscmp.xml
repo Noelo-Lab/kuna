@@ -21,7 +21,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Status Compare #1" min="1" max="1">if \(val2 &lt;= val1\)</stringmatch>
+<stringmatch name="Status Compare #1" min="1" max="1">if \(\(\(volatile float10\)\{ \(float10\)val2 \}\) &lt;= \(\(volatile float10\)\{ \(float10\)val1 \}\)\)</stringmatch>
 <stringmatch name="Status Compare #2" min="0" max="0">&lt;&lt;</stringmatch>
 <stringmatch name="Status Compare #3" min="0" max="0">\|</stringmatch>
 </decompilertest>

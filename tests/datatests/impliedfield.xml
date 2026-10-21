@@ -27,6 +27,6 @@ f8c30fafc7c3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="Implied Fields #1" min="1" max="1">return \(int4\)\(val\.u\.myfloat \+ 3\.0\) \+ val\.a;</stringmatch>
+<stringmatch name="Implied Fields #1" min="1" max="1">return \(int4\)\(\(\(volatile float8\)\{ \(float8\)val\.u\.myfloat \}\) \+ 3\.0\) \+ val\.a;</stringmatch>
 <stringmatch name="Implied Fields #2" min="1" max="1">return val\.u\.myint \* val\.a;</stringmatch>
 </decompilertest>
