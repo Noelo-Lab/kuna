@@ -261,7 +261,9 @@ value minus the stack pointer at entry, which is where every `// stack - 0x58` c
 counts from (`kuna_console::kuna_framebase`). It is read off the raw p-code from the
 entry. Until the stack pointer first moves, the walk follows jumps and both ways of a
 conditional one into code it has not passed, and goes on past a conditional return or
-call, since a shrink-wrapped prologue tests its argument before it saves anything. It ends before any other control flow, before an instruction that
+call, since a shrink-wrapped prologue tests its argument before it saves anything. A
+call to an i386 get-PC thunk (which only reads its return address and returns) is
+stepped over. It ends before any other control flow, before an instruction that
 gives stack back and before one that moves the stack pointer while storing anything but
 a register's entry value (an argument push). `stack_pointer` is the deepest place the
 frame setup leaves the stack pointer on any path, `null` once a path realigns it (`AND
@@ -1393,7 +1395,9 @@ ELF, a flag check whose strings are used directly and through a pointer), `struc
 ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
 must not move the view), `frames-O2.elf` (x86-64 ELF built with `-O2`, whose `read_name`
 copies `RSP` into `RBP` after reserving its locals: no frame pointer), `frames-asm.elf`
-(assembled x86-64: shrink-wrapped prologues, stack-probe loops, a CMOV between pushes). **PE** executables were
+(assembled x86-64: shrink-wrapped prologues, stack-probe loops, a CMOV between pushes),
+`frames-i386.o` (an i386 PIC prologue calling the get-PC thunk) and `frames-arm.o` (ARM and
+Thumb prologues behind a conditional call or return). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

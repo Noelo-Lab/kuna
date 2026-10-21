@@ -10,7 +10,7 @@
 //! a conditional return); it ends, before the instruction that does it, at any
 //! other control flow, a stack-pointer change that releases stack (an
 //! epilogue) and one that stores anything but a register's entry value (an
-//! argument push). The stack pointer
+//! argument push). A call to a get-PC thunk is stepped over. The stack pointer
 //! is the deepest value the frame setup leaves it at on any path, and unknown
 //! when a path realigns it (`AND RSP,-16`) or moves it in a loop (a stack probe).
 //!
@@ -327,6 +327,31 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
         }
     };
 
+    let word = sp.size as i64;
+    // A get-PC thunk (`CALL __x86.get_pc_thunk.bx`) reads its own return address
+    // off the stack into a register and returns: the call moves nothing, and the
+    // registers the thunk writes come back unknown.
+    let thunk = |run: &Run, target: u64| -> Option<Vec<Op>> {
+        let (first, len) = decode(target)?;
+        let (second, _) = decode(target.wrapping_add(len))?;
+        if first.iter().any(|op| is_flow(op.0)) || !second.iter().any(|op| op.0 == OpCode::CPUI_RETURN) {
+            return None;
+        }
+        let top = run.stack(&sp)?.wrapping_sub(word);
+        let mut inner = run.clone();
+        inner.known.retain(|(k, _)| *k != sp_key);
+        inner.known.push((sp_key, Val::Stack(top)));
+        let mut reads_return = false;
+        for op in &first {
+            reads_return |= op.0 == OpCode::CPUI_LOAD && op.2.get(1).and_then(|a| inner.stack(a)) == Some(top);
+            inner.apply(op);
+        }
+        let clobbered = first.iter().filter_map(|op| op.1.clone()).filter(|o| {
+            o.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR) && key(o) != Some(sp_key)
+        });
+        reads_return.then(|| clobbered.map(|o| (OpCode::CPUI_CALLOTHER, Some(o), Vec::new())).collect())
+    };
+
     let start = Path {
         run: Run { known: vec![(sp_key, Val::Stack(0))], ..Run::default() },
         at: entry,
@@ -348,8 +373,13 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
                 ops[..i].iter().position(|(opc, _, ins)| *opc == OpCode::CPUI_CBRANCH && code_target(ins) == Some(fall))
             });
             let mut fork_to = None;
+            let mut through_thunk = None;
             let next_at = match flow.map(|i| &ops[i]) {
                 None => fall,
+                Some((OpCode::CPUI_CALL, _, ins)) if skip.is_none() && code_target(ins).and_then(|t| thunk(&path.run, t)).is_some() => {
+                    through_thunk = code_target(ins).and_then(|t| thunk(&path.run, t));
+                    fall
+                }
                 Some((opc, _, ins)) if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) => {
                     let target = code_target(ins).unwrap_or(u64::MAX);
                     let conditional = *opc == OpCode::CPUI_CBRANCH || skip.is_some();
@@ -382,7 +412,10 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
                 work.push(fork);
             }
             let applied = if next_at == fall { skip.unwrap_or(ops.len()) } else { ops.len() };
-            let ops: Vec<Op> = ops.into_iter().take(applied).filter(|op| !is_flow(op.0)).collect();
+            let ops: Vec<Op> = match through_thunk {
+                Some(clobbers) => clobbers,
+                None => ops.into_iter().take(applied).filter(|op| !is_flow(op.0)).collect(),
+            };
             let (next, entry_stores) = path.run.step(&ops);
             let after = next.stack(&sp);
             if after != before {
@@ -410,7 +443,6 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
         ended.push(path);
     }
 
-    let word = sp.size as i64;
     let frame_pointer = |path: &Path| {
         candidates.iter().enumerate().find_map(|(i, c)| {
             let fp = path.run.stack(c)?;
