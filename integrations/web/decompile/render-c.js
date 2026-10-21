@@ -108,6 +108,24 @@ export function rebaseStack(entryOffset, base) {
   return `${base.register} ${d < 0 ? '-' : '+'} 0x${Math.abs(d).toString(16)}`;
 }
 
+const ENTRY_BASE = { register: 'stack', offset: 0 };
+
+/** An offset from the stack pointer at entry as the declarations' comments write it: `rbp - 0x50`, or the engine's own `stack - 0x58` without a frame base. */
+export function stackLocation(entryOffset, frame) {
+  return rebaseStack(entryOffset, frameBase(frame) || ENTRY_BASE);
+}
+
+/** The entry offsets a declaration's storage comment places it at (`rax | rbp - 0x50` with RBP at entry − 8 → [-0x58]). */
+export function stackPieces(storage, frame) {
+  const base = frameBase(frame) || ENTRY_BASE;
+  const out = [];
+  for (const piece of (storage || '').split(' | ')) {
+    const m = /^(\w+) ([-+]) 0x([0-9a-f]+)$/.exec(piece.trim());
+    if (m && m[1] === base.register) out.push(base.offset + (m[2] === '-' ? -1 : 1) * parseInt(m[3], 16));
+  }
+  return out;
+}
+
 const STORAGE_PIECE = String.raw`(?:[\w:]+|[\w.]+ 0x[0-9a-f]+|stack [-+] 0x[0-9a-f]+)`;
 const STORAGE_COMMENT = new RegExp(`^// ${STORAGE_PIECE}(?: \\| ${STORAGE_PIECE})*$`);
 const STACK_PIECE = /\bstack ([-+]) 0x([0-9a-f]+)\b/g;

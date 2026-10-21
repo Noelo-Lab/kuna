@@ -1654,11 +1654,12 @@ function targetCard(hex) {
   return calleeCard(hex);
 }
 
-/** What a stack slot holds, in words. */
+/** What a stack slot holds, in words, and its location as the code's comments write it. */
 function slotWords(off) {
-  const hit = state.current.frame?.slots.find((s) => off >= s.offset && off < s.offset + s.size);
+  const { frame } = state.current;
+  const hit = frame?.slots.find((s) => off >= s.offset && off < s.offset + s.size);
   const pos = off < 0 ? `${-off} bytes below the return address` : off === 0 ? 'the return address itself' : `${off} bytes above the return address`;
-  return { hit, pos };
+  return { hit, pos, where: frame?.where ? frame.where(off) : entryOffset(off) };
 }
 
 function slotCard(so) {
@@ -1755,19 +1756,21 @@ function lineSelectedCard(n) {
 }
 
 function slotSelectedCard(off) {
-  const { hit, pos } = slotWords(off);
+  const { hit, pos, where } = slotWords(off);
   let html = '<div class="x-card">';
   if (hit) {
-    html += `<div><span class="x-name">${escapeHtml(hit.kind === 'pad' ? 'unused space' : hit.name)}</span></div><dl class="x-dl">` +
+    html += `<div><span class="x-name">${escapeHtml(hit.name)}</span></div><dl class="x-dl">` +
       (hit.type && hit.kind !== 'pad' ? `<dt>Type</dt><dd><code>${escapeHtml(hit.type)}</code></dd>` : '') +
-      `<dt>Size</dt><dd>${hit.size} bytes</dd><dt>Where</dt><dd title="${escapeHtml(entryOffset(off))}">${escapeHtml(pos)}</dd></dl>`;
-    if (hit.alias) html += `<p class="x-note">The decompiler also calls this ${escapeHtml(hit.alias)}.</p>`;
-    if (hit.dim) html += '<p class="x-note">Only the debug info mentions it; the C code never uses it.</p>';
+      `<dt>Size</dt><dd>${hit.size} bytes</dd><dt>Where</dt><dd><code>${escapeHtml(where)}</code>, ${escapeHtml(pos)}</dd></dl>`;
+    if (hit.alias) html += `<p class="x-note">The code also calls this ${escapeHtml(hit.alias)}.</p>`;
   } else {
     html += `<p class="x-note">${escapeHtml(pos[0].toUpperCase() + pos.slice(1))}.</p>`;
   }
   const fp = state.current.frame?.fp;
-  if (fp !== null && fp !== undefined) html += `<p class="x-note d2-teach">The frame pointer RBP points ${-fp} bytes below the return address, so <code>[RBP - d]</code> is d bytes further down.</p>`;
+  if (fp) {
+    const reg = fp.register.toUpperCase();
+    html += `<p class="x-note d2-teach">The frame pointer ${escapeHtml(reg)} points ${-fp.offset} bytes below the return address, so <code>[${escapeHtml(reg)} - d]</code> is d bytes further down.</p>`;
+  }
   return html + '</div>';
 }
 

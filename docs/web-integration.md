@@ -838,13 +838,24 @@ the file's even when it is patched). A
 section whose file data is shorter than its size (`file_size`, a PE section's
 zero-filled tail) has no file offset past it.
 
-**Learning aids.** The Stack view draws the frame from the prologue and the engine's
-variables with offsets from the stack pointer at entry (`[RBP - 0xc]` is entry − 0x14
-after `PUSH RBP; MOV RBP,RSP`), one box per row — how many bytes below the return
-address on the left, then the name and type, a short description (the full text in its
-tooltip) and the size: return address, saved registers, locals, unused space,
-debug-info-only variables dashed; a stack array gets a callout naming what an overflow
-reaches, a leaf without `SUB RSP` the red-zone note (x86 only). Instruction hints label
+**Learning aids.** The Stack view draws the frame from the prologue and the names the
+code shows, one box per row: the return address, the registers the prologue pushes (read
+past instructions that leave RSP alone and past a shrink-wrapped early-exit test, down
+to the stack pointer `inspect`'s `frame` gives; a push below it is an argument and a push
+of a scratch register only padding), the stack canary (the slot the prologue stores
+`FS:[0x28]`/`GS:[0x14]` in), each local at the stack locations its declaration's comment
+gives (the object's box starts where the engine places that variable, and locations
+inside it, a struct's fields or an array's elements, are part of it; any other location is
+a box no bigger than the engine's slot there), and each parameter the engine keeps
+on the stack (an argument passed there, or the copy an unoptimized prologue saves, when the
+engine gives it the parameter's name). A slot the engine knows that the code never names
+(Ghidra-style `local_10`, a debug-info-only variable) is not drawn: it is part of the
+unnamed space between the boxes. The left column is the location as the comments write
+it (`rbp - 0x50`, or `rsp + 0x10` without a frame pointer; how many bytes below the return
+address is its tooltip), so every local reads the same in both views; then the name and
+type, a short description (the full text in its tooltip) and the size. A stack array gets
+a callout naming what an overflow reaches, the canary included, a leaf without `SUB RSP`
+the red-zone note (x86 only). Instruction hints label
 prologues, epilogues, canary loads and checks, `xor r,r`, `test r,r`, `cdqe`, `endbr64`
 and the variadic `mov eax,0`. *Calls and callers* reads as sentences. The callees come
 from the function's own CALL rows at once ("Calls add, sum_to and printf"); who calls it
@@ -858,7 +869,7 @@ says why.
 Code view puts their definitions above the function under the heading *Types this function
 uses*, on a shaded block that starts folded. The heading opens and folds the block, and a
 student's own choice holds for the rest of the visit. Folded, the keyboard starts at
-the signature; the Stack view's "only in the debug info" test ignores the block. It is the engine's own text, so
+the signature. It is the engine's own text, so
 line numbers match `kuna decompile --option structdefs on`; it is highlighted but not
 clickable (a field name is not a variable to rename), and selecting one of its lines says
 which type it defines, that a `/* opaque */` one is a library type whose fields are not
