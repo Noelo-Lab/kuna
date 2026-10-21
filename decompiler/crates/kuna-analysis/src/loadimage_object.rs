@@ -1097,11 +1097,14 @@ impl ObjectLoadImage {
                 ))
             })
             .collect();
+        // Common symbols have allocated storage but no input section. Include
+        // that storage without treating unresolved external slots as objects.
+        let common_objects = layout.common_range.map(|(lo, hi)| (lo, hi - lo));
         let data_objects = crate::loader::kuna_globalref::merged_ranges(file.sections().filter_map(|sec| {
             let vma = *layout.section_vma.get(&sec.index())?;
             crate::loader::kuna_globalref::holds_program_objects(sec.name().ok()?, sec.kind())
                 .then_some((vma, sec.size()))
-        }));
+        }).chain(common_objects));
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
