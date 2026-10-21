@@ -2,7 +2,7 @@
 #![cfg(target_os = "linux")]
 use crate::common;
 use common::process;
-use object::{Object, ObjectSection};
+use object::{Object, ObjectSection, ObjectSymbol};
 use std::{
     io::Write,
     process::{Command, Stdio},
@@ -34,7 +34,7 @@ fn check(windows: bool, entry_prefix: bool) {
 #else
 #define API __attribute__((visibility("default")))
 #endif
-API unsigned char blob[16]={2,4,6,11,15,19};
+unsigned char blob[16]={2,4,6,11,15,19};
 API __attribute__((naked)) unsigned int emit(volatile uintptr_t *slot) {
 #ifdef _WIN32
 __asm__("movl 4(%esp),%eax\nmovl $_blob+3,%ecx\nmovl %ecx,(%eax)\nmovl (%eax),%eax\nmovzbl (%eax),%eax\nretl\n");
@@ -58,6 +58,17 @@ __asm__("leaq blob+3(%rip),%rcx\nmovq %rcx,(%rdi)\nmovq (%rdi),%rax\nmovzbl (%ra
     let bytes = std::fs::read(&binary).unwrap();
     let image = object::File::parse(bytes.as_slice()).unwrap();
     let exports = image.exports().unwrap();
+    // Keep storage out of the PE export directory: exported-data classification
+    // has its own regression fixture and must not obscure the pointer assertion.
+    let blob_address = image
+        .symbols()
+        .find(|symbol| {
+            symbol
+                .name()
+                .is_ok_and(|name| name == "blob" || name == "_blob")
+        })
+        .expect("global storage symbol")
+        .address();
     let address = |name: &[u8]| exports.iter().find(|e| e.name() == name).unwrap().address();
     let word = if windows {
         "unsigned int"
@@ -77,7 +88,7 @@ __asm__("leaq blob+3(%rip),%rcx\nmovq %rcx,(%rdi)\nmovq (%rdi),%rax\nmovzbl (%ra
     // another write. Locate the authored address instruction in the image.
     let offset = if windows {
         let mut instruction = vec![0xb9];
-        instruction.extend_from_slice(&((address(b"blob") + 3) as u32).to_le_bytes());
+        instruction.extend_from_slice(&((blob_address + 3) as u32).to_le_bytes());
         code.windows(instruction.len())
             .position(|bytes| bytes == instruction)
     } else {
@@ -87,7 +98,7 @@ __asm__("leaq blob+3(%rip),%rcx\nmovq %rcx,(%rdi)\nmovq (%rdi),%rax\nmovzbl (%ra
     .expect("authored address instruction");
     let pc = entry + offset as u64;
     let c = root.join("body.c");
-    let script=format!("load file \"{}\"\nread symbols\noption ctypes on\nmap prototype 0x{:x} unsigned int emit(volatile {} *slot)\nmap address 0x{:x} unsigned char blob[16]\nload addr 0x{:x}\ntype varnode %{}(0x{:x}) unsigned char *address\ndecompile\nopenfile write \"{}\"\nprint C\nclosefile\nquit\n",binary.display(),address(b"emit"),word,address(b"blob"),address(b"emit"),register,pc,c.display());
+    let script=format!("load file \"{}\"\nread symbols\noption ctypes on\nmap prototype 0x{:x} unsigned int emit(volatile {} *slot)\nmap address 0x{:x} unsigned char blob[16]\nload addr 0x{:x}\ntype varnode %{}(0x{:x}) unsigned char *address\ndecompile\nopenfile write \"{}\"\nprint C\nclosefile\nquit\n",binary.display(),address(b"emit"),word,blob_address,address(b"emit"),register,pc,c.display());
     render(&script);
     let body = std::fs::read_to_string(&c).unwrap();
     assert!(
