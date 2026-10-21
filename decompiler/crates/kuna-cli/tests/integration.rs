@@ -593,3 +593,6 @@ mod intermediate_float_rounding;
 
 #[path = "stack_allocations.rs"]
 mod stack_allocations;
+
+#[path = "stack_allocations_isa.rs"]
+mod stack_allocations_isa;

@@ -5,7 +5,7 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
-With `stackalloc on`, runtime-sized x86 stack allocation is materialized just
+With `stackalloc on`, runtime-sized 32- and 64-bit stack allocation is materialized just
 after heritage, before stack arithmetic is copied into individual accesses.
 Candidate discovery follows definitions that feed the physical stack pointer,
 including copies, casts, alignment, indirect call effects, and PHIs. Under the
@@ -16,11 +16,17 @@ steps preserve their difference, including through zero-iteration exit PHIs;
 this recovers a stack probe's original requested size without assuming a bound
 on the loop or deleting its control flow. Each allocation receives independent
 storage, including allocations inside branches and loops. An SSA fixed point
-bounds the lower-address space required by stack adjustments, memory accesses,
+bounds both address directions required by stack adjustments, memory accesses,
 and outgoing arguments; fresh allocation roots cut successive lifetimes.
 Pointer induction bounds that do not converge are widened to unknown. Unknown
 stack effects and decreasing stack-pointer cycles without a finite bound are declined.
-The reserved space and alignment rounding are included in the compiler allocation,
+A bounded evaluator follows copies and pure integer constant expressions before
+normal simplification, including alignment masks in either operand position. Lower
+and upper SSA bounds reserve storage below and above the adopted SP. Memory access
+widths contribute to the upper reservation. The selected SPARC V9 register-window
+prototype's biased local range supplies its 2047-byte SP bias, which is retained in
+the allocated address so subsequent ABI-relative accesses remain aligned. The
+reserved space and alignment rounding are included in the compiler allocation,
 whose result is explicitly converted to an address-sized integer before subsequent
 stack arithmetic. The default is off; this is not an arbitrary stack-switch model.
 

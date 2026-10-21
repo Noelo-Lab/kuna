@@ -4225,7 +4225,7 @@ impl Architecture {
         ctx.array_size = self.array_size; // arraysize
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
-        ctx.stack_alloc = self.stack_alloc && self.archid.starts_with("x86:LE:");
+        ctx.stack_alloc = self.stack_alloc;
         ctx.local_stack_views = self.local_stack_views;
         ctx.libc_names = self.libc_names; // libcnames
         ctx.guarded_read_trim = self.guarded_read_trim;

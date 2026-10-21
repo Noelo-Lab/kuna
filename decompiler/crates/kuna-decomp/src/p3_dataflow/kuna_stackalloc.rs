@@ -33,10 +33,54 @@ fn strip(fd: &Funcdata, mut value: VarnodeId) -> VarnodeId {
     }
     value
 }
-fn number(fd: &Funcdata, value: VarnodeId) -> Option<i128> {
+fn literal(fd: &Funcdata, value: VarnodeId, budget: &mut usize) -> Option<u64> {
+    *budget = budget.checked_sub(1)?;
     let v = fd.vbank().get(value)?;
-    v.is_constant()
-        .then(|| sign_extend(v.get_offset() as i64, v.get_size() * 8 - 1) as i128)
+    let size = v.get_size();
+    if !(1..=8).contains(&size) {
+        return None;
+    }
+    if v.is_constant() {
+        return Some(v.get_offset() & calc_mask(size));
+    }
+    let o = fd.obank().get(v.get_def()?)?;
+    if !matches!(
+        o.code(),
+        OpCode::CPUI_COPY
+            | OpCode::CPUI_CAST
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_2COMP
+            | OpCode::CPUI_INT_LEFT
+            | OpCode::CPUI_INT_RIGHT
+            | OpCode::CPUI_INT_SRIGHT
+            | OpCode::CPUI_INT_ZEXT
+            | OpCode::CPUI_INT_SEXT
+    ) {
+        return None;
+    }
+    let a = literal(fd, o.get_in(0)?, budget)?;
+    if matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+        return Some(a & calc_mask(size));
+    }
+    let behavior = fd.get_arch().op_behavior(o.code())?;
+    let input_size = fd.vbank().get(o.get_in(0)?)?.get_size();
+    let result = if behavior.is_unary() {
+        behavior.evaluate_unary(size, input_size, a).ok()?
+    } else {
+        let b = literal(fd, o.get_in(1)?, budget)?;
+        behavior.evaluate_binary(size, input_size, a, b).ok()?
+    };
+    Some(result & calc_mask(size))
+}
+fn number(fd: &Funcdata, value: VarnodeId) -> Option<i128> {
+    let width = fd.vbank().get(value)?.get_size();
+    let raw = literal(fd, value, &mut 32)?;
+    Some(sign_extend(raw as i64, width * 8 - 1) as i128)
 }
 fn negate(fd: &Funcdata, value: VarnodeId) -> Option<VarnodeId> {
     let value = strip(fd, value);
@@ -178,12 +222,12 @@ fn candidates(
     }
     let Some(op) = fd.obank().get(id) else { return };
     match op.code() {
-        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT | OpCode::CPUI_INT_AND => {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
             if let Some(v) = op.get_in(0) {
                 candidates(fd, v, seen, result);
             }
         }
-        OpCode::CPUI_MULTIEQUAL => {
+        OpCode::CPUI_INT_AND | OpCode::CPUI_MULTIEQUAL => {
             for slot in 0..op.num_input() {
                 if let Some(v) = op.get_in(slot) {
                     candidates(fd, v, seen, result);
@@ -362,10 +406,18 @@ fn identify_aliases(
         .collect();
     (roots, aliases)
 }
-fn merge(out: &mut Bounds, from: Bounds) {
+fn merge(out: &mut Bounds, from: Bounds, upper: bool) {
     for (root, offset) in from {
         out.entry(root)
-            .and_modify(|old| *old = (*old).min(offset))
+            .and_modify(|old| {
+                *old = if *old == UNKNOWN || offset == UNKNOWN {
+                    UNKNOWN
+                } else if upper {
+                    (*old).max(offset)
+                } else {
+                    (*old).min(offset)
+                }
+            })
             .or_insert(offset);
     }
 }
@@ -379,19 +431,20 @@ fn shift(mut value: Bounds, by: Option<i128>) -> Bounds {
     }
     value
 }
-fn alignment(fd: &Funcdata, op: OpId) -> Option<u128> {
+fn alignment(fd: &Funcdata, op: OpId) -> Option<(int4, u128)> {
     let o = fd.obank().get(op)?;
     if o.code() != OpCode::CPUI_INT_AND {
         return None;
     }
-    let v = fd.vbank().get(o.get_in(1)?)?;
-    if !v.is_constant() {
-        return None;
-    }
-    let size = (!v.get_offset() & calc_mask(v.get_size())) as u128 + 1;
-    size.is_power_of_two().then_some(size)
+    (0..2).find_map(|slot| {
+        let value = o.get_in(slot)?;
+        let mask = literal(fd, value, &mut 32)?;
+        let width = fd.vbank().get(value)?.get_size();
+        let size = (!mask & calc_mask(width)) as u128 + 1;
+        size.is_power_of_two().then_some((1 - slot, size))
+    })
 }
-fn evaluate(fd: &Funcdata, id: OpId, values: &Values) -> Bounds {
+fn evaluate(fd: &Funcdata, id: OpId, values: &Values, upper: bool) -> Bounds {
     let o = fd.obank().get(id).unwrap();
     let input = |slot| {
         o.get_in(slot)
@@ -404,7 +457,7 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values) -> Bounds {
         OpCode::CPUI_MULTIEQUAL => {
             let mut result = Bounds::new();
             for slot in 0..o.num_input() {
-                merge(&mut result, input(slot));
+                merge(&mut result, input(slot), upper);
             }
             result
         }
@@ -423,7 +476,7 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values) -> Bounds {
                     return shift(input(1), Some(by));
                 }
                 let mut result = shift(input(0), None);
-                merge(&mut result, shift(input(1), None));
+                merge(&mut result, shift(input(1), None), upper);
                 result
             } else {
                 shift(input(0), None)
@@ -436,12 +489,22 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values) -> Bounds {
                 .zip(o.get_in(2).and_then(|v| number(fd, v)))
                 .and_then(|(a, b)| a.checked_mul(b)),
         ),
-        OpCode::CPUI_INT_AND => shift(
-            input(0),
-            alignment(fd, id)
-                .and_then(|a| i128::try_from(a - 1).ok())
-                .map(|a| -a),
-        ),
+        OpCode::CPUI_INT_AND => {
+            if let Some((slot, amount)) = alignment(fd, id) {
+                shift(
+                    input(slot),
+                    if upper {
+                        Some(0)
+                    } else {
+                        i128::try_from(amount - 1).ok().map(|a| -a)
+                    },
+                )
+            } else {
+                let mut result = shift(input(0), None);
+                merge(&mut result, shift(input(1), None), upper);
+                result
+            }
+        }
         OpCode::CPUI_INDIRECT => {
             let pop = o.get_in(1).and_then(|v| fd.vbank().get(v)).and_then(|v| {
                 let call = crate::funcdata_varnode::op_iop_decode(v.get_offset());
@@ -458,33 +521,22 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values) -> Bounds {
         _ => Bounds::new(),
     }
 }
-fn reserves(
+fn propagate_bounds(
     fd: &Funcdata,
-    allocations: &[Allocation],
-    aliases: &[(VarnodeId, VarnodeId)],
-    width: int4,
-) -> Option<Vec<u64>> {
-    let ops: Vec<_> = fd.obank().iter_alive().collect();
-    let mut roots: BTreeMap<_, _> = allocations
-        .iter()
-        .enumerate()
-        .map(|(i, a)| (a.output, i))
-        .collect();
-    for &(alias, original) in aliases {
-        if let Some(&root) = roots.get(&original) {
-            roots.insert(alias, root);
-        }
-    }
+    ops: &[OpId],
+    roots: &BTreeMap<VarnodeId, usize>,
+    upper: bool,
+) -> Option<Values> {
     let mut values = Values::new();
     let update = |values: &mut Values| {
         let mut changed = BTreeSet::new();
-        for &id in &ops {
+        for &id in ops {
             let o = fd.obank().get(id).unwrap();
             let Some(output) = o.get_out() else { continue };
             let next = if let Some(&root) = roots.get(&output) {
                 Bounds::from([(root, 0)])
             } else {
-                evaluate(fd, id, values)
+                evaluate(fd, id, values, upper)
             };
             if values.get(&output) != Some(&next) {
                 values.insert(output, next);
@@ -525,20 +577,106 @@ fn reserves(
             return None;
         }
     }
+    Some(values)
+}
+#[derive(Clone, Copy, Debug)]
+struct Reservation {
+    count: u64,
+    shift: u64,
+}
+
+// The SPARC V9 window ABI includes the 2047-byte bias in its local-range header.
+fn stack_bias(fd: &Funcdata, width: int4) -> u64 {
+    if width != 8 || !fd.get_func_proto().has_model() {
+        return 0;
+    }
+    let arch = fd.get_arch();
+    let Some(stack) = arch.manage().get_stack_space() else {
+        return 0;
+    };
+    let sparc = arch
+        .manage()
+        .register_lookup()
+        .and_then(|r| r.probe_register("didrestore"))
+        .is_some();
+    if sparc
+        && fd
+            .get_func_proto()
+            .model()
+            .get_local_range()
+            .iter()
+            .any(|r| {
+                r.get_space().get_index() == stack.get_index()
+                    && r.get_first() == 0
+                    && r.get_last() == 0x8ae
+            })
+    {
+        0x7ff
+    } else {
+        0
+    }
+}
+fn reserves(
+    fd: &Funcdata,
+    allocations: &[Allocation],
+    aliases: &[(VarnodeId, VarnodeId)],
+    width: int4,
+) -> Option<Vec<Reservation>> {
+    let ops: Vec<_> = fd.obank().iter_alive().collect();
+    let mut roots: BTreeMap<_, _> = allocations
+        .iter()
+        .enumerate()
+        .map(|(i, a)| (a.output, i))
+        .collect();
+    for &(alias, original) in aliases {
+        if let Some(&root) = roots.get(&original) {
+            roots.insert(alias, root);
+        }
+    }
+    let values = propagate_bounds(fd, &ops, &roots, false)?;
+    let upper = propagate_bounds(fd, &ops, &roots, true)?;
+    let bias = stack_bias(fd, width) as i128;
     let mut low = vec![0_i128; allocations.len()];
+    let mut high = vec![bias; allocations.len()];
+    for bounds in upper.values() {
+        for (&root, &offset) in bounds {
+            if offset != UNKNOWN {
+                high[root] = high[root].max(offset);
+            }
+        }
+    }
     let mut align = 16_u128;
     for &id in &ops {
         let o = fd.obank().get(id)?;
-        if let Some(a) = alignment(fd, id) {
+        if let Some((_, a)) = alignment(fd, id) {
             align = align.max(a);
         }
         let mut references = Vec::new();
         if let Some(out) = o.get_out().filter(|&v| stack_register(fd, v)) {
+            if upper
+                .get(&out)
+                .is_some_and(|v| v.values().any(|&x| x == UNKNOWN))
+            {
+                return None;
+            }
             references.push((out, true));
         }
         if matches!(o.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE) {
             if let Some(ptr) = o.get_in(1) {
                 references.push((ptr, false));
+                let accessed = if o.code() == OpCode::CPUI_STORE {
+                    o.get_in(2)
+                } else {
+                    o.get_out()
+                };
+                let size = accessed
+                    .and_then(|v| fd.vbank().get(v))
+                    .map_or(0, |v| v.get_size()) as i128;
+                for (&root, &offset) in upper.get(&ptr).into_iter().flatten() {
+                    if offset != UNKNOWN {
+                        high[root] = high[root].max(offset.checked_add(size)?);
+                    }
+                }
             }
         }
         if matches!(
@@ -564,13 +702,24 @@ fn reserves(
         }
     }
     low.into_iter()
-        .map(|lo| {
-            let size = (lo.unsigned_abs().checked_add(align - 1)?) & !(align - 1);
-            (size <= calc_mask(width) as u128).then(|| size as u64)
+        .zip(high)
+        .map(|(lo, hi)| {
+            let before = ((bias.checked_sub(lo)? as u128).checked_add(align - 1)?) & !(align - 1);
+            let after =
+                ((hi.checked_sub(bias)?.max(0) as u128).checked_add(align - 1)?) & !(align - 1);
+            let count = before.checked_add(after)?;
+            if count > calc_mask(width) as u128 {
+                return None;
+            }
+            Some(Reservation {
+                count: count as u64,
+                shift: (before as u64).checked_sub(bias as u64)?,
+            })
         })
         .collect()
 }
-fn lower(fd: &mut Funcdata, allocation: Allocation, width: int4, headroom: u64) {
+
+fn lower(fd: &mut Funcdata, allocation: Allocation, width: int4, headroom: Reservation) {
     let op = allocation.op;
     let address = fd.obank().get(op).unwrap().get_addr().clone();
     let amount = if fd.vbank().get(allocation.amount).unwrap().is_free() {
@@ -581,7 +730,7 @@ fn lower(fd: &mut Funcdata, allocation: Allocation, width: int4, headroom: u64) 
     let count_op = fd.new_op(2, address.clone());
     fd.op_set_opcode_code(count_op, OpCode::CPUI_INT_ADD);
     fd.op_set_input(count_op, amount, 0).unwrap();
-    let reserve = fd.new_constant(width, headroom);
+    let reserve = fd.new_constant(width, headroom.count);
     fd.op_set_input(count_op, reserve, 1).unwrap();
     let count = fd.new_unique_out(width, count_op).unwrap();
     fd.op_insert_before(count_op, op);
@@ -597,7 +746,7 @@ fn lower(fd: &mut Funcdata, allocation: Allocation, width: int4, headroom: u64) 
     }
     fd.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
     fd.op_set_input(op, buffer, 0).unwrap();
-    let reserve = fd.new_constant(width, headroom);
+    let reserve = fd.new_constant(width, headroom.shift);
     fd.op_set_input(op, reserve, 1).unwrap();
 }
 pub struct ActionStackAlloc {
