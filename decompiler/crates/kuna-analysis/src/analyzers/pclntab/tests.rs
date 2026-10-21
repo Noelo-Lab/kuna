@@ -514,6 +514,24 @@ fn macho_gopclntab_section_is_found_and_decoded() {
 }
 
 #[test]
+fn zero_text_start_resolves_against_the_text_section() {
+    // Newer Go writes `textStart = 0` in the header; the entries must still land in
+    // `__text` (Go's `moduledata.text` is the section base).
+    let text_vma = 0x1_0000_1000u64;
+    let funcs = [(0x0u32, "main.main"), (0x80u32, "main.compute")];
+    let blob = build_go118_image(0, 0, &funcs);
+    let bytes = build_macho_with_pclntab(text_vma, 0x400, 0x1_0001_0000, &blob);
+    let file = object::File::parse(&bytes[..]).expect("hand-built Mach-O must parse");
+    assert_eq!(
+        recover_go_functions(&file),
+        vec![
+            GoFunc { addr: text_vma, name: "main.main".into() },
+            GoFunc { addr: text_vma + 0x80, name: "main.compute".into() },
+        ]
+    );
+}
+
+#[test]
 fn exec_end_bounds_only_interior_addresses() {
     let ranges = [(0x1000u64, 0x10u64)];
     assert_eq!(exec_end(&ranges, 0x1000), Some(0x1010));

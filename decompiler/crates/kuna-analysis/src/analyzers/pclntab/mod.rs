@@ -501,10 +501,26 @@ fn recover_go_functions(file: &object::File) -> Vec<GoFunc> {
     let Some(header_vma) = locate_header(file, &img) else {
         return Vec::new();
     };
-    let Some(h) = parse_header(&img, header_vma) else {
+    let Some(mut h) = parse_header(&img, header_vma) else {
         return Vec::new();
     };
+    // Go 1.26 stopped storing the text base here (the runtime uses `moduledata.text`
+    // instead), so `entryoff` is resolved against the linker's `runtime.text` — the
+    // start of the lowest code section.
+    if h.ver.is_118plus() && h.text_start == 0 {
+        h.text_start = text_section_start(file);
+    }
     decode_functions(&img, &h)
+}
+
+/// Address of the lowest `SectionKind::Text` section — what Go's `moduledata.text`
+/// points at when a stripped image no longer records it in the `pcHeader`.
+fn text_section_start(file: &object::File) -> u64 {
+    file.sections()
+        .filter(|s| s.kind() == object::SectionKind::Text)
+        .map(|s| s.address())
+        .min()
+        .unwrap_or(0)
 }
 
 /// Go pclntab function-name recovery pass. Gated on the source language being Go
