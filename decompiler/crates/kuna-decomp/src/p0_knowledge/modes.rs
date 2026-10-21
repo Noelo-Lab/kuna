@@ -657,6 +657,10 @@ mod tests {
             // preset sweep or speed measurement needed before changing the
             // default output for every aggressive-mode decompile.
             "bytearrayc",
+            // Runtime stack materialization has focused compiler/runtime tests,
+            // but no broad preset ablation or corpus-level speed evaluation.
+            // Keep it explicitly opted in until that evaluation is available.
+            "stackalloc",
         ];
 
         let agg = mode_overrides("aggressive").unwrap();
