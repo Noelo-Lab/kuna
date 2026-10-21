@@ -10,7 +10,7 @@ pub(super) fn target(
     fd: &Funcdata,
     op: OpId,
     decl_high_type: bool,
-    printed: Option<Rc<Datatype>>,
+    printed: impl FnOnce() -> Option<Rc<Datatype>>,
 ) -> Option<Rc<Datatype>> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_COPY {
@@ -23,7 +23,7 @@ pub(super) fn target(
         return None;
     }
     let value = fd.vbank().get(output)?;
-    let target = printed.or_else(|| {
+    let target = printed().or_else(|| {
         let declared = super::kuna_bitcast::declared_member_type(fd, decl_high_type, output)?;
         let offset = value
             .get_high()
