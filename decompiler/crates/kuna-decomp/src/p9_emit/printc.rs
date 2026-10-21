@@ -6550,6 +6550,20 @@ impl PrintC {
             Some(v) => fd.vbank().get(v).map(|vn| vn.get_offset()).unwrap_or(0),
             None => 0,
         };
+        if in0_off == crate::p3_dataflow::kuna_stackalloc::BUILTIN_STACK_ALLOC as u64 {
+            let width = fd.obank().get(op).and_then(|o| o.get_out())
+                .and_then(|v| fd.vbank().get(v)).map(|v| v.get_size()).unwrap_or(arch.types().get_size_of_pointer());
+            let word = arch.types().get_base(width, crate::dtype::type_metatype::TYPE_UINT).unwrap();
+            self.push_cast_open(&word, op);
+            self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+            self.push_atom(&Atom::with_op("__builtin_alloca", TagType::OpToken,
+                crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
+            if let Some(count) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
+                self.push_vn_ir(fd, arch, count, op);
+            }
+            self.push_cast_close(&word);
+            return;
+        }
         let display = arch
             .userops
             .get_op(in0_off as u32)
@@ -10466,6 +10480,53 @@ impl PrintC {
                 }
             }
 
+            // Saved virtual stack pointers address words through their byte view.
+            if arch.stack_alloc
+                && self.out_lang == crate::kuna_lang::OutLang::C
+                && !valueon
+                && sym_off <= 0
+            {
+                let byte_pointer = |p: &std::rc::Rc<crate::dtype::Datatype>| {
+                    p.get_ptr_to().is_some_and(|t| {
+                        t.get_size() == 1
+                            && matches!(
+                                t.get_metatype(),
+                                crate::dtype::type_metatype::TYPE_INT
+                                    | crate::dtype::type_metatype::TYPE_UINT
+                                    | crate::dtype::type_metatype::TYPE_UNKNOWN
+                            )
+                    })
+                };
+                if let Some(out) = fd.obank().get(op).and_then(|o| o.get_out()) {
+                    let mut pointer = Some(fd.vn_type_def_facing(out)).filter(byte_pointer);
+                    if pointer.is_none() {
+                        pointer = crate::printc::declared_variable_type(fd, arch.decl_high_type, out)
+                            .filter(byte_pointer);
+                    }
+                    if pointer.is_none() {
+                        pointer = fd
+                            .vbank()
+                            .get(out)
+                            .into_iter()
+                            .flat_map(|v| v.descend_iter())
+                            .find_map(|user| {
+                                let copy = fd.obank().get(user)?;
+                                if copy.code() != OpCode::CPUI_COPY {
+                                    return None;
+                                }
+                                crate::printc::declared_variable_type(
+                                    fd,
+                                    arch.decl_high_type,
+                                    copy.get_out()?,
+                                )
+                                .filter(byte_pointer)
+                            });
+                    }
+                    if let Some(pointer) = pointer {
+                        self.push_cast_open(&pointer, op);
+                    }
+                }
+            }
             if !valueon {
                 // EMIT  &name  (printc.cc:1095)
                 let tok = self.lang_token(&tokens::ADDRESSOF);

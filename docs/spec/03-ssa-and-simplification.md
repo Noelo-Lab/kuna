@@ -5,6 +5,22 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
+With `stackalloc on`, runtime-sized x86 stack allocation is materialized just
+after heritage, before stack arithmetic is copied into individual accesses.
+The pass follows stack-pointer definitions through copies, casts, alignment,
+indirect call effects, and PHIs. Paired pointer/counter PHIs with equal constant
+steps preserve their difference, including through zero-iteration exit PHIs;
+this recovers a stack probe's original requested size without assuming a bound
+on the loop or deleting its control flow. Each allocation receives independent
+storage, including allocations inside branches and loops. An SSA fixed point
+bounds the lower-address space required by stack adjustments, memory accesses,
+and outgoing arguments; fresh allocation roots cut successive lifetimes.
+Unknown stack effects and decreasing cycles without a finite bound are declined.
+The reserved space and alignment rounding are included in the compiler allocation,
+whose result is explicitly converted to an address-sized integer before subsequent
+stack arithmetic. The default is off; this is not an arbitrary stack-switch model.
+
+
 A LOAD through a pointer with an explicitly volatile pointee is treated as a
 volatile read by early removal and consume-based dead-code elimination, even
 when its value is unused. This type fact supplements the existing volatile

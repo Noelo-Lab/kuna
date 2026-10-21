@@ -1288,6 +1288,9 @@ Three tiers:
 | large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
 | tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
 | a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
+| runtime-sized buffer accesses below a fixed local array | [`stackalloc`](#stackalloc) |
+| dynamic stack memory is overwritten by a generated call | [`stackalloc`](#stackalloc) |
+| undeclared Stack location after variable stack subtraction | [`stackalloc`](#stackalloc) |
 
 ## Toggleable transforms
 
@@ -3908,6 +3911,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option globalcallranges off`
+
+### `stackalloc` -- on | off, default `off`
+
+- **Symptoms:** runtime-sized buffer accesses below a fixed local array; dynamic stack memory is overwritten by a generated call; undeclared Stack location after variable stack subtraction.
+- **What it does:** Materialize runtime-sized x86 stack allocation as compiler-backed C storage across control flow. Follow stack adoption through copies and PHIs, recover the original size from paired pointer/counter probe loops, and bound outgoing stack accesses by SSA fixed-point analysis.
+- **When to flip:** Enable for a known runtime stack allocation that decompiles to accesses below a fixed local array or an undeclared Stack location. Handles conditional and repeated allocations, scoped variable-length arrays, and paired pointer/counter stack probes on 32- and 64-bit x86. Unproved origins, unknown stack effects, and unbounded outgoing-area cycles are declined; this does not assert an arbitrary stack switch is an allocation.
+- **Where / provenance:** P3/stack-pointer-flow · kuna · correctness-fix · kuna-stackalloc
+- **Example:** `option stackalloc on`
 
 ## Programmatic use
 
