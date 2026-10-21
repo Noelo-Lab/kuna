@@ -134,3 +134,10 @@ default. The measurement includes loading, analysis and C emission.
 | sparc-linux-gnu | 102.1 | 110.7 | +8.5% |
 | sparcv9-linux-gnu | 115.9 | 120.9 | +4.3% |
 | i686-linux-gnu | 189.2 | 175.5 | -7.2% |
+
+Alignment masks must retain at least one address bit: an AND with zero erases
+the pointer and cannot establish alignment. Only an AND whose other operand is
+derived from a recovered allocation contributes alignment slack; unrelated
+integer masks cannot enlarge or suppress the backing reservation. Isolated IR
+tests cover copied zero masks, both operand orders at 32/64 bits, and an unrelated
+64-byte mask beside a one-byte access below the allocation.

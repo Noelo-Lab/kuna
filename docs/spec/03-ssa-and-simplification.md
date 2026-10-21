@@ -21,7 +21,9 @@ and outgoing arguments; fresh allocation roots cut successive lifetimes.
 Pointer induction bounds that do not converge are widened to unknown. Unknown
 stack effects and decreasing stack-pointer cycles without a finite bound are declined.
 A bounded evaluator follows copies and pure integer constant expressions before
-normal simplification, including alignment masks in either operand position. Lower
+normal simplification, including alignment masks in either operand position. A zero
+mask erases the address and is not an alignment proof; only masks applied to a
+recovered allocation contribute reservation slack. Lower
 and upper SSA bounds reserve storage below and above the adopted SP. Memory access
 widths contribute to the upper reservation. The selected SPARC V9 register-window
 prototype's biased local range supplies its 2047-byte SP bias, which is retained in

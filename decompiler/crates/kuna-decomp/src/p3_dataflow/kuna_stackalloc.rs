@@ -439,6 +439,9 @@ fn alignment(fd: &Funcdata, op: OpId) -> Option<(int4, u128)> {
     (0..2).find_map(|slot| {
         let value = o.get_in(slot)?;
         let mask = literal(fd, value, &mut 32)?;
+        if mask == 0 {
+            return None;
+        }
         let width = fd.vbank().get(value)?.get_size();
         let size = (!mask & calc_mask(width)) as u128 + 1;
         size.is_power_of_two().then_some((1 - slot, size))
@@ -648,8 +651,13 @@ fn reserves(
     let mut align = 16_u128;
     for &id in &ops {
         let o = fd.obank().get(id)?;
-        if let Some((_, a)) = alignment(fd, id) {
-            align = align.max(a);
+        if let Some((slot, a)) = alignment(fd, id) {
+            if o.get_in(slot)
+                .and_then(|v| values.get(&v))
+                .is_some_and(|v| !v.is_empty())
+            {
+                align = align.max(a);
+            }
         }
         let mut references = Vec::new();
         if let Some(out) = o.get_out().filter(|&v| stack_register(fd, v)) {
@@ -810,5 +818,125 @@ impl Action for ActionStackAlloc {
             lower(fd, allocation, width, reserve);
         }
         0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context::ArchContext;
+    use kuna_base::address::Address;
+    use kuna_base::space::{
+        addrspace_flags, spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, FspecSpace,
+        IopSpace, UniqueSpace,
+    };
+    use std::rc::Rc;
+    fn build_manager() -> AddrSpaceManager {
+        let mut m = AddrSpaceManager::new();
+        m.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+        m.insert_space(Rc::new(UniqueSpace::new(1, 0, false)))
+            .unwrap();
+        m.insert_space(Rc::new(IopSpace::new(2))).unwrap();
+        m.insert_space(Rc::new(FspecSpace::new(3))).unwrap();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "ram",
+            false,
+            8,
+            1,
+            4,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        m
+    }
+
+    fn build_fd() -> Funcdata {
+        let manage = build_manager();
+        let glb = Rc::new(ArchContext::new(manage));
+        let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+        let addr = Address::new(ram, 0x1000);
+        Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+    }
+
+    fn copied_mask(fd: &mut Funcdata, width: int4, mask: u64, reversed: bool) -> OpId {
+        let copy = fd.new_op(1, fd.get_address().clone());
+        fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+        let mask = fd.new_constant(width, mask);
+        fd.op_set_input(copy, mask, 0).unwrap();
+        let mask = fd.new_unique_out(width, copy).unwrap();
+        let unknown = fd.new_unique(width, None);
+        let op = fd.new_op(2, fd.get_address().clone());
+        fd.op_set_opcode_code(op, OpCode::CPUI_INT_AND);
+        let (left, right) = if reversed {
+            (mask, unknown)
+        } else {
+            (unknown, mask)
+        };
+        fd.op_set_input(op, left, 0).unwrap();
+        fd.op_set_input(op, right, 1).unwrap();
+        fd.new_unique_out(width, op).unwrap();
+        op
+    }
+    #[test]
+    fn copied_zero_mask_is_not_pointer_alignment() {
+        for width in [4, 8] {
+            for reversed in [false, true] {
+                let mut fd = build_fd();
+                let op = copied_mask(&mut fd, width, 0, reversed);
+                assert_eq!(alignment(&fd, op), None);
+            }
+        }
+    }
+    #[test]
+    fn copied_alignment_mask_preserves_operand_and_width() {
+        for width in [4, 8] {
+            for reversed in [false, true] {
+                let mut fd = build_fd();
+                let op = copied_mask(&mut fd, width, calc_mask(width) & !63, reversed);
+                assert_eq!(alignment(&fd, op), Some((if reversed { 1 } else { 0 }, 64)));
+            }
+        }
+    }
+    #[test]
+    fn unrelated_integer_mask_does_not_align_an_allocation() {
+        let mut fd = build_fd();
+        let zero = fd.new_constant(4, 0);
+        let op = fd.new_op(1, fd.get_address().clone());
+        fd.op_set_opcode_code(op, OpCode::CPUI_COPY);
+        fd.op_set_input(op, zero, 0).unwrap();
+        let root = fd.new_unique_out(4, op).unwrap();
+        fd.obank_mut().mark_alive(op);
+        let offset = fd.new_constant(4, u32::MAX as u64);
+        let add = fd.new_op(2, fd.get_address().clone());
+        fd.op_set_opcode_code(add, OpCode::CPUI_INT_ADD);
+        fd.op_set_input(add, root, 0).unwrap();
+        fd.op_set_input(add, offset, 1).unwrap();
+        let ptr = fd.new_unique_out(4, add).unwrap();
+        fd.obank_mut().mark_alive(add);
+        let space = fd.new_constant(4, 4);
+        let load = fd.new_op(2, fd.get_address().clone());
+        fd.op_set_opcode_code(load, OpCode::CPUI_LOAD);
+        fd.op_set_input(load, space, 0).unwrap();
+        fd.op_set_input(load, ptr, 1).unwrap();
+        fd.new_unique_out(1, load).unwrap();
+        fd.obank_mut().mark_alive(load);
+        let mask = copied_mask(&mut fd, 4, 0xffffffc0, false);
+        fd.obank_mut().mark_alive(mask);
+        let reservations = reserves(
+            &fd,
+            &[Allocation {
+                op,
+                output: root,
+                amount: zero,
+                base: zero,
+            }],
+            &[],
+            4,
+        )
+        .unwrap();
+        assert_eq!((reservations[0].count, reservations[0].shift), (16, 16));
     }
 }
