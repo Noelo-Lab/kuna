@@ -70,7 +70,7 @@ _root_value:
         ]);
         assert_eq!(status, 0, "{err}");
         assert!(
-            code.contains("*out = (double)_root_value((long double)x);"),
+            code.contains("*out = ((volatile double){ (double)_root_value(((volatile long double){ (long double)x })) });"),
             "{code}"
         );
         assert!(!code.contains("CONCAT"), "{code}");
@@ -209,7 +209,7 @@ original_custom:
             assertions[1],
         ]);
         assert_eq!(status, 0, "{err}");
-        assert!(caller.contains("_scaled((long double)x,n)"), "{caller}");
+        assert!(caller.contains("_scaled(((volatile long double){ (long double)x }),n)"), "{caller}");
         std::fs::write(&regenerated, format!(r#"
 {code}
 {caller}

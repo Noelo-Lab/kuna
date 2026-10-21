@@ -404,7 +404,7 @@ fn powerpc_that_states_no_convention_keeps_the_recovered_arguments() {
     );
     let text = decompile(&powerpc_hard(), &["t3"]);
     let t3 = function(&text, "t3");
-    assert!(t3.contains("((double)v1,k) + 1"), "{t3}");
+    assert!(t3.contains("(((volatile double){ (double)v1 }),k) + 1"), "{t3}");
 }
 
 #[test]

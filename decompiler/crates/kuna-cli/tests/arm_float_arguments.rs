@@ -150,7 +150,7 @@ fn single_arguments_written_over_a_double_result_are_read_as_written() {
         "float bf(float a0,float a1,double a2)",
         "double use3(double a0,float a1,int a2)",
         "v1 = dfi(a0,a1,a2);",
-        "return v1 + (double)bf(a1,a1 + a1,a0);",
+        "return v1 + ((volatile double){ (double)bf(a1,a1 + a1,a0) });",
     ] {
         assert!(code.contains(expected), "missing {expected}\n{code}");
     }
@@ -612,7 +612,7 @@ fn leaf_callees_with_conditional_code_take_zero_for_unread_words() {
     for build in ["arm-O2", "thumb-O2", "thumb-O1"] {
         let bytes = std::fs::read(fixtures.join(format!("armfloatargs_early_{build}.o"))).unwrap();
         let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
-        for call in ["C2(5.5f,0.0f,v1,", "C9(5.5f,a0,v1,a1)", "C3(0.0,0.0,(double)v1,a0)"] {
+        for call in ["C2(5.5f,0.0f,v1,", "C9(5.5f,a0,v1,a1)", "C3(0.0,0.0,((volatile double){ (double)v1 }),a0)"] {
             assert!(code.contains(call), "{build}: lacks {call}\n{code}");
         }
         assert!(!code.contains("unsigned long long"), "{build}\n{code}");
@@ -743,7 +743,7 @@ fn scalar_inputs_and_overlapping_call_results_keep_their_widths() {
         "return narrow(a0) + 1.0f;",
         "float after_clobber(double a0)",
         "float cast_only(double a0)",
-        "return (float)a0;",
+        "return ((volatile float){ (float)a0 });",
         "float mixed_input(double a0,float a1)",
         "return (float)(a0 * a0);",
         "double multiple(double a0,double a1,int a2)",

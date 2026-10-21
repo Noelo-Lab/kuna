@@ -283,13 +283,13 @@ fn narrowing_returns_the_final_float_without_stale_double_bytes() {
             code.contains("float narrow_load(double *a0)"),
             "{option}: {code}"
         );
-        assert!(code.contains("return (float)*a0;"), "{option}: {code}");
+        assert!(code.contains("return ((volatile float){ (float)*a0 });"), "{option}: {code}");
         assert!(!code.contains("CONCAT44"), "{option}: {code}");
         if option == "on" {
             assert!(code.contains("float narrow(double a0)"), "{code}");
             assert!(code.contains("return (float)(a0 + a0);"), "{code}");
             assert!(code.contains("float narrow_paths(double a0)"), "{code}");
-            assert!(code.contains("return (float)a0 + 1.0f;"), "{code}");
+            assert!(code.contains("return ((volatile float){ (float)a0 }) + 1.0f;"), "{code}");
             assert!(code.contains("double widen(float a0)"), "{code}");
             assert!(code.contains("return (double)(a0 + a0);"), "{code}");
             assert!(code.contains("double keep_double(double a0)"), "{code}");
