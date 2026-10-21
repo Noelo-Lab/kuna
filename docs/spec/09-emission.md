@@ -132,6 +132,16 @@ to same-width casts, because the slice does not infer a callee's return
 prototype. Explicit floating conversion opcodes retain their numeric
 conversion, and structured member extraction retains priority.
 
+(kuna) A retained `FLOAT_FLOAT2FLOAT` whose input may be a signaling NaN
+materializes its C result in a volatile compound literal
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::op_float_quiet_ir)`).
+A plain widening/narrowing cast pair can otherwise be erased by the C compiler
+even with strict rounding flags. The literal evaluates its input once and forces
+the target format to exist in storage. Already quiet inputs keep ordinary casts;
+`nanignore all` opts out through
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (can_elide)`.
+This applies to C emission; other output languages retain their cast syntax.
+
 Finite 32-bit floating constants in C carry an `f` suffix when the target
 uses 32-bit `float`. Unsuffixed literals have type `double`: printing `0.1`
 for a float constant changes both comparisons at `0.1f` and arithmetic

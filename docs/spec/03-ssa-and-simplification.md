@@ -1857,8 +1857,8 @@ wider format can be replaced: lowering an intermediate introduces an earlier
 rounding and changes overflow and underflow. Binary32 inputs widened for
 subtraction and addition in binary64 therefore keep their widenings and final
 narrowing, printing `(float)((double)accum + ((double)neg_theta - (double)local_axis))`.
-Conversion-only round trips and arithmetic already performed in binary32
-retain their existing simplifications and grouping. This is a correctness
+Arithmetic already performed in binary32 retains its existing simplifications
+and grouping. This is a correctness
 constraint on both forward and backward traces, including divided SIMD lanes.
 
 Both engines also keep every narrowing rounding. `RuleFloatCast` combines two
@@ -1868,8 +1868,19 @@ narrowing can differ: `(float)(double)0x1.000001000000001p0L` is `0x1p+0`,
 while `(float)0x1.000001000000001p0L` is `0x1.000002p+0`. A `SubfloatFlow`
 backward trace that reaches a narrowing conversion declines to lower its
 result below the narrowed width, since the lowered conversion would bypass
-that rounding. Widening-then-narrowing round trips still collapse. This is a
-value-correctness repair with no option.
+that rounding.
+
+(kuna) A widening-then-narrowing round trip can also quiet a signaling NaN.
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (can_elide)`
+permits removing its final conversion only when `nanignore all` allows NaN
+effects to be discarded, or the input is already quiet. Floating arithmetic,
+integer conversion and a conversion to another floating format produce quiet
+values; copies and merges require their sources to be quiet. Non-NaN constants
+also qualify. Unknown loads, inputs and bitwise sign operations do not.
+The provenance walk has a shared 32-node budget; cycles and larger ambiguous
+graphs conservatively retain the conversion. `RuleFloatCast` uses this guard
+before making an identity COPY; `SubfloatFlow::trace_backward` uses it before
+replacing a conversion by a COPY at the reduced precision.
 
 Integer-to-float conversions also retain their rounding width (`option
 intfloatround`, default on;

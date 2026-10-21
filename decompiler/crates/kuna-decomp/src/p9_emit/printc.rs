@@ -6156,6 +6156,9 @@ impl PrintC {
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
                     OpEmitKind::TypeCast if opc == OpCode::CPUI_FLOAT_FLOAT2FLOAT => {
+                        if self.op_float_quiet_ir(fd, arch, op) {
+                            return;
+                        }
                         let implied = self.float_widening_is_c_promoted(fd, arch, op, read_op);
                         self.op_type_cast_ir_with(fd, arch, op, implied)
                     }
@@ -6885,6 +6888,28 @@ impl PrintC {
     /// the matching size.  It never fires for the scalar `CPUI_CAST` /
     /// float-conversion casts this routes (whose output is a scalar `floatN`/`intN`,
     /// not a pointer-to-array).
+    fn op_float_quiet_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return false;
+        }
+        let Some(cast) = fd.obank().get(op) else { return false };
+        let (Some(input), Some(output)) = (cast.get_in(0), cast.get_out()) else { return false };
+        if crate::p3_dataflow::kuna_floatquiet::can_elide(fd, input) {
+            return false;
+        }
+        let size = fd.vbank().get(output).unwrap().get_size();
+        let Ok(ty) = arch.types().get_base(size, type_metatype::TYPE_FLOAT) else { return false };
+        let name = type_name_for_decl(&ty, self.rt_ctx).0;
+        // A plain widening/narrowing cast pair can be erased by the C compiler
+        // even with strict rounding flags. Materialize this conversion instead.
+        static MATERIALIZE: OpToken = op_token("", " })", 2, 66, false, TokenType::Postsurround, 0, 0);
+        self.push_op(&MATERIALIZE, Some(op_key(op)));
+        self.push_atom(&Atom::syntax(format!("((volatile {name}){{ "),
+            TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+        self.op_type_cast_ir_with(fd, arch, op, false);
+        true
+    }
+
     fn op_type_cast_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         self.op_type_cast_ir_with(fd, arch, op, false)
     }
