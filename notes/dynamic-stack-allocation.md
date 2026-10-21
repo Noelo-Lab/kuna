@@ -16,8 +16,10 @@ assuming a trip count or removing probe side effects.
 
 A second SSA analysis bounds stack adjustments below each allocation and reserves
 space for outgoing arguments. Alignment contributes its maximum downward slack.
-Fresh allocation roots separate successive buffers. Unknown stack effects and
-unbounded decreasing cycles cause the transformation to decline.
+Fresh allocation roots separate successive buffers. Nonconvergent pointer bounds
+are widened to unknown; if an unknown bound reaches a stack-pointer write, the
+transformation declines. This preserves the distinction between an indexed memory
+access and an outgoing area whose size cannot be bounded.
 
 Equivalent address calculations must use the same allocated buffer. Replacement
 requires matching allocation origins and dominance of every replaced use; PHI

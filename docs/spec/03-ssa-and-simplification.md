@@ -15,7 +15,8 @@ on the loop or deleting its control flow. Each allocation receives independent
 storage, including allocations inside branches and loops. An SSA fixed point
 bounds the lower-address space required by stack adjustments, memory accesses,
 and outgoing arguments; fresh allocation roots cut successive lifetimes.
-Unknown stack effects and decreasing cycles without a finite bound are declined.
+Pointer induction bounds that do not converge are widened to unknown. Unknown
+stack effects and decreasing stack-pointer cycles without a finite bound are declined.
 The reserved space and alignment rounding are included in the compiler allocation,
 whose result is explicitly converted to an address-sized integer before subsequent
 stack arithmetic. The default is off; this is not an arbitrary stack-switch model.

@@ -68,38 +68,47 @@ fn stack_register(fd: &Funcdata, value: VarnodeId) -> bool {
                 .is_some_and(|s| std::rc::Rc::ptr_eq(s, v.get_space()))
     })
 }
-fn stack_base(fd: &Funcdata, value: VarnodeId, seen: &mut BTreeSet<VarnodeId>) -> bool {
+fn stack_origin(fd: &Funcdata, value: VarnodeId, seen: &mut BTreeSet<VarnodeId>) -> Option<bool> {
     let value = strip(fd, value);
-    if !seen.insert(value) {
-        return false;
-    }
     if stack_register(fd, value) {
-        return true;
+        return Some(true);
     }
-    let Some(op) = fd
-        .vbank()
-        .get(value)
-        .and_then(|v| v.get_def())
-        .and_then(|d| fd.obank().get(d))
-    else {
-        return false;
-    };
+    if !seen.insert(value) {
+        return Some(false);
+    }
+    let definition = fd.vbank().get(value)?.get_def()?;
+    let op = fd.obank().get(definition)?;
     match op.code() {
-        OpCode::CPUI_PTRSUB | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => {
-            op.get_in(0).is_some_and(|v| stack_base(fd, v, seen))
+        OpCode::CPUI_PTRSUB
+        | OpCode::CPUI_PTRADD
+        | OpCode::CPUI_INT_ADD
+        | OpCode::CPUI_INT_SUB
+        | OpCode::CPUI_INDIRECT => stack_origin(fd, op.get_in(0)?, seen),
+        OpCode::CPUI_INT_AND if alignment(fd, definition).is_some() => {
+            stack_origin(fd, op.get_in(0)?, seen)
         }
-        OpCode::CPUI_INT_AND
-            if alignment(fd, fd.vbank().get(value).unwrap().get_def().unwrap()).is_some() =>
+        OpCode::CPUI_MULTIEQUAL => {
+            let mut rooted = false;
+            for slot in 0..op.num_input() {
+                rooted |= stack_origin(fd, op.get_in(slot)?, seen)?;
+            }
+            Some(rooted)
+        }
+        OpCode::CPUI_CALLOTHER
+            if op
+                .get_in(0)
+                .and_then(|v| fd.vbank().get(v))
+                .is_some_and(|v| v.get_offset() == BUILTIN_STACK_ALLOC as u64) =>
         {
-            op.get_in(0).is_some_and(|v| stack_base(fd, v, seen))
+            Some(true)
         }
-        OpCode::CPUI_INDIRECT => op.get_in(0).is_some_and(|v| stack_base(fd, v, seen)),
-        OpCode::CPUI_CALLOTHER => op
-            .get_in(0)
-            .and_then(|v| fd.vbank().get(v))
-            .is_some_and(|v| v.get_offset() == BUILTIN_STACK_ALLOC as u64),
-        _ => false,
+        _ => None,
     }
+}
+fn stack_base(fd: &Funcdata, value: VarnodeId, seen: &mut BTreeSet<VarnodeId>) -> bool {
+    // Every incoming path must be stack-derived and at least one must reach a
+    // real stack root; an otherwise self-contained PHI cycle is not evidence.
+    stack_origin(fd, value, seen) == Some(true)
 }
 fn constant_step(fd: &Funcdata, value: VarnodeId) -> Option<(VarnodeId, i128)> {
     let op = fd.obank().get(fd.vbank().get(value)?.get_def()?)?;
@@ -506,30 +515,54 @@ fn reserves(
         }
     }
     let mut values = Values::new();
-    let mut stable = false;
-    for _ in 0..=ops.len() {
-        let mut changed = false;
+    let update = |values: &mut Values| {
+        let mut changed = BTreeSet::new();
         for &id in &ops {
-            let o = fd.obank().get(id)?;
+            let o = fd.obank().get(id).unwrap();
             let Some(output) = o.get_out() else { continue };
             let next = if let Some(&root) = roots.get(&output) {
                 Bounds::from([(root, 0)])
             } else {
-                evaluate(fd, id, &values)
+                evaluate(fd, id, values)
             };
             if values.get(&output) != Some(&next) {
                 values.insert(output, next);
-                changed = true;
+                changed.insert(output);
             }
         }
-        if !changed {
+        changed
+    };
+    let mut stable = false;
+    let mut changed = BTreeSet::new();
+    for _ in 0..=ops.len() {
+        changed = update(&mut values);
+        if changed.is_empty() {
             stable = true;
             break;
         }
     }
-    // A decreasing cycle has no finite outgoing-area bound. Do not invent one.
+    // A pointer induction cycle need not change the outgoing stack area. Widen
+    // unresolved cyclic bounds to unknown and propagate that fact. An unknown
+    // bound reaching a physical stack-pointer write still declines below.
     if !stable {
-        return None;
+        for value in changed {
+            for offset in values
+                .get_mut(&value)
+                .into_iter()
+                .flat_map(|b| b.values_mut())
+            {
+                *offset = UNKNOWN;
+            }
+        }
+        for _ in 0..=ops.len() {
+            if update(&mut values).is_empty() {
+                stable = true;
+                break;
+            }
+        }
+        if !stable {
+            return None;
+        }
     }
     let mut low = vec![0_i128; allocations.len()];
     let mut align = 16_u128;

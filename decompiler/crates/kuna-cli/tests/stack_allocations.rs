@@ -46,6 +46,8 @@ enum Case {
     Repeated,
     Scoped,
     Probe,
+    ProbeTwo,
+    Drifting,
 }
 
 #[test]
@@ -81,6 +83,20 @@ fn pe32_probe_loop() {
     check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Probe);
 }
 
+#[test]
+fn elf64_two_probe_allocations_roundtrip() {
+    check_case(None, "-O0", Case::ProbeTwo);
+}
+#[test]
+fn pe32_two_probe_allocations() {
+    check_case(Some("i686-w64-windows-gnu"), "-O0", Case::ProbeTwo);
+}
+
+#[test]
+fn elf64_unknown_outgoing_stack_is_declined() {
+    check_case(None, "-O0", Case::Drifting);
+}
+
 fn check(target: Option<&str>, optimization: &str, twice: bool) {
     check_case(
         target,
@@ -106,6 +122,29 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
         Case::Conditional => "char *data;volatile int choice=n&1;if(choice)data=__builtin_alloca((unsigned)n);else data=__builtin_alloca((unsigned)n+16);data[0]=7;return observe(data,n);",
         Case::Repeated => "int total=0;for(int i=0;i<3;i++){char *data=__builtin_alloca((unsigned)n+i);data[0]=7;total+=observe(data,n+i);}return total;",
         Case::Scoped => "int total=0;for(int i=0;i<3;i++){char data[n+i];data[0]=7;total+=observe(data,n+i);}return total;",
+        Case::Drifting => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovl %edi,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\nmovl %esi,%ecx\n"
+"1: subq $16,%rsp\ndecl %ecx\njnz 1b\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
+        Case::ProbeTwo if target.is_some() => r#"__asm__(
+"pushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %esi\npushl %edi\nmovl 8(%ebp),%ebx\n"
+"movl %esp,%edi\nmovl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\n"
+"1: cmpl $4096,%eax\njbe 2f\nsubl $4096,%edi\nsubl $4096,%eax\ntestl %eax,(%edi)\njmp 1b\n"
+"2: subl %eax,%edi\ntestl %eax,(%edi)\nmovl %edi,%esp\nmovl %edi,%esi\n"
+"movl %esp,%edi\nmovl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\n"
+"3: cmpl $4096,%eax\njbe 4f\nsubl $4096,%edi\nsubl $4096,%eax\ntestl %eax,(%edi)\njmp 3b\n"
+"4: subl %eax,%edi\ntestl %eax,(%edi)\nmovl %edi,%esp\nmovb $3,(%esi)\nmovb $7,(%edi)\n"
+"pushl %ebx\npushl %esi\ncalll _observe\naddl $8,%esp\nmovl %eax,%esi\npushl %ebx\npushl %edi\ncalll _observe\naddl $8,%esp\naddl %esi,%eax\n"
+"leal -12(%ebp),%esp\npopl %edi\npopl %esi\npopl %ebx\npopl %ebp\nretl\n");"#,
+        Case::ProbeTwo => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\npushq %rbx\npushq %r12\npushq %r13\nsubq $8,%rsp\nmovl %edi,%ebx\n"
+"movq %rsp,%r10\nmovl %ebx,%eax\naddq $15,%rax\nandq $-16,%rax\n"
+"1: cmpq $4096,%rax\njbe 2f\nsubq $4096,%r10\nsubq $4096,%rax\ntestl %eax,(%r10)\njmp 1b\n"
+"2: subq %rax,%r10\ntestl %eax,(%r10)\nmovq %r10,%rsp\nmovq %r10,%r12\n"
+"movq %rsp,%r10\nmovl %ebx,%eax\naddq $15,%rax\nandq $-16,%rax\n"
+"3: cmpq $4096,%rax\njbe 4f\nsubq $4096,%r10\nsubq $4096,%rax\ntestl %eax,(%r10)\njmp 3b\n"
+"4: subq %rax,%r10\ntestl %eax,(%r10)\nmovq %r10,%rsp\nmovq %r10,%r13\nmovb $3,(%r12)\nmovb $7,(%r13)\n"
+"movq %r12,%rdi\nmovl %ebx,%esi\ncall observe\nmovl %eax,%r12d\nmovq %r13,%rdi\nmovl %ebx,%esi\ncall observe\naddl %r12d,%eax\n"
+"leaq -24(%rbp),%rsp\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nretq\n");"#,
         Case::Probe if target.is_some() => r#"__asm__(
 "pushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %esi\npushl %edi\n"
 "movl 8(%ebp),%edx\nmovl %esp,%edi\nmovl %edx,%eax\naddl $15,%eax\nandl $-16,%eax\n"
@@ -120,7 +159,7 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
 "2: subq %rax,%r10\ntestl %eax,(%r10)\nmovq %r10,%rsp\nmovb $7,(%r10)\nmovq %r10,%rdi\nmovl %edx,%esi\ncall observe\n"
 "leaq -24(%rbp),%rsp\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nretq\n");"#,
     };
-    let naked = if matches!(case, Case::Probe) {
+    let naked = if matches!(case, Case::Probe | Case::ProbeTwo | Case::Drifting) {
         "__attribute__((naked)) "
     } else {
         ""
@@ -181,7 +220,9 @@ API {naked}int allocate(int n) {{{body}}}
         "sample.so.c"
     });
     let text = std::fs::read_to_string(&generated).unwrap();
-    let allocations = if matches!(case, Case::Two | Case::Conditional) {
+    let allocations = if matches!(case, Case::Drifting) {
+        0
+    } else if matches!(case, Case::Two | Case::Conditional | Case::ProbeTwo) {
         2
     } else {
         1
@@ -191,6 +232,9 @@ API {naked}int allocate(int n) {{{body}}}
         allocations,
         "{text}"
     );
+    if matches!(case, Case::Drifting) {
+        return;
+    }
     assert!(!text.contains("Stackffff"), "{text}");
     if let Some(target) = target {
         for opt in ["-O0", "-O2"] {
@@ -206,11 +250,11 @@ API {naked}int allocate(int n) {{{body}}}
     } else {
         let driver = root.join("driver.c");
         let expected = match case {
-            Case::Two => "n==1?36:28",
+            Case::Two | Case::ProbeTwo => "n==1?36:28",
             Case::Repeated | Case::Scoped => "n==1?50:48",
             _ => "n==1?18:16",
         };
-        let limit = if matches!(case, Case::Probe) {
+        let limit = if matches!(case, Case::Probe | Case::ProbeTwo | Case::Drifting) {
             16384
         } else {
             4096
