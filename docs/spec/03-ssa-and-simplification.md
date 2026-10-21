@@ -990,7 +990,7 @@ mainloop reporting one change forever on certain stripped binaries
 Explicit isolated register declarations are applied to matching values already
 created during flow before simplification starts. Matching uses the storage,
 size, and defining instruction address, so a declaration does not type another
-write to the same register. A constant COPY with a locked pointer output keeps
+write to the same register. A constant COPY with an isolated declared pointer output keeps
 that output when propagated into integer storage: the declared address remains
 available for named-global recovery instead of becoming an image-address integer.
 Without a pointer declaration, integer constants retain their ordinary meaning.
