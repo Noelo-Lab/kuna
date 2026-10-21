@@ -7314,6 +7314,25 @@ inspiration = "Ghidra GolangSymbolAnalyzer (pclntab / GoPcHeader / GoModuledata 
 change_kind = "analysis-enablement"
 tier = "analysis"
 symptoms = "stripped go binary renders sub_<addr> instead of main.main and runtime.* names|go package function names missing"
+
+[[settable]]
+option = "lazyfuncs"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-lazyfuncs"
+summary = "Commit the analysis tier's discovered entry points as NAMES only and build a Function where the decompiler reads one, instead of one per entry at `read symbols`. A dense .eh_frame reports every function as an entry (377,429 on a 51 MB Android .so) at ~0.84 KB each -- 315 MB of a single-function run's peak that the run never reads."
+use_when = "Off (default) is Ghidra's whole-inventory commit. On builds a Function only for the selection and for what its p-code reads (call and tail targets, code addresses taken as values): `kuna decompile <big c++ .so> <fn>` drops 30-38% of peak and 33-42% of the time on entry-dense images, byte-identical over 102 sampled functions across six images. Gains track entry density (a Go binary moves 2%); a whole-binary surface still materializes everything it walks."
+example = "option lazyfuncs on"
+source_decompiler = "kuna"
+inspiration = "Ghidra createFunctionIfMissing deferred to the first getFunctionAt"
+change_kind = "speed"
+tier = "analysis"
+symptoms = "kuna decompile on a large c++ .so needs ~750 MB for one function|read symbols dominates a single-function run on an entry-dense image"
 [[settable]]
 option = "objc"
 values = "on|off"

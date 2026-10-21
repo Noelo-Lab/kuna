@@ -34,6 +34,7 @@ pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
 pub mod kuna_callwide;
+pub mod kuna_lazyfuncs;
 mod kuna_paramasserts;
 mod kuna_dwarfstack;
 pub mod kuna_buildstamp;

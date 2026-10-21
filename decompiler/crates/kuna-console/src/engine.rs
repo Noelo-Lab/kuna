@@ -4631,6 +4631,12 @@ fn commit_analysis_output(
     //    installed in GLOBAL alongside it. `find_function_across_scopes` searches
     //    global first, so that duplicate then shadowed the real name at every call
     //    site and the printer rendered `sub_<addr>` (DIV-59).
+    // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
+    let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    if lazy_funcs {
+        let starts: Vec<u64> = out.entries.clone();
+        prog.arch_mut().set_lazy_entry_starts(starts);
+    }
     for &vma in &out.entries {
         let addr = Address::new(Rc::clone(code_space), vma);
         let name = out
@@ -4641,7 +4647,7 @@ fn commit_analysis_output(
             .unwrap_or_else(|| prog.arch().name_function(&addr));
         let type_code = prog.arch().types().get_type_code()?;
         let min_size = prog.arch().min_funcsymbol_size;
-        {
+        if !lazy_funcs {
             let arch = prog.arch_mut();
             if arch.symboltab.find_function_across_scopes(&addr).is_none() {
                 let (scope, base) = arch
