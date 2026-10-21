@@ -1199,6 +1199,13 @@ impl ConsoleProgram {
                 // binary's ORIGINAL name must still resolve. Idempotent, so the
                 // bounded spelling resolves as well.
                 let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
+                // (kuna) A name the loader already committed answers without the
+                // canonical inventory, which costs ~1 GB on a 100k-function image.
+                // Only a unique executable hit short-circuits; ambiguity and every
+                // fallback below still go through the inventory.
+                if let Some(entry) = self.entry_by_committed_symbol(want) {
+                    return Ok(entry);
+                }
                 let entries = self.function_entries_canonical();
                 let mut candidates = self.entries_named(&entries, want);
                 if candidates.is_empty() {
@@ -1550,6 +1557,45 @@ impl ConsoleProgram {
     /// or the address it spells holds no mapped bytes.  The mapped test is the
     /// numeric selector's own ([`Self::resolve_entry`]), so a name resolved this
     /// way reaches exactly the function `--addr` on the same address reaches.
+    /// The entry a *committed* symbol spells `name`, when exactly one executable
+    /// address carries it. Reads the loader's symbol and alias streams only, so a
+    /// name that needs no discovery never pays for it; `None` on anything ambiguous.
+    fn entry_by_committed_symbol(&self, name: &str) -> Option<FunctionEntry> {
+        let sections = self.sections();
+        let decorated = (self.symbol_underscore_prefix && !name.starts_with('_'))
+            .then(|| format!("_{name}"));
+        for spelling in std::iter::once(name).chain(decorated.as_deref()) {
+            let mut hit: Option<u64> = None;
+            let mut ambiguous = false;
+            let mut take = |vma: u64| {
+                if !self.entry_is_executable(vma, &sections) {
+                    return;
+                }
+                match hit {
+                    Some(prev) if prev != vma => ambiguous = true,
+                    _ => hit = Some(vma),
+                }
+            };
+            for sym in self.symbols.slots_of(spelling) {
+                if sym.addr.get_space().is_some() {
+                    take(sym.addr.get_offset());
+                }
+            }
+            for (&vma, names) in &self.loader_aliases {
+                if names.iter().any(|n| n == spelling) {
+                    take(vma);
+                }
+            }
+            if ambiguous {
+                return None;
+            }
+            if let Some(vma) = hit {
+                return Some(self.entry_at_or_named(vma));
+            }
+        }
+        None
+    }
+
     fn entry_by_placeholder_name(&self, name: &str) -> Option<FunctionEntry> {
         let vma = self.placeholder_name_address(name)?;
         self.vma_is_mapped(vma).then(|| self.entry_at_or_named(vma))

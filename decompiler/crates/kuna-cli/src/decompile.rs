@@ -39,6 +39,9 @@ pub struct DecompileArgs {
     pub raw: bool,
     pub regions: bool,
     pub options: Vec<(String, String)>,
+    /// Whether the caller named `fast_funcdisc` themselves; only then is a widening
+    /// retry allowed to leave it alone.
+    pub fast_funcdisc_explicit: bool,
     pub kasserts: Vec<String>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, lowered to `function bounds` lines.
@@ -770,8 +773,11 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
     let mut result = attempt(&base);
     if !discovery.is_empty() && matches!(&result, Err((_, true))) {
-        let widened: Vec<(&'static str, &'static str)> =
+        let mut widened: Vec<(&'static str, &'static str)> =
             base.iter().chain(discovery.iter()).copied().collect();
+        if !args.fast_funcdisc_explicit {
+            widened.push(("fast_funcdisc", "on"));
+        }
         result = attempt(&widened);
     }
     result.map_err(|(message, _)| message)
@@ -1048,7 +1054,12 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     // prepended so explicit `--option` pairs remain last-write-wins in the
     // generated console script.
     options = decompile_all::mode_options_for_binary(mode.as_deref(), &binary, options)?;
-    if addr && !explicit_fast_funcdisc {
+    // `fast_funcdisc` is whole-project discovery: a size-driven mode preset turns it
+    // on and the load then materializes every entry (12.8 s / 1.28 GB on a 39 MB
+    // Mach-O). Neither single-function surface needs it to find its function -- a
+    // by-name selection resolves against the loader's symbols -- so it stays off
+    // until a name misses, where the widening retry below turns it back on.
+    if !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
 
@@ -1060,6 +1071,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         raw,
         regions,
         options,
+        fast_funcdisc_explicit: explicit_fast_funcdisc,
         kasserts,
         func_decls,
         assertions,
@@ -1351,6 +1363,7 @@ mod tests {
             raw: false,
             regions: false,
             options: Vec::new(),
+            fast_funcdisc_explicit: false,
             kasserts: Vec::new(),
             func_decls: Vec::new(),
             assertions: Vec::new(),
