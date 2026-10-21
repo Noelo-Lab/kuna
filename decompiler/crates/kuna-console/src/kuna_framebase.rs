@@ -10,7 +10,9 @@
 //! a conditional return); it ends, before the instruction that does it, at any
 //! other control flow, a stack-pointer change that releases stack (an
 //! epilogue) and one that stores anything but a register's entry value (an
-//! argument push). A call to a get-PC thunk is stepped over. The stack pointer
+//! argument push), and at any later move once the locals are reserved (`SUB
+//! RSP,N`) unless a stack probe came between (a call site's `SUB ESP,0xc`). A
+//! call to a get-PC thunk is stepped over. The stack pointer
 //! is the deepest value the frame setup leaves it at on any path, and unknown
 //! when a path realigns it (`AND RSP,-16`) or moves it in a loop (a stack probe).
 //!
@@ -278,7 +280,8 @@ fn leaves((opc, _, ins): &Op, at: u64, fall: u64) -> bool {
 /// One path of the prologue run: its state, where it is, the stack pointer the
 /// frame setup has left on it (`None` once it is unknown), whether each frame
 /// pointer candidate was last written as a copy of the stack pointer, the stack
-/// pointer at each address it has passed, and whether it has moved it yet.
+/// pointer at each address it has passed, whether it has moved it yet, and
+/// whether it has reserved its locals with no stack probe since.
 #[derive(Clone)]
 struct Path {
     run: Run,
@@ -287,6 +290,7 @@ struct Path {
     copied_sp: Vec<bool>,
     passed: Vec<(u64, Option<i64>)>,
     moved: bool,
+    reserved: bool,
 }
 
 /// The frame pointer and stack pointer of the function at `entry` (an engine
@@ -359,6 +363,7 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
         copied_sp: vec![false; candidates.len()],
         passed: Vec::new(),
         moved: false,
+        reserved: false,
     };
     let mut work = vec![start];
     let mut ended: Vec<Path> = Vec::new();
@@ -373,13 +378,13 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
                 ops[..i].iter().position(|(opc, _, ins)| *opc == OpCode::CPUI_CBRANCH && code_target(ins) == Some(fall))
             });
             let mut fork_to = None;
-            let mut through_thunk = None;
+            let through_thunk = flow.filter(|_| skip.is_none()).and_then(|i| match &ops[i] {
+                (OpCode::CPUI_CALL, _, ins) => code_target(ins).and_then(|t| thunk(&path.run, t)),
+                _ => None,
+            });
             let next_at = match flow.map(|i| &ops[i]) {
                 None => fall,
-                Some((OpCode::CPUI_CALL, _, ins)) if skip.is_none() && code_target(ins).and_then(|t| thunk(&path.run, t)).is_some() => {
-                    through_thunk = code_target(ins).and_then(|t| thunk(&path.run, t));
-                    fall
-                }
+                Some(_) if through_thunk.is_some() => fall,
                 Some((opc, _, ins)) if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) => {
                     let target = code_target(ins).unwrap_or(u64::MAX);
                     let conditional = *opc == OpCode::CPUI_CBRANCH || skip.is_some();
@@ -418,10 +423,18 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
             };
             let (next, entry_stores) = path.run.step(&ops);
             let after = next.stack(&sp);
+            let stores: Vec<Option<i64>> =
+                ops.iter().filter(|op| op.0 == OpCode::CPUI_STORE).map(|op| op.2.get(1).and_then(|a| next.stack(a))).collect();
+            if after == before && before.is_some() && stores.contains(&before) {
+                path.reserved = false;
+            }
             if after != before {
                 path.moved = true;
                 match (before, after) {
-                    (Some(b), Some(a)) if deeper(a, b) && entry_stores => path.sp_frame = path.sp_frame.map(|_| a),
+                    (Some(b), Some(a)) if deeper(a, b) && entry_stores && !path.reserved => {
+                        path.sp_frame = path.sp_frame.map(|_| a);
+                        path.reserved = stores.is_empty();
+                    }
                     (_, None) => {
                         path.sp_frame = None;
                         break;

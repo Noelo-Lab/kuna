@@ -704,8 +704,8 @@ fn reg(register: &str, offset: i64) -> Value {
 /// leaf that pops it before returning; no frame pointer when optimized code
 /// copies RSP into RBP after reserving its locals; the frame a shrink-wrapped
 /// prologue sets up after its early-exit test or a conditional tail call, past a
-/// CMOV between pushes, past an i386 get-PC thunk call, and on ARM and Thumb
-/// past a conditional call or return; no stack pointer once a probe loop moves
+/// CMOV between pushes, past an i386 get-PC thunk call (but not into a call
+/// site's padding), and on ARM and Thumb past a conditional call or return; no stack pointer once a probe loop moves
 /// it, also one entered at its test; x29 at AArch64's frame record, read
 /// through sp when the code does, and none in a leaf that keeps no record.
 #[test]
@@ -720,6 +720,7 @@ fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
     assert_eq!(frame_of("frames-asm.elf", "interleaved"), (Value::Null, reg("rsp", -0x20), sp.clone()));
     assert_eq!(frame_of("frames-asm.elf", "tail_first"), (Value::Null, reg("rsp", -0x28), sp.clone()));
     assert_eq!(frame_of("frames-i386.o", "pic"), (Value::Null, reg("esp", -0x44), sp.clone()));
+    assert_eq!(frame_of("frames-i386.o", "padded"), (Value::Null, reg("esp", -0x1c), sp.clone()));
     for (function, depth) in [("condcall", -0x30), ("condret", -0x30), ("condpop", -0x40), ("tcondcall", -0x40)] {
         assert_eq!(frame_of("frames-arm.o", function), (Value::Null, reg("sp", depth), sp.clone()), "{function}");
     }
