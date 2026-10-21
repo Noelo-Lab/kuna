@@ -3810,3 +3810,9 @@ A colliding parameter or local receives a unique local spelling; parameter stora
 types, and lock flags are preserved, and the prototype and body use the same name.
 This prevents a source-level parameter name from shadowing a function's emitted
 linkage identifier. The change is local to the rendered function.
+
+Storage transfers use the operation-facing member walk that renders an explicit
+access, including its named union-member result. That member can have a different
+scalar type from its varnode or high variable. Both CAST and COPY check the
+printed type before choosing a bit reinterpretation
+(`kuna_bitcast.rs (storage_transfer)`).

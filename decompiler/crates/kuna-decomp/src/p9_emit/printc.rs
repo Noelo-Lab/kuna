@@ -2346,6 +2346,7 @@ enum PartialEntry {
 /// The member walk of one partial access, before any token is emitted
 /// ([`PrintC::partial_walk`]).
 struct PartialWalk {
+    result_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
     stack: Vec<PartialEntry>,
     finalcast: Option<std::rc::Rc<crate::dtype::Datatype>>,
     unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>>,
@@ -8710,7 +8711,7 @@ impl PrintC {
         allow_cast: bool,
     ) -> bool {
         let whole = std::rc::Rc::clone(&sym_type);
-        let PartialWalk { mut stack, finalcast, unnamed_in } =
+        let PartialWalk { mut stack, finalcast, unnamed_in, .. } =
             self.partial_walk(fd, arch, sym_type, off_in, sz_in, vn, op, slot, allow_cast);
         self.push_partial_walk(fd, arch, name, &whole, &mut stack, finalcast, unnamed_in, sz_in, vn, op)
     }
@@ -8931,7 +8932,8 @@ impl PrintC {
             }
         }
 
-        PartialWalk { stack, finalcast, unnamed_in }
+        let result_type = finalcast.as_ref().cloned().or(ct);
+        PartialWalk { stack, finalcast, unnamed_in, result_type }
     }
 
     /// Emit a walked partial access: the member path over `name`, whose whole
@@ -9118,14 +9120,18 @@ impl PrintC {
         op: OpId,
         slot: int4,
     ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
-        if !self.options.partial_access || self.out_lang != crate::kuna_lang::OutLang::C {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
             return None;
         }
         let (_, walk) = self.piece_walk(fd, arch, vn, op, slot, slot >= 0)?;
         let Some(PartialEntry::Unnamed(off, size)) = walk.stack.last() else {
-            return None;
+            use crate::dtype::type_metatype;
+            let width = fd.vbank().get(vn)?.get_size();
+            return walk.result_type.filter(|ty| ty.get_size() == width && matches!(
+                ty.get_metatype(), type_metatype::TYPE_FLOAT | type_metatype::TYPE_INT
+                    | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_PTR));
         };
-        if *size <= 0 {
+        if !self.options.partial_access || *size <= 0 {
             return None;
         }
         match crate::kuna_partialaccess::Piece::plan(fd, arch, vn, op, *off, *size, false, walk.unnamed_in.as_deref())? {

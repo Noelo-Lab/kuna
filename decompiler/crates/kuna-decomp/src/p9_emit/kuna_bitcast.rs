@@ -51,8 +51,9 @@ pub(crate) fn storage_transfer(
             .and_then(|h| h.kuna_symbol_type().map(|ty| ty.get_metatype()))
             .is_some_and(|meta| matches!(meta, type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION))
     };
-    let member = |id: VarnodeId, own: &Datatype| {
+    let member = |id: VarnodeId, own: &Datatype, slot: i32| {
         partial(own)
+            || printed(id, slot).is_some_and(|ty| !partial(&ty) && float(&ty) != float(own))
             || (aggregate(id)
                 && declared_member_type(fd, decl_high_type, id)
                     .is_some_and(|ty| !partial(&ty) && float(&ty) != float(own)))
@@ -78,7 +79,7 @@ pub(crate) fn storage_transfer(
             .then(|| fd.get_arch().types()?.get_base(own.get_size(), type_metatype::TYPE_UNKNOWN).ok())
             .flatten()
     };
-    if copy && !member(input, src.get_type()) && !member(out, dst.get_type()) {
+    if copy && !member(input, src.get_type(), operation.get_slot(input)) && !member(out, dst.get_type(), -1) {
         return None;
     }
     let size = src.get_size();
@@ -86,7 +87,7 @@ pub(crate) fn storage_transfer(
         return None;
     }
     let slot = operation.get_slot(input);
-    let from_ty = copy.then(|| printed(input, slot)).flatten().unwrap_or_else(|| {
+    let from_ty = printed(input, slot).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, input, op, slot)
             .or_else(|| undefined(input, src.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, input))
@@ -101,7 +102,7 @@ pub(crate) fn storage_transfer(
             .or_else(|| undefined(input, src.get_type()))
             .unwrap_or_else(|| fd.vn_type_read_facing(input, op))
     });
-    let to_ty = copy.then(|| printed(out, -1)).flatten().unwrap_or_else(|| {
+    let to_ty = printed(out, -1).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, out, op, -1)
             .or_else(|| undefined(out, dst.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, out))
