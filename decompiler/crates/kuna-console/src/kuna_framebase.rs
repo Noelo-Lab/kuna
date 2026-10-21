@@ -4,10 +4,10 @@
 //!
 //! The prologue is read off the raw p-code from the entry, tracking which
 //! registers hold `SP@entry + k` and which hold constants. Until the stack
-//! pointer first moves, the run follows a forward jump and both ways of a
-//! forward conditional one, and passes any other conditional exit (a
-//! shrink-wrapped prologue sets the frame up after an early-exit test or a
-//! conditional return); it ends, before the instruction that does it, at any
+//! pointer first moves, the run follows a jump and both ways of a conditional
+//! one into code it has not passed, and the way on past any other conditional
+//! exit (a shrink-wrapped prologue sets the frame up after an early-exit test or
+//! a conditional return); it ends, before the instruction that does it, at any
 //! other control flow, a stack-pointer change that releases stack (an
 //! epilogue) and one that stores anything but a register's entry value (an
 //! argument push). The stack pointer
@@ -344,50 +344,45 @@ pub fn frame_bases(prog: &ConsoleProgram, entry: u64, body: &[u64]) -> FrameBase
             let before = path.run.stack(&sp);
             let fall = path.at.wrapping_add(len);
             let flow = ops.iter().position(|op| leaves(op, path.at, fall));
-            let skippable = flow.is_some_and(|i| {
-                ops[..i].iter().any(|(opc, _, ins)| *opc == OpCode::CPUI_CBRANCH && code_target(ins) == Some(fall))
+            let skip = flow.and_then(|i| {
+                ops[..i].iter().position(|(opc, _, ins)| *opc == OpCode::CPUI_CBRANCH && code_target(ins) == Some(fall))
             });
+            let mut fork_to = None;
             let next_at = match flow.map(|i| &ops[i]) {
                 None => fall,
                 Some((opc, _, ins)) if matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH) => {
                     let target = code_target(ins).unwrap_or(u64::MAX);
-                    let conditional = *opc == OpCode::CPUI_CBRANCH || skippable;
-                    if target <= path.at {
-                        let looped = path.passed.iter().find(|(a, _)| *a == target).map(|(_, s)| *s);
-                        if looped.is_some_and(|s| s != before) {
-                            path.sp_frame = None;
-                            break;
-                        }
-                        if !conditional || path.moved {
-                            break;
-                        }
-                        fall
-                    } else if path.moved {
+                    let conditional = *opc == OpCode::CPUI_CBRANCH || skip.is_some();
+                    let looped = path.passed.iter().find(|(a, _)| *a == target).map(|(_, s)| *s);
+                    if target <= path.at && looped.is_some_and(|s| s != before) {
+                        path.sp_frame = None;
                         break;
-                    } else if !in_body.contains(&target) {
-                        if !conditional {
-                            break;
-                        }
-                        fall
-                    } else if !conditional {
+                    }
+                    let unseen = looped.is_none() && in_body.contains(&target);
+                    if path.moved || (!conditional && !unseen) {
+                        break;
+                    }
+                    if !conditional {
                         target
                     } else {
-                        if forks < 8 {
-                            forks += 1;
-                            let mut fork = path.clone();
-                            fork.at = target;
-                            fork.passed.push((path.at, before));
-                            let ops: Vec<Op> = ops.iter().filter(|op| !is_flow(op.0)).cloned().collect();
-                            fork.run = fork.run.step(&ops).0;
-                            work.push(fork);
-                        }
+                        fork_to = unseen.then_some(target);
                         fall
                     }
                 }
-                Some(_) if skippable && !path.moved => fall,
+                Some(_) if skip.is_some() && !path.moved => fall,
                 Some(_) => break,
             };
-            let ops: Vec<Op> = ops.into_iter().filter(|op| !is_flow(op.0)).collect();
+            if let Some(target) = fork_to.filter(|_| forks < 8) {
+                forks += 1;
+                let mut fork = path.clone();
+                fork.at = target;
+                fork.passed.push((path.at, before));
+                let taken: Vec<Op> = ops.iter().filter(|op| !is_flow(op.0)).cloned().collect();
+                fork.run = fork.run.step(&taken).0;
+                work.push(fork);
+            }
+            let applied = if next_at == fall { skip.unwrap_or(ops.len()) } else { ops.len() };
+            let ops: Vec<Op> = ops.into_iter().take(applied).filter(|op| !is_flow(op.0)).collect();
             let (next, entry_stores) = path.run.step(&ops);
             let after = next.stack(&sp);
             if after != before {

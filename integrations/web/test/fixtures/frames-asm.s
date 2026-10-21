@@ -3,7 +3,8 @@
 # its locals; `probed` reserves a large frame a page at a time through a probe
 # loop, as -fstack-clash-protection does; `interleaved` puts a CMOV (a branch to
 # the next instruction in SLEIGH) between its pushes; `tail_first` leaves
-# through a conditional tail call before it sets its frame up.
+# through a conditional tail call before it sets its frame up; `rotated` enters
+# its probe loop at the loop's test.
 #
 # Rebuild:  gcc -nostdlib -static -o frames-asm.elf frames-asm.s
 	.intel_syntax noprefix
@@ -78,6 +79,24 @@ tail_first:
 	ret
 	.size tail_first, .-tail_first
 
+	.globl rotated
+	.type rotated, @function
+rotated:
+	lea r11, [rsp - 0x2000]
+	jmp 2f
+1:	sub rsp, 0x1000
+	or qword ptr [rsp], 0
+2:	cmp rsp, r11
+	jne 1b
+	push rbx
+	sub rsp, 0x20
+	mov rdi, rsp
+	call fill
+	add rsp, 0x2028
+	pop rbx
+	ret
+	.size rotated, .-rotated
+
 	.globl fill
 	.type fill, @function
 fill:
@@ -94,6 +113,7 @@ _start:
 	call probed
 	call interleaved
 	call tail_first
+	call rotated
 	mov eax, 60
 	xor edi, edi
 	syscall

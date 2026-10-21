@@ -259,9 +259,9 @@ argument set-up that was folded away maps to nothing.
 each as `{register, offset}`: the register as the listing names it, lower case, and its
 value minus the stack pointer at entry, which is where every `// stack - 0x58` comment
 counts from (`kuna_console::kuna_framebase`). It is read off the raw p-code from the
-entry. Until the stack pointer first moves, the walk follows forward jumps and both ways
-of a forward conditional one, since a shrink-wrapped prologue tests its argument before
-it saves anything. It ends before any other control flow, before an instruction that
+entry. Until the stack pointer first moves, the walk follows jumps and both ways of a
+conditional one into code it has not passed, and goes on past a conditional return or
+call, since a shrink-wrapped prologue tests its argument before it saves anything. It ends before any other control flow, before an instruction that
 gives stack back and before one that moves the stack pointer while storing anything but
 a register's entry value (an argument push). `stack_pointer` is the deepest place the
 frame setup leaves the stack pointer on any path, `null` once a path realigns it (`AND
@@ -1393,7 +1393,7 @@ ELF, a flag check whose strings are used directly and through a pointer), `struc
 ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
 must not move the view), `frames-O2.elf` (x86-64 ELF built with `-O2`, whose `read_name`
 copies `RSP` into `RBP` after reserving its locals: no frame pointer), `frames-asm.elf`
-(assembled x86-64: shrink-wrapped prologues, a stack-probe loop, a CMOV between pushes). **PE** executables were
+(assembled x86-64: shrink-wrapped prologues, stack-probe loops, a CMOV between pushes). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 

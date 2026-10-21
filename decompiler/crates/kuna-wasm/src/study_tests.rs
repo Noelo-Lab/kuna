@@ -714,6 +714,7 @@ fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
     assert_eq!(frame_of("frames-O2.elf", "read_name"), (Value::Null, reg("rsp", -0x58), sp.clone()));
     assert_eq!(frame_of("frames-asm.elf", "shrink_wrapped"), (Value::Null, reg("rsp", -0x28), sp.clone()));
     assert_eq!(frame_of("frames-asm.elf", "probed"), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(frame_of("frames-asm.elf", "rotated"), (Value::Null, Value::Null, Value::Null));
     assert_eq!(frame_of("frames-asm.elf", "interleaved"), (Value::Null, reg("rsp", -0x20), sp.clone()));
     assert_eq!(frame_of("frames-asm.elf", "tail_first"), (Value::Null, reg("rsp", -0x28), sp.clone()));
     assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30), sp.clone()));
