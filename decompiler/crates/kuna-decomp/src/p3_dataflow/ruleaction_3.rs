@@ -1835,9 +1835,9 @@ impl Rule for RulePropagateCopy {
             if !vn_is_heritage_known(data, invn) {
                 continue; // Don't propagate free's away from their first use
             }
-            // Keep the address type of a declared pointer when its constant
-            // bits flow into integer storage; otherwise relocation is lost.
-            if vn_is_constant(data, invn) && data.vbank().get(vn).is_some_and(|value| {
+            // Preserve explicit pointer declarations across integer storage so
+            // address recovery also sees dynamically computed pointers.
+            if data.vbank().get(vn).is_some_and(|value| {
                 value.is_type_lock()
                     && value.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                     && data.get_scope_local().is_some_and(|scope| {
