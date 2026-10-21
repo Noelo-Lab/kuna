@@ -3816,3 +3816,5 @@ access, including its named union-member result. That member can have a differen
 scalar type from its varnode or high variable. Both CAST and COPY check the
 printed type before choosing a bit reinterpretation
 (`kuna_bitcast.rs (storage_transfer)`).
+Named frame members follow the `stackviews` control; resolving a named global
+member does not require that option.

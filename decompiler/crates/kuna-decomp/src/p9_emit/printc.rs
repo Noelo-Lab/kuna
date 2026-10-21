@@ -9125,6 +9125,18 @@ impl PrintC {
         }
         let (_, walk) = self.piece_walk(fd, arch, vn, op, slot, slot >= 0)?;
         let Some(PartialEntry::Unnamed(off, size)) = walk.stack.last() else {
+            // Named frame members follow the explicit stackviews control too.
+            if !crate::kuna_stackviews::enabled(fd) {
+                let value = fd.vbank().get(vn)?;
+                let high = fd.high_bank().get(value.get_high()?)?;
+                if (0..high.num_instances()).any(|index| {
+                    fd.vbank().get(high.get_instance(index)).is_some_and(|value| {
+                        value.get_space().get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE
+                    })
+                }) {
+                    return None;
+                }
+            }
             use crate::dtype::type_metatype;
             let width = fd.vbank().get(vn)?.get_size();
             return walk.result_type.filter(|ty| ty.get_size() == width && matches!(
