@@ -88,6 +88,8 @@ to that member's pointee, even when an object name introduces a union backing.
 The whole backing type cannot replace that pointer type: doing so would turn a
 native `head->next` dereference into an unresolved `PTRSUB(head,0)` expression.
 
+An isolated pointer declaration may name the value copied into an integer member of a declared frame array or record. C emission checks the type that the destination actually prints, rather than treating the pointer type carried by the COPY as the member's declaration. When a pointer is copied to a same-width integer member, it emits an explicit cast to that member's integer type. This preserves the native address value and produces valid C without changing numeric conversions or other output languages (`kuna_pointerstorecast.rs`).
+
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackversions.rs` separates memory
 SSA bookkeeping from writes under `stackviews`. Generated-backing definitions
 without the native stack-store mark describe reconstructed memory versions, not
