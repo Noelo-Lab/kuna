@@ -3812,3 +3812,10 @@ A colliding parameter or local receives a unique local spelling; parameter stora
 types, and lock flags are preserved, and the prototype and body use the same name.
 This prevents a source-level parameter name from shadowing a function's emitted
 linkage identifier. The change is local to the rendered function.
+
+A same-width integer representation assigned to a declared pointer member needs
+an explicit pointer cast in C. CAST statements are checked using the type their
+result expression prints, rather than the input type, so a pointer-to-integer
+cast cannot leave an integer expression assigned to a pointer field. The whole
+symbol supplies the member type when the declaration representative covers only
+that field (`kuna_pointerstorecast.rs (target)`).
