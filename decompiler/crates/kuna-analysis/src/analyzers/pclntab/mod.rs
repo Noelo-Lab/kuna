@@ -418,14 +418,14 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// Locate the pclntab header VMA. In precedence order (faithful to
 /// `GoPcHeader.getPcHeaderAddress` + `GoModuledata.getFirstModuledata`, plus a
 /// scan fallback for stripped binaries):
-/// 1. the `.gopclntab` (or `gopclntab`) section start;
+/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`) section start;
 /// 2. the `runtime.pclntab` / `runtime.firstmoduledata`-adjacent symbol — kuna
 ///    resolves the `runtime.pclntab` symbol directly when present;
 /// 3. a byte scan of the read-only data sections for the validated header magic.
 fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
     // (1) The named section. Go's ELF uses `.gopclntab`; some toolchains/PE use
-    // `gopclntab` (no dot).
-    for name in [".gopclntab", "gopclntab"] {
+    // `gopclntab` (no dot); Mach-O names it `__gopclntab` (in `__DATA_CONST`).
+    for name in [".gopclntab", "gopclntab", "__gopclntab"] {
         if let Some(sec) = file.section_by_name(name) {
             let vma = sec.address();
             if let Some(hdr) = img.read(vma, 8) {
@@ -453,10 +453,20 @@ fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
 
     // (3) Scan the read-only data sections for the header magic + valid prefix
     // (the kuna analog of `findPcHeaderAddress` for stripped binaries). Restrict
-    // to the sections Go places the pclntab in (`.rodata`, `.data.rel.ro`,
-    // `.noptrdata`) to keep the scan bounded; the validation predicate
-    // (`probe_header`) rejects coincidental magic-shaped bytes.
-    for name in [".rodata", ".data.rel.ro", ".noptrdata", ".data"] {
+    // to the sections Go places the pclntab in to keep the scan bounded — ELF
+    // `.rodata`/`.data.rel.ro`/`.noptrdata`/`.data`, Mach-O `__rodata`/`__const`/
+    // `__noptrdata`/`__data`; the validation predicate (`probe_header`) rejects
+    // coincidental magic-shaped bytes.
+    for name in [
+        ".rodata",
+        ".data.rel.ro",
+        ".noptrdata",
+        ".data",
+        "__rodata",
+        "__const",
+        "__noptrdata",
+        "__data",
+    ] {
         if let Some(sec) = file.section_by_name(name) {
             let base = sec.address();
             let Ok(data) = sec.data() else { continue };
@@ -472,6 +482,15 @@ fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
         }
     }
     None
+}
+
+/// The end (exclusive) of the executable `(vma, size)` extent holding `addr` —
+/// `None` when `addr` is not inside one.
+fn exec_end(ranges: &[(u64, u64)], addr: u64) -> Option<u64> {
+    ranges
+        .iter()
+        .find(|&&(vma, size)| addr >= vma && addr - vma < size)
+        .map(|&(vma, size)| vma + size)
 }
 
 /// Parse a Go binary's pclntab and return the recovered `(entry_pc, name)`
@@ -509,11 +528,23 @@ impl AnalysisPass for GoPclntabPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
-        // ELF-only (the only format kuna loads); a non-ELF view yields nothing.
-        if !matches!(ctx.file.format(), object::BinaryFormat::Elf) {
-            return out;
-        }
-        for f in recover_go_functions(ctx.file) {
+        // Format-neutral: the three formats share the `pcHeader`/`functab` layout. An
+        // entry is admitted only inside executable bytes, so a corrupt table cannot
+        // mint a function over data.
+        let exec = ctx.image.executable_ranges();
+        let mut funcs: Vec<GoFunc> =
+            recover_go_functions(ctx.file).into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
+        funcs.sort_unstable_by_key(|f| f.addr);
+        let addrs: Vec<u64> = funcs.iter().map(|f| f.addr).collect();
+        for (i, f) in funcs.into_iter().enumerate() {
+            // The next entry is this function's real end — the extent the symbol model
+            // lacks. It never runs past the extent holding it, so a body cannot swallow
+            // an entry in another section.
+            let end = addrs.get(i + 1).copied().unwrap_or(u64::MAX);
+            let end = end.min(exec_end(&exec, f.addr).unwrap_or(u64::MAX));
+            if end > f.addr {
+                out.fde_bodies.push((f.addr, end));
+            }
             out.symbols.push(SymFact { addr: f.addr, name: f.name, kind: SymKind::Function });
         }
         out

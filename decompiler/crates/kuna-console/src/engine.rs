@@ -2810,9 +2810,12 @@ impl ConsoleProgram {
         // Listing consumers (`aif`'s gap starts) as well as the load-time oracles
         // (`eh_frame_full`'s landing pads, the prologue patterns). `fde_bodies` is
         // empty unless a gate let one of those passes through above, so `off` is a
-        // byte-identical no-op; only one of the two can be non-empty for a given
-        // image, so the merged list stays sorted and disjoint.
-        let fde_bodies = std::mem::take(&mut merged.fde_bodies);
+        // byte-identical no-op; a Go `pclntab` pass fills the same channel (its
+        // `functab` is the linker's own extent for every function), so the merged
+        // list is normalized here before the lookup, which expects sorted disjoint
+        // ranges.
+        let mut fde_bodies = std::mem::take(&mut merged.fde_bodies);
+        fde_bodies.sort_unstable();
         kuna_analysis::entry::kuna_fdeinterior::suppress_interior_entries(
             &mut merged.entries,
             &fde_bodies,

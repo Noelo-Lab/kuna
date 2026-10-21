@@ -429,3 +429,96 @@ fn image_read_cstr_bounds() {
     // unmapped address -> None
     assert_eq!(img.read_cstr(0x9999, 64), None);
 }
+// --- Mach-O container --------------------------------------------------------
+//
+// The pass returned before parsing on any non-ELF view, and `locate_header` only
+// knew the ELF section spellings. This builds a real arm64 Mach-O (no toolchain, no
+// fixture) whose `__DATA_CONST,__gopclntab` holds the same hand-built table the
+// ELF-shaped tests use, and drives recovery through `object::File` as the pass does.
+
+fn push_name16(v: &mut Vec<u8>, s: &str) {
+    let mut name = [0u8; 16];
+    name[..s.len()].copy_from_slice(s.as_bytes());
+    v.extend_from_slice(&name);
+}
+
+/// One `LC_SEGMENT_64` holding exactly one section, `(addr, size)` at `offset`.
+fn push_segment64(
+    v: &mut Vec<u8>,
+    seg: &str,
+    sect: &str,
+    addr: u64,
+    size: u64,
+    offset: u64,
+    sect_flags: u32,
+) {
+    push_u32_le(v, 0x19); // LC_SEGMENT_64
+    push_u32_le(v, 72 + 80); // cmdsize
+    push_name16(v, seg);
+    push_u64_le(v, addr);
+    push_u64_le(v, size);
+    push_u64_le(v, offset);
+    push_u64_le(v, size);
+    push_u32_le(v, 7);
+    push_u32_le(v, 5); // initprot r-x
+    push_u32_le(v, 1); // nsects
+    push_u32_le(v, 0); // flags
+    push_name16(v, sect);
+    push_name16(v, seg);
+    push_u64_le(v, addr);
+    push_u64_le(v, size);
+    push_u32_le(v, offset as u32);
+    push_u32_le(v, 4); // align 2^4
+    v.resize(v.len() + 8, 0); // reloff, nreloc
+    push_u32_le(v, sect_flags);
+    v.resize(v.len() + 12, 0); // reserved1..3
+}
+
+/// A minimal `MH_EXECUTE` arm64 Mach-O: executable `__TEXT,__text` at `text_vma`
+/// and `__DATA_CONST,__gopclntab` holding `blob` at `pcln_vma`.
+fn build_macho_with_pclntab(text_vma: u64, text_size: u64, pcln_vma: u64, blob: &[u8]) -> Vec<u8> {
+    let text_off = 0x1000u64;
+    let pcln_off = text_off + text_size;
+    let mut v = Vec::with_capacity((pcln_off + blob.len() as u64) as usize);
+    push_u32_le(&mut v, 0xfeed_facf); // MH_MAGIC_64
+    push_u32_le(&mut v, 0x0100_000c); // CPU_TYPE_ARM64
+    push_u32_le(&mut v, 0); // cpusubtype
+    push_u32_le(&mut v, 2); // MH_EXECUTE
+    push_u32_le(&mut v, 2); // ncmds
+    push_u32_le(&mut v, (72 + 80) * 2); // sizeofcmds
+    v.resize(32, 0); // flags, reserved
+    push_segment64(&mut v, "__TEXT", "__text", text_vma, text_size, text_off, 0x8000_0400);
+    push_segment64(&mut v, "__DATA_CONST", "__gopclntab", pcln_vma, blob.len() as u64, pcln_off, 0);
+    v.resize(text_off as usize, 0);
+    v.resize(pcln_off as usize, 0);
+    v.extend_from_slice(blob);
+    v
+}
+
+#[test]
+fn macho_gopclntab_section_is_found_and_decoded() {
+    let text_vma = 0x1_0000_1000u64;
+    let funcs = [(0x10u32, "main.main"), (0x80u32, "main.compute"), (0x200u32, "runtime.gopanic")];
+    let blob = build_go118_image(0, text_vma, &funcs);
+    let bytes = build_macho_with_pclntab(text_vma, 0x400, 0x1_0001_0000, &blob);
+    let file = object::File::parse(&bytes[..]).expect("hand-built Mach-O must parse");
+    assert_eq!(file.format(), object::BinaryFormat::MachO);
+    assert_eq!(
+        recover_go_functions(&file),
+        vec![
+            GoFunc { addr: text_vma + 0x10, name: "main.main".into() },
+            GoFunc { addr: text_vma + 0x80, name: "main.compute".into() },
+            GoFunc { addr: text_vma + 0x200, name: "runtime.gopanic".into() },
+        ]
+    );
+}
+
+#[test]
+fn exec_end_bounds_only_interior_addresses() {
+    let ranges = [(0x1000u64, 0x10u64)];
+    assert_eq!(exec_end(&ranges, 0x1000), Some(0x1010));
+    assert_eq!(exec_end(&ranges, 0x1004), Some(0x1010));
+    assert_eq!(exec_end(&ranges, 0x1010), None);
+    assert_eq!(exec_end(&ranges, 0x0fff), None);
+    assert_eq!(exec_end(&[], 0x1000), None);
+}
