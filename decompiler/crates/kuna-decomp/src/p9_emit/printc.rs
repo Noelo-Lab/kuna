@@ -7651,6 +7651,27 @@ impl PrintC {
         let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
+        // The C call has its prototype's logical result type, regardless of the
+        // ABI register or the caller's explicitly declared storage view.
+        let word_result = (self.out_lang == crate::kuna_lang::OutLang::C && arch.stack_views)
+            .then(|| {
+                let result = proto?.get_output_type()?;
+                let out = fd.obank().get(op)?.get_out()?;
+                let declared = declared_variable_type(fd, arch.decl_high_type, out)?;
+                (result.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT
+                    && matches!(result.get_size(), 4 | 8)
+                    && declared.get_size() == result.get_size()
+                    && matches!(declared.get_metatype(), crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT))
+                    .then_some(declared)
+            }).flatten();
+        if let Some(ty) = word_result {
+            static CALL_BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+            let float = if ty.get_size() == 4 { "float" } else { "double" };
+            let word = type_name_for_decl(&ty, self.rt_ctx).0;
+            self.push_op(&CALL_BITS, Some(op_key(op)));
+            self.push_atom(&Atom::syntax(format!("((union {{ {float} from; {word} to; }}){{ .from = "),
+                TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+        }
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
 
         if opc == OpCode::CPUI_CALLIND {
