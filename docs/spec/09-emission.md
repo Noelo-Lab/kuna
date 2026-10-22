@@ -147,6 +147,23 @@ to same-width casts, because the slice does not infer a callee's return
 prototype. Explicit floating conversion opcodes retain their numeric
 conversion, and structured member extraction retains priority.
 
+(kuna) Under `option nanignore none`, a retained widening `FLOAT_FLOAT2FLOAT`
+whose input may be a signaling NaN and whose result reaches a conversion back
+to the source format materializes its C result in a volatile compound literal
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::op_float_quiet_ir)`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (feeds_round_trip)`):
+`(float)(*&(volatile double){ (double)x })`. A C compiler erases a plain
+`(float)(double)x` pair even with strict rounding flags. The literal evaluates
+its input once and forces the wider format to exist in storage. The read goes
+through `*&` because GCC drops a bare volatile literal assigned to a variable
+(`v = (volatile double){ (double)x };`), which is how a widening shared by
+several readers prints. Widenings that
+feed arithmetic, comparisons, calls or stores, and every narrowing, keep
+ordinary casts, because the compiler must perform those conversions. Already
+quiet inputs also keep ordinary casts, and the default `nanignore compare`
+never produces the literal. This applies to C emission; other output languages
+retain their cast syntax.
+
 A `SUBPIECE` whose destination is typed as a byte array, such as a temporary that
 carries one word of a double into a declared `unsigned char` member, cannot cast
 to that array type, and the functional `SUBnm` form names no declared function

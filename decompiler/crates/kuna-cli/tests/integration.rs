@@ -639,5 +639,8 @@ mod usepoint_pointer_constants;
 #[path = "pe_data_exports.rs"]
 mod pe_data_exports;
 
+#[path = "float_nan_quieting.rs"]
+mod float_nan_quieting;
+
 #[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;
