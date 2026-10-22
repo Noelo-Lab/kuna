@@ -12614,6 +12614,9 @@ fn printed_integer_signedness(ct: &crate::dtype::Datatype, signed_text_byte: boo
 /// A locked scalar local is declared at its Symbol's type even when a merged
 /// storage representative retained a weaker type. Member and parameter views
 /// have their own declaration rules; only a whole, same-width local qualifies.
+/// A high that coalescing left without its Symbol binding qualifies only when
+/// a member is type-locked to the carried type; input, global and reference
+/// views never do.
 fn locked_scalar_local_type(
     fd: &Funcdata,
     high: crate::context::HighVariableId,
@@ -12633,9 +12636,6 @@ fn locked_scalar_local_type(
         }
         std::rc::Rc::clone(record.dtype.as_ref()?)
     } else {
-        // Coalescing can retain a declaration type without its Symbol identity.
-        // A matching type-locked member is the witness; cached recovery alone
-        // must not impose a type on an unbound variable or a global/input view.
         if h.kuna_global() || h.kuna_ref_symbol().is_some() {
             return None;
         }

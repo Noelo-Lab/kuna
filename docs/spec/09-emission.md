@@ -2143,7 +2143,11 @@ representative, and that is not a parameter, declares that Symbol type instead
 representative at a weaker type, such as `void *` for a gcc `-O0` DWARF
 function-pointer local, which makes the indirect call through it invalid C.
 `declared_variable_type` reports the same type, so the storage-transfer casts
-agree with the declaration. The declaration
+agree with the declaration. A local that coalescing left with the Symbol's type
+but no Symbol binding keeps that type only when one of its members is
+type-locked to exactly that type and none is an input, persistent, global or
+`&symbol` reference view; a recovered type with no locked member never imposes
+a declaration. The declaration
 representative still supplies the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
