@@ -81,6 +81,8 @@ SECTIONS {
   .reginfo : { *(.reginfo) } :constants
   . = 0x200000;
   .text.harness : { *(.text.harness*) } :runtime
+  /* Linux maps permissions by page: keep RW data off the RX harness page. */
+  . = ALIGN(0x1000);
   .rodata.harness : { *(.rodata.harness*) *(.rodata .rodata.*) } :runtime_data
   .data : { *(.data .data.*) } :runtime_data
   .bss : { *(.bss .bss.* COMMON) } :runtime_data

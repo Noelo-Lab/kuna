@@ -19,13 +19,13 @@
 0018                            varnodeprops
 0019                            lowerswitchinstall
 0020                            heritage
-0021                            stackalloc
-0022                            paramdouble
-0023                            segmentize
-0024        !                   internalstorage
-0025                            forcegoto
-0026                            directwrite
-0027                            activeparam
+0021                            paramdouble
+0022                            segmentize
+0023        !                   internalstorage
+0024                            forcegoto
+0025                            directwrite
+0026                            activeparam
+0027                            stackalloc
 0028                            returnrecovery
 0029                            restrictlocal
 0030                            deadcode
