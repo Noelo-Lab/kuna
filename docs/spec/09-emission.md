@@ -210,16 +210,16 @@ unresolved aggregate while the store prints a scalar float view; for a
 float-typed `CAST` output, `storage_transfer` then judges by the output's own
 type instead of that aggregate, keeping the reinterpretation.
 
-A `COPY` into or out of a scalar member of a declared aggregate can join a
-float and an integer without any `CAST`: the merged varnode keeps the type of
-the value it carries while the C prints the member's declared type, or the
-varnode's own type is an unresolved partial struct or union. Such a `COPY` takes
-the same bit transfer (`kuna_bitcast.rs (storage_transfer)`) when either side's
-own type is a partial aggregate, or when that side belongs to a variable whose
-symbol is a struct or union and the scalar member its declaration gives it is a
-float where the varnode is not, or the reverse. A scalar global whose recovered
-type is unknown does not qualify, so a float stored to it keeps its value
-spelling. Each side's kind is the type the C prints it with: a side whose bytes
+A `COPY` can join a float and an integer without any `CAST`: into or out of a
+scalar member of a declared aggregate, where the merged varnode keeps the type
+of the value it carries while the C prints the member's declared type; through
+a varnode whose own type is an unresolved partial struct or union; or between
+plain scalar variables whose C declarations differ, such as a float stored into
+a variable declared as an equal-width word. A `COPY` moves bits, so whenever
+the two sides print as a float and an integer (or native pointer) of the same
+width it takes the same bit transfer (`kuna_bitcast.rs (storage_transfer)`).
+A scalar global whose recovered type is unknown does not qualify, so a float
+stored to it keeps its value spelling. Each side's kind is the type the C prints it with: a side whose bytes
 no member names, printed by partial access as `*(T *)&storage[k]`, has that
 `T` (`printc.rs (PrintC::partial_piece_type)`), so a word moved between two
 such pieces stays a plain copy rather than reading the unsigned word into a
@@ -266,19 +266,25 @@ complementary tokens. `tests/stages/kuna-minss-nan.xml` pins MINSS selection
 with defaults and `nanignore none`; the CLI regression compiles the printed C
 and checks its NaN payloads, signed zeros, finite values and infinities against
 the authored instructions.
-With `stackviews`, a cached integer snapshot can also need a float
-reinterpretation at its consuming `FLOAT_*` edge. P9 requires an explicit
-integer C declaration and the P6 marker recording its conversion from generated
-frame-union storage into a detached scalar snapshot. Raw partial-union types and
-register-only high instances cannot recover this role reliably after conversion.
-It emits the same single-evaluation union transfer for C or `from_bits` for Rust
-at that use only. Integer operations
-such as the sign-bit XOR keep the snapshot as integer, and values already
-declared as floats keep their ordinary expression. Unnamed expressions,
-unmarked values and declarations that are not integers keep ordinary emission.
-`FLOAT_INT2FLOAT` remains a numeric conversion; `FLOAT_TRUNC` and
-`FLOAT_FLOAT2FLOAT` still perform their numeric conversions after any required
-input reinterpretation.
+With `stackviews`, a variable whose C declaration is a 32- or 64-bit integer
+word can carry a float's bits: a cached integer snapshot of generated
+frame-union storage, or a variable the user retyped to a word. Every edge
+between that word and floating arithmetic moves bits rather than converting
+the value (`kuna_bitcast.rs (stack_float_input, word_result)`). A native
+`FLOAT_*` op that consumes the variable, and a `RETURN` of it from a function
+whose prototype returns a float of the same width, read it through the
+single-evaluation union transfer for C or `from_bits` for Rust at that use only.
+In C, a float result assigned to it, from a native floating op of that width
+or from a call whose prototype returns a float or double, is stored through
+the reverse union: `v1 = ((union { float from; unsigned int to; }){ .from =
+adjust_value(first) }).to;`. The call is judged by its prototype's logical
+result width, not the ABI register (an x87 `ST0` result is wider than the
+`float` it holds). Integer operations such as the sign-bit XOR keep the word
+as integer, and values already declared as floats keep their ordinary
+expression. Unnamed expressions and declarations that are not integer words
+keep ordinary emission. `FLOAT_INT2FLOAT` remains a numeric conversion of its
+input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform their numeric
+conversions after any required input reinterpretation.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`

@@ -1,4 +1,5 @@
-//! Explicit word storage preserves a floating call result through native float operations.
+//! Explicit word storage preserves a floating call result, and a native float op's result,
+//! through native float operations.
 #![cfg(target_os = "linux")]
 use crate::common;
 use common::process;
@@ -6,38 +7,55 @@ use object::Object;
 use std::process::Command;
 #[test]
 fn pe32_float_call_word_storage() {
-    check("i686-w64-windows-gnu", true, false);
+    check("i686-w64-windows-gnu", true, false, false);
 }
 #[test]
 fn pe64_float_call_word_storage() {
-    check("x86_64-w64-windows-gnu", true, false);
+    check("x86_64-w64-windows-gnu", true, false, false);
 }
 #[test]
 fn pe32_float_call_control() {
-    check("i686-w64-windows-gnu", false, false);
+    check("i686-w64-windows-gnu", false, false, false);
 }
 #[test]
 fn pe64_float_call_control() {
-    check("x86_64-w64-windows-gnu", false, false);
+    check("x86_64-w64-windows-gnu", false, false, false);
+}
+#[test]
+fn pe32_float_arith_word_storage() {
+    check("i686-w64-windows-gnu", true, false, true);
+}
+#[test]
+fn pe64_float_arith_word_storage() {
+    check("x86_64-w64-windows-gnu", true, false, true);
+}
+#[test]
+fn pe32_double_arith_word_storage() {
+    check("i686-w64-windows-gnu", true, true, true);
+}
+#[test]
+fn pe64_double_arith_word_storage() {
+    check("x86_64-w64-windows-gnu", true, true, true);
 }
 #[test]
 fn pe32_double_call_word_storage() {
-    check("i686-w64-windows-gnu", true, true);
+    check("i686-w64-windows-gnu", true, true, false);
 }
 #[test]
 fn pe64_double_call_word_storage() {
-    check("x86_64-w64-windows-gnu", true, true);
+    check("x86_64-w64-windows-gnu", true, true, false);
 }
 #[test]
 fn pe32_double_call_control() {
-    check("i686-w64-windows-gnu", false, true);
+    check("i686-w64-windows-gnu", false, true, false);
 }
 #[test]
 fn pe64_double_call_control() {
-    check("x86_64-w64-windows-gnu", false, true);
+    check("x86_64-w64-windows-gnu", false, true, false);
 }
-fn check(target: &str, word: bool, double: bool) {
+fn check(target: &str, word: bool, double: bool, arith: bool) {
     let scalar = if double { "double" } else { "float" };
+    let chosen = if arith { "value-second" } else { "second" };
     let storage = if double {
         "unsigned long long"
     } else {
@@ -59,8 +77,8 @@ fn check(target: &str, word: bool, double: bool) {
     std::fs::write(&source,r#"
 #define API __declspec(dllexport) __attribute__((noinline))
 API float adjust_value(float value){return value+0.125f;}
-API float choose_value(float first,float second){float value=adjust_value(first);if(value>second)value=second;return value;}
-"#.replace("float", scalar)).unwrap();
+API float choose_value(float first,float second){float value=adjust_value(first);if(value>second)value=CHOSEN;return value;}
+"#.replace("float", scalar).replace("CHOSEN", chosen)).unwrap();
     process::required_output(
         Command::new("clang")
             .arg(format!("--target={target}"))
@@ -130,11 +148,12 @@ float adjust_value(float x){return x+0.125f;}
 float choose_value(float,float);
 int main(void){
 for(int i=-64;i<=64;i++)for(int j=-8;j<=8;j++){
-float a=i*0.0625f,b=j*0.25f,expected=adjust_value(a);if(expected>b)expected=b;
+float a=i*0.0625f,b=j*0.25f,expected=adjust_value(a);if(expected>b)expected=CHOSEN;
 if(choose_value(a,b)!=expected)return 1;
 }return 0;}
 "#
-        .replace("float", scalar),
+        .replace("float", scalar)
+        .replace("CHOSEN", &chosen.replace("value", "expected").replace("second", "b")),
     )
     .unwrap();
     for opt in ["-O0", "-O2"] {

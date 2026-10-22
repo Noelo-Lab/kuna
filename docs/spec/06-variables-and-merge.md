@@ -3424,12 +3424,11 @@ frame alias even when its value has an integer type. The bounded pointer helper
 only recovers byte extents for byte-addressed stack spaces, so word-addressed
 pointers cannot justify removing an overlapping save.
 
-When a generated frame-union value becomes a detached integer snapshot,
-`kuna_stackvaluecopies.rs` records that role on its high before emission. The
-register/unique instances can retain partial-union types after the declaration
-has become an integer; tracing their storage addresses would also miss copied
-or phi-joined values. P9 uses the recorded role and the actual integer C
-declaration to preserve bits at native floating uses. Integer bit operations and
+When a generated frame-union value becomes a detached scalar snapshot,
+`kuna_stackvaluecopies.rs` retypes its instances to the scalar type of their
+source bytes, else the unsigned word of their width, before emission. P9 reads
+the resulting integer C declaration like any other word variable and preserves
+bits at native floating uses and floating stores. Integer bit operations and
 explicit numeric conversion opcodes retain their original interpretation.
 
 An early layout or required-merge query can precede prototype-store attachment.

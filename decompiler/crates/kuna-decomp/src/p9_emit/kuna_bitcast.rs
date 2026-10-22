@@ -209,6 +209,42 @@ pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: 
     }
 }
 
+/// The declared word type of the explicit variable that `op` assigns a float or double
+/// result to: a call whose prototype returns one (its logical width, not the ABI register's),
+/// or a native float op whose output has that width. The assignment then stores the bits.
+pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Rc<Datatype>> {
+    if !fd.get_arch().stack_views {
+        return None;
+    }
+    let operation = fd.obank().get(op)?;
+    let out = operation.get_out()?;
+    let size = match operation.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            let index = fd.get_call_specs_index(op)?;
+            let result = fd.get_call_specs(index).proto().get_output_type()?;
+            (result.get_metatype() == type_metatype::TYPE_FLOAT).then(|| result.get_size())?
+        }
+        OpCode::CPUI_FLOAT_ABS
+        | OpCode::CPUI_FLOAT_ADD
+        | OpCode::CPUI_FLOAT_CEIL
+        | OpCode::CPUI_FLOAT_DIV
+        | OpCode::CPUI_FLOAT_FLOAT2FLOAT
+        | OpCode::CPUI_FLOAT_FLOOR
+        | OpCode::CPUI_FLOAT_INT2FLOAT
+        | OpCode::CPUI_FLOAT_MULT
+        | OpCode::CPUI_FLOAT_NEG
+        | OpCode::CPUI_FLOAT_ROUND
+        | OpCode::CPUI_FLOAT_SQRT
+        | OpCode::CPUI_FLOAT_SUB => fd.vbank().get(out)?.get_size(),
+        _ => return None,
+    };
+    let declared = crate::printc::declared_variable_type(fd, decl_high_type, out)?;
+    (matches!(size, 4 | 8)
+        && declared.get_size() == size
+        && matches!(declared.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT))
+        .then_some(declared)
+}
+
 /// Explicit word storage keeps its bits when a native float op consumes it.
 pub(crate) fn stack_float_input(
     fd: &Funcdata,
