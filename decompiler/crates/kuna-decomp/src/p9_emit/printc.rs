@@ -6741,6 +6741,7 @@ impl PrintC {
         let value = fd.vbank().get(constant).unwrap();
         if value.is_annotation() || value.get_size() != size
             || fd.vn_type_read_facing(delta, op).get_metatype() == type_metatype::TYPE_PTR
+            || !scaled_index(fd, delta, 4)
         { return false; }
         let Some(base) = self.named_globals.object_address(fd, arch, value.get_offset()) else { return false };
         let Ok(word) = arch.types().get_base(size, type_metatype::TYPE_UINT) else { return false };
@@ -12704,4 +12705,27 @@ pub(crate) fn declared_variable_type(
     };
     let rep = type_rep.or_else(|| decl_rep_varnode(fd, hid))?;
     Some(fd.vbank().get(rep)?.get_type().clone())
+}
+
+/// Whether `vn` is an index the binary scaled or widened (a multiply or left
+/// shift by a constant, an extension, or a sum of those), so it cannot be the
+/// base pointer of an addition whose other operand is a constant address.
+fn scaled_index(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+        return false;
+    };
+    let constant = |slot: i32| def.get_in(slot).and_then(|i| fd.vbank().get(i)).is_some_and(|v| v.is_constant());
+    match def.code() {
+        OpCode::CPUI_INT_MULT => constant(0) || constant(1),
+        OpCode::CPUI_INT_LEFT => constant(1),
+        OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT => true,
+        OpCode::CPUI_CAST | OpCode::CPUI_COPY if depth > 0 => def.get_in(0).is_some_and(|input| {
+            fd.vn_type_def_facing(input).get_metatype() != crate::dtype::type_metatype::TYPE_PTR
+                && scaled_index(fd, input, depth - 1)
+        }),
+        OpCode::CPUI_INT_ADD if depth > 0 => (0..2).all(|slot| {
+            constant(slot) || def.get_in(slot).is_some_and(|input| scaled_index(fd, input, depth - 1))
+        }) && !(constant(0) && constant(1)),
+        _ => false,
+    }
 }
