@@ -130,6 +130,9 @@ mod verify_eh_frame_full;
 #[path = "verify_elf_language_ids.rs"]
 mod verify_elf_language_ids;
 
+#[path = "verify_entry_lookup_cache.rs"]
+mod verify_entry_lookup_cache;
+
 #[path = "verify_entry_selectors.rs"]
 mod verify_entry_selectors;
 

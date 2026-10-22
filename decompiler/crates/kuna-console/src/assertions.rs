@@ -599,16 +599,22 @@ pub(crate) fn resolve_proto_target(
     prog: &ConsoleProgram,
     func: &str,
 ) -> Result<ProtoTarget, String> {
-    match prog.resolve_entry(&EntrySelector::Name(func.to_string())) {
-        Ok(entry) => return Ok(ProtoTarget::At(entry.addr, entry.name)),
-        // An unresolved name is deliberately legal: it parks in the pending
-        // store for a symbol that may be loaded later. Keep going because a
-        // hexadecimal operand can still be the address form below.
-        Err(EntryLookupError::NotFound { .. }) => {}
-        // In particular, do not turn two executable definitions with the same
-        // name into an arbitrary global-scope choice. The public selector
-        // reports every candidate, which lets an agent retry with an address.
-        Err(err) => return Err(err.to_string()),
+    // An explicit address operand that no symbol is spelled as cannot match by
+    // name; skip the whole-image name lookup and its unused spelling suggestion.
+    let address_only =
+        (func.starts_with("0x") || func.starts_with("0X")) && !prog.has_symbol_spelled(func);
+    if !address_only {
+        match prog.resolve_entry(&EntrySelector::Name(func.to_string())) {
+            Ok(entry) => return Ok(ProtoTarget::At(entry.addr, entry.name)),
+            // An unresolved name is deliberately legal: it parks in the pending
+            // store for a symbol that may be loaded later. Keep going because a
+            // hexadecimal operand can still be the address form below.
+            Err(EntryLookupError::NotFound { .. }) => {}
+            // In particular, do not turn two executable definitions with the same
+            // name into an arbitrary global-scope choice. The public selector
+            // reports every candidate, which lets an agent retry with an address.
+            Err(err) => return Err(err.to_string()),
+        }
     }
     let hex = func.strip_prefix("0x").or_else(|| func.strip_prefix("0X"));
     let explicit = hex.is_some();
