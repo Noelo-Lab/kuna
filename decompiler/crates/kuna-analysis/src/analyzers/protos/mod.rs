@@ -38,6 +38,7 @@ use kuna_decomp::fspec::PrototypePieces;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
+mod kuna_libgcc;
 mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
@@ -49,10 +50,9 @@ pub struct LibProtoPass;
 
 /// A primitive type slot in a built-in libc signature.
 ///
-/// Every variant is **width-stable**: it is either `void`, exactly 4 bytes, or
-/// exactly pointer-width on every ILP32/LP64 target. A C type that is neither
-/// (`off_t`, `time_t`, `long long`, `char`/`short` parameters) has no spelling
-/// here on purpose — see [`kuna_libcsigs`].
+/// Integer slots are four bytes or pointer-width for libc declarations. Compiler
+/// runtime machine-mode contracts can additionally state an exact eight-byte
+/// integer; that does not establish the width of libc `long long` parameters.
 #[derive(Clone, Copy)]
 enum Ty {
     /// `void` (return only).
@@ -65,6 +65,8 @@ enum Ty {
     Size,
     /// `ssize_t` / `long` / `ptrdiff_t` (pointer-width signed).
     Long,
+    /// Signed DI-mode integer (exactly eight bytes in the compiler runtime ABI).
+    Int64,
     /// `char *`.
     CharPtr,
     /// `char **`.
@@ -182,6 +184,7 @@ fn build_ty(
         Ty::UInt => types.get_base(4, type_metatype::TYPE_UINT),
         Ty::Size => types.get_base(ptr, type_metatype::TYPE_UINT),
         Ty::Long => types.get_base(ptr, type_metatype::TYPE_INT),
+        Ty::Int64 => types.get_base(8, type_metatype::TYPE_INT),
         Ty::CharPtr => {
             let c = types.get_type_char(types.get_size_of_char())?;
             types.get_type_pointer(ptr, c, word_size)
@@ -607,6 +610,7 @@ impl AnalysisPass for LibProtoPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
         seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size, L);
+        kuna_libgcc::seed(ctx, &mut out, &present, &imports);
         out.c_runtime_imports = crate::loader::pe_iat::c_runtime_import_names(ctx.bytes);
         out
     }
