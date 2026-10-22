@@ -370,6 +370,57 @@ fn check_stack_width(addr: &Address, widths: &[int4], ct: &Datatype) -> Result<(
     Ok(())
 }
 
+/// Independently locked locals cannot both own the same frame bytes. A single
+/// aggregate or union may describe multiple views, but two C declarations would
+/// lose the alias between their writes and reads.
+fn check_stack_retype_overlap(
+    fd: &Funcdata,
+    target: SymbolId,
+    address: &Address,
+    size: int4,
+) -> Result<(), String> {
+    if !address.get_space().is_some_and(|space| space.get_type() == IPTR_SPACEBASE) {
+        return Ok(());
+    }
+    let Some(scope) = fd.get_scope_local() else { return Ok(()) };
+    // Definition-scoped bindings may describe distinct incarnations of a slot.
+    // This guard concerns independent whole-frame declarations only.
+    if scope.database().symbol(target).mapentry.iter().any(|&entry| {
+        !scope.database().entry(scope.scope_id(), entry).uselimit.empty()
+    }) {
+        return Ok(());
+    }
+    let start = address.get_offset() as u128;
+    let end = start + size.max(0) as u128;
+    for directive in fd.kuna_directive_symbols() {
+        if !directive.retyped || directive.symbol == target {
+            continue;
+        }
+        for &mapping in &scope.database().symbol(directive.symbol).mapentry {
+            let entry = scope.database().entry(scope.scope_id(), mapping);
+            if !entry.uselimit.empty() || entry.get_offset() != 0 || entry.get_addr().is_invalid() {
+                continue;
+            }
+            let other = entry.get_addr();
+            let width = entry.get_size();
+            if other.get_space().map(|space| space.get_index())
+                != address.get_space().map(|space| space.get_index())
+            {
+                continue;
+            }
+            let other_start = other.get_offset() as u128;
+            let other_end = other_start + width.max(0) as u128;
+            if start < other_end && other_start < end {
+                return Err(format!(
+                    "Stack storage overlaps the independently retyped local `{}`; declare one aggregate or union covering the shared storage",
+                    directive.printed
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Apply one `name`/`type` directive to the local `name` resolves to: rename it
 /// to `newname` (empty keeps the name) and, for a `type`, retype it to
 /// `retype`. Returns the Symbol the directive is recorded on, if any (a stack
@@ -435,6 +486,7 @@ pub fn apply_local(
     if let (None, Some(ct)) = (bound_size, retype.as_ref()) {
         if let Some((addr, widths)) = stack_storage(fd, sym) {
             check_stack_width(&addr, &widths, ct)?;
+            check_stack_retype_overlap(fd, sym, &addr, ct.get_size())?;
         }
     }
     let retype_given = retype.is_some();

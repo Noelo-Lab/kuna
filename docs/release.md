@@ -12,18 +12,20 @@ kuna versions are **two components only** — `MAJOR.MINOR` (e.g. `0.14`,
 | Component | Where it lives | Who/what changes it |
 |---|---|---|
 | **MAJOR** | The top-level `VERSION` file (a single integer). | A maintainer, by editing the file in a PR. `.github/CODEOWNERS` routes any `VERSION` change to maintainer review (enforced once branch protection on `main` requires code-owner review). |
-| **MINOR** | Not stored — **derived**: the number of commits on `main` since `VERSION` last changed. | Every commit, automatically. No bot commits, no push-backs: the count *is* the bump. |
+| **MINOR** | Not stored — **derived** from the release tags: a commit tagged `vMAJOR.N` is `MAJOR.N`; any other commit is one past the highest `vMAJOR.*` tag. | Each release, automatically. No bot commits, no push-backs: the release's own tag *is* the bump. |
 
 Consequences worth knowing:
 
-- A commit that edits `VERSION` is itself version `MAJOR.0` — bumping the major
+- **Each release bumps the minor by exactly 1**, however many commits it
+  batches — a night that merged eight PRs still goes `v1.979` → `v1.980`.
+  (Until 2026-10 the minor was the commit count since `VERSION` changed, which
+  jumped it by a whole day's merges; `v1.978` is the last release cut that way,
+  and the count continues from it.)
+- The first release after a `VERSION` edit is `MAJOR.0` — bumping the major
   resets the minor.
-- **Released minor numbers skip, by design.** The minor is gap-free *per commit*,
-  but releases are nightly and batch a whole day, so a night that merged eight
-  PRs jumps the published version by eight. `v1.89` following `v1.81` is the
-  system working, not a failed run.
-- Merge strategy matters: a squash-merge bumps the minor by 1 per PR; a merge
-  or rebase of N commits bumps it by N.
+- An untagged commit reports the version the *next* release would take, so
+  between releases every commit on `main` shares one number; a dev build is
+  identified by its commit hash, not its version.
 
 Compute it locally:
 
@@ -31,8 +33,9 @@ Compute it locally:
 make version          # or: bash scripts/version.sh
 ```
 
-The script needs full git history (the minor is a commit count) and errors out
-on shallow clones.
+The script needs the release tags (the minor is read from them) and errors out
+on shallow clones; in a clone without the tags it reports the wrong minor, so
+`git fetch --tags` first.
 
 ## What `kuna --version` reports
 
@@ -56,9 +59,10 @@ triggers:
 | `workflow_dispatch` | On demand, Actions tab | Cut a release now, or re-run a failed one. |
 
 There is deliberately **no "has anything changed?" guard**, because the version
-scheme already is one: the minor *is* the commit count, so a nightly run on an
-unchanged `main` recomputes the same `MAJOR.MINOR`, the `version` job finds that
-tag already published, and every downstream job skips. A quiet day costs one
+scheme already is one: a commit that already carries a release tag reports that
+tag's version, so a nightly run on an unchanged `main` recomputes the same
+`MAJOR.MINOR`, the `version` job finds that tag already published, and every
+downstream job skips. A quiet day costs one
 ~30-second job and publishes nothing.
 
 Before this, every push to `main` released: one busy day produced **18 releases
@@ -66,9 +70,10 @@ and 18 tags**.
 
 ### The jobs
 
-1. **version** — computes `MAJOR.MINOR` from a full-history checkout and skips
-   the whole run if tag `vMAJOR.MINOR` already exists (safe re-runs, and the
-   no-op guard above).
+1. **version** — computes `MAJOR.MINOR` from a full checkout (history and
+   tags) and skips the whole run if tag `vMAJOR.MINOR` already exists (the
+   no-op guard above). A failed run creates no tag — the tag is the last thing
+   published — so re-running it recomputes the same version.
 2. **specs** — compiles every `.slaspec` → `.sla` once on Linux and packages
    the whole `specs/` tree as `kuna-v<ver>-specs.tar.gz`. `.sla` files are
    platform-independent, so one tree serves every OS: each **build** row
