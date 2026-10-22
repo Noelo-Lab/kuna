@@ -981,6 +981,9 @@ pub fn resolve_integer_format(
     // Sign handling (printc.cc:1381-1391).
     if sign && display_fmt_in != display_format::FORCE_CHAR {
         let mask = calc_mask(sz);
+        if sz > 0 {
+            val &= mask;
+        }
         let flip = val ^ mask;
         print_negsign = flip < val;
         if print_negsign {
@@ -2349,6 +2352,7 @@ struct PartialWalk {
     stack: Vec<PartialEntry>,
     finalcast: Option<std::rc::Rc<crate::dtype::Datatype>>,
     unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    result_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 impl PrintC {
@@ -3927,6 +3931,15 @@ impl PrintC {
             // itself, never a Symbol; declare it `<base> name [N]` instead of
             // flattening it to a scalar `undefined<N>`.
             .or_else(|| {
+                // A partial array member cannot replace the whole record that
+                // supplies the base for this variable's member accesses.
+                if declared.as_ref().is_some_and(|ty| matches!(
+                    ty.get_metatype(),
+                    crate::dtype::type_metatype::TYPE_STRUCT
+                        | crate::dtype::type_metatype::TYPE_UNION
+                )) {
+                    return None;
+                }
                 let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
                 array_decl_parts(v.get_type(), rt).map(|parts| (parts, std::rc::Rc::clone(v.get_type())))
             });
@@ -8747,7 +8760,7 @@ impl PrintC {
         allow_cast: bool,
     ) -> bool {
         let whole = std::rc::Rc::clone(&sym_type);
-        let PartialWalk { mut stack, finalcast, unnamed_in } =
+        let PartialWalk { mut stack, finalcast, unnamed_in, .. } =
             self.partial_walk(fd, arch, sym_type, off_in, sz_in, vn, op, slot, allow_cast);
         self.push_partial_walk(fd, arch, name, &whole, &mut stack, finalcast, unnamed_in, sz_in, vn, op)
     }
@@ -8968,7 +8981,8 @@ impl PrintC {
             }
         }
 
-        PartialWalk { stack, finalcast, unnamed_in }
+        let result_type = finalcast.clone().or(ct);
+        PartialWalk { stack, finalcast, unnamed_in, result_type }
     }
 
     /// Emit a walked partial access: the member path over `name`, whose whole
@@ -9145,8 +9159,8 @@ impl PrintC {
         Some((name, self.partial_walk(fd, arch, st, symoff as int8, asize, vn, op, slot, allow_cast)))
     }
 
-    /// (kuna `partialaccess`) The type `vn` prints with when its Symbol's bytes
-    /// are read through a typed pointer because no member names them.
+    /// The type of the member or cast this access actually prints, including
+    /// the typed pointer used when no member names the Symbol's bytes.
     fn partial_piece_type(
         &self,
         fd: &Funcdata,
@@ -9155,13 +9169,22 @@ impl PrintC {
         op: OpId,
         slot: int4,
     ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
-        if !self.options.partial_access || self.out_lang != crate::kuna_lang::OutLang::C {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
             return None;
         }
         let (_, walk) = self.piece_walk(fd, arch, vn, op, slot, slot >= 0)?;
         let Some(PartialEntry::Unnamed(off, size)) = walk.stack.last() else {
-            return None;
+            use crate::dtype::type_metatype;
+            let width = fd.vbank().get(vn)?.get_size();
+            return walk.result_type.filter(|ty| ty.get_size() == width && matches!(
+                ty.get_metatype(), type_metatype::TYPE_BOOL | type_metatype::TYPE_INT
+                    | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_FLOAT | type_metatype::TYPE_PTR
+            ));
         };
+        if !self.options.partial_access {
+            return None;
+        }
         if *size <= 0 {
             return None;
         }
