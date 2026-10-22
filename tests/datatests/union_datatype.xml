@@ -198,13 +198,13 @@ ff90c9c3554889e548897df88975f489
 <stringmatch name="Union #16" min="1" max="1">res = \(int4\)\(val\.mydouble \+ 33\.0\);</stringmatch>
 <stringmatch name="Union #17" min="1" max="1">arr\[3\]\.ffield = arr\[4\]\.ffield \+ arr\[3\]\.ffield;</stringmatch>
 <stringmatch name="Union #18" min="1" max="1">displayint\(arr\[i\]\.ifield \+ 7\);</stringmatch>
-<stringmatch name="Union #19" min="1" max="1">displayint\(\(int4\)\(\(\(volatile float8\)\{ \(float8\)arr\[i\]\.ffield \}\) \+ 3\.2\)\);</stringmatch>
+<stringmatch name="Union #19" min="1" max="1">displayint\(\(int4\)\(arr\[i\]\.ffield \+ 3\.2\)\);</stringmatch>
 <stringmatch name="Union #20" min="1" max="1">ptr-\>value\)\.myfloat = fval \+ 5\.5f?;</stringmatch>
 <stringmatch name="Union #21" min="1" max="1">ptr-\>value\)\.myint = ival \+ 3;</stringmatch>
-<stringmatch name="Union #22" min="1" max="1">val = \(int4\)\(\(\(volatile float8\)\{ \(float8\)\(ptr-&gt;value\)\.myfloat \}\) \* 1\.5\);</stringmatch>
+<stringmatch name="Union #22" min="1" max="1">val = \(int4\)\(\(ptr-\>value\)\.myfloat \* 1\.5\);</stringmatch>
 <stringmatch name="Union #23" min="1" max="1">val = \(ptr-\>value\)\.myint \+ 0x1b;</stringmatch>
 <stringmatch name="Union #24" min="1" max="1">res = ptr-\>a-\>aIntField \+ 10;</stringmatch>
-<stringmatch name="Union #25" min="1" max="1">res = \(int4\)\(\(\(volatile float8\)\{ \(float8\)ptr-&gt;a-&gt;aFloatField \}\) \+ 5\.0\);</stringmatch>
+<stringmatch name="Union #25" min="1" max="1">res = \(int4\)\(ptr-\>a-\>aFloatField \+ 5\.0\);</stringmatch>
 <stringmatch name="Union #26" min="1" max="1">res = \(int4\)ptr-\>b-\>bCharField;</stringmatch>
 <stringmatch name="Union #27" min="1" max="1">res = ptr-\>b-\>bIntField;</stringmatch>
 <stringmatch name="Union #28" min="1" max="1">res = \(int4\)ptr-\>longField;</stringmatch>

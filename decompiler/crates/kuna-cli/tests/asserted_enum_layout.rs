@@ -84,12 +84,7 @@ fn an_asserted_enum_is_as_wide_as_int() {
         let input = object_file(stem, arch, functions);
         for (func, read) in [("read_value", "packet->value;"), ("read_gain", "packet->gain;"), ("read_mode", "packet->mode;")] {
             let code = decompile(&input, func, &PACKET);
-            let expected = if stem == "enum-i386" && func == "read_gain" {
-                "return (float)((volatile long double){ (long double)packet->gain });".to_string()
-            } else {
-                format!("return {read}")
-            };
-            assert!(code.contains(&expected), "{stem} {func}: {code}");
+            assert!(code.contains(&format!("return {read}")), "{stem} {func}: {code}");
         }
         std::fs::remove_file(input).unwrap();
     }

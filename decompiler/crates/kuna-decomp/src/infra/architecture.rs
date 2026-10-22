@@ -4318,6 +4318,7 @@ impl Architecture {
         // Carry the `nanignore all` flag (C++ `glb->nan_ignore_all`) so
         // `RuleIgnoreNan` reaches it via `glb`.
         ctx.nan_ignore_all = self.nan_ignore_all;
+        ctx.nan_ignore_compare = self.nan_ignore_compare;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         ctx.types = Some(self.types_rc());

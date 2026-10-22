@@ -1,4 +1,5 @@
-//! Format conversion round trips quiet signaling NaNs without changing payloads.
+//! Format conversion round trips quiet signaling NaNs without changing payloads;
+//! `nanignore none` keeps that effect, the default `compare` policy drops it.
 #![cfg(all(target_arch = "x86_64", target_os = "linux"))]
 use crate::common;
 use common::process;
@@ -72,7 +73,15 @@ int main(void) {
  return 0;
 }
 "#).unwrap();
-    for policy in ["none", "compare"] {
+    let (default, stderr, rc) = common::run_kuna(&[
+        "decompile-all",
+        native.to_str().unwrap(),
+        "--functions",
+        "quiet32,quiet64,quiet_sse32",
+    ]);
+    assert_eq!(rc, 0, "{stderr}\n{default}");
+    assert!(!default.contains("volatile"), "the default nanignore compare drops quieting\n{default}");
+    for policy in ["none"] {
         let (printed, stderr, rc) = common::run_kuna(&[
             "decompile-all",
             native.to_str().unwrap(),

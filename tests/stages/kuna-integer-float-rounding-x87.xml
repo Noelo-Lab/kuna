@@ -23,8 +23,6 @@ d9e8dd442404dfe9ddd80f97c00fb6c0c3
 <symbol space="ram" offset="0x10200" name="l2d2f"/>
 </binaryimage>
 <script>
-<!-- These controls isolate finite integer rounding from NaN quieting. -->
-<com>option nanignore all</com>
 <com>parse line extern int cmpf(int x, double y);</com>
 <com>parse line extern int lt1(double x);</com>
 <com>parse line extern float8 l2d2f(int8 x);</com>

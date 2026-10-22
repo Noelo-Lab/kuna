@@ -348,7 +348,7 @@ fn a_stored_variadic_integer_round_trips_without_claiming_unused_registers() {
     let floating_off = decompile_imported_kind(&imported, false, true);
     let floating_on = decompile_imported_kind(&imported, true, true);
     assert!(
-        floating_off.contains("render_value(\"%.02f\",((volatile float8){ (float8)value }))"),
+        floating_off.contains("render_value(\"%.02f\",(float8)value)"),
         "{floating_off}"
     );
     assert_eq!(floating_off, floating_on);
