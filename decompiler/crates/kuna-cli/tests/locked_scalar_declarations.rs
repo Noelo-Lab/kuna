@@ -295,3 +295,40 @@ int main(void) {
     }
     let _ = std::fs::remove_dir_all(root);
 }
+
+/// A DWARF function-pointer local merged with a `void *` register keeps its
+/// declared type, so the indirect call through it is valid C.
+#[test]
+#[cfg(target_arch = "x86_64")]
+fn dwarf_function_pointer_local_keeps_its_declaration() {
+    let source = common::scratch_file("locked-function-pointer", "c");
+    let object = source.with_extension("o");
+    let helpers = "static int add(int a,int b){return a+b;}\nstatic int sub(int a,int b){return a-b;}\n";
+    std::fs::write(
+        &source,
+        format!("typedef int (*binop)(int,int);\n{helpers}int apply(int k,int a,int b){{binop f=add;if(k&1)f=sub;if(k&2)f=(binop)0;return f?f(a,b):-1;}}\n"),
+    )
+    .unwrap();
+    if process::optional_output(
+        Command::new("gcc").args(["-g", "-O0", "-fno-pic", "-c"]).arg(&source).arg("-o").arg(&object),
+    )
+    .is_none()
+    {
+        return;
+    }
+    let (body, err, status) = common::run_kuna(&["decompile", object.to_str().unwrap(), "apply"]);
+    assert_eq!(status, 0, "{err}");
+    assert!(body.contains("int (*f)(int,int);"), "function-pointer type was lost:\n{body}");
+    let generated = common::scratch_file("locked-function-pointer-generated", "c");
+    std::fs::write(
+        &generated,
+        format!("#include <stddef.h>\n{helpers}{body}\nint main(void){{for(int k=0;k<4;k++)if(apply(k,7,3)!=(k&2?-1:k&1?4:10))return 1;return 0;}}\n"),
+    )
+    .unwrap();
+    let executable = source.with_extension("bin");
+    process::required_output(Command::new("gcc").args(["-O0", "-Werror=implicit-function-declaration"]).arg(&generated).arg("-o").arg(&executable));
+    process::required_output(&mut Command::new(&executable));
+    for path in [source, object, generated, executable] {
+        let _ = std::fs::remove_file(path);
+    }
+}
