@@ -37,8 +37,6 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     let (address, linked_symbol) = if value.get_space().get_index() == stack.get_index() {
         (value.get_addr().clone(), None)
     } else {
-        // An explicit register or unique definition can render as a frame member.
-        // Resolve its local Symbol instead of treating the SSA address as storage.
         let high = fd.high_bank().get(value.get_high()?)?;
         let symbol = high.kuna_link_symbol()?;
         if scope.database().symbol(symbol).scope != scope.scope_id() {
@@ -83,8 +81,6 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
             let storage = piece.get_partial_base().unwrap_or(piece);
             super::kuna_bytearrayc::byte_array(&storage)
         });
-    // Scalar members already have their own bit-transfer rendering. The new
-    // symbolic-frame route is needed only for byte-array storage.
     if linked_symbol.is_some() && !byte_member {
         return None;
     }
@@ -98,6 +94,8 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     let mut operand = matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST)
         .then(|| operation.get_in(0))
         .flatten();
+    let mut array_cast = operation.code() == OpCode::CPUI_CAST
+        && super::kuna_bytearrayc::byte_array(value.get_type());
     if byte_member {
         // The inserted array CAST describes storage, not a numeric conversion.
         // Copy the scalar representation underneath it into the declared member.
@@ -117,7 +115,11 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
                 return None;
             }
             operand = Some(source);
+            array_cast = true;
         }
+    }
+    if linked_symbol.is_some() && !array_cast {
+        return None;
     }
     let raw_constant = operand.is_some_and(|id| {
         fd.vbank().get(id).is_some_and(|value| value.is_constant())
