@@ -16,6 +16,9 @@ mod ambiguous_selector_cli;
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
 
+#[path = "array_member_bits.rs"]
+mod array_member_bits;
+
 #[path = "conditional_register_lifetimes.rs"]
 mod conditional_register_lifetimes;
 

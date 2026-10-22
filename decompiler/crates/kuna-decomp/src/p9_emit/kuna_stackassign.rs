@@ -40,21 +40,50 @@ pub(crate) fn assignment(fd: &Funcdata, op: OpId) -> Option<Assignment> {
     let info =
         scope.query_container_for_link_width(value.get_addr(), size, &Address::new_invalid())?;
     let root = info.sym_type.as_ref()?;
+    let factory = fd.get_arch().types()?;
+    let byte_member = factory
+        .get_exact_piece(Rc::clone(root), info.sym_off, size)
+        .ok()
+        .flatten()
+        .is_some_and(|piece| {
+            let storage = piece.get_partial_base().unwrap_or(piece);
+            super::kuna_bytearrayc::byte_array(&storage)
+        });
     if !scope.database().symbol(info.symbol).is_type_locked()
         || info.is_name_undefined
         || root.get_name().starts_with("stack_views_")
-        || !incompatible_views(fd, &info.entry_addr, root)
+        || (!byte_member && !incompatible_views(fd, &info.entry_addr, root))
     {
         return None;
     }
-    let operand = matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST)
+    let mut operand = matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST)
         .then(|| operation.get_in(0))
         .flatten();
+    if byte_member {
+        // The inserted array CAST describes storage, not a numeric conversion.
+        // Copy the scalar representation underneath it into the declared member.
+        while let Some(input) = operand {
+            let value = fd.vbank().get(input)?;
+            if !value.is_implied() || !super::kuna_bytearrayc::byte_array(value.get_type()) {
+                break;
+            }
+            let Some(cast) = value.get_def().and_then(|id| fd.obank().get(id)) else {
+                break;
+            };
+            if cast.code() != OpCode::CPUI_CAST {
+                break;
+            }
+            let source = cast.get_in(0)?;
+            if fd.vbank().get(source)?.get_size() != size {
+                return None;
+            }
+            operand = Some(source);
+        }
+    }
     let raw_constant = operand.is_some_and(|id| {
         fd.vbank().get(id).is_some_and(|value| value.is_constant())
             && !crate::kuna_stackviews::pointer_origin(fd, id)
     });
-    let factory = fd.get_arch().types()?;
     let datatype = if raw_constant {
         factory.get_base(size, type_metatype::TYPE_UINT).ok()?
     } else if let Some(input) = operand {

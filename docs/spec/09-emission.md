@@ -145,6 +145,17 @@ to same-width casts, because the slice does not infer a callee's return
 prototype. Explicit floating conversion opcodes retain their numeric
 conversion, and structured member extraction retains priority.
 
+A `SUBPIECE` whose destination is typed as a byte array, such as a temporary that
+carries one word of a double into a declared `unsigned char` member, cannot cast
+to that array type, and the functional `SUBnm` form names no declared function
+(`kuna_bytearrayslice.rs`). The printer instead narrows the source's bits to an
+unsigned word of the destination width, shifting by the byte offset as a
+significance offset. A `float` or `double` source contributes its representation
+through the same union reinterpretation, and a pointer is first widened to an
+unsigned word of its own width. Integer sources shift directly, since the selected
+bits lie inside the source. Sources of any other type, and destinations wider than
+four bytes, keep the existing rendering.
+
 Finite 32-bit floating constants in C carry an `f` suffix when the target
 uses 32-bit `float`. Unsuffixed literals have type `double`: printing `0.1`
 for a float constant changes both comparisons at `0.1f` and arithmetic
@@ -3709,7 +3720,14 @@ local that receives a same-width floating representation uses a byte-copy store
 from the scalar expression, including any preceding numeric conversion. One-byte
 SUBPIECE reads defined by that floating transfer use byte subscripts at the target's memory offset,
 rather than passing an array to an integer helper. Opaque vector lanes retain
-their separate option-controlled rendering. Integer bit patterns are printed as
+their separate option-controlled rendering.
+A scalar write into a declared
+byte-array member takes this byte-copy path even when the call's record layout
+agrees with the local layout: the member has no scalar C assignment type, and
+copying a float must retain its representation instead of casting it to an array.
+Implied same-width CASTs to the byte-array view are peeled before selecting the
+scalar representation; numeric conversion opcodes remain part of the expression.
+Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and
 keep ordinary scalar assignments; the fallback targets incompatible layouts or
