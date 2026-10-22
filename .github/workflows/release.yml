@@ -4,7 +4,7 @@ name: Release binaries
 # slacomp) for Linux, macOS, and Windows, then tags the commit vMAJOR.MINOR and
 # publishes a GitHub Release with the archives plus a platform-independent
 # compiled SLEIGH spec tree (the engine needs .sla files at runtime). The
-# version scheme -- VERSION file = MAJOR, commits since it last changed = MINOR
+# version scheme -- VERSION file = MAJOR, one past the last release tag = MINOR
 # -- lives in scripts/version.sh and docs/release.md.
 #
 # The release also ships a ready-to-install KunaDecompiler Ghidra extension
@@ -14,10 +14,11 @@ name: Release binaries
 # Cadence: ONE release a night, batching whatever landed that day, not one per
 # merge. A busy day used to publish ~18 releases and ~18 tags.
 #
-# No "did anything change?" guard is needed, because the minor version IS the
-# commit count: a nightly run on an unchanged main computes the same MAJOR.MINOR,
-# the `version` job sees that tag already exists, and build/specs/release all
-# skip. Quiet days cost one 30-second job and publish nothing.
+# No "did anything change?" guard is needed: a commit that already carries a
+# release tag reports that tag's version, so a nightly run on an unchanged main
+# computes the same MAJOR.MINOR, the `version` job sees that tag already exists,
+# and build/specs/release all skip. Quiet days cost one 30-second job and
+# publish nothing.
 
 on:
   # Nightly, 06:00 UTC (~02:00 America/New_York) -- after the day's merges.
@@ -58,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # the minor number is a commit count
+          fetch-depth: 0 # the minor number is read from the release tags
 
       - name: Compute MAJOR.MINOR and check the tag is free
         id: ver

@@ -1,0 +1,19 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!-- Fresh pointer publication through explicitly mapped byte storage. -->
+<bytechunk space="ram" offset="0x100000" readonly="true">5589e58b45088b45088b008b4d088b490481e1ff00000001c85dc30f1f4400005589e583ec088b4508c745f8050000008945fc8d45f850e8c4ffffff83c40489ec5dc30000000000000000000000000000000000000000000000000000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="consume"/>
+<symbol space="ram" offset="0x100020" name="emit"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com><com>option partialaccess on</com><com>option stackviews on</com>
+<com>parse line typedef struct Record {unsigned int length;void *pointer;} Record;</com>
+<com>parse line extern unsigned int consume(Record *r);</com>
+<com>parse line extern unsigned int emit(char *payload);</com>
+<com>lo fu emit</com>
+<com>map address s0xfffffff4 unsigned char frame[8]</com>
+<com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="POINTERLITERAL #1: pointer literal converts its integer carrier" min="1" max="1">\(void \*\)\(unsigned int\)payload</stringmatch>
+<stringmatch name="POINTERLITERAL #2: no integer initializes a pointer without conversion" min="0" max="0">&amp;\(void \*\)\{ \(unsigned int\)payload \}</stringmatch>
+</decompilertest>

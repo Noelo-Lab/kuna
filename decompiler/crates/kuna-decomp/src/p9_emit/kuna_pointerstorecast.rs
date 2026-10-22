@@ -13,7 +13,10 @@ pub(super) fn target(
     printed: impl FnOnce() -> Option<Rc<Datatype>>,
 ) -> Option<Rc<Datatype>> {
     let operation = fd.obank().get(op)?;
-    if !matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+    if !matches!(
+        operation.code(),
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB
+    ) {
         return None;
     }
     let input = operation.get_in(0)?;
@@ -31,6 +34,13 @@ pub(super) fn target(
             | type_metatype::TYPE_UINT
             | type_metatype::TYPE_UNKNOWN
     ) {
+        return None;
+    }
+    if operation.code() == OpCode::CPUI_COPY
+        && source.get_metatype() == type_metatype::TYPE_PTR
+        && crate::printc::declared_variable_type(fd, decl_high_type, input)
+            .is_some_and(|declared| declared.get_metatype() != type_metatype::TYPE_PTR)
+    {
         return None;
     }
     let value = fd.vbank().get(output)?;
@@ -72,4 +82,14 @@ pub(super) fn target(
         && target.get_size() == source.get_size()
         && target.get_size() == value.get_size())
     .then_some(target)
+}
+
+/// A null pointer copied into integer storage prints as the integer `0`.
+pub(super) fn null_source(fd: &Funcdata, op: OpId) -> bool {
+    fd.obank()
+        .get(op)
+        .filter(|operation| operation.code() == OpCode::CPUI_COPY)
+        .and_then(|operation| operation.get_in(0))
+        .and_then(|input| fd.vbank().get(input))
+        .is_some_and(|input| input.is_constant() && input.get_offset() == 0)
 }

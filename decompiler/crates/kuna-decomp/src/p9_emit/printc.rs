@@ -981,6 +981,9 @@ pub fn resolve_integer_format(
     // Sign handling (printc.cc:1381-1391).
     if sign && display_fmt_in != display_format::FORCE_CHAR {
         let mask = calc_mask(sz);
+        if sz > 0 {
+            val &= mask;
+        }
         let flip = val ^ mask;
         print_negsign = flip < val;
         if print_negsign {
@@ -2349,6 +2352,7 @@ struct PartialWalk {
     stack: Vec<PartialEntry>,
     finalcast: Option<std::rc::Rc<crate::dtype::Datatype>>,
     unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>>,
+    result_type: Option<std::rc::Rc<crate::dtype::Datatype>>,
 }
 
 impl PrintC {
@@ -3886,6 +3890,11 @@ impl PrintC {
             declared = Some(object);
         }
 
+        if let Some(locked) = locked_scalar_local_type(fd, high) {
+            type_name = type_name_for_decl(&locked, rt);
+            declared = Some(locked);
+        }
+
         // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
         // `sym->getType()`), not the partial member Varnode's type.  When the
         // high is a non-array partial cover of a composite Symbol (a struct/
@@ -3927,6 +3936,15 @@ impl PrintC {
             // itself, never a Symbol; declare it `<base> name [N]` instead of
             // flattening it to a scalar `undefined<N>`.
             .or_else(|| {
+                // A partial array member cannot replace the whole record that
+                // supplies the base for this variable's member accesses.
+                if declared.as_ref().is_some_and(|ty| matches!(
+                    ty.get_metatype(),
+                    crate::dtype::type_metatype::TYPE_STRUCT
+                        | crate::dtype::type_metatype::TYPE_UNION
+                )) {
+                    return None;
+                }
                 let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
                 array_decl_parts(v.get_type(), rt).map(|parts| (parts, std::rc::Rc::clone(v.get_type())))
             });
@@ -5915,7 +5933,13 @@ impl PrintC {
             .then(|| outvn.and_then(|out| crate::p9_emit::kuna_pointerstorecast::target(
                 fd, op, arch.decl_high_type, || self.partial_piece_type(fd, arch, out, op, -1),
             ))).flatten();
-        if let Some(target) = &storage_cast { self.push_cast_open(target, op); }
+        if let Some(target) = &storage_cast {
+            if crate::p9_emit::kuna_pointerstorecast::null_source(fd, op) {
+                self.push_constant_ir_fmt_sign(0, target.get_size(), op, display_format::NONE, false);
+                return;
+            }
+            self.push_cast_open(target, op);
+        }
         self.stmt_op = outvn.map(|_| op);
         self.op_push_ir(fd, arch, op, None);
         self.stmt_op = None;
@@ -8118,6 +8142,36 @@ impl PrintC {
         }
     }
 
+    /// Converts a pointer compound initializer whose rendered operand is not
+    /// already a pointer the declared type accepts implicitly (an integer
+    /// carrier, a constant, or an unrelated pointer).
+    fn push_storage_initializer_cast(
+        &mut self,
+        fd: &Funcdata,
+        datatype: &std::rc::Rc<crate::dtype::Datatype>,
+        rendered: Option<VarnodeId>,
+        op: OpId,
+    ) {
+        use crate::dtype::type_metatype::{TYPE_PTR, TYPE_VOID};
+        if datatype.get_metatype() != TYPE_PTR {
+            return;
+        }
+        let is_void = |t: &std::rc::Rc<crate::dtype::Datatype>| {
+            t.get_ptr_to().is_some_and(|p| p.get_metatype() == TYPE_VOID)
+        };
+        let accepted = rendered.and_then(|vn| fd.vbank().get(vn)).is_some_and(|v| {
+            let ty = v.get_type();
+            ty.get_metatype() == TYPE_PTR
+                && (std::rc::Rc::ptr_eq(ty, datatype)
+                    || matches!(ty.compare(datatype, 10), Ok(0))
+                    || is_void(ty)
+                    || is_void(datatype))
+        });
+        if !accepted {
+            self.push_cast_open(datatype, op);
+        }
+    }
+
     fn op_storage_copy_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, access: crate::kuna_stackmem::Access) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
@@ -8139,6 +8193,7 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({ty}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_storage_initializer_cast(fd, &access.datatype, Some(value), op);
             self.push_vn_ir_m(fd, arch, value, op, mods);
         } else {
             self.push_atom(&Atom::syntax(format!("&({ty}){{0}}"), TagType::TypeToken, SyntaxHighlight::type_color));
@@ -8367,6 +8422,12 @@ impl PrintC {
         self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
         self.push_op(&COMPOUND, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+        let rendered = match assignment.operand {
+            Some(_) if assignment.raw_constant => None,
+            Some(input) => Some(input),
+            None => Some(assignment.output),
+        };
+        self.push_storage_initializer_cast(fd, &assignment.datatype, rendered, op);
         if let Some(input) = assignment.operand {
             if assignment.raw_constant {
                 self.push_constant_ir(fd.vbank().get(input).unwrap().get_offset(), assignment.size, op);
@@ -8716,7 +8777,7 @@ impl PrintC {
         allow_cast: bool,
     ) -> bool {
         let whole = std::rc::Rc::clone(&sym_type);
-        let PartialWalk { mut stack, finalcast, unnamed_in } =
+        let PartialWalk { mut stack, finalcast, unnamed_in, .. } =
             self.partial_walk(fd, arch, sym_type, off_in, sz_in, vn, op, slot, allow_cast);
         self.push_partial_walk(fd, arch, name, &whole, &mut stack, finalcast, unnamed_in, sz_in, vn, op)
     }
@@ -8937,7 +8998,8 @@ impl PrintC {
             }
         }
 
-        PartialWalk { stack, finalcast, unnamed_in }
+        let result_type = finalcast.clone().or(ct);
+        PartialWalk { stack, finalcast, unnamed_in, result_type }
     }
 
     /// Emit a walked partial access: the member path over `name`, whose whole
@@ -9114,8 +9176,8 @@ impl PrintC {
         Some((name, self.partial_walk(fd, arch, st, symoff as int8, asize, vn, op, slot, allow_cast)))
     }
 
-    /// (kuna `partialaccess`) The type `vn` prints with when its Symbol's bytes
-    /// are read through a typed pointer because no member names them.
+    /// The type of the member or cast this access actually prints, including
+    /// the typed pointer used when no member names the Symbol's bytes.
     fn partial_piece_type(
         &self,
         fd: &Funcdata,
@@ -9124,13 +9186,22 @@ impl PrintC {
         op: OpId,
         slot: int4,
     ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
-        if !self.options.partial_access || self.out_lang != crate::kuna_lang::OutLang::C {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
             return None;
         }
         let (_, walk) = self.piece_walk(fd, arch, vn, op, slot, slot >= 0)?;
         let Some(PartialEntry::Unnamed(off, size)) = walk.stack.last() else {
-            return None;
+            use crate::dtype::type_metatype;
+            let width = fd.vbank().get(vn)?.get_size();
+            return walk.result_type.filter(|ty| ty.get_size() == width && matches!(
+                ty.get_metatype(), type_metatype::TYPE_BOOL | type_metatype::TYPE_INT
+                    | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+                    | type_metatype::TYPE_FLOAT | type_metatype::TYPE_PTR
+            ));
         };
+        if !self.options.partial_access {
+            return None;
+        }
         if *size <= 0 {
             return None;
         }
@@ -12612,6 +12683,36 @@ fn printed_integer_signedness(ct: &crate::dtype::Datatype, signed_text_byte: boo
     }
 }
 
+/// A locked scalar local is declared at its Symbol's type even when a merged
+/// storage representative retained a weaker type. Member and parameter views
+/// have their own declaration rules; only a whole, same-width local qualifies.
+fn locked_scalar_local_type(
+    fd: &Funcdata,
+    high: crate::context::HighVariableId,
+) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    use crate::dtype::type_metatype;
+    let h = fd.high_bank().get(high)?;
+    if h.kuna_symbol_offset() > 0 {
+        return None;
+    }
+    let scope = fd.get_scope_local()?;
+    let symbol = h.kuna_link_symbol()?;
+    let record = scope.database().symbol(symbol);
+    if record.scope != scope.scope_id() || !record.is_type_locked()
+        || scope.symbol_category(symbol) == crate::database::symbol_category::FUNCTION_PARAMETER
+    {
+        return None;
+    }
+    let ty = record.dtype.as_ref()?;
+    if !matches!(ty.get_metatype(), type_metatype::TYPE_BOOL | type_metatype::TYPE_INT
+        | type_metatype::TYPE_UINT | type_metatype::TYPE_FLOAT | type_metatype::TYPE_PTR)
+    {
+        return None;
+    }
+    let representative = fd.vbank().get(decl_rep_varnode(fd, high)?)?;
+    (representative.get_size() == ty.get_size()).then(|| std::rc::Rc::clone(ty))
+}
+
 /// The type the printed C declares the variable `vid` belongs to: a parameter's
 /// prototype type, or a local's declaration type. `None` for an expression.
 pub(crate) fn declared_variable_type(
@@ -12638,6 +12739,9 @@ pub(crate) fn declared_variable_type(
                 }
             }
         }
+    }
+    if let Some(locked) = locked_scalar_local_type(fd, hid) {
+        return Some(locked);
     }
     let type_rep = if decl_high_type {
         crate::kuna_declhightype::type_representative(fd, hid).filter(|_| crate::kuna_declhightype::declares_from_high(fd, hid))

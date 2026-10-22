@@ -205,20 +205,49 @@ fn collect<Pe: ImageNtHeaders>(
     // PE exports (additive funcsyms): name + address, registered directly so a
     // call to an exported function of this image resolves.  `relative_address_base`
     // is already folded into `Export::address` by `object`.
-    if let Ok(exports) = neutral.exports() {
-        for e in exports {
-            let name = e.name();
-            if !name.is_empty() {
-                out.push(ImportSym {
-                    addr: e.address(),
-                    name: name.to_vec(),
-                    kind: ImportSymKind::Export,
-                });
-            }
+    for (addr, name, code) in named_exports(neutral) {
+        if code {
+            out.push(ImportSym { addr, name, kind: ImportSymKind::Export });
         }
     }
 
     out
+}
+
+/// The image's named exports as `(address, name, in_code)`, where `in_code` says
+/// the address lies in a section the loader classifies as code.
+fn named_exports(neutral: &object::File) -> Vec<(u64, Vec<u8>, bool)> {
+    let Ok(exports) = neutral.exports() else {
+        return Vec::new();
+    };
+    let code_ranges: Vec<_> = neutral.sections().filter_map(|section| {
+        let flags = super::format::pe::coff_section_bits(section.kind(), section.flags());
+        (flags & kuna_sleigh::loadimage::section_flags::CODE != 0)
+            .then_some((section.address(), section.size()))
+    }).collect();
+    exports
+        .into_iter()
+        .filter(|e| !e.name().is_empty())
+        .map(|e| {
+            let addr = e.address();
+            let code = code_ranges.iter().any(|&(start, size)| addr >= start && addr - start < size);
+            (addr, e.name().to_vec(), code)
+        })
+        .collect()
+}
+
+/// The PE exports that name data rather than code: each named export whose
+/// address lies outside every code section, as `(address, name)`. Empty for a
+/// non-PE image.
+pub fn data_exports(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    if file.format() != object::BinaryFormat::Pe {
+        return Vec::new();
+    }
+    named_exports(file)
+        .into_iter()
+        .filter(|(_, _, code)| !code)
+        .map(|(addr, name, _)| (addr, name))
+        .collect()
 }
 
 /// Walk one import table, emitting an [`ImportSym`] per IAT slot and recording the
