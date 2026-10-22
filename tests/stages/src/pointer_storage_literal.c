@@ -1,6 +1,6 @@
 /* Fresh record-store fixture. Build with Clang --target=i686-w64-windows-gnu -O0 -shared -nostdlib -Wl,--entry,0. */
 
-#include <stdint.h>
+typedef __UINTPTR_TYPE__ uintptr_t;
 typedef struct Record {unsigned int length;void *pointer;} Record;
 #ifdef _WIN32
 #define API __declspec(dllexport) __attribute__((noinline))

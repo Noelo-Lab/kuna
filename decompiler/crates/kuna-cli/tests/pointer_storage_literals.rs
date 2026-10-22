@@ -24,7 +24,7 @@ fn check(windows: bool) {
     std::fs::create_dir_all(&root).unwrap();
     let source = root.join("sample.c");
     std::fs::write(&source,r#"
-#include <stdint.h>
+typedef __UINTPTR_TYPE__ uintptr_t;
 typedef struct Record {unsigned int length;void *pointer;} Record;
 #ifdef _WIN32
 #define API __declspec(dllexport) __attribute__((noinline))
