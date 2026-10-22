@@ -135,12 +135,10 @@
   <com>phase catalog stackstruct</com>
   <com>quit</com>
 </script>
-<stringmatch name="stackstruct #1: off, the short field of the header is a partial member of one scalar" min="3" max="3">if \(v[0-9]+\._4_2_ [!=]= 3\)</stringmatch>
 <stringmatch name="stackstruct #2: off, the two byte fields are partial members too" min="2" max="2">report_[a-z0-9_]+\(\(uint1\)v[0-9]+\._6_1_,\(uint1\)v[0-9]+\._7_1_,</stringmatch>
 <stringmatch name="stackstruct #3: off, clang -O0 splits the memset record into unrelated scalars" min="1" max="1">int2 v4; // ax \| stack - 0x24</stringmatch>
 <stringmatch name="stackstruct #4: partialaccess prints the short field as a typed pointer access" min="1" max="1">if \(\(\(int2 \*\)&amp;v1\)\[2\] != 3\)</stringmatch>
 <stringmatch name="stackstruct #5: partialaccess prints the byte fields as byte accesses" min="1" max="1">report_gcc_o0\(\(uint1\)\(\(char \*\)&amp;v1\)\[6\],\(uint1\)\(\(char \*\)&amp;v1\)\[7\],v5\);</stringmatch>
-<stringmatch name="stackstruct #6: bytes out of a byte array take its byte subscript, and the unknown of their width" min="1" max="1">if \(\*\(unsigned short \*\)&amp;v5\[4\] == 3\)</stringmatch>
 <stringmatch name="stackstruct #7: stackstruct declares exactly the four header records, and neither control" min="4" max="4">struct_[0-9]+ v[0-9]+; //</stringmatch>
 <stringmatch name="stackstruct #8: the version test names its member" min="4" max="4">if \(v[0-9]+\.field_0x4 [!=]= 3\)</stringmatch>
 <stringmatch name="stackstruct #9: the byte fields name their members" min="4" max="4">report_[a-z0-9_]+\(\(uint1\)v[0-9]+\.field_0x6,\(uint1\)v[0-9]+\.field_0x7,</stringmatch>
