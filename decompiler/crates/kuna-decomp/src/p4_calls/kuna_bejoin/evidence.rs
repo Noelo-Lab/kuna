@@ -786,7 +786,9 @@ impl<'a> Walk<'a> {
         let sp = dest.space.as_ref()?;
         let a = Address::new(Rc::clone(sp), dest.offset);
         if a.get_offset() < self.entry.get_offset()
-            || (a != self.entry && self.arch.symboltab.find_function_across_scopes(&a).is_some())
+            || (a != self.entry
+                && (self.arch.symboltab.find_function_across_scopes(&a).is_some()
+                    || self.arch.is_lazy_entry(a.get_offset())))
         {
             return None;
         }

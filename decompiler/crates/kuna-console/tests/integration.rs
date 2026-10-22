@@ -52,6 +52,9 @@ mod verify_buildstamp;
 #[path = "verify_bytehonest.rs"]
 mod verify_bytehonest;
 
+#[path = "verify_lazyfuncs.rs"]
+mod verify_lazyfuncs;
+
 #[path = "verify_byteoverlay.rs"]
 mod verify_byteoverlay;
 
