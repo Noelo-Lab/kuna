@@ -8,7 +8,7 @@ use crate::funcdata::Funcdata;
 
 pub(crate) fn prepare(fd: &mut Funcdata, factory: &dyn TypeFactory) {
     let mut snapshots = Vec::new();
-    for (high_id, high) in fd.high_bank().iter() {
+    for (_, high) in fd.high_bank().iter() {
         if high.kuna_symbol_type().is_some() {
             continue;
         }
@@ -37,7 +37,6 @@ pub(crate) fn prepare(fd: &mut Funcdata, factory: &dyn TypeFactory) {
             let parent = ty.get_partial_base().unwrap_or_else(|| Rc::clone(ty));
             if parent.get_name().starts_with("stack_views_") {
                 snapshots.push((
-                    high_id,
                     id,
                     source_type(fd, id).or_else(|| {
                         factory
@@ -48,18 +47,9 @@ pub(crate) fn prepare(fd: &mut Funcdata, factory: &dyn TypeFactory) {
             }
         }
     }
-    for (high_id, id, ty) in snapshots {
+    for (id, ty) in snapshots {
         if let Some(ty) = ty {
-            let integer = matches!(
-                ty.get_metatype(),
-                type_metatype::TYPE_INT | type_metatype::TYPE_UINT
-            );
-            let updated = fd.vn_update_type(id, ty);
-            if integer && updated {
-                if let Some(high) = fd.high_bank_mut().get_mut(high_id) {
-                    high.set_kuna_frame_snapshot();
-                }
-            }
+            fd.vn_update_type(id, ty);
         }
     }
 }
