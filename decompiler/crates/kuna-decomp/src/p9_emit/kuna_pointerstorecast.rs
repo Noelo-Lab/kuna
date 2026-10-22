@@ -27,7 +27,12 @@ pub(super) fn target(
     }
     if operation.code() == OpCode::CPUI_COPY
         && crate::printc::declared_variable_type(fd, decl_high_type, input)
-            .is_some_and(|declared| declared.get_metatype() != type_metatype::TYPE_PTR)
+            .is_some_and(|declared| {
+                matches!(
+                    declared.get_metatype(),
+                    type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+                ) && declared.get_size() == source.get_size()
+            })
     {
         return None;
     }
