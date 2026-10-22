@@ -981,8 +981,6 @@ pub fn resolve_integer_format(
     // Sign handling (printc.cc:1381-1391).
     if sign && display_fmt_in != display_format::FORCE_CHAR {
         let mask = calc_mask(sz);
-        // A narrow constant can arrive sign-extended in the host-sized carrier.
-        // Only its declared bits participate in the sign and magnitude.
         if sz > 0 {
             val &= mask;
         }

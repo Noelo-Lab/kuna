@@ -34,13 +34,6 @@ With `partialaccess` enabled, pointer views of volatile annotations retain a
 volatile pointee, including sixteen-byte views, so changing the spelling does
 not change the access width or permit the C compiler to merge the accesses.
 
-Signed integer constants are normalized to their declared byte width before
-choosing their sign, magnitude, and numeric base. A four-byte `0xfffffffffffffffc`
-carrier therefore prints as `-4`, just like `0xfffffffc`; upper carrier bits also
-cannot turn a positive narrow value negative. Forced numeric radices retain this
-width interpretation. Character overrides, unsigned rendering, and unsized
-constant handling retain their existing paths.
-
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
 types (§9.1), then walks the structured block tree of chapter 08 and the SSA
@@ -1967,6 +1960,15 @@ is not a residual unknown and never enters the relabel, so the opaque
 `void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
+
+Signed integer constants are normalized to their declared byte width before
+choosing their sign, magnitude, and numeric base
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (resolve_integer_format)`).
+A four-byte `0xfffffffffffffffc` carrier therefore prints as `-4`, just like
+`0xfffffffc`; upper carrier bits also cannot turn a positive narrow value
+negative. Forced numeric radices retain this width interpretation. Character
+overrides, unsigned rendering, and unsized constant handling retain their
+existing paths.
 
 Anonymous function types with a stored prototype participate in the C declarator
 walk alongside pointers and arrays. The function contributes a parameter suffix,
