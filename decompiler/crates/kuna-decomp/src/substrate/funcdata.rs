@@ -3965,7 +3965,9 @@ impl Funcdata {
         self.bb_set_order_within(bl, uintm::MAX);
     }
 
-    /// Spread the orders of `bl`'s ops evenly over `[0, span]`.
+    /// Spread the orders of `bl`'s ops evenly over `[0, span]`.  Cover points
+    /// cache these orders, so the covers of every Varnode the block reads or
+    /// writes (and their HighVariables) are marked dirty for a rebuild.
     fn bb_set_order_within(&mut self, bl: BlockId, span: uintm) {
         self.affecting_ops_changed();
         let n = self.bb_op_len(bl);
@@ -3980,8 +3982,6 @@ impl Funcdata {
             self.obank.get_mut(op).expect("bb_set_order").set_order(count);
             cur = self.obank.get(op).expect("bb_set_order").basic_neighbours().1;
         }
-        // Covers cache numeric operation positions. Renumbering changes those
-        // positions even though the def/use graph remains unchanged.
         let mut affected = std::collections::HashSet::new();
         for op in self.bb_ops(bl) {
             let operation = self.obank.get(op).expect("bb_set_order");
@@ -6119,7 +6119,6 @@ mod tests {
         assert!(!fd.vbank.get(value).unwrap().is_cover_dirty_flag());
         assert!(!fd.high_bank.get(high).unwrap().is_cover_dirty());
 
-        // Repeated insertions exhaust a real gap and trigger block renumbering.
         let previous_order = fd.obank.get(ops[0]).unwrap().get_seq_num().get_order();
         let mut right = ops[1];
         for _ in 0..64 {
