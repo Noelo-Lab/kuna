@@ -13,6 +13,14 @@ fn pe32_array_pointer_slot() {
     check(true, false, false);
 }
 #[test]
+fn elf64_array_derived_pointer_slot_roundtrip() {
+    check_derived(false);
+}
+#[test]
+fn elf64_array_derived_pointer_slot_with_views_roundtrip() {
+    check_derived(true);
+}
+#[test]
 fn elf64_array_pointer_slot_roundtrip() {
     check(false, false, false);
 }
@@ -35,13 +43,22 @@ fn elf64_record_pointer_slot_roundtrip() {
 }
 
 fn check(windows: bool, views: bool, record: bool) {
+    run(windows, views, record, false);
+}
+
+fn check_derived(views: bool) {
+    run(false, views, false, true);
+}
+
+fn run(windows: bool, views: bool, record: bool, derived: bool) {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
     }
     let root = common::scratch_file("pointer-slot-cast", "dir");
     std::fs::create_dir_all(&root).unwrap();
     let source = root.join("sample.c");
-    std::fs::write(&source, r#"
+    let mov = if derived { "lea 1(%rdi),%rax" } else { "mov %rdi,%rax" };
+    std::fs::write(&source, format!("#define MOVE \"{mov}\"\n") + r#"
 typedef __UINTPTR_TYPE__ uintptr_t;
 #ifdef _WIN32
 #define API __declspec(dllexport)
@@ -55,7 +72,7 @@ API __attribute__((naked)) unsigned emit(unsigned char *value) {
 #ifdef _WIN32
  __asm__("sub $16,%esp;mov 20(%esp),%eax;mov %eax,(%esp);mov %esp,%eax;push %eax;call _consume;add $20,%esp;ret");
 #else
- __asm__("sub $24,%rsp;mov %rdi,%rax;mov %rax,(%rsp);mov %rsp,%rdi;call consume;add $24,%rsp;ret");
+ __asm__("sub $24,%rsp;" MOVE ";mov %rax,(%rsp);mov %rsp,%rdi;call consume;add $24,%rsp;ret");
 #endif
 }
 "#).unwrap();
@@ -82,6 +99,8 @@ API __attribute__((naked)) unsigned emit(unsigned char *value) {
     let code = &bytes[start..bytes.len().min(start + 48)];
     let instruction: &[u8] = if windows {
         &[0x8b, 0x44, 0x24, 0x14]
+    } else if derived {
+        &[0x48, 0x8d, 0x47, 0x01]
     } else {
         &[0x48, 0x89, 0xf8]
     };
@@ -130,7 +149,7 @@ API __attribute__((naked)) unsigned emit(unsigned char *value) {
         process::required_output(compile.arg("-c").arg(&body_file).arg("-o").arg(&object));
         if !windows {
             let driver = root.join("driver.c");
-            std::fs::write(&driver,r#"
+            std::fs::write(&driver,format!("#define OFFSET {}\n", derived as u8) + r#"
 #include <stdint.h>
 #include <dlfcn.h>
 unsigned generated_emit(unsigned char *);
@@ -138,8 +157,8 @@ unsigned consume(void *slot){uintptr_t value;__builtin_memcpy(&value,slot,sizeof
 int main(int argc,char **argv){
  if(argc!=2)return 1;void *module=dlopen(argv[1],RTLD_NOW|RTLD_LOCAL);if(!module)return 2;
  unsigned (*native)(unsigned char*)=dlsym(module,"emit");if(!native)return 3;
- unsigned char bytes[256];for(unsigned i=0;i<256;i++)bytes[i]=(unsigned char)(i*37);
- for(unsigned i=0;i<4096;i++){unsigned char *p=bytes+i%256;if(native(p)!=*p||generated_emit(p)!=*p)return 4;}
+ unsigned char bytes[257];for(unsigned i=0;i<257;i++)bytes[i]=(unsigned char)(i*37);
+ for(unsigned i=0;i<4096;i++){unsigned char *p=bytes+i%256;if(native(p)!=OFFSET[p]||generated_emit(p)!=native(p))return 4;}
  return 0;
 }
 "#).unwrap();
