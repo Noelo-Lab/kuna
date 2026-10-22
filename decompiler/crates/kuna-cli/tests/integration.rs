@@ -639,5 +639,10 @@ mod usepoint_pointer_constants;
 #[path = "pe_data_exports.rs"]
 mod pe_data_exports;
 
+#[path = "stack_allocations.rs"]
+mod stack_allocations;
+
+#[path = "stack_allocations_isa.rs"]
+mod stack_allocations_isa;
 #[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;

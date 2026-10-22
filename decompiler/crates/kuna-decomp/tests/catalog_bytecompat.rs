@@ -76,14 +76,14 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-fn fixture_has_all_327_settables() {
+fn fixture_has_all_328_settables() {
     // One `"option":` per settable row; the authoritative per-option list is
     // phases.toml settableTable (counts asserted in kuna_phases/tests.rs).
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 327);
+    assert_eq!(FIXTURE.matches("\"option\": ").count(), 328);
     // Every row carries the tier field appended after change_kind.
-    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 327);
+    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 328);
     // ... and the symptoms array appended after tier (C3).
-    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 327);
+    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 328);
 }
 
 #[test]
