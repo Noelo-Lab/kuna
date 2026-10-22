@@ -610,7 +610,8 @@ pub struct ConsoleProgram {
     /// (`elfmain` naming a libc-start `main` at an address the caller declared
     /// `stage1`). The discovered names stay as aliases; only the report changes.
     declared_names: BTreeMap<u64, String>,
-    /// Changes whenever `declared_names` does (it orders canonical entry names).
+    /// Changes whenever `declared_names` (it orders canonical entry names) or
+    /// `declared_extents` (it sizes them) does.
     declared_revision: u64,
     /// [`Self::function_entries_canonical`] for (symbols revision, declared
     /// revision): name lookups resolve against it without regrouping the image.
@@ -869,8 +870,8 @@ impl ConsoleProgram {
         self.function_entries_shared().as_ref().clone()
     }
 
-    /// The canonical entries, rebuilt only after the symbols or declared names
-    /// changed. Assertion targets resolve names one at a time, so rebuilding the
+    /// The canonical entries, rebuilt only after the symbols, declared names or
+    /// declared extents changed. Assertion targets resolve names one at a time, so rebuilding the
     /// whole list per lookup made applying A assertions O(A x symbols).
     fn function_entries_shared(&self) -> Rc<Vec<FunctionEntry>> {
         let key = (self.symbols.revision, self.declared_revision);
@@ -2220,6 +2221,7 @@ impl ConsoleProgram {
     /// (`declared_extents`); `size <= 0` clears it back to unbounded.
     pub fn declare_extent(&mut self, vma: u64, size: int4) {
         self.callwide_changed();
+        self.declared_revision = next_revision();
         if size > 0 {
             self.declared_extents.insert(vma, size);
         } else {

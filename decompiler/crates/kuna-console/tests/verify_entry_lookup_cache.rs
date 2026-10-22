@@ -77,3 +77,22 @@ fn a_symbol_spelled_like_an_address_takes_the_prototype() {
         "the prototype reached the function at the address instead of the named symbol:\n{code}"
     );
 }
+
+/// An extent declared on its own (`load addr ram,<entry>,<size>` records one
+/// without touching any symbol) reaches the next listing's size.
+#[test]
+fn an_extent_declared_after_a_listing_reaches_the_next_listing() {
+    let mut prog = load();
+    let entry = named(&prog, "authenticate");
+    let vma = entry.addr.get_offset();
+    let size_of = |prog: &ConsoleProgram| {
+        prog.function_entries_canonical()
+            .into_iter()
+            .find(|e| e.addr.get_offset() == vma)
+            .expect("authenticate in the listing")
+            .size
+    };
+    assert_ne!(size_of(&prog), 3);
+    prog.declare_extent(vma, 3);
+    assert_eq!(size_of(&prog), 3, "the listing kept the extent from before the declaration");
+}
