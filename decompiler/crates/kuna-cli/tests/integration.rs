@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "local_array_bits.rs"]
+mod local_array_bits;
+
 #[path = "array_record.rs"]
 mod array_record;
 
@@ -12,6 +15,15 @@ mod ambiguous_selector_cli;
 
 #[path = "argument_errors_cli.rs"]
 mod argument_errors_cli;
+
+#[path = "array_member_bits.rs"]
+mod array_member_bits;
+
+#[path = "mapped_array_bits.rs"]
+mod mapped_array_bits;
+
+#[path = "array_source_bits.rs"]
+mod array_source_bits;
 
 #[path = "conditional_register_lifetimes.rs"]
 mod conditional_register_lifetimes;
@@ -596,6 +608,12 @@ mod intermediate_float_rounding;
 
 #[path = "pointer_slot_casts.rs"]
 mod pointer_slot_casts;
+
+#[path = "indexed_descriptor_pointer.rs"]
+mod indexed_descriptor_pointer;
+
+#[path = "float_call_storage.rs"]
+mod float_call_storage;
 
 #[path = "locked_scalar_declarations.rs"]
 mod locked_scalar_declarations;
