@@ -1977,6 +1977,15 @@ is not a residual unknown and never enters the relabel, so the opaque
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
 
+Signed integer constants are normalized to their declared byte width before
+choosing their sign, magnitude, and numeric base
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (resolve_integer_format)`).
+A four-byte `0xfffffffffffffffc` carrier therefore prints as `-4`, just like
+`0xfffffffc`; upper carrier bits also cannot turn a positive narrow value
+negative. Forced numeric radices retain this width interpretation. Character
+overrides, unsigned rendering, and unsized constant handling retain their
+existing paths.
+
 Anonymous function types with a stored prototype participate in the C declarator
 walk alongside pointers and arrays. The function contributes a parameter suffix,
 then the walk continues through its return type. Parameters use recursive abstract
