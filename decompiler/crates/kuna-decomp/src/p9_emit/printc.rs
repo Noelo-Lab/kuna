@@ -981,6 +981,9 @@ pub fn resolve_integer_format(
     // Sign handling (printc.cc:1381-1391).
     if sign && display_fmt_in != display_format::FORCE_CHAR {
         let mask = calc_mask(sz);
+        if sz > 0 {
+            val &= mask;
+        }
         let flip = val ^ mask;
         print_negsign = flip < val;
         if print_negsign {
@@ -5884,6 +5887,12 @@ impl PrintC {
                 return;
             }
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(assignment) = self.local_array_assignment(fd, arch, op) {
+                self.emit_storage_assignment_ir(fd, arch, op, assignment);
+                return;
+            }
+        }
         if self.emit_wide_copy(fd, arch, op) {
             return;
         }
@@ -7199,6 +7208,43 @@ impl PrintC {
     /// (printc.cc:882-888).  A non-special SUBPIECE falls to the cast/functional
     /// dispatch (the existing `is_subpiece_cast` → `opTypeCast` / `opFunc`).
     fn op_subpiece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            let operation = fd.obank().get(op).unwrap();
+            let input = operation.get_in(0).unwrap();
+            let output = operation.get_out().and_then(|vn| fd.vbank().get(vn));
+            let offset = operation.get_in(1).and_then(|vn| fd.vbank().get(vn));
+            if output.is_some_and(|value| value.get_size() == 1)
+                && offset.is_some_and(|value| value.is_constant())
+                // Keep opaque vector lanes under their own option. Only use
+                // byte subscripts for the floating transfer emitted here.
+                && fd.vbank().get(input).and_then(|value| value.get_def())
+                    .is_some_and(|definition| self.local_array_assignment(fd, arch, definition).is_some())
+            {
+                if let Some((name, element)) = self.local_byte_array_name(fd, arch, input) {
+                    let byte = subpiece_byte_offset_for_composite(fd, op);
+                    let size = fd.vbank().get(input).unwrap().get_size() as i64;
+                    if byte >= 0 && byte < size {
+                        let output = operation.get_out().unwrap();
+                        let datatype = read_op
+                            .map(|read| fd.vn_type_read_facing(output, read))
+                            .unwrap_or_else(|| fd.vn_type_def_facing(output));
+                        if !matches!(datatype.compare(&element, 10), Ok(0)) {
+                            self.push_cast_open(&datatype, op);
+                        }
+                        self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
+                        self.push_atom(&Atom::with_op_vn(
+                            name,
+                            TagType::VarToken,
+                            crate::printlanguage::SyntaxHighlight::var_color,
+                            op_key(op),
+                            vn_key(input),
+                        ));
+                        self.push_constant_ir(byte as u64, 4, op);
+                        return;
+                    }
+                }
+            }
+        }
         use crate::dtype::type_metatype;
         if fd.obank().get(op).map(|o| o.does_special_printing()).unwrap_or(false) {
             let in0 = fd.obank().get(op).and_then(|o| o.get_in(0));
@@ -8127,6 +8173,36 @@ impl PrintC {
         }
     }
 
+    /// Converts a pointer compound initializer whose rendered operand is not
+    /// already a pointer the declared type accepts implicitly (an integer
+    /// carrier, a constant, or an unrelated pointer).
+    fn push_storage_initializer_cast(
+        &mut self,
+        fd: &Funcdata,
+        datatype: &std::rc::Rc<crate::dtype::Datatype>,
+        rendered: Option<VarnodeId>,
+        op: OpId,
+    ) {
+        use crate::dtype::type_metatype::{TYPE_PTR, TYPE_VOID};
+        if datatype.get_metatype() != TYPE_PTR {
+            return;
+        }
+        let is_void = |t: &std::rc::Rc<crate::dtype::Datatype>| {
+            t.get_ptr_to().is_some_and(|p| p.get_metatype() == TYPE_VOID)
+        };
+        let accepted = rendered.and_then(|vn| fd.vbank().get(vn)).is_some_and(|v| {
+            let ty = v.get_type();
+            ty.get_metatype() == TYPE_PTR
+                && (std::rc::Rc::ptr_eq(ty, datatype)
+                    || matches!(ty.compare(datatype, 10), Ok(0))
+                    || is_void(ty)
+                    || is_void(datatype))
+        });
+        if !accepted {
+            self.push_cast_open(datatype, op);
+        }
+    }
+
     fn op_storage_copy_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, access: crate::kuna_stackmem::Access) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
@@ -8148,6 +8224,7 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({ty}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_storage_initializer_cast(fd, &access.datatype, Some(value), op);
             self.push_vn_ir_m(fd, arch, value, op, mods);
         } else {
             self.push_atom(&Atom::syntax(format!("&({ty}){{0}}"), TagType::TypeToken, SyntaxHighlight::type_color));
@@ -8345,6 +8422,68 @@ impl PrintC {
         }
     }
 
+    /// The rendered declaration decides whether a whole local is a byte array.
+    /// Recovered register values can have that declaration without a frame Symbol.
+    fn local_byte_array_name(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        vn: VarnodeId,
+    ) -> Option<(String, std::rc::Rc<crate::dtype::Datatype>)> {
+        let value = fd.vbank().get(vn)?;
+        if value.is_implied() || value.is_persist() || value.is_volatile() {
+            return None;
+        }
+        let high = value.get_high()?;
+        if fd.high_bank().get(high)?.kuna_global() {
+            return None;
+        }
+        let (_, _, _, _, declared) = self.rendered_local_decl(fd, arch, high);
+        let declared = declared?;
+        if !super::kuna_bytearrayc::byte_array(&declared)
+            || declared.get_size() != value.get_size()
+        {
+            return None;
+        }
+        let (name, offset, _) = self.emitted_high_symbol(fd, high)?;
+        (offset <= 0).then_some((name, declared.get_array_base()?))
+    }
+
+    fn local_array_assignment(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+    ) -> Option<crate::p9_emit::kuna_stackassign::Assignment> {
+        let operation = fd.obank().get(op)?;
+        if !matches!(operation.code(), OpCode::CPUI_COPY | OpCode::CPUI_CAST) {
+            return None;
+        }
+        let output = operation.get_out()?;
+        let input = operation.get_in(0)?;
+        let size = fd.vbank().get(output)?.get_size();
+        if fd.vbank().get(input)?.get_size() != size {
+            return None;
+        }
+        let datatype = fd.vn_type_read_facing(input, op);
+        if datatype.get_metatype() != crate::dtype::type_metatype::TYPE_FLOAT
+            || datatype.get_size() != size
+        {
+            return None;
+        }
+        let (name, _) = self.local_byte_array_name(fd, arch, output)?;
+        Some(crate::p9_emit::kuna_stackassign::Assignment {
+            output,
+            operand: Some(input),
+            raw_constant: false,
+            datatype,
+            size,
+            name,
+            offset: 0,
+            pointer_size: arch.manage().get_default_data_space()?.get_addr_size() as i32,
+        })
+    }
+
     fn emit_storage_assignment_ir(
         &mut self,
         fd: &Funcdata,
@@ -8376,6 +8515,12 @@ impl PrintC {
         self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
         self.push_op(&COMPOUND, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+        let rendered = match assignment.operand {
+            Some(_) if assignment.raw_constant => None,
+            Some(input) => Some(input),
+            None => Some(assignment.output),
+        };
+        self.push_storage_initializer_cast(fd, &assignment.datatype, rendered, op);
         if let Some(input) = assignment.operand {
             if assignment.raw_constant {
                 self.push_constant_ir(fd.vbank().get(input).unwrap().get_offset(), assignment.size, op);

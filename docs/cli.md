@@ -533,7 +533,7 @@ function `score`), is `applied`, with a detail saying what it was printed as,
 and later directives reach it by that name (`name score_1 total`). A `type`
 that gives a stack local a scalar of another width is `rejected` before it
 applies (`Storage is 32 bytes, the stated type is 8`); a structure, union or
-array may grow or narrow it, within the stack. A whole scalar local keeps its explicitly stated type even when a merged storage instance retains a weaker recovered type. If coalescing drops the direct Symbol binding, a matching type-locked member must still confirm the carried declaration type. Two independently retyped whole-frame locals may not cover the same stack bytes: that would emit separate C objects and lose their alias. Declare one aggregate or union covering the shared storage instead.
+array may grow or narrow it, within the stack. Two independently retyped whole-frame locals may not cover the same stack bytes: that would emit separate C objects and lose their alias. Declare one aggregate or union covering the shared storage instead. A whole scalar local keeps its explicitly stated type even when a merged storage instance retains a weaker recovered type. If coalescing drops the direct Symbol binding, a matching type-locked member must still confirm the carried declaration type.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
