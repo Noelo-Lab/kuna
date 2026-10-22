@@ -3501,6 +3501,19 @@ stack objects, and function symbols. Project extraction includes these facts eve
 when synthetic address naming is disabled. Whole symbol types describe the
 object declaration, rather than the scalar type of a partial access.
 
+An integer `INT_ADD` of a constant and a non-pointer offset can still compute a
+pointer: a declared pointer member stores it, or a CAST or COPY consumes it at a
+pointer type. When types are printed (a project export or `structdefs`), the
+pointer is the target's width with byte-sized words, and the constant addresses
+a complete named data object, `printc.rs (op_named_pointer_add_ir)` relocates
+the constant through `kuna_namedglobals.rs (object_address)` and keeps the
+addition at pointer width, `(float *)((unsigned long long)((unsigned char
+*)&arena + 0x40) + index * 4LL)`, so the byte offset is not scaled again and
+the recompiled pointer lands inside the generated object rather than at the
+original binary's address. A consuming CAST already spells the pointer type,
+so the printer adds the pointer cast only when nothing else does. Integer
+results, unmapped constants, and other output languages print as before.
+
 A scalar named object is not simply declared at its symbol's type, because the
 body reads it at the type the printer gave each varnode, and an image symbol
 is usually an undefined type the prelude spells unsigned (`undefined4` is

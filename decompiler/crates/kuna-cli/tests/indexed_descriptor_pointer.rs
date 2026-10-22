@@ -105,6 +105,10 @@ API float send_slot(int index){Descriptor d;d.character.length=4;d.character.dat
             !body.contains(&format!("0x{:x}", arena + 64)),
             "fixed binary address escaped pointer relocation:\n{body}"
         );
+        assert!(
+            !body.contains("(float *)(float *)"),
+            "pointer cast repeated:\n{body}"
+        );
     } else {
         assert!(
             body.contains(&format!("0x{:x}", arena + 64)),

@@ -6700,14 +6700,22 @@ impl PrintC {
 
     /// A pointer stored through a declared member can retain integer address
     /// arithmetic in the IR. Relocate its mapped base without scaling the byte
-    /// offset a second time or treating unrelated integers as addresses.
+    /// offset a second time or treating unrelated integers as addresses; a
+    /// consuming CAST already spells the pointer type, so it is not repeated.
     fn op_named_pointer_add_ir(
         &mut self, fd: &Funcdata, arch: &Architecture, op: OpId, reader: Option<OpId>,
     ) -> bool {
         use crate::dtype::type_metatype;
+        if !self.options.header_carries_types && !self.options.struct_defs { return false; }
         let Some(operation) = fd.obank().get(op) else { return false };
         let (Some(out), Some(first), Some(second)) =
             (operation.get_out(), operation.get_in(0), operation.get_in(1)) else { return false };
+        let (Some(a), Some(b)) = (fd.vbank().get(first), fd.vbank().get(second)) else { return false };
+        let (constant, delta) = match (a.is_constant(), b.is_constant()) {
+            (true, false) => (first, second),
+            (false, true) => (second, first),
+            _ => return false,
+        };
         let pointer_type = |operation: OpId, output: VarnodeId| {
             self.partial_piece_type(fd, arch, output, operation, -1)
                 .or_else(|| crate::kuna_bitcast::declared_member_type(fd, arch.decl_high_type, output))
@@ -6717,38 +6725,37 @@ impl PrintC {
                     (ty.get_metatype() == type_metatype::TYPE_PTR).then_some(ty)
                 })
         };
+        let reader_op = reader.and_then(|r| fd.obank().get(r)).filter(|r| r.get_in(0) == Some(out));
+        let reader_casts = reader_op.is_some_and(|r| r.code() == OpCode::CPUI_CAST);
         let pointer = pointer_type(op, out).or_else(|| {
-            let cast = fd.obank().get(reader?)?;
-            (matches!(cast.code(), OpCode::CPUI_CAST | OpCode::CPUI_COPY) && cast.get_in(0) == Some(out))
+            let cast = reader_op?;
+            matches!(cast.code(), OpCode::CPUI_CAST | OpCode::CPUI_COPY)
                 .then(|| pointer_type(reader?, cast.get_out()?)).flatten()
         });
         let Some(pointer) = pointer else { return false };
         let size = pointer.get_size();
-        if !self.options.header_carries_types && !self.options.struct_defs
-            || !matches!(size, 4 | 8) || size != arch.types().get_size_of_pointer()
+        if !matches!(size, 4 | 8) || size != arch.types().get_size_of_pointer()
             || pointer.get_word_size() != Some(1)
             || fd.vbank().get(out).is_none_or(|v| v.get_size() != size)
         { return false; }
-        let (Some(a), Some(b)) = (fd.vbank().get(first), fd.vbank().get(second)) else { return false };
-        let (constant, delta) = match (a.is_constant(), b.is_constant()) {
-            (true, false) => (first, second),
-            (false, true) => (second, first),
-            _ => return false,
-        };
         let value = fd.vbank().get(constant).unwrap();
         if value.is_annotation() || value.get_size() != size
             || fd.vn_type_read_facing(delta, op).get_metatype() == type_metatype::TYPE_PTR
         { return false; }
         let Some(base) = self.named_globals.object_address(fd, arch, value.get_offset()) else { return false };
         let Ok(word) = arch.types().get_base(size, type_metatype::TYPE_UINT) else { return false };
-        self.push_cast_open(&pointer, op);
+        if !reader_casts {
+            self.push_cast_open(&pointer, op);
+        }
         self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
         self.push_cast_open(&word, op);
         self.push_atom(&Atom::with_op_vn(base, TagType::VarToken,
             crate::printlanguage::SyntaxHighlight::var_color, op_key(op), vn_key(constant)));
         self.push_cast_close(&word);
         self.push_vn_ir(fd, arch, delta, op);
-        self.push_cast_close(&pointer);
+        if !reader_casts {
+            self.push_cast_close(&pointer);
+        }
         true
     }
 
