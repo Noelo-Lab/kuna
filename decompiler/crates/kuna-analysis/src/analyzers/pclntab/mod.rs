@@ -496,25 +496,75 @@ fn exec_end(ranges: &[(u64, u64)], addr: u64) -> Option<u64> {
 /// Parse a Go binary's pclntab and return the recovered `(entry_pc, name)`
 /// functions. Pure and never-failing: any malformation yields an empty vec. This
 /// is the hermetically testable core (the [`AnalysisPass`] just wraps it).
+#[cfg(test)]
 fn recover_go_functions(file: &object::File) -> Vec<GoFunc> {
-    let img = ImageBytes::new(file);
-    let Some(header_vma) = locate_header(file, &img) else {
-        return Vec::new();
-    };
-    let Some(mut h) = parse_header(&img, header_vma) else {
-        return Vec::new();
-    };
-    // Go 1.26 stopped storing the text base here (the runtime uses `moduledata.text`
-    // instead), so `entryoff` is resolved against the linker's `runtime.text` — the
-    // start of the lowest code section.
-    if h.ver.is_118plus() && h.text_start == 0 {
-        h.text_start = text_section_start(file);
-    }
-    decode_functions(&img, &h)
+    recover_go_table(file).0
 }
 
-/// Address of the lowest `SectionKind::Text` section — what Go's `moduledata.text`
-/// points at when a stripped image no longer records it in the `pcHeader`.
+/// [`recover_go_functions`] plus the end of the module's text (the functab's
+/// closing `etext` entry), when the table carries one.
+fn recover_go_table(file: &object::File) -> (Vec<GoFunc>, Option<u64>) {
+    let img = ImageBytes::new(file);
+    let Some(header_vma) = locate_header(file, &img) else {
+        return (Vec::new(), None);
+    };
+    let Some(mut h) = parse_header(&img, header_vma) else {
+        return (Vec::new(), None);
+    };
+    // Go 1.26 stopped storing the text base here (the runtime uses `moduledata.text`
+    // instead), so `entryoff` is resolved against the module's `moduledata.text`,
+    // falling back to the lowest code section when no moduledata is found.
+    if h.ver.is_118plus() && h.text_start == 0 {
+        h.text_start =
+            moduledata_text(file, &h, header_vma).unwrap_or_else(|| text_section_start(file));
+    }
+    (decode_functions(&img, &h), functab_end(&img, &h))
+}
+
+/// The closing functab entry (`ftab[nfunc]`): the PC one past the module's last
+/// function.
+fn functab_end(img: &ImageBytes, h: &PcHeader) -> Option<u64> {
+    if h.ver.is_118plus() {
+        let off = h.nfunc.checked_mul(8)?;
+        let ent = img.read(h.functab_vma.checked_add(off)?, 4)?;
+        Some(h.text_start.wrapping_add(rd_u32(ent, h.end) as u64))
+    } else {
+        let ps = h.ptr_size as u64;
+        let off = h.nfunc.checked_mul(2 * ps)?;
+        let ent = img.read(h.functab_vma.checked_add(off)?, ps as usize)?;
+        Some(rd_ptr(ent, h.ptr_size, h.end))
+    }
+}
+
+/// `moduledata.text` of the module whose `pcHeader` is at `header_vma`. The
+/// `moduledata` opens with that pointer; word 17 is `len(ftab)` (`nfunc + 1`) and
+/// words 20-23 are `minpc, maxpc, text, etext`, which must nest. Searched in the
+/// data sections the linker places `runtime.firstmoduledata` in.
+fn moduledata_text(file: &object::File, h: &PcHeader, header_vma: u64) -> Option<u64> {
+    let ps = h.ptr_size as usize;
+    let word = |rec: &[u8], i: usize| rd_ptr(&rec[i * ps..], h.ptr_size, h.end);
+    for name in [".go.module", "__go_module", ".noptrdata", ".data", "__noptrdata", "__data"] {
+        let Some(sec) = file.section_by_name(name) else { continue };
+        let Ok(data) = sec.data() else { continue };
+        let lead = (ps - (sec.address() as usize % ps)) % ps;
+        let mut off = lead;
+        while off + 24 * ps <= data.len() {
+            let rec = &data[off..off + 24 * ps];
+            off += ps;
+            if word(rec, 0) != header_vma || word(rec, 17) != h.nfunc.wrapping_add(1) {
+                continue;
+            }
+            let (minpc, maxpc, text, etext) = (word(rec, 20), word(rec, 21), word(rec, 22), word(rec, 23));
+            if text != 0 && text <= minpc && minpc < maxpc && maxpc <= etext {
+                return Some(text);
+            }
+        }
+    }
+    None
+}
+
+/// Address of the lowest `SectionKind::Text` section — the `moduledata.text` of an
+/// internally linked image, used when no `moduledata` record is found.
 fn text_section_start(file: &object::File) -> u64 {
     file.sections()
         .filter(|s| s.kind() == object::SectionKind::Text)
@@ -548,15 +598,17 @@ impl AnalysisPass for GoPclntabPass {
         // entry is admitted only inside executable bytes, so a corrupt table cannot
         // mint a function over data.
         let exec = ctx.image.executable_ranges();
-        let mut funcs: Vec<GoFunc> =
-            recover_go_functions(ctx.file).into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
+        let (funcs, text_end) = recover_go_table(ctx.file);
+        let mut funcs: Vec<GoFunc> = funcs.into_iter().filter(|f| exec_end(&exec, f.addr).is_some()).collect();
         funcs.sort_unstable_by_key(|f| f.addr);
         let addrs: Vec<u64> = funcs.iter().map(|f| f.addr).collect();
         for (i, f) in funcs.into_iter().enumerate() {
-            // The next entry is this function's real end — the extent the symbol model
-            // lacks. It never runs past the extent holding it, so a body cannot swallow
-            // an entry in another section.
-            let end = addrs.get(i + 1).copied().unwrap_or(u64::MAX);
+            // The next entry (the functab's closing `etext` for the last function) is
+            // this function's real end — the extent the symbol model lacks. It never
+            // runs past the extent holding it, so a body cannot swallow an entry in
+            // another section or the host code an external link places after Go's.
+            let next = addrs.get(i + 1).copied().or(text_end.filter(|&e| e > f.addr));
+            let end = next.unwrap_or(u64::MAX);
             let end = end.min(exec_end(&exec, f.addr).unwrap_or(u64::MAX));
             if end > f.addr {
                 out.fde_bodies.push((f.addr, end));

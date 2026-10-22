@@ -2923,8 +2923,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   feeds those extents to the interior-entry rejection, so a jump-table case block
   or landing pad inside a Go function is no longer claimed as a `sub_<addr>` of its
   own (on arm64 that artifact used to clip every function that contained one).
-  Go 1.26 stopped storing the text base in the header, so an `entryoff` is then
-  resolved against the lowest code section (the linker's `runtime.text`).
+  The last function ends at the table's closing `etext` entry, so host code an
+  external link places after Go's is not swallowed. Go 1.26 stopped storing the
+  text base in the header, so an `entryoff` is then resolved against the module's
+  `moduledata.text` (the record in `.go.module` / `__go_module` / the data
+  sections that opens with the header's address, accepted only when its
+  `minpc`/`maxpc`/`text`/`etext` nest) — an external link puts `crt` code and
+  `.init`/`.plt` ahead of `runtime.text` — falling back to the lowest code section
+  when no record is found.
 - **MSVC RTTI** (`rtti`, PE-only, default-off;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`): find the shared
   `type_info` vftable, byte-search back from each `.?A…@@` TypeDescriptor to its

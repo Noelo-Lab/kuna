@@ -108,6 +108,12 @@ fn probe_rejects_malformed_headers() {
 /// Layout (all offsets relative to header start):
 ///   header (0x48 bytes), then funcnametab, then functab, then the `_func`s.
 fn build_go118_image(_header_vma: u64, text_start: u64, funcs: &[(u32, &str)]) -> Vec<u8> {
+    build_go118_image_end(text_start, funcs, None)
+}
+
+/// [`build_go118_image`] with the closing `ftab[nfunc]` entry (`etext - text`)
+/// when `etext_off` is given.
+fn build_go118_image_end(text_start: u64, funcs: &[(u32, &str)], etext_off: Option<u32>) -> Vec<u8> {
     let names: Vec<&str> = funcs.iter().map(|&(_, n)| n).collect();
     let (nametab, name_offs) = build_nametab(&names);
 
@@ -117,7 +123,7 @@ fn build_go118_image(_header_vma: u64, text_start: u64, funcs: &[(u32, &str)]) -
     let functab_off = funcname_off + nametab.len() as u64;
     // functab: nfunc entries of (entryoff:u32, funcoff:u32) = 8 bytes each.
     let nfunc = funcs.len() as u64;
-    let funcs_blob_off = functab_off + nfunc * 8;
+    let funcs_blob_off = functab_off + (nfunc + etext_off.is_some() as u64) * 8;
 
     // Lay out each `_func`: entryoff(u32) nameoff(i32) then padding to a few
     // fields (we only need the first 8 bytes). Give each 16 bytes of room.
@@ -148,6 +154,10 @@ fn build_go118_image(_header_vma: u64, text_start: u64, funcs: &[(u32, &str)]) -
         push_u32_le(&mut blob, entryoff);
         let funcoff = (funcs_blob_off - functab_off) + i as u64 * func_stride;
         push_u32_le(&mut blob, funcoff as u32);
+    }
+    if let Some(end) = etext_off {
+        push_u32_le(&mut blob, end);
+        push_u32_le(&mut blob, 0);
     }
     assert_eq!(blob.len() as u64, funcs_blob_off);
 
@@ -474,25 +484,39 @@ fn push_segment64(
     v.resize(v.len() + 12, 0); // reserved1..3
 }
 
-/// A minimal `MH_EXECUTE` arm64 Mach-O: executable `__TEXT,__text` at `text_vma`
-/// and `__DATA_CONST,__gopclntab` holding `blob` at `pcln_vma`.
-fn build_macho_with_pclntab(text_vma: u64, text_size: u64, pcln_vma: u64, blob: &[u8]) -> Vec<u8> {
-    let text_off = 0x1000u64;
-    let pcln_off = text_off + text_size;
-    let mut v = Vec::with_capacity((pcln_off + blob.len() as u64) as usize);
+/// A minimal `MH_EXECUTE` arm64 Mach-O with one single-section segment per
+/// `(segment, section, vma, bytes, flags)`.
+fn build_macho(secs: &[(&str, &str, u64, &[u8], u32)]) -> Vec<u8> {
+    let mut off = 0x1000u64;
+    let mut v = Vec::new();
     push_u32_le(&mut v, 0xfeed_facf); // MH_MAGIC_64
     push_u32_le(&mut v, 0x0100_000c); // CPU_TYPE_ARM64
     push_u32_le(&mut v, 0); // cpusubtype
     push_u32_le(&mut v, 2); // MH_EXECUTE
-    push_u32_le(&mut v, 2); // ncmds
-    push_u32_le(&mut v, (72 + 80) * 2); // sizeofcmds
+    push_u32_le(&mut v, secs.len() as u32); // ncmds
+    push_u32_le(&mut v, (72 + 80) * secs.len() as u32); // sizeofcmds
     v.resize(32, 0); // flags, reserved
-    push_segment64(&mut v, "__TEXT", "__text", text_vma, text_size, text_off, 0x8000_0400);
-    push_segment64(&mut v, "__DATA_CONST", "__gopclntab", pcln_vma, blob.len() as u64, pcln_off, 0);
-    v.resize(text_off as usize, 0);
-    v.resize(pcln_off as usize, 0);
-    v.extend_from_slice(blob);
+    let mut offs = Vec::new();
+    for &(seg, sect, vma, bytes, flags) in secs {
+        push_segment64(&mut v, seg, sect, vma, bytes.len() as u64, off, flags);
+        offs.push(off);
+        off += (bytes.len() as u64 + 0xf) & !0xf;
+    }
+    for (&(_, _, _, bytes, _), &o) in secs.iter().zip(&offs) {
+        v.resize(o as usize, 0);
+        v.extend_from_slice(bytes);
+    }
     v
+}
+
+/// [`build_macho`] with executable `__TEXT,__text` at `text_vma` and
+/// `__DATA_CONST,__gopclntab` holding `blob` at `pcln_vma`.
+fn build_macho_with_pclntab(text_vma: u64, text_size: u64, pcln_vma: u64, blob: &[u8]) -> Vec<u8> {
+    let text = vec![0u8; text_size as usize];
+    build_macho(&[
+        ("__TEXT", "__text", text_vma, &text, 0x8000_0400),
+        ("__DATA_CONST", "__gopclntab", pcln_vma, blob, 0),
+    ])
 }
 
 #[test]
@@ -539,4 +563,45 @@ fn exec_end_bounds_only_interior_addresses() {
     assert_eq!(exec_end(&ranges, 0x1010), None);
     assert_eq!(exec_end(&ranges, 0x0fff), None);
     assert_eq!(exec_end(&[], 0x1000), None);
+}
+
+#[test]
+fn zero_text_start_resolves_against_moduledata_text() {
+    // An external link places host code ahead of Go's: `moduledata.text` (here
+    // `__text + 0x400`), not the section base, is what `entryoff` is relative to.
+    let text_vma = 0x1_0000_1000u64;
+    let go_text = text_vma + 0x400;
+    let pcln_vma = 0x1_0001_0000u64;
+    let funcs = [(0x0u32, "main.main"), (0x80u32, "main.compute")];
+    let blob = build_go118_image_end(0, &funcs, Some(0x100));
+    let mut md = Vec::new();
+    for w in 0..24u64 {
+        push_u64_le(
+            &mut md,
+            match w {
+                0 => pcln_vma,
+                17 => funcs.len() as u64 + 1,
+                20 | 22 => go_text,
+                21 | 23 => go_text + 0x100,
+                _ => 0,
+            },
+        );
+    }
+    let text = vec![0u8; 0x800];
+    let bytes = build_macho(&[
+        ("__TEXT", "__text", text_vma, &text, 0x8000_0400),
+        ("__DATA_CONST", "__gopclntab", pcln_vma, &blob, 0),
+        ("__DATA", "__go_module", 0x1_0002_0000, &md, 0),
+    ]);
+    let file = object::File::parse(&bytes[..]).expect("hand-built Mach-O must parse");
+    assert_eq!(
+        recover_go_table(&file),
+        (
+            vec![
+                GoFunc { addr: go_text, name: "main.main".into() },
+                GoFunc { addr: go_text + 0x80, name: "main.compute".into() },
+            ],
+            Some(go_text + 0x100)
+        )
+    );
 }
