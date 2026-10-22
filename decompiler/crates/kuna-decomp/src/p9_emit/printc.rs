@@ -6980,8 +6980,9 @@ impl PrintC {
     }
 
     /// (kuna) Under `nanignore none`, print a widening that quiets a possibly
-    /// signaling NaN and feeds a round trip as a volatile compound literal, so a
-    /// C compiler cannot erase the `(float)(double)x` pair.
+    /// signaling NaN and feeds a round trip as a read through a volatile compound
+    /// literal, so a C compiler cannot erase the `(float)(double)x` pair. GCC drops
+    /// a bare `v = (volatile double){ x }` literal; the `*&` access keeps it.
     fn op_float_quiet_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
         if self.out_lang != crate::kuna_lang::OutLang::C {
             return false;
@@ -6998,7 +6999,7 @@ impl PrintC {
         let name = type_name_for_decl(&ty, self.rt_ctx).0;
         static MATERIALIZE: OpToken = op_token("", " })", 2, 66, false, TokenType::Postsurround, 0, 0);
         self.push_op(&MATERIALIZE, Some(op_key(op)));
-        self.push_atom(&Atom::syntax(format!("((volatile {name}){{ "),
+        self.push_atom(&Atom::syntax(format!("(*&(volatile {name}){{ "),
             TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
         self.op_type_cast_ir_with(fd, arch, op, false);
         true

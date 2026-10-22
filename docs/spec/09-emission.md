@@ -150,9 +150,12 @@ whose input may be a signaling NaN and whose result reaches a conversion back
 to the source format materializes its C result in a volatile compound literal
 (`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::op_float_quiet_ir)`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (feeds_round_trip)`):
-`(float)((volatile double){ (double)x })`. A C compiler erases a plain
+`(float)(*&(volatile double){ (double)x })`. A C compiler erases a plain
 `(float)(double)x` pair even with strict rounding flags. The literal evaluates
-its input once and forces the wider format to exist in storage. Widenings that
+its input once and forces the wider format to exist in storage. The read goes
+through `*&` because GCC drops a bare volatile literal assigned to a variable
+(`v = (volatile double){ (double)x };`), which is how a widening shared by
+several readers prints. Widenings that
 feed arithmetic, comparisons, calls or stores, and every narrowing, keep
 ordinary casts, because the compiler must perform those conversions. Already
 quiet inputs also keep ordinary casts, and the default `nanignore compare`

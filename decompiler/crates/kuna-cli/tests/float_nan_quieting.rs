@@ -29,6 +29,11 @@ __attribute__((naked)) unsigned long quiet64(unsigned long bits) {
 __attribute__((naked)) unsigned quiet_sse32(unsigned bits) {
  __asm__("movd %edi,%xmm0;cvtss2sd %xmm0,%xmm0;cvtsd2ss %xmm0,%xmm0;movd %xmm0,%eax;retq");
 }
+__attribute__((naked)) unsigned quiet_merge(unsigned a, unsigned b, int c) {
+ __asm__("pushq %rbp;movq %rsp,%rbp;testl %edx,%edx;je 1f;movd %edi,%xmm0;cvtss2sd %xmm0,%xmm0;"
+   "movsd %xmm0,-8(%rbp);jmp 2f;1:movd %esi,%xmm0;cvtss2sd %xmm0,%xmm0;movsd %xmm0,-8(%rbp);"
+   "2:pxor %xmm0,%xmm0;cvtsd2ss -8(%rbp),%xmm0;movd %xmm0,%eax;popq %rbp;retq");
+}
 "#,
     )
     .unwrap();
@@ -47,6 +52,7 @@ __attribute__((naked)) unsigned quiet_sse32(unsigned bits) {
 #include <stdio.h>
 unsigned quiet32(unsigned),printed_quiet32(unsigned);
 unsigned quiet_sse32(unsigned),printed_quiet_sse32(unsigned);
+unsigned quiet_merge(unsigned,unsigned,int),printed_quiet_merge(unsigned,unsigned,int);
 unsigned long quiet64(unsigned long),printed_quiet64(unsigned long);
 int main(void) {
  const unsigned values32[]={0,0x80000000u,1,0x80000001u,0x3f800000u,0xbf800000u,
@@ -64,9 +70,10 @@ int main(void) {
    unsigned a=quiet32(x),b=printed_quiet32(x);
    uint64_t c=quiet64(y),d=printed_quiet64(y);
    unsigned e=quiet_sse32(x),f=printed_quiet_sse32(x);
-   if(a!=b||c!=d||e!=f) {
-    fprintf(stderr,"round=%u case=%u float=%08x/%08x double=%016llx/%016llx sse=%08x/%08x\n",
-      mode,i,a,b,(unsigned long long)c,(unsigned long long)d,e,f);return 1;
+   unsigned g=quiet_merge(x,~x,i&1),h=printed_quiet_merge(x,~x,i&1);
+   if(a!=b||c!=d||e!=f||g!=h) {
+    fprintf(stderr,"round=%u case=%u float=%08x/%08x double=%016llx/%016llx sse=%08x/%08x merge=%08x/%08x\n",
+      mode,i,a,b,(unsigned long long)c,(unsigned long long)d,e,f,g,h);return 1;
    }
   }
  }
@@ -77,7 +84,7 @@ int main(void) {
         "decompile-all",
         native.to_str().unwrap(),
         "--functions",
-        "quiet32,quiet64,quiet_sse32",
+        "quiet32,quiet64,quiet_sse32,quiet_merge",
     ]);
     assert_eq!(rc, 0, "{stderr}\n{default}");
     assert!(!default.contains("volatile"), "the default nanignore compare drops quieting\n{default}");
@@ -86,7 +93,7 @@ int main(void) {
             "decompile-all",
             native.to_str().unwrap(),
             "--functions",
-            "quiet32,quiet64,quiet_sse32",
+            "quiet32,quiet64,quiet_sse32,quiet_merge",
             "--option",
             "nanignore",
             policy,
@@ -96,11 +103,13 @@ int main(void) {
             "prototype quiet64 unsigned long quiet64(unsigned long bits)",
             "--assert",
             "prototype quiet_sse32 unsigned int quiet_sse32(unsigned int bits)",
+            "--assert",
+            "prototype quiet_merge unsigned int quiet_merge(unsigned int a,unsigned int b,int c)",
             "--assert-strict",
         ]);
         assert_eq!(rc, 0, "{stderr}\n{printed}");
         let regenerated = dir.join(format!("regenerated-{policy}.c"));
-        std::fs::write(&regenerated,format!("typedef float float4;typedef double float8;typedef long double float10;\n#define quiet32 printed_quiet32\n#define quiet64 printed_quiet64\n#define quiet_sse32 printed_quiet_sse32\n{printed}")).unwrap();
+        std::fs::write(&regenerated,format!("typedef float float4;typedef double float8;typedef long double float10;\n#define quiet32 printed_quiet32\n#define quiet64 printed_quiet64\n#define quiet_sse32 printed_quiet_sse32\n#define quiet_merge printed_quiet_merge\n{printed}")).unwrap();
         for cc in &compilers {
             for opt in ["-O0", "-O2"] {
                 let exe = dir.join(format!("check-{policy}-{cc}-{opt}"));
