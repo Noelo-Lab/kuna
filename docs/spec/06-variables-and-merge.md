@@ -116,6 +116,11 @@ the normal copy chain). A whole-cover test walks both block maps in order and
 reports the strongest per-block verdict (`cover.rs (Cover::intersect)`,
 `(Cover::intersect_list)` at level 2 for the candidate blocks).
 
+Cover points cache numeric operation positions. When inserting an operation
+exhausts an order gap and renumbers its block, the covers of that block's input
+and output Varnodes, and their owning HighVariables, must be marked dirty.
+The next merge comparison rebuilds those ranges using the new positions.
+
 A Cover is keyed by block index; its walk over the CFG resolves an index to its
 block through a table built once per walk, the first block in list order with
 that index (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs

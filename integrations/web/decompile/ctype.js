@@ -95,7 +95,7 @@ const CONVENTIONS = /\b(__stdcall|__cdecl|__fastcall|__thiscall|__vectorcall|MSA
 /** One parameter declaration → `{type, name}` (name '' when unnamed). */
 export function parseParam(text) {
   const t = normalizeType(text);
-  const fp = /^(.*?\(\s*\*+)\s*([A-Za-z_]\w*)\s*(\)\s*\(.*\))$/.exec(t);
+  const fp = /^(.*?\(\s*\*+)\s*([A-Za-z_]\w*)\s*(\)\s*(?:\(.*\)|(?:\[\d*\])+))$/.exec(t);
   if (fp) return { type: normalizeType(fp[1] + fp[3]), name: fp[2] };
   const m = /^(.*?[\s*])([A-Za-z_]\w*)\s*((?:\[\d*\])*)$/.exec(t);
   if (m && !KEYWORDS.has(m[2]) && m[1].trim() && !/^(const|volatile|signed|unsigned|struct|union|enum)$/.test(m[1].trim())) {
@@ -183,6 +183,24 @@ export function typeSize(ctype, { bits = 64, llp64 = false, known = new Map() } 
   const size = SCALAR_SIZE.get(base) ?? SCALAR_SIZE.get(base.replace(/^unsigned /, ''));
   if (size !== undefined) return size;
   const sized = /^(?:u?int|undefined|float)(\d+)$/.exec(base);
+  return sized ? Number(sized[1]) : null;
+}
+
+const RUST_SIZE = new Map([['i8', 1], ['u8', 1], ['bool', 1], ['i16', 2], ['u16', 2], ['i32', 4], ['u32', 4], ['f32', 4], ['char', 4],
+  ['i64', 8], ['u64', 8], ['f64', 8], ['i128', 16], ['u128', 16]]);
+
+/** Bytes a Rust type as kuna prints it occupies (`i64`, `*mut u8`, `[u8; 40]`); null when unknown. */
+export function rustTypeSize(type, { bits = 64, known = new Map() } = {}) {
+  const t = (type || '').trim();
+  if (/^(\*(mut|const)\s|&|fn\s*\(|(unsafe\s+)?extern\b)/.test(t) || /^[iu]size$/.test(t)) return bits / 8;
+  const arr = /^\[(.+);\s*(\d+)\]$/.exec(t);
+  if (arr) {
+    const inner = rustTypeSize(arr[1], { bits, known });
+    return inner === null ? null : inner * Number(arr[2]);
+  }
+  if (RUST_SIZE.has(t)) return RUST_SIZE.get(t);
+  if (known.has(t)) return known.get(t);
+  const sized = /^(?:undefined|u?int)(\d+)$/.exec(t);
   return sized ? Number(sized[1]) : null;
 }
 

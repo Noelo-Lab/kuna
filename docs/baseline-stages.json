@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3180,
-    3180
+    3182,
+    3182
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1437,6 +1437,8 @@
     "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
     "data:PEMAIN #2: default, the same call site names main",
     "data:PEMAIN #3: default, main is defined under its name",
+    "data:POINTERLITERAL #1: pointer literal converts its integer carrier",
+    "data:POINTERLITERAL #2: no integer initializes a pointer without conversion",
     "data:POINTERWALK-BUDGET #1: the function decompiles",
     "data:POINTERWALK-MEMO #1: buf is one array of sixteen bytes",
     "data:PPCISA #1: only the reporting pass gives the ISA hint",
