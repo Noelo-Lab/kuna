@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "local_array_bits.rs"]
+mod local_array_bits;
+
 #[path = "array_record.rs"]
 mod array_record;
 

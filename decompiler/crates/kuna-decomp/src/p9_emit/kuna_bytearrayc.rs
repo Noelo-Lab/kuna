@@ -11,7 +11,7 @@ pub(crate) struct Access {
     pub big: bool,
 }
 
-fn byte_array(ty: &Datatype) -> bool {
+pub(super) fn byte_array(ty: &Datatype) -> bool {
     ty.get_metatype() == type_metatype::TYPE_ARRAY
         && ty.get_array_base().is_some_and(|elem| {
             elem.get_size() == 1
