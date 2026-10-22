@@ -5989,6 +5989,9 @@ impl PrintC {
         opc: OpCode,
     ) {
         if self.out_lang == crate::kuna_lang::OutLang::C {
+            if opc == OpCode::CPUI_INT_ADD && self.op_named_pointer_add_ir(fd, arch, op, read_op) {
+                return;
+            }
             if let Some(transfer) = crate::kuna_aggregatecast::storage_transfer(fd, arch.decl_high_type, op) {
                 self.op_aggregate_transfer_ir(fd, arch, op, transfer);
                 return;
@@ -6717,6 +6720,68 @@ impl PrintC {
         if let Some(ct) = &cast_ty {
             self.push_cast_close(ct);
         }
+    }
+
+    /// A pointer stored through a declared member can retain integer address
+    /// arithmetic in the IR. Relocate its mapped base without scaling the byte
+    /// offset a second time or treating unrelated integers as addresses; a
+    /// consuming CAST already spells the pointer type, so it is not repeated.
+    fn op_named_pointer_add_ir(
+        &mut self, fd: &Funcdata, arch: &Architecture, op: OpId, reader: Option<OpId>,
+    ) -> bool {
+        use crate::dtype::type_metatype;
+        if !self.options.header_carries_types && !self.options.struct_defs { return false; }
+        let Some(operation) = fd.obank().get(op) else { return false };
+        let (Some(out), Some(first), Some(second)) =
+            (operation.get_out(), operation.get_in(0), operation.get_in(1)) else { return false };
+        let (Some(a), Some(b)) = (fd.vbank().get(first), fd.vbank().get(second)) else { return false };
+        let (constant, delta) = match (a.is_constant(), b.is_constant()) {
+            (true, false) => (first, second),
+            (false, true) => (second, first),
+            _ => return false,
+        };
+        let pointer_type = |operation: OpId, output: VarnodeId| {
+            self.partial_piece_type(fd, arch, output, operation, -1)
+                .or_else(|| crate::kuna_bitcast::declared_member_type(fd, arch.decl_high_type, output))
+                .filter(|ty| ty.get_metatype() == type_metatype::TYPE_PTR)
+                .or_else(|| {
+                    let ty = fd.vn_type_def_facing(output);
+                    (ty.get_metatype() == type_metatype::TYPE_PTR).then_some(ty)
+                })
+        };
+        let reader_op = reader.and_then(|r| fd.obank().get(r)).filter(|r| r.get_in(0) == Some(out));
+        let reader_casts = reader_op.is_some_and(|r| r.code() == OpCode::CPUI_CAST);
+        let pointer = pointer_type(op, out).or_else(|| {
+            let cast = reader_op?;
+            matches!(cast.code(), OpCode::CPUI_CAST | OpCode::CPUI_COPY)
+                .then(|| pointer_type(reader?, cast.get_out()?)).flatten()
+        });
+        let Some(pointer) = pointer else { return false };
+        let size = pointer.get_size();
+        if !matches!(size, 4 | 8) || size != arch.types().get_size_of_pointer()
+            || pointer.get_word_size() != Some(1)
+            || fd.vbank().get(out).is_none_or(|v| v.get_size() != size)
+        { return false; }
+        let value = fd.vbank().get(constant).unwrap();
+        if value.is_annotation() || value.get_size() != size
+            || fd.vn_type_read_facing(delta, op).get_metatype() == type_metatype::TYPE_PTR
+            || !scaled_index(fd, delta, 4)
+        { return false; }
+        let Some(base) = self.named_globals.object_address(fd, arch, value.get_offset()) else { return false };
+        let Ok(word) = arch.types().get_base(size, type_metatype::TYPE_UINT) else { return false };
+        if !reader_casts {
+            self.push_cast_open(&pointer, op);
+        }
+        self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
+        self.push_cast_open(&word, op);
+        self.push_atom(&Atom::with_op_vn(base, TagType::VarToken,
+            crate::printlanguage::SyntaxHighlight::var_color, op_key(op), vn_key(constant)));
+        self.push_cast_close(&word);
+        self.push_vn_ir(fd, arch, delta, op);
+        if !reader_casts {
+            self.push_cast_close(&pointer);
+        }
+        true
     }
 
     fn op_aggregate_transfer_ir(
@@ -12864,4 +12929,31 @@ pub(crate) fn declared_variable_type(
     };
     let rep = type_rep.or_else(|| decl_rep_varnode(fd, hid))?;
     Some(fd.vbank().get(rep)?.get_type().clone())
+}
+
+/// Whether `vn` is an index the binary scaled, widened or masked (a multiply or
+/// left shift by a constant, an extension, an AND with a mask below 0x10000, or
+/// a sum of those), so it cannot be the base pointer of an addition whose other
+/// operand is a constant address.
+fn scaled_index(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
+        return false;
+    };
+    let constant = |slot: i32| def.get_in(slot).and_then(|i| fd.vbank().get(i)).is_some_and(|v| v.is_constant());
+    match def.code() {
+        OpCode::CPUI_INT_MULT => constant(0) || constant(1),
+        OpCode::CPUI_INT_LEFT => constant(1),
+        OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT => true,
+        OpCode::CPUI_INT_AND => (0..2).any(|slot| {
+            def.get_in(slot).and_then(|i| fd.vbank().get(i)).is_some_and(|v| v.is_constant() && v.get_offset() <= 0xffff)
+        }),
+        OpCode::CPUI_CAST | OpCode::CPUI_COPY if depth > 0 => def.get_in(0).is_some_and(|input| {
+            fd.vn_type_def_facing(input).get_metatype() != crate::dtype::type_metatype::TYPE_PTR
+                && scaled_index(fd, input, depth - 1)
+        }),
+        OpCode::CPUI_INT_ADD if depth > 0 => (0..2).all(|slot| {
+            constant(slot) || def.get_in(slot).is_some_and(|input| scaled_index(fd, input, depth - 1))
+        }) && !(constant(0) && constant(1)),
+        _ => false,
+    }
 }

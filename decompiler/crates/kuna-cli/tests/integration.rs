@@ -597,6 +597,9 @@ mod float_integer_truncation;
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
 
+#[path = "indexed_descriptor_pointer.rs"]
+mod indexed_descriptor_pointer;
+
 #[path = "locked_scalar_declarations.rs"]
 mod locked_scalar_declarations;
 
