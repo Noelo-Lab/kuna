@@ -53,7 +53,6 @@ PATH_RESOURCES = [
     ("decompiler/crates/kuna-decomp/src/p0_knowledge/options.rs", "counter:catalog"),
     ("decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases", "counter:catalog"),
     ("decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs", "counter:catalog"),
-    ("decompiler/crates/kuna-base/src/xml.rs", "counter:stages-corpus"),
     ("docs/options.md", "file:docs/options.md"),
     ("docs/baseline-stages.json", "counter:stages-corpus"),
     ("tests/stages", "counter:stages-corpus"),

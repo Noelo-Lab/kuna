@@ -19,8 +19,8 @@ The counters, how each is measured, and where each is hard-coded:
                             -> kuna_phases/tests.rs   the tuple assert + the test fn NAME
     catalog buckets         field/value tallies over the same catalog rows
                             -> tests/stages/kuna-catalog.xml  per-bucket stringmatch min/max
-    stage corpus (222)      tests/datatests/*.xml + tests/stages/*.xml, non-recursive
-                            -> kuna-base/src/xml.rs   "corpus file count drifted"
+    stage corpus inventory tests/datatests/*.xml + tests/stages/*.xml, non-recursive
+                            -> reported only; the XML parser discovers its corpus files
     next ElementId (4132)   max `ElementId::new(_, N)` for N >= 4000, plus one. No hard-coded
                             site: the convention is "grep for the current highest"
                             (docs/agents.md, docs/improvement-pipeline.md).
@@ -67,7 +67,6 @@ REL_TESTS_RS = "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests
 REL_BYTECOMPAT_RS = "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs"
 REL_CATALOG_FIXTURE = "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json"
 REL_CATALOG_XML = "tests/stages/kuna-catalog.xml"
-REL_BASE_XML_RS = "decompiler/crates/kuna-base/src/xml.rs"
 
 TIERS = ("core", "transform", "analysis")
 
@@ -208,8 +207,6 @@ SITES = (
      r'FIXTURE\.matches\("\\"(?:option|tier|symptoms)\\": "\)\.count\(\), (\d+)\)', "settables"),
     ("phases-tests.catalog-json-records", REL_TESTS_RS,
      r'assert_eq!\(json\.matches\("\},\\n"\)\.count\(\), (\d+)\)', "settables_minus_one"),
-    ("base-xml.corpus-count", REL_BASE_XML_RS,
-     r'assert_eq!\(count, (\d+), "corpus file count drifted"\)', "corpus_files"),
 )
 
 
