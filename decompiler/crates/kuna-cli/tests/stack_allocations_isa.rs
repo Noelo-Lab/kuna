@@ -5,9 +5,7 @@ use common::process;
 use std::path::Path;
 use std::process::Command;
 
-const CASES: &[&str] = &[
-    "one", "two", "branch", "loop", "scoped", "aligned", "outgoing",
-];
+const CASES: &[&str] = &["one", "two", "branch", "loop", "aligned", "outgoing"];
 struct Target {
     triple: &'static str,
     emulator: &'static str,
@@ -157,6 +155,11 @@ fn check(target: Target) {
         },
     ] {
         if process::optional_output(Command::new(tool).arg("--version")).is_none() {
+            assert!(
+                std::env::var_os("KUNA_REQUIRE_STACKALLOC_ISA").is_none(),
+                "required tool missing: {}",
+                tool.to_string_lossy()
+            );
             eprintln!(
                 "skipping {}: missing {}",
                 target.triple,
@@ -168,6 +171,11 @@ fn check(target: Target) {
     let emulate =
         process::optional_output(Command::new(target.emulator).arg("--version")).is_some();
     if !emulate {
+        assert!(
+            std::env::var_os("KUNA_REQUIRE_STACKALLOC_ISA").is_none(),
+            "required emulator missing: {}",
+            target.emulator
+        );
         eprintln!(
             "{}: QEMU unavailable; retaining compile/decompile checks",
             target.triple
@@ -248,7 +256,10 @@ fn check(target: Target) {
         if emulate {
             process::required_output(Command::new(target.emulator).arg(&binary));
         }
-        for negative in ["sample_drifting", "sample_rising"] {
+        for negative in ["sample_drifting", "sample_rising", "sample_scoped"] {
+            if negative == "sample_scoped" && original_opt == "-O2" {
+                continue;
+            }
             let mut decline = Command::new(env!("CARGO_BIN_EXE_kuna"));
             decline
                 .arg("decompile")
@@ -270,8 +281,8 @@ fn check(target: Target) {
             let output = process::required_output(&mut decline);
             assert!(
                 !String::from_utf8_lossy(&output.stdout).contains("__builtin_alloca("),
-                "{}: unbounded outgoing stack must be declined",
-                target.triple
+                "{}: {negative} must decline unsupported stack growth or lifetime: {decline:?}\n{}",
+                target.triple, String::from_utf8_lossy(&output.stdout)
             );
         }
 
@@ -347,6 +358,11 @@ fn check(target: Target) {
                     &executable,
                 );
                 if !emulate {
+                    assert!(
+                        std::env::var_os("KUNA_REQUIRE_STACKALLOC_ISA").is_none(),
+                        "required emulator missing: {}",
+                        target.emulator
+                    );
                     continue;
                 }
                 let result = process::output_with_timeout(
@@ -361,7 +377,7 @@ fn check(target: Target) {
     }
     if emulate {
         eprintln!(
-            "{}: 14364 native/regenerated comparisons passed ({})",
+            "{}: 12312 native/regenerated comparisons passed ({})",
             target.triple,
             root.display()
         );

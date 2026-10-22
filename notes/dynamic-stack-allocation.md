@@ -35,7 +35,7 @@ uses are checked on their incoming edges. Matching scalar expressions does not
 identify distinct loads, calls, or PHIs.
 
 Fresh Clang examples cover PE32, PE64, and ELF64; multiple allocations, branches,
-loops, scoped VLAs, alignment, and explicit page-probe loops exercise the broader
+loops, alignment, and explicit page-probe loops exercise the broader
 analysis. ELF cases compare native and regenerated functions over thousands of
 sizes at both C optimization levels. Windows cases recompile with Clang and treat
 incompatible pointer diagnostics as errors. These checks do not establish support
@@ -83,8 +83,8 @@ mistaking it for a misaligned C buffer address. The ABI rule is documented in th
 An unrelated custom stack convention requires its own verified model.
 
 `stack_allocations_isa` uses independent freestanding C fixtures. Each target has
-seven positive cases: one buffer, consecutive buffers, conditional allocation,
-repeated allocation, scoped VLAs, 64-byte alignment, and 12-argument calls with
+six positive cases: one buffer, consecutive buffers, conditional allocation,
+repeated allocation, 64-byte alignment, and 12-argument calls with
 stack-passed values. Separate ascending and descending assembly loops must decline allocation
 recovery when outgoing SP growth is unbounded. Reference code is compiled at
 O0/O2; regenerated C is compiled for the same target at O0/O2 and compared under
@@ -107,7 +107,7 @@ under QEMU. Existing no-return inference otherwise incorrectly truncates these
 callers. Those controls isolate stack-allocation recovery; they do not establish
 that default SPARC no-return inference is correct.
 
-The complete fixture diff covers 112 functions: seven functions, eight targets and
+The complete fixture diff covers 96 functions: six functions, eight targets and
 two original optimization levels. Every helper call site remains present. The
 changes are classified by source case:
 
@@ -117,7 +117,7 @@ changes are classified by source case:
 | Consecutive buffers | Each live buffer receives independent storage. |
 | Conditional allocation | Branch-local storage or the compiler's merged size is preserved. |
 | Repeated allocation | New backing remains inside the loop. |
-| Scoped VLA | Allocation replaces saved virtual-SP arithmetic; unused SP copies disappear. |
+| Scoped VLA | Recovery is declined when a loop restores its earlier SP; compiler alloca cannot preserve the shorter lifetime. |
 | Aligned buffer | Alignment masks and bounded slack preserve 64-byte alignment. |
 | Outgoing arguments | Stack argument slots and buffer accesses fit their reserved backing. |
 
@@ -126,7 +126,7 @@ and `O2-on` project exports, so the full per-function diff is reproducible. Valu
 helper call counts and ordered input digests are compared for all 513 sizes; this
 also checks that control-flow simplification has not removed or reordered calls.
 
-For the seven-function cross-ISA fixture, the following whole-command timings
+For the earlier seven-function cross-ISA fixture, the following whole-command timings
 use two warmups and seven interleaved measurements per setting, with no build or
 other test running concurrently. These are medians; the option remains off by
 default. The measurement includes loading, analysis and C emission.
@@ -148,3 +148,18 @@ derived from a recovered allocation contributes alignment slack; unrelated
 integer masks cannot enlarge or suppress the backing reservation. Isolated IR
 tests cover copied zero masks, both operand orders at 32/64 bits, and an unrelated
 64-byte mask beside a one-byte access below the allocation.
+
+Loop lifetime proof is separate from outgoing-area bounds. For every enclosing
+natural loop, each latch must carry the allocation through its SP PHI; a restored
+base, a missing proof, or an irreducible loop is declined. The graph walk has a
+65,536-edge budget and the shared SSA proof a 4,096-node budget. Scoped VLAs are
+negative cases, including a 20,000-iteration allocation that would exhaust the
+stack if emitted as alloca. True function-lifetime allocations in loops retain
+their existing round-trip coverage.
+
+Allocation lowering runs immediately after active call-argument recovery, while
+the original SP relationships can still distinguish outgoing arguments from
+untouched registers and the caller frame. An unasserted caller/callee regression
+checks both inferred arities. CI installs Clang, LLD, QEMU user emulators and the
+SPARC GNU linker; its dedicated round-trip step requires every tool and emulator
+and prints the per-target native/recompiled comparison counts.

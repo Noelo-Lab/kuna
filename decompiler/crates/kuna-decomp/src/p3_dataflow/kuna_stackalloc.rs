@@ -797,6 +797,137 @@ fn reserves(
         .collect()
 }
 
+/// A compiler alloca survives until return. A loop that restores an older SP
+/// requires a shorter lifetime, which this lowering does not emit.
+fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
+    fn derives(
+        fd: &Funcdata,
+        value: VarnodeId,
+        root: VarnodeId,
+        seen: &mut BTreeSet<VarnodeId>,
+        budget: &mut usize,
+    ) -> bool {
+        if *budget == 0 {
+            return false;
+        }
+        *budget -= 1;
+        if value == root {
+            return true;
+        }
+        if !seen.insert(value) || seen.len() > 256 {
+            return false;
+        }
+        let Some(op) = fd
+            .vbank()
+            .get(value)
+            .and_then(|v| v.get_def())
+            .and_then(|d| fd.obank().get(d))
+        else {
+            return false;
+        };
+        match op.code() {
+            OpCode::CPUI_COPY
+            | OpCode::CPUI_CAST
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_PTRADD
+            | OpCode::CPUI_PTRSUB => op
+                .get_in(0)
+                .is_some_and(|v| derives(fd, v, root, seen, budget)),
+            OpCode::CPUI_INT_ADD => (0..2).any(|slot| {
+                op.get_in(slot)
+                    .is_some_and(|v| derives(fd, v, root, &mut seen.clone(), budget))
+            }),
+            OpCode::CPUI_INT_AND => {
+                alignment(fd, fd.vbank().get(value).unwrap().get_def().unwrap())
+                    .and_then(|(slot, _)| op.get_in(slot))
+                    .is_some_and(|v| derives(fd, v, root, seen, budget))
+            }
+            OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|slot| {
+                op.get_in(slot)
+                    .is_some_and(|v| derives(fd, v, root, &mut seen.clone(), budget))
+            }),
+            _ => false,
+        }
+    }
+    let Some(block) = fd.obank().get(allocation.op).and_then(|o| o.get_parent()) else {
+        return true;
+    };
+    let graph = fd.bblocks_ref();
+    let mut reachable = BTreeSet::new();
+    let mut todo = vec![block];
+    let mut budget = 65536usize;
+    while let Some(b) = todo.pop() {
+        if !reachable.insert(b) {
+            continue;
+        }
+        let b = graph.block(b);
+        for slot in 0..b.size_out() {
+            if budget == 0 {
+                return true;
+            }
+            budget -= 1;
+            todo.push(b.get_out(slot));
+        }
+    }
+    let cyclic = reachable.iter().any(|&b| {
+        let b = graph.block(b);
+        (0..b.size_out()).any(|i| b.get_out(i) == block)
+    });
+    if !cyclic {
+        return false;
+    }
+    let mut proved = false;
+    let mut proof_budget = 4096;
+    for &latch in &reachable {
+        let b = graph.block(latch);
+        for slot in 0..b.size_out() {
+            let header = b.get_out(slot);
+            if !graph.dominates(header, Some(latch)) || !graph.dominates(header, Some(block)) {
+                continue;
+            }
+            let mut natural = BTreeSet::from([header]);
+            let mut todo = vec![latch];
+            while let Some(b) = todo.pop() {
+                if !natural.insert(b) {
+                    continue;
+                }
+                let b = graph.block(b);
+                for i in 0..b.size_in() {
+                    if budget == 0 {
+                        return true;
+                    }
+                    budget -= 1;
+                    todo.push(b.get_in(i));
+                }
+            }
+            if !natural.contains(&block) {
+                continue;
+            }
+            proved = true;
+            let incoming = graph.block(header).get_in_index(latch);
+            let carried = fd.bb_ops(header).into_iter().any(|id| {
+                let o = fd.obank().get(id).unwrap();
+                o.code() == OpCode::CPUI_MULTIEQUAL
+                    && o.get_out().is_some_and(|v| stack_register(fd, v))
+                    && o.get_in(incoming).is_some_and(|v| {
+                        derives(
+                            fd,
+                            v,
+                            allocation.output,
+                            &mut BTreeSet::new(),
+                            &mut proof_budget,
+                        )
+                    })
+            });
+            if !carried {
+                return true;
+            }
+        }
+    }
+    !proved
+}
+
 fn lower(fd: &mut Funcdata, allocation: Allocation, width: int4, headroom: Reservation) {
     let op = allocation.op;
     let address = fd.obank().get(op).unwrap().get_addr().clone();
@@ -874,11 +1005,15 @@ impl Action for ActionStackAlloc {
             }
         }
         let (allocations, aliases) = identify_aliases(fd, found.into_values().collect());
-        if allocations.is_empty() {
+        if allocations.is_empty() || allocations.iter().any(|a| loop_restores_stack(fd, a)) {
             return 0;
         }
         for (op, root, delta) in displaced_aliases(fd, &allocations, &aliases) {
-            let size = fd.vbank().get(fd.obank().get(op).unwrap().get_out().unwrap()).unwrap().get_size();
+            let size = fd
+                .vbank()
+                .get(fd.obank().get(op).unwrap().get_out().unwrap())
+                .unwrap()
+                .get_size();
             while fd.obank().get(op).unwrap().num_input() > 2 {
                 fd.op_remove_input(op, 2);
             }

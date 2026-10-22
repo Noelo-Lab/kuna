@@ -36,10 +36,10 @@ KEEP unsigned sample_loop(unsigned n) {
 }
 KEEP unsigned sample_scoped(unsigned n) {
   unsigned total = 0;
-  for (unsigned i = 0; i < 3; i++) {
-    unsigned char p[n + i];
+  for (unsigned i = 0; i < 20000; i++) {
+    unsigned char p[n + 4000];
     p[0] = (unsigned char)(7 + i);
-    total += observe(p, n + i);
+    total += observe(p, n + 4000);
   }
   return total;
 }

@@ -73,11 +73,11 @@ fn pe32_loop_allocation() {
     check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Repeated);
 }
 #[test]
-fn elf64_scoped_vla_roundtrip() {
+fn elf64_scoped_vla_is_declined() {
     check_case(None, "-O0", Case::Scoped);
 }
 #[test]
-fn pe32_scoped_vla() {
+fn pe32_scoped_vla_is_declined() {
     check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Scoped);
 }
 #[test]
@@ -147,7 +147,7 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
         Case::One => "char *data=__builtin_alloca((unsigned)n);data[0]=7;return observe(data,n);",
         Case::Conditional => "char *data;volatile int choice=n&1;if(choice)data=__builtin_alloca((unsigned)n);else data=__builtin_alloca((unsigned)n+16);data[0]=7;return observe(data,n);",
         Case::Repeated => "int total=0;for(int i=0;i<3;i++){char *data=__builtin_alloca((unsigned)n+i);data[0]=7;total+=observe(data,n+i);}return total;",
-        Case::Scoped => "int total=0;for(int i=0;i<3;i++){char data[n+i];data[0]=7;total+=observe(data,n+i);}return total;",
+        Case::Scoped => "int total=0;for(int i=0;i<20000;i++){char data[n+4000];data[0]=7;total+=observe(data,n+4000);}return total;",
         Case::Restored if target.is_some() => r#"__asm__(
 "pushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %edi\nsubl $8,%esp\nmovl 8(%ebp),%ebx\nmovl $31,-12(%ebp)\n"
 "movl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\nsubl %eax,%esp\nmovl %esp,%edi\nmovb $7,(%edi)\n"
@@ -284,7 +284,7 @@ API {naked}int allocate(int n) {{{body}}}
         );
     }
     let text = std::fs::read_to_string(&generated).unwrap();
-    let declined = matches!(case, Case::Drifting | Case::SteppedProbe);
+    let declined = matches!(case, Case::Drifting | Case::SteppedProbe | Case::Scoped);
     let allocations = if declined {
         0
     } else if matches!(
@@ -325,10 +325,7 @@ API {naked}int allocate(int n) {{{body}}}
             Case::Repeated | Case::Scoped => "n==1?50:48",
             _ => "n==1?18:16",
         };
-        let limit = if matches!(
-            case,
-            Case::Probe | Case::ProbeTwo | Case::Drifting
-        ) {
+        let limit = if matches!(case, Case::Probe | Case::ProbeTwo | Case::Drifting) {
             16384
         } else {
             4096
@@ -438,4 +435,41 @@ fn map_restored_frame(
         ),
     )
     .unwrap();
+}
+
+#[test]
+fn elf64_unasserted_allocation_keeps_call_arity() {
+    if process::optional_output(Command::new("clang").arg("--version")).is_none() {
+        return;
+    }
+    let root = common::scratch_file("unasserted-stack-allocation", "dir");
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("sample.c");
+    let binary = root.join("sample.so");
+    std::fs::write(&source,"__attribute__((noinline)) int observe(char*p,int n){p[n-1]=9;return (unsigned char)p[0]+(unsigned char)p[n-1];}\nint allocate(int n){char*p=__builtin_alloca((unsigned)n);p[0]=7;return observe(p,n); }\n").unwrap();
+    process::required_output(
+        Command::new("clang")
+            .args(["-O2", "-shared", "-fPIC", "-nostdlib", "-Wl,-Bsymbolic"])
+            .arg(&source)
+            .arg("-o")
+            .arg(&binary),
+    );
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile")
+            .arg(&binary)
+            .arg("allocate")
+            .args(["--option", "stackalloc", "on", "--sleighpath"])
+            .arg(common::repo_root().join("specs")),
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("__builtin_alloca("), "{text}");
+    let signature = text
+        .lines()
+        .find(|line| line.contains("allocate("))
+        .unwrap();
+    assert_eq!(signature.matches(',').count(), 0, "{text}");
+    let call = text.lines().find(|line| line.contains("observe(")).unwrap();
+    assert_eq!(call.matches(',').count(), 1, "{text}");
+    assert!(!text.contains("Stackffff"), "{text}");
 }

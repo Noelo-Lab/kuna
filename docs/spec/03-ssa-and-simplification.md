@@ -2946,3 +2946,11 @@ For `mulblob`, an isolated dynamic name without a type lock still describes a
 numeric value. Mapping that name does not disable the widened-operand guard when
 the datatype is the fallback array and every reader satisfies the existing
 arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.
+
+The stack-allocation pass preserves function-lifetime storage only. Within each
+enclosing natural loop, every latch must derive its incoming SP from the recovered
+allocation. Loops that restore an earlier SP, scoped VLAs and irreducible loops
+without this proof are declined; a C alloca would retain storage across iterations.
+The lifetime proof bounds graph and SSA traversal work. Lowering follows active
+call-argument recovery so it cannot turn the original SP relationships into
+spurious caller or callee parameters.

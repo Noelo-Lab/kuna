@@ -587,7 +587,6 @@ pub fn universal_sched(
                 ))
             })),
             act!(ActionHeritage::boxed("base")),
-            act!(crate::p3_dataflow::kuna_stackalloc::ActionStackAlloc::boxed()),
             act!(ActionParamDouble::boxed("protorecovery")),
             act!(ActionSegmentize::boxed("base")),
             act!(ActionInternalStorage::boxed("base")),
@@ -595,6 +594,7 @@ pub fn universal_sched(
             act!(ActionDirectWrite::boxed("protorecovery_a", true)),
             act!(ActionDirectWrite::boxed("protorecovery_b", false)),
             act!(ActionActiveParam::boxed("protorecovery")),
+            act!(crate::p3_dataflow::kuna_stackalloc::ActionStackAlloc::boxed()),
             act!(ActionReturnRecovery::boxed("protorecovery")),
             act!(ActionRestrictLocal::boxed("localrecovery")),
             act!(ActionDeadCode::boxed("deadcode")),
