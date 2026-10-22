@@ -414,6 +414,16 @@ at `read symbols`, after the option lines are applied, so the gate is the plain
 path. Off drops the stream at the commit and restores the raw `dat_<addr>`
 rendering exactly.
 
+A PE image has no sized data symbols, but its export directory names data too:
+`msvcrt.dll` exports `_iob`, `_environ` and `__argc`, and a COM DLL exports its
+`IID_*` constants. Each named export whose address lies outside every code
+section is kept as a **lookup name only** (`pe_iat.rs (data_exports)`), so
+`xrefs --to _iob` and `disassemble` resolve it, under the same `datasyms` gate.
+It never becomes a global: an export carries no extent, and a one-byte symbol
+would not cover a wider access, so mapping it would trade `dat_<addr>` for
+extra casts and raw addresses. A declaration (`--assert data ...`, DWARF) that
+supplies the real extent names the storage in emitted C.
+
 A **declared extent is never trusted to be representable.** `st_size` is a 64-bit
 field of the image that no header check validates, while the type factory sizes
 types in a 32-bit `int4`, so the commit clamps the declared size into `1 ..=
@@ -1119,7 +1129,11 @@ funcsym stream:
   stays `sub_<addr>` and is never marked no-return — the spurious
   `do {} while(true)` symptom.
 - **PE IAT** (`decompiler/crates/kuna-analysis/src/loader/pe_iat.rs`, the
-  `PeLoader.processImports` analog): walk each import descriptor's INT (names) and
+  `PeLoader.processImports` analog): PE exports enter the function-symbol
+  stream only when their addresses lie in sections classified as code by the
+  loader. A data export keeps only a lookup name (§1.2), so an explicit array
+  or other object declaration can claim its address.
+  The import path walks each import descriptor's INT (names) and
   IAT (slots) in lockstep — the i-th name belongs to the slot at
   `image_base + first_thunk_rva + i*ptr` — naming the slot (the GOT analog, folded
   through the read-only `.idata` page) and additionally decoding the MinGW `FF 25`

@@ -608,3 +608,6 @@ mod named_member_bits;
 
 #[path = "usepoint_pointer_constants.rs"]
 mod usepoint_pointer_constants;
+
+#[path = "pe_data_exports.rs"]
+mod pe_data_exports;
