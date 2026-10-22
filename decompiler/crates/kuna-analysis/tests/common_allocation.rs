@@ -1,4 +1,4 @@
-use kuna_analysis::loader::{format::elf::ElfFormat, reloc_object::layout_relocatable};
+use kuna_analysis::loader::reloc_object::layout_relocatable;
 use object::{
     write, Architecture, BinaryFormat, Endianness, Object, ObjectSymbol, RelocationEncoding,
     RelocationFlags, RelocationKind, SymbolFlags, SymbolKind, SymbolScope,
@@ -6,7 +6,7 @@ use object::{
 
 #[test]
 fn common_sizes_alignment_and_repeated_references_hold_across_architectures() {
-    for (architecture, endian, width) in [
+    for (format, architecture, endian, width) in [
         (Architecture::X86_64, Endianness::Little, 8),
         (Architecture::I386, Endianness::Little, 4),
         (Architecture::Sparc, Endianness::Big, 4),
@@ -15,8 +15,24 @@ fn common_sizes_alignment_and_repeated_references_hold_across_architectures() {
         (Architecture::Aarch64, Endianness::Little, 8),
         (Architecture::Mips, Endianness::Big, 4),
         (Architecture::PowerPc, Endianness::Big, 4),
-    ] {
-        let mut object = write::Object::new(BinaryFormat::Elf, architecture, endian);
+    ]
+    .into_iter()
+    .map(|(a, e, w)| (BinaryFormat::Elf, a, e, w))
+    .chain([
+        (
+            BinaryFormat::Coff,
+            Architecture::I386,
+            Endianness::Little,
+            4,
+        ),
+        (
+            BinaryFormat::Coff,
+            Architecture::X86_64,
+            Endianness::Little,
+            8,
+        ),
+    ]) {
+        let mut object = write::Object::new(format, architecture, endian);
         let section = object.section_id(write::StandardSection::Data);
         object.append_section_data(section, &vec![0; width * 4], width as u64);
         let mut symbols = Vec::new();
@@ -76,7 +92,8 @@ fn common_sizes_alignment_and_repeated_references_hold_across_architectures() {
         }
         let bytes = object.write().unwrap();
         let file = object::File::parse(&*bytes).unwrap();
-        let layout = layout_relocatable(&file, &ElfFormat);
+        let fmt = kuna_analysis::loader::format::detect(&file).unwrap();
+        let layout = layout_relocatable(&file, fmt.as_ref());
         assert!(
             layout.diagnostics.is_empty(),
             "{architecture:?}: {:?}",
@@ -85,14 +102,22 @@ fn common_sizes_alignment_and_repeated_references_hold_across_architectures() {
         let address = |name: &str| {
             let symbol = file
                 .symbols()
-                .find(|s| s.name().ok() == Some(name))
+                .find(|s| s.name().ok().is_some_and(|n| n == name || (format == BinaryFormat::Coff && n.strip_prefix('_') == Some(name))))
                 .unwrap();
             layout.extern_addr[&symbol.index()]
         };
         let buffer = address("buffer");
         let state = address("state");
-        assert_eq!(buffer % 32, 0, "{architecture:?}");
-        assert_eq!(state % 64, 0, "{architecture:?}");
+        assert_eq!(
+            buffer % if format == BinaryFormat::Elf { 32 } else { 16 },
+            0,
+            "{architecture:?}"
+        );
+        assert_eq!(
+            state % if format == BinaryFormat::Elf { 64 } else { 16 },
+            0,
+            "{architecture:?}"
+        );
         assert!(state >= buffer + 64, "{architecture:?}");
         let (extern_start, extern_end) = layout.extern_range.unwrap();
         assert_eq!(address("callee"), extern_start, "{architecture:?}");
@@ -101,6 +126,21 @@ fn common_sizes_alignment_and_repeated_references_hold_across_architectures() {
         let (common_start, common_end) = layout.common_range.unwrap();
         assert_eq!(common_start, buffer);
         assert_eq!(common_end, state + 32);
+        let image =
+            kuna_analysis::loadimage_object::ObjectLoadImage::from_bytes("common", &bytes).unwrap();
+        let ranges = image.data_object_ranges();
+        assert!(
+            ranges
+                .iter()
+                .any(|&(lo, hi)| lo <= buffer && hi >= state + 31),
+            "{format:?}: {ranges:?}"
+        );
+        assert!(
+            !ranges
+                .iter()
+                .any(|&(lo, hi)| lo <= extern_start && extern_start <= hi),
+            "{format:?}: extern slot is data"
+        );
         let data_vma = layout
             .section_info
             .iter()

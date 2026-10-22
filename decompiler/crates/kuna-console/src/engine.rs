@@ -559,6 +559,8 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    /// (kuna) A PE image's data exports, `(addr, name)`: lookup names only.
+    loader_data_exports: Vec<(u64, String)>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
@@ -2810,9 +2812,12 @@ impl ConsoleProgram {
         // Listing consumers (`aif`'s gap starts) as well as the load-time oracles
         // (`eh_frame_full`'s landing pads, the prologue patterns). `fde_bodies` is
         // empty unless a gate let one of those passes through above, so `off` is a
-        // byte-identical no-op; only one of the two can be non-empty for a given
-        // image, so the merged list stays sorted and disjoint.
-        let fde_bodies = std::mem::take(&mut merged.fde_bodies);
+        // byte-identical no-op; a Go `pclntab` pass fills the same channel (its
+        // `functab` is the linker's own extent for every function), so the merged
+        // list is normalized here before the lookup, which expects sorted disjoint
+        // ranges.
+        let mut fde_bodies = std::mem::take(&mut merged.fde_bodies);
+        fde_bodies.sort_unstable();
         kuna_analysis::entry::kuna_fdeinterior::suppress_interior_entries(
             &mut merged.entries,
             &fde_bodies,
@@ -3710,6 +3715,7 @@ fn empty_program(
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
+        loader_data_exports: Vec::new(),
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
@@ -4276,6 +4282,7 @@ pub fn bootstrap_from_object_with_isa(
     // the analysis commit, after DWARF and the detected strings have claimed their
     // addresses. See `ConsoleProgram::loader_data_objects`.
     let loader_data_objects = loader.data_symbols();
+    let loader_data_exports = loader.data_exports().to_vec();
     // The container entry and named section table, for the project README.
     let image_metadata = ProgramImageMetadata {
         entry: loader.image_entry(),
@@ -4344,6 +4351,7 @@ pub fn bootstrap_from_object_with_isa(
     }
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
+    prog.loader_data_exports = loader_data_exports;
     prog.import_slots = import_slots;
     prog.symbol_underscore_prefix = symbol_underscore_prefix;
     if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
@@ -4455,6 +4463,7 @@ fn commit_analysis_output(
         .iter()
         .filter(|_| data_symbols_enabled)
         .map(|(address, name, _)| (name.clone(), *address))
+        .chain(prog.loader_data_exports.iter().filter(|_| data_symbols_enabled).map(|(address, name)| (name.clone(), *address)))
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
@@ -4631,6 +4640,17 @@ fn commit_analysis_output(
     //    installed in GLOBAL alongside it. `find_function_across_scopes` searches
     //    global first, so that duplicate then shadowed the real name at every call
     //    site and the printer rendered `sub_<addr>` (DIV-59).
+    // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
+    let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    let eager = if lazy_funcs {
+        crate::kuna_lazyfuncs::fact_entries(&out)
+    } else {
+        std::collections::HashSet::new()
+    };
+    if lazy_funcs {
+        let starts: Vec<u64> = out.entries.iter().copied().filter(|v| !eager.contains(v)).collect();
+        prog.arch_mut().set_lazy_entry_starts(starts);
+    }
     for &vma in &out.entries {
         let addr = Address::new(Rc::clone(code_space), vma);
         let name = out
@@ -4641,7 +4661,7 @@ fn commit_analysis_output(
             .unwrap_or_else(|| prog.arch().name_function(&addr));
         let type_code = prog.arch().types().get_type_code()?;
         let min_size = prog.arch().min_funcsymbol_size;
-        {
+        if !lazy_funcs || eager.contains(&vma) {
             let arch = prog.arch_mut();
             if arch.symboltab.find_function_across_scopes(&addr).is_none() {
                 let (scope, base) = arch
@@ -4851,6 +4871,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -4927,6 +4948,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -4989,6 +5011,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())

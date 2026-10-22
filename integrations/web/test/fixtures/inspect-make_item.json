@@ -1348,7 +1348,18 @@
     ]
    }
   ],
-  "instructions_truncated": false
+  "instructions_truncated": false,
+  "frame": {
+   "frame_pointer": {
+    "register": "rbp",
+    "offset": -8
+   },
+   "stack_pointer": {
+    "register": "rsp",
+    "offset": -56
+   },
+   "base": "frame_pointer"
+  }
  },
  "assertions": []
 }
