@@ -52,6 +52,9 @@ mod verify_buildstamp;
 #[path = "verify_bytehonest.rs"]
 mod verify_bytehonest;
 
+#[path = "verify_lazyfuncs.rs"]
+mod verify_lazyfuncs;
+
 #[path = "verify_byteoverlay.rs"]
 mod verify_byteoverlay;
 
@@ -126,6 +129,9 @@ mod verify_eh_frame_full;
 
 #[path = "verify_elf_language_ids.rs"]
 mod verify_elf_language_ids;
+
+#[path = "verify_entry_lookup_cache.rs"]
+mod verify_entry_lookup_cache;
 
 #[path = "verify_entry_selectors.rs"]
 mod verify_entry_selectors;

@@ -4538,6 +4538,7 @@ impl Heritage {
         writevars: &[crate::context::VarnodeId],
         inputvars: &[crate::context::VarnodeId],
         byte_copy: bool,
+        halves: bool,
     ) -> Option<usize> {
         let size = self.disjoint.get(idx).size;
         if size > 1024 {
@@ -4552,6 +4553,10 @@ impl Heritage {
         if byte_copy {
             refine.fill(1);
         }
+        if halves {
+            refine.fill(0);
+            refine[(size / 2) as usize] = 1;
+        }
         refine.pop(); // remove the fencepost
         // Convert boundary points to partition sizes.
         let mut lastpos: usize = 0;
@@ -4565,7 +4570,7 @@ impl Heritage {
             return None; // No non-trivial refinements
         }
         refine[lastpos] = size - lastpos as int4;
-        if !byte_copy {
+        if !byte_copy && !halves {
             let space = addr.get_space().expect("refinement: space");
             crate::p3_dataflow::kuna_inputrefinement::coalesce(
                 &mut refine,
@@ -4592,14 +4597,20 @@ impl Heritage {
                 },
             );
         }
+        let straddles = |vn: crate::context::VarnodeId| {
+            !halves || crate::p3_dataflow::kuna_pairrefine::straddles_middle(fd, vn, &addr, size)
+        };
+        let readvars: Vec<_> = readvars.iter().copied().filter(|&vn| straddles(vn)).collect();
+        let writevars: Vec<_> = writevars.iter().copied().filter(|&vn| straddles(vn)).collect();
+        let inputvars: Vec<_> = inputvars.iter().copied().filter(|&vn| straddles(vn)).collect();
         let mut newvn: Vec<crate::context::VarnodeId> = Vec::new();
-        for &vn in readvars {
+        for &vn in &readvars {
             self.refine_read(fd, vn, &addr, &refine, &mut newvn);
         }
-        for &vn in writevars {
+        for &vn in &writevars {
             self.refine_write(fd, vn, &addr, &refine, &mut newvn);
         }
-        for &vn in inputvars {
+        for &vn in &inputvars {
             self.refine_input(fd, vn, &addr, &refine, &mut newvn);
         }
 
@@ -4666,9 +4677,14 @@ impl Heritage {
                 fd.vbank().get(vn).and_then(|v| v.get_def())
                     .is_some_and(|op| fd.is_stack_byte_copy_op(op))
             });
-            if byte_copy || (memrange.size > 4 && maxw < memrange.size) {
+            let pair_split = !byte_copy
+                && crate::p3_dataflow::kuna_pairrefine::split_pair(
+                    fd, &memrange.addr, memrange.size, maxw, &readvars, &writevars, &inputvars,
+                );
+            let normal = memrange.size > 4 && maxw < memrange.size;
+            if byte_copy || pair_split || normal {
                 if let Some(refiter) =
-                    self.refinement(fd, idx, &readvars, &writevars, &inputvars, byte_copy)
+                    self.refinement(fd, idx, &readvars, &writevars, &inputvars, byte_copy, pair_split && !normal)
                 {
                     idx = refiter;
                     memrange = self.disjoint.get(idx).clone();

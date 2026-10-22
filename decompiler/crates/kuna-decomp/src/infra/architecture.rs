@@ -1094,6 +1094,10 @@ pub struct Architecture {
     /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
     /// [`crate::p3_dataflow::kuna_splitstorekeep`].
     pub split_store_keep: bool,
+    /// (kuna) `pairrefine` — refine an integer register pair accessed whole and by
+    /// half at its midpoint (`Heritage::placeMultiequals`, default-on).  See
+    /// [`crate::p3_dataflow::kuna_pairrefine`].
+    pub pair_refine: bool,
     /// (kuna) Push a demanded SUBPIECE through 9..15-byte (and wider
     /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
     /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
@@ -2248,6 +2252,11 @@ pub struct Architecture {
     /// from metadata-backed roots and admits pointer-table targets only after
     /// fingerprint and valid-subroutine checks. The `fast` mode enables it.
     pub analysis_fast_funcdisc: bool,
+    /// (kuna `lazyfuncs`) Commit discovered entries as names only; default off.
+    pub analysis_lazyfuncs: bool,
+    /// (kuna `lazyfuncs`) Entry starts the commit installed as NAMES only, sorted, so
+    /// flow reads a branch to one as a transfer, not code to follow into.
+    pub lazy_entry_starts: Vec<u64>,
     /// (kuna) Gate recursive-descent function discovery on a headerless
     /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
     /// `object::File`, so the whole object-backed discovery tier declines and the
@@ -2984,6 +2993,7 @@ impl Architecture {
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
+            pair_refine: false, // (kuna) option pairrefine; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
@@ -3153,6 +3163,8 @@ impl Architecture {
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
+            analysis_lazyfuncs: false,
+            lazy_entry_starts: Vec::new(),
             analysis_rawdiscover: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_discstrict: false,
@@ -3366,6 +3378,7 @@ impl Architecture {
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
+        self.pair_refine = true; // (kuna) default-on: Heritage::placeMultiequals refines an 8-byte register range accessed whole and as a named 4-byte half at its midpoint, so the two registers of a pair keep separate variables; `option pairrefine off` restores upstream's whole-range heritage
         self.wide_slice_reduce = true; // (kuna) default-on: every rewrite is a bitvector identity on a synthetic 9..15-byte intermediate that no upstream rule can take apart; byte-identical (0/675) on the datatest corpus, and the power-of-two widths ActionLaneDivide owns are refused; `option wideslice off` leaves the wide intermediates to upstream's rules
         self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
@@ -3571,6 +3584,8 @@ impl Architecture {
         self.analysis_formatstring = crate::kuna_formatstring::FormatStringMode::Static; // (kuna) DIV: the LOAD-TIME format-string resolver default-ON. Ghidra's own FormatStringAnalyzer is default-off because it costs a second decompile; the static resolver reads the constant out of the image instead, so it costs nothing per function. `full` restores the second-decompile loop. Gated on the Listing (default-off), so every parity gate is byte-identical
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
+        self.analysis_lazyfuncs = false;
+        self.lazy_entry_starts.clear();
         self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
         self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
@@ -3642,6 +3657,18 @@ impl Architecture {
     /// `ActionDatabase` default-group reset, a W5 surface not yet exposed) and
     /// resets every `PrintLanguage` in `printlist` (W8).  Only the internal
     /// option reset runs here; the action/print resets land with their waves.
+    /// (kuna `lazyfuncs`) Is `vma` an entry the commit installed as a name only?
+    pub fn is_lazy_entry(&self, vma: u64) -> bool {
+        self.lazy_entry_starts.binary_search(&vma).is_ok()
+    }
+
+    /// (kuna `lazyfuncs`) Record the entry starts the commit left as names.
+    pub fn set_lazy_entry_starts(&mut self, mut starts: Vec<u64>) {
+        starts.sort_unstable();
+        starts.dedup();
+        self.lazy_entry_starts = starts;
+    }
+
     pub fn reset_defaults(&mut self) {
         self.reset_defaults_internal();
         // allacts.resetDefaults();                                 -- STUB(W5)
@@ -4231,6 +4258,7 @@ impl Architecture {
         ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
+        ctx.pair_refine = self.pair_refine; // pairrefine
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
@@ -4318,6 +4346,7 @@ impl Architecture {
         // Carry the `nanignore all` flag (C++ `glb->nan_ignore_all`) so
         // `RuleIgnoreNan` reaches it via `glb`.
         ctx.nan_ignore_all = self.nan_ignore_all;
+        ctx.nan_ignore_compare = self.nan_ignore_compare;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         ctx.types = Some(self.types_rc());

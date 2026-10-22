@@ -5645,6 +5645,9 @@ impl SubfloatFlow {
                 let invn = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 let iv = data.vbank().get(invn).expect("stale invn");
                 let original_size = data.vbank().get(origvn).expect("stale origvn").get_size();
+                if iv.get_size() == self.precision && !super::kuna_floatquiet::can_elide(data, invn) {
+                    return Ok(false);
+                }
                 if iv.get_size() > original_size && self.precision < original_size {
                     return Ok(false);
                 }

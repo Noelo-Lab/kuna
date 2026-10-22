@@ -94,6 +94,16 @@ struct SymbolStream {
     /// listed: `remove_name` drops the whole entry as it tombstones.
     by_name: HashMap<String, Vec<usize>>,
     live: usize,
+    /// Changes with every mutation; [`ConsoleProgram::function_entries_shared`]
+    /// keys its cache on it.
+    revision: u64,
+}
+
+/// Process-wide revisions, so a replaced stream never repeats an earlier key.
+static NEXT_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_revision() -> u64 {
+    NEXT_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl SymbolStream {
@@ -109,12 +119,14 @@ impl SymbolStream {
         self.by_name.entry(sym.name.clone()).or_default().push(self.records.len());
         self.records.push(Some(sym));
         self.live += 1;
+        self.revision = next_revision();
     }
 
     /// Tombstone every record named `name` — the `retain(|s| s.name != name)`
     /// half of a registration.
     fn remove_name(&mut self, name: &str) {
         let Some(stale) = self.by_name.remove(name) else { return };
+        self.revision = next_revision();
         for slot in stale {
             if self.records[slot].take().is_some() {
                 self.live -= 1;
@@ -127,6 +139,7 @@ impl SymbolStream {
     /// at other addresses live.
     fn remove_name_at(&mut self, name: &str, addr: &Address) {
         let Some(slots) = self.by_name.get_mut(name) else { return };
+        self.revision = next_revision();
         let records = &mut self.records;
         let mut removed = 0;
         slots.retain(|&slot| {
@@ -559,6 +572,8 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    /// (kuna) A PE image's data exports, `(addr, name)`: lookup names only.
+    loader_data_exports: Vec<(u64, String)>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
@@ -595,6 +610,12 @@ pub struct ConsoleProgram {
     /// (`elfmain` naming a libc-start `main` at an address the caller declared
     /// `stage1`). The discovered names stay as aliases; only the report changes.
     declared_names: BTreeMap<u64, String>,
+    /// Changes whenever `declared_names` (it orders canonical entry names) or
+    /// `declared_extents` (it sizes them) does.
+    declared_revision: u64,
+    /// [`Self::function_entries_canonical`] for (symbols revision, declared
+    /// revision): name lookups resolve against it without regrouping the image.
+    canonical_entries: std::cell::RefCell<Option<(u64, u64, Rc<Vec<FunctionEntry>>)>>,
     /// (kuna `--assert`) The caller-supplied assertions this program was loaded
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
@@ -846,6 +867,33 @@ impl ConsoleProgram {
     /// resolves.  Nothing is lost — one function is simply reported, and
     /// decompiled, once.
     pub fn function_entries_canonical(&self) -> Vec<FunctionEntry> {
+        self.function_entries_shared().as_ref().clone()
+    }
+
+    /// The canonical entries, rebuilt only after the symbols, declared names or
+    /// declared extents changed. Assertion targets resolve names one at a time, so rebuilding the
+    /// whole list per lookup made applying A assertions O(A x symbols).
+    fn function_entries_shared(&self) -> Rc<Vec<FunctionEntry>> {
+        let key = (self.symbols.revision, self.declared_revision);
+        if let Some((symbols, declared, entries)) = self.canonical_entries.borrow().as_ref() {
+            if (*symbols, *declared) == key {
+                return Rc::clone(entries);
+            }
+        }
+        let entries = Rc::new(self.build_function_entries_canonical());
+        *self.canonical_entries.borrow_mut() = Some((key.0, key.1, Rc::clone(&entries)));
+        entries
+    }
+
+    /// Whether any symbol or loader alias is spelled exactly `name` (the
+    /// spelling a name selector would match first). O(1) on the name index.
+    pub(crate) fn has_symbol_spelled(&self, name: &str) -> bool {
+        let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
+        self.symbols.lookup(name).is_some()
+            || self.loader_aliases.values().any(|names| names.iter().any(|alias| alias == name))
+    }
+
+    fn build_function_entries_canonical(&self) -> Vec<FunctionEntry> {
         let normalize = |vma: u64| self.thumb_normalized(vma);
 
         // Group every name by normalized entry offset, keeping one Address per
@@ -1199,8 +1247,9 @@ impl ConsoleProgram {
                 // binary's ORIGINAL name must still resolve. Idempotent, so the
                 // bounded spelling resolves as well.
                 let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
-                let entries = self.function_entries_canonical();
-                let mut candidates = self.entries_named(&entries, want);
+                let entries = self.function_entries_shared();
+                let entries: &[FunctionEntry] = &entries;
+                let mut candidates = self.entries_named(entries, want);
                 if candidates.is_empty() {
                     // (kuna, RE-need `string-owner-function-name`) Nothing carries
                     // that name, so read it as the placeholder it looks like: a
@@ -2172,6 +2221,7 @@ impl ConsoleProgram {
     /// (`declared_extents`); `size <= 0` clears it back to unbounded.
     pub fn declare_extent(&mut self, vma: u64, size: int4) {
         self.callwide_changed();
+        self.declared_revision = next_revision();
         if size > 0 {
             self.declared_extents.insert(vma, size);
         } else {
@@ -2324,6 +2374,7 @@ impl ConsoleProgram {
         self.declared_entries.insert(vma);
         if explicit.is_some() {
             self.declared_names.insert(vma, name.clone());
+            self.declared_revision = next_revision();
             self.seed_declared_libc_prototype(&name, &addr);
         }
         Ok(name)
@@ -2810,9 +2861,12 @@ impl ConsoleProgram {
         // Listing consumers (`aif`'s gap starts) as well as the load-time oracles
         // (`eh_frame_full`'s landing pads, the prologue patterns). `fde_bodies` is
         // empty unless a gate let one of those passes through above, so `off` is a
-        // byte-identical no-op; only one of the two can be non-empty for a given
-        // image, so the merged list stays sorted and disjoint.
-        let fde_bodies = std::mem::take(&mut merged.fde_bodies);
+        // byte-identical no-op; a Go `pclntab` pass fills the same channel (its
+        // `functab` is the linker's own extent for every function), so the merged
+        // list is normalized here before the lookup, which expects sorted disjoint
+        // ranges.
+        let mut fde_bodies = std::mem::take(&mut merged.fde_bodies);
+        fde_bodies.sort_unstable();
         kuna_analysis::entry::kuna_fdeinterior::suppress_interior_entries(
             &mut merged.entries,
             &fde_bodies,
@@ -3710,10 +3764,13 @@ fn empty_program(
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
+        loader_data_exports: Vec::new(),
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
+        declared_revision: 0,
+        canonical_entries: std::cell::RefCell::new(None),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
@@ -4276,6 +4333,7 @@ pub fn bootstrap_from_object_with_isa(
     // the analysis commit, after DWARF and the detected strings have claimed their
     // addresses. See `ConsoleProgram::loader_data_objects`.
     let loader_data_objects = loader.data_symbols();
+    let loader_data_exports = loader.data_exports().to_vec();
     // The container entry and named section table, for the project README.
     let image_metadata = ProgramImageMetadata {
         entry: loader.image_entry(),
@@ -4344,6 +4402,7 @@ pub fn bootstrap_from_object_with_isa(
     }
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
+    prog.loader_data_exports = loader_data_exports;
     prog.import_slots = import_slots;
     prog.symbol_underscore_prefix = symbol_underscore_prefix;
     if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
@@ -4455,6 +4514,7 @@ fn commit_analysis_output(
         .iter()
         .filter(|_| data_symbols_enabled)
         .map(|(address, name, _)| (name.clone(), *address))
+        .chain(prog.loader_data_exports.iter().filter(|_| data_symbols_enabled).map(|(address, name)| (name.clone(), *address)))
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
@@ -4631,6 +4691,17 @@ fn commit_analysis_output(
     //    installed in GLOBAL alongside it. `find_function_across_scopes` searches
     //    global first, so that duplicate then shadowed the real name at every call
     //    site and the printer rendered `sub_<addr>` (DIV-59).
+    // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
+    let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    let eager = if lazy_funcs {
+        crate::kuna_lazyfuncs::fact_entries(&out)
+    } else {
+        std::collections::HashSet::new()
+    };
+    if lazy_funcs {
+        let starts: Vec<u64> = out.entries.iter().copied().filter(|v| !eager.contains(v)).collect();
+        prog.arch_mut().set_lazy_entry_starts(starts);
+    }
     for &vma in &out.entries {
         let addr = Address::new(Rc::clone(code_space), vma);
         let name = out
@@ -4641,7 +4712,7 @@ fn commit_analysis_output(
             .unwrap_or_else(|| prog.arch().name_function(&addr));
         let type_code = prog.arch().types().get_type_code()?;
         let min_size = prog.arch().min_funcsymbol_size;
-        {
+        if !lazy_funcs || eager.contains(&vma) {
             let arch = prog.arch_mut();
             if arch.symboltab.find_function_across_scopes(&addr).is_none() {
                 let (scope, base) = arch
@@ -4851,6 +4922,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -4927,6 +4999,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -4989,6 +5062,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())

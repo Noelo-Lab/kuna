@@ -25,6 +25,8 @@
 //! `attemptJoin`/`isConstAbsorbable`) is the rest of the output-determining
 //! logic and is transcribed in full, including the mixed-sign `int8` modulus
 //! in `reconcile` and the `resType` 0/1/2 dispatch in `merge`.
+//! Kuna additionally preserves an indexed integer array's byte coverage across
+//! element retyping and keeps partial integer reads in that shared storage.
 //!
 //! ## Cross-wave boundaries
 //!
@@ -191,6 +193,9 @@ impl RangeHint {
         // C++ swaps `a`/`b` so that `b` is the smaller-aligned of the two.
         let (a, b): (&RangeHint, &RangeHint) =
             if self.type_.get_align_size() < b.type_.get_align_size() { (b, self) } else { (self, b) };
+        if a.can_join_piece(b) {
+            return Ok(true);
+        }
 
         // int8 mod = (b->sstart - a->sstart) % a->type->getAlignSize();
         let align_a = a.type_.get_align_size() as int8;
@@ -303,6 +308,37 @@ impl RangeHint {
         Ok(0 > self.type_.type_order(&b.type_)?)
     }
 
+    fn integer_storage(&self) -> bool {
+        self.type_.get_size() > 0
+            && self.type_.get_size() == self.type_.get_align_size()
+            && matches!(
+                self.type_.get_metatype(),
+                type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+            )
+    }
+
+    fn can_join_piece(&self, b: &RangeHint) -> bool {
+        if self.range_type != RangeType::Open || self.highind < 0 {
+            return false;
+        }
+        let width = self.type_.get_align_size() as intb;
+        if self.is_type_lock()
+            || b.is_type_lock()
+            || b.range_type != RangeType::Fixed
+            || !self.integer_storage()
+            || !b.integer_storage()
+            || width <= b.size as intb
+            || b.size <= 0
+        {
+            return false;
+        }
+        let delta = b.sstart.wsub(self.sstart);
+        let extent = (self.highind as intb + 1) * width;
+        // A fixed integer read may name part of an indexed element. Keep it
+        // in the same storage only inside the already required array extent.
+        delta >= 0 && delta <= extent - b.size as intb && delta % width + b.size as intb <= width
+    }
+
     /// Try to concatenate another RangeHint onto `this` (C++ `attemptJoin`,
     /// `varmap.cc:170-211`).
     ///
@@ -324,6 +360,10 @@ impl RangeHint {
         }
         let mut settype = Rc::clone(&self.type_); // Assume we will keep this data-type
         if settype.get_align_size() != b.type_.get_align_size() {
+            if self.can_join_piece(b) {
+                self.absorb(b);
+                return true;
+            }
             return false;
         }
         if !Rc::ptr_eq(&settype, &b.type_) {
@@ -408,6 +448,20 @@ impl RangeHint {
                 let meta = self.type_.get_metatype();
                 if meta != type_metatype::TYPE_STRUCT && meta != type_metatype::TYPE_UNION {
                     self.range_type = RangeType::Open;
+                    if !self.is_type_lock()
+                        && !b.is_type_lock()
+                        && b.highind >= 0
+                        && self.integer_storage()
+                        && b.integer_storage()
+                    {
+                        let width = self.type_.get_align_size() as intb;
+                        let bytes = (b.highind as intb + 1) * b.type_.get_align_size() as intb;
+                        // Index bounds are in elements of the old type. Retain
+                        // their byte coverage when a narrower view wins.
+                        if let Ok(high) = int4::try_from((bytes + width - 1) / width - 1) {
+                            self.highind = self.highind.max(high);
+                        }
+                    }
                 }
             }
         } else if (b.flags & COPY_CONSTANT) != 0 && self.range_type == RangeType::Open {

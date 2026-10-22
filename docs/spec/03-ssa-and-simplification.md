@@ -193,6 +193,40 @@ smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
 pass are deleted and the old outputs re-derived as SUBPIECEs of the new full
 range (`heritage.rs (Heritage::remove_revisited_markers)`).
 
+**Register pairs refined at their midpoint** (`option pairrefine`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,
+default **on**). The size test above never refines a range that some access
+covers whole, so a SPARC32 even/odd integer register pair that an `ldd` or `std`
+moves as one 8-byte value is heritaged as an 8-byte range even where its two
+registers also hold unrelated 32-bit values (a loop index in `%l4`, a counter in
+`%l5`). Every 4-byte access is joined to the pair through `PIECE`/`SUBPIECE`,
+the phis are placed on the whole pair, and variable merging fuses the two
+registers into one 64-bit variable updated by `CONCAT44`. With the option on, a
+range is refined at its midpoint only when it is a named 8-byte pair register
+whose halves are named 4-byte registers, at least one whole-pair load writes it,
+it is accessed whole only by memory
+moves (written by a `LOAD` or the `COPY` of a memory varnode a frame load
+becomes, read by a `STORE` or a `COPY` into memory), one of its halves is written
+as a 4-byte value, no access feeds or is produced by a floating-point op, and
+every access that crosses the midpoint covers the whole pair. Only those
+whole-pair moves are cut in two; the 4-byte accesses keep their varnodes, so
+each register is heritaged on its own, and the input-join healing of ordinary
+refinement is not applied. A pair that a call takes or returns whole, or that
+an 8-byte op reads or writes, keeps the whole-range heritage. SPARC32 64-bit
+arithmetic runs on the two registers (`addcc`/`addx`, `subcc`/`subx`), so a
+`long long` that `ldd` loads and that is added half by half is refined like any
+other selected pair; the double-precision rules rebuild the 64-bit value from
+the halves where they can. A pair in a floating-point register file is never
+selected, whatever ops touch it: the file is the run of contiguous, equally
+sized named registers that holds a float-class entry of the function's or the
+default prototype model (ARM `s0`..`s31` and `d0`..`d31` from the `s0`/`d0`
+entries, SPARC `fs`/`fd`, MIPS32 `f0_1`, an x86-64 `XMM0_Qa` lane), so a
+callee-saved ARM `d8` that `vpush` saves and `vpop` restores, with `s16` and
+`s17` written by `vmov.f32` copies, stays whole. Neither is an 8-byte register
+read through a half that is not a register of its own (x86-64 `rax`/`eax`).
+A pair assembled only from half-register writes and stored whole is not
+selected. `option pairrefine off` restores the whole-range heritage.
+
 **Refinement pieces keep the store mark** (`option splitstorekeep`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs
 (keep_store_mark)`, default **on**). A frame store reaches this phase as a
@@ -987,6 +1021,14 @@ mainloop reporting one change forever on certain stripped binaries
 
 ## 3.2 The rule pools
 
+Explicit isolated register declarations are applied to matching values already
+created during flow before simplification starts. Matching uses the storage,
+size, and defining instruction address, so a declaration does not type another
+write to the same register. A COPY with an isolated declared pointer output keeps
+that output when propagated into integer storage: the declared address remains
+available for named-global recovery instead of becoming an image-address integer.
+This also applies to computed interior addresses: losing the declaration before pointer recovery can leave a base address embedded in integer arithmetic. Without a pointer declaration, integer expressions retain their ordinary meaning.
+
 A `decompiler/crates/kuna-decomp/src/infra/action.rs (Rule)` is a stateless
 pattern→rewrite unit: `get_op_list` declares the opcodes it can fire on
 (defaulting to *all* opcodes), and `apply_op(op, data)` either returns 0 (no
@@ -1603,6 +1645,17 @@ value. A disjoint guard is replaced by its previous input. Guards for another
 operation are untouched, and a write with no surviving uses can still be
 removed as dead.
 
+Conversion also requires complete effect coverage when the destination is an
+already-heritaged persistent global
+(`kuna_storecopyeffects.rs (can_materialize)`). The contiguous INDIRECTs that name
+this STORE must cover every byte of the write; adjacent ranges can cover a wide
+write together, but a gap or an effect belonging to another operation cannot.
+If global alias guarding exhausted its budget, no such chain may exist.
+`RuleStoreVarnode` then leaves the original STORE intact rather than creating
+an unread COPY that dead-code removal can discard. Newly discovered locations
+and nonpersistent frame storage retain the existing conversion path. This does
+not raise the global guard budget or make an artificial SSA definition live.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/
@@ -1868,8 +1921,25 @@ narrowing can differ: `(float)(double)0x1.000001000000001p0L` is `0x1p+0`,
 while `(float)0x1.000001000000001p0L` is `0x1.000002p+0`. A `SubfloatFlow`
 backward trace that reaches a narrowing conversion declines to lower its
 result below the narrowed width, since the lowered conversion would bypass
-that rounding. Widening-then-narrowing round trips still collapse. This is a
-value-correctness repair with no option.
+that rounding. Widening-then-narrowing round trips still collapse under the
+default NaN policy. This is a value-correctness repair with no option.
+
+(kuna) A widening-then-narrowing round trip can also quiet a signaling NaN:
+an x87 `fld`/`fstp` pair or `cvtss2sd; cvtsd2ss` returns `0x7fc00001` for the
+input `0x7f800001`. Kuna keeps that effect only under `option nanignore none`,
+the policy that keeps every NaN behaviour. The shipped `nanignore compare`
+default and `all` drop it as upstream does, since the source most likely held
+a plain copy (`*d = *s` compiles to `fldl; fstpl` on i386) and C does not
+promise signaling-NaN preservation. Under `none`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (can_elide)`
+permits removing the final conversion only when the input is already quiet.
+Floating arithmetic, integer conversion and a conversion to another floating
+format produce quiet values; copies and merges require their sources to be
+quiet. Non-NaN constants also qualify. Unknown loads, inputs and bitwise sign
+operations do not. The provenance walk has a shared 32-node budget; cycles and
+larger ambiguous graphs conservatively retain the conversion. `RuleFloatCast`
+uses this guard before making an identity COPY; `SubfloatFlow::trace_backward`
+uses it before replacing a conversion by a COPY at the reduced precision.
 
 Integer-to-float conversions also retain their rounding width (`option
 intfloatround`, default on;

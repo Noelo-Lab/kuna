@@ -1,0 +1,63 @@
+<decompilertest>
+<!--
+    SPARC32 integer register pairs (kuna, no upstream issue).
+    Stage: P3 heritage refinement. P0 assertion: option pairrefine (default on).
+    The pair %l4:%l5 is loaded whole by ldd on one path and set as two 32-bit
+    values on the other; after the join %l4 is a loop index and %l5 a counter.
+    Upstream heritages the pair as one 8-byte range because the ldd covers it,
+    so the two registers merge into one unsigned long long updated by CONCAT44.
+    #1-#3 prove the fix at the default; #4-#5 reproduce the bug with the option off.
+-->
+<binaryimage arch="sparc:BE:32:default:default">
+<!-- Independently assembled.
+.text
+.global pair_loop
+.type pair_loop,@function
+pair_loop:
+ save %sp, -96, %sp
+ cmp %i2, 0
+ be 1f
+ nop
+ ldd [%i3], %l4
+ b 2f
+ nop
+1:
+ mov %i1, %l4
+ mov 0, %l5
+2:
+ mov 0, %i5
+3:
+ sll %l4, 2, %g1
+ ld [%i0+%g1], %g2
+ add %i5, %g2, %i5
+ add %l5, 1, %l5
+ subcc %l4, 1, %l4
+ bpos 3b
+ nop
+ add %i5, %l5, %i0
+ ret
+ restore
+.size pair_loop, .-pair_loop
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+9de3bfa080a6a0000280000501000000e81ec0001080000401000000a8100019aa102000ba102000832d2002c4060001ba074002aa056001a8a520011cbffffb01000000b007401581c7e00881e80000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="pair_loop"/>
+</binaryimage>
+<script>
+<com>parse line extern int pair_loop(int *a, int n, int c, long long *p);</com>
+<com>lo fu pair_loop</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option pairrefine off</com>
+<com>lo fu pair_loop</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="SPARC-REGISTER-PAIR #1: the loop index in %l4 steps by itself at the default" min="1" max="1">n -= 1;</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #2: the counter in %l5 is a 32-bit local incremented in place at the default" min="1" max="1">v[0-9]+ \+= 1;</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #3: the ldd still loads both halves, the high word into the index" min="1" max="1">n = \(uint8\)\*p &gt;&gt; 0x20;</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #4: pairrefine off restores the fused 64-bit pair local" min="1" max="1">uint8 v[0-9]+; // l4_5</stringmatch>
+<stringmatch name="SPARC-REGISTER-PAIR #5: and its CONCAT44 piece updates, only with the option off" min="1" max="1">CONCAT44</stringmatch>
+</decompilertest>

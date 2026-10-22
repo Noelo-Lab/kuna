@@ -54,6 +54,9 @@ fn check_record(members: &str, fields: &[&str]) {
         ]);
         if let Some(option) = option {
             command.args(["--option", "globalfieldstore", option]);
+            if option == "off" {
+                command.args(["--option", "pairrefine", "off"]);
+            }
         }
         let output = command.output().unwrap();
         assert!(

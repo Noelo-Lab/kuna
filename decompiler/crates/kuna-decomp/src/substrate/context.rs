@@ -1281,6 +1281,8 @@ pub struct ArchContext {
     pub tied_phi_trim: bool,
     /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
     pub split_store_keep: bool,
+    /// (kuna) `pairrefine` — refine integer register pairs at their midpoint.
+    pub pair_refine: bool,
     /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
     pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
@@ -1533,6 +1535,11 @@ pub struct ArchContext {
     /// `nanignore all` option and shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     pub nan_ignore_all: bool,
+    /// Ignore NaN effects around comparisons (C++ `nan_ignore_compare`; the
+    /// shipped `nanignore compare` default). Also lets a floating round trip
+    /// drop its signaling-NaN quieting
+    /// ([`crate::p3_dataflow::kuna_floatquiet`]); fixtures default to off.
+    pub nan_ignore_compare: bool,
     /// The data-type factory (C++ `glb->types`), shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
@@ -1960,6 +1967,7 @@ impl ArchContext {
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
+            pair_refine: false,          // pairrefine (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
@@ -2017,6 +2025,7 @@ impl ArchContext {
             // only `nanignore all` flips it. nan_ignore_compare drives the rule's
             // enabled state at registration, not this flag.
             nan_ignore_all: false,
+            nan_ignore_compare: false,
             types: None,
             internal_strings: None,
             max_jumptable_size: 0,

@@ -20,7 +20,7 @@
   <com>quit</com>
 </script>
 <stringmatch name="Revisit SSA #1" min="1" max="1">EAX\(0x00100017:.*\) = r0x00100074:4\(i\) \+ #0xa</stringmatch>
-<stringmatch name="Revisit SSA #2" min="1" max="1">r0x00100074:4\(0x0010001c:.*\) = EAX\(0x00100017:.*\) \[\] i0x0010001c:</stringmatch>
+<stringmatch name="Revisit SSA #2" min="1" max="1">r0x00100074:4\(0x0010001c:.*\) = (EAX\(0x00100017:.*\)|r0x00100074:4\(0x0010001a:.*\)) \[\] i0x0010001c:</stringmatch>
 <stringmatch name="Revisit SSA #3" min="1" max="1">r0x00100074:2\(0x0010001c:.*\) = SUB42\(r0x00100074:4\(0x0010001c:.*\),#0x0:4\)</stringmatch>
 <stringmatch name="Revisit SSA #4" min="1" max="1">AX\(0x00100027:.*\) = r0x00100074:2\(0x0010001c:.*\) \+ #0x64:2</stringmatch>
 <stringmatch name="Revisit SSA #5" min="1" max="1">r0x00100076:2\(0x0010002b:.*\) = SUB42\(r0x00100074:4\(0x0010001c:.*\),#0x2\)</stringmatch>

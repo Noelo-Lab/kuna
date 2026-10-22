@@ -116,6 +116,11 @@ the normal copy chain). A whole-cover test walks both block maps in order and
 reports the strongest per-block verdict (`cover.rs (Cover::intersect)`,
 `(Cover::intersect_list)` at level 2 for the candidate blocks).
 
+Cover points cache numeric operation positions. When inserting an operation
+exhausts an order gap and renumbers its block, the covers of that block's input
+and output Varnodes, and their owning HighVariables, must be marked dirty.
+The next merge comparison rebuilds those ranges using the new positions.
+
 A Cover is keyed by block index; its walk over the CFG resolves an index to its
 block through a table built once per walk, the first block in list order with
 that index (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
@@ -1553,6 +1558,34 @@ later passes and the final sync enable it. After `fullloop` exits,
 failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
+
+**Mixed-width indexed integer storage.** A fixed integer read can name only
+part of an indexed element: a loop may write six eight-byte cells and then
+read the two four-byte halves of the last cell. `RangeHint::can_join_piece`
+keeps such a hint in the open array when both types are unlocked plain
+integers or unknowns, the complete read lies inside the array's existing
+minimum byte extent, and it does not cross an element boundary. The same
+check in `reconcile` handles a partial read inside the first element instead
+of conceding the indexed storage to a scalar blob. Pointers, floating types,
+aggregates, locked types, and reads beyond that extent do not gain this
+compatibility.
+
+When an overlapping hint selects a different integer element width at the
+same base, `RangeHint::absorb` carries the old index bound through bytes:
+the new minimum count is
+`ceil((old_highind + 1) * old_align / selected_align)`. It never reduces an
+existing larger bound. Otherwise selecting four-byte elements for an
+eight-byte indexed store can silently halve the covered storage and detach
+the tail reads into never-assigned locals.
+
+This preserves a minimum footprint, not the original source declaration's
+capacity. The existing frame-window and next-object boundaries still close
+the array; padding may remain part of its inferred capacity. Dynamic stack
+allocation and source VLA reconstruction are not added by this rule.
+`decompiler/crates/kuna-cli/tests/indexed_stack_stores.rs` exercises tail
+halves, a narrower prefix view, an interior first-cell read, and an
+already-wide predicate control against authored native machine code and
+independent arithmetic at both compiler optimization levels.
 
 **Call-escaped integer storage (kuna `callarrayextent`, default `off`).**
 A plain frame address passed to a declared integer-pointer parameter can
@@ -3424,12 +3457,11 @@ frame alias even when its value has an integer type. The bounded pointer helper
 only recovers byte extents for byte-addressed stack spaces, so word-addressed
 pointers cannot justify removing an overlapping save.
 
-When a generated frame-union value becomes a detached integer snapshot,
-`kuna_stackvaluecopies.rs` records that role on its high before emission. The
-register/unique instances can retain partial-union types after the declaration
-has become an integer; tracing their storage addresses would also miss copied
-or phi-joined values. P9 uses the recorded role and the actual integer C
-declaration to preserve bits at native floating uses. Integer bit operations and
+When a generated frame-union value becomes a detached scalar snapshot,
+`kuna_stackvaluecopies.rs` retypes its instances to the scalar type of their
+source bytes, else the unsigned word of their width, before emission. P9 reads
+the resulting integer C declaration like any other word variable and preserves
+bits at native floating uses and floating stores. Integer bit operations and
 explicit numeric conversion opcodes retain their original interpretation.
 
 An early layout or required-merge query can precede prototype-store attachment.
