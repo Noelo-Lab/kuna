@@ -217,7 +217,9 @@ Compact JSON, every address a number plus an `_hex` twin:
    tokens_error: null | string,
    instructions:[{address, address_hex, offset, size, bytes, mnemonic, operands, text,
                   file_offset, lines}],
-   instructions_truncated},
+   instructions_truncated,
+   frame:{frame_pointer: null | {register, offset}, stack_pointer: null | {register, offset},
+          base: "frame_pointer" | "stack_pointer" | null}},
  assertions:[…]}
 ```
 
@@ -252,6 +254,32 @@ instruction passes control on, read from its own p-code (`ConsoleProgram::insn_f
 and calls name (`[]` when none). A branch within the instruction's own p-code is not flow. The line mappings
 are sparse — a line maps to the instructions whose p-code its tokens were printed from, so
 argument set-up that was folded away maps to nothing.
+
+`frame` says where the function's prologue leaves its frame pointer and its stack pointer,
+each as `{register, offset}`: the register as the listing names it, lower case, and its
+value minus the stack pointer at entry, which is where every `// stack - 0x58` comment
+counts from (`kuna_console::kuna_framebase`). It is read off the raw p-code from the
+entry. Until the stack pointer first moves, the walk follows jumps and both ways of a
+conditional one into code it has not passed, and goes on past a conditional return or
+call, since a shrink-wrapped prologue tests its argument before it saves anything. A
+call to an i386 get-PC thunk (which only reads its return address and returns) is
+stepped over. Once the locals are reserved, a further move of the stack pointer ends the
+walk (a call site's `SUB ESP,0xc`) unless a stack probe came between. It ends before any other control flow, before an instruction that
+gives stack back and before one that moves the stack pointer while storing anything but
+a register's entry value (an argument push). `stack_pointer` is the deepest place the
+frame setup leaves the stack pointer on any path, `null` once a path realigns it (`AND
+RSP,-16`) or moves it in a loop (a `-fstack-clash-protection` probe). `frame_pointer` is
+the target's conventional one (`rbp`/`ebp`, `x29`, `r11` or `r7`, `s8`, `s0`, `r31`,
+`a6`) only when the walk sets it up in that target's frame shape: at the frame record
+holding its own saved value (x86, AArch64, ARM, 68000), as a copy of the stack pointer
+(MIPS, PowerPC, GCC's Thumb frames) or at the stack pointer at entry (RISC-V). Optimized
+code that copies `RSP` into `RBP` after reserving its locals is using `RBP` as an
+ordinary register and has none. `base` names the one the code reads its stack through:
+on x86 the frame pointer whenever there is one; elsewhere whichever more of the
+function's instructions read, because clang's ARM and AArch64 frames keep a frame pointer
+but reach most locals through `sp`; `null` when neither is known. After `PUSH RBP; MOV
+RBP,RSP; SUB RSP,0x50` it is `{frame_pointer:{register:"rbp", offset:-8},
+stack_pointer:{register:"rsp", offset:-88}, base:"frame_pointer"}`.
 
 `read <0xADDR> <LEN>` returns `{binary, address, address_hex, size, bytes, file_offset,
 assertions}`: up to 64 KiB, stopping where the mapped run holding the address ends (the
@@ -602,8 +630,7 @@ nothing re-renders; a script in the page's head sets that attribute before the p
 draws, so nothing flashes.
 
 **The Explain panel.** Three parts. *What is selected*: a variable (its kind, type,
-which input it is, where it lives in words — "the stack, 28 bytes below the return
-address" —, the lines that use it, *Rename* and *Change type*), an instruction ("5 bytes
+which input it is, where it lives in words — "the stack, 80 bytes below RBP" —, the lines that use it, *Rename* and *Change type*), an instruction ("5 bytes
 at 11b5, 29 bytes into main", what the mnemonic does, its C line, *Replace with NOP*,
 *Edit bytes*, *Add a note*), a C line (its instructions, and each note kuna left at its
 end — `// branch-flip`, `// no-return`, `// early-return x10` — in words, which the hover
@@ -611,7 +638,13 @@ card shows too) or a stack slot. The page keeps those notes out of the code it s
 (and so out of what is copied from it, the Assembly headings and the `x` rows): it takes
 them off each line when the function arrives and keeps them by line for these cards
 (`tags.js` `splitNotes`). Every other comment stays, such as a declaration's `// rax`
-and a note of the student's own. The *Download C code* files are the decompiler's own
+and a note of the student's own. A declaration's stack location is shown the way the
+assembly addresses it: the engine's `// stack - 0x58` (from the stack pointer at entry)
+reads `// rbp - 0x50` when the function keeps a frame pointer, and `// rsp + 0x10` from
+the stack pointer after the prologue when it does not, each stack piece of a combined
+comment (`// rax | stack - 0x60`) alike (`render-c.js` `rebaseStackComments`, from
+`inspect`'s `frame.base`; a function with neither keeps the engine's text). Where it
+lives in words follows ("the stack, 80 bytes below RBP"). The *Download C code* files are the decompiler's own
 output, as the command line writes it, and keep them. `e` opens and closes the panel. *This function*: its inputs and
 return type in words, *Calls and callers*, *Variables*, and behind disclosures the
 variables only the debug info has and the types. *Your changes*: one plain line per edit
@@ -805,13 +838,24 @@ the file's even when it is patched). A
 section whose file data is shorter than its size (`file_size`, a PE section's
 zero-filled tail) has no file offset past it.
 
-**Learning aids.** The Stack view draws the frame from the prologue and the engine's
-variables with offsets from the stack pointer at entry (`[RBP - 0xc]` is entry − 0x14
-after `PUSH RBP; MOV RBP,RSP`), one box per row — how many bytes below the return
-address on the left, then the name and type, a short description (the full text in its
-tooltip) and the size: return address, saved registers, locals, unused space,
-debug-info-only variables dashed; a stack array gets a callout naming what an overflow
-reaches, a leaf without `SUB RSP` the red-zone note (x86 only). Instruction hints label
+**Learning aids.** The Stack view draws the frame from the prologue and the names the
+code shows, one box per row: the return address, the registers the prologue pushes (read
+past instructions that leave RSP alone and past a shrink-wrapped early-exit test, down
+to the stack pointer `inspect`'s `frame` gives; a push below it is an argument and a push
+of a scratch register only padding), the stack canary (the slot the prologue stores
+`FS:[0x28]`/`GS:[0x14]` in), each local at the stack locations its declaration's comment
+gives (the object's box starts where the engine places that variable, and locations
+inside it, a struct's fields or an array's elements, are part of it; any other location is
+a box no bigger than the engine's slot there), and each parameter the engine keeps
+on the stack (an argument passed there, or the copy an unoptimized prologue saves, when the
+engine gives it the parameter's name). A slot the engine knows that the code never names
+(Ghidra-style `local_10`, a debug-info-only variable) is not drawn: it is part of the
+unnamed space between the boxes. The left column is the location as the comments write
+it (`rbp - 0x50`, or `rsp + 0x10` without a frame pointer; how many bytes below the return
+address is its tooltip), so every local reads the same in both views; then the name and
+type, a short description (the full text in its tooltip) and the size. A stack array gets
+a callout naming what an overflow reaches, the canary included, a leaf without `SUB RSP`
+the red-zone note (x86 only). Instruction hints label
 prologues, epilogues, canary loads and checks, `xor r,r`, `test r,r`, `cdqe`, `endbr64`
 and the variadic `mov eax,0`. *Calls and callers* reads as sentences. The callees come
 from the function's own CALL rows at once ("Calls add, sum_to and printf"); who calls it
@@ -825,7 +869,7 @@ says why.
 Code view puts their definitions above the function under the heading *Types this function
 uses*, on a shaded block that starts folded. The heading opens and folds the block, and a
 student's own choice holds for the rest of the visit. Folded, the keyboard starts at
-the signature; the Stack view's "only in the debug info" test ignores the block. It is the engine's own text, so
+the signature. It is the engine's own text, so
 line numbers match `kuna decompile --option structdefs on`; it is highlighted but not
 clickable (a field name is not a variable to rename), and selecting one of its lines says
 which type it defines, that a `/* opaque */` one is a library type whose fields are not
@@ -1361,7 +1405,12 @@ header): `sample.elf` (x86-64 ELF, rich body — call chain + `for`-loop), `samp
 ELF, a flag check whose strings are used directly and through a pointer), `structs.elf`
 (x86-64 ELF without debug info, whose `struct item` the decompiler works out as `struct_0`), `long.elf` (x86-64
 ELF, a 120-line `main` whose locals are used far below their declarations, for edits that
-must not move the view). **PE** executables were
+must not move the view), `frames-O2.elf` (x86-64 ELF built with `-O2`, whose `read_name`
+copies `RSP` into `RBP` after reserving its locals: no frame pointer), `frames-asm.elf`
+(assembled x86-64: shrink-wrapped prologues, stack-probe loops, a CMOV between pushes),
+`frames-i386.o` (an i386 PIC prologue calling the get-PC thunk, and a call site's
+`SUB ESP,0xc` right after the locals are reserved) and `frames-arm.o` (ARM and
+Thumb prologues behind a conditional call or return). **PE** executables were
 verified separately against a real PE (152 functions) through the browser lazy path; no
 benign PE is committed because this environment has no PE linker.
 
