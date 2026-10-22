@@ -4554,7 +4554,7 @@ impl PrintC {
             self.emit_block_if_bool(fd, arch, m);
             return;
         }
-        if let Some(m) = self.ite_ternary_match(fd, blk) {
+        if let Some(m) = self.ite_ternary_match(fd, arch, blk) {
             self.emit_block_if_ite(fd, arch, m);
             return;
         }
@@ -4849,6 +4849,7 @@ impl PrintC {
     fn ite_ternary_match(
         &self,
         fd: &Funcdata,
+        arch: &Architecture,
         blk: BlockId,
     ) -> Option<crate::p8_structure::kuna_iteregion::IteAssignMatch> {
         let m = crate::p8_structure::kuna_iteregion::match_ite_assignment(fd, blk)?;
@@ -4860,6 +4861,8 @@ impl PrintC {
         if marked
             && !self.needs_storage_assignment(fd, m.true_op)
             && !self.needs_storage_assignment(fd, m.else_op)
+            && !self.converts_storage_load(fd, arch, m.true_op)
+            && !self.converts_storage_load(fd, arch, m.else_op)
         {
             Some(m)
         } else {
@@ -8055,21 +8058,13 @@ impl PrintC {
 
     /// C++ `PrintC::opLoad` (printc.cc:507).  A LOAD renders either as an array/
     /// member value (when the pointer is a PTRSUB/PTRADD, absorbing the deref) or
-    /// as an explicit `*ptr`.
+    /// as an explicit `*ptr`.  A statement LOAD through the byte-copy helper copies
+    /// straight into its printed destination member's scalar type.
     fn op_load_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
-                // A statement LOAD writes the printed member's representation.
-                // Copy directly into that scalar type instead of numerically
-                // converting a temporary with a different propagated type.
                 if self.stmt_op == Some(op) {
-                    if let Some(target) = fd.obank().get(op).and_then(|operation| operation.get_out())
-                        .and_then(|out| self.partial_piece_type(fd, arch, out, op, -1))
-                        .filter(|ty| ty.get_size() == access.size
-                            && matches!(ty.get_metatype(), crate::dtype::type_metatype::TYPE_FLOAT
-                                | crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
-                                | crate::dtype::type_metatype::TYPE_UNKNOWN | crate::dtype::type_metatype::TYPE_PTR))
-                    {
+                    if let Some(target) = self.storage_load_member_type(fd, arch, op, access.size) {
                         access.datatype = target;
                     }
                 }
@@ -8092,17 +8087,37 @@ impl PrintC {
         self.push_vn_ir_m(fd, arch, ptr, op, m);
     }
 
+    fn storage_load_member_type(
+        &self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        size: int4,
+    ) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        let out = fd.obank().get(op)?.get_out()?;
+        self.partial_piece_type(fd, arch, out, op, -1).filter(|ty| storage_copy_scalar(ty, size))
+    }
+
+    /// A byte-copy LOAD whose destination member differs in float-ness from the
+    /// helper's own type; only its own statement copies into the member's type.
+    fn converts_storage_load(&self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        let float = |ty: &crate::dtype::Datatype| ty.get_metatype() == type_metatype::TYPE_FLOAT;
+        self.out_lang == crate::kuna_lang::OutLang::C
+            && fd.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_LOAD)
+            && crate::kuna_stackmem::access(fd, op).is_some_and(|access| {
+                self.storage_load_member_type(fd, arch, op, access.size)
+                    .is_some_and(|ty| float(&ty) != float(&access.datatype))
+            })
+    }
+
     /// C++ `PrintC::opStore` (printc.cc:520).  `*ptr = value` (or member/array
-    /// notation absorbing the deref).
+    /// notation absorbing the deref).  A byte-copy helper's compound initializer
+    /// takes the rendered source member's scalar type, so it copies those bits.
     fn op_store_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(mut access) = crate::kuna_stackmem::access(fd, op) {
-                // The compound initializer copies the rendered source's bits.
                 if let Some(target) = access.value.and_then(|value| self.partial_piece_type(fd, arch, value, op, 2))
-                    .filter(|ty| ty.get_size() == access.size
-                        && matches!(ty.get_metatype(), crate::dtype::type_metatype::TYPE_FLOAT
-                            | crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
-                            | crate::dtype::type_metatype::TYPE_UNKNOWN | crate::dtype::type_metatype::TYPE_PTR))
+                    .filter(|ty| storage_copy_scalar(ty, access.size))
                 {
                     access.datatype = target;
                 }
@@ -11168,6 +11183,13 @@ impl PrintC {
         }
         true
     }
+}
+
+/// A same-width scalar a byte-copy helper can copy into or out of without conversion.
+fn storage_copy_scalar(ty: &crate::dtype::Datatype, size: int4) -> bool {
+    ty.get_size() == size
+        && matches!(ty.get_metatype(), type_metatype::TYPE_FLOAT | type_metatype::TYPE_INT
+            | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_PTR)
 }
 
 /// Identifiers a generated local suffix must not capture.

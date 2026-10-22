@@ -25,6 +25,13 @@ __attribute__((naked)) unsigned int scatter(unsigned int index) {
  __asm__("movl %edi,%eax\n leaq items(%rip),%rcx\n movl %eax,%esi\n testl %esi,%esi\n jz 2f\n 1: incl 64(%rcx)\n movl 64(%rcx),%edx\n movl %edx,1(%rcx,%rax,4)\n decl %esi\n jnz 1b\n 2: movl 64(%rcx),%eax\n retq\n");
 #endif
 }
+__attribute__((naked)) unsigned int choose(unsigned int index, unsigned int odd) {
+#ifdef _WIN32
+ __asm__("movl 4(%esp),%eax\n shll $2,%eax\n testl $1,8(%esp)\n jz 1f\n movl _items+1(%eax),%edx\n jmp 2f\n 1: movl _items+3(%eax),%edx\n 2: movl %edx,_items+64\n flds _items+64\n fstps _items+68\n movl _items+64,%eax\n retl\n");
+#else
+ __asm__("movl %edi,%eax\n leaq items(%rip),%rcx\n testl $1,%esi\n jz 1f\n movl 1(%rcx,%rax,4),%edx\n jmp 2f\n 1: movl 3(%rcx,%rax,4),%edx\n 2: movl %edx,64(%rcx)\n flds 64(%rcx)\n fstps 68(%rcx)\n movl 64(%rcx),%eax\n retq\n");
+#endif
+}
 "#).unwrap();
     let object = dir.join("fixture.o");
     let result = Command::new("clang")
@@ -64,6 +71,11 @@ __attribute__((naked)) unsigned int scatter(unsigned int index) {
         if windows { "_scatter" } else { "scatter" },
         if windows { "__cdecl " } else { "" }
     );
+    let choose_prototype = format!(
+        "prototype {} unsigned int {}choose(unsigned int index, unsigned int odd)",
+        if windows { "_choose" } else { "choose" },
+        if windows { "__cdecl " } else { "" }
+    );
     let (_, stderr, status) = common::run_kuna(&[
         "decompile-project",
         object.to_str().unwrap(),
@@ -71,6 +83,8 @@ __attribute__((naked)) unsigned int scatter(unsigned int index) {
         export.to_str().unwrap(),
         "--assert",
         &scatter_prototype,
+        "--assert",
+        &choose_prototype,
         "--assert",
         if integer_member {
             "typedef union block {float real[32];unsigned int integer[32];} block;"
@@ -98,8 +112,9 @@ __attribute__((naked)) unsigned int scatter(unsigned int index) {
     fs::write(
         &wrapper,
         format!(
-            "#define {name} regenerated_transfer\n#define {} regenerated_scatter\n#include \"{}\"\n",
+            "#define {name} regenerated_transfer\n#define {} regenerated_scatter\n#define {} regenerated_choose\n#include \"{}\"\n",
             if windows { "_scatter" } else { "scatter" },
+            if windows { "_choose" } else { "choose" },
             export.join("fixture.o.c").display()
         ),
     )
@@ -115,6 +130,8 @@ unsigned int transfer(unsigned int);
 unsigned int regenerated_transfer(unsigned int);
 unsigned int scatter(unsigned int);
 unsigned int regenerated_scatter(unsigned int);
+unsigned int choose(unsigned int, unsigned int);
+unsigned int regenerated_choose(unsigned int, unsigned int);
 int main(void) {
  for(unsigned i=1;i<=4096;i++) {
   unsigned index=i%12, bits=i==1 ? 1 : i*2654435761u;
@@ -138,6 +155,15 @@ int main(void) {
   items=initial;
   actual=regenerated_scatter(index);
   if(expected!=bits+index || actual!=expected || memcmp(&items,&expected_state,sizeof items)) return 3;
+  unsigned odd=i&1, loaded;
+  memcpy(&loaded, (unsigned char *)&items + index*4 + (odd ? 1 : 3), sizeof loaded);
+  if((loaded & 0x7f800000u)==0x7f800000u) continue;
+  initial=items;
+  expected=choose(index, odd);
+  expected_state=items;
+  items=initial;
+  actual=regenerated_choose(index, odd);
+  if(expected!=loaded || actual!=expected || memcmp(&items,&expected_state,sizeof items)) return 4;
  }
  return 0;
 }
@@ -185,6 +211,10 @@ int main(void) {
         "{target}: {generated}"
     );
     assert!(generated.contains("__builtin_memcpy"), "{generated}");
+    assert!(
+        !generated.contains("? *(unsigned int *)__builtin_memcpy"),
+        "{target}: {generated}"
+    );
     fs::remove_dir_all(&dir).unwrap();
 }
 
