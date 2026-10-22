@@ -481,13 +481,15 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   non-empty section out above `0x400000` (`RELOC_BASE`, matching CLE so addresses
   line up with angr's), apply the relocations, rebase defined symbols, and bind
   each undefined extern to a synthetic call target in an extern area above the
-  sections so calls render by name. ELF COMMON symbols instead reserve their
-  full `st_size` at the alignment carried by `st_value`, in a separate synthetic
+  sections so calls render by name. COMMON symbols instead reserve their
+  full size (ELF `st_size`, COFF symbol value), using the ELF alignment carried
+  by `st_value` or a 16-byte synthetic alignment for COFF, in a separate synthetic
   area after the maximum undefined-symbol slot extent. Their addresses are
   reused for repeated references, remain disjoint from extern slots, and do not
   move ordinary undefined targets. The analyzer’s rebased view retains the COMMON
-  extent as a separate loaded-address range. COFF COMMON allocation is outside
-  this ELF repair. Invalid alignment, address overflow or an
+  extent as a separate loaded-address range. The project loader includes this
+  extent in its program-object ranges, so generated headers declare referenced
+  COMMON globals; unresolved external slots remain excluded. Invalid alignment, address overflow or an
   allocation beyond the object's address width leaves the relocation unresolved,
   rather than assigning overlapping storage. This loader correctness repair in
   `decompiler/crates/kuna-analysis/src/loader/kuna_commonalloc.rs (CommonAllocator)`
