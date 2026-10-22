@@ -1603,6 +1603,17 @@ value. A disjoint guard is replaced by its previous input. Guards for another
 operation are untouched, and a write with no surviving uses can still be
 removed as dead.
 
+Conversion also requires complete effect coverage when the destination is an
+already-heritaged persistent global
+(`kuna_storecopyeffects.rs (can_materialize)`). The contiguous INDIRECTs that name
+this STORE must cover every byte of the write; adjacent ranges can cover a wide
+write together, but a gap or an effect belonging to another operation cannot.
+If global alias guarding exhausted its budget, no such chain may exist.
+`RuleStoreVarnode` then leaves the original STORE intact rather than creating
+an unread COPY that dead-code removal can discard. Newly discovered locations
+and nonpersistent frame storage retain the existing conversion path. This does
+not raise the global guard budget or make an artificial SSA definition live.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/

@@ -335,6 +335,9 @@ impl Rule for RuleStoreVarnode {
         let size = size_of(data, in_vn(data, op, 2));
         let offoff = kuna_base::space::AddrSpace::address_to_byte(offoff, baseoff.get_word_size());
         let addr = Address::new(Rc::clone(&baseoff), offoff);
+        if !super::kuna_storecopyeffects::can_materialize(data, op, &addr, size) {
+            return 0;
+        }
         crate::kuna_stackparamviews::record_store(data, &addr, size);
         crate::kuna_localstackviews::record_store(data, op, &addr, size);
         let outvn = data.new_varnode_out_unlaned(size, &addr, op).expect("newVarnodeOut");
