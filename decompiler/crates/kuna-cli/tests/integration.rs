@@ -609,6 +609,9 @@ mod intermediate_float_rounding;
 #[path = "pointer_slot_casts.rs"]
 mod pointer_slot_casts;
 
+#[path = "implied_word_casts.rs"]
+mod implied_word_casts;
+
 #[path = "indexed_descriptor_pointer.rs"]
 mod indexed_descriptor_pointer;
 
@@ -635,3 +638,6 @@ mod usepoint_pointer_constants;
 
 #[path = "pe_data_exports.rs"]
 mod pe_data_exports;
+
+#[path = "storage_load_transfers.rs"]
+mod storage_load_transfers;

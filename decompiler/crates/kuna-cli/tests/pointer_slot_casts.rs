@@ -42,6 +42,41 @@ fn elf64_record_pointer_slot_roundtrip() {
     check(false, false, true);
 }
 
+#[test]
+fn record_declared_source_keeps_cast() {
+    if process::optional_output(Command::new("gcc").arg("--version")).is_none() {
+        return;
+    }
+    let root = common::scratch_file("pointer-slot-record-source", "dir");
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("sample.c");
+    let header = "typedef struct W { unsigned char *p; } W;\nextern void g(void *);\n";
+    std::fs::write(
+        &source,
+        format!("{header}long load(W w) {{ long x = (long)w.p; g(&x); return x; }}\n"),
+    )
+    .unwrap();
+    let object = root.join("sample.o");
+    process::required_output(
+        Command::new("gcc")
+            .args(["-g", "-O2", "-fno-stack-protector", "-fcf-protection=none", "-c"])
+            .arg(&source)
+            .arg("-o")
+            .arg(&object),
+    );
+    let (body, err, status) = common::run_kuna(&["decompile", object.to_str().unwrap(), "load"]);
+    assert_eq!(status, 0, "{err}");
+    let generated = root.join("generated.c");
+    std::fs::write(&generated, format!("{header}{body}")).unwrap();
+    process::required_output(
+        Command::new("gcc")
+            .args(["-std=gnu11", "-Werror=int-conversion", "-c"])
+            .arg(&generated)
+            .arg("-o")
+            .arg(root.join("generated.o")),
+    );
+}
+
 fn check(windows: bool, views: bool, record: bool) {
     run(windows, views, record, false);
 }

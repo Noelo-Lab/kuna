@@ -76,7 +76,7 @@ pub(crate) fn storage_transfer(
         return None;
     }
     let slot = operation.get_slot(input);
-    let from_ty = copy.then(|| printed(input, slot)).flatten().unwrap_or_else(|| {
+    let from_ty = printed(input, slot).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, input, op, slot)
             .or_else(|| undefined(input, src.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, input))
@@ -91,7 +91,7 @@ pub(crate) fn storage_transfer(
             .or_else(|| undefined(input, src.get_type()))
             .unwrap_or_else(|| fd.vn_type_read_facing(input, op))
     });
-    let to_ty = copy.then(|| printed(out, -1)).flatten().unwrap_or_else(|| {
+    let to_ty = printed(out, -1).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, out, op, -1)
             .or_else(|| undefined(out, dst.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, out))

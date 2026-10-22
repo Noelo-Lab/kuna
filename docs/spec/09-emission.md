@@ -101,7 +101,7 @@ to that member's pointee, even when an object name introduces a union backing.
 The whole backing type cannot replace that pointer type: doing so would turn a
 native `head->next` dereference into an unresolved `PTRSUB(head,0)` expression.
 
-An isolated pointer declaration may name the value copied into an integer member of a declared frame array or record. C emission checks the type that the destination actually prints, rather than treating the pointer type carried by the COPY as the member's declaration. When a pointer is copied to a same-width integer member, it emits an explicit cast to that member's integer type. This preserves the native address value and produces valid C without changing numeric conversions or other output languages (`kuna_pointerstorecast.rs`). The same holds for any integer variable or member that a pointer-valued statement assigns: a plain copy, and a pointer addition or member address (`frame[0] = (unsigned long)&value[1];`). A copied variable that is itself declared as an integer takes no cast, since only its storage was typed as a pointer, and a null pointer constant copied into integer storage prints as `0` rather than a cast `NULL`.
+An isolated pointer declaration may name the value copied into an integer member of a declared frame array or record. C emission checks the type that the destination actually prints, rather than treating the pointer type carried by the COPY as the member's declaration. When a pointer is copied to a same-width integer member, it emits an explicit cast to that member's integer type. This preserves the native address value and produces valid C without changing numeric conversions or other output languages (`kuna_pointerstorecast.rs`). The same holds for any integer variable or member that a pointer-valued statement assigns: a plain copy, and a pointer addition or member address (`frame[0] = (unsigned long)&value[1];`). A copied variable that is itself declared as a same-width integer takes no cast, since only its storage was typed as a pointer; a source declared as a record, union or array keeps the cast, because it prints as the pointer member it reads (`x = (long)w.p;`), and a null pointer constant copied into integer storage prints as `0` rather than a cast `NULL`.
 
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackversions.rs` separates memory
 SSA bookkeeping from writes under `stackviews`. Generated-backing definitions
@@ -254,7 +254,13 @@ access, has the scalar type of the member or truncating cast that path ends in
 when it is the side's width, the same walk that prints it, so a float stored to
 `store.real[2]` keeps its bits even when another incarnation merged into that
 global supplies an unsigned word type. That printed type decides the side before
-the unresolved-aggregate rules above and below. A partial struct or union is never taken as a side's C type;
+the unresolved-aggregate rules above and below, for a `CAST` as for a `COPY`.
+The walk is operation-facing, so it resolves the union member the access
+actually prints even when the variable's declared member agrees with the
+varnode: an indexed word `items.integer[index]` copied into `items.real[16]`
+reinterprets its bits. A named member of a stack-frame variable gives its
+printed type only under `stackviews`; with that option off the frame side is
+judged by its declared member type. A partial struct or union is never taken as a side's C type;
 the value's own type stands in for it, except for a side that is a variable of
 its own, not part of a struct or union symbol, whose declared type is that
 partial aggregate: the declaration prints it as `undefinedN`, so the side is an
@@ -3913,6 +3919,18 @@ A colliding parameter or local receives a unique local spelling; parameter stora
 types, and lock flags are preserved, and the prototype and body use the same name.
 This prevents a source-level parameter name from shadowing a function's emitted
 linkage identifier. The change is local to the rendered function.
+
+A statement LOAD rendered through a byte-copy helper copies directly into the
+printed destination member’s scalar type when its width matches the access.
+The helper must preserve the representation instead of numerically converting
+an integer temporary into a float member (`printc.rs (op_load_ir)`).
+An `iteregion` assignment diamond whose arm is such a LOAD, with the destination
+member and the helper's type disagreeing on float-ness, keeps its `if`/`else`
+form so each arm stays a statement LOAD copying into the member's type
+(`printc.rs (converts_storage_load)`); a `?:` arm would convert numerically.
+A STORE helper likewise initializes its compound literal with the rendered
+source member’s same-width scalar type (`printc.rs (op_store_ir)`), preserving
+its bytes when propagated IR types disagree.
 
 A same-width integer representation assigned to a declared pointer member needs
 an explicit pointer cast in C. CAST statements are checked using the type their
