@@ -602,3 +602,6 @@ mod overlapping_stack_assertions;
 
 #[path = "named_member_bits.rs"]
 mod named_member_bits;
+
+#[path = "usepoint_pointer_constants.rs"]
+mod usepoint_pointer_constants;
