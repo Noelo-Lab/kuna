@@ -6002,6 +6002,9 @@ impl PrintC {
             self.op_bit_transfer_ir(fd, arch, op, transfer);
             return;
         }
+        if !matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            self.push_word_result_open(fd, arch, op);
+        }
         match opc {
             // INT_SEXT (printc.cc:819 opIntSext) / INT_ZEXT (printc.cc:806 opIntZext):
             // the cast-strategy decides whether the extension renders as an explicit
@@ -6801,6 +6804,21 @@ impl PrintC {
         self.push_vn_ir_body(fd, arch, transfer.input, op);
     }
 
+    /// Opens the union that stores a float result's bits in the explicit word variable
+    /// `op` assigns ([`crate::kuna_bitcast::word_result`]); the result expression closes it.
+    fn push_word_result_open(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return;
+        }
+        let Some(ty) = crate::kuna_bitcast::word_result(fd, arch.decl_high_type, op) else { return };
+        static WORD_BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let float = if ty.get_size() == 4 { "float" } else { "double" };
+        let word = type_name_for_decl(&ty, self.rt_ctx).0;
+        self.push_op(&WORD_BITS, Some(op_key(op)));
+        self.push_atom(&Atom::syntax(format!("((union {{ {float} from; {word} to; }}){{ .from = "),
+            TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+    }
+
     fn op_bit_transfer_ir(
         &mut self, fd: &Funcdata, arch: &Architecture, op: OpId,
         transfer: crate::kuna_bitcast::Transfer,
@@ -7423,6 +7441,12 @@ impl PrintC {
             self.op_float_slice_ir(fd, arch, op, slice);
             return;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some((slice, cast)) = crate::p9_emit::kuna_bytearrayslice::recognize(fd, arch.decl_high_type, op) {
+                self.push_word_slice_ir(fd, arch, op, slice, cast);
+                return;
+            }
+        }
         if let Some((transfer, target)) =
             crate::kuna_bitcast::truncated_float_storage(fd, arch.decl_high_type, op)
         {
@@ -7476,11 +7500,25 @@ impl PrintC {
                 SyntaxHighlight::type_color,
             ));
         }
+        self.push_word_slice_ir(fd, arch, op, slice, true);
+    }
+
+    /// `(target_word)(source bits >> shift)`, reading a floating source's bits;
+    /// `cast_source` widens an integer source to `source_word` first.
+    fn push_word_slice_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        slice: crate::p9_emit::kuna_floatslice::Slice,
+        cast_source: bool,
+    ) {
         self.push_cast_open(&slice.target_word, op);
         if slice.shift != 0 {
             self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
         }
         if slice.source_float {
+            let size = slice.source_word.get_size();
             self.op_bit_transfer_ir(
                 fd,
                 arch,
@@ -7488,15 +7526,17 @@ impl PrintC {
                 crate::kuna_bitcast::Transfer {
                     input: slice.input,
                     target: slice.source_word,
-                    size: 8,
+                    size,
                     to_float: false,
                     source_pointer: false,
                 },
             );
-        } else {
+        } else if cast_source {
             self.push_cast_open(&slice.source_word, op);
             self.push_vn_ir(fd, arch, slice.input, op);
             self.push_cast_close(&slice.source_word);
+        } else {
+            self.push_vn_ir(fd, arch, slice.input, op);
         }
         if slice.shift != 0 {
             self.push_constant_ir(slice.shift, 4, op);
@@ -7805,6 +7845,7 @@ impl PrintC {
         let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());
+        self.push_word_result_open(fd, arch, op);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
 
         if opc == OpCode::CPUI_CALLIND {
@@ -8586,6 +8627,10 @@ impl PrintC {
     ) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let array_source = super::kuna_bytearrayc::byte_array(&assignment.datatype)
+            .then(|| assignment.operand.and_then(|input| crate::p9_emit::kuna_stackassign::loaded_bytes(fd, input))
+                .or_else(|| crate::p9_emit::kuna_stackassign::load_pointer(fd, op)))
+            .flatten();
         let (front, back) = declarator_parts(&assignment.datatype, self.rt_ctx);
         let access = crate::kuna_stackmem::Access {
             pointer: assignment.output,
@@ -8600,11 +8645,28 @@ impl PrintC {
             }),
         };
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-        self.push_atom(&Atom::syntax("__builtin_memcpy", TagType::FuncToken, SyntaxHighlight::funcname_color));
+        self.push_atom(&Atom::syntax(
+            if array_source.is_some() { "__builtin_memmove" } else { "__builtin_memcpy" },
+            TagType::FuncToken,
+            SyntaxHighlight::funcname_color,
+        ));
         self.push_op(&tokens::COMMA, Some(op_key(op)));
         self.push_op(&tokens::COMMA, Some(op_key(op)));
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
         self.push_storage_pointer_ir(fd, arch, op, &access, mods);
+        if let Some((pointer, load, pointer_size)) = array_source {
+            let (pointer, reader, cast) =
+                crate::p9_emit::kuna_stackassign::memmove_source(fd, pointer, load).unwrap_or((pointer, load, true));
+            if cast {
+                let types = fd.get_arch().types().unwrap();
+                let byte = types.get_base(1, crate::dtype::type_metatype::TYPE_UINT).unwrap();
+                let pointer_type = types.get_type_pointer(pointer_size, byte, 1).unwrap();
+                self.push_cast_open(&pointer_type, op);
+            }
+            self.push_vn_ir_m(fd, arch, pointer, reader, mods);
+            self.push_constant_ir(assignment.size as u64, 4, op);
+            return;
+        }
         self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
         self.push_op(&COMPOUND, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
