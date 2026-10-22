@@ -15,10 +15,12 @@
   <com>parse line extern void publish(Record *value);</com>
   <com>map addr r0x1100 Record cache</com>
   <com>option globalfieldstore off</com>
+  <com>option pairrefine off</com>
   <com>lo fu update</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option globalfieldstore on</com>
+  <com>option pairrefine on</com>
   <com>lo fu update</com>
   <com>decompile</com>
   <com>print C</com>
