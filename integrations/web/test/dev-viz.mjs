@@ -27,6 +27,15 @@ assert.ok(data.community.changes.every((c) => c.externalPr || c.issues.length > 
 assert.ok(data.community.changes.every((c) => data.commits.some((commit) => commit.subject.endsWith(`(#${c.pr})`))));
 assert.ok(data.milestones.some((m) => m.date === '2026-08-08' && m.title.includes('optimized C')));
 assert.ok(data.milestones.some((m) => m.date === '2026-08-31' && m.commit === '63a124ae'));
+assert.ok(data.options.every((o) => o.source === o.source.toLowerCase()), 'option sources must be case-normalized');
+const arch = data.architecture;
+assert.deepEqual(Object.keys(arch.phases), data.phases.map((p) => p.id));
+assert.ok(Object.values(arch.phases).every((p) => p.loc > 0 && p.kunaLoc <= p.loc && /^docs\/spec\/.+\.md$/.test(p.spec)));
+assert.ok(arch.shared.some((f) => f.folder === 'substrate') && arch.shared.some((f) => f.folder === 'infra'));
+assert.ok(arch.crates.some((c) => c.name === 'kuna-decomp'));
+assert.ok(arch.schedule.passes.length > 200, 'the default schedule was not exported');
+assert.ok(arch.schedule.passes.every((p) => p.phase in arch.phases), 'a scheduled pass has no phase');
+assert.ok(arch.schedule.loops.some((l) => l.name === 'mainloop' && l.end > l.start));
 
 const {dailyRows, sourceKey} = runInNewContext(app.replace(/main\(\);\s*$/, '') + '\n({dailyRows, sourceKey})');
 const day = (date, added, removed = 0, agent = false) => ({date, added, removed, agent});
@@ -39,6 +48,7 @@ assert.deepEqual(JSON.parse(JSON.stringify(rows)), [
 assert.equal(dailyRows(data).reduce((sum, row) => sum + row.commits, 0), data.commits.length);
 assert.ok(dailyRows(data).every((row) => row.commits > 0));
 assert.equal(sourceKey('ghidra-upstream'), sourceKey('ghidra'));
+assert.equal(sourceKey('IDA'), sourceKey('ida'));
 assert.notEqual(sourceKey('kuna'), sourceKey('ghidra'));
 
 const serialized = JSON.stringify(data);
@@ -46,6 +56,8 @@ assert.doesNotMatch(serialized, /\/(Users|home)\//, 'local paths leaked into pub
 assert.doesNotMatch(serialized, /noreply@|simplelogin|@anthropic|@openai/i, 'author identity leaked into public data');
 assert.match(html, /id="phase-heatmap"/);
 assert.match(html, /id="catalog-search"/);
+assert.match(html, /id="arch-table"/);
+assert.match(html, /id="order-chart"/);
 assert.match(app, /fetch\('\.\/data\.json'\)/);
 
 console.log(`dev-viz OK: ${data.commits.length} commits, ${data.options.length} options, ${data.records.length} records, ${data.community.changes.length} community changes`);

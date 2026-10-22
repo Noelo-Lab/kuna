@@ -75,6 +75,11 @@ first piece is declared at the piece's type, as a directly accessed piece
 already is. This corrects the declaration without extending `castobject`'s
 permission to retype escaped locals.
 
+A local mapped or declared as a struct or union keeps that whole record type
+when its storage representative is an array member. The array-declaration
+fallback must not replace the record with its first member: later field accesses
+still require the complete object, including fields after that array.
+
 With `stackviews`, a physical stack declaration can contain the scalar being
 cast rather than itself being that scalar. Bit-transfer classification descends
 through an exact member at the symbol offset and access width; a declared
@@ -223,8 +228,12 @@ spelling. Each side's kind is the type the C prints it with: a side whose bytes
 no member names, printed by partial access as `*(T *)&storage[k]`, has that
 `T` (`printc.rs (PrintC::partial_piece_type)`), so a word moved between two
 such pieces stays a plain copy rather than reading the unsigned word into a
-float; that printed type decides the side before the unresolved-aggregate rules
-above and below. A partial struct or union is never taken as a side's C type;
+float. A side printed through a named member path, with or without partial
+access, has the scalar type of the member or truncating cast that path ends in
+when it is the side's width, the same walk that prints it, so a float stored to
+`store.real[2]` keeps its bits even when another incarnation merged into that
+global supplies an unsigned word type. That printed type decides the side before
+the unresolved-aggregate rules above and below. A partial struct or union is never taken as a side's C type;
 the value's own type stands in for it, except for a side that is a variable of
 its own, not part of a struct or union symbol, whose declared type is that
 partial aggregate: the declaration prints it as `undefinedN`, so the side is an
@@ -239,6 +248,13 @@ therefore stores `((union { float from; int to; }){ .from = .. }).to` into
 rather than `r.tag = x;`, and a member holding a float's bits that is copied out
 reads them back rather than converting the integer. A `COPY` whose two sides
 print the same kind is unchanged.
+
+The same `undefinedN` rule decides each side of a same-width storage `CAST`,
+ahead of the scalar piece a frame-backed declaration would resolve to. When a
+register holds both a union word and such a variable, the variable is still an
+integer, so a float-typed `CAST` between it and an integer prints as a plain
+integer conversion. Treating it as a float would convert the integer's value
+rather than keep its bits.
 
 A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
 storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
@@ -1961,6 +1977,15 @@ is not a residual unknown and never enters the relabel, so the opaque
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
 
+Signed integer constants are normalized to their declared byte width before
+choosing their sign, magnitude, and numeric base
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (resolve_integer_format)`).
+A four-byte `0xfffffffffffffffc` carrier therefore prints as `-4`, just like
+`0xfffffffc`; upper carrier bits also cannot turn a positive narrow value
+negative. Forced numeric radices retain this width interpretation. Character
+overrides, unsigned rendering, and unsized constant handling retain their
+existing paths.
+
 Anonymous function types with a stored prototype participate in the C declarator
 walk alongside pointers and arrays. The function contributes a parameter suffix,
 then the walk continues through its return type. Parameters use recursive abstract
@@ -2134,7 +2159,16 @@ past the object and drops the sign extension. The option `declhightype`
 p-code moves. It applies only to a high the symbol table does not describe — a
 mapped local keeps the declaration representative's type, because kuna does not
 always type-lock the storage a symbol claims and the most specialized member of
-a mapped local can be a transient the symbol never described. The declaration
+a mapped local can be a transient the symbol never described. A whole mapped
+local whose Symbol is type-locked (a DWARF or `--assert type` declaration) with
+a boolean, integer, float or pointer type as wide as the declaration
+representative, and that is not a parameter, declares that Symbol type instead
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(locked_scalar_local_type)`), whatever this option says: merging can leave the
+representative at a weaker type, such as `void *` for a gcc `-O0` DWARF
+function-pointer local, which makes the indirect call through it invalid C.
+`declared_variable_type` reports the same type, so the storage-transfer casts
+agree with the declaration. The declaration
 representative still supplies the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
