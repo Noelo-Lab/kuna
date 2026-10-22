@@ -40,7 +40,24 @@ fn pe64_double_partial_byte_member_preserves_bits() {
     check_target("x86_64-w64-windows-gnu", 8, 16);
 }
 
+#[test]
+fn pe32_double_register_halves_preserve_bits() {
+    check_target_cpu("i686-w64-windows-gnu", "i686", 8, 8);
+}
+#[test]
+fn pe32_double_partial_register_halves_preserve_bits() {
+    check_target_cpu("i686-w64-windows-gnu", "i686", 8, 16);
+}
+
+/// i686 pins `-march=pentium4`, the default of current clang, so older clang also copies a
+/// double through SSE; the `register_halves` cases pin `-march=i686`, which copies it as
+/// two general-register words.
 fn check_target(target: &str, width: usize, capacity: usize) {
+    let cpu = if target.starts_with("i686") { "pentium4" } else { "x86-64" };
+    check_target_cpu(target, cpu, width, capacity);
+}
+
+fn check_target_cpu(target: &str, cpu: &str, width: usize, capacity: usize) {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
     }
@@ -54,6 +71,7 @@ fn check_target(target: &str, width: usize, capacity: usize) {
             .arg(format!("--target={target}"))
             .arg(format!("-DPAYLOAD_BYTES={width}"))
             .arg(format!("-DPAYLOAD_CAPACITY={capacity}"))
+            .arg(format!("-march={cpu}"))
             .args(["-shared", "-nostdlib", "-O0", "-Wl,--entry,0"])
             .arg(&source)
             .arg("-o")
