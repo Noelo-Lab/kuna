@@ -51,7 +51,7 @@ const GLOSSARY = [
   ['LAB_00401234', 'a place the code jumps to'],
   ['undefined4 · int4 · uint8', 'a value of that many bytes: type unknown · signed · unsigned'],
   ['// rax', 'this variable lives in the register RAX'],
-  ['// stack - 0x14', 'it lives on the stack, 0x14 bytes below the return address'],
+  ['// rbp - 0x14', 'it lives on the stack, 0x14 bytes below where the frame pointer RBP points, just as [RBP - 0x14] in the assembly (rsp + 0x8 in a function that keeps no frame pointer)'],
   ['CONCAT44(a,b)', 'two 4-byte values joined into 8 bytes'],
   ['SEXT48(x) · ZEXT48(x)', 'x widened from 4 to 8 bytes, keeping its sign · with zeros'],
   ['x._4_8_', 'the 8 bytes of x that start at byte 4'],

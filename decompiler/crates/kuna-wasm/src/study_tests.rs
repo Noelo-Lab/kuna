@@ -4,7 +4,9 @@
 //! example (`crackme.elf`); the type definitions `inspect` prints above a
 //! function (`structs.elf`); and the globals a function names, the `data`
 //! window around one and the `uses` of it (`globals.elf`, and its stripped
-//! twin).
+//! twin); and where each function's frame pointer and stack pointer sit
+//! (`frames-O2.elf`, `frames-asm.elf`, `frames-i386.o`, `frames-arm.o`,
+//! `sample_aarch64.o`).
 
 use std::path::PathBuf;
 
@@ -684,4 +686,44 @@ fn uses_names_the_instructions_that_use_the_data() {
         let to = u["to"].as_u64().unwrap();
         assert!((0x4040..0x4088).contains(&to), "{u:?}");
     }
+}
+
+fn frame_of(name: &str, function: &str) -> (Value, Value, Value) {
+    let doc = run_on(name, "inspect", &[function], &[]).unwrap_or_else(|e| panic!("inspect {function}: {e}"));
+    let frame = &doc["function"]["frame"];
+    (frame["frame_pointer"].clone(), frame["stack_pointer"].clone(), frame["base"].clone())
+}
+
+fn reg(register: &str, offset: i64) -> Value {
+    serde_json::json!({ "register": register, "offset": offset })
+}
+
+/// `frame` says where the prologue leaves the frame pointer and the stack
+/// pointer, from the stack pointer at entry, and which one the code reads its
+/// stack through: RBP at the saved RBP after `PUSH RBP; MOV RBP,RSP`, also in a
+/// leaf that pops it before returning; no frame pointer when optimized code
+/// copies RSP into RBP after reserving its locals; the frame a shrink-wrapped
+/// prologue sets up after its early-exit test or a conditional tail call, past a
+/// CMOV between pushes, past an i386 get-PC thunk call (but not into a call
+/// site's padding), and on ARM and Thumb past a conditional call or return; no stack pointer once a probe loop moves
+/// it, also one entered at its test; x29 at AArch64's frame record, read
+/// through sp when the code does, and none in a leaf that keeps no record.
+#[test]
+fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
+    let (fp, sp) = (Value::from("frame_pointer"), Value::from("stack_pointer"));
+    assert_eq!(frame_of("sample.elf", "main"), (reg("rbp", -8), reg("rsp", -0x28), fp.clone()));
+    assert_eq!(frame_of("sample.elf", "add"), (reg("rbp", -8), reg("rsp", -8), fp.clone()));
+    assert_eq!(frame_of("frames-O2.elf", "read_name"), (Value::Null, reg("rsp", -0x58), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "shrink_wrapped"), (Value::Null, reg("rsp", -0x28), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "probed"), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(frame_of("frames-asm.elf", "rotated"), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(frame_of("frames-asm.elf", "interleaved"), (Value::Null, reg("rsp", -0x20), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "tail_first"), (Value::Null, reg("rsp", -0x28), sp.clone()));
+    assert_eq!(frame_of("frames-i386.o", "pic"), (Value::Null, reg("esp", -0x44), sp.clone()));
+    assert_eq!(frame_of("frames-i386.o", "padded"), (Value::Null, reg("esp", -0x1c), sp.clone()));
+    for (function, depth) in [("condcall", -0x30), ("condret", -0x30), ("condpop", -0x40), ("tcondcall", -0x40)] {
+        assert_eq!(frame_of("frames-arm.o", function), (Value::Null, reg("sp", depth), sp.clone()), "{function}");
+    }
+    assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30), sp.clone()));
+    assert_eq!(frame_of("sample_aarch64.o", "sum_to"), (Value::Null, reg("sp", -0x20), sp));
 }
