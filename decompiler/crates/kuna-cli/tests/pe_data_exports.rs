@@ -68,6 +68,10 @@ __declspec(dllexport) void write_byte(void) { exported_bytes[0] = 7; }
         .unwrap()["name"]
         .as_str()
         .unwrap();
+    let (xrefs, stderr, status) =
+        common::run_kuna(&["xrefs", binary.to_str().unwrap(), "--to", "exported_bytes"]);
+    assert_eq!(status, 0, "{stderr}");
+    assert!(xrefs.contains(&format!("exported_bytes @ 0x{data:x}")), "{xrefs}");
     let project = root.join("project");
     let declaration = format!("data 0x{data:x} unsigned char exported_bytes[16]");
     let (_, stderr, status) = common::run_kuna(&[

@@ -497,6 +497,8 @@ pub struct ObjectLoadImage {
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
+    /// A PE image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
+    data_exports: Vec<(u64, String)>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
     /// the program's own data objects live in; see
     /// [`crate::loader::kuna_globalref`].
@@ -1006,6 +1008,10 @@ impl ObjectLoadImage {
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
             datasyms,
+            data_exports: crate::loader::pe_iat::data_exports(&file)
+                .into_iter()
+                .map(|(addr, name)| (addr, String::from_utf8_lossy(&name).into_owned()))
+                .collect(),
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
@@ -1154,6 +1160,7 @@ impl ObjectLoadImage {
             // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
             // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
             datasyms: Vec::new(),
+            data_exports: Vec::new(),
             data_objects,
             const_ranges: Vec::new(),
             // (kuna) The foldable-range exception list. `dynrelocs` itself is
@@ -1326,6 +1333,13 @@ impl ObjectLoadImage {
             .iter()
             .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned(), s.size))
             .collect()
+    }
+
+    /// A PE image's data exports as `(vma, name)`: the named exports outside
+    /// every code section. They carry no extent, so they name addresses for
+    /// lookup only and never become globals.
+    pub fn data_exports(&self) -> &[(u64, String)] {
+        &self.data_exports
     }
 
     /// Write `data` over the mapped bytes at `vma` (the write twin of

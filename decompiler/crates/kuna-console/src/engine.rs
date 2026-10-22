@@ -559,6 +559,8 @@ pub struct ConsoleProgram {
     /// objects — `optind`, `stdin`, `stdout`, `optarg` — live). Empty on the XML
     /// datatest path and for a relocatable object.
     loader_data_objects: Vec<(u64, String, u64)>,
+    /// (kuna) A PE image's data exports, `(addr, name)`: lookup names only.
+    loader_data_exports: Vec<(u64, String)>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
@@ -3710,6 +3712,7 @@ fn empty_program(
         analysis_image: None,
         arm_frames: None,
         loader_data_objects: Vec::new(),
+        loader_data_exports: Vec::new(),
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
@@ -4276,6 +4279,7 @@ pub fn bootstrap_from_object_with_isa(
     // the analysis commit, after DWARF and the detected strings have claimed their
     // addresses. See `ConsoleProgram::loader_data_objects`.
     let loader_data_objects = loader.data_symbols();
+    let loader_data_exports = loader.data_exports().to_vec();
     // The container entry and named section table, for the project README.
     let image_metadata = ProgramImageMetadata {
         entry: loader.image_entry(),
@@ -4344,6 +4348,7 @@ pub fn bootstrap_from_object_with_isa(
     }
     prog.analysis_image = Some((path.to_string(), bytes));
     prog.loader_data_objects = loader_data_objects;
+    prog.loader_data_exports = loader_data_exports;
     prog.import_slots = import_slots;
     prog.symbol_underscore_prefix = symbol_underscore_prefix;
     if let Ok(loc) = prog.arch().get_register_varnode(b"r2") {
@@ -4455,6 +4460,7 @@ fn commit_analysis_output(
         .iter()
         .filter(|_| data_symbols_enabled)
         .map(|(address, name, _)| (name.clone(), *address))
+        .chain(prog.loader_data_exports.iter().filter(|_| data_symbols_enabled).map(|(address, name)| (name.clone(), *address)))
         .chain(out.symbols.iter().filter(|s| s.kind == SymKind::Data).map(|s| (s.name.clone(), s.addr)))
         .chain(out.data_objects.iter().map(|d| (d.name.clone(), d.addr)))
         .chain(out.typed_data.iter().filter(|_| data_symbols_enabled).map(|d| (d.name.clone(), d.addr)))
