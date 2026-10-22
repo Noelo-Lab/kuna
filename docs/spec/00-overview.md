@@ -2543,11 +2543,20 @@ complete is refused (`Cannot redefine a completed record`), and a member that
 holds an incomplete record by value, or an array of one, is refused as C refuses
 it. A failed body leaves its tag declared but incomplete, so a pointer an
 earlier declaration built still names the stub a later, correct body completes;
-an anonymous record is built fresh each time and destroyed on failure, as
-upstream does. `typedef struct Node Node;` keeps the tag under its own name, and
+a failed anonymous body is discarded. `typedef struct Node Node;` keeps the tag under its own name, and
 a typedef made of a record while it is incomplete is completed with the record.
 A pointer built to the declared stub reads the completed record (chapter 05,
 §5.1), so `node->next->next->value` prints as fields.
+
+Anonymous struct and union occurrences receive internal names before their
+shells are interned (`decompiler/crates/kuna-console/src/grammar.rs
+(CParse::new_anonymous_record)`). The declaration text, data organization and
+occurrence within that declaration determine the name, so separate occurrences
+remain distinct while worker parse order does not change their C identity.
+Repeated parsing checks the layout before reusing an existing occurrence.
+Nested records therefore reach the emitted type definitions instead of becoming
+`undefinedN` fields. An anonymous struct or union used directly in a typedef
+keeps the declared typedef name.
 
 (kuna) **A name that is also a type name is still a name.** The same
 `findByName` classification reaches the declarator, where C says the identifier

@@ -88,12 +88,45 @@
     </section>
   </div>
 
+  <div class="wrap">
+    <section class="sec viz-section" id="architecture">
+      <div class="section-intro">
+        <div>
+          <p class="eyebrow">03 / architecture</p>
+          <h2>What each phase holds</h2>
+        </div>
+        <p>Each row is one phase’s source folder at this snapshot. Red marks lines in <code>kuna_*</code> modules, where Kuna adds its own logic; the rest began as the port of Ghidra’s decompiler and has changed since. Open a row for its largest modules and the specification chapter that describes it.</p>
+      </div>
+      <div class="chart-legend arch-legend" aria-hidden="true">
+        <span><i class="legend-line legend-kuna"></i> lines in kuna_* modules</span>
+        <span><i class="legend-ported"></i> lines from the Ghidra port, since changed</span>
+      </div>
+      <div class="arch-table" id="arch-table" aria-label="Source lines, options, and scheduled passes per phase"></div>
+      <p class="fineprint light" id="arch-note"></p>
+
+      <div class="order-head">
+        <h3>The order passes run in</h3>
+        <p>Phases group the code; they are not run one after another. This is the engine’s default schedule: each tick is one pass, placed on its phase’s row at its position in the run. Most passes are dataflow rules (P3), and they repeat in a loop together with call, type, and variable passes. Hover, or focus the chart and use the arrow keys, to name a pass.</p>
+      </div>
+      <div class="order-shell">
+        <div class="chart-legend" aria-hidden="true">
+          <span><i class="legend-action"></i> action: one pass over the whole function</span>
+          <span><i class="legend-rule"></i> rule: one rewrite pattern, tried on each operation</span>
+        </div>
+        <div class="order-scroll">
+          <div class="order-chart" id="order-chart" tabindex="0" aria-label="Default pass schedule by phase. Use left and right arrow keys to step through passes."></div>
+        </div>
+        <p class="chart-summary" id="order-summary" aria-live="polite"></p>
+      </div>
+    </section>
+  </div>
+
   <div class="ink-band">
     <div class="wrap">
       <section class="viz-section provenance" id="provenance">
         <div class="section-intro">
           <div>
-            <p class="eyebrow">03 / sources</p>
+            <p class="eyebrow">04 / sources</p>
             <h2>Where changes come from</h2>
           </div>
           <p>The option catalog records a source and inspiration for each option. These counts group options by their recorded source. Some also name the DecBench function that prompted the change.</p>
@@ -141,7 +174,7 @@
     <section class="sec viz-section" id="outcomes">
       <div class="section-intro">
         <div>
-          <p class="eyebrow">04 / measurements</p>
+          <p class="eyebrow">05 / measurements</p>
           <h2>Recorded benchmark changes</h2>
         </div>
         <p>These feature records compare graph edit distance (GED) before and after a change. Lower means the measured control-flow graph is closer to the source’s graph. Zero means matching graph structure, not identical source code or proof of correctness.</p>
@@ -155,7 +188,7 @@
     <section class="sec viz-section" id="method">
       <div class="section-intro">
         <div>
-          <p class="eyebrow">05 / method</p>
+          <p class="eyebrow">06 / method</p>
           <h2>How changes are tested</h2>
         </div>
         <p>Coding agents can select problems, implement changes, and run checks. People set the direction and review results. The benchmark loop records test cases, measurements, and the reasons for a change.</p>
