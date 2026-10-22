@@ -2915,7 +2915,22 @@ every other binary's pass list is byte-identical to before the pass existed):
   needs the PC→name table for stack traces, so it survives stripping; the pass
   handles all four header magics (go1.2/1.16/1.18/1.20 layouts) and emits one
   function symbol per entry, so a stripped Go binary renders `main.main` and
-  `runtime.*` instead of `sub_<addr>`.
+  `runtime.*` instead of `sub_<addr>`. It is format-neutral: the table is located
+  by its ELF `.gopclntab` / Mach-O `__gopclntab` section (or a scan of the
+  read-only data sections that Go places it in), and an entry is admitted only
+  when it lands in an executable extent — a corrupt table cannot mint a function
+  over data. Because the `functab` also carries each function's **end**, the pass
+  feeds those extents to the interior-entry rejection, so a jump-table case block
+  or landing pad inside a Go function is no longer claimed as a `sub_<addr>` of its
+  own (on arm64 that artifact used to clip every function that contained one).
+  The last function ends at the table's closing `etext` entry, so host code an
+  external link places after Go's is not swallowed. Go 1.26 stopped storing the
+  text base in the header, so an `entryoff` is then resolved against the module's
+  `moduledata.text` (the record in `.go.module` / `__go_module` / the data
+  sections that opens with the header's address, accepted only when its
+  `minpc`/`maxpc`/`text`/`etext` nest) — an external link puts `crt` code and
+  `.init`/`.plt` ahead of `runtime.text` — falling back to the lowest code section
+  when no record is found.
 - **MSVC RTTI** (`rtti`, PE-only, default-off;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/mod.rs`): find the shared
   `type_info` vftable, byte-search back from each `.?A…@@` TypeDescriptor to its

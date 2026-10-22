@@ -218,6 +218,8 @@ int main(void){
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// The pinned gcc 15 fixture reloads a union word through a register that also holds an
+/// `undefined4` variable, the codegen this host's compiler may not produce.
 #[test]
 fn union_field_words_held_in_undefined_variables_match_native() {
     let compilers: Vec<_> = ["gcc", "clang"]
@@ -299,6 +301,10 @@ int main(void){
  return 0;
 }
 "#).unwrap();
+    let mut samples = vec![(
+        "gcc15".to_string(),
+        std::path::PathBuf::from(common::fixture("aggregate_undefined_word_x86_64")),
+    )];
     for sample_cc in &compilers {
         let sample = dir.join(format!("sample-{sample_cc}"));
         process::required_output(
@@ -316,6 +322,9 @@ int main(void){
                 .arg("-o")
                 .arg(&sample),
         );
+        samples.push((sample_cc.to_string(), sample));
+    }
+    for (sample_cc, sample) in &samples {
         let (printed, stderr, rc) = common::run_kuna(&[
             "decompile-all",
             sample.to_str().unwrap(),
