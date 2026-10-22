@@ -7279,6 +7279,12 @@ impl PrintC {
             self.op_float_slice_ir(fd, arch, op, slice);
             return;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some((slice, cast)) = crate::p9_emit::kuna_bytearrayslice::recognize(fd, arch.decl_high_type, op) {
+                self.push_word_slice_ir(fd, arch, op, slice, cast);
+                return;
+            }
+        }
         if let Some((transfer, target)) =
             crate::kuna_bitcast::truncated_float_storage(fd, arch.decl_high_type, op)
         {
@@ -7332,11 +7338,25 @@ impl PrintC {
                 SyntaxHighlight::type_color,
             ));
         }
+        self.push_word_slice_ir(fd, arch, op, slice, true);
+    }
+
+    /// `(target_word)(source bits >> shift)`, reading a floating source's bits;
+    /// `cast_source` widens an integer source to `source_word` first.
+    fn push_word_slice_ir(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        slice: crate::p9_emit::kuna_floatslice::Slice,
+        cast_source: bool,
+    ) {
         self.push_cast_open(&slice.target_word, op);
         if slice.shift != 0 {
             self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
         }
         if slice.source_float {
+            let size = slice.source_word.get_size();
             self.op_bit_transfer_ir(
                 fd,
                 arch,
@@ -7344,15 +7364,17 @@ impl PrintC {
                 crate::kuna_bitcast::Transfer {
                     input: slice.input,
                     target: slice.source_word,
-                    size: 8,
+                    size,
                     to_float: false,
                     source_pointer: false,
                 },
             );
-        } else {
+        } else if cast_source {
             self.push_cast_open(&slice.source_word, op);
             self.push_vn_ir(fd, arch, slice.input, op);
             self.push_cast_close(&slice.source_word);
+        } else {
+            self.push_vn_ir(fd, arch, slice.input, op);
         }
         if slice.shift != 0 {
             self.push_constant_ir(slice.shift, 4, op);

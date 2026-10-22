@@ -44,6 +44,7 @@ pub mod kuna_warnstyle;
 pub mod kuna_infloopstyle;
 pub mod kuna_arraycoverwidth;
 pub mod kuna_bytearrayc;
+pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;
