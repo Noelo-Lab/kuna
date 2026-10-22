@@ -596,6 +596,10 @@ mod intermediate_float_rounding;
 
 #[path = "indexed_descriptor_pointer.rs"]
 mod indexed_descriptor_pointer;
+
+#[path = "locked_scalar_declarations.rs"]
+mod locked_scalar_declarations;
+
 #[path = "anonymous_record_definitions.rs"]
 mod anonymous_record_definitions;
 
@@ -604,3 +608,6 @@ mod overlapping_stack_assertions;
 
 #[path = "named_member_bits.rs"]
 mod named_member_bits;
+
+#[path = "usepoint_pointer_constants.rs"]
+mod usepoint_pointer_constants;

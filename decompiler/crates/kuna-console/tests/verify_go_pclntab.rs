@@ -58,10 +58,18 @@ func main() {
 }
 "#;
 
-/// Build `MAIN_GO` into `out_bin` hermetically. `strip` toggles `-ldflags=-s -w`
-/// (drops the symbol table + DWARF, but KEEPS `.gopclntab`). Returns `true` on a
-/// successful build that produced the binary, `false` for any failure.
-fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, strip: bool) -> bool {
+/// Build `MAIN_GO` into `out_bin` hermetically for `(goos, goarch)`. `strip`
+/// toggles `-ldflags=-s -w` (drops the symbol table + DWARF, but KEEPS
+/// `.gopclntab`/`__gopclntab`). Returns `true` on a successful build that produced
+/// the binary, `false` for any failure. Cross-compiling is pure-Go work
+/// (`CGO_ENABLED=0`), so a Linux runner can build the darwin/arm64 fixture.
+fn build_go(
+    dir: &std::path::Path,
+    out_bin: &std::path::Path,
+    goos: &str,
+    goarch: &str,
+    strip: bool,
+) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
@@ -71,7 +79,7 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, strip: bool) -> bo
     let mut cmd = Command::new("go");
     cmd.arg("build");
     // Flags MUST precede the package argument (`main.go`); `-ldflags=-s -w` drops
-    // the symbol table + DWARF but keeps `.gopclntab`.
+    // the symbol table + DWARF but keeps the pclntab.
     if strip {
         cmd.arg("-ldflags=-s -w");
     }
@@ -79,8 +87,8 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, strip: bool) -> bo
         .arg(out_bin)
         .arg("main.go")
         .current_dir(dir)
-        .env("GOOS", "linux")
-        .env("GOARCH", "amd64")
+        .env("GOOS", goos)
+        .env("GOARCH", goarch)
         .env("GOCACHE", dir.join(".gocache"))
         .env("GOPATH", dir.join(".gopath"))
         .env("CGO_ENABLED", "0")
@@ -116,7 +124,7 @@ fn stripped_go_functions_recovered_from_pclntab() {
     let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let out_bin = dir.join("go_stripped");
-    if !build_go(&dir, &out_bin, /* strip */ true) {
+    if !build_go(&dir, &out_bin, "linux", "amd64", /* strip */ true) {
         let _ = std::fs::remove_dir_all(&dir);
         panic!("installed Go compiler failed to build the fixture");
     }
@@ -158,7 +166,7 @@ fn gopclntab_off_suppresses_recovery() {
     let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_off_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let out_bin = dir.join("go_stripped");
-    if !build_go(&dir, &out_bin, /* strip */ true) {
+    if !build_go(&dir, &out_bin, "linux", "amd64", /* strip */ true) {
         let _ = std::fs::remove_dir_all(&dir);
         panic!("installed Go compiler failed to build the fixture");
     }
@@ -180,6 +188,42 @@ fn gopclntab_off_suppresses_recovery() {
         prog.lookup_symbol("main.compute").is_none(),
         "gopclntab off must suppress pclntab name recovery (main.compute should be absent)"
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The Mach-O arm (the pass used to return before parsing). `GOOS=darwin GOARCH=arm64`
+/// is a pure-Go cross build, so a Linux runner covers it. Also pins the *extent*:
+/// `main.main` must not be clipped, and nothing may be claimed inside it (an arm64
+/// Go jump-table case block used to become a `sub_<addr>` of its own there).
+#[test]
+fn stripped_go_macho_functions_recovered_from_pclntab() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_macho_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped_macho");
+    if !build_go(&dir, &out_bin, "darwin", "arm64", /* strip */ true) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to cross-build the darwin/arm64 fixture");
+    }
+    let prog = bootstrap(out_bin.to_str().expect("utf8 path"));
+
+    for name in ["main.main", "main.compute", "runtime.main"] {
+        assert!(prog.lookup_symbol(name).is_some(), "{name} not recovered from a Mach-O pclntab");
+    }
+    let entries = prog.function_entries_canonical();
+    let main = entries.iter().find(|e| e.name == "main.main").expect("main.main in inventory");
+    let (start, end) = (main.addr.get_offset(), main.addr.get_offset() + main.size);
+    assert!(main.size > 32, "main.main clipped to {} bytes", main.size);
+    let interior: Vec<&str> = entries
+        .iter()
+        .filter(|e| e.addr.get_offset() > start && e.addr.get_offset() < end)
+        .map(|e| e.name.as_str())
+        .collect();
+    assert!(interior.is_empty(), "entries claimed inside main.main: {interior:?}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

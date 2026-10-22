@@ -3890,6 +3890,11 @@ impl PrintC {
             declared = Some(object);
         }
 
+        if let Some(locked) = locked_scalar_local_type(fd, high) {
+            type_name = type_name_for_decl(&locked, rt);
+            declared = Some(locked);
+        }
+
         // C++ `emitVarDecl` declares the whole *Symbol*'s type (printc.cc:1719
         // `sym->getType()`), not the partial member Varnode's type.  When the
         // high is a non-array partial cover of a composite Symbol (a struct/
@@ -12694,6 +12699,36 @@ fn printed_integer_signedness(ct: &crate::dtype::Datatype, signed_text_byte: boo
     }
 }
 
+/// A locked scalar local is declared at its Symbol's type even when a merged
+/// storage representative retained a weaker type. Member and parameter views
+/// have their own declaration rules; only a whole, same-width local qualifies.
+fn locked_scalar_local_type(
+    fd: &Funcdata,
+    high: crate::context::HighVariableId,
+) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+    use crate::dtype::type_metatype;
+    let h = fd.high_bank().get(high)?;
+    if h.kuna_symbol_offset() > 0 {
+        return None;
+    }
+    let scope = fd.get_scope_local()?;
+    let symbol = h.kuna_link_symbol()?;
+    let record = scope.database().symbol(symbol);
+    if record.scope != scope.scope_id() || !record.is_type_locked()
+        || scope.symbol_category(symbol) == crate::database::symbol_category::FUNCTION_PARAMETER
+    {
+        return None;
+    }
+    let ty = record.dtype.as_ref()?;
+    if !matches!(ty.get_metatype(), type_metatype::TYPE_BOOL | type_metatype::TYPE_INT
+        | type_metatype::TYPE_UINT | type_metatype::TYPE_FLOAT | type_metatype::TYPE_PTR)
+    {
+        return None;
+    }
+    let representative = fd.vbank().get(decl_rep_varnode(fd, high)?)?;
+    (representative.get_size() == ty.get_size()).then(|| std::rc::Rc::clone(ty))
+}
+
 /// The type the printed C declares the variable `vid` belongs to: a parameter's
 /// prototype type, or a local's declaration type. `None` for an expression.
 pub(crate) fn declared_variable_type(
@@ -12720,6 +12755,9 @@ pub(crate) fn declared_variable_type(
                 }
             }
         }
+    }
+    if let Some(locked) = locked_scalar_local_type(fd, hid) {
+        return Some(locked);
     }
     let type_rep = if decl_high_type {
         crate::kuna_declhightype::type_representative(fd, hid).filter(|_| crate::kuna_declhightype::declares_from_high(fd, hid))
