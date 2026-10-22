@@ -28,8 +28,10 @@
 //! a memory varnode a frame load becomes) and read by stores (the `std`) — and
 //! is also written through a half. That is the shape of GCC's block moves
 //! through a pair whose registers are reused for 32-bit values. A pair a call
-//! takes or returns whole, or that 64-bit arithmetic uses, is a 64-bit value
-//! and keeps upstream's heritage, as does one with any floating-point access.
+//! takes or returns whole, or that an 8-byte op uses, keeps upstream's
+//! heritage, as does one with any floating-point access. SPARC32 64-bit
+//! arithmetic works on the two registers (`addcc`/`addx`), so it does not count
+//! as a whole-pair use.
 //! Every access that crosses the midpoint must cover the whole pair. The
 //! selected range is refined at its midpoint only: those whole-pair moves
 //! ([`straddles_middle`]) become two halves through `PIECE`/`SUBPIECE`, and the
@@ -39,9 +41,10 @@
 //! An 8-byte register read through its low half (x86-64 `rax`/`eax`) is not a
 //! pair: its upper half is not a named register, so it is left whole. Two
 //! adjacent registers with no pair register over them (x86-32 `EAX`/`ECX`) are
-//! not one either. A floating-point double held in two named registers (MIPS32
-//! `f0_1`, an x86-64 `XMM0_Qa` lane) is recognised by an access that feeds or
-//! is produced by a floating-point op, and is left whole.
+//! not one either. A pair in a floating-point register file ([`in_float_file`]:
+//! ARM `d8` over `s16`/`s17`, MIPS32 `f0_1`, an x86-64 `XMM0_Qa` lane) is left
+//! whole even when it is only moved, as a callee-saved `d8` is by `vpush` and
+//! `vpop`.
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
@@ -49,6 +52,7 @@ use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::VarnodeId;
+use crate::dtype::type_class;
 use crate::funcdata::Funcdata;
 use crate::p5_types::kuna_ptrfromuse::is_float_op;
 
@@ -116,6 +120,51 @@ pub fn split_pair(
     !lookup.get_exact_register_name(space, low, 8).is_empty()
         && !lookup.get_exact_register_name(space, low, 4).is_empty()
         && !lookup.get_exact_register_name(space, low + 4, 4).is_empty()
+        && !in_float_file(fd, lookup.as_ref(), space, low)
+}
+
+/// Whether the 8 bytes at `low` lie in a floating-point register file: a run of
+/// contiguous, equally sized named registers holding a float-class entry of the
+/// function's or the default prototype model (ARM `s0`..`s31` and `d0`..`d31`
+/// from the `s0`/`d0` entries, so a callee-saved `d8` is one).
+fn in_float_file(
+    fd: &Funcdata,
+    lookup: &dyn kuna_base::space::RegisterLookup,
+    space: &std::rc::Rc<kuna_base::space::AddrSpace>,
+    low: u64,
+) -> bool {
+    let named = |off: u64, size: int4| !lookup.get_exact_register_name(space, off, size).is_empty();
+    let proto = fd.get_func_proto();
+    let models = proto.has_model().then(|| proto.model()).into_iter().chain(fd.get_arch().default_fp());
+    models
+        .flat_map(|m| m.input_opt().into_iter().chain(m.output_list()))
+        .flat_map(|list| list.get_entry().iter())
+        .filter(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT
+                && e.get_size() > 0
+                && e.get_space().get_index() == space.get_index()
+        })
+        .any(|e| {
+            let (base, size) = (e.get_base(), e.get_size());
+            let step = size as u64;
+            if !named(base, size) {
+                return false;
+            }
+            let (mut start, mut end) = (base, base + step);
+            for _ in 0..256 {
+                if start < step || !named(start - step, size) {
+                    break;
+                }
+                start -= step;
+            }
+            for _ in 0..256 {
+                if !named(end, size) {
+                    break;
+                }
+                end += step;
+            }
+            start <= low && low + 8 <= end
+        })
 }
 
 /// Whether `vn` is exactly the `size`-byte range at `addr`.

@@ -211,13 +211,21 @@ as a 4-byte value, no access feeds or is produced by a floating-point op, and
 every access that crosses the midpoint covers the whole pair. Only those
 whole-pair moves are cut in two; the 4-byte accesses keep their varnodes, so
 each register is heritaged on its own, and the input-join healing of ordinary
-refinement is not applied. A pair passed to or returned from a call as a
-`long long`, or used by 64-bit arithmetic, is a 64-bit value and keeps the
-whole-range heritage, as do floating doubles in register pairs (MIPS32 `f0_1`,
-an x86-64 `XMM0_Qa` lane) and an 8-byte register read through a half that is
-not a register of its own (x86-64 `rax`/`eax`). `option pairrefine off` restores the
-whole-range heritage.
-A pair assembled only from half-register writes and stored whole is not selected.
+refinement is not applied. A pair that a call takes or returns whole, or that
+an 8-byte op reads or writes, keeps the whole-range heritage. SPARC32 64-bit
+arithmetic runs on the two registers (`addcc`/`addx`, `subcc`/`subx`), so a
+`long long` that `ldd` loads and that is added half by half is refined like any
+other selected pair; the double-precision rules rebuild the 64-bit value from
+the halves where they can. A pair in a floating-point register file is never
+selected, whatever ops touch it: the file is the run of contiguous, equally
+sized named registers that holds a float-class entry of the function's or the
+default prototype model (ARM `s0`..`s31` and `d0`..`d31` from the `s0`/`d0`
+entries, SPARC `fs`/`fd`, MIPS32 `f0_1`, an x86-64 `XMM0_Qa` lane), so a
+callee-saved ARM `d8` that `vpush` saves and `vpop` restores, with `s16` and
+`s17` written by `vmov.f32` copies, stays whole. Neither is an 8-byte register
+read through a half that is not a register of its own (x86-64 `rax`/`eax`).
+A pair assembled only from half-register writes and stored whole is not
+selected. `option pairrefine off` restores the whole-range heritage.
 
 **Refinement pieces keep the store mark** (`option splitstorekeep`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs

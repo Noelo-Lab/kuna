@@ -15,10 +15,12 @@
   <com>parse line extern void publish(Record *value);</com>
   <com>map addr r0x1100 Record cache</com>
   <com>option globalfieldstore off</com>
+  <com>option pairrefine off</com>
   <com>lo fu update</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option globalfieldstore on</com>
+  <com>option pairrefine on</com>
   <com>lo fu update</com>
   <com>decompile</com>
   <com>print C</com>
@@ -30,4 +32,5 @@
 <stringmatch name="Fourth aggregate field is published" min="1" max="1">cache\.d =</stringmatch>
 <stringmatch name="Global aggregate fields do not become locals" min="0" max="0">float4 cache_[0-9]+;</stringmatch>
 <stringmatch name="Observer receives the complete global record" min="2" max="2">publish\(&amp;cache\);</stringmatch>
+<stringmatch name="Legacy scalar writes to the whole structure require the option off" min="2" max="2">cache = v[0-9]+\.[cd];</stringmatch>
 </decompilertest>

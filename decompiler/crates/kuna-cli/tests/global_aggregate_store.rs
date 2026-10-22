@@ -4,15 +4,18 @@ use std::process::Command;
 
 #[test]
 fn emitted_partial_global_record_preserves_every_field() {
-    check_record("float a; float b; float c; float d;");
+    check_record("float a; float b; float c; float d;", &["a", "b", "c", "d"]);
 }
 
 #[test]
 fn emitted_global_array_members_preserve_every_field() {
-    check_record("float first[2]; float second[2];");
+    check_record(
+        "float first[2]; float second[2];",
+        &["first[0]", "first[1]", "second[0]", "second[1]"],
+    );
 }
 
-fn check_record(members: &str) {
+fn check_record(members: &str, fields: &[&str]) {
     let declaration = format!("typedef struct Record {{ {members} }} Record;");
     let bytes = "9de3bf9021000004a014210080a6200012800006010000004000007e901000101080000c01000000400000769007bff080a220000280000701000000d41fbff0d43c0000d81fbff810bffff4d83c200881c7e00881e80000";
     let mut image = vec![0; 0x220];
@@ -21,7 +24,7 @@ fn check_record(members: &str) {
     }
     let path = common::scratch_file("global-aggregate-store", "bin");
     std::fs::write(&path, image).unwrap();
-    let run = || {
+    let run = |option: Option<&str>| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
         command.arg("decompile").arg(&path).args([
             "0x1000",
@@ -49,6 +52,12 @@ fn check_record(members: &str) {
             "--assert-strict",
             "--json",
         ]);
+        if let Some(option) = option {
+            command.args(["--option", "globalfieldstore", option]);
+            if option == "off" {
+                command.args(["--option", "pairrefine", "off"]);
+            }
+        }
         let output = command.output().unwrap();
         assert!(
             output.status.success(),
@@ -59,8 +68,22 @@ fn check_record(members: &str) {
         assert!(document["functions"][0]["error"].is_null(), "{document}");
         document
     };
-    let document = run();
+    let document = run(None);
+    let enabled = run(Some("on"));
+    let disabled = run(Some("off"));
+    assert_eq!(
+        document["functions"][0]["code"],
+        enabled["functions"][0]["code"]
+    );
+    let legacy = disabled["functions"][0]["code"].as_str().unwrap();
+    assert!(
+        legacy.contains("cache_") || legacy.contains("cache = v"),
+        "{legacy}"
+    );
     let body = document["functions"][0]["code"].as_str().unwrap();
+    for member in fields {
+        assert!(body.contains(&format!("cache.{member} =")), "{body}");
+    }
     let source = common::scratch_file("global-aggregate-store", "c");
     std::fs::write(&source, format!(r#"
 #include <stdint.h>
