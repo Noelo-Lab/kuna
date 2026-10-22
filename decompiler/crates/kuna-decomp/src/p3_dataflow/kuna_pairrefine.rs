@@ -54,6 +54,7 @@ use crate::p5_types::kuna_ptrfromuse::is_float_op;
 
 /// Whether the register range at `addr` (`size` bytes, widest access `maxw`) is
 /// an integer register pair to refine at its midpoint (kuna `pairrefine`).
+/// Requires a whole-pair load, not just half writes followed by a whole store.
 pub fn split_pair(
     fd: &Funcdata,
     addr: &Address,
@@ -87,6 +88,9 @@ pub fn split_pair(
         .chain(inputvars.iter())
         .any(|&vn| straddles_middle(fd, vn, addr, size) && !covers(fd, vn, addr, size));
     if partial {
+        return false;
+    }
+    if !writevars.iter().any(|&vn| covers(fd, vn, addr, size) && written_by_load(fd, vn)) {
         return false;
     }
     let loaded = writevars

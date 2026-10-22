@@ -203,7 +203,8 @@ registers also hold unrelated 32-bit values (a loop index in `%l4`, a counter in
 the phis are placed on the whole pair, and variable merging fuses the two
 registers into one 64-bit variable updated by `CONCAT44`. With the option on, a
 range is refined at its midpoint only when it is a named 8-byte pair register
-whose halves are named 4-byte registers, it is accessed whole only by memory
+whose halves are named 4-byte registers, at least one whole-pair load writes it,
+it is accessed whole only by memory
 moves (written by a `LOAD` or the `COPY` of a memory varnode a frame load
 becomes, read by a `STORE` or a `COPY` into memory), one of its halves is written
 as a 4-byte value, no access feeds or is produced by a floating-point op, and
@@ -216,6 +217,7 @@ whole-range heritage, as do floating doubles in register pairs (MIPS32 `f0_1`,
 an x86-64 `XMM0_Qa` lane) and an 8-byte register read through a half that is
 not a register of its own (x86-64 `rax`/`eax`). `option pairrefine off` restores the
 whole-range heritage.
+A pair assembled only from half-register writes and stored whole is not selected.
 
 **Refinement pieces keep the store mark** (`option splitstorekeep`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs

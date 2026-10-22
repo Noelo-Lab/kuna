@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_326() {
+fn settable_count_is_327() {
     assert_eq!(kuna_num_settables(), 327);
     assert_eq!(SETTABLE_TABLE.len(), 327);
 }
 
 #[test]
-fn tier_counts_are_119_core_126_transform_81_analysis() {
+fn tier_counts_are_120_core_126_transform_81_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
