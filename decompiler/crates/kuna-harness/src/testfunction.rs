@@ -2,7 +2,7 @@
 //! datatest runner.
 //!
 //! Ports the three C++ types that execute the 83 datatest files
-//! (`tests/datatests/`):
+//! (`tests/datatests/`, 675 `<stringmatch>` assertions):
 //!
 //! - [`FunctionTestProperty`] — one `<stringmatch min=.. max=..>` assertion: a
 //!   (possibly multi-line) regular expression run over the lines of decompiler

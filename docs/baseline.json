@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    674,
-    674
+    675,
+    675
   ],
   "passing": [
     "data:Access packed fields #1",
@@ -480,6 +480,7 @@
     "data:Return Value Input Register #6",
     "data:Return Value Input Register #7",
     "data:Revisit SSA #1",
+    "data:Revisit SSA #2",
     "data:Revisit SSA #3",
     "data:Revisit SSA #4",
     "data:Revisit SSA #5",
