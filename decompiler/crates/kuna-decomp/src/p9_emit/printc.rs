@@ -8580,6 +8580,10 @@ impl PrintC {
     ) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
+        let array_source = super::kuna_bytearrayc::byte_array(&assignment.datatype)
+            .then(|| assignment.operand.and_then(|input| crate::p9_emit::kuna_stackassign::loaded_bytes(fd, input))
+                .or_else(|| crate::p9_emit::kuna_stackassign::load_pointer(fd, op)))
+            .flatten();
         let (front, back) = declarator_parts(&assignment.datatype, self.rt_ctx);
         let access = crate::kuna_stackmem::Access {
             pointer: assignment.output,
@@ -8594,11 +8598,28 @@ impl PrintC {
             }),
         };
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-        self.push_atom(&Atom::syntax("__builtin_memcpy", TagType::FuncToken, SyntaxHighlight::funcname_color));
+        self.push_atom(&Atom::syntax(
+            if array_source.is_some() { "__builtin_memmove" } else { "__builtin_memcpy" },
+            TagType::FuncToken,
+            SyntaxHighlight::funcname_color,
+        ));
         self.push_op(&tokens::COMMA, Some(op_key(op)));
         self.push_op(&tokens::COMMA, Some(op_key(op)));
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
         self.push_storage_pointer_ir(fd, arch, op, &access, mods);
+        if let Some((pointer, load, pointer_size)) = array_source {
+            let (pointer, reader, cast) =
+                crate::p9_emit::kuna_stackassign::memmove_source(fd, pointer, load).unwrap_or((pointer, load, true));
+            if cast {
+                let types = fd.get_arch().types().unwrap();
+                let byte = types.get_base(1, crate::dtype::type_metatype::TYPE_UINT).unwrap();
+                let pointer_type = types.get_type_pointer(pointer_size, byte, 1).unwrap();
+                self.push_cast_open(&pointer_type, op);
+            }
+            self.push_vn_ir_m(fd, arch, pointer, reader, mods);
+            self.push_constant_ir(assignment.size as u64, 4, op);
+            return;
+        }
         self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
         self.push_op(&COMPOUND, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
