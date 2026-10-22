@@ -42,7 +42,7 @@ fn check(windows: bool, views: bool, record: bool) {
     std::fs::create_dir_all(&root).unwrap();
     let source = root.join("sample.c");
     std::fs::write(&source, r#"
-#include <stdint.h>
+typedef __UINTPTR_TYPE__ uintptr_t;
 #ifdef _WIN32
 #define API __declspec(dllexport)
 #else
