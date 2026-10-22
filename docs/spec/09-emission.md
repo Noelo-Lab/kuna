@@ -3530,9 +3530,11 @@ An integer `INT_ADD` of a constant and a non-pointer offset can still compute a
 pointer: a declared pointer member stores it, or a CAST or COPY consumes it at a
 pointer type. When types are printed (a project export or `structdefs`), the
 pointer is the target's width with byte-sized words, the constant addresses a
-complete named data object, and the other operand is an index the binary scaled
-or widened (a multiply or left shift by a constant, a sign or zero extension, a
-sum of those, through CASTs and COPYs that are not from a pointer),
+complete named data object, and the other operand is an index the binary scaled,
+widened or masked (a multiply or left shift by a constant, a sign or zero
+extension, an AND with a constant below 0x10000 such as the `index & 0x3c` a
+compiler folds `((index >> 2) & 0xf) * 4` into, a sum of those, through CASTs
+and COPYs that are not from a pointer),
 `printc.rs (op_named_pointer_add_ir)` relocates
 the constant through `kuna_namedglobals.rs (object_address)` and keeps the
 addition at pointer width, `(float *)((unsigned long long)((unsigned char

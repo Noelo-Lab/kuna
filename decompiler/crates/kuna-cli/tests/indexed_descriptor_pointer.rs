@@ -7,19 +7,27 @@ use std::process::Command;
 
 #[test]
 fn pe32_descriptor_pointer() {
-    check("i686-w64-windows-gnu", true);
+    check("i686-w64-windows-gnu", true, "index");
 }
 #[test]
 fn pe64_descriptor_pointer() {
-    check("x86_64-w64-windows-gnu", true);
+    check("x86_64-w64-windows-gnu", true, "index");
+}
+#[test]
+fn pe32_masked_index_pointer() {
+    check("i686-w64-windows-gnu", true, "((index>>2)&0xf)");
+}
+#[test]
+fn pe64_masked_index_pointer() {
+    check("x86_64-w64-windows-gnu", true, "((index>>2)&0xf)");
 }
 #[test]
 fn pe32_integer_control() {
-    check("i686-w64-windows-gnu", false);
+    check("i686-w64-windows-gnu", false, "index");
 }
 #[test]
 fn pe64_integer_control() {
-    check("x86_64-w64-windows-gnu", false);
+    check("x86_64-w64-windows-gnu", false, "index");
 }
 #[test]
 fn pe32_heap_offset_control() {
@@ -30,7 +38,7 @@ fn pe64_heap_offset_control() {
     check_heap("x86_64-w64-windows-gnu");
 }
 
-fn check(target: &str, pointer: bool) {
+fn check(target: &str, pointer: bool, slot: &str) {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
     }
@@ -38,13 +46,13 @@ fn check(target: &str, pointer: bool) {
     std::fs::create_dir_all(&root).unwrap();
     let source = root.join("sample.c");
     let binary = root.join("sample.dll");
-    std::fs::write(&source,r#"
+    std::fs::write(&source,format!("#define SLOT(index) {slot}\n") + r#"
 #define API __declspec(dllexport) __attribute__((noinline))
 typedef struct Character {unsigned length;float *data;} Character;
 typedef union Descriptor {Character character;void *scalar;} Descriptor;
 unsigned char arena[2048];
 API float consume(void *opaque){Descriptor *d=opaque;return *d->character.data;}
-API float send_slot(int index){Descriptor d;d.character.length=4;d.character.data=(float*)((__UINTPTR_TYPE__)arena+64+(__UINTPTR_TYPE__)index*4);return consume(&d);}
+API float send_slot(int index){Descriptor d;d.character.length=4;d.character.data=(float*)((__UINTPTR_TYPE__)arena+64+(__UINTPTR_TYPE__)SLOT(index)*4);return consume(&d);}
 "#).unwrap();
     process::required_output(
         Command::new("clang")
@@ -135,12 +143,12 @@ API float send_slot(int index){Descriptor d;d.character.length=4;d.character.dat
     // with its Windows target so descriptor widths and padding stay meaningful.
     if pointer && wide {
         let driver = output.join("driver.c");
-        std::fs::write(&driver,r#"
+        std::fs::write(&driver,format!("#define SLOT(index) {slot}\n") + r#"
 #include "sample.dll.h"
 Arena arena;
 static int current;
-float consume(void *opaque){Descriptor *d=opaque;if(d->character.length!=4||d->character.data!=arena.bank+current)return -12345;return *d->character.data;}
-int main(void){for(int i=0;i<496;i++){current=i;arena.bank[i]=(float)i+0.25f;if(send_slot(i)!=arena.bank[i])return 1;}return 0;}
+float consume(void *opaque){Descriptor *d=opaque;if(d->character.length!=4||d->character.data!=arena.bank+SLOT(current))return -12345;return *d->character.data;}
+int main(void){for(int i=0;i<496;i++){current=i;arena.bank[i]=(float)i+0.25f;if(send_slot(i)!=arena.bank[SLOT(i)])return 1;}return 0;}
 "#).unwrap();
         for opt in ["-O0", "-O2"] {
             let exe = root.join(format!("check{opt}"));

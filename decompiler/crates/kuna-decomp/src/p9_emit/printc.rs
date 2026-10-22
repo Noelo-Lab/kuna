@@ -12730,9 +12730,10 @@ pub(crate) fn declared_variable_type(
     Some(fd.vbank().get(rep)?.get_type().clone())
 }
 
-/// Whether `vn` is an index the binary scaled or widened (a multiply or left
-/// shift by a constant, an extension, or a sum of those), so it cannot be the
-/// base pointer of an addition whose other operand is a constant address.
+/// Whether `vn` is an index the binary scaled, widened or masked (a multiply or
+/// left shift by a constant, an extension, an AND with a mask below 0x10000, or
+/// a sum of those), so it cannot be the base pointer of an addition whose other
+/// operand is a constant address.
 fn scaled_index(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else {
         return false;
@@ -12742,6 +12743,9 @@ fn scaled_index(fd: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
         OpCode::CPUI_INT_MULT => constant(0) || constant(1),
         OpCode::CPUI_INT_LEFT => constant(1),
         OpCode::CPUI_INT_SEXT | OpCode::CPUI_INT_ZEXT => true,
+        OpCode::CPUI_INT_AND => (0..2).any(|slot| {
+            def.get_in(slot).and_then(|i| fd.vbank().get(i)).is_some_and(|v| v.is_constant() && v.get_offset() <= 0xffff)
+        }),
         OpCode::CPUI_CAST | OpCode::CPUI_COPY if depth > 0 => def.get_in(0).is_some_and(|input| {
             fd.vn_type_def_facing(input).get_metatype() != crate::dtype::type_metatype::TYPE_PTR
                 && scaled_index(fd, input, depth - 1)
