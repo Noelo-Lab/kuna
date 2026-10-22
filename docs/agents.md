@@ -158,10 +158,10 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   "Could not find .sla file" no matter what is exported. Symlink the main tree's built
   `.sla` files into the worktree's `specs/` before running the suite (they are gitignored,
   so the tree stays clean) — do not `make specs`.
-- Adding or removing `tests/stages/*.xml` requires re-recording
-  `docs/baseline-stages.json`. The XML parser discovers its corpus files; no fixed file
-  count needs updating. For concurrent PRs, capture the baseline on the combined tree
-  rather than hand-merging its assertion list or footer.
+- Adding a `tests/stages/*.xml` also bumps a hard-coded corpus file count in
+  `decompiler/crates/kuna-base/src/xml.rs` and requires re-recording
+  `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
+  to base + all merged, and re-record the baseline rather than hand-merging it.
 - Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses), and most importantly replies or comments to issues/PRs. It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
 - **PR bodies** lead with a runnable repro, stay under one screen, and never mention our
   internal process (milestones, review rounds, agents, gate runs). The full rules are in

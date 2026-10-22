@@ -1686,24 +1686,14 @@ pointer would invent alignment and aliasing guarantees. Their standard-C
 representation requires an additional device/type contract. Read helpers accept
 `const void *`, store helpers accept `void *`, and neither casts away a qualifier
 on a source or destination argument. This option does not repair qualifier loss
-in declaration recovery. Arrays nested in aggregates, register-only containers,
+in declaration recovery. Arrays nested in aggregates, stack/register containers,
 noninteger values, non-byte-addressed spaces and other transfer widths also
-retain their existing representation. For globals, off retains existing emitted C.
+retain their existing representation. Off retains all existing emitted C.
 The authored CLI round trips in
 `decompiler/crates/kuna-cli/tests/mapped_array_c.rs` compile unchanged emitted
 bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
 transfers, overlapping stores, signed reads, const sources, both ARM endian
 variants and an unchanged named-struct control.
-
-C output uses the same checked integer transfers for nonvolatile, non-implied
-values mapped to local stack byte arrays, independently of the global
-`bytearrayc` setting. The mapped symbol must be a byte array, the access must
-fit its storage, and the high variable must have a stack-resident instance.
-This preserves an inferred array's declaration when overlapping scalar and
-indexed byte accesses share its storage, without inventing a struct member,
-alignment or integer aliasing guarantees. The native partial-write regression
-in `decompiler/crates/kuna-cli/tests/stack_object_lifetimes.rs` exercises this
-path under strict aliasing.
 
 **Partial accesses as C (kuna `partialaccess`, default `off`, on in
 `aggressive`, `fast` and at every `auto` size).** Everywhere else the walk ends

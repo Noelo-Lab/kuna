@@ -2700,14 +2700,14 @@ impl PrintC {
         fd: &Funcdata,
         vn: VarnodeId,
     ) -> Option<crate::kuna_bytearrayc::Access> {
-        if self.out_lang != crate::kuna_lang::OutLang::C {
+        if !self.options.bytearray_c || self.out_lang != crate::kuna_lang::OutLang::C {
             return None;
         }
-        crate::kuna_bytearrayc::access(fd, vn, self.options.bytearray_c)
+        crate::kuna_bytearrayc::access(fd, vn)
     }
 
     fn emit_bytearray_preamble(&mut self, fd: &Funcdata) {
-        if self.out_lang != crate::kuna_lang::OutLang::C {
+        if !self.options.bytearray_c || self.out_lang != crate::kuna_lang::OutLang::C {
             return;
         }
         let pairs: std::collections::BTreeSet<_> = fd
@@ -5899,7 +5899,7 @@ impl PrintC {
         if self.emit_wide_copy(fd, arch, op) {
             return;
         }
-        if self.emit_bytearray_store(fd, arch, op) {
+        if self.options.bytearray_c && self.emit_bytearray_store(fd, arch, op) {
             return;
         }
         // C++ `if (option_inplace_ops && emitInplaceOp(op)) return;`
@@ -7014,11 +7014,12 @@ impl PrintC {
     /// [`op_type_cast_ir`](Self::op_type_cast_ir), leaving the cast out when
     /// `implied` (kuna `castimplied`: C's own conversion performs it).
     fn op_type_cast_ir_with(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, implied: bool) {
-        if self
-            .stmt_op
-            .and_then(|stmt| fd.obank().get(stmt).and_then(|o| o.get_out()))
-            .and_then(|vn| self.bytearray_access(fd, vn))
-            .is_some()
+        if self.options.bytearray_c
+            && self
+                .stmt_op
+                .and_then(|stmt| fd.obank().get(stmt).and_then(|o| o.get_out()))
+                .and_then(|vn| self.bytearray_access(fd, vn))
+                .is_some()
         {
             if let Some(input) = crate::kuna_bytearrayc::integer_array_cast(fd, op) {
                 let size = fd.vbank().get(input).unwrap().get_size();
@@ -10058,7 +10059,8 @@ impl PrintC {
                     ));
                     return;
                 }
-                if fd.obank().get(op).and_then(|o| o.get_out()) != Some(vn)
+                if self.options.bytearray_c
+                    && fd.obank().get(op).and_then(|o| o.get_out()) != Some(vn)
                     && self.push_bytearray_read(fd, arch, vn, op)
                 {
                     return;
