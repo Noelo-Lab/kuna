@@ -597,6 +597,9 @@ mod intermediate_float_rounding;
 #[path = "locked_scalar_declarations.rs"]
 mod locked_scalar_declarations;
 
+#[path = "pointer_storage_literals.rs"]
+mod pointer_storage_literals;
+
 #[path = "anonymous_record_definitions.rs"]
 mod anonymous_record_definitions;
 

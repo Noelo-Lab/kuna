@@ -8130,6 +8130,36 @@ impl PrintC {
         }
     }
 
+    /// Converts a pointer compound initializer whose rendered operand is not
+    /// already a pointer the declared type accepts implicitly (an integer
+    /// carrier, a constant, or an unrelated pointer).
+    fn push_storage_initializer_cast(
+        &mut self,
+        fd: &Funcdata,
+        datatype: &std::rc::Rc<crate::dtype::Datatype>,
+        rendered: Option<VarnodeId>,
+        op: OpId,
+    ) {
+        use crate::dtype::type_metatype::{TYPE_PTR, TYPE_VOID};
+        if datatype.get_metatype() != TYPE_PTR {
+            return;
+        }
+        let is_void = |t: &std::rc::Rc<crate::dtype::Datatype>| {
+            t.get_ptr_to().is_some_and(|p| p.get_metatype() == TYPE_VOID)
+        };
+        let accepted = rendered.and_then(|vn| fd.vbank().get(vn)).is_some_and(|v| {
+            let ty = v.get_type();
+            ty.get_metatype() == TYPE_PTR
+                && (std::rc::Rc::ptr_eq(ty, datatype)
+                    || matches!(ty.compare(datatype, 10), Ok(0))
+                    || is_void(ty)
+                    || is_void(datatype))
+        });
+        if !accepted {
+            self.push_cast_open(datatype, op);
+        }
+    }
+
     fn op_storage_copy_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, access: crate::kuna_stackmem::Access) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
@@ -8151,6 +8181,7 @@ impl PrintC {
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&COMPOUND, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("({ty}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_storage_initializer_cast(fd, &access.datatype, Some(value), op);
             self.push_vn_ir_m(fd, arch, value, op, mods);
         } else {
             self.push_atom(&Atom::syntax(format!("&({ty}){{0}}"), TagType::TypeToken, SyntaxHighlight::type_color));
@@ -8379,6 +8410,12 @@ impl PrintC {
         self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
         self.push_op(&COMPOUND, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, SyntaxHighlight::type_color));
+        let rendered = match assignment.operand {
+            Some(_) if assignment.raw_constant => None,
+            Some(input) => Some(input),
+            None => Some(assignment.output),
+        };
+        self.push_storage_initializer_cast(fd, &assignment.datatype, rendered, op);
         if let Some(input) = assignment.operand {
             if assignment.raw_constant {
                 self.push_constant_ir(fd.vbank().get(input).unwrap().get_offset(), assignment.size, op);
