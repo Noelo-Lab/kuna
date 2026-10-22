@@ -79,17 +79,23 @@ pub(crate) fn looks_like_addr(target: &str) -> bool {
 }
 
 /// Whether a by-name selection skips a preset's `fast_funcdisc` walk on its first
-/// attempt: not when the caller named the option, and not for an engine
-/// placeholder spelling (`sub_<hex>`, `FUN_<hex>`, `func_0x<hex>`), whose entry
-/// may exist only because that walk found it.
-fn defers_fast_funcdisc(target: &str, explicit: bool) -> bool {
+/// attempt: only when the resolved `options` turn the walk on, not when the caller
+/// named the option, and not for an engine placeholder spelling (`sub_<hex>`,
+/// `FUN_<hex>`, `func_0x<hex>`), whose entry may exist only because that walk
+/// found it.
+fn defers_fast_funcdisc(target: &str, explicit: bool, options: &[(String, String)]) -> bool {
+    let walk_on = options
+        .iter()
+        .rev()
+        .find(|(name, _)| name == "fast_funcdisc")
+        .is_some_and(|(_, value)| value == "on");
     let placeholder = ["sub_", "FUN_", "func_"].iter().any(|prefix| {
         target.strip_prefix(prefix).is_some_and(|rest| {
             let digits = rest.strip_prefix("0x").unwrap_or(rest);
             !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_hexdigit())
         })
     });
-    !explicit && !placeholder
+    walk_on && !explicit && !placeholder
 }
 
 fn parse_cli_address(value: &str) -> Result<u64, String> {
@@ -793,7 +799,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
 
     let deferred = args.defer_fast_funcdisc && !by_address;
     let mut result = attempt(&base, deferred);
-    if (deferred || !discovery.is_empty()) && matches!(&result, Err((_, true))) {
+    if deferred && matches!(&result, Err((_, true))) {
+        result = attempt(&base, false);
+    }
+    if !discovery.is_empty() && matches!(&result, Err((_, true))) {
         let widened: Vec<(&'static str, &'static str)> =
             base.iter().chain(discovery.iter()).copied().collect();
         result = attempt(&widened, false);
@@ -1075,7 +1084,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     if addr && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
-    let defer_fast_funcdisc = defers_fast_funcdisc(&target, explicit_fast_funcdisc);
+    let defer_fast_funcdisc = defers_fast_funcdisc(&target, explicit_fast_funcdisc, &options);
 
     Ok(run(&DecompileArgs {
         binary,
@@ -1414,13 +1423,27 @@ mod tests {
     /// explicit `--option fast_funcdisc` keeps it.
     #[test]
     fn only_a_real_name_defers_fast_funcdisc() {
-        assert!(super::defers_fast_funcdisc("main", false));
-        assert!(super::defers_fast_funcdisc("sub_main", false));
-        assert!(super::defers_fast_funcdisc("ns::Foo::bar", false));
-        assert!(!super::defers_fast_funcdisc("main", true));
+        let on = [("fast_funcdisc".to_string(), "on".to_string())];
+        let defers = |target, explicit| super::defers_fast_funcdisc(target, explicit, &on);
+        assert!(defers("main", false));
+        assert!(defers("sub_main", false));
+        assert!(defers("ns::Foo::bar", false));
+        assert!(!defers("main", true));
         for placeholder in ["sub_401280", "FUN_00401280", "func_0x00401280", "sub_ABCDEF"] {
-            assert!(!super::defers_fast_funcdisc(placeholder, false), "{placeholder}");
+            assert!(!defers(placeholder, false), "{placeholder}");
         }
+    }
+
+    /// With no preset walk to skip (`reliable`), nothing is deferred, so a name
+    /// miss runs the engine once rather than twice.
+    #[test]
+    fn nothing_defers_without_a_preset_walk() {
+        let off = [
+            ("fast_funcdisc".to_string(), "on".to_string()),
+            ("fast_funcdisc".to_string(), "off".to_string()),
+        ];
+        assert!(!super::defers_fast_funcdisc("main", false, &[]));
+        assert!(!super::defers_fast_funcdisc("main", false, &off));
     }
 
     /// The deferred `off` follows the preset's `on`, so it wins for that attempt.

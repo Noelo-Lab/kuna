@@ -5408,9 +5408,10 @@ unnamed exit wrappers swallow the functions after them. Under the `fast` preset
 unfiltered `decompile-all`, `decompile-project`, and `functions` inventory runs.
 An explicit address selection suppresses the preset-provided walk unless the
 caller spells `--option fast_funcdisc on`. Text-surface name selection also
-suppresses it on the first attempt and restores it in the retry a name miss
-triggers (on every architecture, whether or not the non-x86-64 discovery bundle
-is held back), so a miss is diagnosed exactly as with the walk on; a placeholder
+suppresses a preset-provided walk on the first attempt and restores it in a
+retry a name miss triggers, ahead of the held-back non-x86-64 discovery-bundle
+retry, so a miss is diagnosed exactly as with the walk on; when the preset
+leaves the walk off there is nothing to defer and no extra attempt. A placeholder
 spelling (`sub_<hex>`, `FUN_<hex>`, `func_0x<hex>`) keeps the walk from the
 start, since its entry may exist only because the walk found it. Selection remains exact even when
 analysis is forced on. Under `reliable`, `kuna functions` keeps the Listing off: metadata-only
