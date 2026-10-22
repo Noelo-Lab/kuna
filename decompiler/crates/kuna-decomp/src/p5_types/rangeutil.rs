@@ -2607,6 +2607,48 @@ impl ValueSetSolver {
         }
     }
 
+    fn zext_constraint(range: &CircleRange, in_size: int4, out_size: int4) -> Option<CircleRange> {
+        // Both the predicate and its complement must stay valid. A strided
+        // hull could admit additional reachable values on the true edge.
+        if range.get_step() != 1 {
+            return None;
+        }
+        let mut extended = CircleRange::new_empty();
+        if !extended.push_forward_unary(OpCode::CPUI_INT_ZEXT, range, in_size, out_size) {
+            // A wrapped input becomes two pieces. The wider wrapped hull
+            // adds only values outside the zero extension's output domain.
+            extended = CircleRange::new(range.get_min(), range.get_end(), out_size, 1);
+        } else if extended.is_empty() {
+            extended.set_mask(calc_mask(out_size));
+        }
+        Some(extended)
+    }
+
+    fn apply_zext_constraints(
+        &mut self,
+        fd: &Funcdata,
+        vn: VarnodeId,
+        previous: Option<VarnodeId>,
+        range: &CircleRange,
+        cbranch: OpId,
+        read_marked: &HashSet<OpId>,
+    ) {
+        let Some(value) = fd.vbank().get(vn) else { return };
+        for op in value.descend_iter() {
+            let Some(op) = fd.obank().get(op).filter(|op| op.code() == OpCode::CPUI_INT_ZEXT) else { continue };
+            // The backward walk already constrained its preceding value.
+            let Some(output) = op.get_out().filter(|out| {
+                Some(*out) != previous && self.value_set_map.contains_key(out)
+            }) else { continue };
+            let Some(out_size) = fd.vbank().get(output).map(|out| out.get_size()) else { continue };
+            if out_size <= value.get_size() {
+                continue;
+            }
+            let Some(extended) = Self::zext_constraint(range, value.get_size(), out_size) else { continue };
+            self.apply_constraints(fd, output, 0, &extended, cbranch, read_marked);
+        }
+    }
+
     /// Look for PcodeOps where the given constraint range applies and
     /// instantiate an equation (C++ `applyConstraints`, `rangeutil.cc:2105`).
     fn apply_constraints(
@@ -2738,8 +2780,15 @@ impl ValueSetSolver {
             }
         }
         let mut end_vn = end_vn;
+        let mut previous = None;
         loop {
             self.apply_constraints(fd, end_vn, type_code, &lift, cbranch, read_marked);
+            if type_code == 0 {
+                // A narrow counter can feed a wider loop phi through ZEXT.
+                // Constrain the phi's conditional input, not the earlier
+                // extension itself, which also executes on the exit path.
+                self.apply_zext_constraints(fd, end_vn, previous, &lift, cbranch, read_marked);
+            }
             let (is_written, def) = match fd.vbank().get(end_vn) {
                 Some(v) => (v.is_written(), v.get_def()),
                 None => break,
@@ -2755,6 +2804,7 @@ impl ValueSetSolver {
             if stop {
                 break;
             }
+            previous = Some(end_vn);
             match crate::jumptable::circlerange_pull_back(fd, &mut lift, op, false) {
                 Some(v) => end_vn = v,
                 None => break,

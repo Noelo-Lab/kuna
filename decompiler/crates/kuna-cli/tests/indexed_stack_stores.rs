@@ -1003,3 +1003,233 @@ int main(int argc, char **argv) {{
         std::fs::remove_file(path).unwrap();
     }
 }
+
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[test]
+fn indexed_wide_stores_feed_both_tail_words_and_narrow_prefix_reads() {
+    // Authored loop: for i=0..5, write ((seed+i)<<32)|((i+1)^seed)
+    // at rbp-96+i*8. Read the last two words, weighted 3:1. Additional
+    // reads either select a narrower layout or overlap the first wide cell.
+    let mut tail = vec![
+        0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 0x60, 0x31, 0xc9,
+        0x89, 0xf8, 0x01, 0xc8, 0x48, 0xc1, 0xe0, 0x20, 0x8d, 0x51,
+        0x01, 0x31, 0xfa, 0x48, 0x09, 0xd0, 0x48, 0x89, 0x44, 0xcd,
+        0xa0, 0xff, 0xc1, 0x83, 0xf9, 0x05, 0x7e, 0xe4, 0x8b, 0x45,
+        0xc8, 0x6b, 0xc0, 0x03, 0x03, 0x45, 0xcc,
+    ];
+    let mut prefix = tail.clone();
+    let mut inner = tail.clone();
+    let mut wide_predicate = tail.clone();
+    wide_predicate.insert(33, 0x48); // cmpq instead of cmpl; keep the 32-bit increment.
+    wide_predicate[38] = 0xe3; // The added REX prefix moves the backward branch by one byte.
+    wide_predicate.extend([0xc9, 0xc3]);
+    tail.extend([0xc9, 0xc3]);
+    prefix.extend([0x03, 0x45, 0xa0, 0x03, 0x45, 0xa4, 0xc9, 0xc3]);
+    inner.extend([0x03, 0x45, 0xa4, 0xc9, 0xc3]);
+    let input = x86_64_object(
+        "indexed-wide-tail",
+        [
+            ("word_tail", tail.as_slice()),
+            ("word_prefix_tail", prefix.as_slice()),
+            ("word_inner_tail", inner.as_slice()),
+            ("word_wide_predicate", wide_predicate.as_slice()),
+        ].into_iter(),
+    );
+    let mut printed = String::new();
+    for name in ["word_tail", "word_prefix_tail", "word_inner_tail", "word_wide_predicate"] {
+        let prototype = format!("prototype binary_{name} unsigned int binary_{name}(unsigned int seed)");
+        let text = decompile(&input, name, &["--assert", &prototype, "--assert-strict"]);
+        printed.push_str(&text.replace(&format!("binary_{name}("), &format!("printed_{name}(")));
+    }
+    let source = common::scratch_file("indexed-wide-tail", "c");
+    let executable = common::scratch_file("indexed-wide-tail", "exe");
+    std::fs::write(
+        &source,
+        format!(
+            r#"
+#include <stdint.h>
+#include <stdio.h>
+#define CONCAT44(hi,lo) (((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo))
+{printed}
+unsigned int binary_word_tail(unsigned int);
+unsigned int binary_word_prefix_tail(unsigned int);
+unsigned int binary_word_inner_tail(unsigned int);
+unsigned int binary_word_wide_predicate(unsigned int);
+int main(void) {{
+    static const uint32_t edges[] = {{0, 1, 5, 6, 0x7fffffff, 0x80000000, 0xfffffff9, 0xfffffffa, 0xffffffff}};
+    uint32_t random = 0x5f372a19;
+    for(unsigned i=0; i<2000; ++i) {{
+        random ^= random<<13; random ^= random>>17; random ^= random<<5;
+        uint32_t seed = i<sizeof edges/sizeof edges[0] ? edges[i] : random;
+        uint32_t tail = (seed^6u)*3u + (seed+5u);
+        uint32_t prefix = tail + (seed^1u) + seed;
+        uint32_t inner = tail + seed;
+        if(binary_word_tail(seed)!=tail || binary_word_prefix_tail(seed)!=prefix || binary_word_inner_tail(seed)!=inner) return 1;
+        if(binary_word_wide_predicate(seed)!=tail) return 1;
+        if(printed_word_tail(seed)!=tail || printed_word_prefix_tail(seed)!=prefix || printed_word_inner_tail(seed)!=inner) {{
+            fprintf(stderr, "seed=%08x tail=%08x/%08x prefix=%08x/%08x inner=%08x/%08x\n",
+                seed, printed_word_tail(seed), tail, printed_word_prefix_tail(seed), prefix,
+                printed_word_inner_tail(seed), inner);
+            return 2;
+        }}
+        if(printed_word_wide_predicate(seed)!=tail) {{
+            fprintf(stderr, "wide predicate seed=%08x actual=%08x expected=%08x\n",
+                seed, printed_word_wide_predicate(seed), tail);
+            return 2;
+        }}
+    }}
+    return 0;
+}}
+"#,
+            printed = lower_pieces(&printed),
+        ),
+    )
+    .unwrap();
+    let mut checked = false;
+    for compiler in ["gcc", "clang"] {
+        if process::optional_output(Command::new(compiler).arg("--version")).is_none() {
+            continue;
+        }
+        for level in ["-O0", "-O2"] {
+            // Existing integer storage views use aliasing casts; machine
+            // arithmetic wraps at its native width.
+            process::required_output(
+                Command::new(compiler)
+                    .args([
+                        "-std=c11", "-fno-strict-aliasing", "-fwrapv", level,
+                        "-Werror=uninitialized", "-fsanitize=undefined", "-fno-sanitize-recover=all",
+                    ])
+                    .arg(&source)
+                    .arg(&input)
+                    .arg("-o")
+                    .arg(&executable),
+            );
+            process::required_output(&mut Command::new(&executable));
+            checked = true;
+        }
+    }
+    assert!(checked, "a C compiler is required for semantic validation");
+    for path in [input, source, executable] {
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[test]
+fn zeroing_loops_preserve_later_partial_record_fields() {
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "a C compiler is required for semantic validation");
+    let input = common::scratch_file("zero-loop-fields", "o");
+    process::required_output(
+        Command::new(compilers[0])
+            .arg("-c")
+            .arg(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/zero_loop_fields.s"),
+            )
+            .arg("-o")
+            .arg(&input),
+    );
+    let printed = decompile(
+        &input,
+        "fill_two_requests",
+        &[
+            "--assert",
+            "prototype binary_fill_two_requests unsigned int binary_fill_two_requests(const unsigned int *family)",
+            "--assert",
+            "prototype binary_record_hash unsigned int binary_record_hash(void *record,unsigned int tag)",
+            "--assert-strict",
+        ],
+    );
+    let source = common::scratch_file("zero-loop-fields", "c");
+    let executable = common::scratch_file("zero-loop-fields", "exe");
+    std::fs::write(
+        &source,
+        format!(
+            r#"
+#include <stdint.h>
+#include <stdio.h>
+static unsigned int inspect(void *, unsigned int);
+#define binary_fill_two_requests printed_fill
+#define binary_record_hash inspect
+{printed}
+#undef binary_fill_two_requests
+#undef binary_record_hash
+unsigned int binary_fill_two_requests(const unsigned int *);
+static uint32_t family;
+static unsigned calls, failed;
+static unsigned char expected_byte(unsigned offset, unsigned tag) {{
+    switch(offset) {{
+        case 0: return 20;
+        case 4: return family;
+        case 5: return family >> 8;
+        case 6: return 1;
+        case 7: return tag == 2 ? 3 : 0;
+        case 16: return 3;
+        case 17: return 1;
+        default: return 0;
+    }}
+}}
+static unsigned int inspect(void *record, unsigned int tag) {{
+    unsigned char *bytes = record;
+    uint32_t hash = 0;
+    if(tag != ++calls) failed = 1;
+    for(unsigned offset=0; offset<64; ++offset) {{
+        if(bytes[offset] != expected_byte(offset, tag)) failed = 1;
+        hash = hash*33u + bytes[offset];
+    }}
+    bytes[4] ^= 0xff;
+    bytes[5] ^= 0xff;
+    return hash ^ tag;
+}}
+static uint32_t expected_hash(unsigned tag) {{
+    uint32_t hash = 0;
+    for(unsigned offset=0; offset<64; ++offset)
+        hash = hash*33u + expected_byte(offset, tag);
+    return hash ^ tag;
+}}
+int main(void) {{
+    static const uint32_t edges[] = {{0, 1, 0xffff, 0x10000, 0x7fffffff, 0x80000000, 0xffffffff}};
+    uint32_t random = 0x5f372a19;
+    for(unsigned i=0; i<2000; ++i) {{
+        random ^= random<<13; random ^= random>>17; random ^= random<<5;
+        family = i<sizeof edges/sizeof edges[0] ? edges[i] : random;
+        uint32_t expected = expected_hash(1) + expected_hash(2);
+        if(binary_fill_two_requests(&family) != expected) return 1;
+        calls = failed = 0;
+        uint32_t actual = printed_fill(&family);
+        if(actual != expected || calls != 2 || failed) {{
+            fprintf(stderr, "family=%08x result=%08x/%08x calls=%u invalid_bytes=%u\n",
+                family, actual, expected, calls, failed);
+            return 2;
+        }}
+    }}
+    return 0;
+}}
+"#,
+        ),
+    )
+    .unwrap();
+    for compiler in compilers {
+        for level in ["-O0", "-O2"] {
+            process::required_output(
+                Command::new(compiler)
+                    .args([
+                        "-std=c11", "-fno-strict-aliasing", "-fwrapv", level,
+                        "-Werror=uninitialized", "-fsanitize=undefined", "-fno-sanitize-recover=all",
+                    ])
+                    .arg(&source)
+                    .arg(&input)
+                    .arg("-o")
+                    .arg(&executable),
+            );
+            process::required_output(&mut Command::new(&executable));
+        }
+    }
+    for path in [input, source, executable] {
+        std::fs::remove_file(path).unwrap();
+    }
+}

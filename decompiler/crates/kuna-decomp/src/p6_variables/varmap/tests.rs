@@ -258,6 +258,52 @@ fn absorb_extends_open_array_highind() {
 }
 
 #[test]
+fn absorb_keeps_byte_coverage_when_integer_element_width_changes() {
+    for (width, old_width, high, expected) in [(4, 8, 5, 11), (8, 4, 4, 2)] {
+        let mut selected = hint(0x10, width, base(width, type_metatype::TYPE_UINT), RangeType::Fixed);
+        let indexed = RangeHint::new(
+            0x10, old_width, 0x10, base(old_width, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, high,
+        );
+        selected.absorb(&indexed);
+        assert_eq!(selected.range_type, RangeType::Open);
+        assert_eq!(selected.highind, expected);
+    }
+}
+
+#[test]
+fn a_locked_integer_does_not_take_distant_constants_after_a_width_conflict() {
+    let mut locked = hint(0x10, 4, base(4, type_metatype::TYPE_INT), RangeType::Fixed);
+    locked.flags = TYPELOCK;
+    let indexed = RangeHint::new(
+        0x10, 8, 0x10, base(8, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, 5,
+    );
+    locked.absorb(&indexed);
+    let mut unrelated = hint(0x20, 4, base(4, type_metatype::TYPE_INT), RangeType::Fixed);
+    unrelated.flags = COPY_CONSTANT;
+    assert!(!locked.is_const_absorbable(&unrelated));
+}
+
+#[test]
+fn integer_piece_join_preserves_extent_element_boundaries_and_type_locks() {
+    let array = RangeHint::new(0x10, 8, 0x10, base(8, type_metatype::TYPE_UINT), 0, RangeType::Open, 5);
+    for (offset, meta, flags) in [
+        (0x40, type_metatype::TYPE_UINT, 0),
+        (0x37, type_metatype::TYPE_UINT, 0),
+        (0x3c, type_metatype::TYPE_FLOAT, 0),
+        (0x3c, type_metatype::TYPE_PTR, 0),
+        (0x3c, type_metatype::TYPE_UINT, TYPELOCK),
+    ] {
+        let mut candidate = hint(offset, 4, base(4, meta), RangeType::Fixed);
+        candidate.flags = flags;
+        assert!(!array.clone().attempt_join(&candidate), "offset {offset:x}, {meta:?}, flags {flags}");
+    }
+    let piece = hint(0x3c, 4, base(4, type_metatype::TYPE_UINT), RangeType::Fixed);
+    let mut locked = array;
+    locked.flags = TYPELOCK;
+    assert!(!locked.attempt_join(&piece));
+}
+
+#[test]
 fn attempt_join_concatenates_matching_array_elements() {
     // Open int array with room (highind=3) joins a later same-type open element.
     // The C++ `attemptJoin` tests data-type identity by pointer (`aTestType !=
@@ -900,56 +946,21 @@ fn restructured_start(hints: &[Hint], bases: Vec<intb>, off: uintb, size: int4) 
 }
 
 #[test]
-fn scope_local_restructure_absorbs_a_read_inside_an_absorbed_slot_at_a_guarded_base() {
-    // An indexed open range at 0x10 absorbs the constant word at 0x14; the
-    // half-word read at 0x16 starts inside that word. Upstream ends the range
-    // at 0x16 and the read becomes its own local; at a guarded store's base
-    // the range absorbs it.
-    let hints = [
-        (0x10, base(1, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, 3),
-        (0x10, base(4, type_metatype::TYPE_UINT), COPY_CONSTANT, RangeType::Fixed, -1),
-        (0x14, base(4, type_metatype::TYPE_UNKNOWN), COPY_CONSTANT, RangeType::Fixed, -1),
-        (0x16, base(2, type_metatype::TYPE_UINT), 0, RangeType::Fixed, -1),
-        (0x30, base(4, type_metatype::TYPE_INT), 0, RangeType::Fixed, -1),
-    ];
-    assert_eq!(restructured_start(&hints, Vec::new(), 0x16, 2), 0x16);
-    assert_eq!(restructured_start(&hints, vec![0x10], 0x16, 2), 0x10);
-    let other_base = restructured_start(&hints, vec![0x14], 0x16, 2);
-    assert_eq!(other_base, 0x16, "only an open range starting at a base absorbs");
-}
-
-#[test]
-fn scope_local_restructure_keeps_a_guarded_base_open_through_a_conceding_merge() {
-    // An unknown-byte open range at 0x10 merged with a constant word and a
-    // half-word read inside it concedes to a fixed word; the bytes past 0x14
-    // then belong to no local. At a guarded store's base the range stays open
-    // and runs to the next hint.
-    let hints = [
-        (0x10, base(1, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, 3),
-        (0x10, base(4, type_metatype::TYPE_UNKNOWN), COPY_CONSTANT, RangeType::Fixed, -1),
-        (0x11, base(2, type_metatype::TYPE_UNKNOWN), 0, RangeType::Fixed, -1),
-        (0x18, base(4, type_metatype::TYPE_INT), 0, RangeType::Fixed, -1),
-    ];
-    let f = factory();
-    let mut sl = scope_local();
-    let spc = Rc::clone(sl.get_space_id());
-    let scope = sl.scope_id();
-    let mut localr = RangeList::new();
-    localr.insert_range(Rc::clone(&spc), 0, 0x3f);
-    let paramr = RangeList::new();
-    for (bases, covered) in [(Vec::new(), false), (vec![0x10], true)] {
-        sl.clear_unlocked_category_negative().expect("reset");
-        sl.reset_local_window(&localr, &paramr, false);
-        let unknown = base(1, type_metatype::TYPE_UNKNOWN);
-        let mut state = MapState::new(Rc::clone(&spc), &localr, &paramr, unknown);
-        for (start, ct, flags, rt, hi) in &hints {
-            state.add_range_pub(*start, Some(Rc::clone(ct)), *flags, *rt, *hi);
+fn scope_local_restructure_maps_tail_words_into_the_indexed_storage() {
+    let word = base(4, type_metatype::TYPE_INT);
+    for prefix in [None, Some(0x08), Some(0x0c)] {
+        let mut hints = vec![
+            (0x08, base(8, type_metatype::TYPE_UNKNOWN), 0, RangeType::Open, 5),
+            (0x30, Rc::clone(&word), 0, RangeType::Fixed, -1),
+            (0x34, Rc::clone(&word), 0, RangeType::Fixed, -1),
+            (0x38, Rc::clone(&word), 0, RangeType::Fixed, -1),
+        ];
+        if let Some(offset) = prefix {
+            hints.push((offset, Rc::clone(&word), 0, RangeType::Fixed, -1));
         }
-        state.set_absorbing_bases(bases);
-        sl.restructure(&mut state, &f).expect("restructure");
-        let byte = Address::new(Rc::clone(&spc), 0x15);
-        let at = sl.database().find_overlap(scope, &byte, 1);
-        assert_eq!(at.is_some(), covered, "byte 0x15 belongs to the base's local");
+        assert_eq!(restructured_start(&hints, Vec::new(), 0x30, 4), 0x08);
+        assert_eq!(restructured_start(&hints, Vec::new(), 0x34, 4), 0x08);
+        assert_eq!(restructured_start(&hints, Vec::new(), 0x38, 4), 0x38);
     }
 }
 

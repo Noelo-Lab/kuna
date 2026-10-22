@@ -3274,6 +3274,24 @@ C++ threads a `Varnode -> ValueSet` back-pointer and mark bits through the IR,
 the port keeps a `VarnodeId -> node` map plus side sets on the solver, which
 is observationally identical.
 
+For a numeric condition, `ValueSetSolver::constraints_from_path` also
+forwards its range through an immediate `INT_ZEXT` already in the value-set
+system (`apply_zext_constraints`). This is needed when a 32-bit counter is
+compared before the branch but its zero-extended 64-bit value feeds the
+loop phi and indexed address. The extension executes on the exit path too,
+so the solver applies the extended condition through the existing
+conditional-read equations, including the phi's individual incoming edge;
+it does not globally restrict the extension's output.
+
+`zext_constraint` handles unit-stride predicates and uses the ordinary
+forward range transfer when exact. A wrapped signed predicate can produce
+two disjoint pieces after zero extension. In that case it keeps both in a
+wider wrapped hull. The additional high values are outside the zero
+extension's possible output domain, so both the predicate and its
+complement remain exact on reachable values. Empty constraints retain the
+wider mask before complementation. Strided predicates and relative
+stack-pointer constraints keep their existing path.
+
 The solver's one in-tree client is the LoadGuard range refinement at
 `decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs (LoadGuard)`,
 gated by `option loadguardrange` (default on): at the end of each heritage
