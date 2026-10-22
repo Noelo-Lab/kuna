@@ -1554,6 +1554,34 @@ failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
 
+**Mixed-width indexed integer storage.** A fixed integer read can name only
+part of an indexed element: a loop may write six eight-byte cells and then
+read the two four-byte halves of the last cell. `RangeHint::can_join_piece`
+keeps such a hint in the open array when both types are unlocked plain
+integers or unknowns, the complete read lies inside the array's existing
+minimum byte extent, and it does not cross an element boundary. The same
+check in `reconcile` handles a partial read inside the first element instead
+of conceding the indexed storage to a scalar blob. Pointers, floating types,
+aggregates, locked types, and reads beyond that extent do not gain this
+compatibility.
+
+When an overlapping hint selects a different integer element width at the
+same base, `RangeHint::absorb` carries the old index bound through bytes:
+the new minimum count is
+`ceil((old_highind + 1) * old_align / selected_align)`. It never reduces an
+existing larger bound. Otherwise selecting four-byte elements for an
+eight-byte indexed store can silently halve the covered storage and detach
+the tail reads into never-assigned locals.
+
+This preserves a minimum footprint, not the original source declaration's
+capacity. The existing frame-window and next-object boundaries still close
+the array; padding may remain part of its inferred capacity. Dynamic stack
+allocation and source VLA reconstruction are not added by this rule.
+`decompiler/crates/kuna-cli/tests/indexed_stack_stores.rs` exercises tail
+halves, a narrower prefix view, an interior first-cell read, and an
+already-wide predicate control against authored native machine code and
+independent arithmetic at both compiler optimization levels.
+
 **Call-escaped integer storage (kuna `callarrayextent`, default `off`).**
 A plain frame address passed to a declared integer-pointer parameter can
 refer to more storage than its first directly observed slot. If a later slot
