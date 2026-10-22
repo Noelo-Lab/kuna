@@ -599,3 +599,6 @@ mod anonymous_record_definitions;
 
 #[path = "overlapping_stack_assertions.rs"]
 mod overlapping_stack_assertions;
+
+#[path = "named_member_bits.rs"]
+mod named_member_bits;
