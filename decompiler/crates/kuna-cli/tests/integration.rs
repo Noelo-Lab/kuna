@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "array_record.rs"]
+mod array_record;
+
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 
@@ -593,3 +596,11 @@ mod intermediate_float_rounding;
 
 #[path = "indexed_descriptor_pointer.rs"]
 mod indexed_descriptor_pointer;
+#[path = "anonymous_record_definitions.rs"]
+mod anonymous_record_definitions;
+
+#[path = "overlapping_stack_assertions.rs"]
+mod overlapping_stack_assertions;
+
+#[path = "named_member_bits.rs"]
+mod named_member_bits;
