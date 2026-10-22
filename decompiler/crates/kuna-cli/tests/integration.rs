@@ -606,6 +606,9 @@ mod float_integer_truncation;
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
 
+#[path = "implied_word_casts.rs"]
+mod implied_word_casts;
+
 #[path = "indexed_descriptor_pointer.rs"]
 mod indexed_descriptor_pointer;
 
@@ -635,3 +638,6 @@ mod pe_data_exports;
 
 #[path = "float_nan_quieting.rs"]
 mod float_nan_quieting;
+
+#[path = "storage_load_transfers.rs"]
+mod storage_load_transfers;

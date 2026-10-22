@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x400110",
+    "--addr",
+    "--option",
+    "lazyfuncs",
+    "on"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/lazyfuncs_tail_mips32_be",
+    "binary_sha256": "07bd736e461c385ae582de5404e4a611ec4425129e6fb5cb2c2f15f54810e658",
+    "binary_size": 1120,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/lazyfuncs_tail_mips32_be",
+    "selector": "0x400110",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned long long v[0-9]+; // v1:v0"
+    ],
+    "stdout_absent": [
+      "// v0:v1"
+    ]
+  },
+  "notes": "Desired: `lazyfuncs on` leaves output unchanged. `bejoin evidence` walks sub_400184's raw p-code once per image, before the lift materializes anything; its `j` to the parked entry sub_40018c must end the walk as it does at a Function, or the cached verdict joins the call's v0:v1 pair in the other order than `lazyfuncs off` does."
+}

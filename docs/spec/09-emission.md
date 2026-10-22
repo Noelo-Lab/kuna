@@ -269,7 +269,13 @@ access, has the scalar type of the member or truncating cast that path ends in
 when it is the side's width, the same walk that prints it, so a float stored to
 `store.real[2]` keeps its bits even when another incarnation merged into that
 global supplies an unsigned word type. That printed type decides the side before
-the unresolved-aggregate rules above and below. A partial struct or union is never taken as a side's C type;
+the unresolved-aggregate rules above and below, for a `CAST` as for a `COPY`.
+The walk is operation-facing, so it resolves the union member the access
+actually prints even when the variable's declared member agrees with the
+varnode: an indexed word `items.integer[index]` copied into `items.real[16]`
+reinterprets its bits. A named member of a stack-frame variable gives its
+printed type only under `stackviews`; with that option off the frame side is
+judged by its declared member type. A partial struct or union is never taken as a side's C type;
 the value's own type stands in for it, except for a side that is a variable of
 its own, not part of a struct or union symbol, whose declared type is that
 partial aggregate: the declaration prints it as `undefinedN`, so the side is an
@@ -3928,3 +3934,15 @@ A colliding parameter or local receives a unique local spelling; parameter stora
 types, and lock flags are preserved, and the prototype and body use the same name.
 This prevents a source-level parameter name from shadowing a function's emitted
 linkage identifier. The change is local to the rendered function.
+
+A statement LOAD rendered through a byte-copy helper copies directly into the
+printed destination member’s scalar type when its width matches the access.
+The helper must preserve the representation instead of numerically converting
+an integer temporary into a float member (`printc.rs (op_load_ir)`).
+An `iteregion` assignment diamond whose arm is such a LOAD, with the destination
+member and the helper's type disagreeing on float-ness, keeps its `if`/`else`
+form so each arm stays a statement LOAD copying into the member's type
+(`printc.rs (converts_storage_load)`); a `?:` arm would convert numerically.
+A STORE helper likewise initializes its compound literal with the rendered
+source member’s same-width scalar type (`printc.rs (op_store_ir)`), preserving
+its bytes when propagated IR types disagree.

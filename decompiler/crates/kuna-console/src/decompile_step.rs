@@ -142,6 +142,47 @@ pub fn decompile_one_prefollowed(
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
 ) -> DecompileStep {
+    let mut first = decompile_one_prefollowed_once(
+        arch,
+        name,
+        entry.clone(),
+        size,
+        seed,
+        proto_overrides,
+        prefollowed,
+    );
+    // (kuna `lazyfuncs`) Materialize the targets this lift read and re-run; each round
+    // creates at least one `Function`, so the finite entry set bounds the loop.  The
+    // previous `Funcdata` is dropped first so the extra pass does not double the peak.
+    if arch.analysis_lazyfuncs {
+        for _ in 0..4 {
+            if crate::kuna_lazyfuncs::materialize_callees(arch, &first.result) == 0 {
+                break;
+            }
+            drop(first);
+            first = decompile_one_prefollowed_once(
+                arch,
+                name,
+                entry.clone(),
+                size,
+                seed,
+                proto_overrides,
+                None,
+            );
+        }
+    }
+    first
+}
+
+fn decompile_one_prefollowed_once(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    seed: &DecompileSeed<'_>,
+    proto_overrides: &[(Address, PrototypePieces)],
+    prefollowed: Option<Funcdata>,
+) -> DecompileStep {
     let formatstring_mode = arch.analysis_formatstring;
     let saved_readonlypropagate = arch.readonlypropagate;
     // Only the LOOP needs the drive to fold the format constant out of read-only
