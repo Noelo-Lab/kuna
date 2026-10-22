@@ -1094,6 +1094,10 @@ pub struct Architecture {
     /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
     /// [`crate::p3_dataflow::kuna_splitstorekeep`].
     pub split_store_keep: bool,
+    /// (kuna) `pairrefine` — refine an integer register pair accessed whole and by
+    /// half at its midpoint (`Heritage::placeMultiequals`, default-on).  See
+    /// [`crate::p3_dataflow::kuna_pairrefine`].
+    pub pair_refine: bool,
     /// (kuna) Push a demanded SUBPIECE through 9..15-byte (and wider
     /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
     /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
@@ -2984,6 +2988,7 @@ impl Architecture {
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
+            pair_refine: false, // (kuna) option pairrefine; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
@@ -3366,6 +3371,7 @@ impl Architecture {
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
+        self.pair_refine = true; // (kuna) default-on: Heritage::placeMultiequals refines an 8-byte register range accessed whole and as a named 4-byte half at its midpoint, so the two registers of a pair keep separate variables; `option pairrefine off` restores upstream's whole-range heritage
         self.wide_slice_reduce = true; // (kuna) default-on: every rewrite is a bitvector identity on a synthetic 9..15-byte intermediate that no upstream rule can take apart; byte-identical (0/675) on the datatest corpus, and the power-of-two widths ActionLaneDivide owns are refused; `option wideslice off` leaves the wide intermediates to upstream's rules
         self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
@@ -4231,6 +4237,7 @@ impl Architecture {
         ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
+        ctx.pair_refine = self.pair_refine; // pairrefine
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan

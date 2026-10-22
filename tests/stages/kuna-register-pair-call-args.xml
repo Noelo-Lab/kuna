@@ -150,6 +150,7 @@
 <com>decompile</com>
 <com>print C</com>
 <com>option calloverlap off</com>
+<com>option pairrefine off</com>
 <com>option multiregargs off</com>
 <com>load function pair_then_single</com>
 <com>decompile</com>
@@ -174,8 +175,8 @@
 <stringmatch name="declared wide input keeps its complete value" min="1" max="1">wide_sink\(producer\(a,b\),0xa8\);</stringmatch>
 <stringmatch name="coalesced unknown output retains input constants" min="1" max="1">unknown_producer\(5,7\);</stringmatch>
 <stringmatch name="converted floating argument survives the wide range" min="1" max="1">v[0-9]+ = \(int4\).*\.to;</stringmatch>
-<stringmatch name="saved narrow interval keeps its zero fallback" min="1" max="1">v[0-9]+ = 1000;</stringmatch>
-<stringmatch name="saved narrow interval is passed to the call" min="1" max="1">sink\(v[0-9]+,\(uint2\)v[0-9]+,0xa8\);</stringmatch>
+<stringmatch name="saved narrow interval keeps its zero fallback" min="1" max="1">(v[0-9]+|a) = 1000;</stringmatch>
+<stringmatch name="saved narrow interval is passed to the call" min="1" max="1">sink\(v[0-9]+,(\(uint2\)v[0-9]+|a),0xa8\);</stringmatch>
 <stringmatch name="two disabled calls and the converted call use variable-valued arguments" min="3" max="3">sink\(v[0-9]+,v[0-9]+,0xa8\);</stringmatch>
 <stringmatch name="single argument without a wide return remains visible" min="1" max="1">unknown_one\(1\);</stringmatch>
 <stringmatch name="disabled entry partition retains legacy missing input" min="1" max="1">math_wrapper\(void\)</stringmatch>

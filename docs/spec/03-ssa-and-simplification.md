@@ -193,6 +193,30 @@ smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
 pass are deleted and the old outputs re-derived as SUBPIECEs of the new full
 range (`heritage.rs (Heritage::remove_revisited_markers)`).
 
+**Register pairs refined at their midpoint** (`option pairrefine`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,
+default **on**). The size test above never refines a range that some access
+covers whole, so a SPARC32 even/odd integer register pair that an `ldd` or `std`
+moves as one 8-byte value is heritaged as an 8-byte range even where its two
+registers also hold unrelated 32-bit values (a loop index in `%l4`, a counter in
+`%l5`). Every 4-byte access is joined to the pair through `PIECE`/`SUBPIECE`,
+the phis are placed on the whole pair, and variable merging fuses the two
+registers into one 64-bit variable updated by `CONCAT44`. With the option on, a
+range is refined at its midpoint only when it is a named 8-byte pair register
+whose halves are named 4-byte registers, it is accessed whole only by memory
+moves (written by a `LOAD` or the `COPY` of a memory varnode a frame load
+becomes, read by a `STORE` or a `COPY` into memory), one of its halves is written
+as a 4-byte value, no access feeds or is produced by a floating-point op, and
+every access that crosses the midpoint covers the whole pair. Only those
+whole-pair moves are cut in two; the 4-byte accesses keep their varnodes, so
+each register is heritaged on its own, and the input-join healing of ordinary
+refinement is not applied. A pair passed to or returned from a call as a
+`long long`, or used by 64-bit arithmetic, is a 64-bit value and keeps the
+whole-range heritage, as do floating doubles in register pairs (MIPS32 `f0_1`,
+an x86-64 `XMM0_Qa` lane) and an 8-byte register read through a half that is
+not a register of its own (x86-64 `rax`/`eax`). `option pairrefine off` restores the
+whole-range heritage.
+
 **Refinement pieces keep the store mark** (`option splitstorekeep`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs
 (keep_store_mark)`, default **on**). A frame store reaches this phase as a

@@ -1123,6 +1123,11 @@ Three tiers:
 | two of the four MOVs of an inlined memcpy have no statement in the emitted C | [`splitstorekeep`](#splitstorekeep) |
 | a copied buffer looks half-uninitialised although the disassembly writes every byte | [`splitstorekeep`](#splitstorekeep) |
 | the stores that vanish are exactly the ones whose 8-byte ranges overlap | [`splitstorekeep`](#splitstorekeep) |
+| an unsigned long long local is commented with a register pair such as l4_5 | [`pairrefine`](#pairrefine) |
+| 32-bit counters are updated through CONCAT44 piece writes | [`pairrefine`](#pairrefine) |
+| a loop index is read as the high word of a 64-bit variable | [`pairrefine`](#pairrefine) |
+| two unrelated 32-bit values share one 64-bit local | [`pairrefine`](#pairrefine) |
+| ldd/std copies make the registers they load into one fused variable | [`pairrefine`](#pairrefine) |
 | iVar1/uVar2/param_1 ghidra-style names wanted instead of v1/a1 (set ghidra) | [`namestyle`](#namestyle) |
 | v-numbered locals and sub_/dat_/label_ names in the default output | [`namestyle`](#namestyle) |
 | byte-for-byte comparison against upstream ghidra naming | [`namestyle`](#namestyle) |
@@ -3572,6 +3577,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-153). The OFF symptom is a buffer copy that silently loses its middle: the compiler copies a 31-byte array with four 8-byte moves at offsets 0, 8, 15 and 23, so the middle two overlap on byte 15, refinement splits exactly those two, and the emitted C copies bytes 0..7 and 23..30 with the fifteen in between never written -- `v7[7] = v6[7];` followed straight by `v7[0x17] = v6[0x17];`. It is the compiler's standard idiom for any word-copy of a size that is not a multiple of eight, so it shows up on struct assignments and inlined memcpy rather than on loops, and an analyst reads the gap as an uninitialised tail. Inert on any function whose stack accesses all agree on their boundaries, because refinement does not split there at all: 0/675 datatest assertions move and a 40-binary decompile-all sweep changed 6 functions, every one of them by ADDING the copies of an overlapping-store run. Flip OFF to reproduce upstream Ghidra's unmarked pieces, or to bisect whether a newly-appearing frame store came from this mark.
 - **Where / provenance:** P3/heritage-refinement · kuna · correctness-fix · re-31-byte-buffer-copy
 - **Example:** `option splitstorekeep off`
+
+### `pairrefine` -- on | off, default `on`
+
+- **Symptoms:** an unsigned long long local is commented with a register pair such as l4_5; 32-bit counters are updated through CONCAT44 piece writes; a loop index is read as the high word of a 64-bit variable; two unrelated 32-bit values share one 64-bit local; ldd/std copies make the registers they load into one fused variable.
+- **What it does:** Refine a SPARC32-style register pair at its midpoint when ldd/std move it whole and its registers are also written as 32-bit values. Heritage::placeMultiequals (heritage.cc:2611) refines a range only when no access covers all of it, so a pair loaded whole is heritaged as one 8-byte value even where its two registers hold unrelated 32-bit values: every 4-byte access is joined through PIECE/SUBPIECE, phis are placed on the pair, and variable merging fuses the two lifetimes into one unsigned long long updated by CONCAT44. The option selects a named 8-byte pair register whose halves are named 4-byte registers, that is accessed whole only by memory moves (written by a LOAD or the COPY of a memory varnode a frame load becomes, read by a STORE or a COPY into memory), written through a 4-byte half, has no floating-point access, and whose every access crossing the midpoint covers the whole pair. Only those whole-pair moves are cut in two; the 4-byte accesses keep their varnodes. A pair passed to or returned from a call as a long long, or used by 64-bit arithmetic, is a 64-bit value and keeps the whole-range heritage, as do floating doubles in register pairs and x86 rax/eax.
+- **When to flip:** On by default. The OFF symptom is an unsigned long long local whose storage comment names a register pair (l4_5, o4_5) in a function that uses those registers as two independent 32-bit values: loop counters and sums are read as v >> 0x20 or (int)v and written back with CONCAT44(hi,lo). Turn it off to compare against upstream's whole-pair heritage.
+- **Where / provenance:** P3/heritage-refinement · kuna · correctness-fix · sparc-register-pair-fusion
+- **Example:** `option pairrefine off`
 
 ### `namestyle` -- angr | ghidra, default `angr`
 
