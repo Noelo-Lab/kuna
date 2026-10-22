@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_327() {
-    assert_eq!(kuna_num_settables(), 327);
-    assert_eq!(SETTABLE_TABLE.len(), 327);
+fn settable_count_is_328() {
+    assert_eq!(kuna_num_settables(), 328);
+    assert_eq!(SETTABLE_TABLE.len(), 328);
 }
 
 #[test]
-fn tier_counts_are_120_core_126_transform_81_analysis() {
+fn tier_counts_are_120_core_126_transform_82_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_120_core_126_transform_81_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (120, 126, 81));
+    assert_eq!((core, transform, analysis), (120, 126, 82));
 }
 
 #[test]
@@ -529,6 +529,10 @@ fn option_values_live_value_present_for_154() {
         // kuna_live_value like the analysis-pass gates above, so it has no
         // codegen live_value. Default-on.
         "picbase",
+        // (kuna `lazyfuncs`) The deferred entry commit -- read console-side at
+        // `read symbols` (the commit either creates a Function per entry or parks
+        // the starts), so it has no codegen live reader. Default-off.
+        "lazyfuncs",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -1048,7 +1052,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `bytearrayc`; its P9 row sits mid-table.
     // +2 for `wideslice` and `devectorize`.
     // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    assert_eq!(json.matches("},\n").count(), 326);
+    // +1 for `lazyfuncs`; its P1 row sits beside `addrtakenentry`.
+    assert_eq!(json.matches("},\n").count(), 327);
 }
 
 #[test]

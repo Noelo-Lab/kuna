@@ -14,7 +14,7 @@ pub(crate) struct Transfer {
     pub source_pointer: bool,
 }
 
-/// A same-width storage `CAST`, or a `COPY` into or out of an aggregate member, between a
+/// A same-width storage `CAST` or `COPY` between a
 /// float and integer or native pointer, judged by the types the printed C declares: a named
 /// variable or field, else the value's own type. A partial struct or union is never a member's
 /// C type, and an unknown one does not declare the scalar type of a pointer or float read
@@ -43,19 +43,12 @@ pub(crate) fn storage_transfer(
     let partial = |ty: &Datatype| {
         matches!(ty.get_metatype(), type_metatype::TYPE_PARTIALSTRUCT | type_metatype::TYPE_PARTIALUNION)
     };
-    let float = |ty: &Datatype| ty.get_metatype() == type_metatype::TYPE_FLOAT;
     let aggregate = |id: VarnodeId| {
         fd.vbank()
             .get(id)
             .and_then(|v| fd.high_bank().get(v.get_high()?))
             .and_then(|h| h.kuna_symbol_type().map(|ty| ty.get_metatype()))
             .is_some_and(|meta| matches!(meta, type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION))
-    };
-    let member = |id: VarnodeId, own: &Datatype| {
-        partial(own)
-            || (aggregate(id)
-                && declared_member_type(fd, decl_high_type, id)
-                    .is_some_and(|ty| !partial(&ty) && float(&ty) != float(own)))
     };
     let copy = operation.code() == OpCode::CPUI_COPY;
     let global = |id: VarnodeId| {
@@ -78,15 +71,12 @@ pub(crate) fn storage_transfer(
             .then(|| fd.get_arch().types()?.get_base(own.get_size(), type_metatype::TYPE_UNKNOWN).ok())
             .flatten()
     };
-    if copy && !member(input, src.get_type()) && !member(out, dst.get_type()) {
-        return None;
-    }
     let size = src.get_size();
     if !matches!(size, 4 | 8) || dst.get_size() != size {
         return None;
     }
     let slot = operation.get_slot(input);
-    let from_ty = copy.then(|| printed(input, slot)).flatten().unwrap_or_else(|| {
+    let from_ty = printed(input, slot).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, input, op, slot)
             .or_else(|| undefined(input, src.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, input))
@@ -101,7 +91,7 @@ pub(crate) fn storage_transfer(
             .or_else(|| undefined(input, src.get_type()))
             .unwrap_or_else(|| fd.vn_type_read_facing(input, op))
     });
-    let to_ty = copy.then(|| printed(out, -1)).flatten().unwrap_or_else(|| {
+    let to_ty = printed(out, -1).unwrap_or_else(|| {
         crate::kuna_stackviews::access_type(fd, out, op, -1)
             .or_else(|| undefined(out, dst.get_type()))
             .or_else(|| declared_member_type(fd, decl_high_type, out))
@@ -220,7 +210,43 @@ pub(crate) fn reinterprets_to_float(fd: &Funcdata, decl_high_type: bool, input: 
     }
 }
 
-/// A detached frame snapshot keeps its bits when a native float op consumes it.
+/// The declared word type of the explicit variable that `op` assigns a float or double
+/// result to: a call whose prototype returns one (its logical width, not the ABI register's),
+/// or a native float op whose output has that width. The assignment then stores the bits.
+pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Option<Rc<Datatype>> {
+    if !fd.get_arch().stack_views {
+        return None;
+    }
+    let operation = fd.obank().get(op)?;
+    let out = operation.get_out()?;
+    let size = match operation.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+            let index = fd.get_call_specs_index(op)?;
+            let result = fd.get_call_specs(index).proto().get_output_type()?;
+            (result.get_metatype() == type_metatype::TYPE_FLOAT).then(|| result.get_size())?
+        }
+        OpCode::CPUI_FLOAT_ABS
+        | OpCode::CPUI_FLOAT_ADD
+        | OpCode::CPUI_FLOAT_CEIL
+        | OpCode::CPUI_FLOAT_DIV
+        | OpCode::CPUI_FLOAT_FLOAT2FLOAT
+        | OpCode::CPUI_FLOAT_FLOOR
+        | OpCode::CPUI_FLOAT_INT2FLOAT
+        | OpCode::CPUI_FLOAT_MULT
+        | OpCode::CPUI_FLOAT_NEG
+        | OpCode::CPUI_FLOAT_ROUND
+        | OpCode::CPUI_FLOAT_SQRT
+        | OpCode::CPUI_FLOAT_SUB => fd.vbank().get(out)?.get_size(),
+        _ => return None,
+    };
+    let declared = crate::printc::declared_variable_type(fd, decl_high_type, out)?;
+    (matches!(size, 4 | 8)
+        && declared.get_size() == size
+        && matches!(declared.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT))
+        .then_some(declared)
+}
+
+/// Explicit word storage keeps its bits when a native float op consumes it.
 pub(crate) fn stack_float_input(
     fd: &Funcdata,
     decl_high_type: bool,
@@ -231,7 +257,12 @@ pub(crate) fn stack_float_input(
         return None;
     }
     let code = fd.obank().get(op)?.code();
-    if !matches!(
+    let float_return = code == OpCode::CPUI_RETURN
+        && fd.get_func_proto().get_output_type().is_some_and(|ty| {
+            ty.get_metatype() == type_metatype::TYPE_FLOAT
+                && fd.vbank().get(input).is_some_and(|vn| vn.get_size() == ty.get_size())
+        });
+    if !float_return && !matches!(
         code,
         OpCode::CPUI_FLOAT_ABS
             | OpCode::CPUI_FLOAT_ADD
@@ -267,10 +298,6 @@ pub(crate) fn stack_float_input(
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT
         )
     {
-        return None;
-    }
-    let high = value.get_high().and_then(|id| fd.high_bank().get(id))?;
-    if !high.is_kuna_frame_snapshot() {
         return None;
     }
     let factory = fd.get_arch().types()?;

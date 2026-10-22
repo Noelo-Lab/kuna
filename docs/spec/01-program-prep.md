@@ -92,6 +92,44 @@ re-seeded into each freshly-rebuilt `Funcdata`'s `ScopeLocal` at decompile time 
 `map addr`/`seed_mapped_symbols` path), and the `error(nonzero,…)` call-site list is
 stashed on the `Architecture` for the per-function flow override (§1.7).
 
+The entry arm is where a single-function run pays for the whole inventory: a
+`createFunctionIfMissing` per discovered entry costs about a kilobyte, so an image
+whose `.eh_frame` enumerates every function (377,429 on a 51 MB Android `.so`)
+spends some 315 MB of a run that reads one of them. `lazyfuncs` (default **off**)
+splits the commit: the names install exactly as above, but the entry starts are
+parked on the `Architecture`
+(`decompiler/crates/kuna-decomp/src/infra/architecture.rs (set_lazy_entry_starts)`)
+and no `Function` is created. An entry some other fact of the same commit attaches
+to is not parked — a committed name (`_INIT_<i>`, the entry oracle's `main`), a
+no-return verdict, a FID rename, an address-keyed prototype (library, `elfmain`,
+DWARF, demangled), locals, comments, tracked registers or a format site
+(`decompiler/crates/kuna-console/src/kuna_lazyfuncs.rs (fact_entries)`) — because
+each of those lands on the `Function` itself and would otherwise be dropped; the
+string and data arms also treat a parked start as occupied, as they would its
+`Function`. Flow still reads such an entry as a function rather
+than code to follow into — `decompiler/crates/kuna-decomp/src/substrate
+(ArchFlowEnv)` consults the parked set once the symbol table declines — so a
+`BRANCH` into a lazy entry stays a tail call. The raw walk `bejoin evidence` makes
+of a function and its callees stops at a parked entry for the same reason
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (destination)`):
+its verdict is cached once per image, before any `Function` is materialized, so a
+walk that ran on into a tail-called entry would swap a big-endian pair's halves in
+every later read. Materialization then happens on read,
+at two depths: the console gives the *selection* its `Function`
+(`decompiler/crates/kuna-console/src/engine.rs (ensure_function_symbol)`), and after
+a drive `decompiler/crates/kuna-console/src/kuna_lazyfuncs.rs (materialize_callees)`
+gives every parked entry the p-code read one — transfer targets plus code addresses
+taken as *values*, a Thumb pointer's odd value naming its even start — while
+`decompiler/crates/kuna-console/src/decompile_step.rs (decompile_one_prefollowed)`
+drives again while that makes progress. The value case is load-bearing:
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (ActionConstantPtr)`
+types a constant as a code pointer, and the printer names it, only through a global
+Symbol, so a merely-stored function address would lose both. Only parked entries
+are materialized — never a constant that merely looks like an address, nor a
+p-code-relative `BRANCH` offset — so the lazy symbol table is always a subset of the
+eager one. The saving is a property of one function's run: a whole-binary surface
+materializes what it walks.
+
 Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are
 bridged across the process by environment variables the CLI exports:
@@ -5438,8 +5476,13 @@ unnamed exit wrappers swallow the functions after them. Under the `fast` preset
 (DIV-41), those full-tier injections stay off and `fast_funcdisc` is on for
 unfiltered `decompile-all`, `decompile-project`, and `functions` inventory runs.
 An explicit address selection suppresses the preset-provided walk unless the
-caller spells `--option fast_funcdisc on`; name selection retains discovery so
-a generated `sub_<addr>` name can resolve. Selection remains exact even when
+caller spells `--option fast_funcdisc on`. Text-surface name selection also
+suppresses a preset-provided walk on the first attempt and restores it in a
+retry a name miss triggers, ahead of the held-back non-x86-64 discovery-bundle
+retry, so a miss is diagnosed exactly as with the walk on; when the preset
+leaves the walk off there is nothing to defer and no extra attempt. A placeholder
+spelling (`sub_<hex>`, `FUN_<hex>`, `func_0x<hex>`) keeps the walk from the
+start, since its entry may exist only because the walk found it. Selection remains exact even when
 analysis is forced on. Under `reliable`, `kuna functions` keeps the Listing off: metadata-only
 name enumeration gains nothing from the 0.21 s → 5.7 s full decode measured for a
 stripped tar (DIV-15). The console and XML datatest paths never build either model

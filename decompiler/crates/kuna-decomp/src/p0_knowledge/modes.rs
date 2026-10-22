@@ -589,7 +589,13 @@ mod tests {
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
               "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide"];
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide",
+              // `lazyfuncs` changes no output, but its saving is a single-function
+              // property: the whole-binary surfaces the presets drive (decompile-all,
+              // the web front-end, the benchmark) materialize every target they walk
+              // anyway, so preset membership would buy nothing there and has not been
+              // measured on them. Flip it into the preset with that measurement.
+              "lazyfuncs"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
