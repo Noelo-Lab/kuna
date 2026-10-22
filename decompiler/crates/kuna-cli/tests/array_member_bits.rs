@@ -40,6 +40,8 @@ fn pe64_double_partial_byte_member_preserves_bits() {
     check_target("x86_64-w64-windows-gnu", 8, 16);
 }
 
+/// i686 pins `-march=pentium4`, the default of current clang, so older clang also copies a
+/// double through SSE instead of two general-register halves.
 fn check_target(target: &str, width: usize, capacity: usize) {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
@@ -54,6 +56,7 @@ fn check_target(target: &str, width: usize, capacity: usize) {
             .arg(format!("--target={target}"))
             .arg(format!("-DPAYLOAD_BYTES={width}"))
             .arg(format!("-DPAYLOAD_CAPACITY={capacity}"))
+            .args(target.starts_with("i686").then_some("-march=pentium4"))
             .args(["-shared", "-nostdlib", "-O0", "-Wl,--entry,0"])
             .arg(&source)
             .arg("-o")
