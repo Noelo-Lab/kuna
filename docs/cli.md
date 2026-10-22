@@ -533,7 +533,7 @@ function `score`), is `applied`, with a detail saying what it was printed as,
 and later directives reach it by that name (`name score_1 total`). A `type`
 that gives a stack local a scalar of another width is `rejected` before it
 applies (`Storage is 32 bytes, the stated type is 8`); a structure, union or
-array may grow or narrow it, within the stack. Two independently retyped whole-frame locals may not cover the same stack bytes: that would emit separate C objects and lose their alias. Declare one aggregate or union covering the shared storage instead. A whole scalar local keeps its explicitly stated type even when a merged storage instance retains a weaker recovered type.
+array may grow or narrow it, within the stack. Two independently retyped whole-frame locals may not cover the same stack bytes: that would emit separate C objects and lose their alias. Declare one aggregate or union covering the shared storage instead. A whole scalar local keeps its explicitly stated type even when a merged storage instance retains a weaker recovered type. If coalescing drops the direct Symbol binding, a matching type-locked member must still confirm the carried declaration type.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
@@ -1009,9 +1009,14 @@ preset it selects; an explicit `--mode reliable` keeps the catalog's
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
-Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
-explicitly spelling `--option fast_funcdisc on` opts an address run back into
-that analysis.
+Name selection suppresses it too on the first attempt, because a name the
+loader or the remaining discovery already carries needs no whole-image walk to
+resolve; that attempt then renders what `--addr` on the same entry renders. A
+name that misses retries with the preset's walk restored, so a miss reports
+what it reported before, and a placeholder spelling (`sub_<hex>`, `FUN_<hex>`,
+`func_0x<hex>`) keeps the walk from the start, since its entry may exist only
+because the walk found it. Explicitly spelling `--option fast_funcdisc on|off`
+always wins. Only the text surface defers it; `--json` keeps the preset.
 
 `--target <SLEIGH-language-id>` selects the decoder while a recognized object
 container continues to own its section mappings and image base. `--target default`

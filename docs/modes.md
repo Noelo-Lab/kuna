@@ -302,10 +302,11 @@ pointer-table target, with real C bodies in both cases.
 
 Explicit `--addr` commands already have their target set, so the file
 front-ends suppress preset-provided `fast_funcdisc` work for those commands.
-Name selection keeps discovery enabled because a generated `sub_<addr>` name
-does not exist until discovery registers it. Address-selected callers can opt
-back in explicitly with `--option fast_funcdisc on`; an explicit option always
-wins.
+Text-surface `kuna decompile <name>` suppresses it on its first attempt as
+well and restores it only when the name misses; a generated placeholder name
+(`sub_<addr>`) keeps discovery enabled, because that entry may exist only
+because discovery registered it. Callers can opt back in explicitly with
+`--option fast_funcdisc on`; an explicit option always wins.
 
 An explicit option selectively restores analysis while keeping the rest of the
 preset:

@@ -5438,8 +5438,13 @@ unnamed exit wrappers swallow the functions after them. Under the `fast` preset
 (DIV-41), those full-tier injections stay off and `fast_funcdisc` is on for
 unfiltered `decompile-all`, `decompile-project`, and `functions` inventory runs.
 An explicit address selection suppresses the preset-provided walk unless the
-caller spells `--option fast_funcdisc on`; name selection retains discovery so
-a generated `sub_<addr>` name can resolve. Selection remains exact even when
+caller spells `--option fast_funcdisc on`. Text-surface name selection also
+suppresses a preset-provided walk on the first attempt and restores it in a
+retry a name miss triggers, ahead of the held-back non-x86-64 discovery-bundle
+retry, so a miss is diagnosed exactly as with the walk on; when the preset
+leaves the walk off there is nothing to defer and no extra attempt. A placeholder
+spelling (`sub_<hex>`, `FUN_<hex>`, `func_0x<hex>`) keeps the walk from the
+start, since its entry may exist only because the walk found it. Selection remains exact even when
 analysis is forced on. Under `reliable`, `kuna functions` keeps the Listing off: metadata-only
 name enumeration gains nothing from the 0.21 s → 5.7 s full decode measured for a
 stripped tar (DIV-15). The console and XML datatest paths never build either model
