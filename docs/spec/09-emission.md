@@ -5,6 +5,14 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+Typed byte-copy stores explicitly convert a pointer initializer to its declared
+pointer type when the rendered operand is not already a pointer that type accepts
+implicitly. The operand may carry the pointer bits through an unsigned integer
+cast, be a raw constant, or point to an unrelated type; a pointer compound literal
+cannot accept those expressions implicitly. The conversion preserves the bits
+before `__builtin_memcpy` copies the object. An operand of the same pointer type,
+or a `void *` on either side, is printed without the extra conversion.
+
 C declarators preserve explicit type qualification. Qualifiers on a base or a
 named typedef precede its name; qualifiers on a pointer follow its own `*`.
 The declarator walk keeps those layers through arrays and function pointers,
@@ -1988,6 +1996,15 @@ is not a residual unknown and never enters the relabel, so the opaque
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
 
+Signed integer constants are normalized to their declared byte width before
+choosing their sign, magnitude, and numeric base
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (resolve_integer_format)`).
+A four-byte `0xfffffffffffffffc` carrier therefore prints as `-4`, just like
+`0xfffffffc`; upper carrier bits also cannot turn a positive narrow value
+negative. Forced numeric radices retain this width interpretation. Character
+overrides, unsigned rendering, and unsized constant handling retain their
+existing paths.
+
 Anonymous function types with a stored prototype participate in the C declarator
 walk alongside pointers and arrays. The function contributes a parameter suffix,
 then the walk continues through its return type. Parameters use recursive abstract
@@ -2161,7 +2178,20 @@ past the object and drops the sign extension. The option `declhightype`
 p-code moves. It applies only to a high the symbol table does not describe — a
 mapped local keeps the declaration representative's type, because kuna does not
 always type-lock the storage a symbol claims and the most specialized member of
-a mapped local can be a transient the symbol never described. The declaration
+a mapped local can be a transient the symbol never described. A whole mapped
+local whose Symbol is type-locked (a DWARF or `--assert type` declaration) with
+a boolean, integer, float or pointer type as wide as the declaration
+representative, and that is not a parameter, declares that Symbol type instead
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(locked_scalar_local_type)`), whatever this option says: merging can leave the
+representative at a weaker type, such as `void *` for a gcc `-O0` DWARF
+function-pointer local, which makes the indirect call through it invalid C.
+`declared_variable_type` reports the same type, so the storage-transfer casts
+agree with the declaration. A local that coalescing left with the Symbol's type
+but no Symbol binding keeps that type only when one of its members is
+type-locked to exactly that type and none is an input, persistent, global or
+`&symbol` reference view; a recovered type with no locked member never imposes
+a declaration. The declaration
 representative still supplies the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
@@ -3663,7 +3693,13 @@ is retained. Stores copy bytes from a scalar compound literal at the original
 displacement instead of assigning a pointer to a struct or imposing the declared
 field's numeric type on a later incarnation. COPY and same-width CAST retain the
 source representation; computed stores use the opcode's result type, including
-floating arithmetic and numeric conversions. A scalar write into a declared
+floating arithmetic and numeric conversions. A recovered standalone byte-array
+local that receives a same-width floating representation uses a byte-copy store
+from the scalar expression, including any preceding numeric conversion. One-byte
+SUBPIECE reads defined by that floating transfer use byte subscripts at the target's memory offset,
+rather than passing an array to an integer helper. Opaque vector lanes retain
+their separate option-controlled rendering.
+A scalar write into a declared
 byte-array member takes this byte-copy path even when the call's record layout
 agrees with the local layout: the member has no scalar C assignment type, and
 copying a float must retain its representation instead of casting it to an array.
