@@ -7202,7 +7202,7 @@ impl PrintC {
                 && fd.vbank().get(input).and_then(|value| value.get_def())
                     .is_some_and(|definition| self.local_array_assignment(fd, arch, definition).is_some())
             {
-                if let Some(name) = self.local_byte_array_name(fd, arch, input) {
+                if let Some((name, element)) = self.local_byte_array_name(fd, arch, input) {
                     let byte = subpiece_byte_offset_for_composite(fd, op);
                     let size = fd.vbank().get(input).unwrap().get_size() as i64;
                     if byte >= 0 && byte < size {
@@ -7210,7 +7210,9 @@ impl PrintC {
                         let datatype = read_op
                             .map(|read| fd.vn_type_read_facing(output, read))
                             .unwrap_or_else(|| fd.vn_type_def_facing(output));
-                        self.push_cast_open(&datatype, op);
+                        if !matches!(datatype.compare(&element, 10), Ok(0)) {
+                            self.push_cast_open(&datatype, op);
+                        }
                         self.push_op(&tokens::SUBSCRIPT, Some(op_key(op)));
                         self.push_atom(&Atom::with_op_vn(
                             name,
@@ -8378,7 +8380,7 @@ impl PrintC {
         fd: &Funcdata,
         arch: &Architecture,
         vn: VarnodeId,
-    ) -> Option<String> {
+    ) -> Option<(String, std::rc::Rc<crate::dtype::Datatype>)> {
         let value = fd.vbank().get(vn)?;
         if value.is_implied() || value.is_persist() || value.is_volatile() {
             return None;
@@ -8395,7 +8397,7 @@ impl PrintC {
             return None;
         }
         let (name, offset, _) = self.emitted_high_symbol(fd, high)?;
-        (offset <= 0).then_some(name)
+        (offset <= 0).then_some((name, declared.get_array_base()?))
     }
 
     fn local_array_assignment(
@@ -8409,7 +8411,6 @@ impl PrintC {
             return None;
         }
         let output = operation.get_out()?;
-        let name = self.local_byte_array_name(fd, arch, output)?;
         let input = operation.get_in(0)?;
         let size = fd.vbank().get(output)?.get_size();
         if fd.vbank().get(input)?.get_size() != size {
@@ -8421,6 +8422,7 @@ impl PrintC {
         {
             return None;
         }
+        let (name, _) = self.local_byte_array_name(fd, arch, output)?;
         Some(crate::p9_emit::kuna_stackassign::Assignment {
             output,
             operand: Some(input),
