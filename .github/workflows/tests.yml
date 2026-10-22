@@ -252,7 +252,8 @@ jobs:
       - name: Cross-ISA stack allocation round trips
         env:
           KUNA_REQUIRE_STACKALLOC_ISA: "1"
-        run: cargo test --manifest-path decompiler/Cargo.toml -p kuna-cli --test integration stack_allocations_isa:: -- --nocapture
+        run: |
+          cargo test --manifest-path decompiler/Cargo.toml -p kuna-cli --test integration stack_allocations_isa:: -- --nocapture
 
       - name: Workspace build disk usage
         if: always()
