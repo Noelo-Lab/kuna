@@ -1,4 +1,4 @@
-//! Size- and alignment-aware ELF COMMON addresses, separate from extern slots.
+//! Size- and alignment-aware COMMON addresses, separate from extern slots.
 
 pub(super) struct CommonAllocator {
     cursor: Option<u64>,

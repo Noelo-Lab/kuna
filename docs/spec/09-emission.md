@@ -5,6 +5,14 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+Typed byte-copy stores explicitly convert a pointer initializer to its declared
+pointer type when the rendered operand is not already a pointer that type accepts
+implicitly. The operand may carry the pointer bits through an unsigned integer
+cast, be a raw constant, or point to an unrelated type; a pointer compound literal
+cannot accept those expressions implicitly. The conversion preserves the bits
+before `__builtin_memcpy` copies the object. An operand of the same pointer type,
+or a `void *` on either side, is printed without the extra conversion.
+
 C declarators preserve explicit type qualification. Qualifiers on a base or a
 named typedef precede its name; qualifiers on a pointer follow its own `*`.
 The declarator walk keeps those layers through arrays and function pointers,
@@ -2166,7 +2174,16 @@ past the object and drops the sign extension. The option `declhightype`
 p-code moves. It applies only to a high the symbol table does not describe — a
 mapped local keeps the declaration representative's type, because kuna does not
 always type-lock the storage a symbol claims and the most specialized member of
-a mapped local can be a transient the symbol never described. The declaration
+a mapped local can be a transient the symbol never described. A whole mapped
+local whose Symbol is type-locked (a DWARF or `--assert type` declaration) with
+a boolean, integer, float or pointer type as wide as the declaration
+representative, and that is not a parameter, declares that Symbol type instead
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(locked_scalar_local_type)`), whatever this option says: merging can leave the
+representative at a weaker type, such as `void *` for a gcc `-O0` DWARF
+function-pointer local, which makes the indirect call through it invalid C.
+`declared_variable_type` reports the same type, so the storage-transfer casts
+agree with the declaration. The declaration
 representative still supplies the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
@@ -3668,7 +3685,12 @@ is retained. Stores copy bytes from a scalar compound literal at the original
 displacement instead of assigning a pointer to a struct or imposing the declared
 field's numeric type on a later incarnation. COPY and same-width CAST retain the
 source representation; computed stores use the opcode's result type, including
-floating arithmetic and numeric conversions. Integer bit patterns are printed as
+floating arithmetic and numeric conversions. A recovered standalone byte-array
+local that receives a same-width floating representation uses a byte-copy store
+from the scalar expression, including any preceding numeric conversion. One-byte
+SUBPIECE reads defined by that floating transfer use byte subscripts at the target's memory offset,
+rather than passing an array to an integer helper. Opaque vector lanes retain
+their separate option-controlled rendering. Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and
 keep ordinary scalar assignments; the fallback targets incompatible layouts or
