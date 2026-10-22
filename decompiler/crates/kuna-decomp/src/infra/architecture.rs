@@ -2248,6 +2248,11 @@ pub struct Architecture {
     /// from metadata-backed roots and admits pointer-table targets only after
     /// fingerprint and valid-subroutine checks. The `fast` mode enables it.
     pub analysis_fast_funcdisc: bool,
+    /// (kuna `lazyfuncs`) Commit discovered entries as names only; default off.
+    pub analysis_lazyfuncs: bool,
+    /// (kuna `lazyfuncs`) Entry starts the commit installed as NAMES only, sorted, so
+    /// flow reads a branch to one as a transfer, not code to follow into.
+    pub lazy_entry_starts: Vec<u64>,
     /// (kuna) Gate recursive-descent function discovery on a headerless
     /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
     /// `object::File`, so the whole object-backed discovery tier declines and the
@@ -3153,6 +3158,8 @@ impl Architecture {
             format_vararg_abi: None, // (kuna) a load-time fact; set by the console's `load file`
             analysis_listing: false,
             analysis_fast_funcdisc: false,
+            analysis_lazyfuncs: false,
+            lazy_entry_starts: Vec::new(),
             analysis_rawdiscover: false,
             analysis_noreturn_disc: false,
             analysis_noreturn_discstrict: false,
@@ -3571,6 +3578,8 @@ impl Architecture {
         self.analysis_formatstring = crate::kuna_formatstring::FormatStringMode::Static; // (kuna) DIV: the LOAD-TIME format-string resolver default-ON. Ghidra's own FormatStringAnalyzer is default-off because it costs a second decompile; the static resolver reads the constant out of the image instead, so it costs nothing per function. `full` restores the second-decompile loop. Gated on the Listing (default-off), so every parity gate is byte-identical
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
+        self.analysis_lazyfuncs = false;
+        self.lazy_entry_starts.clear();
         self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
         self.analysis_noreturn_discstrict = true; // (kuna, GH-312) DIV-92 default-on: drop noreturn_disc's decode-failure evidence arm, keeping the terminal arm + the two positive arms. RESTORES CODE (a forged no-return verdict no longer deletes the caller's tail). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore the legacy three-arm tally with `option noreturn_discstrict off`
@@ -3642,6 +3651,18 @@ impl Architecture {
     /// `ActionDatabase` default-group reset, a W5 surface not yet exposed) and
     /// resets every `PrintLanguage` in `printlist` (W8).  Only the internal
     /// option reset runs here; the action/print resets land with their waves.
+    /// (kuna `lazyfuncs`) Is `vma` an entry the commit installed as a name only?
+    pub fn is_lazy_entry(&self, vma: u64) -> bool {
+        self.lazy_entry_starts.binary_search(&vma).is_ok()
+    }
+
+    /// (kuna `lazyfuncs`) Record the entry starts the commit left as names.
+    pub fn set_lazy_entry_starts(&mut self, mut starts: Vec<u64>) {
+        starts.sort_unstable();
+        starts.dedup();
+        self.lazy_entry_starts = starts;
+    }
+
     pub fn reset_defaults(&mut self) {
         self.reset_defaults_internal();
         // allacts.resetDefaults();                                 -- STUB(W5)
