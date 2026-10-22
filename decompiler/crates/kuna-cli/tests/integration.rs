@@ -593,3 +593,6 @@ mod intermediate_float_rounding;
 
 #[path = "anonymous_record_definitions.rs"]
 mod anonymous_record_definitions;
+
+#[path = "overlapping_stack_assertions.rs"]
+mod overlapping_stack_assertions;
