@@ -607,10 +607,15 @@ fn resolve_symbol(
                     thumb: None,
                 });
             }
-            let is_elf_common = sym.section() == SymbolSection::Common
-                && file.format() == object::BinaryFormat::Elf;
-            let a = if is_elf_common {
-                common_allocator.allocate(sym.size(), sym.address())?
+            let common_alignment = match (sym.section(), file.format()) {
+                (SymbolSection::Common, object::BinaryFormat::Elf) => Some(sym.address()),
+                // COFF records the size, but no separate alignment. Give its
+                // synthetic storage a conservative 16-byte alignment.
+                (SymbolSection::Common, object::BinaryFormat::Coff) => Some(16),
+                _ => None,
+            };
+            let a = if let Some(alignment) = common_alignment {
+                common_allocator.allocate(sym.size(), alignment)?
             } else {
                 let a = *extern_cursor;
                 *extern_cursor = extern_cursor.wrapping_add(16);

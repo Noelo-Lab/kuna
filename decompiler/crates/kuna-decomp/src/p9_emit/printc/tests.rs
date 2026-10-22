@@ -2263,6 +2263,9 @@ mod w10_printc_cast_render {
         op
     }
 
+    #[path = "pointer_assignments.rs"]
+    mod pointer_assignments;
+
     /// Build a 1-input cast op (`opc`) whose in0 is a constant `k` (renders as a
     /// literal, deterministic) and whose OUTPUT carries the data-type `out_ty`.
     fn build_cast_over_const(
@@ -2835,12 +2838,15 @@ mod w10_printc_cast_render {
     }
 
     #[test]
-    fn only_a_cast_reinterprets_float_bits_even_with_cast_printing_disabled() {
-        for opcode in [OpCode::CPUI_CAST, OpCode::CPUI_COPY] {
+    fn storage_operations_reinterpret_float_bits_even_with_cast_printing_disabled() {
+        for opcode in [OpCode::CPUI_CAST, OpCode::CPUI_COPY, OpCode::CPUI_FLOAT_INT2FLOAT] {
             for size in [4, 8] {
                 let mut fd = build_fd();
                 let op = mk_op(&mut fd, 1, 0x20, opcode);
-                let bits = if size == 4 { 0xbf800000 } else { 0xbff0000000000000 };
+                // COPY and CAST move storage bits; FLOAT_INT2FLOAT converts a
+                // signed numeric value. Keep that value positive in this control.
+                let bits = if opcode == OpCode::CPUI_FLOAT_INT2FLOAT { 123 }
+                    else if size == 4 { 0xbf800000 } else { 0xbff0000000000000 };
                 let input = fd.new_constant(size, bits);
                 fd.vbank_mut().get_mut(input).unwrap().update_type(named("bits", size, type_metatype::TYPE_UINT));
                 fd.op_set_input(op, input, 0).unwrap();
@@ -2853,7 +2859,7 @@ mod w10_printc_cast_render {
                     p.set_output_stream();
                     p.op_push_ir(&fd, &bare_arch(), op, None);
                     let text = p.emit_mut().output_str();
-                    if opcode == OpCode::CPUI_CAST {
+                    if opcode != OpCode::CPUI_FLOAT_INT2FLOAT {
                         assert!(text.contains("union {") && text.ends_with(".to"), "{opcode:?} {size}: {text}");
                     } else {
                         assert!(!text.contains("union"), "{opcode:?} {size}: {text}");

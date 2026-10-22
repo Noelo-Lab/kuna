@@ -1145,6 +1145,10 @@ kuna_options! { self, p1;
     "fast_funcdisc" => {
         on_off!(analysis_fast_funcdisc, "Fast whole-project function discovery")
     },
+    "lazyfuncs" => on_off!(
+        analysis_lazyfuncs,
+        "Materialize Function objects on demand instead of one per entry"
+    ),
     "rawdiscover" => {
         on_off!(analysis_rawdiscover, "Raw-image recursive function discovery")
     },

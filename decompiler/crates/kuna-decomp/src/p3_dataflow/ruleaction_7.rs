@@ -2138,7 +2138,10 @@ impl Rule for RuleFloatCast {
                 if insize2 > insize1 {
                     return 0;
                 }
-                // op is superfluous
+                if outsize == insize2 && !super::kuna_floatquiet::can_elide(data, vn2) {
+                    return 0;
+                }
+                // The remaining conversion, if any, still performs NaN quieting.
                 data.op_set_input(op, vn2, 0).expect("floatcast: superfluous in0");
                 if outsize == insize2 {
                     data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY)); // identity

@@ -776,6 +776,8 @@ Three tiers:
 | loading a te reports the thumb context walk stopped | [`entrythumbflow`](#entrythumbflow) |
 | stripped go binary renders sub_<addr> instead of main.main and runtime.* names | [`gopclntab`](#gopclntab) |
 | go package function names missing | [`gopclntab`](#gopclntab) |
+| kuna decompile on a large c++ .so needs ~750 MB for one function | [`lazyfuncs`](#lazyfuncs) |
+| read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
 | __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
@@ -2901,6 +2903,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) names Go functions from the pclntab (main.main, runtime.gopanic, ...); off leaves a stripped Go binary's functions as sub_<addr>.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-gopclntab
 - **Example:** `option gopclntab off`
+
+### `lazyfuncs` -- on | off, default `off`
+
+- **Symptoms:** kuna decompile on a large c++ .so needs ~750 MB for one function; read symbols dominates a single-function run on an entry-dense image.
+- **What it does:** Commit the analysis tier's discovered entry points as NAMES only and build a Function where the decompiler reads one, instead of one per entry at `read symbols`. A dense .eh_frame reports every function as an entry (377,429 on a 51 MB Android .so) at ~0.84 KB each -- 315 MB of a single-function run's peak that the run never reads.
+- **When to flip:** Off (default) is Ghidra's whole-inventory commit. On builds a Function only for the selection and for what its p-code reads (call and tail targets, code addresses taken as values): `kuna decompile <big c++ .so> <fn>` drops 30-38% of peak and 33-42% of the time on entry-dense images, byte-identical over 102 sampled functions across six images. Gains track entry density (a Go binary moves 2%); a whole-binary surface still materializes everything it walks.
+- **Where / provenance:** P1/code-data-partition · kuna · speed · kuna-lazyfuncs
+- **Example:** `option lazyfuncs on`
 
 ### `objc` -- on | off, default `off`
 

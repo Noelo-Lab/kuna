@@ -1535,6 +1535,11 @@ pub struct ArchContext {
     /// `nanignore all` option and shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     pub nan_ignore_all: bool,
+    /// Ignore NaN effects around comparisons (C++ `nan_ignore_compare`; the
+    /// shipped `nanignore compare` default). Also lets a floating round trip
+    /// drop its signaling-NaN quieting
+    /// ([`crate::p3_dataflow::kuna_floatquiet`]); fixtures default to off.
+    pub nan_ignore_compare: bool,
     /// The data-type factory (C++ `glb->types`), shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
@@ -2020,6 +2025,7 @@ impl ArchContext {
             // only `nanignore all` flips it. nan_ignore_compare drives the rule's
             // enabled state at registration, not this flag.
             nan_ignore_all: false,
+            nan_ignore_compare: false,
             types: None,
             internal_strings: None,
             max_jumptable_size: 0,

@@ -312,9 +312,11 @@ pub struct AnalysisOutput {
     /// The commit boundary rejects any [`Self::entries`] VMA strictly inside one of
     /// these — a discovered entry in the middle of a body is a landing pad /
     /// gap-walk artifact, not a function. Produced by
-    /// [`crate::entry::kuna_fdeinterior`] (`.eh_frame` FDEs) and
-    /// [`crate::entry::kuna_pdatainterior`] (`.pdata` records), so the list is
-    /// empty whenever their gates are off and the suppression is a no-op.
+    /// [`crate::entry::kuna_fdeinterior`] (`.eh_frame` FDEs),
+    /// [`crate::entry::kuna_pdatainterior`] (`.pdata` records) and
+    /// [`crate::pclntab`] (a Go binary's `functab`, the linker's own extent for
+    /// every function), so the list is empty whenever their gates are off and the
+    /// suppression is a no-op.
     pub fde_bodies: Vec<(u64, u64)>,
     /// (kuna) Function entries strictly inside an FDE body that the image itself
     /// enters from outside it — the extra entry points of a multi-entry `.cold`
