@@ -109,7 +109,12 @@ string and data arms also treat a parked start as occupied, as they would its
 `Function`. Flow still reads such an entry as a function rather
 than code to follow into — `decompiler/crates/kuna-decomp/src/substrate
 (ArchFlowEnv)` consults the parked set once the symbol table declines — so a
-`BRANCH` into a lazy entry stays a tail call. Materialization then happens on read,
+`BRANCH` into a lazy entry stays a tail call. The raw walk `bejoin evidence` makes
+of a function and its callees stops at a parked entry for the same reason
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (destination)`):
+its verdict is cached once per image, before any `Function` is materialized, so a
+walk that ran on into a tail-called entry would swap a big-endian pair's halves in
+every later read. Materialization then happens on read,
 at two depths: the console gives the *selection* its `Function`
 (`decompiler/crates/kuna-console/src/engine.rs (ensure_function_symbol)`), and after
 a drive `decompiler/crates/kuna-console/src/kuna_lazyfuncs.rs (materialize_callees)`
