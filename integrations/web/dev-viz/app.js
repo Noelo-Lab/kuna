@@ -6,8 +6,9 @@ const longDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric
 const $ = (id) => document.getElementById(id);
 const esc = (value) => String(value).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const title = (slug) => slug.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-const sourceKey = (source) => source === 'ghidra-upstream' ? 'ghidra' : source;
-const sourceLabel = (source) => ({'ghidra':'Ghidra','angr':'angr','ida':'IDA','kuna':'Kuna','oxidizer':'Oxidizer'}[sourceKey(source)] || title(source));
+const sourceKey = (source) => source.toLowerCase() === 'ghidra-upstream' ? 'ghidra' : source.toLowerCase();
+const sourceLabel = (source) => ({'ghidra':'Ghidra','angr':'angr','ida':'IDA','binja':'Binary Ninja','kuna':'Kuna','oxidizer':'Oxidizer'}[sourceKey(source)] || title(source));
+const kilo = (lines) => lines < 1000 ? String(lines) : `${(lines / 1000).toFixed(lines < 10000 ? 1 : 0)}k`;
 const iso = (date) => new Date(`${date}T00:00:00Z`);
 const repoLink = (path, line = '') => `${REPO}/blob/main/${path}${line ? `#L${line}` : ''}`;
 
@@ -196,7 +197,8 @@ function renderHeatmap(data) {
   let selected = null;
   function show(phase, week, value, button) {
     selected?.classList.remove('selected'); button.classList.add('selected'); selected = button;
-    detail.innerHTML = `<span class="phase-id">${phase.id}</span><div><h3>${esc(phase.name)}</h3><p>${esc(phase.description)} · week of ${longDate.format(iso(week))}</p></div><p class="phase-metric"><strong>${number.format(value.churn)}</strong> source lines changed in ${value.commits.size} commit${value.commits.size === 1 ? '' : 's'} · ${phase.options} current options</p>`;
+    const today = data.architecture.phases[phase.id];
+    detail.innerHTML = `<span class="phase-id">${phase.id}</span><div><h3>${esc(phase.name)}</h3><p>${esc(phase.description)} · week of ${longDate.format(iso(week))}</p></div><p class="phase-metric"><strong>${number.format(value.churn)}</strong> source lines changed in ${value.commits.size} commit${value.commits.size === 1 ? '' : 's'} · ${phase.options} current options · ${kilo(today.loc)} lines today</p>`;
   }
   for (const phase of data.phases) {
     root.insertAdjacentHTML('beforeend', `<span class="heat-label"><b>${phase.id}</b><span>${esc(phase.name)}</span></span>`);
@@ -217,6 +219,74 @@ function renderHeatmap(data) {
   const phase = data.phases.find((p) => p.id === phaseId);
   const index = 1 + weeks.length + data.phases.indexOf(phase) * (weeks.length + 1) + weeks.indexOf(week) + 1;
   show(phase, week, busiest[1], root.children[index]);
+}
+
+function renderArchitecture(data) {
+  const arch = data.architecture;
+  const passes = arch.schedule.passes.reduce((a, p) => ((a[p.phase] = (a[p.phase] || 0) + 1), a), {});
+  const rows = [
+    ...data.phases.map((p) => ({...arch.phases[p.id], id: p.id, name: p.name, options: p.options, passes: passes[p.id] || 0})),
+    ...arch.shared.map((f) => ({...f, id: '', name: f.folder === 'substrate' ? 'Shared IR' : 'Framework', shared: true})),
+  ];
+  const max = Math.max(...rows.map((r) => r.loc));
+  const module = (m) => `<li><a href="${repoLink(`decompiler/crates/kuna-decomp/src/${m.folder}/${m.file}`)}">${esc(m.file)}</a> <span>${number.format(m.loc)}</span>${m.kuna ? ' <em>Kuna</em>' : ''}</li>`;
+  $('arch-table').innerHTML = `<div class="arch-head" aria-hidden="true"><span>phase</span><span>lines of Rust</span><span>in kuna_*</span><span>options</span><span>passes</span></div>` + rows.map((r) => {
+    const kunaShare = r.kunaLoc != null ? Math.round(r.kunaLoc / r.loc * 100) : null;
+    const facts = r.shared ? '<span>—</span><span>—</span><span>—</span>'
+      : `<span>${kunaShare}%</span><span>${r.options}</span><span>${r.passes}</span>`;
+    const body = r.shared ? `<p>${esc(r.role)}. ${r.files} files in <code>${esc(r.folder)}/</code>.</p>`
+      : `<p>${esc(r.role)}. ${r.files} files in <code>${esc(r.folder)}/</code>, ${r.subphases} named decision points.</p>
+        <ul>${r.modules.map((m) => module({...m, folder: r.folder})).join('')}</ul>`;
+    return `<details class="arch-row${r.shared ? ' shared' : ''}"><summary>
+      <span class="arch-name"><b>${r.id}</b>${esc(r.name)}</span>
+      <span class="arch-bar" title="${number.format(r.loc)} lines${kunaShare != null ? `; ${number.format(r.kunaLoc)} in kuna_* modules` : ''}"><i style="width:${r.loc / max * 100}%">${r.kunaLoc != null ? `<i style="width:${r.kunaLoc / r.loc * 100}%"></i>` : ''}</i></span>
+      <span class="arch-loc">${kilo(r.loc)}</span>${facts}</summary>
+      <div class="arch-body">${body}<a href="${repoLink(r.spec)}">Read the specification: ${esc(r.spec.split('/').pop())}</a></div></details>`;
+  }).join('');
+  const total = arch.crates.reduce((sum, c) => sum + c.loc, 0);
+  const engine = arch.crates.find((c) => c.name === 'kuna-decomp');
+  $('arch-note').innerHTML = `Line counts include tests kept beside the code. The engine crate (<code>kuna-decomp</code>) holds ${kilo(engine.loc)} of the ${kilo(total)} lines of Rust in ${arch.crates.length} workspace crates; the rest are the loader and analyzer, the SLEIGH compiler and runtime, the command line, and the Ghidra and browser front ends. Options and passes are counted from <a href="${repoLink('decompiler/crates/kuna-decomp/phases.toml')}">the option catalog</a> and <a href="${repoLink(arch.schedule.source)}">the recorded default schedule</a>.`;
+}
+
+function renderOrder(data) {
+  const {passes, loops} = data.architecture.schedule;
+  const chart = $('order-chart');
+  const idle = data.phases.filter((p) => !passes.some((x) => x.phase === p.id)).map((p) => p.id);
+  const summary = `${passes.length} passes in the default schedule. Brackets mark the loops that repeat until nothing changes.${idle.length ? ` ${idle.join(', ')} schedules no passes; the other phases read its configuration.` : ''}`;
+  const at = (i) => `${(i + .5) / passes.length * 100}%`;
+  const lanes = Math.max(0, ...loops.map((l) => l.depth));
+  const phaseRows = data.phases.filter((p) => !idle.includes(p.id));
+  chart.style.setProperty('--lanes', lanes);
+  chart.innerHTML = `<div class="order-loops" aria-hidden="true">${loops.map((l) => `<span class="order-loop" style="left:${l.start / passes.length * 100}%;width:${(l.end - l.start) / passes.length * 100}%;top:${(l.depth - 1) * 22}px">${esc(l.name)}</span>`).join('')}</div>`
+    + phaseRows.map((p) => `<div class="order-row"><span class="heat-label"><b>${p.id}</b><span>${esc(p.name)}</span></span><div class="order-track" aria-hidden="true">${passes.map((x, i) => x.phase === p.id ? `<i class="${x.kind}" style="left:${at(i)}"></i>` : '').join('')}</div></div>`).join('')
+    + '<div class="order-cursor" hidden></div>';
+  const cursor = chart.querySelector('.order-cursor');
+  const track = () => chart.querySelector('.order-track').getBoundingClientRect();
+  let selected = 0;
+  function inspect(index) {
+    selected = index;
+    const pass = passes[index];
+    const box = track(), base = chart.getBoundingClientRect();
+    cursor.hidden = false;
+    cursor.style.left = `${box.left - base.left + (index + .5) / passes.length * box.width}px`;
+    $('order-summary').innerHTML = `#${index + 1} <b>${esc(pass.name)}</b> · ${pass.kind} · ${pass.phase}${pass.group ? ` · group ${esc(pass.group)}` : ''}${pass.file ? ` · <a href="${repoLink(pass.file)}">${esc(pass.file.split('/').slice(-2).join('/'))}</a>` : ''}`;
+  }
+  const dismiss = () => { cursor.hidden = true; $('order-summary').textContent = summary; };
+  chart.onpointermove = (event) => {
+    const box = track();
+    if (event.clientX < box.left) return;
+    inspect(Math.max(0, Math.min(passes.length - 1, Math.floor((event.clientX - box.left) / box.width * passes.length))));
+  };
+  chart.onpointerleave = dismiss;
+  chart.onblur = dismiss;
+  chart.onfocus = () => inspect(selected);
+  chart.onkeydown = (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? passes.length - 1 : selected + (event.key === 'ArrowLeft' ? -1 : 1);
+    inspect(Math.max(0, Math.min(passes.length - 1, next)));
+  };
+  dismiss();
 }
 
 function renderProvenance(data) {
@@ -273,7 +343,7 @@ async function main() {
     const response = await fetch('./data.json');
     if (!response.ok) throw new Error(`snapshot request failed: ${response.status}`);
     const data = await response.json();
-    summarize(data); renderMilestones(data); renderPace(data); renderHeatmap(data); renderProvenance(data); renderContributions(data); renderGed(data);
+    summarize(data); renderMilestones(data); renderPace(data); renderHeatmap(data); renderArchitecture(data); renderOrder(data); renderProvenance(data); renderContributions(data); renderGed(data);
     let timer;
     addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(() => renderPace(data), 100); });
   } catch (error) {

@@ -384,10 +384,9 @@ a.xt:hover{color:var(--accent);text-decoration:underline;}
 .d2frame td.slot .sa{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   color:var(--text-muted);font-family:var(--font-ui);font-size:var(--fs-small);}
 .d2frame td.slot .sz{flex:none;margin-left:auto;padding-left:16px;color:var(--text-faint);font-family:var(--font-ui);font-size:var(--fs-small);white-space:nowrap;}
-.d2frame tr.ret td.slot,.d2frame tr.fp td.slot,.d2frame tr.saved td.slot{background:var(--bg-muted);font-family:var(--font-ui);}
-.d2frame tr.var td.slot{cursor:pointer;}
-.d2frame tr.var td.slot:hover{border-color:var(--text-faint);}
-.d2frame tr.dim td.slot{color:var(--text-muted);border-style:dashed;}
+.d2frame tr.ret td.slot,.d2frame tr.fp td.slot,.d2frame tr.saved td.slot,.d2frame tr.canary td.slot{background:var(--bg-muted);font-family:var(--font-ui);}
+.d2frame tr[data-sym] td.slot{cursor:pointer;}
+.d2frame tr[data-sym] td.slot:hover{border-color:var(--text-faint);}
 .d2frame tr.pad td.slot{border-style:dashed;color:var(--text-muted);background:transparent;font-family:var(--font-ui);font-size:var(--fs-small);}
 .d2frame tr.arr td.slot{border-color:var(--warn-border);}
 .d2frame tr.hl-sym td.slot,.d2frame tr.hl-sel td.slot{background:var(--select-bg);}

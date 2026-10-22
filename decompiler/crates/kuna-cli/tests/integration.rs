@@ -1,6 +1,12 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "local_array_bits.rs"]
+mod local_array_bits;
+
+#[path = "array_record.rs"]
+mod array_record;
+
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 
@@ -590,5 +596,30 @@ mod float_integer_truncation;
 
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
+
+#[path = "indexed_descriptor_pointer.rs"]
+mod indexed_descriptor_pointer;
+
+#[path = "locked_scalar_declarations.rs"]
+mod locked_scalar_declarations;
+
+#[path = "pointer_storage_literals.rs"]
+mod pointer_storage_literals;
+
+#[path = "anonymous_record_definitions.rs"]
+mod anonymous_record_definitions;
+
+#[path = "overlapping_stack_assertions.rs"]
+mod overlapping_stack_assertions;
+
+#[path = "named_member_bits.rs"]
+mod named_member_bits;
+
+#[path = "usepoint_pointer_constants.rs"]
+mod usepoint_pointer_constants;
+
+#[path = "pe_data_exports.rs"]
+mod pe_data_exports;
+
 #[path = "float_nan_quieting.rs"]
 mod float_nan_quieting;

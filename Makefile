@@ -91,7 +91,7 @@ test-tools:
 	$(PYTHON) $(ROOT)/scripts/check_test_layout.py
 	PYTHONPATH=$(ROOT) $(PYTHON) -m unittest discover -s $(ROOT)/scripts/tests -p 'test_*.py'
 
-# Print the repo version as MAJOR.MINOR (VERSION file + commit count -- the
+# Print the repo version as MAJOR.MINOR (VERSION file + release count -- the
 # scheme release CI tags with; see docs/release.md).
 version:
 	@bash scripts/version.sh
