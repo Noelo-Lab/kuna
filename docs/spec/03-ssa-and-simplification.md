@@ -18,8 +18,15 @@ on the loop or deleting its control flow. Each allocation receives independent
 storage, including allocations inside branches and loops. An SSA fixed point
 bounds both address directions required by stack adjustments, memory accesses,
 and outgoing arguments; fresh allocation roots cut successive lifetimes.
-Pointer induction bounds that do not converge are widened to unknown. Unknown
-stack effects and decreasing stack-pointer cycles without a finite bound are declined.
+Pointer induction bounds still changing after 64 sweeps are widened to unknown and
+the fixed point is resumed, at most eight times; a function that still has not
+converged is declined, so the analysis stays linear in the function size. Unknown
+stack effects and decreasing stack-pointer cycles without a finite bound are declined,
+including a base carried around a loop by a nonzero constant step, as in a
+stack-clash probe that lowers SP one page at a time before subtracting the
+residual: that residual is not the whole buffer. Another address formed as the
+same base and amount displaced by a constant (`base + 8 - n` beside `SP = base - n`)
+and dominated by the allocation is rewritten from the allocated buffer.
 A bounded evaluator follows copies and pure integer constant expressions before
 normal simplification, including alignment masks in either operand position. A zero
 mask erases the address and is not an alignment proof; only masks applied to a

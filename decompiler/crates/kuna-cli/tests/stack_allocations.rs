@@ -52,6 +52,8 @@ enum Case {
     ProbeTwo,
     Drifting,
     Restored,
+    Displaced,
+    SteppedProbe,
 }
 
 #[test]
@@ -102,6 +104,16 @@ fn elf64_unknown_outgoing_stack_is_declined() {
 }
 
 #[test]
+fn elf64_displaced_allocation_address_roundtrip() {
+    check_case(None, "-O0", Case::Displaced);
+}
+
+#[test]
+fn elf64_stepped_stack_probe_is_declined() {
+    check_case(None, "-O0", Case::SteppedProbe);
+}
+
+#[test]
 fn pe32_restored_frame_allocation() {
     check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Restored);
 }
@@ -148,6 +160,14 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
 "leaq -32(%rbp),%r10\nmovl %ebx,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%r10\nmovq %r10,%rsp\nmovq %r10,%rdi\nmovb $7,(%rdi)\nmovl %ebx,%esi\n"
 "pushq $0x2468a\npushq %rbp\nmovq %rsp,%rbp\ncall observe\npopq %rbp\naddq $8,%rsp\naddl -24(%rbp),%eax\naddl -16(%rbp),%eax\n"
 "leaq -8(%rbp),%rsp\npopq %rbx\npopq %rbp\nretq\n");"#,
+        Case::Displaced => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovl %edi,%eax\naddq $31,%rax\nandq $-16,%rax\n"
+"movq %rsp,%r10\nmovq %r10,%rdi\nsubq %rax,%rdi\nmovq %rdi,%rsp\nnegq %rax\nmovb $7,16(%r10,%rax,1)\n"
+"addq $16,%rdi\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
+        Case::SteppedProbe => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovslq %edi,%rax\naddq $15,%rax\nmovq %rax,%rcx\nandq $-4096,%rax\nandq $-16,%rcx\n"
+"movq %rsp,%rdx\nsubq %rax,%rdx\n1: cmpq %rdx,%rsp\nje 2f\nsubq $4096,%rsp\norq $0,4088(%rsp)\njmp 1b\n"
+"2: andl $4095,%ecx\nsubq %rcx,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
         Case::Drifting => r#"__asm__(
 "pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovl %edi,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\nmovl %esi,%ecx\n"
 "1: subq $16,%rsp\ndecl %ecx\njnz 1b\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
@@ -187,7 +207,12 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
     };
     let naked = if matches!(
         case,
-        Case::Probe | Case::ProbeTwo | Case::Drifting | Case::Restored
+        Case::Probe
+            | Case::ProbeTwo
+            | Case::Drifting
+            | Case::Restored
+            | Case::Displaced
+            | Case::SteppedProbe
     ) {
         "__attribute__((naked)) "
     } else {
@@ -259,7 +284,8 @@ API {naked}int allocate(int n) {{{body}}}
         );
     }
     let text = std::fs::read_to_string(&generated).unwrap();
-    let allocations = if matches!(case, Case::Drifting) {
+    let declined = matches!(case, Case::Drifting | Case::SteppedProbe);
+    let allocations = if declined {
         0
     } else if matches!(
         case,
@@ -276,7 +302,7 @@ API {naked}int allocate(int n) {{{body}}}
     } else {
         assert_eq!(actual, allocations, "{text}");
     }
-    if matches!(case, Case::Drifting) {
+    if declined {
         return;
     }
     assert!(!text.contains("Stackffff"), "{text}");

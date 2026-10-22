@@ -11,6 +11,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Internal allocation result is an address-sized integer, including in C.
 pub const BUILTIN_STACK_ALLOC: u32 = 0x10000009;
 const UNKNOWN: i128 = i128::MIN;
+const SWEEPS: usize = 64;
+const WIDENINGS: usize = 8;
 type Bounds = BTreeMap<usize, i128>;
 type Values = BTreeMap<VarnodeId, Bounds>;
 
@@ -114,6 +116,11 @@ fn stack_register(fd: &Funcdata, value: VarnodeId) -> bool {
 }
 fn constant_step(fd: &Funcdata, value: VarnodeId) -> Option<(VarnodeId, i128)> {
     let op = fd.obank().get(fd.vbank().get(value)?.get_def()?)?;
+    if op.code() == OpCode::CPUI_INT_ADD {
+        if let Some(amount) = number(fd, op.get_in(0)?) {
+            return Some((op.get_in(1)?, amount));
+        }
+    }
     let amount = number(fd, op.get_in(1)?)?;
     match op.code() {
         OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => Some((op.get_in(0)?, amount)),
@@ -169,6 +176,49 @@ fn paired_origins(
     // its complete provenance would miss ordinary saved-frame allocations.
     Some(BTreeSet::from([(p, n)]))
 }
+/// A base carried around a loop by a nonzero constant step has moved by an
+/// unbounded amount, as in a stack-clash probe walking the stack pointer down a
+/// page at a time; the residual subtraction is then not the whole buffer.
+fn stepped_cycle(fd: &Funcdata, base: VarnodeId) -> bool {
+    fn walk(
+        fd: &Funcdata,
+        value: VarnodeId,
+        at: i128,
+        path: &mut BTreeMap<VarnodeId, i128>,
+        done: &mut BTreeSet<VarnodeId>,
+    ) -> bool {
+        let value = strip(fd, value);
+        if let Some(&entered) = path.get(&value) {
+            return entered != at;
+        }
+        if !done.insert(value) {
+            return false;
+        }
+        if path.len() >= 256 {
+            return true;
+        }
+        let mut next = Vec::new();
+        if let Some((origin, step)) = constant_step(fd, value) {
+            next.push((origin, step));
+        } else if let Some(phi) = fd
+            .vbank()
+            .get(value)
+            .and_then(|v| v.get_def())
+            .and_then(|d| fd.obank().get(d))
+            .filter(|o| o.code() == OpCode::CPUI_MULTIEQUAL)
+        {
+            next.extend((0..phi.num_input()).filter_map(|slot| Some((phi.get_in(slot)?, 0))));
+        }
+        path.insert(value, at);
+        let cyclic = next.into_iter().any(|(origin, step)| {
+            at.checked_add(step)
+                .map_or(true, |to| walk(fd, origin, to, path, done))
+        });
+        path.remove(&value);
+        cyclic
+    }
+    walk(fd, base, 0, &mut BTreeMap::new(), &mut BTreeSet::new())
+}
 #[derive(Clone, Copy)]
 struct Allocation {
     op: OpId,
@@ -197,6 +247,9 @@ fn allocation(fd: &Funcdata, op: OpId) -> Option<Allocation> {
         return None;
     }
     let (base, amount) = origins.into_iter().next()?;
+    if stepped_cycle(fd, base) {
+        return None;
+    }
     Some(Allocation {
         op,
         output: o.get_out()?,
@@ -374,9 +427,36 @@ fn equivalent(
         && equivalent(fd, oa.get_in(1).unwrap(), ob.get_in(0).unwrap(), seen)
 }
 fn same_origin(fd: &Funcdata, a: &Allocation, b: &Allocation) -> bool {
-    canonical_base(fd, a.base, &mut BTreeSet::new())
-        == canonical_base(fd, b.base, &mut BTreeSet::new())
-        && equivalent(fd, a.amount, b.amount, &mut BTreeSet::new())
+    origin_delta(fd, a, b) == Some(0)
+}
+/// Constant displacement of `b` from `a` when both subtract the same amount from one base.
+fn origin_delta(fd: &Funcdata, a: &Allocation, b: &Allocation) -> Option<i128> {
+    let (base_a, offset_a) = canonical_base(fd, a.base, &mut BTreeSet::new());
+    let (base_b, offset_b) = canonical_base(fd, b.base, &mut BTreeSet::new());
+    if base_a != base_b || !equivalent(fd, a.amount, b.amount, &mut BTreeSet::new()) {
+        return None;
+    }
+    offset_b.checked_sub(offset_a)
+}
+/// Displaced copies of a root allocation, as `(op, root output, displacement)`.
+fn displaced_aliases(
+    fd: &Funcdata,
+    roots: &[Allocation],
+    aliases: &[(VarnodeId, VarnodeId)],
+) -> Vec<(OpId, VarnodeId, i128)> {
+    fd.obank()
+        .iter_alive()
+        .filter_map(|op| {
+            let candidate = allocation(fd, op)?;
+            if roots.iter().any(|r| r.op == op) || aliases.iter().any(|a| a.0 == candidate.output) {
+                return None;
+            }
+            roots.iter().find_map(|r| {
+                let delta = origin_delta(fd, r, &candidate).filter(|&d| d != 0)?;
+                dominates_op(fd, r.op, op).then_some((op, r.output, delta))
+            })
+        })
+        .collect()
 }
 fn identify_aliases(
     fd: &Funcdata,
@@ -548,19 +628,18 @@ fn propagate_bounds(
         }
         changed
     };
-    let mut stable = false;
-    let mut changed = BTreeSet::new();
-    for _ in 0..=ops.len() {
-        changed = update(&mut values);
-        if changed.is_empty() {
-            stable = true;
-            break;
-        }
-    }
     // A pointer induction cycle need not change the outgoing stack area. Widen
-    // unresolved cyclic bounds to unknown and propagate that fact. An unknown
-    // bound reaching a physical stack-pointer write still declines below.
-    if !stable {
+    // bounds still changing after a bounded number of sweeps to unknown and
+    // propagate that fact. An unknown bound reaching a physical stack-pointer
+    // write still declines below.
+    for _ in 0..WIDENINGS {
+        let mut changed = BTreeSet::new();
+        for _ in 0..SWEEPS {
+            changed = update(&mut values);
+            if changed.is_empty() {
+                return Some(values);
+            }
+        }
         for value in changed {
             for offset in values
                 .get_mut(&value)
@@ -570,17 +649,8 @@ fn propagate_bounds(
                 *offset = UNKNOWN;
             }
         }
-        for _ in 0..=ops.len() {
-            if update(&mut values).is_empty() {
-                stable = true;
-                break;
-            }
-        }
-        if !stable {
-            return None;
-        }
     }
-    Some(values)
+    None
 }
 #[derive(Clone, Copy, Debug)]
 struct Reservation {
@@ -806,6 +876,16 @@ impl Action for ActionStackAlloc {
         let (allocations, aliases) = identify_aliases(fd, found.into_values().collect());
         if allocations.is_empty() {
             return 0;
+        }
+        for (op, root, delta) in displaced_aliases(fd, &allocations, &aliases) {
+            let size = fd.vbank().get(fd.obank().get(op).unwrap().get_out().unwrap()).unwrap().get_size();
+            while fd.obank().get(op).unwrap().num_input() > 2 {
+                fd.op_remove_input(op, 2);
+            }
+            fd.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
+            fd.op_set_input(op, root, 0).unwrap();
+            let displacement = fd.new_constant(size, delta as u64 & calc_mask(size));
+            fd.op_set_input(op, displacement, 1).unwrap();
         }
         let Some(headroom) = reserves(fd, &allocations, &aliases, width) else {
             return 0;

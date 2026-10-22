@@ -14,6 +14,13 @@ constant steps. Their difference is invariant. Predecessor-aligned PHIs, includi
 the zero-iteration exit, recover the original base and requested size without
 assuming a trip count or removing probe side effects.
 
+GCC's `-fstack-clash-protection` (the default in Ubuntu, Debian and Fedora
+compilers) instead lowers SP itself one page per iteration until it reaches
+`SP - (size & -4096)`, then subtracts the residual `size & 4095`. That residual
+is not the buffer, so a base carried around a loop by a nonzero constant step is
+declined; recovering it as an allocation emitted `__builtin_alloca(size & 4095)`
+and smashed the stack once `size` reached a page.
+
 Lower and upper SSA analyses bound stack adjustments and derived addresses on
 both sides of each allocation, including outgoing arguments and memory access
 widths. Alignment contributes its maximum downward slack.

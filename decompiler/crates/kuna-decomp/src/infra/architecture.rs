@@ -793,7 +793,7 @@ pub struct Architecture {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
-    /// Materialize dynamic stack allocations across x86 control flow.
+    /// Materialize dynamic stack allocations across control flow.
     pub stack_alloc: bool,
     /// Bounded native local storage and declared pointer views.
     pub local_stack_views: bool,
