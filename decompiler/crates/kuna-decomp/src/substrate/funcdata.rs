@@ -2611,6 +2611,22 @@ impl Funcdata {
                 }
             }
         }
+        // Flow has already created register outputs before these declarations
+        // are seeded. Refresh matching values before simplification can erase
+        // a declared type along with a constant expression.
+        if specs.iter().any(|spec| spec.5) {
+            let values: Vec<_> = self.vbank().iter_loc().collect();
+            for vn in values {
+                let value = self.vbank().get(vn).expect("seeded varnode");
+                let usepoint = self.vn_use_point(vn);
+                if specs.iter().any(|(_, ty, addr, _, pc, isolated)| {
+                    *isolated && value.get_addr() == addr
+                        && value.get_size() == ty.get_size() && &usepoint == pc
+                }) {
+                    self.set_varnode_properties(vn);
+                }
+            }
+        }
     }
 
     /// (kuna, ghidra Phase 4) The local-scope Symbol **id** a HighVariable's

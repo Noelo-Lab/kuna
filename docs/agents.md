@@ -186,5 +186,5 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/web-integration.md` | The WASM/browser front-end and the project site. |
 | `docs/devcontainer.md` | The reproducible build container + cross-arch fixture builds. |
 | `docs/nightly.md` | The nightly CI: full gates plus a decbench sample (score and speed changes night to night). |
-| `docs/release.md` | The MAJOR.MINOR version scheme (`VERSION` file + commit count, `make version`) and the binary release CI. |
+| `docs/release.md` | The MAJOR.MINOR version scheme (`VERSION` file + release count, `make version`) and the binary release CI. |
 | `docs/history.md` | **Rarely needed.** The far past: milestone timeline, the C++→Rust port + its verification, a frozen index for old `DIV-N` citations, vendored-tree provenance (`GHIDRA_REV`) + sync procedure. |

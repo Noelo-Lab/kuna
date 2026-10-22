@@ -24,6 +24,7 @@ pub mod engine;
 pub mod decompile_step;
 pub mod project;
 pub mod inspect;
+pub mod kuna_framebase;
 pub mod disasm;
 pub mod litpool;
 pub mod project_stream;

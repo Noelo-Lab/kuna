@@ -478,3 +478,6 @@ mod signed_float_trunc;
 
 #[path = "forloop_hidden_copy.rs"]
 mod forloop_hidden_copy;
+
+#[path = "signed_constant_width.rs"]
+mod signed_constant_width;
