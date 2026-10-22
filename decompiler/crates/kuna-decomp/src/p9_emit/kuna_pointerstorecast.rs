@@ -37,7 +37,16 @@ pub(super) fn target(
     let target = printed().or_else(|| {
         let high = value.get_high().and_then(|id| fd.high_bank().get(id));
         let declared = high
-            .and_then(|high| high.kuna_symbol_type().cloned())
+            .and_then(|high| high.kuna_symbol_type())
+            .filter(|ty| {
+                matches!(
+                    ty.get_metatype(),
+                    type_metatype::TYPE_STRUCT
+                        | type_metatype::TYPE_ARRAY
+                        | type_metatype::TYPE_UNION
+                )
+            })
+            .cloned()
             .or_else(|| super::kuna_bitcast::declared_member_type(fd, decl_high_type, output))?;
         let offset = high
             .map(|high| high.kuna_symbol_offset().max(0))

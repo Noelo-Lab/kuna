@@ -83,9 +83,9 @@ fn integer_carriers_and_cast_results_assign_to_pointer_members() {
             let call = if opcode == OpCode::CPUI_CAST {
                 "bytes+13".to_owned()
             } else {
-                format!("({word_name})(uintptr_t)(bytes+13)")
+                format!("({word_name})(__UINTPTR_TYPE__)(bytes+13)")
             };
-            let program = format!("#include <stdint.h>\ntypedef struct {{ {word_name} length; unsigned char *slot; }} Frame;\nstatic Frame emit({argument} value) {{ Frame frame; frame.length=0; {statement} return frame; }}\nint main(void) {{ unsigned char bytes[32]; return emit({call}).slot != bytes+13; }}\n");
+            let program = format!("typedef struct {{ {word_name} length; unsigned char *slot; }} Frame;\nstatic Frame emit({argument} value) {{ Frame frame; frame.length=0; {statement} return frame; }}\nint main(void) {{ unsigned char bytes[32]; return emit({call}).slot != bytes+13; }}\n");
             if Command::new("clang").arg("--version").output().is_err() {
                 continue;
             }
