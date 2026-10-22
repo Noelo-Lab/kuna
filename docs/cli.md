@@ -1009,9 +1009,14 @@ preset it selects; an explicit `--mode reliable` keeps the catalog's
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
-Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
-explicitly spelling `--option fast_funcdisc on` opts an address run back into
-that analysis.
+Name selection suppresses it too on the first attempt, because a name the
+loader or the remaining discovery already carries needs no whole-image walk to
+resolve; that attempt then renders what `--addr` on the same entry renders. A
+name that misses retries with the preset's walk restored, so a miss reports
+what it reported before, and a placeholder spelling (`sub_<hex>`, `FUN_<hex>`,
+`func_0x<hex>`) keeps the walk from the start, since its entry may exist only
+because the walk found it. Explicitly spelling `--option fast_funcdisc on|off`
+always wins. Only the text surface defers it; `--json` keeps the preset.
 
 `--target <SLEIGH-language-id>` selects the decoder while a recognized object
 container continues to own its section mappings and image base. `--target default`
