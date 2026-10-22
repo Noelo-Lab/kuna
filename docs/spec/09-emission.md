@@ -223,8 +223,12 @@ spelling. Each side's kind is the type the C prints it with: a side whose bytes
 no member names, printed by partial access as `*(T *)&storage[k]`, has that
 `T` (`printc.rs (PrintC::partial_piece_type)`), so a word moved between two
 such pieces stays a plain copy rather than reading the unsigned word into a
-float; that printed type decides the side before the unresolved-aggregate rules
-above and below. A partial struct or union is never taken as a side's C type;
+float. A side printed through a named member path, with or without partial
+access, has the scalar type of the member or truncating cast that path ends in
+when it is the side's width, the same walk that prints it, so a float stored to
+`store.real[2]` keeps its bits even when another incarnation merged into that
+global supplies an unsigned word type. That printed type decides the side before
+the unresolved-aggregate rules above and below. A partial struct or union is never taken as a side's C type;
 the value's own type stands in for it, except for a side that is a variable of
 its own, not part of a struct or union symbol, whose declared type is that
 partial aggregate: the declaration prints it as `undefinedN`, so the side is an
