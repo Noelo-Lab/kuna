@@ -8367,14 +8367,15 @@ impl PrintC {
         let mods = self.context.mods() & !(modifiers::PRINT_LOAD_VALUE | modifiers::PRINT_STORE_VALUE);
         self.push_storage_pointer_ir(fd, arch, op, &access, mods);
         if let Some((pointer, load, pointer_size)) = array_source {
-            // The original LOAD reads all source bytes before the destination
-            // changes. memmove retains that behavior for potentially aliasing
-            // addresses and avoids inventing a scalar value for an array.
-            let types = fd.get_arch().types().unwrap();
-            let byte = types.get_base(1, crate::dtype::type_metatype::TYPE_UINT).unwrap();
-            let pointer_type = types.get_type_pointer(pointer_size, byte, 1).unwrap();
-            self.push_cast_open(&pointer_type, op);
-            self.push_vn_ir_m(fd, arch, pointer, load, mods);
+            let (pointer, reader, cast) =
+                crate::p9_emit::kuna_stackassign::memmove_source(fd, pointer, load).unwrap_or((pointer, load, true));
+            if cast {
+                let types = fd.get_arch().types().unwrap();
+                let byte = types.get_base(1, crate::dtype::type_metatype::TYPE_UINT).unwrap();
+                let pointer_type = types.get_type_pointer(pointer_size, byte, 1).unwrap();
+                self.push_cast_open(&pointer_type, op);
+            }
+            self.push_vn_ir_m(fd, arch, pointer, reader, mods);
             self.push_constant_ir(assignment.size as u64, 4, op);
             return;
         }

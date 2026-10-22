@@ -248,3 +248,49 @@ pub(super) fn load_pointer(fd: &Funcdata, definition: OpId) -> Option<(VarnodeId
         space.get_addr_size() as i32,
     ))
 }
+
+/// The memmove source operand: implied pointer CASTs are peeled, and the
+/// `unsigned char *` conversion is requested only for a non-pointer expression.
+pub(super) fn memmove_source(
+    fd: &Funcdata,
+    mut pointer: VarnodeId,
+    mut reader: OpId,
+) -> Option<(VarnodeId, OpId, bool)> {
+    let typed_pointer = |vn: VarnodeId, op: OpId| {
+        let value = fd.vbank().get(vn)?;
+        if value.is_constant() {
+            return Some(false);
+        }
+        let ty = crate::printc::declared_variable_type(fd, fd.get_arch().decl_high_type, vn)
+            .unwrap_or_else(|| fd.vn_type_read_facing(vn, op));
+        Some(
+            ty.get_metatype() == type_metatype::TYPE_PTR
+                && ty
+                    .get_ptr_to()
+                    .is_some_and(|to| to.get_metatype() != type_metatype::TYPE_CODE),
+        )
+    };
+    for _ in 0..8 {
+        let value = fd.vbank().get(pointer)?;
+        let Some(cast) = value
+            .is_implied()
+            .then(|| value.get_def())
+            .flatten()
+            .and_then(|id| fd.obank().get(id).map(|op| (id, op)))
+        else {
+            break;
+        };
+        if cast.1.code() != OpCode::CPUI_CAST {
+            break;
+        }
+        let input = cast.1.get_in(0)?;
+        if fd.vbank().get(input)?.get_size() != value.get_size()
+            || !typed_pointer(input, cast.0)?
+        {
+            break;
+        }
+        pointer = input;
+        reader = cast.0;
+    }
+    Some((pointer, reader, !typed_pointer(pointer, reader)?))
+}
