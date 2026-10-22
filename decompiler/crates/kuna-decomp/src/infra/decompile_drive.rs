@@ -123,7 +123,13 @@ impl FlowEnvironment for ArchFlowEnv {
         // so a namespaced (demangled) callee like `foo::Bar::baz` renders its
         // qualified name instead of `sub_<addr>` (C++ queryFunction spans the
         // scope tree; kuna's per-scope maptable otherwise hides it).
-        arch.symboltab.function_display_name_across_scopes(entry)
+        if let Some(name) = arch.symboltab.function_display_name_across_scopes(entry) {
+            return Some(name);
+        }
+        // (kuna `lazyfuncs`) A name-only entry has no `FunctionSymbol`; answering `None`
+        // makes flow follow the branch INTO the callee, so the entry set stands in.
+        arch.is_lazy_entry(entry.get_offset())
+            .then(|| arch.name_function(entry))
     }
     fn query_call_no_return(&self, entry: &Address) -> bool {
         crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch(), entry)

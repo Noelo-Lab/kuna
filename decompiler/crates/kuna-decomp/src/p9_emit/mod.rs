@@ -30,6 +30,7 @@ pub mod kuna_paramrefdecl;
 pub mod kuna_addressdecl;
 pub mod kuna_callerstack;
 pub mod kuna_bitcast;
+pub mod kuna_pointerstorecast;
 pub(crate) mod kuna_floatslice;
 pub mod kuna_aggregatecast;
 pub(crate) mod kuna_memberbase;
@@ -44,6 +45,7 @@ pub mod kuna_warnstyle;
 pub mod kuna_infloopstyle;
 pub mod kuna_arraycoverwidth;
 pub mod kuna_bytearrayc;
+pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 mod kuna_armconstantshift;
 pub mod kuna_emptystrconst;

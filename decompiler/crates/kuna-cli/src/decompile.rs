@@ -39,6 +39,9 @@ pub struct DecompileArgs {
     pub raw: bool,
     pub regions: bool,
     pub options: Vec<(String, String)>,
+    /// Run the first by-name attempt with `fast_funcdisc off` after every other
+    /// option; a name miss retries without it ([`defers_fast_funcdisc`]).
+    pub defer_fast_funcdisc: bool,
     pub kasserts: Vec<String>,
     /// `--define-function <start[-end][=name] | @file>` (repeatable): the
     /// caller-declared function boundaries, lowered to `function bounds` lines.
@@ -73,6 +76,26 @@ pub struct DecompileArgs {
 /// function name; use `--addr` for bare numeric addresses) — `_looks_like_addr`.
 pub(crate) fn looks_like_addr(target: &str) -> bool {
     target.starts_with("0x") || target.starts_with("0X")
+}
+
+/// Whether a by-name selection skips a preset's `fast_funcdisc` walk on its first
+/// attempt: only when the resolved `options` turn the walk on, not when the caller
+/// named the option, and not for an engine placeholder spelling (`sub_<hex>`,
+/// `FUN_<hex>`, `func_0x<hex>`), whose entry may exist only because that walk
+/// found it.
+fn defers_fast_funcdisc(target: &str, explicit: bool, options: &[(String, String)]) -> bool {
+    let walk_on = options
+        .iter()
+        .rev()
+        .find(|(name, _)| name == "fast_funcdisc")
+        .is_some_and(|(_, value)| value == "on");
+    let placeholder = ["sub_", "FUN_", "func_"].iter().any(|prefix| {
+        target.strip_prefix(prefix).is_some_and(|rest| {
+            let digits = rest.strip_prefix("0x").unwrap_or(rest);
+            !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_hexdigit())
+        })
+    });
+    walk_on && !explicit && !placeholder
 }
 
 fn parse_cli_address(value: &str) -> Result<u64, String> {
@@ -619,9 +642,15 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
     // The selected function's name, or `None` for an `--addr` run — what decides
     // whether a `<func>::`-qualified directive binds to the selection.
     let selected: Option<&str> = if by_address { None } else { Some(args.target.as_str()) };
-    let attempt = |injected: &[(&'static str, &'static str)]| {
+    let attempt = |injected: &[(&'static str, &'static str)], defer_fast_funcdisc: bool| {
         let script = build_script_for_input(
-            args, &binary, by_address, &out_path, injected, regions_path.as_deref(),
+            args,
+            &binary,
+            by_address,
+            &out_path,
+            injected,
+            defer_fast_funcdisc,
+            regions_path.as_deref(),
         );
 
 
@@ -768,11 +797,15 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
         })
     };
 
-    let mut result = attempt(&base);
+    let deferred = args.defer_fast_funcdisc && !by_address;
+    let mut result = attempt(&base, deferred);
+    if deferred && matches!(&result, Err((_, true))) {
+        result = attempt(&base, false);
+    }
     if !discovery.is_empty() && matches!(&result, Err((_, true))) {
         let widened: Vec<(&'static str, &'static str)> =
             base.iter().chain(discovery.iter()).copied().collect();
-        result = attempt(&widened);
+        result = attempt(&widened, false);
     }
     result.map_err(|(message, _)| message)
 }
@@ -1051,6 +1084,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     if addr && !explicit_fast_funcdisc {
         options.push(("fast_funcdisc".into(), "off".into()));
     }
+    let defer_fast_funcdisc = defers_fast_funcdisc(&target, explicit_fast_funcdisc, &options);
 
     Ok(run(&DecompileArgs {
         binary,
@@ -1060,6 +1094,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         raw,
         regions,
         options,
+        defer_fast_funcdisc,
         kasserts,
         func_decls,
         assertions,
@@ -1351,6 +1386,7 @@ mod tests {
             raw: false,
             regions: false,
             options: Vec::new(),
+            defer_fast_funcdisc: false,
             kasserts: Vec::new(),
             func_decls: Vec::new(),
             assertions: Vec::new(),
@@ -1378,8 +1414,52 @@ mod tests {
             args.by_address,
             out_path,
             injected,
+            false,
             regions_path,
         )
+    }
+
+    /// A real name defers a preset's discovery walk; a placeholder spelling or an
+    /// explicit `--option fast_funcdisc` keeps it.
+    #[test]
+    fn only_a_real_name_defers_fast_funcdisc() {
+        let on = [("fast_funcdisc".to_string(), "on".to_string())];
+        let defers = |target, explicit| super::defers_fast_funcdisc(target, explicit, &on);
+        assert!(defers("main", false));
+        assert!(defers("sub_main", false));
+        assert!(defers("ns::Foo::bar", false));
+        assert!(!defers("main", true));
+        for placeholder in ["sub_401280", "FUN_00401280", "func_0x00401280", "sub_ABCDEF"] {
+            assert!(!defers(placeholder, false), "{placeholder}");
+        }
+    }
+
+    /// With no preset walk to skip (`reliable`), nothing is deferred, so a name
+    /// miss runs the engine once rather than twice.
+    #[test]
+    fn nothing_defers_without_a_preset_walk() {
+        let off = [
+            ("fast_funcdisc".to_string(), "on".to_string()),
+            ("fast_funcdisc".to_string(), "off".to_string()),
+        ];
+        assert!(!super::defers_fast_funcdisc("main", false, &[]));
+        assert!(!super::defers_fast_funcdisc("main", false, &off));
+    }
+
+    /// The deferred `off` follows the preset's `on`, so it wins for that attempt.
+    #[test]
+    fn deferred_fast_funcdisc_outranks_the_preset() {
+        let mut args = script_args("/x/a.out", "main");
+        args.options = vec![("fast_funcdisc".into(), "on".into())];
+        let out = Path::new("/tmp/kuna_c_x.c");
+        let script = |defer| {
+            super::build_script_for_input(&args, &args.binary, false, out, LISTING, defer, None)
+        };
+        let last = |text: String| {
+            text.lines().filter(|l| l.starts_with("option fast_funcdisc")).last().map(str::to_owned)
+        };
+        assert_eq!(last(script(true)).as_deref(), Some("option fast_funcdisc off"));
+        assert_eq!(last(script(false)).as_deref(), Some("option fast_funcdisc on"));
     }
 
     /// Recorded `decomp_dbg` transcript: the empty-scope load failure DIV-88's
