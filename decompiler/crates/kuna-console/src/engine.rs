@@ -4633,8 +4633,13 @@ fn commit_analysis_output(
     //    site and the printer rendered `sub_<addr>` (DIV-59).
     // (kuna `lazyfuncs`) On, an entry keeps its NAME but no `Function` is created here.
     let lazy_funcs = prog.arch().analysis_lazyfuncs;
+    let eager = if lazy_funcs {
+        crate::kuna_lazyfuncs::fact_entries(&out)
+    } else {
+        std::collections::HashSet::new()
+    };
     if lazy_funcs {
-        let starts: Vec<u64> = out.entries.clone();
+        let starts: Vec<u64> = out.entries.iter().copied().filter(|v| !eager.contains(v)).collect();
         prog.arch_mut().set_lazy_entry_starts(starts);
     }
     for &vma in &out.entries {
@@ -4647,7 +4652,7 @@ fn commit_analysis_output(
             .unwrap_or_else(|| prog.arch().name_function(&addr));
         let type_code = prog.arch().types().get_type_code()?;
         let min_size = prog.arch().min_funcsymbol_size;
-        if !lazy_funcs {
+        if !lazy_funcs || eager.contains(&vma) {
             let arch = prog.arch_mut();
             if arch.symboltab.find_function_across_scopes(&addr).is_none() {
                 let (scope, base) = arch
@@ -4857,6 +4862,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -4933,6 +4939,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())
@@ -4995,6 +5002,7 @@ fn commit_analysis_output(
             match arch.symboltab.get_global_scope() {
                 Some(global) => {
                     arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
                         || arch
                             .symboltab
                             .find_container(global, &addr, 1, &Address::new_invalid())

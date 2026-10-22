@@ -12,12 +12,13 @@ use kuna_base::address::Address;
 use kuna_console::decompile_step::{decompile_one, DecompileSeed};
 use kuna_console::engine::{bootstrap_from_image, ConsoleProgram};
 
-fn fixture() -> PathBuf {
+fn fixture(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()
         .unwrap()
-        .join("decompiler/crates/kuna-analysis/tests/fixtures/fauxware")
+        .join("decompiler/crates/kuna-analysis/tests/fixtures")
+        .join(name)
 }
 
 fn specs() -> String {
@@ -30,8 +31,8 @@ fn specs() -> String {
         .into_owned()
 }
 
-fn load(lazy: bool) -> ConsoleProgram {
-    let mut prog = bootstrap_from_image(fixture().to_str().unwrap(), "", &[specs()])
+fn load(image: &str, lazy: bool) -> ConsoleProgram {
+    let mut prog = bootstrap_from_image(fixture(image).to_str().unwrap(), "", &[specs()])
         .expect("bootstrap fixture with built processor specs");
     if lazy {
         prog.arch_mut().set_kuna_option("lazyfuncs", "on").expect("settable");
@@ -50,8 +51,8 @@ fn entries(prog: &ConsoleProgram) -> Vec<u64> {
 }
 
 /// Every entry's emitted C, decompiled the way `kuna decompile <image> <addr>` does.
-fn bodies(lazy: bool, inventory: &[u64]) -> Vec<(String, String)> {
-    let mut prog = load(lazy);
+fn bodies(image: &str, lazy: bool, inventory: &[u64]) -> Vec<(String, String)> {
+    let mut prog = load(image, lazy);
     let mut out = Vec::new();
     for &vma in inventory {
         // Rebuild in THIS program's manager: an `Address` from another program carries
@@ -74,11 +75,10 @@ fn bodies(lazy: bool, inventory: &[u64]) -> Vec<(String, String)> {
     out
 }
 
-#[test]
-fn lazyfuncs_keeps_every_body_identical() {
-    let inventory = entries(&load(false));
-    let off = bodies(false, &inventory);
-    let on = bodies(true, &inventory);
+fn assert_identical(image: &str) {
+    let inventory = entries(&load(image, false));
+    let off = bodies(image, false, &inventory);
+    let on = bodies(image, true, &inventory);
     assert!(!off.is_empty(), "the fixture must decompile");
     assert_eq!(off.len(), on.len(), "both arms must decompile the same entries");
     for ((name, off_c), (on_name, on_c)) in off.iter().zip(on.iter()) {
@@ -88,9 +88,24 @@ fn lazyfuncs_keeps_every_body_identical() {
 }
 
 #[test]
+fn lazyfuncs_keeps_every_body_identical() {
+    assert_identical("fauxware");
+}
+
+/// A stripped image's discovered entries carry the facts the commit lands on a
+/// `Function` -- the entry oracle's `main` name and declaration, discovered no-return
+/// verdicts -- so a name-only commit of those entries would change their callers.
+#[test]
+fn lazyfuncs_keeps_stripped_bodies_identical() {
+    assert_identical("stripped_dynamic_x86_64");
+    assert_identical("pe_imports_stripped.exe");
+}
+
+#[test]
 fn lazyfuncs_commits_names_only() {
-    assert!(load(false).arch().lazy_entry_starts.is_empty(), "the faithful commit parks none");
-    let on = load(true);
+    let off = load("fauxware", false);
+    assert!(off.arch().lazy_entry_starts.is_empty(), "the faithful commit parks none");
+    let on = load("fauxware", true);
     let lazy = on.arch().lazy_entry_starts.clone();
     assert!(!lazy.is_empty(), "the lazy commit must park the entry starts");
     let space = on.arch().manage().get_default_code_space().cloned().expect("code space");
@@ -105,5 +120,5 @@ fn lazyfuncs_commits_names_only() {
 
 #[test]
 fn lazyfuncs_is_off_by_default() {
-    assert!(!load(false).arch().analysis_lazyfuncs, "the option must default off");
+    assert!(!load("fauxware", false).arch().analysis_lazyfuncs, "the option must default off");
 }
