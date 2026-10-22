@@ -1113,3 +1113,123 @@ int main(void) {{
         std::fs::remove_file(path).unwrap();
     }
 }
+
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+#[test]
+fn zeroing_loops_preserve_later_partial_record_fields() {
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "a C compiler is required for semantic validation");
+    let input = common::scratch_file("zero-loop-fields", "o");
+    process::required_output(
+        Command::new(compilers[0])
+            .arg("-c")
+            .arg(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/zero_loop_fields.s"),
+            )
+            .arg("-o")
+            .arg(&input),
+    );
+    let printed = decompile(
+        &input,
+        "fill_two_requests",
+        &[
+            "--assert",
+            "prototype binary_fill_two_requests unsigned int binary_fill_two_requests(const unsigned int *family)",
+            "--assert",
+            "prototype binary_record_hash unsigned int binary_record_hash(void *record,unsigned int tag)",
+            "--assert-strict",
+        ],
+    );
+    let source = common::scratch_file("zero-loop-fields", "c");
+    let executable = common::scratch_file("zero-loop-fields", "exe");
+    std::fs::write(
+        &source,
+        format!(
+            r#"
+#include <stdint.h>
+#include <stdio.h>
+static unsigned int inspect(void *, unsigned int);
+#define binary_fill_two_requests printed_fill
+#define binary_record_hash inspect
+{printed}
+#undef binary_fill_two_requests
+#undef binary_record_hash
+unsigned int binary_fill_two_requests(const unsigned int *);
+static uint32_t family;
+static unsigned calls, failed;
+static unsigned char expected_byte(unsigned offset, unsigned tag) {{
+    switch(offset) {{
+        case 0: return 20;
+        case 4: return family;
+        case 5: return family >> 8;
+        case 6: return 1;
+        case 7: return tag == 2 ? 3 : 0;
+        case 16: return 3;
+        case 17: return 1;
+        default: return 0;
+    }}
+}}
+static unsigned int inspect(void *record, unsigned int tag) {{
+    unsigned char *bytes = record;
+    uint32_t hash = 0;
+    if(tag != ++calls) failed = 1;
+    for(unsigned offset=0; offset<64; ++offset) {{
+        if(bytes[offset] != expected_byte(offset, tag)) failed = 1;
+        hash = hash*33u + bytes[offset];
+    }}
+    bytes[4] ^= 0xff;
+    bytes[5] ^= 0xff;
+    return hash ^ tag;
+}}
+static uint32_t expected_hash(unsigned tag) {{
+    uint32_t hash = 0;
+    for(unsigned offset=0; offset<64; ++offset)
+        hash = hash*33u + expected_byte(offset, tag);
+    return hash ^ tag;
+}}
+int main(void) {{
+    static const uint32_t edges[] = {{0, 1, 0xffff, 0x10000, 0x7fffffff, 0x80000000, 0xffffffff}};
+    uint32_t random = 0x5f372a19;
+    for(unsigned i=0; i<2000; ++i) {{
+        random ^= random<<13; random ^= random>>17; random ^= random<<5;
+        family = i<sizeof edges/sizeof edges[0] ? edges[i] : random;
+        uint32_t expected = expected_hash(1) + expected_hash(2);
+        if(binary_fill_two_requests(&family) != expected) return 1;
+        calls = failed = 0;
+        uint32_t actual = printed_fill(&family);
+        if(actual != expected || calls != 2 || failed) {{
+            fprintf(stderr, "family=%08x result=%08x/%08x calls=%u invalid_bytes=%u\n",
+                family, actual, expected, calls, failed);
+            return 2;
+        }}
+    }}
+    return 0;
+}}
+"#,
+        ),
+    )
+    .unwrap();
+    for compiler in compilers {
+        for level in ["-O0", "-O2"] {
+            process::required_output(
+                Command::new(compiler)
+                    .args([
+                        "-std=c11", "-fno-strict-aliasing", "-fwrapv", level,
+                        "-Werror=uninitialized", "-fsanitize=undefined", "-fno-sanitize-recover=all",
+                    ])
+                    .arg(&source)
+                    .arg(&input)
+                    .arg("-o")
+                    .arg(&executable),
+            );
+            process::required_output(&mut Command::new(&executable));
+        }
+    }
+    for path in [input, source, executable] {
+        std::fs::remove_file(path).unwrap();
+    }
+}

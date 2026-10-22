@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3182,
-    3182
+    3179,
+    3179
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3182,10 +3182,7 @@
     "data:zerofillreturn #6: option on prints return 0.0",
     "data:zerofillreturn #7: option on returns the double on both exits of pick",
     "data:zerofillreturn #8: option on returns the aggregate in d0 and d1",
-    "data:zerofillreturn #9: a 64-bit vector built lane by lane prints the same in both passes",
-    "data:zeroloopfield #1: nl stores req2's type after the loop that zeroes req2",
-    "data:zeroloopfield #2: no request field is copied out of another request",
-    "data:zeroloopfield #3: off stores both types from the temporary loaded before the loops, as main does"
+    "data:zerofillreturn #9: a 64-bit vector built lane by lane prints the same in both passes"
   ],
   "returncode": 0,
   "unit_footer": null

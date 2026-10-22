@@ -1,4 +1,4 @@
-//! Opt-in C byte transfers for direct, nonvolatile mapped byte-array accesses.
+//! C byte transfers for local stack arrays and opt-in mapped global byte arrays.
 
 use crate::context::{OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
@@ -28,7 +28,7 @@ pub(super) fn byte_array(ty: &Datatype) -> bool {
 
 /// Refuse wider containers, noninteger values and accesses without a complete
 /// byte-array storage contract. Volatile annotations are never split into bytes.
-pub(crate) fn access(fd: &Funcdata, vn: VarnodeId) -> Option<Access> {
+pub(crate) fn access(fd: &Funcdata, vn: VarnodeId, globals: bool) -> Option<Access> {
     let value = fd.vbank().get(vn)?;
     if value.is_constant() || value.is_annotation() || value.is_volatile() {
         return None;
@@ -56,15 +56,6 @@ pub(crate) fn access(fd: &Funcdata, vn: VarnodeId) -> Option<Access> {
         return None;
     }
     let high = fd.high_bank().get(value.get_high()?)?;
-    let global = high.kuna_global()
-        || (0..high.num_instances()).any(|i| {
-            fd.vbank()
-                .get(high.get_instance(i))
-                .is_some_and(|v| v.is_persist())
-        });
-    if !global {
-        return None;
-    }
     let symbol = high.kuna_symbol_type()?;
     let offset = high.kuna_symbol_offset().max(0);
     if !byte_array(symbol) || offset.checked_add(size)? > symbol.get_size() {
@@ -73,7 +64,32 @@ pub(crate) fn access(fd: &Funcdata, vn: VarnodeId) -> Option<Access> {
     if size == 1 && symbol.get_size() != 1 {
         return None;
     }
-    let space = value.get_addr().get_space()?;
+    let global = high.kuna_global()
+        || (0..high.num_instances()).any(|i| {
+            fd.vbank()
+                .get(high.get_instance(i))
+                .is_some_and(|v| v.is_persist())
+        });
+    let space = if global {
+        if !globals {
+            return None;
+        }
+        value.get_addr().get_space()?
+    } else {
+        // A scalar view into an inferred stack array still names C array
+        // storage. Do not apply this to implied values or register-only arrays.
+        let stack = fd.get_arch().manage().get_stack_space()?;
+        if value.is_implied()
+            || !(0..high.num_instances()).any(|i| {
+                fd.vbank()
+                    .get(high.get_instance(i))
+                    .is_some_and(|v| v.get_space().get_index() == stack.get_index())
+            })
+        {
+            return None;
+        }
+        stack
+    };
     if space.get_word_size() != 1 {
         return None;
     }
