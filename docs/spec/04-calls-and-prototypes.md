@@ -2023,6 +2023,26 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+A wider heritaged register range can contain several separate output entries.
+`Heritage::guard_returns_overlapping` keeps the extra entries as inactive
+candidates instead of dropping their bytes or treating the range alone as
+evidence that the caller returns every word. With a declared wide callee,
+return scoring lets frame slots materialized by spacebase simplification
+receive stack SSA before finalizing. A wide load alone is not proof, since it
+can reload unused incoming arguments.
+Before deriving the output map, `kuna_retcallhalf::whole_pair` can retain a
+high-first pair when both words at every live return are corresponding slices
+of one locked, same-convention eight-byte integer call result. Corresponding
+phi inputs are checked together; other exits may return constants, but at least
+one must return a whole wide value. The ABI supplies the join order. Explicit
+caller outputs and competing output classes are unchanged, and a caller that
+returns only a call's low or high word does not acquire its other word.
+
+The authored `kuna-cli/tests/libgcc_divdi3.rs` round trips cover direct,
+saved-across-call and guarded quotient returns at compiler `-O0` and `-O2`,
+both with the runtime contract and with an explicit wide prototype while
+`libproto` is off. They also check single-word truncations and call effects.
+
 After native return trials are finalized, an otherwise unknown ten-byte scalar
 result in the full x87 ST0 register receives an extended floating type when the
 active convention explicitly classifies that exact output storage as floating.

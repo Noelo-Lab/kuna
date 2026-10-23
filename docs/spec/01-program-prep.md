@@ -1743,6 +1743,16 @@ moves.
   (stale i386 `-O0` outgoing stack slots, the AArch64 `x8` result register), and
   in an i386 PIC object, whose `GOTOFF` addresses the loader leaves unresolved,
   a `char *` parameter renders such a garbage address as a string literal.
+  The same `libproto` gate seeds the reserved compiler-runtime name `__divdi3`
+  on SPARC32 big-endian ELF under `sparc:BE:32:default:default`
+  (`decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libgcc.rs (seed)`).
+  Its DI-mode contract is a signed eight-byte quotient of two signed eight-byte
+  operands, independent of the target's four-byte C `long`. The normal compiler
+  model assigns the argument and return register pairs. Thus a caller storing
+  only `%o1` still stores the low word of the computed quotient instead of reading
+  an unassigned local. Other names and targets retain their existing inference.
+  Existing import-address and name-ambiguity rules apply, and DWARF or explicit
+  prototype assertions retain precedence over the built-in signature.
 - **(kuna) Measured libc signatures** (`libcsigs`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/kuna_libcsigs.rs (LibcSigsPass)`):
   the second, larger half of the same table, closing most of the LOSS above. Which
