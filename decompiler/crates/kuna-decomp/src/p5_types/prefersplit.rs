@@ -269,7 +269,7 @@ impl PreferSplitManager {
             let origval = vn_get_offset(data, vn);
             // Split the constant into two pieces
             let loval = origval & calc_mask(losize);
-            let hival = (origval >> (8 * losize)) & calc_mask(hisize);
+            let hival = origval.checked_shr((8 * losize) as u32).unwrap_or(0) & calc_mask(hisize);
             if setlo && inst.lo.is_none() {
                 inst.lo = Some(data.new_constant(losize, loval));
             }
@@ -447,7 +447,7 @@ impl PreferSplitManager {
         if vn_is_constant(data, ininst_vn) {
             let origval = vn_get_offset(data, ininst_vn);
             let loval = origval & calc_mask(losize); // Split the constant into two pieces
-            let hival = (origval >> (8 * losize)) & calc_mask(hisize);
+            let hival = origval.checked_shr((8 * losize) as u32).unwrap_or(0) & calc_mask(hisize);
             ininst.lo = Some(data.new_constant(losize, loval));
             ininst.hi = Some(data.new_constant(hisize, hival));
         } else {

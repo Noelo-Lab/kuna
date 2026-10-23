@@ -211,8 +211,11 @@ statements that existed before the bootstrap, and the new statements are merged
 only at the end, so one callee never reads another's partial answer.
 
 The trials exist only after heritage and trial scoring, so the bootstrap cannot
-run before the pipeline. `ActionActiveParam` pauses immediately before it binds
-the hitting call's argument list (a partial-completion return that the action
+run before the pipeline. `ActionActiveParam` scores the pass's calls and collects
+all ready split-storage callees before finalizing any argument list. This keeps
+deferred argument repairs intact across the pause and lets sibling callees be
+checked together for cycles against one snapshot. It pauses before binding
+the argument lists (a partial-completion return that the action
 tree resumes with its state intact), the drive runs the callee recovery against a
 detached action root, copies the new statements onto the paused `Funcdata`, and
 re-runs the three `ActionFuncLink` seams that read them (the passthrough claim,
@@ -235,6 +238,10 @@ callee's flow and pipeline comments never enter the program-wide comment databas
 and the one-shot staged prototype list was already consumed by the outer drive.
 What the nested drive states is handed back explicitly as the caller's parameter
 types; nothing else survives it.
+Nested recovery shares the enclosing drive's memory accounting and takes the
+earlier of the enclosing and requested deadlines, so calling a helper cannot
+renew either watchdog allowance. Recovery and statement publication are caught
+within the same state-restoration boundary.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer

@@ -95,3 +95,41 @@ fn naming_protoorder_orders_the_narrowed_batch() {
     assert_eq!(code, 0, "{err}");
     assert!(out.contains("double *a0"), "{out}");
 }
+
+#[test]
+fn sibling_callees_in_a_cycle_do_not_publish_partial_contracts() {
+    use kuna_console::{decompile_step::{decompile_one, DecompileSeed}, engine::bootstrap_from_object};
+    use kuna_decomp::decompile_drive::DrivePurpose;
+
+    let specs = vec![common::repo_root().join("specs").to_string_lossy().into_owned()];
+    let mut program = bootstrap_from_object(&fixture(), "", &specs).unwrap();
+    program.commit_pending_analysis().unwrap();
+    program.arch_mut().set_kuna_option("protoorder", "types").unwrap();
+    let entry = program.function_entries_canonical().into_iter()
+        .find(|e| e.name == "ccw_cycle_entry").unwrap();
+    let mut seed = DecompileSeed::plain(&[], &[]);
+    seed.purpose = DrivePurpose::SingleFunction;
+    decompile_one(program.arch_mut(), &entry.name, entry.addr, entry.size as i32, &seed, &[])
+        .result.unwrap();
+    assert!(program.arch().kuna_protoorder_types.is_empty(),
+        "a cycle between direct callees must not state either contract");
+}
+
+#[test]
+fn a_recovery_drive_keeps_the_enclosing_deadline() {
+    use kuna_console::engine::bootstrap_from_object;
+    use kuna_decomp::decompile_drive::decompile_func;
+    use std::time::{Duration, Instant};
+
+    let specs = vec![common::repo_root().join("specs").to_string_lossy().into_owned()];
+    let mut program = bootstrap_from_object(&fixture(), "", &specs).unwrap();
+    program.commit_pending_analysis().unwrap();
+    let entry = program.function_entries_canonical().into_iter()
+        .find(|e| e.name == "ccw_helper").unwrap();
+    let deadline = Instant::now();
+    program.arch_mut().kuna_fn_deadline = Some(deadline);
+    program.arch_mut().kuna_fn_budget = Some(Duration::from_secs(60));
+    let result = decompile_func(program.arch_mut(), &entry.name, entry.addr, entry.size as i32);
+    assert!(result.is_err(), "the callee must not receive another 60 seconds");
+    assert_eq!(program.arch().kuna_fn_deadline, Some(deadline));
+}

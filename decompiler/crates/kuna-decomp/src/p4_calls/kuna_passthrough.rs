@@ -578,7 +578,7 @@ fn claim_untouched_registers_mode(data: &mut Funcdata, late: bool) {
         .collect();
     data.kuna_set_passthrough_vararg_calls(vararg);
     let first = first_calls(data);
-    let mut claims: Vec<PassThroughClaim> = Vec::new();
+    let mut claims = if late { data.kuna_passthrough_claims().to_vec() } else { Vec::new() };
     for idx in 0..data.num_calls() {
         if !data.get_call_specs(idx).is_input_active() || !first.contains(&data.get_call_specs(idx).get_op()) {
             continue;

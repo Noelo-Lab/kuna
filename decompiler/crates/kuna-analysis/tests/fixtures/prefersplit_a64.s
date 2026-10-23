@@ -120,3 +120,31 @@ ccw_intshelper:
     ldr w0, [x0]
     ret
 .size ccw_intshelper, .-ccw_intshelper
+
+.global ccw_cycle_entry
+.type ccw_cycle_entry, %function
+ccw_cycle_entry:
+    stp x29, x30, [sp, #-16]!
+    ldr d0, [x0]
+    bl .Lcycle_a
+    fneg d0, d0
+    bl .Lcycle_b
+    ldp x29, x30, [sp], #16
+    ret
+.size ccw_cycle_entry, .-ccw_cycle_entry
+
+.global ccw_cycle_a
+.type ccw_cycle_a, %function
+ccw_cycle_a:
+.Lcycle_a:
+    fneg d0, d0
+    b .Lcycle_b
+.size ccw_cycle_a, .-ccw_cycle_a
+
+.global ccw_cycle_b
+.type ccw_cycle_b, %function
+ccw_cycle_b:
+.Lcycle_b:
+    fneg d0, d0
+    b .Lcycle_a
+.size ccw_cycle_b, .-ccw_cycle_b

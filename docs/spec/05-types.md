@@ -355,6 +355,11 @@ the function's op bank: the audit follows `COPY`, `CAST`, constant `INT_ADD`/
 it names the same base, so a function growing unrelated ops cannot change the
 answer and there is no whole-scan budget to hit. A family the walk cannot complete
 refuses the promotion.
+Every dynamic term in a nested address must prove that width; a later matching
+scale cannot erase an unknown or conflicting term, and a scale must fit the
+element-size representation without truncation. An access whose address cannot
+be peeled within the walk's depth bound also refuses promotion, even if another
+access through the same base was proven.
 
 With stackviews enabled, `decompiler/crates/kuna-decomp/src/p5_types/kuna_stackwordtypes.rs`
 separates a generated frame backing from the value stored through another

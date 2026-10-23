@@ -338,9 +338,6 @@ struct Evidence {
     slots: BTreeMap<intb, Slot>,
     /// A dereference whose offset was not a constant (the array signal).
     dynamic_offset: bool,
-    /// The element size of a dynamic `PTRADD` access when its scale is a
-    /// constant; `None` when the stride is unknown.
-    dynamic_element_size: Option<int4>,
     /// The base reached an operation that treats it as an integer.
     integer_use: bool,
     /// The base flows into a phi, so some dereference of it is loop-carried.
@@ -419,13 +416,6 @@ impl Evidence {
             slot.accesses.extend(theirs.accesses.iter().cloned());
         }
         self.dynamic_offset |= other.dynamic_offset;
-        if other.dynamic_offset {
-            self.dynamic_element_size = match (self.dynamic_element_size, other.dynamic_element_size) {
-                (None, size) => size,
-                (Some(a), Some(b)) if a == b => Some(a),
-                _ => None,
-            };
-        }
         self.integer_use |= other.integer_use;
         self.phi_reached |= other.phi_reached;
         self.text_store |= other.text_store;
@@ -537,9 +527,7 @@ fn peel(
                     // A non-constant term is the array signal, recorded against
                     // whatever root the other operand reaches.
                     if let Some((root, _)) = peel(data, a, ev, budget - step - 1) {
-                        let entry = ev.entry(root).or_default();
-                        entry.dynamic_offset = true;
-                        entry.dynamic_element_size = None;
+                        ev.entry(root).or_default().dynamic_offset = true;
                     }
                     return None;
                 }
@@ -554,9 +542,7 @@ fn peel(
                 let sv = data.vbank().get(sz)?;
                 if !iv.is_constant() || !sv.is_constant() {
                     if let Some((root, _)) = peel(data, a, ev, budget - step - 1) {
-                        let entry = ev.entry(root).or_default();
-                        entry.dynamic_offset = true;
-                        entry.dynamic_element_size = sv.is_constant().then(|| sv.get_offset() as int4);
+                        ev.entry(root).or_default().dynamic_offset = true;
                     }
                     return None;
                 }
@@ -571,30 +557,42 @@ fn peel(
     None
 }
 
-/// The base an address peels to, whether the walk met a dynamic (indexed) term
-/// on it, and the element size a `PTRADD` scale stated when the stride is known.
-/// `None` when it peels to no root at all.
+/// The pointer root, whether any index is dynamic, and the common known stride.
+/// Every dynamic term must agree; an unknown or conflicting term stays unknown.
 pub(crate) fn peel_base_stride(
     data: &Funcdata,
-    vn: VarnodeId,
+    mut vn: VarnodeId,
 ) -> Option<(VarnodeId, bool, Option<int4>)> {
-    let mut ev = BTreeMap::new();
-    if let Some((root, _)) = peel(data, vn, &mut ev, MAX_PEEL_DEPTH) {
-        let entry = ev.get(&root);
-        return Some((
-            root,
-            entry.is_some_and(|e| e.dynamic_offset),
-            entry.and_then(|e| e.dynamic_element_size),
-        ));
-    }
-    // A dynamic term makes `peel` return `None` after recording the root the
-    // other operand reached; report that root with `dynamic = true` so a
-    // caller can still see which base the indexed access belongs to.
-    if ev.len() == 1 {
-        let (&root, entry) = ev.iter().next().expect("len == 1");
-        if entry.dynamic_offset {
-            return Some((root, true, entry.dynamic_element_size));
+    let mut indexed = false;
+    let mut stride = None;
+    for _ in 0..MAX_PEEL_DEPTH {
+        let v = data.vbank().get(vn)?;
+        if v.is_input() || v.is_constant() {
+            return Some((vn, indexed, stride));
         }
+        let op = data.obank().get(v.get_def()?)?;
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => {}
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => {
+                if !data.vbank().get(op.get_in(1)?)?.is_constant() {
+                    indexed = true;
+                    stride = None;
+                }
+            }
+            OpCode::CPUI_PTRADD => {
+                let index = data.vbank().get(op.get_in(1)?)?;
+                let scale = data.vbank().get(op.get_in(2)?)?;
+                if !index.is_constant() || !scale.is_constant() {
+                    let term = scale.is_constant()
+                        .then(|| int4::try_from(scale.get_offset()).ok())
+                        .flatten().filter(|size| *size > 0);
+                    stride = if !indexed || stride == term { term } else { None };
+                    indexed = true;
+                }
+            }
+            _ => return Some((vn, indexed, stride)),
+        }
+        vn = op.get_in(0)?;
     }
     None
 }
@@ -642,7 +640,7 @@ pub(crate) fn every_access_through(data: &Funcdata, base: VarnodeId, width: int4
                     let Some(access_width) =
                         value.and_then(|x| data.vbank().get(x)).map(|x| x.get_size())
                     else {
-                        continue;
+                        return false;
                     };
                     if access_width != width {
                         return false;
@@ -650,10 +648,10 @@ pub(crate) fn every_access_through(data: &Funcdata, base: VarnodeId, width: int4
                     let Some((root, indexed, stride)) =
                         op.get_in(1).and_then(|addr| peel_base_stride(data, addr))
                     else {
-                        continue;
+                        return false;
                     };
                     if root != base {
-                        continue;
+                        return false;
                     }
                     if indexed && stride != Some(width) {
                         return false;

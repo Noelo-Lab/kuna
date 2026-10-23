@@ -89,6 +89,9 @@ half never becomes a value. The records are decoded from the cspec once
 (`Architecture::decode_split_records`) and delivered to every function's handle.
 The split pass keeps its record table in place while walking, because each
 candidate is matched against that table.
+When a constant is split above the 64 bits carried by its literal, the upper
+piece is zero; splitting a 128-bit register must neither shift a 64-bit literal
+by 64 nor repeat the lower piece into the upper one.
 
 **Address-range worklists.** The unit of work is an address range, not a
 varnode. Two disjoint-cover maps drive each pass

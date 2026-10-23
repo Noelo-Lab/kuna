@@ -84,14 +84,27 @@ The repository currently has only `ActionGroup` and `ActionRestartGroup`.
 ## Verification
 
 - `make test`: 675/675, PARITY OK
-- `make test-stages`: 3201/3201, PARITY OK
+- `make test-stages`: 3203/3203, PARITY OK
+- `make rust-test`: full workspace green, using an isolated pristine Go 1.18.1
 - `make check-spec`: OK
-- `prefersplit_scope`: 7/7; `kuna_structsynth`: 31/31; `prefersplit`: 8/8;
+- `make lint`, `make test-tools`, and `kuna catalog --check`: green
+- `make test-cli`: 303/303
+- `prefersplit_scope`: 9/9; `kuna_structsynth`: 32/32; `prefersplit`: 10/10;
   the new action test passes
-- `sub_17bf1c` output is unchanged from the pre-cleanup branch, and
-  `protoorder off` still shows the untyped integer
+- A Clang-compiled scalar-double wrapper prints an unsigned integer access with
+  `protoorder off` and a double access with the default
 
-Not covered here: the bootstrap's hard-coded 32-callee budget and its missing
-measured speed delta, and tightening the split gate from storage shape to a
-float-specific witness. The workspace suite (`make rust-test`) is the remaining
-gate before a merge.
+The bootstrap remains capped at 32 direct callees. A CLI benchmark of
+`ccw_entry`, pinned to one CPU with 41 measured runs after five warmups, gave
+median times of 93.312 ms on the PR base, 92.189 ms with `protoorder off`, and
+93.685 ms with the default. The default costs 1.62% against off and 0.40% against
+the base, within the 5% speed budget.
+
+Follow-up regression probes cover constants split at the 64-bit boundary,
+sibling callees in a cycle, inherited watchdog deadlines, retained forwarding
+claims, and unknown or conflicting stride evidence. Trial scoring now collects
+ready callees before argument finalization, so a pause cannot discard deferred
+repairs or let a sibling read another sibling's partial contract. Nested drives
+share memory accounting and the enclosing deadline, statement recovery stays
+inside the restoration boundary, and the paused action tree is restored on
+unwind.

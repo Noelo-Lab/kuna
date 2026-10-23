@@ -15,7 +15,7 @@ use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
 
-use crate::action::{Action, ActionContext, ActionGroup};
+use crate::action::{Action, ActionContext};
 use crate::architecture::Architecture;
 use crate::flow::{FlowEnvironment, FlowInfo};
 use crate::funcdata::{funcdata_flags, Funcdata};
@@ -1026,14 +1026,18 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
                 contract_root = Some(
                     arch.allacts
                         .derive_fresh("decompile")?
-                        .unwrap_or_else(|| Box::new(ActionGroup::new(0, "decompile"))),
+                        .ok_or_else(|| KunaError::lowlevel("missing callee recovery action"))?,
                 );
             }
             let fresh = contract_root.take().expect("contract root just installed");
-            let paused = arch.allacts.swap_current_action(fresh);
-            bootstrap_split_callees(arch, fd, pending, &mut contract_budget);
-            if let Some(paused) = paused {
-                contract_root = arch.allacts.swap_current_action(paused);
+            let paused = arch.allacts.swap_current_action(fresh)
+                .ok_or_else(|| KunaError::lowlevel("missing paused caller action"))?;
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                bootstrap_split_callees(arch, fd, pending, &mut contract_budget);
+            }));
+            contract_root = arch.allacts.swap_current_action(paused);
+            if let Err(payload) = result {
+                std::panic::resume_unwind(payload);
             }
             resume = true;
             continue;
@@ -1262,7 +1266,7 @@ fn bootstrap_split_callees(
         }
     }
     arch.kuna_protoorder_types = prior;
-    let any_recovered = !recovered.is_empty();
+    let mut any_stated = false;
     let cyclic = contract_cycles(&root_entry, &recovered);
     for (entry, stated, _) in recovered {
         let (Some(stated), Some(key)) = (stated, crate::p4_calls::kuna_protoorder::stated_key(&entry)) else {
@@ -1270,13 +1274,14 @@ fn bootstrap_split_callees(
         };
         if !cyclic.contains(&key) {
             arch.kuna_protoorder_types.insert(key, stated);
+            any_stated = true;
         }
     }
     // The caller's own pipeline already ran `seed_protoorder_types` at the drive
     // start, so hand the new statements to the live `Funcdata` here: the paused
     // `ActionActiveParam` resumes and the later type fold reads them.
     crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, root);
-    if any_recovered {
+    if any_stated {
         // `ActionFuncLink` already ran, before these statements existed.  Re-run
         // the three seams there that read them, so a forwarded register the
         // callee states (the passthrough claim, the VFP input link, the variadic
@@ -1319,7 +1324,24 @@ fn recover_one_contract(
     let name = format!("sub_{:x}", entry.get_offset());
     CONTRACT_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        decompile_func(arch, &name, entry.clone(), 0)
+        let callee = decompile_func(arch, &name, entry.clone(), 0).ok()?;
+        let calls = (0..callee.num_calls())
+            .filter_map(|i| {
+                let entry = callee.get_call_specs(i).get_entry_address();
+                (!entry.is_invalid()).then(|| entry.clone())
+            })
+            .collect();
+        let _ = crate::p4_calls::kuna_protoorder::park_recovered(
+            arch,
+            entry,
+            &name,
+            &callee,
+            callee.get_func_proto(),
+            crate::p4_calls::kuna_protoorder::ProtoOrderMode::Types,
+        );
+        let stated = crate::p4_calls::kuna_protoorder::stated_key(entry)
+            .and_then(|key| arch.kuna_protoorder_types.get(&key).cloned());
+        Some((stated, calls))
     }));
     CONTRACT_DEPTH.with(|depth| depth.set(depth.get() - 1));
     arch.kuna_fn_deadline = saved_deadline;
@@ -1333,24 +1355,7 @@ fn recover_one_contract(
     arch.kuna_prior_names = saved_prior_names;
     arch.format_override_callpoints = saved_format_sites;
     arch.readonlypropagate = saved_readonly;
-    let Ok(Ok(callee)) = result else { return None };
-    let calls = (0..callee.num_calls())
-        .filter_map(|i| {
-            let entry = callee.get_call_specs(i).get_entry_address();
-            (!entry.is_invalid()).then(|| entry.clone())
-        })
-        .collect();
-    let _ = crate::p4_calls::kuna_protoorder::park_recovered(
-        arch,
-        entry,
-        &name,
-        &callee,
-        callee.get_func_proto(),
-        crate::p4_calls::kuna_protoorder::ProtoOrderMode::Types,
-    );
-    let stated = crate::p4_calls::kuna_protoorder::stated_key(entry)
-        .and_then(|key| arch.kuna_protoorder_types.get(&key).cloned());
-    Some((stated, calls))
+    result.ok().flatten()
 }
 
 /// The direct-callee statements whose callee lies on a call cycle with the root
@@ -1599,12 +1604,17 @@ fn decompile_func_full_with_objects_inner(
     //
     // A memory limit (`--max-fn-memory`) arms too: with no wall-clock budget
     // its deadline is a year out, so the same probes run and ask about memory.
-    let memory = crate::kuna_fnmemory::Armed::enter();
+    let outer_deadline = arch.kuna_fn_deadline;
+    let memory = arch.kuna_drive_publishes().then(crate::kuna_fnmemory::Armed::enter);
     let now = std::time::Instant::now();
-    arch.kuna_fn_deadline = match fn_budget(arch) {
+    let requested_deadline = match fn_budget(arch) {
         Some(budget) => Some(now + budget),
-        None if memory.is_armed() => Some(now + MEMORY_ONLY_HORIZON),
+        None if memory.as_ref().is_some_and(|guard| guard.is_armed()) => Some(now + MEMORY_ONLY_HORIZON),
         None => None,
+    };
+    arch.kuna_fn_deadline = match (outer_deadline, requested_deadline) {
+        (Some(outer), Some(requested)) => Some(outer.min(requested)),
+        (outer, requested) => outer.or(requested),
     };
     let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
     // (ghidra-mode, Phase 4) Take the staged name recommendations UP FRONT so
@@ -1848,7 +1858,7 @@ fn decompile_func_full_with_objects_inner(
     };
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
-    arch.kuna_fn_deadline = None;
+    arch.kuna_fn_deadline = outer_deadline;
     result.and_then(|fd| {
         crate::kuna_stackobjectasserts::validate(&fd).map_err(KunaError::lowlevel)?;
         Ok(fd)
