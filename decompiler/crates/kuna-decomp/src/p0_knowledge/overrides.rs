@@ -239,6 +239,9 @@ pub struct Override {
     protoover: BTreeMap<Address, Box<dyn FuncProtoOverride>>,
     /// Addresses of indirect jumps that need multistage recovery.
     multistagejump: Vec<Address>,
+    /// (kuna) The targets the late model recovered for a multistage jump, used
+    /// when the second flow-time stage still recovers a single address.
+    multistagetargets: BTreeMap<Address, Vec<Address>>,
     /// Override the CALL <-> BRANCH interpretation of a branch instruction.
     flowoverride: BTreeMap<Address, uint4>,
     /// `/GS` checker call sites recognized after SSA and replayed on restart.
@@ -263,6 +266,7 @@ impl Override {
         self.indirectover.clear();
         self.protoover.clear();
         self.multistagejump.clear();
+        self.multistagetargets.clear();
         self.flowoverride.clear();
         self.msvc_cookie_calls.clear();
         self.format_calls.clear();
@@ -342,6 +346,17 @@ impl Override {
     /// (C++ `Override::insertMultistageJump`).
     pub fn insert_multistage_jump(&mut self, addr: Address) {
         self.multistagejump.push(addr);
+    }
+
+    /// (kuna) Record the targets a late model recovered for the multistage jump
+    /// at `addr`.
+    pub fn insert_multistage_targets(&mut self, addr: Address, targets: Vec<Address>) {
+        self.multistagetargets.insert(addr, targets);
+    }
+
+    /// (kuna) The targets recorded for the multistage jump at `addr`.
+    pub fn multistage_targets(&self, addr: &Address) -> Option<&[Address]> {
+        self.multistagetargets.get(addr).map(Vec::as_slice)
     }
 
     /// Mark a branch instruction with a different flow type
