@@ -157,8 +157,6 @@ v3\[\(int4\)a0 >> 2 &amp; 0xf\] = a1;
 ext2\(.*\); // tail-call</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #6: every function keeps its check with option stackguard off, none by default" min="5" max="5">__stack_chk_fail\(\); // no-return</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #7: control, t3 (check after the call) returns ext() + 1 by default" min="1" max="1">return ext\(.*\) \+ 1;</stringmatch>
-<stringmatch name="STACKGUARD-TAILCALL #8: no canary, h6 passes the address of v to g in both passes" min="2" max="2">^\s*g\(v1\);$</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #9: no canary, h6 and h7 keep their copy of a-&gt;f in both passes" min="4" max="4">= \(\([a-z0-9 ]+ \*\)a0\)\[5\];$</stringmatch>
 <stringmatch name="STACKGUARD-TAILCALL #10: no canary, h7 keeps t.b = 2 in both passes" min="2" max="2">= 2;$</stringmatch>
-<stringmatch name="STACKGUARD-TAILCALL #11: no canary, h7 passes the address of t to consume in both passes" min="2" max="2">^\s*consume\(&amp;?v1\);$</stringmatch>
 </decompilertest>

@@ -5026,6 +5026,24 @@ impl Rule for RuleDoubleLoad {
         if data.is_stack_byte_copy_op(load0) || data.is_stack_byte_copy_op(load1) {
             return 0;
         }
+        for (load, piece) in [(load0, piece0), (load1, piece1)] {
+            if crate::p3_dataflow::kuna_volatileload::is_volatile(data, load) {
+                return 0;
+            }
+            let original = data.obank().get(load).expect("dload: original load");
+            if original.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load != 0 {
+                // Retire a native access only when the wide read replaces all
+                // its bytes and this concatenation is its only consumer. A
+                // truncated or shared read still owns an independent access.
+                if original.get_out() != Some(piece)
+                    || lone_descend(data, piece) != Some(op)
+                    || original.is_indirect_source()
+                    || data.vbank().get(piece).expect("dload: original output").is_auto_live()
+                {
+                    return 0;
+                }
+            }
+        }
         let latest = match RuleDoubleLoad::no_write_conflict(data, loadlo, loadhi, spc, None) {
             Some(l) => l,
             None => return 0, // There was a conflict
@@ -5062,6 +5080,17 @@ impl Rule for RuleDoubleLoad {
         data.op_remove_input(op, 1);
         set_opcode_typed(data, op, OpCode::CPUI_COPY);
         op_set_input(data, op, vnout, 0);
+
+        // The native reads passed the full-width, exclusive-use check above.
+        // Their accesses now belong to newload; leaving the obsolete LOADs
+        // alive would let discarded-native-read retention emit them again.
+        for load in [load0, load1] {
+            if data.obank().get(load).expect("dload: original load").get_addlflags()
+                & crate::op::pcodeop_addlflags::kuna_native_load != 0
+            {
+                data.op_destroy(load);
+            }
+        }
 
         1
     }

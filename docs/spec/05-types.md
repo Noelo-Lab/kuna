@@ -3428,6 +3428,14 @@ input halves into one logical input via `combine_input_varnodes`.
 LOADs/STOREs into one whole-width access — requiring address contiguity in
 the right endian order and proving no interfering write between the two ops.
 
+A successful LOAD fusion owns the accesses it replaces. For decoded native
+LOADs, both source outputs must feed only this PIECE, at their full widths,
+without auto-live or indirect-source obligations. Only after inserting the
+whole-width read and rewiring the PIECE does the rule destroy those obsolete
+native LOADs; otherwise discarded-read retention would emit them again.
+Shared or truncated native sources decline fusion, as do provably volatile
+reads. The synthesized LOAD does not acquire native-decode provenance.
+
 LOADs originating in the short frame byte-copy expansion of chapter 03 keep
 their original byte widths. Their source pointer need only be byte-aligned;
 fusion into a halfword or word would introduce an alignment requirement the
