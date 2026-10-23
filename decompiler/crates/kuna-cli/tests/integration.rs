@@ -292,6 +292,9 @@ mod passthrough_own_return;
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
+#[path = "ppc64_delayed_constant_switch.rs"]
+mod ppc64_delayed_constant_switch;
+
 #[path = "powerpc_isa_selection.rs"]
 mod powerpc_isa_selection;
 
