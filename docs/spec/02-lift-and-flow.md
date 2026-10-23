@@ -1653,9 +1653,18 @@ The hint therefore also carries the targets the late model built
 (`overrides.rs (Override::multistage_targets)`). A second stage that again finds
 one address adopts them (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
 so flow follows every case and the late check below labels them. Each jump is
-restarted at most once. This is a correctness repair, without an option: before
-it, such a switch kept one case, and its other indexes fell through to the code
-after the switch.
+restarted at most once. A jump is not restarted unless every value in the
+late model's range passes the guards on its path
+(`jumptable.rs (JumpBasicModel::values_pass_guards)`) and every target is
+mapped and within the `0xffff` reach of the jump. A range wider than its guards,
+as `switchguardbound` can recover under a lower-bound guard, would otherwise
+turn rows the code never dispatches into cases. The restarting pass still
+labels its table, without the model-drop warning, because it is the pass
+printed when the drive's restart budget runs out. On that last pass
+`decompile_drive.rs (run_pipeline)` keeps the analysis instead of re-following
+flow, and adds `Exceeded maximum restarts with more pending` to the header.
+This is a correctness repair, without an option: before it, such a switch kept
+one case, and its other indexes fell through to the code after the switch.
 
 ### The late check: labels, normalization folding, guard folding
 

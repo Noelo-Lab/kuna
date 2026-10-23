@@ -5973,7 +5973,7 @@ impl JumpTable {
             return Ok(());
         }
         if jbasic.rows_rejected {
-            self.drop_model_for_rows(fd);
+            self.drop_model_for_rows(fd, true);
             return Ok(());
         }
         // Try model 2 (default-path).
@@ -6222,11 +6222,12 @@ impl JumpTable {
             .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_ref()))
             .map(|rows| Rc::new(rows.with_default(self.default_addresses())));
         self.recover_model(fd, rows.clone())?; // Create a current instance of the model
-        if self.request_multistage(fd) {
-            return Ok(());
-        }
+        // (kuna) Unlike upstream, keep labelling this pass: when the drive's
+        // restart budget is spent, this pass is the one printed, under its own
+        // restart warning rather than the model-drop one.
+        let restarting = self.request_multistage(fd);
         if let Some(rows) = rows {
-            self.choose_label_values(fd, &rows);
+            self.choose_label_values(fd, &rows, !restarting);
         }
         Ok(())
     }
@@ -6239,9 +6240,12 @@ impl JumpTable {
     /// (kuna) The current model's own targets are recorded with the hint, since
     /// the second flow-time stage repeats the first one's view of the function
     /// and can recover the same single address. A jump is restarted at most once,
-    /// and only when every target is mapped and within the `0xffff` reach that
-    /// `sanity_check` allows an intraprocedural table.
-    fn request_multistage(&mut self, fd: &mut Funcdata) -> bool {
+    /// and only when every value in the model's range passes the guards on its
+    /// path (a range wider than the guards, as `switchguardbound` can recover,
+    /// would turn guarded-out rows into cases) and every target is mapped and
+    /// within the `0xffff` reach that `sanity_check` allows an intraprocedural
+    /// table.
+    fn request_multistage(&self, fd: &mut Funcdata) -> bool {
         let Some(model) = self.jmodel.as_ref() else { return false };
         if self.addresstable.len() != 1
             || model.get_table_size() <= 1
@@ -6250,6 +6254,13 @@ impl JumpTable {
             return false;
         }
         let Some(indirect) = self.indirect else { return false };
+        let dispatched = model
+            .as_any()
+            .downcast_ref::<JumpBasicModel>()
+            .and_then(|basic| Some(basic.values_pass_guards(fd, basic.jrange.as_ref()?.clone_box(), 0)));
+        if !dispatched.is_some_and(|rows| !rows.is_empty() && rows.iter().all(|&row| row)) {
+            return false;
+        }
         let mut targets = Vec::new();
         if model.build_addresses(fd, indirect, &mut targets, None, None).is_err() || targets.len() <= 1 {
             return false;
@@ -6276,7 +6287,7 @@ impl JumpTable {
     ///
     /// Stands in for the upstream multistage restart on a table mismatch
     /// (`Override::insertMultistageJump`/`setRestartPending`, not ported).
-    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows) {
+    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows, warn: bool) {
         let indop = self.indirect.unwrap();
         let Some(model) = self
             .jmodel
@@ -6297,7 +6308,7 @@ impl JumpTable {
             self.origmodel = None;
             return;
         }
-        self.drop_model_for_rows(fd);
+        self.drop_model_for_rows(fd, warn);
     }
 
     /// The table addresses whose block is the current default destination.
@@ -6311,8 +6322,9 @@ impl JumpTable {
 
     /// Drop the model of a table whose flow-time rows no recovered model can
     /// label, so the trivial model labels each case by address: by the
-    /// flow-time table values that reach it.
-    fn drop_model_for_rows(&mut self, fd: &mut Funcdata) {
+    /// flow-time table values that reach it. `warn` adds the header warning; a
+    /// pass that has requested a multistage restart is not the final one.
+    fn drop_model_for_rows(&mut self, fd: &mut Funcdata, warn: bool) {
         self.case_values = self
             .block2addr
             .iter()
@@ -6324,9 +6336,11 @@ impl JumpTable {
         self.case_values.sort();
         self.case_values.dedup();
         self.jmodel = None;
-        fd.warning_header(
-            "Switch model does not reproduce the recovered table; cases are labelled by address",
-        );
+        if warn {
+            fd.warning_header(
+                "Switch model does not reproduce the recovered table; cases are labelled by address",
+            );
+        }
     }
 
     /// Recover the case labels for \b this jump-table
