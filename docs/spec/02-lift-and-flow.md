@@ -37,6 +37,13 @@ the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
 
+The generic 64-bit PowerPC constructors (the languages without the `IS_ISA`
+instruction set, including e500) decode extended opcode 21 of primary opcode
+31 as `ldx` and opcode 84 as `ldarx`, matching the ISA languages. Both lift to
+an indexed doubleword load. Like the generic `lwarx`, `ldarx` does not model
+its reservation. Encodings with the exclusive-access hint bit set remain
+undecoded there. This is a SLEIGH correctness repair, without an inference option.
+
 Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
 `CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
 constants. A32 and Thumb constructors use unattached numeric aliases of the token

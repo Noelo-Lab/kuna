@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3187,
-    3187
+    3189,
+    3189
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1441,6 +1441,8 @@
     "data:POINTERLITERAL #2: no integer initializes a pointer without conversion",
     "data:POINTERWALK-BUDGET #1: the function decompiles",
     "data:POINTERWALK-MEMO #1: buf is one array of sixteen bytes",
+    "data:PPC64 ldarx #1: no bad instruction",
+    "data:PPC64 ldarx #2: both doubleword loads reach the return",
     "data:PPCISA #1: only the reporting pass gives the ISA hint",
     "data:PPCISA #2: the supported override is actionable",
     "data:PPCISA #3: the selected decoder still halts",

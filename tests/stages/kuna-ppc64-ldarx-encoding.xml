@@ -1,0 +1,19 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default">
+<!--
+  Synthetic generic PPC64: ldx r9,r3,r4; ldarx r3,r9,r5; blr.
+  P2 instruction decoding, correctness repair without an option. ldx is
+  extended opcode 21 and ldarx is 84; both are doubleword loads, so the
+  return is a two-level load rather than a bad-instruction halt.
+-->
+<bytechunk space="ram" offset="0x10000">7d23202a7c6928a84e800020</bytechunk>
+<symbol space="ram" offset="0x10000" name="ldx_then_ldarx"/>
+</binaryimage>
+<script>
+  <com>load function ldx_then_ldarx</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="PPC64 ldarx #1: no bad instruction" min="0" max="0">halt_baddata</stringmatch>
+<stringmatch name="PPC64 ldarx #2: both doubleword loads reach the return" min="1" max="1">return \*\(unsigned long \*\)\(\*\(int8 \*\)\(a0 \+ a1\) \+ a2\);</stringmatch>
+</decompilertest>
