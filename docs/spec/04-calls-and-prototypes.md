@@ -229,6 +229,13 @@ returns a partial completion, so every caller resumes at that member — includi
 `ActionRestartGroup`, which drives its inner group through `apply` rather than
 `perform`.
 
+A nested drive is likewise a scope, not a second owner of the `Architecture`:
+`Architecture::kuna_drive_publishes` is false below the outermost drive, so the
+callee's flow and pipeline comments never enter the program-wide comment database,
+and the one-shot staged prototype list was already consumed by the outer drive.
+What the nested drive states is handed back explicitly as the caller's parameter
+types; nothing else survives it.
+
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
 value as argument evidence. This retains a passed local address despite other

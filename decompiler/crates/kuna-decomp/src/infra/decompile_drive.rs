@@ -877,13 +877,19 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
-    // Publish buffered flow comments only after replacement construction succeeds.
+    // Publish buffered flow comments only after replacement construction succeeds,
+    // and only from the drive that owns the Architecture.  A nested recovery drive
+    // (the P4 callee-contract bootstrap) exists to state types: its statements are
+    // private to the caller it types for, so its comments must not enter the
+    // program-wide comment database.
     let func_addr = data.get_address().clone();
-    if arch.mapped_flow_boundary_image {
-        crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
-    }
-    for (tp, ad, txt) in data.drain_pending_comments() {
-        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    if arch.kuna_drive_publishes() {
+        if arch.mapped_flow_boundary_image {
+            crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+        }
+        for (tp, ad, txt) in data.drain_pending_comments() {
+            arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+        }
     }
     Ok(data)
 }
@@ -1103,6 +1109,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
 /// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
 /// pipeline land here.  No-op when nothing was buffered.
 fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
+    if !arch.kuna_drive_publishes() {
+        return;
+    }
     let func_addr = fd.get_address().clone();
     for (tp, ad, txt) in fd.drain_pending_comments() {
         arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
@@ -1282,9 +1291,14 @@ fn bootstrap_split_callees(
 }
 
 /// Decompile one callee far enough to state its recovered parameter types, then
-/// restore the caller's drive state exactly.  A panic or a declined recovery
-/// leaves the table untouched.  The callee sees only `prior` statements, never
-/// one this pass just parked.
+/// restore the caller's drive state.  The restored state is the per-drive
+/// switches the callee drive rewrites; the statements are handed back explicitly
+/// by the caller.  Everything the Architecture publishes program-wide is already
+/// out of reach here: [`Architecture::kuna_drive_publishes`] is false for this
+/// nested drive, so its flow/pipeline comments never enter the comment database,
+/// and the one-shot staged prototype list was consumed by the outer drive.  A
+/// panic or a declined recovery leaves the table untouched.  The callee sees only
+/// `prior` statements, never one this pass just parked.
 fn recover_one_contract(
     arch: &mut Architecture,
     prior: &StatedMap,
@@ -1521,6 +1535,43 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::mutable_key_type)]
 pub fn decompile_func_full_with_objects(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address, bool)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    prefollowed: Option<Funcdata>,
+    object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
+    purpose: DrivePurpose,
+) -> KunaResult<Funcdata> {
+    let _drive = arch.kuna_drive_scope();
+    decompile_func_full_with_objects_inner(
+        arch,
+        name,
+        funcaddr,
+        size,
+        mapped_symbols,
+        usepoint_symbols,
+        dynamic_symbols,
+        pending_proto,
+        flow_overrides,
+        proto_overrides,
+        mapped_params,
+        prefollowed,
+        object_assertions,
+        purpose,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::mutable_key_type)]
+fn decompile_func_full_with_objects_inner(
     arch: &mut Architecture,
     name: &str,
     funcaddr: Address,

@@ -2636,6 +2636,14 @@ pub struct Architecture {
     /// and inherited by every per-function handle, where heritage pass 0 hands
     /// them to the [`PreferSplitManager`](crate::p5_types::prefersplit::PreferSplitManager).
     split_records: Vec<crate::p5_types::prefersplit::PreferSplitRecord>,
+    /// (kuna) How many decompile drives are active: 0 outside a drive, 1 for the
+    /// drive the caller asked for, and more when a drive runs a recovery drive
+    /// inside itself (the P4 callee-contract bootstrap).  The outermost drive
+    /// owns the Architecture's externally visible output, so only it publishes
+    /// analysis comments; a nested drive's statements are private to the caller
+    /// it is typed for.  Shared with the [`KunaDriveScope`] guard so an unwinding
+    /// drive still leaves it balanced.
+    kuna_drive_depth: std::rc::Rc<std::cell::Cell<u32>>,
     /// Vector registers that have preferred lane sizes (C++
     /// `Architecture::lanerecords`), built by [`decode_register_data`] from the
     /// pspec `<register_data>` `vector_lane_sizes` attributes during
@@ -2685,6 +2693,20 @@ pub struct Architecture {
     /// where `modify_spaces` applies them. `None` until that bootstrap step has
     /// run; an empty list is a valid, complete recipe for most languages.
     decode_truncations: Option<Arc<[(String, u32)]>>,
+}
+
+/// One active decompile drive, from [`Architecture::kuna_drive_scope`].
+///
+/// Dropping it leaves the scope; the depth is shared with the `Architecture`, so
+/// an unwinding drive still balances the count.
+pub(crate) struct KunaDriveScope {
+    depth: std::rc::Rc<std::cell::Cell<u32>>,
+}
+
+impl Drop for KunaDriveScope {
+    fn drop(&mut self) {
+        self.depth.set(self.depth.get().saturating_sub(1));
+    }
 }
 
 impl Architecture {
@@ -3222,6 +3244,7 @@ impl Architecture {
             pspec_xml: None,
             coretypes_xml: None,
             split_records: Vec::new(),
+            kuna_drive_depth: std::rc::Rc::new(std::cell::Cell::new(0)),
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
@@ -6207,6 +6230,26 @@ impl Architecture {
     /// The compiler spec's preferred-split rows, in `PreferSplitRecord` order.
     pub fn split_records(&self) -> &[crate::p5_types::prefersplit::PreferSplitRecord] {
         &self.split_records
+    }
+
+    /// Enter a decompile drive.  Every [`decompile_func_full_with_objects`] call
+    /// nests one deeper; the drive that started from 0 is the outermost one.
+    ///
+    /// The returned [`KunaDriveScope`] leaves the scope on drop, so a drive that
+    /// unwinds still keeps the depth balanced.
+    ///
+    /// [`decompile_func_full_with_objects`]: crate::decompile_drive::decompile_func_full_with_objects
+    pub(crate) fn kuna_drive_scope(&self) -> KunaDriveScope {
+        let depth = std::rc::Rc::clone(&self.kuna_drive_depth);
+        depth.set(depth.get() + 1);
+        KunaDriveScope { depth }
+    }
+
+    /// Does the active drive own the Architecture's externally visible output?
+    /// True outside a drive (a standalone flow build keeps its old behaviour)
+    /// and for the outermost drive; false for a nested recovery drive.
+    pub(crate) fn kuna_drive_publishes(&self) -> bool {
+        self.kuna_drive_depth.get() <= 1
     }
 
     /// Decode the cspec's `<prefersplit style="...">` block into the
