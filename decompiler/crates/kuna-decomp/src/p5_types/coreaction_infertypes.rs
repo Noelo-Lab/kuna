@@ -1126,15 +1126,16 @@ fn propagate_load_store(
 /// base read at several widths is a record (or a union member) and keeps its
 /// storage type; the float access then prints as its own cast
 /// (`*(double *)a0`) instead of re-typing the whole object and forcing every
-/// other access through a bit-cast.  A dynamic (indexed) access says array,
-/// which this scalar check cannot characterize, so it refuses too.
+/// other access through a bit-cast.  A dynamic access is admitted only when its
+/// `PTRADD` scale proves the element width is `value_size`: that is a float
+/// array, not a mixed-width object.  An unknown stride refuses.
 fn float_pointee_admits(data: &Funcdata, op: OpId, value_size: int4) -> bool {
     const MAX_OPS: usize = 4096;
     let Some(pointer) = data.obank().get(op).and_then(|o| o.get_in(1)) else { return false };
-    let Some((base, dynamic)) = crate::kuna_structsynth::peel_base(data, pointer) else {
+    let Some((base, dynamic, stride)) = crate::kuna_structsynth::peel_base_stride(data, pointer) else {
         return false;
     };
-    if dynamic {
+    if dynamic && stride != Some(value_size) {
         return false;
     }
     let mut any = false;
@@ -1154,13 +1155,13 @@ fn float_pointee_admits(data: &Funcdata, op: OpId, value_size: int4) -> bool {
             let Some(width) = value.and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) else {
                 continue;
             };
-            let Some((root, indexed)) = crate::kuna_structsynth::peel_base(data, addr) else {
+            let Some((root, indexed, stride)) = crate::kuna_structsynth::peel_base_stride(data, addr) else {
                 continue;
             };
             if root != base {
                 continue;
             }
-            if indexed || width != value_size {
+            if width != value_size || (indexed && stride != Some(value_size)) {
                 return false;
             }
             any = true;

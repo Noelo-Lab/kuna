@@ -47,6 +47,9 @@ mod narrow_args;
 #[path = "narrow_ret.rs"]
 mod narrow_ret;
 
+#[path = "prefersplit_scope.rs"]
+mod prefersplit_scope;
+
 #[path = "arm_frame_retain.rs"]
 mod arm_frame_retain;
 #[path = "arm_frame_pool.rs"]

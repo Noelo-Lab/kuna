@@ -6204,6 +6204,11 @@ impl Architecture {
         !self.split_records.is_empty()
     }
 
+    /// The compiler spec's preferred-split rows, in `PreferSplitRecord` order.
+    pub fn split_records(&self) -> &[crate::p5_types::prefersplit::PreferSplitRecord] {
+        &self.split_records
+    }
+
     /// Decode the cspec's `<prefersplit style="...">` block into the
     /// [`PreferSplitRecord`](crate::p5_types::prefersplit::PreferSplitRecord)
     /// table heritage pass 0 consumes (C++ `Architecture::parseCompilerConfig`

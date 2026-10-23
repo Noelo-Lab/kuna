@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3188,
-    3188
+    3196,
+    3196
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1854,11 +1854,16 @@
     "data:ZEXTWORD #7: abi, the zero-extended constant is returned whole",
     "data:ZEXTWORD #8: abi, both returns of zc return the register",
     "data:ZEXTWORD #9: a sign-extended word is unchanged either way",
+    "data:a dynamic double array is a double access",
     "data:a full 16-byte vector parameter is not split",
+    "data:a mixed-width base stays a record, not a double pointer",
+    "data:a non-dominated split value is not left untyped",
+    "data:a non-dominated split value is typed float8",
     "data:a stale pair half does not hide the next call's single argument",
     "data:a tagged address does not become a float",
     "data:adjacent object does not steal array reference",
     "data:all seven families are defined and option off adds none",
+    "data:an integer call beside a q touch is unchanged",
     "data:angr-LoweredSwitch #1: exactly one switch (none in pass 1 off, one in pass 2 on)",
     "data:angr-LoweredSwitch #2: default present",
     "data:angr-LoweredSwitch #3: case 0x70 (p) recovered",
@@ -3057,6 +3062,9 @@
     "data:the helper forwards the double unchanged",
     "data:the helper negates the shared double",
     "data:the loaded pair reaches the first call as two slots",
+    "data:the mixed record keeps its double field",
+    "data:the mixed record keeps its short field",
+    "data:the non-dominated value reaches the split callee",
     "data:the split register delivers a scalar double parameter",
     "data:the whole-register object is gone",
     "data:truncarg #10: a sum that provably fits its byte gets no cast",

@@ -1203,12 +1203,18 @@ impl Action for ActionParamDouble {
 /// as parameters, then resolves the model and builds the input map.
 pub struct ActionActiveParam {
     base: ActionBase,
+    /// (kuna callee-contract) The direct callees this pass has already paused for,
+    /// so one call site does not request the same bootstrap twice.
+    contract_requested: crate::kuna_fasthash::FxHashSet<(int4, uintb)>,
 }
 
 impl ActionActiveParam {
     /// Construct in group `g` (C++ `ActionActiveParam::ActionActiveParam`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
-        Box::new(ActionActiveParam { base: ActionBase::new(0, "activeparam", g) })
+        Box::new(ActionActiveParam {
+            base: ActionBase::new(0, "activeparam", g),
+            contract_requested: Default::default(),
+        })
     }
 }
 
@@ -1223,9 +1229,18 @@ impl Action for ActionActiveParam {
         if !grouplist.contains(self.get_group()) {
             return None;
         }
-        Some(Box::new(ActionActiveParam { base: self.base.clone() }))
+        Some(Box::new(ActionActiveParam {
+            base: self.base.clone(),
+            contract_requested: Default::default(),
+        }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    /// C++ has no per-function state beyond the base; the callee-contract pause
+    /// bookkeeping is kuna's, and a fresh drive must not inherit it.
+    fn reset(&mut self, _data: &mut Funcdata) {
+        self.base.reset_base();
+        self.contract_requested.clear();
+    }
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:1769 — ActionActiveParam::apply: per sub-function, run
         // input-parameter recovery over its active trials.
         use crate::funcdata_callsite::{
@@ -1307,6 +1322,28 @@ impl Action for ActionActiveParam {
                 self.base.count += 1; // still have work to do
             }
             if trimmable && data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
+                // (kuna callee-contract) This call site passes a value in a
+                // compiler-spec preferred-split register: one of its ACTIVE input
+                // trials is the whole <prefersplit> container or one of the
+                // pieces heritage pass 0 replaced it with.  A callee's own
+                // recovery is the only statement that can type that storage, and
+                // it must be made BEFORE this call binds its argument list.  The
+                // drive owns the `Architecture` the callee decompile needs, so
+                // pause here: -1 unwinds the action tree with its state intact
+                // and the drive resumes this same apply from the top, where the
+                // already-scored trials are skipped and this call finalizes.
+                if data.kuna_callee_contract_armed() && !ctx.deadline_expired() {
+                    if let Some(entry) =
+                        crate::p4_calls::kuna_calleetrial::split_trial_callee(data, idx)
+                    {
+                        if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(&entry) {
+                            if self.contract_requested.insert(key) {
+                                data.kuna_queue_callee_split_call(entry);
+                                return -1;
+                            }
+                        }
+                    }
+                }
                 // Finalize: single-spec take/restore (no cross-call lookup needed).
                 // Splice this spec out so `final_input_check`/`build_input_from_trials`
                 // can hold `&mut FuncCallSpecs` and `&mut Funcdata` at once, then

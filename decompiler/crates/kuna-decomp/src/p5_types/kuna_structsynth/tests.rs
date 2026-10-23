@@ -58,6 +58,26 @@ fn only_a_base_whose_every_access_is_text_is_a_string_buffer() {
 }
 
 #[test]
+fn a_dynamic_stride_survives_a_matching_merge_and_unknowns_clear_it() {
+    let eight = Evidence { dynamic_offset: true, dynamic_element_size: Some(8), ..Evidence::default() };
+    let four = Evidence { dynamic_offset: true, dynamic_element_size: Some(4), ..Evidence::default() };
+    let unknown = Evidence { dynamic_offset: true, dynamic_element_size: None, ..Evidence::default() };
+    let mut merged = Evidence::default();
+    merged.absorb(&eight);
+    assert_eq!(merged.dynamic_element_size, Some(8));
+    merged.absorb(&eight);
+    assert_eq!(merged.dynamic_element_size, Some(8), "the same stride agrees");
+    let mut conflicting = Evidence::default();
+    conflicting.absorb(&eight);
+    conflicting.absorb(&four);
+    assert_eq!(conflicting.dynamic_element_size, None, "different strides state nothing");
+    let mut cleared = Evidence::default();
+    cleared.absorb(&eight);
+    cleared.absorb(&unknown);
+    assert_eq!(cleared.dynamic_element_size, None, "an unknown stride clears the proof");
+}
+
+#[test]
 fn off_does_not_fire_and_param_does() {
     assert!(!StructSynthMode::Off.fires());
     assert!(StructSynthMode::Param.fires());

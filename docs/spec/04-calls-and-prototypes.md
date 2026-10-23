@@ -150,7 +150,8 @@ Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP
 then core order consistently. Whole-program callers use the established
 `protoorder types` and `passthrough on` contract propagation; a single-function
-run without a callee contract cannot recover an untouched forwarded argument.
+run that stated no contract for the callee cannot recover an untouched forwarded
+argument, and the split-trial bootstrap below is what gives it one.
 Forwarding and wrapper-return claims are established before synthetic narrowing
 inputs are inserted. If heritage splits a forwarded double around a float result,
 same-width copies and contiguous incoming pieces still establish the original
@@ -190,6 +191,34 @@ in d0 as a double on some path before narrowing into s0, such as `float f(float
 a, double b, int k) { if (k > 4) { a = b * b + 1; a = a * b - 2; } return a;
 }`, is recovered as taking and returning a double, as with `armfloatreturn`
 alone, so its callers now compile and compute the wrong value.
+
+A single-function run has no callee-first order behind it. Where the target's
+compiler spec states preferred register splits (AArch64's `q` registers), the
+drive states the `protoorder` types of the direct callees its own call sites pass
+preferred-split storage to — at most 32 per drive, deadline-bounded and without
+recursing. The fact that selects a callee is the call's **active-input trial
+storage**, the verdict `ActionActiveParam` already reaches by data flow: an
+active trial whose range is the whole `<prefersplit>` register or one of the
+pieces heritage pass 0 replaced it with. A value merged through a `MULTIEQUAL`
+(`if (c) q0=x; else q0=y; call f(q0)`) is one such trial, so this is not a
+dominance test; a body that merely loads a `q` register but passes only integers
+selects nothing. A direct callee that lies on a call cycle with the root or with
+another direct callee states nothing. Each callee runs against a snapshot of the
+statements that existed before the bootstrap, and the new statements are merged
+only at the end, so one callee never reads another's partial answer.
+
+The trials exist only after heritage and trial scoring, so the bootstrap cannot
+run before the pipeline. `ActionActiveParam` pauses immediately before it binds
+the hitting call's argument list (a partial-completion return that the action
+tree resumes with its state intact), the drive runs the callee recovery against a
+detached action root, copies the new statements onto the paused `Funcdata`, and
+re-runs the three `ActionFuncLink` seams that read them (the passthrough claim,
+the VFP input link, the variadic read record) — otherwise a register forwarded
+untouched would have lost its claim before the facts existed. It then resumes the
+same pass at the same call. No arity is locked, and the bootstrap is inert under
+`protoorder off`, on a spec with no split records, and on every surface but the
+single-function drive; whole-binary, `--jobs`, `decompile-project` and browser
+schedules are unchanged.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
@@ -980,9 +1009,10 @@ because it hands a register on to a partner is answered by the callee-body walk
 below, which follows the partner's body and proves nothing about a cycle it
 re-enters. "Nothing parked" and "cannot tell" are
 therefore the same answer and both decline, which also makes the rule inert
-wherever no callee was decompiled first: a single-function `kuna decompile` (it
-forks one process per function), a `decompile-all` narrowed by `--addr` or
-`--functions`, a `--jobs N` run, and `--option protoorder off`.
+wherever no callee was decompiled first: a single-function `kuna decompile`
+except for the direct callees its split-trial bootstrap states (above), a
+`decompile-all` narrowed by `--addr` or `--functions`, a `--jobs N` run, and
+`--option protoorder off`.
 
 `protoorder` does **not** decline a variadic callee, and this rule must not be
 read as resting on that. The variadic guards described above — the under-recovery

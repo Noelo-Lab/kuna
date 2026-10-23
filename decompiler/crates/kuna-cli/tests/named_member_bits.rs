@@ -103,6 +103,7 @@ API unsigned int store_values(float first,float second){
         entry.addr,
         entry.size as i32,
         &DecompileSeed {
+            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
             mapped_symbols: &[],
             usepoint_symbols: &[],
             dynamic_symbols: &[],

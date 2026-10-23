@@ -192,6 +192,11 @@ Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`,
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+For an AArch64 target (any compiler spec with `<prefersplit>`), a single-function
+decompile also bootstraps its direct callees' recovered parameter types — at most
+32, no recursion, types only — so a split-register argument takes the callee's
+type; `--option protoorder off` disables it. Batch, `--jobs`, and
+`decompile-project` keep their own documented schedules.
 `--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
 resident and the function has added 64 MiB (see *Per-function memory limit*
 under `decompile-all`, including its cgroup default) and reports `per-function

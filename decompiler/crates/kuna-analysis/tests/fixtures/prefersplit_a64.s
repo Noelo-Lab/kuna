@@ -58,3 +58,50 @@ ccw_tagged:
     ldr x0, [x8, x9, lsl #3]
     ret
 .size ccw_tagged, .-ccw_tagged
+
+.global ccw_mixed
+.type ccw_mixed, %function
+ccw_mixed:
+    ldrh w8, [x0, #22]
+    ldr d0, [x0]
+    fcmp d0, #0.0
+    cset w9, gt
+    and w0, w9, w8, lsr #1
+    ret
+.size ccw_mixed, .-ccw_mixed
+
+.global ccw_array
+.type ccw_array, %function
+ccw_array:
+    ldr d0, [x0, x1, lsl #3]
+    ret
+.size ccw_array, .-ccw_array
+
+.global ccw_phi
+.type ccw_phi, %function
+ccw_phi:
+    ldr d0, [x0]
+    cbz w1, .Lphi_y
+    b .Lphi_call
+.Lphi_y:
+    ldr d0, [x0, #8]
+.Lphi_call:
+    mov x1, x2
+    b .Lhelper
+.size ccw_phi, .-ccw_phi
+
+.global ccw_ints
+.type ccw_ints, %function
+ccw_ints:
+    ldr q0, [x0]
+    add x0, x1, #1
+    b .Lintshelper
+.size ccw_ints, .-ccw_ints
+
+.global ccw_intshelper
+.type ccw_intshelper, %function
+ccw_intshelper:
+.Lintshelper:
+    ldr w0, [x0]
+    ret
+.size ccw_intshelper, .-ccw_intshelper

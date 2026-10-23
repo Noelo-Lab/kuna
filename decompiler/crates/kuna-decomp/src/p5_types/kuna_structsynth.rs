@@ -338,6 +338,9 @@ struct Evidence {
     slots: BTreeMap<intb, Slot>,
     /// A dereference whose offset was not a constant (the array signal).
     dynamic_offset: bool,
+    /// The element size of a dynamic `PTRADD` access when its scale is a
+    /// constant; `None` when the stride is unknown.
+    dynamic_element_size: Option<int4>,
     /// The base reached an operation that treats it as an integer.
     integer_use: bool,
     /// The base flows into a phi, so some dereference of it is loop-carried.
@@ -416,6 +419,13 @@ impl Evidence {
             slot.accesses.extend(theirs.accesses.iter().cloned());
         }
         self.dynamic_offset |= other.dynamic_offset;
+        if other.dynamic_offset {
+            self.dynamic_element_size = match (self.dynamic_element_size, other.dynamic_element_size) {
+                (None, size) => size,
+                (Some(a), Some(b)) if a == b => Some(a),
+                _ => None,
+            };
+        }
         self.integer_use |= other.integer_use;
         self.phi_reached |= other.phi_reached;
         self.text_store |= other.text_store;
@@ -527,7 +537,9 @@ fn peel(
                     // A non-constant term is the array signal, recorded against
                     // whatever root the other operand reaches.
                     if let Some((root, _)) = peel(data, a, ev, budget - step - 1) {
-                        ev.entry(root).or_default().dynamic_offset = true;
+                        let entry = ev.entry(root).or_default();
+                        entry.dynamic_offset = true;
+                        entry.dynamic_element_size = None;
                     }
                     return None;
                 }
@@ -542,7 +554,9 @@ fn peel(
                 let sv = data.vbank().get(sz)?;
                 if !iv.is_constant() || !sv.is_constant() {
                     if let Some((root, _)) = peel(data, a, ev, budget - step - 1) {
-                        ev.entry(root).or_default().dynamic_offset = true;
+                        let entry = ev.entry(root).or_default();
+                        entry.dynamic_offset = true;
+                        entry.dynamic_element_size = sv.is_constant().then(|| sv.get_offset() as int4);
                     }
                     return None;
                 }
@@ -557,22 +571,29 @@ fn peel(
     None
 }
 
-/// The base an address peels to and whether the walk met a dynamic (indexed)
-/// term on it.  `None` when it peels to no root at all.  Exposed to
-/// [`crate::p5_types::coreaction_infertypes`] for the value->pointee soundness
-/// check: a base with mixed-width constant accesses must not become one scalar.
-pub(crate) fn peel_base(data: &Funcdata, vn: VarnodeId) -> Option<(VarnodeId, bool)> {
+/// The base an address peels to, whether the walk met a dynamic (indexed) term
+/// on it, and the element size a `PTRADD` scale stated when the stride is known.
+/// `None` when it peels to no root at all.
+pub(crate) fn peel_base_stride(
+    data: &Funcdata,
+    vn: VarnodeId,
+) -> Option<(VarnodeId, bool, Option<int4>)> {
     let mut ev = BTreeMap::new();
     if let Some((root, _)) = peel(data, vn, &mut ev, MAX_PEEL_DEPTH) {
-        return Some((root, ev.get(&root).is_some_and(|e| e.dynamic_offset)));
+        let entry = ev.get(&root);
+        return Some((
+            root,
+            entry.is_some_and(|e| e.dynamic_offset),
+            entry.and_then(|e| e.dynamic_element_size),
+        ));
     }
     // A dynamic term makes `peel` return `None` after recording the root the
     // other operand reached; report that root with `dynamic = true` so a
     // caller can still see which base the indexed access belongs to.
     if ev.len() == 1 {
-        let (&root, e) = ev.iter().next().expect("len == 1");
-        if e.dynamic_offset {
-            return Some((root, true));
+        let (&root, entry) = ev.iter().next().expect("len == 1");
+        if entry.dynamic_offset {
+            return Some((root, true, entry.dynamic_element_size));
         }
     }
     None

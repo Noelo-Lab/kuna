@@ -303,7 +303,7 @@ impl ActionBase {
 
     /// Reset for a new function (C++ `Action::reset`): status back to start and
     /// clear the warning-given latch.
-    fn reset_base(&mut self) {
+    pub(crate) fn reset_base(&mut self) {
         self.status = statusflags::status_start;
         self.flags &= !ruleflags::rule_warnings_given;
     }
@@ -898,6 +898,14 @@ impl Action for ActionRestartGroup {
         }
         loop {
             let res = self.group.apply(data, ctx);
+            if res < 0 {
+                // (kuna) A partial completion pauses the tree.  The group was
+                // entered through `apply`, not `perform`, so `state` was never
+                // marked mid; set it here so a later `perform` resumes at the
+                // paused child instead of restarting the whole universal tree
+                // (the P4 callee-contract bootstrap relies on this).
+                self.group.base.status = statusflags::status_mid;
+            }
             if res != 0 {
                 return res;
             }
@@ -1595,6 +1603,18 @@ impl ActionDatabase {
     /// Get the current root Action (C++ `getCurrent`).
     pub fn get_current(&self) -> Option<&dyn Action> {
         self.actionmap.get(&self.currentactname).map(|b| b.as_ref())
+    }
+
+    /// Replace the current root Action, returning the previous one.
+    ///
+    /// (kuna) The P4 callee-contract bootstrap runs a callee's own pipeline while
+    /// the caller's action tree is paused mid-pass.  Sharing the cached root
+    /// would `reset` its state, so the drive swaps a fresh derived tree in for
+    /// the callee drives and swaps the paused one back afterwards.
+    pub fn swap_current_action(&mut self, replacement: Box<dyn Action>) -> Option<Box<dyn Action>> {
+        self.actionmap
+            .get_mut(&self.currentactname)
+            .map(|slot| std::mem::replace(slot, replacement))
     }
 
     /// Mutable access to the current root Action (so a driver can `perform` it).
