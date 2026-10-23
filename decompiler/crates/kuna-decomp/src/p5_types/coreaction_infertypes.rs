@@ -1129,45 +1129,15 @@ fn propagate_load_store(
 /// other access through a bit-cast.  A dynamic access is admitted only when its
 /// `PTRADD` scale proves the element width is `value_size`: that is a float
 /// array, not a mixed-width object.  An unknown stride refuses.
+///
+/// The evidence walk starts at the base, not at the function's op bank, so its
+/// answer does not depend on how many unrelated ops the function holds.
 fn float_pointee_admits(data: &Funcdata, op: OpId, value_size: int4) -> bool {
-    const MAX_OPS: usize = 4096;
     let Some(pointer) = data.obank().get(op).and_then(|o| o.get_in(1)) else { return false };
-    let Some((base, dynamic, stride)) = crate::kuna_structsynth::peel_base_stride(data, pointer) else {
+    let Some((base, _dynamic, _stride)) = crate::kuna_structsynth::peel_base_stride(data, pointer) else {
         return false;
     };
-    if dynamic && stride != Some(value_size) {
-        return false;
-    }
-    let mut any = false;
-    let mut scanned = 0usize;
-    for code in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE] {
-        for id in data.obank().iter_code(code) {
-            scanned += 1;
-            if scanned > MAX_OPS {
-                return false;
-            }
-            let Some(o) = data.obank().get(id) else { continue };
-            if o.is_dead() {
-                continue;
-            }
-            let Some(addr) = o.get_in(1) else { continue };
-            let value = if code == OpCode::CPUI_LOAD { o.get_out() } else { o.get_in(2) };
-            let Some(width) = value.and_then(|v| data.vbank().get(v)).map(|v| v.get_size()) else {
-                continue;
-            };
-            let Some((root, indexed, stride)) = crate::kuna_structsynth::peel_base_stride(data, addr) else {
-                continue;
-            };
-            if root != base {
-                continue;
-            }
-            if width != value_size || (indexed && stride != Some(value_size)) {
-                return false;
-            }
-            any = true;
-        }
-    }
-    any
+    crate::kuna_structsynth::every_access_through(data, base, value_size)
 }
 
 /// C++ `TypeOpPiece::propagateType` (typeop.cc:2076).

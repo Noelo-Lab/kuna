@@ -349,7 +349,12 @@ several widths is an object with several views; it keeps its storage type and th
 float access prints as its own cast (`*(double *)a0`) instead of re-typing the
 whole object and forcing every other access through a bit-cast. A dynamic access
 whose `PTRADD` scale is the same width is a float array and keeps the promotion;
-an unknown stride refuses it.
+an unknown stride refuses it. The evidence is the base's own pointer family, not
+the function's op bank: the audit follows `COPY`, `CAST`, constant `INT_ADD`/
+`PTRSUB` and `PTRADD` forward from the base and peels each address back to prove
+it names the same base, so a function growing unrelated ops cannot change the
+answer and there is no whole-scan budget to hit. A family the walk cannot complete
+refuses the promotion.
 
 With stackviews enabled, `decompiler/crates/kuna-decomp/src/p5_types/kuna_stackwordtypes.rs`
 separates a generated frame backing from the value stored through another
