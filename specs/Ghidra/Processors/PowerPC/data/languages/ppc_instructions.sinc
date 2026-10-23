@@ -2128,6 +2128,9 @@
 :ldarx D,RA_OR_ZERO,B	is OP=31 & D & RA_OR_ZERO & B & XOP_1_10=84 & BIT_0=0
 {
 	ea:$(REGISTER_SIZE) = RA_OR_ZERO+B;
+	RESERVE = 1;
+	RESERVE_LENGTH = 8;
+	RESERVE_ADDRESS = ea;
 	D = *:8(ea);
 }
 @endif

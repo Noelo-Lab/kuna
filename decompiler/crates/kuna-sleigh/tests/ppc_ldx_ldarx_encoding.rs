@@ -54,6 +54,10 @@ fn ldx_and_ldarx_decode_as_doubleword_loads_at_their_own_opcodes() {
             let r9 = sleigh.get_register("r9").unwrap();
             assert!(ops.0.iter().any(|(op, out)| *op == OpCode::CPUI_LOAD
                 && out.as_ref().is_some_and(|v| v.size == 8 && v.offset == r9.offset)), "{word:x}, {spec}: {:?}", ops.0);
+            let reserve = sleigh.get_register("RESERVE").unwrap();
+            let sets_reserve = ops.0.iter().any(|(_, out)| out.as_ref().is_some_and(|v| v.offset == reserve.offset
+                && matches!((&v.space, &reserve.space), (Some(a), Some(b)) if Rc::ptr_eq(a, b))));
+            assert_eq!(sets_reserve, mnemonic == "ldarx", "{word:x}, {spec}: {:?}", ops.0);
         }
     }
 }
