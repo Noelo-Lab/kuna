@@ -222,6 +222,8 @@ pub mod pcodeop_addlflags {
     /// writes a narrowed call result back into its register.  Set and read by
     /// [`crate::p4_calls::kuna_narrowret`].
     pub const kuna_narrowret: uint4 = 0x400000;
+    /// A LOAD emitted by native instruction decoding, not analysis or injection.
+    pub const kuna_native_load: uint4 = 0x800000;
 }
 
 // ---------------------------------------------------------------------------

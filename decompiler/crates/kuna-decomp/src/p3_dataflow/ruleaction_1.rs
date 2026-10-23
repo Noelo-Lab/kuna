@@ -145,6 +145,9 @@ impl Rule for RuleEarlyRemoval {
         {
             return 0;
         }
+        if kuna_volatileload::preserve_discarded(data, op, &mut memo) {
+            return 1;
+        }
         // Get rid of unused op
         data.op_destroy(op);
         1

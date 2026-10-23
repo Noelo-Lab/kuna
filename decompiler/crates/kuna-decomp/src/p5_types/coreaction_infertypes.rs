@@ -70,6 +70,11 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     // `BUILTIN_STRINGDATA` CALLOTHER reports its char-pointer output token and
     // `ActionSetCasts` inserts no spurious cast around the rendered string literal.
     if o.code() == OpCode::CPUI_CALLOTHER {
+        if let Some((_, size)) = crate::p3_dataflow::kuna_volatileload::dynamic_read(data, op) {
+            if let Some(Ok(ty)) = arch.types().map(|t| t.get_base(size, type_metatype::TYPE_UINT)) {
+                return ty;
+            }
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -145,6 +150,19 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
     if (opcode == OpCode::CPUI_CALL || opcode == OpCode::CPUI_CALLIND) && slot > 0 {
         if let Some(ct) = call_input_type_local(data, op, slot, opcode, recovered) {
             return ct;
+        }
+    }
+
+    // Retained native reads still consume an address, not an integer payload.
+    if opcode == OpCode::CPUI_CALLOTHER && slot == 1 {
+        if let Some((_, size)) = crate::p3_dataflow::kuna_volatileload::dynamic_read(data, op) {
+            if let Some(types) = arch.types() {
+                if let Ok(pointer) = types.get_base(size, type_metatype::TYPE_UINT)
+                    .and_then(|value| types.get_type_pointer(in_size, value, 1))
+                {
+                    return pointer;
+                }
+            }
         }
     }
 

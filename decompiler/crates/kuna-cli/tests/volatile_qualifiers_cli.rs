@@ -85,15 +85,6 @@ fn pointer_arithmetic_keeps_the_volatile_pointee() {
 }
 
 #[test]
-fn unused_volatile_pointee_reads_remain_live() {
-    let words = [0xe5901000, 0xe5901000, 0xe3a00000, 0xe12fff1e];
-    let plain = decompile(&words, "uint4 *control");
-    assert_eq!(plain.matches("*control").count(), 1, "{plain}");
-    let qualified = decompile(&words, "volatile uint4 *control");
-    assert_eq!(qualified.matches("*control").count(), 3, "{qualified}");
-}
-
-#[test]
 fn casts_for_access_width_keep_the_volatile_pointee() {
     let words = [0xe5901000, 0xe5900000, 0xe0810000, 0xe12fff1e];
     let code = decompile(&words, "volatile void *control");

@@ -494,3 +494,74 @@ fn inferred_simd_temporaries_round_trip_through_native_c() {
         }
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn discarded_pointer_reads_preserve_their_guard_and_access_width() {
+    use common::process;
+    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "native read verification requires a C compiler");
+    let dir = tempfile::tempdir().unwrap();
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/conditional_read_native.c");
+    let original = dir.path().join("original.o");
+    process::required_output(
+        Command::new(compilers[0])
+            .args(["-O2", "-fno-stack-protector", "-DORIGINAL_ONLY", "-c"])
+            .arg(&fixture).arg("-o").arg(&original),
+    );
+    let mut targets = vec!["native"];
+    if compilers.contains(&"clang") {
+        targets.push("sparc");
+    }
+    for target in targets {
+        let input = if target == "native" {
+            original.clone()
+        } else {
+            let object = dir.path().join("sparc.o");
+            process::required_output(
+                Command::new("clang")
+                    .args([
+                        "--target=sparc-unknown-linux-gnu", "-integrated-as", "-O2",
+                        "-fno-stack-protector", "-DORIGINAL_ONLY", "-c",
+                    ])
+                    .arg(&fixture).arg("-o").arg(&object),
+            );
+            object
+        };
+        let mut generated = String::new();
+        for name in ["Probe8", "Probe16", "Probe32", "Probe64", "ProbeSpill32"] {
+            let prototype = format!(
+                "prototype {name} void {name}(unsigned int state,unsigned int mode,unsigned int left,unsigned int right,void *base)"
+            );
+            let result = process::required_output(
+                Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .arg("decompile").arg(&input).arg(name)
+                    .args(["--mode", "reliable", "--assert", &prototype, "--assert-strict"]),
+            );
+            generated.push_str(std::str::from_utf8(&result.stdout).unwrap());
+        }
+        let driver = dir.path().join(format!("{target}.c"));
+        std::fs::write(
+            &driver,
+            include_str!("fixtures/conditional_read_native.c")
+                .replace("GENERATED_FUNCTIONS", &generated),
+        ).unwrap();
+        for compiler in &compilers {
+            for optimization in ["-O0", "-O2"] {
+                let executable = dir.path().join(format!("{target}-{compiler}{optimization}"));
+                process::required_output(
+                    Command::new(compiler)
+                        .args([
+                            "-std=c11", optimization, "-fstrict-aliasing",
+                            "-Werror=uninitialized", "-Werror=implicit-function-declaration",
+                        ])
+                        .arg(&driver).arg(&original).arg("-o").arg(&executable),
+                );
+                process::required_output(&mut Command::new(&executable));
+            }
+        }
+    }
+}
