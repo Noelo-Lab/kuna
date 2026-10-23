@@ -61,8 +61,9 @@
 //! is not changed: `bl g; orr r0,r0,#255` is byte for byte `int f(void) {
 //! return (int)g() | 255; }` as well as a 64-bit return. Nor is one whose
 //! second register feeds the first (`asr r1,r0,#2; add r0,r1,r0,lsr #31` is
-//! an `int` division by a constant). And a big-endian pair is left alone,
-//! because a pair is still joined in little-endian order there.
+//! an `int` division by a constant). These heuristics leave high-first pairs
+//! alone; [`whole_pair`] separately retains both halves of one declared
+//! integer call result, using the model's word order.
 //!
 //! # A pair the function names only in part
 //!
@@ -100,6 +101,193 @@ const MAX_DEPTH: u32 = 8;
 
 /// How many defining ops the zero test follows.
 const ZERO_DEPTH: u32 = 8;
+
+/// Preserve pending return reads until scheduled frame SSA can resolve spills.
+/// A wide LOAD is not itself proof: it may reload unused incoming arguments.
+pub(crate) fn awaiting_stack(
+    data: &Funcdata,
+    active: &ParamActive,
+    returns: &[OpId],
+) -> bool {
+    let Some(stack) = data.get_arch().manage().get_stack_space() else { return false };
+    // Spacebase and the simplification pool run after return recovery. Frame
+    // slots exposed there need the following stack heritage pass to get SSA.
+    if !data.num_heritage_passes(stack).is_ok_and(|passes| passes <= 1)
+        || !data.get_func_proto().has_model() || active.get_num_trials() < 2
+    {
+        return false;
+    }
+    if !(0..data.num_calls()).any(|i| wide_integer_call(data, data.get_call_specs(i))) {
+        return false;
+    }
+    if !returns.iter().any(|&ret| {
+        data.obank().get(ret).is_some_and(|op| {
+            !op.is_dead() && op.get_halt_type() == 0 && (0..active.get_num_trials()).any(|i| {
+                let value = op.get_in(active.get_trial(i).get_slot());
+                value.and_then(|vn| word_source(data, (vn, 0)))
+                    .and_then(|(vn, _)| data.vbank().get(vn))
+                    .is_some_and(|vn| vn.get_size() == 8
+                        && vn.get_def().and_then(|id| data.obank().get(id)).is_some_and(|def| def.code() == OpCode::CPUI_LOAD))
+            })
+        })
+    }) {
+        return false;
+    }
+    crate::kuna_bejoin::wide_pair(data.get_func_proto().model(), data.get_arch().manage())
+        .is_some_and(|pair| pair.hi.1 == 4 && pair.lo.1 == 4)
+}
+
+/// A complete high-first pair copied from a declared integer call result.
+/// Constants on other exits are allowed, but every live exit must define both
+/// words, and at least one must return a whole value.
+pub(crate) fn whole_pair(
+    data: &Funcdata,
+    active: &ParamActive,
+    returns: &[OpId],
+) -> Option<[i32; 2]> {
+    let proto = data.get_func_proto();
+    if proto.is_output_locked() || !proto.has_model() || active.get_num_trials() < 2 {
+        return None;
+    }
+    let pair = crate::kuna_bejoin::wide_pair(proto.model(), data.get_arch().manage())?;
+    if pair.hi.1 != 4 || pair.lo.1 != 4 {
+        return None;
+    }
+    let mut indices = [0; 2];
+    for (slot, (address, size)) in [&pair.hi, &pair.lo].into_iter().enumerate() {
+        indices[slot] = (0..active.get_num_trials()).find(|&i| {
+            let trial = active.get_trial(i);
+            trial.get_address() == address && trial.get_size() == *size && !trial.is_unref()
+        })?;
+    }
+    if (0..active.get_num_trials())
+        .any(|i| !indices.contains(&i) && active.get_trial(i).is_active())
+    {
+        return None;
+    }
+    let mut wide = false;
+    for &ret in returns {
+        let operation = data.obank().get(ret)?;
+        if operation.is_dead() || operation.get_halt_type() != 0
+            || crate::kuna_bejoin::never_reached(data, ret)
+        {
+            continue;
+        }
+        let hi = operation.get_in(active.get_trial(indices[0]).get_slot())?;
+        let lo = operation.get_in(active.get_trial(indices[1]).get_slot())?;
+        wide |= whole_words(data, (hi, 0), (lo, 0), MAX_DEPTH)?;
+    }
+    wide.then_some(indices)
+}
+
+/// Follow only representation-preserving moves and exact four-byte slices.
+fn word_source(data: &Funcdata, mut word: (VarnodeId, u64)) -> Option<(VarnodeId, u64)> {
+    // Moves cannot cycle in SSA without a phi, where this walk stops.
+    // Use the graph's own size as the bound, not an arbitrary copy-chain depth.
+    for _ in 0..data.vbank().num_varnodes() {
+        let value = data.vbank().get(word.0)?;
+        if word.1.checked_add(4)? > value.get_size() as u64 {
+            return None;
+        }
+        let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else {
+            return Some(word);
+        };
+        match op.code() {
+            OpCode::CPUI_COPY => word.0 = op.get_in(0)?,
+            OpCode::CPUI_INDIRECT if !op.is_indirect_creation() => word.0 = op.get_in(0)?,
+            OpCode::CPUI_INT_OR if op.get_in(0) == op.get_in(1) => word.0 = op.get_in(0)?,
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => {
+                let a = op.get_in(0)?;
+                let b = op.get_in(1)?;
+                word.0 = if is_zero(data, a, ZERO_DEPTH) {
+                    b
+                } else if is_zero(data, b, ZERO_DEPTH) {
+                    a
+                } else {
+                    return Some(word);
+                };
+            }
+            OpCode::CPUI_SUBPIECE => {
+                let offset = data.vbank().get(op.get_in(1)?)?;
+                if !offset.is_constant() {
+                    return None;
+                }
+                word = (op.get_in(0)?, word.1.checked_add(offset.get_offset())?);
+            }
+            OpCode::CPUI_PIECE => {
+                let low = op.get_in(1)?;
+                let low_size = data.vbank().get(low)?.get_size() as u64;
+                if word.1.checked_add(4)? <= low_size {
+                    word.0 = low;
+                } else if word.1 >= low_size {
+                    word = (op.get_in(0)?, word.1 - low_size);
+                } else {
+                    return None;
+                }
+            }
+            _ => return Some(word),
+        }
+    }
+    None
+}
+
+fn whole_words(
+    data: &Funcdata,
+    hi: (VarnodeId, u64),
+    lo: (VarnodeId, u64),
+    depth: u32,
+) -> Option<bool> {
+    if depth == 0 {
+        return None;
+    }
+    let hi = word_source(data, hi)?;
+    let lo = word_source(data, lo)?;
+    let h = data.vbank().get(hi.0)?;
+    let l = data.vbank().get(lo.0)?;
+    if h.is_constant() && l.is_constant() {
+        return Some(false);
+    }
+    let hop = data.obank().get(h.get_def()?)?;
+    let lop = data.obank().get(l.get_def()?)?;
+    if hop.code() == OpCode::CPUI_MULTIEQUAL && lop.code() == OpCode::CPUI_MULTIEQUAL
+        && hop.get_parent() == lop.get_parent() && hop.num_input() == lop.num_input()
+    {
+        let mut wide = false;
+        for slot in 0..hop.num_input() {
+            wide |= whole_words(data, (hop.get_in(slot)?, hi.1), (lop.get_in(slot)?, lo.1), depth - 1)?;
+        }
+        return Some(wide);
+    }
+    if hi.0 != lo.0 || hi.1 != 4 || lo.1 != 0 || h.get_size() != 8 {
+        return None;
+    }
+    let call = match hop.code() {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => h.get_def()?,
+        OpCode::CPUI_INDIRECT if hop.is_indirect_creation() => {
+            let iop = data.vbank().get(hop.get_in(1)?)?;
+            OpId::from(slotmap::KeyData::from_ffi(iop.get_offset()))
+        }
+        _ => return None,
+    };
+    let spec = data.get_call_specs(data.get_call_specs_index(call)?);
+    if !wide_integer_call(data, spec)
+        || hop.code() == OpCode::CPUI_INDIRECT && spec.proto().get_output().get_address() != *h.get_addr()
+    {
+        return None;
+    }
+    Some(true)
+}
+
+fn wide_integer_call(data: &Funcdata, spec: &crate::fspec::FuncCallSpecs) -> bool {
+    spec.proto().is_output_locked()
+        && spec.proto().has_matching_model(data.get_func_proto().model())
+        && spec.proto().get_output().get_type().is_some_and(|ty| {
+            ty.get_size() == 8 && matches!(
+                ty.get_metatype(),
+                crate::dtype::type_metatype::TYPE_INT | crate::dtype::type_metatype::TYPE_UINT
+            )
+        })
+}
 
 /// What the first register of a pair holds at one RETURN, when upstream's
 /// scoring refused it.

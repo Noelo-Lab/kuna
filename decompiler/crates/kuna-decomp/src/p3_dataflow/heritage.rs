@@ -2753,29 +2753,58 @@ impl Heritage {
         }
     }
 
-    /// Guard RETURN ops when the heritaged range *contains* the output storage,
-    /// truncating to the recovered output (C++ `Heritage::guardReturnsOverlapping`,
-    /// `heritage.cc:1610`).  Registers the truncated output trial and inserts a
-    /// SUBPIECE before each RETURN, appending the truncated value as a new input.
+    /// Guard every model output contained by a wider heritaged range. A locked
+    /// register-pair call result can cover two separate output entries; keeping
+    /// only the biggest entry would silently discard the other return word.
     fn guard_returns_overlapping(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
     ) {
+        self.guard_returns_in_range(fd, addr, size, addr, size, true);
+    }
+
+    fn guard_returns_in_range(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        addr: &Address,
+        size: int4,
+        range: &Address,
+        range_size: int4,
+        primary: bool,
+    ) {
         use kuna_num::opcodes::OpCode;
         use kuna_num::pcoderaw::VarnodeData;
         let mut vdata = VarnodeData::default();
-        if !fd.get_func_proto().get_biggest_contained_output(addr, size, &mut vdata) {
+        if !fd.get_func_proto().get_biggest_contained_output(range, range_size, &mut vdata) {
             return;
         }
         let vspace = match vdata.space.clone() {
             Some(s) => s,
             None => return,
         };
+        let Some(before) = vdata.offset.checked_sub(range.get_offset())
+            .and_then(|n| int4::try_from(n).ok())
+        else {
+            return;
+        };
+        let piece_size = vdata.size as int4;
+        if before > range_size || piece_size <= 0 || piece_size > range_size - before {
+            return;
+        }
+        if before > 0 {
+            self.guard_returns_in_range(fd, addr, size, range, before, false);
+        }
         let trunc_addr = Address::new(Rc::clone(&vspace), vdata.offset);
         if let Some(active) = fd.get_active_output_mut() {
             active.register_trial(&trunc_addr, vdata.size as int4);
+            if !primary {
+                // The wide range alone is no evidence that the caller returns
+                // this extra word. Activate it only after a whole-pair proof.
+                let index = active.get_num_trials() - 1;
+                active.get_trial_mut(index).mark_inactive();
+            }
         }
         // offset = least-significant bytes to truncate (endian-adjusted).
         let mut offset = (vdata.offset.wrapping_sub(addr.get_offset())) as i64 as int4;
@@ -2809,6 +2838,10 @@ impl Heritage {
                 .expect("guardReturnsOverlapping: invn")
                 .set_active_heritage();
             let _ = fd.op_insert_input(op, ret_val, n);
+        }
+        let after = range_size - before - piece_size;
+        if after > 0 {
+            self.guard_returns_in_range(fd, addr, size, &(&trunc_addr + piece_size as i64), after, false);
         }
     }
 

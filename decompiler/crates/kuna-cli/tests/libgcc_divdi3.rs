@@ -1,6 +1,9 @@
-//! A named DI-mode helper's low return word remains a computed value.
+//! Signed DI-mode call results survive stores and full-width caller returns.
 use crate::common;
-use object::{write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags, SymbolKind, SymbolScope};
+use object::{
+    write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags, SymbolKind,
+    SymbolScope,
+};
 use std::process::Command;
 
 fn caller(low_word: bool) -> Vec<u8> {
@@ -8,27 +11,48 @@ fn caller(low_word: bool) -> Vec<u8> {
     let text = image.section_id(write::StandardSection::Text);
     // save; mov 62,o0; mov i0,o3; sra i0,31,o2; call; sethi 0x200000,o1;
     // st o1,[i1]; ret; restore. Independently authored, with the call's delay slot.
-    let mut words: [u32; 9] = [0x9de3bfa0, 0x9010203e, 0x96100018, 0x953e201f, 0x40000000,
-        0x13200000, 0xd2264000, 0x81c7e008, 0x81e80000];
+    let mut words: [u32; 9] = [
+        0x9de3bfa0, 0x9010203e, 0x96100018, 0x953e201f, 0x40000000, 0x13200000, 0xd2264000,
+        0x81c7e008, 0x81e80000,
+    ];
     if !low_word {
         words[6] = 0xd0264000;
     }
     let bytes: Vec<u8> = words.into_iter().flat_map(u32::to_be_bytes).collect();
     image.append_section_data(text, &bytes, 4);
     image.add_symbol(write::Symbol {
-        name: b"divide_low".to_vec(), value: 0, size: bytes.len() as u64,
-        kind: SymbolKind::Text, scope: SymbolScope::Linkage, weak: false,
-        section: write::SymbolSection::Section(text), flags: SymbolFlags::None,
+        name: b"divide_low".to_vec(),
+        value: 0,
+        size: bytes.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: write::SymbolSection::Section(text),
+        flags: SymbolFlags::None,
     });
     let helper = image.add_symbol(write::Symbol {
-        name: b"__divdi3".to_vec(), value: 0, size: 0, kind: SymbolKind::Unknown,
-        scope: SymbolScope::Dynamic, weak: false,
-        section: write::SymbolSection::Undefined, flags: SymbolFlags::None,
+        name: b"__divdi3".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Unknown,
+        scope: SymbolScope::Dynamic,
+        weak: false,
+        section: write::SymbolSection::Undefined,
+        flags: SymbolFlags::None,
     });
-    image.add_relocation(text, write::Relocation {
-        offset: 16, symbol: helper, addend: 0,
-        flags: RelocationFlags::Elf { r_type: object::elf::R_SPARC_WDISP30 },
-    }).unwrap();
+    image
+        .add_relocation(
+            text,
+            write::Relocation {
+                offset: 16,
+                symbol: helper,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_SPARC_WDISP30,
+                },
+            },
+        )
+        .unwrap();
     image.write().unwrap()
 }
 
@@ -37,21 +61,28 @@ fn signed_di_quotient_low_word_survives_an_opaque_call() {
     let root = tempfile::tempdir().unwrap();
     let image = root.path().join("divide.o");
     std::fs::write(&image, caller(true)).unwrap();
-    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
-        .filter(|cc| Command::new(cc).arg("--version").output().is_ok()).collect();
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| Command::new(cc).arg("--version").output().is_ok())
+        .collect();
     assert!(!compilers.is_empty(), "a C compiler is required");
-    for mode in ["off", "on"] {
-        let (output, error, status) = common::run_kuna(&[
-            "decompile", image.to_str().unwrap(), "divide_low", "--json",
-            "--option", "libproto", mode,
-            "--assert", "prototype divide_low void divide_low(int divisor,unsigned int *result)",
-        ]);
-        assert_eq!(status, 0, "{error}");
-        let document: serde_json::Value = serde_json::from_str(&output).unwrap();
-        assert!(document["functions"][0]["error"].is_null(), "{output}");
-        let body = document["functions"][0]["code"].as_str().unwrap();
-        let source = root.path().join(format!("{mode}.c"));
-        std::fs::write(&source, format!(r#"
+    let (output, error, status) = common::run_kuna(&[
+        "decompile",
+        image.to_str().unwrap(),
+        "divide_low",
+        "--json",
+        "--assert",
+        "prototype divide_low void divide_low(int divisor,unsigned int *result)",
+    ]);
+    assert_eq!(status, 0, "{error}");
+    let document: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert!(document["functions"][0]["error"].is_null(), "{output}");
+    let body = document["functions"][0]["code"].as_str().unwrap();
+    let source = root.path().join("quotient.c");
+    std::fs::write(
+        &source,
+        format!(
+            r#"
 #include <stdint.h>
 #include <limits.h>
 long long __divdi3(long long a,long long b) {{ return a/b; }}
@@ -65,19 +96,29 @@ int main(void) {{
   }}
   return 0;
 }}
-"#)).unwrap();
-        for cc in &compilers {
-            for opt in ["-O0", "-O2"] {
-                let executable = root.path().join(format!("{mode}-{cc}-{opt}"));
-                let built = Command::new(cc).args(["-std=c11", opt, "-Werror=uninitialized"])
-                    .arg(&source).arg("-o").arg(&executable).output().unwrap();
-                if mode == "off" {
-                    assert!(!built.status.success(), "legacy helper call unexpectedly compiled: {body}");
-                } else {
-                    assert!(built.status.success(), "{}\n{body}", String::from_utf8_lossy(&built.stderr));
-                    assert!(Command::new(&executable).status().unwrap().success(), "{cc} {opt}: {body}");
-                }
-            }
+"#
+        ),
+    )
+    .unwrap();
+    for cc in &compilers {
+        for opt in ["-O0", "-O2"] {
+            let executable = root.path().join(format!("{cc}-{opt}"));
+            let built = Command::new(cc)
+                .args(["-std=c11", opt, "-Werror=uninitialized"])
+                .arg(&source)
+                .arg("-o")
+                .arg(&executable)
+                .output()
+                .unwrap();
+            assert!(
+                built.status.success(),
+                "{}\n{body}",
+                String::from_utf8_lossy(&built.stderr)
+            );
+            assert!(
+                Command::new(&executable).status().unwrap().success(),
+                "{cc} {opt}: {body}"
+            );
         }
     }
 }
@@ -119,11 +160,142 @@ int main(void) {{
             continue;
         }
         let executable = root.path().join(cc);
-        let built = Command::new(cc).args(["-std=c11", "-O2", "-Werror=uninitialized"])
-            .arg(&source).arg("-o").arg(&executable).output().unwrap();
-        assert!(built.status.success(), "{}\n{body}", String::from_utf8_lossy(&built.stderr));
-        assert!(Command::new(&executable).status().unwrap().success(), "{cc}: {body}");
+        let built = Command::new(cc)
+            .args(["-std=c11", "-O2", "-Werror=uninitialized"])
+            .arg(&source)
+            .arg("-o")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(
+            built.status.success(),
+            "{}\n{body}",
+            String::from_utf8_lossy(&built.stderr)
+        );
+        assert!(
+            Command::new(&executable).status().unwrap().success(),
+            "{cc}: {body}"
+        );
         checked += 1;
     }
     assert!(checked > 0, "a C compiler is required");
+}
+
+#[test]
+fn declared_wide_results_survive_caller_return_recovery() {
+    if Command::new("clang").arg("--version").output().is_err() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let fixture = root.path().join("returns.c");
+    std::fs::write(
+        &fixture,
+        r#"
+void g(void);
+long long q(long long a,long long b){return a/b;}
+long long keep(long long a,long long b){long long r=a/b;g();return r;}
+long long guard(long long a,long long b){if(b==0)return -1;return a/b;}
+int low(long long a,long long b){return (int)(a/b);}
+int high(long long a,long long b){return (int)((a/b)>>32);}
+"#,
+    )
+    .unwrap();
+    for level in ["-O0", "-O2"] {
+        let image = root.path().join("returns.o");
+        common::process::required_output(
+            Command::new("clang")
+                .args(["-target", "sparc-linux-gnu", "-integrated-as", level, "-c"])
+                .arg(&fixture)
+                .arg("-o")
+                .arg(&image),
+        );
+        for explicit in [false, true] {
+            let mut bodies = String::new();
+            for function in ["q", "keep", "guard", "low", "high"] {
+                let mut args = vec!["decompile", image.to_str().unwrap(), function, "--json"];
+                if explicit {
+                    args.extend([
+                        "--option",
+                        "libproto",
+                        "off",
+                        "--assert",
+                        "prototype __divdi3 long long __divdi3(long long a,long long b)",
+                    ]);
+                }
+                let (output, error, status) = common::run_kuna(&args);
+                assert_eq!(status, 0, "{error}");
+                let document: serde_json::Value = serde_json::from_str(&output).unwrap();
+                assert!(document["functions"][0]["error"].is_null(), "{output}");
+                bodies.push_str(document["functions"][0]["code"].as_str().unwrap());
+                bodies.push('\n');
+            }
+            let source = root.path().join("driver.c");
+            std::fs::write(&source, format!(r#"
+#include <stdint.h>
+#include <limits.h>
+#include <stdio.h>
+#define CONCAT44(hi,lo) (((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo))
+static unsigned calls, effects;
+long long __divdi3(long long a,long long b) {{ ++calls; return a/b; }}
+void g(void) {{ ++effects; }}
+{bodies}
+#define ARGS(a,b) (uint32_t)((uint64_t)(a)>>32),(uint32_t)(a),(uint32_t)((uint64_t)(b)>>32),(uint32_t)(b)
+_Static_assert(sizeof(low(0,0,0,1)) == 4, "the low-word caller returns one word");
+_Static_assert(sizeof(high(0,0,0,1)) == 4, "the high-word caller returns one word");
+int main(void) {{
+    const int64_t edges[] = {{0,1,-1,2,-3,INT64_MIN,INT64_MAX,INT64_C(0x123456789abcdef),-INT64_C(0x123456789abcdef)}};
+    uint64_t random = UINT64_C(0x79b153c5a7d931e5);
+    for(unsigned i=0;i<2000;++i) {{
+        random ^= random<<13; random ^= random>>7; random ^= random<<17;
+        int64_t a = i<81 ? edges[i/9] : (int64_t)random;
+        random ^= random<<13; random ^= random>>7; random ^= random<<17;
+        int64_t b = i<81 ? edges[i%9] : (int64_t)random;
+        if(!b || (a==INT64_MIN && b==-1)) continue;
+        uint64_t expected = (uint64_t)(a/b);
+        calls = effects = 0;
+        if(q(ARGS(a,b)) != expected || calls!=1 || effects) return 1;
+        if(keep(ARGS(a,b)) != expected || calls!=2 || effects!=1) return 2;
+        if(guard(ARGS(a,b)) != expected || calls!=3 || effects!=1) return 3;
+        if(low(ARGS(a,b)) != (uint32_t)expected || calls!=4) return 4;
+        if(high(ARGS(a,b)) != (uint32_t)(expected>>32) || calls!=5) return 5;
+        if(guard(ARGS(a,0)) != UINT64_MAX || calls!=5 || effects!=1) return 6;
+    }}
+    return 0;
+}}
+"#)).unwrap();
+            for cc in ["gcc", "clang"] {
+                if Command::new(cc).arg("--version").output().is_err() {
+                    continue;
+                }
+                for opt in ["-O0", "-O2"] {
+                    let executable = root.path().join(format!("run-{cc}"));
+                    let built = Command::new(cc)
+                        .args([
+                            "-std=c11",
+                            opt,
+                            "-Werror=uninitialized",
+                            "-fsanitize=undefined",
+                            "-fno-sanitize-recover=all",
+                        ])
+                        .arg(&source)
+                        .arg("-o")
+                        .arg(&executable)
+                        .output()
+                        .unwrap();
+                    assert!(
+                        built.status.success(),
+                        "{level} explicit={explicit} {cc} {opt}: {}\n{bodies}",
+                        String::from_utf8_lossy(&built.stderr)
+                    );
+                    let ran = Command::new(&executable).output().unwrap();
+                    assert!(
+                        ran.status.success(),
+                        "{level} explicit={explicit} {cc} {opt}: {:?}\n{}\n{bodies}",
+                        ran.status.code(),
+                        String::from_utf8_lossy(&ran.stderr)
+                    );
+                }
+            }
+        }
+    }
 }
