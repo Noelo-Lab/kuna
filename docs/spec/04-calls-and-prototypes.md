@@ -223,6 +223,12 @@ same pass at the same call. No arity is locked, and the bootstrap is inert under
 single-function drive; whole-binary, `--jobs`, `decompile-project` and browser
 schedules are unchanged.
 
+The pause itself is the framework's partial-completion contract, not a drive-private
+signal: `ActionGroup::apply` records `status_mid` on the group whenever a member
+returns a partial completion, so every caller resumes at that member — including
+`ActionRestartGroup`, which drives its inner group through `apply` rather than
+`perform`.
+
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
 value as argument evidence. This retains a passed local address despite other

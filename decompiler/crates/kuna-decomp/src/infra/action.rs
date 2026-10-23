@@ -810,10 +810,16 @@ impl Action for ActionGroup {
                 self.base.count += res;
                 if self.base.check_action_break() {
                     self.state += 1;
+                    self.base.status = statusflags::status_mid;
                     return -1;
                 }
             } else if res < 0 {
-                // Partial completion of member == partial completion of group
+                // Partial completion of a member is partial completion of the
+                // group (C++ `action.cc:516`).  Record it on the group itself so
+                // every caller resumes at `state`, whether it drives the group
+                // through `perform` (which sets the same flag) or calls `apply`
+                // directly (as `ActionRestartGroup` does).
+                self.base.status = statusflags::status_mid;
                 return -1;
             }
             self.state += 1;
@@ -898,14 +904,6 @@ impl Action for ActionRestartGroup {
         }
         loop {
             let res = self.group.apply(data, ctx);
-            if res < 0 {
-                // (kuna) A partial completion pauses the tree.  The group was
-                // entered through `apply`, not `perform`, so `state` was never
-                // marked mid; set it here so a later `perform` resumes at the
-                // paused child instead of restarting the whole universal tree
-                // (the P4 callee-contract bootstrap relies on this).
-                self.group.base.status = statusflags::status_mid;
-            }
             if res != 0 {
                 return res;
             }
