@@ -22,13 +22,16 @@ use kuna_base::types::int4;
 use crate::funcdata::Funcdata;
 use crate::p5_types::prefersplit::PreferSplitRecord;
 
-/// Is `addr:size` the whole preferred-split register of `record`, or one of the
-/// two pieces heritage pass 0 replaced it with?
+/// Is `addr:size` the whole preferred-split register of `record`, or a scalar
+/// argument living inside one of the two pieces heritage pass 0 replaced it
+/// with?
 ///
 /// The record names the full container (`q0`, 16 bytes) and the byte offset of
-/// the second piece (`8`).  Either piece boundary is a valid place for a
-/// scalar argument, in either endianness: the piece at `offset` is
-/// `splitoffset` bytes and the one at `offset + splitoffset` is the rest.
+/// the second piece (`8`).  A scalar argument in the register can be whole (16
+/// bytes), a piece (8), or narrower than a piece: a single-precision `float`
+/// arrives in the low 4 bytes of `d0` in little-endian and the high 4 in
+/// big-endian.  The range must therefore stay inside ONE piece; an access that
+/// crosses the split is not a scalar the split creates.
 pub fn is_split_storage(records: &[PreferSplitRecord], addr: &Address, size: int4) -> bool {
     let Some(space) = addr.get_space() else { return false };
     records.iter().any(|record| {
@@ -42,12 +45,15 @@ pub fn is_split_storage(records: &[PreferSplitRecord], addr: &Address, size: int
         if size <= 0 || size > total {
             return false;
         }
-        if size == total {
-            return addr.get_offset() == start;
-        }
         let off = addr.get_offset();
-        (off == start || off == start.wrapping_add(split as u64))
-            && (size == split || size == total - split)
+        let Some(rel) = off.checked_sub(start) else { return false };
+        if rel > (total - size) as u64 {
+            return false;
+        }
+        let rel = rel as int4;
+        let end = rel + size;
+        // The whole container is the value heritage splits, so it hits too.
+        size == total || end <= split || (rel >= split && end <= total)
     })
 }
 
@@ -130,15 +136,28 @@ mod tests {
     }
 
     #[test]
+    fn a_single_precision_scalar_inside_either_piece_hits() {
+        let manage = manager();
+        let recs = records(&manage);
+        let reg = Rc::clone(manage.get_space_by_name("register").unwrap());
+        // Little-endian `s0` is the low word of `d0`; big-endian is the high one.
+        assert!(is_split_storage(&recs, &Address::new(Rc::clone(&reg), 0), 4));
+        assert!(is_split_storage(&recs, &Address::new(Rc::clone(&reg), 4), 4));
+        assert!(is_split_storage(&recs, &Address::new(Rc::clone(&reg), 8), 4));
+        assert!(is_split_storage(&recs, &Address::new(Rc::clone(&reg), 12), 4));
+    }
+
+    #[test]
     fn integer_and_unrelated_storage_miss() {
         let manage = manager();
         let recs = records(&manage);
         let reg = Rc::clone(manage.get_space_by_name("register").unwrap());
         // The next argument register is not part of the split container.
         assert!(!is_split_storage(&recs, &Address::new(Rc::clone(&reg), 0x10), 8));
-        // A range inside the container that is not a piece boundary.
+        // An access that crosses the split is not a scalar the split creates.
         assert!(!is_split_storage(&recs, &Address::new(Rc::clone(&reg), 4), 8));
-        // A width that matches no piece of the record.
-        assert!(!is_split_storage(&recs, &Address::new(Rc::clone(&reg), 0), 4));
+        // A register window that runs past the container.
+        assert!(!is_split_storage(&recs, &Address::new(Rc::clone(&reg), 12), 8));
+        assert!(!is_split_storage(&recs, &Address::new(Rc::clone(&reg), 0), 20));
     }
 }

@@ -42,6 +42,17 @@ fn a_non_dominated_split_value_still_bootstraps() {
 }
 
 #[test]
+fn a_single_precision_split_value_bootstraps_through_its_piece() {
+    // `s0` is 4 bytes inside the low 8-byte piece of `q0`; the callee's own
+    // recovery is what says the argument is a float rather than its bits.
+    let path = fixture();
+    let (out, err, code) = run(&["decompile", &path, "ccw_f32_entry"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(out.contains("float *a0"), "{out}");
+    assert!(out.contains("ccw_f32_helper(*a0)"), "{out}");
+}
+
+#[test]
 fn a_pure_integer_call_is_inert() {
     // The body touches a `q` register but passes only integers, so no callee is
     // bootstrapped and the option changes nothing.

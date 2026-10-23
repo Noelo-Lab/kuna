@@ -98,6 +98,21 @@ ccw_ints:
     b .Lintshelper
 .size ccw_ints, .-ccw_ints
 
+.global ccw_f32_entry
+.type ccw_f32_entry, %function
+ccw_f32_entry:
+    ldr s0, [x0]
+    b .Lf32helper
+.size ccw_f32_entry, .-ccw_f32_entry
+
+.global ccw_f32_helper
+.type ccw_f32_helper, %function
+ccw_f32_helper:
+.Lf32helper:
+    fneg s0, s0
+    ret
+.size ccw_f32_helper, .-ccw_f32_helper
+
 .global ccw_intshelper
 .type ccw_intshelper, %function
 ccw_intshelper:

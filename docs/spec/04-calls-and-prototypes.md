@@ -198,8 +198,11 @@ drive states the `protoorder` types of the direct callees its own call sites pas
 preferred-split storage to — at most 32 per drive, deadline-bounded and without
 recursing. The fact that selects a callee is the call's **active-input trial
 storage**, the verdict `ActionActiveParam` already reaches by data flow: an
-active trial whose range is the whole `<prefersplit>` register or one of the
-pieces heritage pass 0 replaced it with. A value merged through a `MULTIEQUAL`
+active trial whose range is the whole `<prefersplit>` register, one of the
+pieces heritage pass 0 replaced it with, or a narrower scalar inside one of
+those pieces (a single-precision `float` in `s0` inside `d0`). A range that
+crosses the split is not a scalar the split creates and selects nothing. A value
+merged through a `MULTIEQUAL`
 (`if (c) q0=x; else q0=y; call f(q0)`) is one such trial, so this is not a
 dominance test; a body that merely loads a `q` register but passes only integers
 selects nothing. A direct callee that lies on a call cycle with the root or with
