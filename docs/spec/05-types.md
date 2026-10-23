@@ -342,6 +342,14 @@ non-zero mask (§5.3) admits values above 1. When the incoming type is a union
 markers, where the unresolved union flows on so one phi input cannot lock the
 facet for all of them.
 
+The LOAD/STORE value→pointee edge is guarded for floats: a float value becomes
+the base's pointee only when every constant-offset `LOAD`/`STORE` through that
+base uses the same width. A base read at several widths is an object with
+several views; it keeps its storage type and the float access prints as its own
+cast (`*(double *)a0`) instead of re-typing the whole object and forcing every
+other access through a bit-cast. A dynamic (indexed) access refuses the
+promotion as well.
+
 With stackviews enabled, `decompiler/crates/kuna-decomp/src/p5_types/kuna_stackwordtypes.rs`
 separates a generated frame backing from the value stored through another
 pointer. A one-, two-, four-, or eight-byte STORE value uses its resolved scalar

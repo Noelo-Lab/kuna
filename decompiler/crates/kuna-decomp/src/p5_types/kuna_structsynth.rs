@@ -557,6 +557,27 @@ fn peel(
     None
 }
 
+/// The base an address peels to and whether the walk met a dynamic (indexed)
+/// term on it.  `None` when it peels to no root at all.  Exposed to
+/// [`crate::p5_types::coreaction_infertypes`] for the value->pointee soundness
+/// check: a base with mixed-width constant accesses must not become one scalar.
+pub(crate) fn peel_base(data: &Funcdata, vn: VarnodeId) -> Option<(VarnodeId, bool)> {
+    let mut ev = BTreeMap::new();
+    if let Some((root, _)) = peel(data, vn, &mut ev, MAX_PEEL_DEPTH) {
+        return Some((root, ev.get(&root).is_some_and(|e| e.dynamic_offset)));
+    }
+    // A dynamic term makes `peel` return `None` after recording the root the
+    // other operand reached; report that root with `dynamic = true` so a
+    // caller can still see which base the indexed access belongs to.
+    if ev.len() == 1 {
+        let (&root, e) = ev.iter().next().expect("len == 1");
+        if e.dynamic_offset {
+            return Some((root, true));
+        }
+    }
+    None
+}
+
 /// The signed value of a constant varnode of `size` bytes.
 fn sign_extend(val: uintb, size: int4) -> intb {
     if size <= 0 || size >= 8 {
