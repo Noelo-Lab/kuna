@@ -234,7 +234,7 @@ impl SplitInstance {
 }
 
 /// C++ `class PreferSplitManager`.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct PreferSplitManager {
     records: Vec<PreferSplitRecord>,
     /// Copies of temporaries that need additional splitting.
@@ -873,12 +873,15 @@ impl PreferSplitManager {
     }
 
     /// Run the split over all records (C++ `split`).
+    ///
+    /// The record table stays in place: [`Self::find_record`] reads it while
+    /// `split_record` walks each range, so moving it out would make every lookup
+    /// miss (the C++ reads its `const vector *` member throughout).
     pub fn split(&mut self, data: &mut Funcdata) {
-        let recs = std::mem::take(&mut self.records);
+        let recs = self.records.clone();
         for rec in &recs {
             self.split_record(data, rec);
         }
-        self.records = recs;
     }
 
     /// Clean up temporaries produced by [`Self::split`] that need a further

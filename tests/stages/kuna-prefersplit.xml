@@ -1,0 +1,22 @@
+<decompilertest>
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+    <symbol space="ram" offset="0x100000" name="harness_stub"/>
+  </binaryimage>
+  <script>
+    <com>clear architecture</com>
+    <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prefersplit_a64.o</com>
+    <com>read symbols</com>
+    <com>load function ccw_helper</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_formatter</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_vector</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_tagged</com><com>decompile</com><com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="the split register delivers a scalar double parameter" min="1" max="1">^void ccw_helper\(float8 a0,uint8 \*a1\)</stringmatch>
+  <stringmatch name="the helper negates the shared double" min="1" max="1">a0 = -a0;</stringmatch>
+  <stringmatch name="the helper forwards the double unchanged" min="1" max="1">ccw_formatter\(a0,a1\);</stringmatch>
+  <stringmatch name="the whole-register object is gone" min="0" max="0">^void ccw_helper\(char a0\[16\]\)</stringmatch>
+  <stringmatch name="a full 16-byte vector parameter is not split" min="1" max="1">^void ccw_vector\(char a0\[16\]</stringmatch>
+  <stringmatch name="a tagged address does not become a float" min="0" max="0">^.*ccw_tagged\((double|float8)</stringmatch>
+</decompilertest>
