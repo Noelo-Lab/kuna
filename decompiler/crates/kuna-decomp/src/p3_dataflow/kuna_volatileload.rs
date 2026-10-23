@@ -230,9 +230,9 @@ pub(crate) fn dynamic_read(data: &Funcdata, id: OpId) -> Option<(VarnodeId, i32)
     Some((address, data.vbank().get(op.get_out()?)?.get_size()))
 }
 
-// Spacebase/input flags can be established after the first removal pass. The
-// ABI stack register itself already proves ordinary fixed-offset frame reads.
-fn stack_register_address(
+// Fixed offsets from implicit frame or thread-storage bases are not external
+// pointers. Do not follow LOADs: a pointer read from such a slot is external.
+fn register_relative_address(
     data: &Funcdata,
     id: VarnodeId,
     register: (i32, u64, i32),
@@ -253,16 +253,84 @@ fn stack_register_address(
     match op.code() {
         OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
             data.vbank().get(first).is_some_and(|v| v.get_size() == value.get_size())
-                && stack_register_address(data, first, register, budget)
+                && register_relative_address(data, first, register, budget)
         }
         OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB
-            if constant_input(1) => stack_register_address(data, first, register, budget),
+            if constant_input(1) => register_relative_address(data, first, register, budget),
         OpCode::CPUI_INT_ADD if constant_input(0) => op.get_in(1)
-            .is_some_and(|v| stack_register_address(data, v, register, budget)),
+            .is_some_and(|v| register_relative_address(data, v, register, budget)),
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|slot| op.get_in(slot)
+            .is_some_and(|vn| register_relative_address(data, vn, register, budget))),
         OpCode::CPUI_PTRADD if constant_input(1) && constant_input(2) =>
-            stack_register_address(data, first, register, budget),
+            register_relative_address(data, first, register, budget),
         _ => false,
     }
+}
+
+fn frame_reference(data: &Funcdata, mut pointer: VarnodeId) -> bool {
+    let Some(stack) = data.get_arch().manage().get_stack_space() else { return false };
+    for _ in 0..BUDGET {
+        let Some(value) = data.vbank().get(pointer) else { return false };
+        let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else { return false };
+        let Some(first) = op.get_in(0).and_then(|vn| data.vbank().get(vn)) else { return false };
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST if first.get_size() == value.get_size() => {
+                pointer = op.get_in(0).expect("frame address copy");
+            }
+            OpCode::CPUI_PTRSUB => {
+                return op.get_in(1).and_then(|vn| data.vbank().get(vn)).is_some_and(|vn| vn.is_constant())
+                    && first.get_type().get_ptr_to().and_then(|ty| ty.spacebase_parts())
+                        .and_then(|(space, _)| space).is_some_and(|space| space.get_index() == stack.get_index());
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn resolved_storage(data: &Funcdata, pointer: VarnodeId, memo: &mut Memo) -> bool {
+    let manage = data.get_arch().manage();
+    let mut budget = BUDGET;
+    if manage.get_stack_space().and_then(|s| s.get_spacebase(0).ok())
+        .and_then(|base| base.space.map(|s| (s.get_index(), base.offset, base.size as i32)))
+        .is_some_and(|register| register_relative_address(data, pointer, register, &mut budget))
+    {
+        return true;
+    }
+    if let Some(lookup) = manage.register_lookup() {
+        for name in ["FS_OFFSET", "GS_OFFSET"] {
+            if let Some(register) = lookup.probe_register(name) {
+                if let Some(space) = register.space {
+                    budget = BUDGET;
+                    if register_relative_address(
+                        data, pointer, (space.get_index(), register.offset, register.size as i32), &mut budget,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    budget = BUDGET;
+    constant(data, pointer, memo, &mut BTreeSet::new(), &mut budget).is_some()
+        || crate::kuna_stackranges::frame_address(data, pointer).is_some()
+        || frame_reference(data, pointer)
+}
+
+/// Re-enter ordinary LOAD analysis once a rescued pointer resolves. This also
+/// lets known volatile addresses use their normal fixed-storage lowering.
+pub(crate) fn restore_resolved(data: &mut Funcdata, id: OpId) -> bool {
+    let Some((pointer, _)) = dynamic_read(data, id) else { return false };
+    if !resolved_storage(data, pointer, &mut Memo::new()) {
+        return false;
+    }
+    let space = data.obank().get(id).and_then(|op| op.get_in(2)).expect("retained read space");
+    data.op_remove_input(id, 2);
+    data.op_set_input(id, space, 0).expect("restored read space");
+    data.op_set_opcode_code(id, OpCode::CPUI_LOAD);
+    data.obank_mut().get_mut(id).expect("restored read")
+        .clear_additional_flag(crate::op::pcodeop_addlflags::hold_output);
+    true
 }
 
 /// Preserve an unread native scalar access through an unresolved external
@@ -292,19 +360,17 @@ pub(crate) fn preserve_discarded(data: &mut Funcdata, id: OpId, memo: &mut Memo)
         || manage.get_space(space_index as i32).is_none_or(|s| {
             s.get_word_size() != 1 || s.get_type() != kuna_base::space::spacetype::IPTR_PROCESSOR
         })
+        || manage.get_space_by_name("register").is_some_and(|space| space.get_index() == space_index as i32)
     {
         return false;
     }
-    let mut budget = BUDGET;
-    if manage.get_stack_space().and_then(|s| s.get_spacebase(0).ok())
-        .and_then(|base| base.space.map(|s| (s.get_index(), base.offset, base.size as i32)))
-        .is_some_and(|register| stack_register_address(data, pointer, register, &mut budget))
-    {
+    if manage.get_stack_space().is_some_and(|stack| {
+        crate::ruleaction_4::RuleLoadVarnode::check_spacebase(data, id)
+            .is_some_and(|(space, _)| space.get_index() == stack.get_index())
+    }) {
         return false;
     }
-    budget = BUDGET;
-    if constant(data, pointer, memo, &mut BTreeSet::new(), &mut budget).is_some()
-        || crate::kuna_stackranges::frame_address(data, pointer).is_some()
+    if resolved_storage(data, pointer, memo)
         || rereads(data, id, memo, |data, other| {
             data.obank().get(other).and_then(|op| op.get_out())
                 .and_then(|v| data.vbank().get(v))

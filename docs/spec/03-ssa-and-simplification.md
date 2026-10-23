@@ -2796,10 +2796,19 @@ volatile-pointee metadata. Native decoding marks these LOADs before analysis;
 injected or analysis-created LOADs do not acquire that provenance. Cloning
 preserves it. Before removal, an unread 1/2/4/8-byte access in byte-addressed
 processor memory becomes a held `read_volatile` effect. Fixed addresses and
-proven frame accesses retain their existing cleanup behavior, and repeated
-operand reads at one instruction use the same deduplication policy as known
-volatile LOADs. The effect keeps its original CFG placement and access width,
-so its guarding branches cannot disappear with an unused result.
+proven implicit frame/thread-storage accesses retain their existing cleanup
+behavior. Repeated operand reads at one instruction use the same deduplication
+policy as known volatile LOADs. The effect keeps its original CFG placement and
+access width, so its guarding branches cannot disappear with an unused result.
+
+If later propagation resolves the address, the effect returns to ordinary LOAD
+analysis: a known volatile address keeps its normal lowering, while proven
+nonvolatile storage can be removed.
+
+SLEIGH LOADs from the architectural register space are not external-memory
+accesses, even on processors whose register file is modeled with dynamic
+LOADs; SPARC window rotation is one such case. Processor-space type alone
+does not distinguish that storage from RAM.
 
 The retained effect carries its dynamic address and address-space metadata,
 and type inference still treats that operand as a pointer. C output uses an

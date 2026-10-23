@@ -111,7 +111,7 @@ impl Rule for RuleEarlyRemoval {
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // Functions automatically consumed
         if data.obank().get(op).expect("RuleEarlyRemoval: stale op").is_call() {
-            return 0;
+            return int4::from(kuna_volatileload::restore_resolved(data, op));
         }
         if data.obank().get(op).expect("RuleEarlyRemoval: stale op").is_indirect_source() {
             return 0;

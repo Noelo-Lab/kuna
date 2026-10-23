@@ -565,3 +565,81 @@ fn discarded_pointer_reads_preserve_their_guard_and_access_width() {
         }
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn recovered_switch_dispatch_does_not_add_a_table_read() {
+    use common::process;
+    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "native switch verification requires a C compiler");
+    let mut storage = kuna_base::xml::DocumentStorage::new();
+    let document = storage.parse_document(
+        include_bytes!("../../../../tests/datatests/ifswitch.xml"),
+    ).unwrap();
+    let image = document.get_root().get_children().iter()
+        .find(|element| element.get_name() == "binaryimage").unwrap();
+    let chunk = image.get_children().iter()
+        .find(|element| element.get_name() == "bytechunk").unwrap();
+    let hex: Vec<_> = chunk.get_content().iter().copied()
+        .filter(|byte| !byte.is_ascii_whitespace()).collect();
+    let bytes: Vec<_> = hex.chunks_exact(2)
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap()).collect();
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("switch.bin");
+    std::fs::write(&input, &bytes).unwrap();
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&input)
+            .args([
+                "0x100000", "--addr", "--raw-image", "--base", "0x100000",
+                "--target", "x86:LE:64:default:gcc", "--mode", "reliable",
+                "--assert", "function 0x100000=table_probe",
+                "--assert", "prototype table_probe int table_probe(int value)", "--assert-strict",
+            ]),
+    );
+    let printed = std::str::from_utf8(&output.stdout).unwrap();
+    let machine = bytes.iter().map(|byte| byte.to_string()).collect::<Vec<_>>().join(",");
+    let driver = directory.path().join("switch.c");
+    std::fs::write(&driver, format!(r#"
+#define _GNU_SOURCE
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <sys/mman.h>
+typedef int32_t int4; typedef uint32_t uint4;
+typedef int64_t int8; typedef uint64_t uint8;
+{printed}
+static const unsigned char machine[] = {{{machine}}};
+static void bad_read(int signal) {{ (void)signal; _Exit(77); }}
+int main(void) {{
+    signal(SIGSEGV, bad_read);
+    void *code = mmap(0,sizeof machine,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
+    if (code == MAP_FAILED) return 90;
+    memcpy(code,machine,sizeof machine);
+    if (mprotect(code,sizeof machine,PROT_READ|PROT_EXEC)) return 91;
+    int (*reference)(int) = (int (*)(int))code;
+    for (int value=-32; value<=256; ++value) {{
+        int expected=reference(value), actual=table_probe(value);
+        if (expected != actual) {{
+            fprintf(stderr,"selector=%d expected=%d actual=%d\n",value,expected,actual);
+            return 1;
+        }}
+    }}
+    return munmap(code,sizeof machine) ? 92 : 0;
+}}
+"#)).unwrap();
+    for compiler in compilers {
+        for level in ["-O0", "-O2"] {
+            let executable = directory.path().join(format!("switch-{compiler}{level}"));
+            process::required_output(
+                Command::new(compiler).args(["-std=c11", level])
+                    .arg(&driver).arg("-o").arg(&executable),
+            );
+            process::required_output(&mut Command::new(&executable));
+        }
+    }
+}
