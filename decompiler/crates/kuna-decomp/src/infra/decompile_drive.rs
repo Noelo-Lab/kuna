@@ -960,7 +960,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     // caps in-loop restarts; this caps cross-flow restarts).
     const MAX_REFLOW: int4 = 8;
     let mut total: int4 = 0;
-    for _ in 0..=MAX_REFLOW {
+    for iteration in 0..=MAX_REFLOW {
         let res = {
             let deadline = arch.kuna_fn_deadline;
             let root = arch
@@ -1007,6 +1007,12 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
             drain_pipeline_comments(arch, fd);
             return Ok(total);
+        }
+        // The last iteration's analysis is complete; re-following now would
+        // clear it and leave nothing analyzed to print.
+        if iteration == MAX_REFLOW {
+            fd.warning_header("Exceeded maximum restarts with more pending");
+            break;
         }
         // Re-follow flow against the same Funcdata (its Override — incl. the
         // deindirect's indirect override — survives `clear()`), then loop to
