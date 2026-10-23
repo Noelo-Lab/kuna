@@ -2788,7 +2788,35 @@ both `readonly` and `volatile` over memory the image does not map prints each
 kept read as a self-assignment at the function's exit. The volatile ranges
 include those a processor specification declares (MSP430, AVR, 8051, PIC and
 others), so default output changes on those processors; loads from any other
-address keep the existing removal rules.
+resolved nonvolatile address keep their existing removal rules.
+
+A discarded native scalar LOAD through an unresolved external pointer is not
+proof of a pure read: it may access a device even when the binary carries no
+volatile-pointee metadata. Native decoding marks these LOADs before analysis;
+injected or analysis-created LOADs do not acquire that provenance. Cloning
+preserves it. Before removal, an unread 1/2/4/8-byte access in byte-addressed
+processor memory becomes a held `read_volatile` effect. Fixed addresses and
+proven implicit frame/thread-storage accesses retain their existing cleanup
+behavior. Repeated operand reads at one instruction use the same deduplication
+policy as known volatile LOADs. The effect keeps its original CFG placement and
+access width, so its guarding branches cannot disappear with an unused result.
+
+If later propagation resolves the address, the effect returns to ordinary LOAD
+analysis: a known volatile address keeps its normal lowering, while proven
+nonvolatile storage can be removed.
+
+SLEIGH LOADs from the architectural register space are not external-memory
+accesses, even on processors whose register file is modeled with dynamic
+LOADs; SPARC window rotation is one such case. Processor-space type alone
+does not distinguish that storage from RAM.
+
+The retained effect carries its dynamic address and address-space metadata,
+and type inference still treats that operand as a pointer. C output uses an
+access-local `volatile` scalar dereference; Rust uses `core::ptr::read_volatile`.
+Neither changes the formal parameter's qualifiers or requires a fabricated
+helper implementation. The independently authored protected-page round trip in
+`kuna-cli/tests/volatile_loads_cli.rs` checks conditional execution and width
+boundaries, including pointers reloaded from a frame slot.
 
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`

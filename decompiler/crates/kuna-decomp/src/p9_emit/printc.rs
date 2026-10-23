@@ -6604,6 +6604,36 @@ impl PrintC {
             .map(|u| u.get_display())
             .unwrap_or(0);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
+        let dynamic_read = crate::p3_dataflow::kuna_volatileload::dynamic_read(fd, op);
+        if let Some((address, size)) = dynamic_read.filter(|_| display == userop_flags::NO_OPERATOR) {
+            let pointer_size = fd.vbank().get(address).expect("retained read pointer").get_size();
+            let types = arch.types();
+            let value = types.get_base(size, crate::dtype::type_metatype::TYPE_UINT)
+                .expect("retained scalar read type");
+            let value = if self.out_lang == crate::kuna_lang::OutLang::Rust {
+                value
+            } else {
+                types.get_qualified_type(value, crate::kuna_typequal::VOLATILE)
+                    .expect("retained volatile read type")
+            };
+            let pointer = types.get_type_pointer(pointer_size, value, 1)
+                .expect("retained read pointer type");
+            if self.out_lang == crate::kuna_lang::OutLang::Rust {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::syntax(
+                    "core::ptr::read_volatile", TagType::FuncToken,
+                    crate::printlanguage::SyntaxHighlight::funcname_color,
+                ));
+            } else {
+                self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+            }
+            self.push_cast_open(&pointer, op);
+            self.push_vn_ir(fd, arch, address, op);
+            self.push_cast_close(&pointer);
+            return;
+        }
+        // A dynamic read's final input is internal address-space metadata.
+        let nin = if dynamic_read.is_some() { 2 } else { nin };
         if display == 0 {
             // Functional syntax: for CALLOTHER the operator name resolves to the
             // userop's name (the base getOperatorName), or the generic

@@ -222,6 +222,8 @@ pub mod pcodeop_addlflags {
     /// writes a narrowed call result back into its register.  Set and read by
     /// [`crate::p4_calls::kuna_narrowret`].
     pub const kuna_narrowret: uint4 = 0x400000;
+    /// A decoded LOAD not yet represented by a replacement read or switch dispatch.
+    pub const kuna_native_load: uint4 = 0x800000;
 }
 
 // ---------------------------------------------------------------------------

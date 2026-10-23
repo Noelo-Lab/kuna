@@ -1789,6 +1789,13 @@ following this call as a branch"
                     // the same point the C++ exception would propagate.
                     return Err(err);
                 }
+                for &id in &emit.emitted {
+                    if let Some(op) = emit.fd.obank_mut().get_mut(id) {
+                        if op.code() == OpCode::CPUI_LOAD {
+                            op.set_additional_flag(crate::op::pcodeop_addlflags::kuna_native_load);
+                        }
+                    }
+                }
                 if let Some(mode) = mode {
                     self.env.preserve_arm_decode_mode(curaddr, mode, false);
                 }
