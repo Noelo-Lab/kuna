@@ -40,8 +40,9 @@ This is a SLEIGH correctness repair, without an inference option.
 The generic 64-bit PowerPC constructors (the languages without the `IS_ISA`
 instruction set, including e500) decode extended opcode 21 of primary opcode
 31 as `ldx` and opcode 84 as `ldarx`, matching the ISA languages. Both lift to
-an indexed doubleword load. Like the generic `lwarx`, `ldarx` does not model
-its reservation. Encodings with the exclusive-access hint bit set remain
+an indexed doubleword load. `ldarx` also sets the reservation, as in the ISA
+languages, so a following `stdcx.` stores unconditionally rather than testing
+an uninitialized reservation flag. Encodings with the exclusive-access hint bit set remain
 undecoded there. This is a SLEIGH correctness repair, without an inference option.
 
 Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
