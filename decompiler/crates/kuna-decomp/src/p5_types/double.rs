@@ -5032,13 +5032,16 @@ impl Rule for RuleDoubleLoad {
             }
             let original = data.obank().get(load).expect("dload: original load");
             if original.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load != 0 {
-                // Retire a native access only when the wide read replaces all
-                // its bytes and this concatenation is its only consumer. A
-                // truncated or shared read still owns an independent access.
-                if original.get_out() != Some(piece)
-                    || lone_descend(data, piece) != Some(op)
+                let source = original.get_out().expect("dload: original output");
+                // The logical value may discard padding through SUBPIECE.
+                // Retire that projection only when neither it nor its source
+                // has another consumer or an independent liveness obligation.
+                if lone_descend(data, piece) != Some(op)
                     || original.is_indirect_source()
-                    || data.vbank().get(piece).expect("dload: original output").is_auto_live()
+                    || data.vbank().get(piece).expect("dload: piece output").is_auto_live()
+                    || (source != piece
+                        && (lone_descend(data, source) != vn_get_def(data, piece)
+                            || data.vbank().get(source).expect("dload: source output").is_auto_live()))
                 {
                     return 0;
                 }
@@ -5081,13 +5084,15 @@ impl Rule for RuleDoubleLoad {
         set_opcode_typed(data, op, OpCode::CPUI_COPY);
         op_set_input(data, op, vnout, 0);
 
-        // The native reads passed the full-width, exclusive-use check above.
-        // Their accesses now belong to newload; leaving the obsolete LOADs
-        // alive would let discarded-native-read retention emit them again.
-        for load in [load0, load1] {
-            if data.obank().get(load).expect("dload: original load").get_addlflags()
-                & crate::op::pcodeop_addlflags::kuna_native_load != 0
-            {
+        // These native reads now belong to newload. Remove an exclusive
+        // padding projection first so its source LOAD has no descendants.
+        for (load, piece) in [(load0, piece0), (load1, piece1)] {
+            let original = data.obank().get(load).expect("dload: original load");
+            if original.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load != 0 {
+                if original.get_out() != Some(piece) {
+                    let projection = vn_get_def(data, piece).expect("dload: padding projection");
+                    data.op_destroy(projection);
+                }
                 data.op_destroy(load);
             }
         }
