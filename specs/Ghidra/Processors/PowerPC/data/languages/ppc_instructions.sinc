@@ -2265,8 +2265,9 @@ define pcodeop lswxOp;
 :lwarx D,RA_OR_ZERO,B	is OP=31 & D & RA_OR_ZERO & B & XOP_1_10=20 & BIT_0=0
 {
 	ea:$(REGISTER_SIZE) = RA_OR_ZERO+B;
-	#RESERVE = 1;
-	#RESERVE_ADDRSS:$(REGISTER_SIZE) = ea;
+	RESERVE = 1;
+	RESERVE_LENGTH = 4;
+	RESERVE_ADDRESS = ea;
 @ifdef BIT_64
 	D = zext(*:4(ea));
 @else
