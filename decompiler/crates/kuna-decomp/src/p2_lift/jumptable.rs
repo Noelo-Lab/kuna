@@ -6165,6 +6165,16 @@ impl JumpTable {
         Ok(())
     }
 
+    /// (kuna) A second flow-time stage that again recovered a single address
+    /// adopts the targets the late model recorded with the multistage hint, so
+    /// flow follows every case of the table.
+    pub fn kuna_adopt_multistage_targets(&mut self, targets: Vec<Address>) {
+        if self.addresstable.len() == 1 && targets.len() > 1 {
+            self.addresstable = targets;
+            self.row_loads = None;
+        }
+    }
+
     /// Set manual override information on \b this jump-table
     /// (C++ `JumpTable::setOverride`, `jumptable.cc:2616`).
     ///
@@ -6212,10 +6222,51 @@ impl JumpTable {
             .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_ref()))
             .map(|rows| Rc::new(rows.with_default(self.default_addresses())));
         self.recover_model(fd, rows.clone())?; // Create a current instance of the model
+        if self.request_multistage(fd) {
+            return Ok(());
+        }
         if let Some(rows) = rows {
             self.choose_label_values(fd, &rows);
         }
         Ok(())
+    }
+
+    /// The multistage restart of C++ `JumpTable::matchModel` (`jumptable.cc:2709`):
+    /// a flow-time table of one address whose current model has more entries was
+    /// not fully recovered during flow, so record the jump for a second recovery
+    /// stage and request a restart.
+    ///
+    /// (kuna) The current model's own targets are recorded with the hint, since
+    /// the second flow-time stage repeats the first one's view of the function
+    /// and can recover the same single address. A jump is restarted at most once,
+    /// and only when every target is mapped and within the `0xffff` reach that
+    /// `sanity_check` allows an intraprocedural table.
+    fn request_multistage(&mut self, fd: &mut Funcdata) -> bool {
+        let Some(model) = self.jmodel.as_ref() else { return false };
+        if self.addresstable.len() != 1
+            || model.get_table_size() <= 1
+            || fd.get_override().query_multistage_jumptable(&self.opaddress)
+        {
+            return false;
+        }
+        let Some(indirect) = self.indirect else { return false };
+        let mut targets = Vec::new();
+        if model.build_addresses(fd, indirect, &mut targets, None, None).is_err() || targets.len() <= 1 {
+            return false;
+        }
+        let jump = self.opaddress.get_offset();
+        if !targets.iter().all(|target| {
+            let offset = target.get_offset();
+            offset != 0
+                && offset.abs_diff(jump) <= 0xffff
+                && fd.get_arch().get_load_image_value(target, 4).is_ok()
+        }) {
+            return false;
+        }
+        fd.get_override_mut().insert_multistage_jump(self.opaddress.clone());
+        fd.get_override_mut().insert_multistage_targets(self.opaddress.clone(), targets);
+        fd.set_restart_pending(true);
+        true
     }
 
     /// Choose the values that label \b this table after a late re-recovery:
@@ -6382,12 +6433,8 @@ impl JumpTable {
     }
 
     /// Check if this jump-table requires an additional recovery stage
-    /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:3003`).
-    ///
-    /// STUB(W4): the override-table query (`fd->getOverride().queryMultistageJumptable`)
-    /// is W4; the structural guards are faithful and short-circuit before the
-    /// query whenever possible.
-    pub fn check_for_multistage(&mut self, _fd: &Funcdata) -> KunaResult<bool> {
+    /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:2865`).
+    pub fn check_for_multistage(&mut self, fd: &Funcdata) -> KunaResult<bool> {
         if self.addresstable.len() != 1 {
             return Ok(false);
         }
@@ -6400,10 +6447,14 @@ impl JumpTable {
         if self.recover_count > 1 {
             return Ok(false);
         }
-        // fd->getOverride().queryMultistageJumptable(indirect->getAddr()) STUB(W4)
-        Err(KunaError::lowlevel(
-            "JumpTable::checkForMultistage: Override::queryMultistageJumptable is W4",
-        ))
+        let Some(addr) = self.indirect.and_then(|op| fd.obank().get(op)).map(|op| op.get_addr().clone()) else {
+            return Ok(false);
+        };
+        if fd.get_override().query_multistage_jumptable(&addr) {
+            self.partial_table = true; // Mark that we need additional recovery
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// Perform a sanity check on recovered address targets
