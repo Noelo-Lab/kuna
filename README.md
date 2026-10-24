@@ -40,7 +40,7 @@ It ships inside the binary, so `kuna install-skill` sets it up for Claude Code, 
 Since Kuna is written in Rust, you can also use it in the web browser through WebAssembly.
 This will do all of the work on your machine, which means the binary remains private.
 
-Visit [kuna.noelo.org/decompile](https://kuna.noelo.org/decompile) to use it.
+Visit [decompile.run](https://decompile.run) to use it.
 
 The code for deploying your own site can be found in `./integrations/web`
 

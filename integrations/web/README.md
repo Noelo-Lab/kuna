@@ -1,8 +1,9 @@
 # The kuna site (and the in-browser decompiler)
 
-**kuna.noelo.org** — the project site, its public development visualization, and the
-decompiler that runs **entirely client-side in a web browser**: no server, no backend, no
-upload. Three pages and a redirect, one static bundle:
+**kuna.noelo.org** — the project site and its public development visualization — and
+**decompile.run**, the decompiler that runs **entirely client-side in a web browser**: no
+server, no backend, no upload. One static bundle, split into the two sites at deploy time
+(paths below are the bundle's; `/decompile/` is the root of decompile.run once deployed):
 
 | URL | Page |
 |---|---|
@@ -64,13 +65,23 @@ function listing, decompilation, and project export. The JavaScript glue request
 
 `.github/workflows/pages.yml` builds this bundle and publishes it to GitHub Pages on every
 push to `main` that touches `integrations/web/`, `decompiler/`, or `specs/` (and on manual
-dispatch). The workflow builds the SLEIGH specs (`make specs`), runs `build.sh`,
-and deploys `dist/` — nothing is committed. The site is served at **`kuna.noelo.org`**
-(the `CNAME` in the bundle), and equally from `https://<owner>.github.io/<repo>/` — every
-asset path is relative, so a project subpath just works.
+dispatch). The workflow builds the SLEIGH specs (`make specs`), runs `build.sh` and the
+tests, then `split-sites.sh`, which divides `dist/` into the two sites:
 
-**One-time enablement** (repo admin): *Settings → Pages → Build and deployment → Source =
-**GitHub Actions***. The next push to `main` (or a manual run from the Actions tab) deploys.
+- **`decompile.run`** — `dist-run/`: the decompiler at the root, with the wasm, specs,
+  Worker and assets beside it. The workflow force-pushes it as a single commit to
+  [`Noelo-Lab/decompile.run`](https://github.com/Noelo-Lab/decompile.run), whose Pages
+  serves its `main` branch. The push uses the `DECOMPILE_RUN_DEPLOY_KEY` secret, the
+  private half of a write deploy key on that repo. Its `README.md` and `CNAME` come from
+  `decompile-run/` here.
+- **`kuna.noelo.org`** — what is left in `dist/`: the landing page and `/dev-viz/`, with
+  their decompiler links pointed at decompile.run, and `/decompile/` replaced by
+  `decompile-run/redirect.html`, which forwards with the query and fragment intact so old
+  invite and student links keep working. This repo's Pages deploys it via
+  `actions/deploy-pages` (*Settings → Pages → Source = GitHub Actions*).
+
+Nothing built is committed to this repo. Locally, `build.sh --serve` keeps the single
+bundle with the decompiler at `/decompile/`, which is also what the tests serve.
 
 ## What's here
 
@@ -82,6 +93,7 @@ asset path is relative, so a project subpath just works.
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter the landing page and the decompiler use — and `js/fnfilter.js`, the DOM-free matcher behind the /decompile function search. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
+| `decompile-run/` | What `split-sites.sh` adds to the two sites: decompile.run's `README.md` and `CNAME`, and `redirect.html`, kuna.noelo.org's `/decompile/`. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
 | `kuna-worker.js` | The module Worker: owns the binary and WASI handle, lists first, decompiles one selected address, and builds whole-project ZIPs off the UI thread. |
 | `kuna-worker-client.js` | The page-side RPC client. Cancellation terminates/recreates its Worker and rehydrates the retained binary on the next request. |
@@ -107,8 +119,9 @@ node integrations/web/test/dev-viz.mjs ../
 python3 -m http.server 8000 --directory integrations/web
 ```
 | `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + the pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
+| `split-sites.sh` | Run after `build.sh` at deploy time: moves the decompiler to the root of `dist-run/` (decompile.run) and leaves `dist/` as kuna.noelo.org with a forwarding `/decompile/`. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
-| `dist/` | Assembled output (gitignored — regenerate with `build.sh`). |
+| `dist/`, `dist-run/` | Assembled output (gitignored — regenerate with `build.sh`, then `split-sites.sh`). |
 
 The wasm module itself is the `kuna-wasm` crate (`decompiler/crates/kuna-wasm`), a thin
 front-end over the `kuna-console` in-process path. It builds natively too — that native
