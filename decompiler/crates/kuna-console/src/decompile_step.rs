@@ -61,6 +61,9 @@ pub struct DecompileSeed<'a> {
     pub flow_overrides: &'a [(Address, uint4)],
     /// `map param <i> <addr> <decl>` storage locks (console only).
     pub mapped_params: &'a [(int4, String, ParameterPieces)],
+    /// Which surface this drive serves. Only `SingleFunction` may bootstrap its
+    /// direct callees' stated parameter types.
+    pub purpose: kuna_decomp::decompile_drive::DrivePurpose,
 }
 
 impl DecompileSeed<'_> {
@@ -70,6 +73,7 @@ impl DecompileSeed<'_> {
         flow_overrides: &'a [(Address, uint4)],
     ) -> DecompileSeed<'a> {
         DecompileSeed {
+            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
             object_assertions: &[],
             mapped_symbols,
             usepoint_symbols: &[],
@@ -303,6 +307,7 @@ fn decompile_one_prefollowed_once(
         seed.mapped_params,
         prefollowed,
         seed.object_assertions,
+        seed.purpose,
     );
     // (kuna `floatglobals`) A float vote asked about a global before the
     // whole-program scan ran: take it once for the run, and drive again. One
@@ -330,6 +335,7 @@ fn decompile_one_prefollowed_once(
                     &flow_overrides,
                     proto_overrides,
                     seed.mapped_params,
+                    seed.purpose,
                 );
             }
         }
@@ -385,6 +391,7 @@ fn decompile_one_prefollowed_once(
             seed.mapped_params,
             None,
             seed.object_assertions,
+            seed.purpose,
         );
     }
     // (kuna `callrettype`) A callee's stated return type that the finished
@@ -410,6 +417,7 @@ fn decompile_one_prefollowed_once(
             seed.mapped_params,
             None,
             seed.object_assertions,
+            seed.purpose,
         );
     }
     // (kuna `callerreads`) A `void` function decompiled alone whose callers read
@@ -433,6 +441,7 @@ fn decompile_one_prefollowed_once(
             &flow_overrides,
             &last_overrides,
             seed.mapped_params,
+            seed.purpose,
         );
         kuna_decomp::kuna_callerreads::release(arch, &redo_entry);
         if redo.as_ref().is_ok_and(kuna_decomp::kuna_callerreads::returns_value) {

@@ -640,6 +640,10 @@ pub struct ArchContext {
     /// as the C++ `Architecture::getLanedRegister` does.  Empty for hand-built
     /// fixtures and non-vector architectures.
     pub lanerecords: Vec<crate::transform::LanedRegister>,
+    /// (kuna) The compiler spec's `<prefersplit>` rows: whole registers heritage
+    /// pass 0 splits into two independent pieces.  Copied from the engine
+    /// `Architecture` in `build_arch_handle`; empty when the spec states none.
+    pub split_records: Vec<crate::p5_types::prefersplit::PreferSplitRecord>,
     /// The p-code OpBehavior emulation table (C++ `glb->inst[opc]->getBehavior()`),
     /// indexed by op-code.
     ///
@@ -1758,6 +1762,7 @@ impl ArchContext {
             min_laned_register_size: 4,
             x87_empty_storage: None,
             lanerecords: Vec::new(),
+            split_records: Vec::new(),
             opbehaviors: Vec::new(),
             floatformats: Vec::new(),
             callee_proto_models: Vec::new(),

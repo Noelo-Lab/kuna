@@ -342,6 +342,25 @@ non-zero mask (§5.3) admits values above 1. When the incoming type is a union
 markers, where the unresolved union flows on so one phi input cannot lock the
 facet for all of them.
 
+The LOAD/STORE value→pointee edge is guarded for floats: a float value becomes
+the base's pointee only when every `LOAD`/`STORE` through that base uses the same
+width and every dynamic access proves the same element width. A base read at
+several widths is an object with several views; it keeps its storage type and the
+float access prints as its own cast (`*(double *)a0`) instead of re-typing the
+whole object and forcing every other access through a bit-cast. A dynamic access
+whose `PTRADD` scale is the same width is a float array and keeps the promotion;
+an unknown stride refuses it. The evidence is the base's own pointer family, not
+the function's op bank: the audit follows `COPY`, `CAST`, constant `INT_ADD`/
+`PTRSUB` and `PTRADD` forward from the base and peels each address back to prove
+it names the same base, so a function growing unrelated ops cannot change the
+answer and there is no whole-scan budget to hit. A family the walk cannot complete
+refuses the promotion.
+Every dynamic term in a nested address must prove that width; a later matching
+scale cannot erase an unknown or conflicting term, and a scale must fit the
+element-size representation without truncation. An access whose address cannot
+be peeled within the walk's depth bound also refuses promotion, even if another
+access through the same base was proven.
+
 With stackviews enabled, `decompiler/crates/kuna-decomp/src/p5_types/kuna_stackwordtypes.rs`
 separates a generated frame backing from the value stored through another
 pointer. A one-, two-, four-, or eight-byte STORE value uses its resolved scalar

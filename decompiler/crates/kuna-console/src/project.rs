@@ -714,6 +714,7 @@ pub fn decompile_pulled(
             entry.clone(),
             declared,
             &crate::decompile_step::DecompileSeed {
+                purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
                 mapped_symbols: &mapped,
                 usepoint_symbols: &[],
                 dynamic_symbols: &[],
@@ -748,6 +749,7 @@ pub fn decompile_pulled(
                         entry,
                         declared,
                         &crate::decompile_step::DecompileSeed {
+                            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
                             mapped_symbols: &carried,
                             usepoint_symbols: &carried_usepoint,
                             dynamic_symbols: &carried_dynamic,
