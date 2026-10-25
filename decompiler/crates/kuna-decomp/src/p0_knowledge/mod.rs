@@ -28,6 +28,9 @@ pub mod kuna_rexthunk;
 // (kuna) The source-language image fact (SourceLang) and its `sourcelang`
 // override (load-time, env-bridged).
 pub mod kuna_sourcelang;
+// (kuna) Discriminant-value naming for recovered variant parts (load-time,
+// env-bridged; the first VariantLayout consumer).
+pub mod kuna_variantnames;
 // (kuna) PE import-by-ordinal naming from built-in export tables (load-time,
 // env-bridged).
 pub mod kuna_peordinal;

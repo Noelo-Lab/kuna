@@ -2106,7 +2106,7 @@ mod tests {
         // registers then hold two 32-bit values keeps them apart (option off = one
         // 64-bit local updated with CONCAT44)
         // and kuna-prefersplit / the compiler spec's split registers reach heritage pass 0
-        assert_eq!(count, 584, "corpus file count drifted");
+        assert_eq!(count, 585, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

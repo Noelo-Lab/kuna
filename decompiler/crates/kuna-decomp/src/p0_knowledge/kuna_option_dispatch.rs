@@ -1133,6 +1133,15 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "variantnames" => {
+        let val = on_or_off(p1)?;
+        self.analysis_variantnames = val;
+        crate::kuna_variantnames::set_variantnames_env(val);
+        Ok(format!(
+            "Variant discriminant-value naming turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
     "dwarfvariants" => {
         let val = on_or_off(p1)?;
         self.analysis_dwarfvariants = val;

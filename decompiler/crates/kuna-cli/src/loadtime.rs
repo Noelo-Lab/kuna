@@ -12,6 +12,7 @@ use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
     kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
     kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_symbolnamebound, kuna_symbolnamechars,
+    kuna_variantnames,
     kuna_symbolnamerepair, kuna_typedepth, options::RELOC_OBJECTS_ENV,
 };
 
@@ -46,6 +47,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "libctypes" => (kuna_libctypes::LIBCTYPES_ENV, LibcTypes),
         "dwarfstructs" => (kuna_dwarfstructs::DWARFSTRUCTS_ENV, DefaultOn),
         "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
+        "variantnames" => (kuna_variantnames::VARIANTNAMES_ENV, DefaultOn),
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
         "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
         "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),

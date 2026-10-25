@@ -57,6 +57,10 @@ name = "verify_dwarfvariants"
 path = "tests/verify_dwarfvariants.rs"
 
 [[test]]
+name = "verify_variantnames"
+path = "tests/verify_variantnames.rs"
+
+[[test]]
 name = "verify_fid"
 path = "tests/verify_fid.rs"
 

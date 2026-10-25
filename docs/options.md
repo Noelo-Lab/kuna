@@ -692,6 +692,10 @@ Three tiers:
 | a tagged-union discriminant renders as an unnamed integer at offset 0 | [`dwarfvariants`](#dwarfvariants) |
 | a variant payload renders as a cast-and-offset instead of a named field | [`dwarfvariants`](#dwarfvariants) |
 | a rust enum's discriminant and payload have no names even though the binary was built with full debug info | [`dwarfvariants`](#dwarfvariants) |
+| a rust match on Result or Option renders its discriminant tests against bare integers | [`variantnames`](#variantnames) |
+| if ((*e).tag == 1) where the binary carries full debug info | [`variantnames`](#variantnames) |
+| a recovered rust enum's tag field is a plain integer type though DWARF names every variant | [`variantnames`](#variantnames) |
+| switch cases over a rust enum discriminant print numbers instead of variant names | [`variantnames`](#variantnames) |
 | c++ member functions on a stripped binary decompile with a0/a1 parameters | [`cppsig`](#cppsig) |
 | this renders as int8 * or unsigned long instead of the class type | [`cppsig`](#cppsig) |
 | a mangled symbol names the function but not its parameter types | [`cppsig`](#cppsig) |
@@ -2714,6 +2718,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) gives a -g Rust binary its enums: Result<u32, u32> ret_result(uint4 x) instead of a phantom-sret pointer to a field-less shell, and rethidden->tag = 0 / (rethidden->payload).A.__0 = x instead of *(uint4 *)rethidden = 0 / *(uint4 *)&rethidden->field_0x4 = x. A variant name only appears where exactly one variant claims the bytes (Some on an Option, A/B on an enum whose payloads do not overlap); on a Result and on any enum with two payload variants over one range the payload is spelled (dst->payload).field_0x8.__0, which is the same offset rendering this option off produces -- the discriminant field, the recovered size and the lost phantom sret are the gain there, not the label. Flip off to restore the dwarfstructs mapping (a tagged enum keeps its width and gets no fields). Extends dwarfstructs and is gated on it too, so dwarfstructs off suppresses this arm as well. Inert on any binary without full debug info, and on C (a C aggregate has no variant part).
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-dwarfvariants
 - **Example:** `option dwarfvariants off`
+
+### `variantnames` -- on | off, default `on`
+
+- **Symptoms:** a rust match on Result or Option renders its discriminant tests against bare integers; if ((*e).tag == 1) where the binary carries full debug info; a recovered rust enum's tag field is a plain integer type though DWARF names every variant; switch cases over a rust enum discriminant print numbers instead of variant names.
+- **What it does:** Name a recovered Rust enum's discriminant VALUES. dwarfvariants (DIV-87) imports a DW_TAG_variant_part into struct E { tag; union E::payload {...} } and records every DW_AT_discr_value and variant name on the VariantLayout side table, but the tag member keeps the plain integer type DWARF declares for it, so every test of the discriminant renders a bare constant: if ((*e).tag == 1) where the compiler SAID 1 selects Err. With this gate on the importer gives the tag member a synthesized kuna enum, <enum>::Discriminant, of the tag's own width, whose members are exactly the variant part's (DW_AT_discr_value, variant name) pairs - and the existing enum-constant rendering (the TYPE_ENUM namemap path the C-enum import uses) prints if ((*e).tag == Err) with no new emission machinery. Deliberate stand-downs: a NICHE layout has no tag field (the discriminant lives inside the payload bytes), so an Option<&T> null test keeps its rendering - selecting the facet a niche value implies is the match renderer's job on the same side table; a tag DWARF already declares as an enum keeps the compiler's own type; the DEFAULT variant (no DW_AT_discr_value) is selected by every unclaimed value and so gets no member, keeping numeric rendering; and a foreign type already owning the synthesized name is never fought. Needs full -g debug info, exactly as dwarfvariants does, and dwarfvariants off suppresses this arm wholesale (no layout, no tag member, nothing to retype).
+- **When to flip:** On (default) makes a -g Rust binary's discriminant logic read as the source did: if ((*e).tag == Err) / case Ok instead of magic integers, on every tagged (non-niche) enum - Result and Option included, since the TAG test names the variant even where payload-field naming is suppressed by the overlap rule. Flip off to restore the bare integers (an audit of raw discriminant values, or a namemap suspected of colliding with a real symbol vocabulary).
+- **Where / provenance:** P1/external-refinement · kuna · type-inference · kuna-multilang-variantnames
+- **Example:** `option variantnames off`
 
 ### `cppsig` -- off | proven | inferred, default `proven`
 
