@@ -14,7 +14,7 @@ rounds: []
 first_seen_round: null
 attempts: 0
 covered_by_option: null
-touches: [decompiler/crates/kuna-analysis/src/listing/xrefs.rs, decompiler/crates/kuna-analysis/src/listing/kuna_a32switch.rs]
+touches: [decompiler/crates/kuna-analysis/src/listing/xrefs.rs, decompiler/crates/kuna-analysis/src/listing/kuna_a32switch.rs, decompiler/crates/kuna-analysis/src/listing/classify.rs, decompiler/crates/kuna-analysis/src/listing/kuna_thumbswitch.rs]
 scope: small
 regression_of: null
 pr: null
@@ -140,3 +140,4 @@ _not yet refuted_
 ## Decision log
 
 - filed by hand from vendor binaries and their synthetic reduction; prior art: `arm-pic-got-xrefs`
+- the reference walk reads both forms under `armframes` alone (no `listing` or `funcstart_patterns` prerequisite, unlike frame recovery); the predicated skip is the dispatch's fall-through only where A32 tables are read, so `armframes off` and other architectures keep the skip row; a dispatch reached before its guard is read again once the guard is decoded (`early_dispatch` in the fixture)
