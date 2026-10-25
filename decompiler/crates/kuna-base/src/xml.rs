@@ -2105,7 +2105,10 @@ mod tests {
         // and kuna-sparc-register-pair / an ldd-loaded SPARC register pair whose
         // registers then hold two 32-bit values keeps them apart (option off = one
         // 64-bit local updated with CONCAT44)
-        assert_eq!(count, 584, "corpus file count drifted");
+        // and kuna-prefersplit / the compiler spec's split registers reach heritage pass 0
+        // and kuna-gomorestack / the Go stack-growth entry guard folds (option gomorestack)
+        // and kuna-fatstr / a read-only (ptr,len) constant pair prints as a bounded literal
+        assert_eq!(count, 586, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

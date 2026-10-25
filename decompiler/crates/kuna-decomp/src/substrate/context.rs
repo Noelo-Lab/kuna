@@ -640,6 +640,10 @@ pub struct ArchContext {
     /// as the C++ `Architecture::getLanedRegister` does.  Empty for hand-built
     /// fixtures and non-vector architectures.
     pub lanerecords: Vec<crate::transform::LanedRegister>,
+    /// (kuna) The compiler spec's `<prefersplit>` rows: whole registers heritage
+    /// pass 0 splits into two independent pieces.  Copied from the engine
+    /// `Architecture` in `build_arch_handle`; empty when the spec states none.
+    pub split_records: Vec<crate::p5_types::prefersplit::PreferSplitRecord>,
     /// The p-code OpBehavior emulation table (C++ `glb->inst[opc]->getBehavior()`),
     /// indexed by op-code.
     ///
@@ -749,6 +753,10 @@ pub struct ArchContext {
     /// (kuna) `option fatstr` mode; read by [`crate::p5_types::kuna_fatstr`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub fat_str: u8,
+    /// (kuna) `option gomorestack` mode; read by
+    /// [`crate::p2_lift::kuna_gomorestack`].  Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub go_morestack: u8,
     /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
     pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
@@ -1759,6 +1767,7 @@ impl ArchContext {
             min_laned_register_size: 4,
             x87_empty_storage: None,
             lanerecords: Vec::new(),
+            split_records: Vec::new(),
             opbehaviors: Vec::new(),
             floatformats: Vec::new(),
             callee_proto_models: Vec::new(),
@@ -1809,6 +1818,9 @@ impl ArchContext {
             // (kuna) `option fatstr` default auto; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             fat_str: 1,
+            // (kuna) `option gomorestack` default auto; the real value is
+            // copied from the engine Architecture in `build_arch_handle`.
+            go_morestack: 1,
             // (kuna) `option reloadarg` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             reload_arg: true,

@@ -894,6 +894,9 @@ pub struct Heritage {
     /// as `(space, first byte, last byte)`.
     global_load_ranges: Vec<(Rc<AddrSpace>, u64, u64)>,
     partial_global_loads: Vec<crate::kuna_partialglobalload::Guard>,
+    /// (kuna) C++ `Heritage::splitmanage`: the compiler spec's preferred
+    /// register splits, run once at heritage pass 0.
+    splitmanage: crate::p5_types::prefersplit::PreferSplitManager,
 }
 
 impl Heritage {
@@ -934,6 +937,7 @@ impl Heritage {
             global_loads: None,
             global_load_ranges: Vec::new(),
             partial_global_loads: Vec::new(),
+            splitmanage: Default::default(),
         }
     }
 
@@ -5506,9 +5510,14 @@ impl Heritage {
             self.build_adt(fd);
         }
         self.process_joins(fd);
-        // STUB(W6): PreferSplitManager (pass-0 splitmanage.init/split)
-        // is a no-op for an architecture with no <splitrecords> (the critical
-        // path); it splits SIMD-style registers when present.
+        // C++ heritage.cc:2667 pass-0 `splitmanage.init/split`: rewrite every
+        // whole-register value the compiler spec prefers split into two pieces
+        // (AArch64's q0..q30 -> two 8-byte halves) before SSA is rebuilt.
+        if self.pass == 0 && !fd.get_arch().split_records.is_empty() {
+            let records = fd.get_arch().split_records.clone();
+            self.splitmanage.init(&records);
+            self.splitmanage.split(fd);
+        }
 
         let mut reprocess_stack_count = 0;
         let mut stack_space: Option<Rc<AddrSpace>> = None;
@@ -5652,7 +5661,9 @@ impl Heritage {
         // list takes the early return, so this is inert with the arm off.
         crate::kuna_partialglobalload::apply(fd, std::mem::take(&mut self.partial_global_loads));
         self.handle_new_load_copies(fd);
-        // splitmanage.splitAdditional() on pass 0: STUB(W6) PreferSplitManager.
+        if self.pass == 0 && !fd.get_arch().split_records.is_empty() {
+            self.splitmanage.split_additional(fd);
+        }
         self.pass += 1;
     }
 
