@@ -82,7 +82,26 @@ impl<'a> A32Tables<'a> {
         from: u64,
     ) -> (Vec<u64>, Option<usize>) {
         let mut cap = FullCapture::default();
-        if decode(translate, from, code_space, &mut cap) != Some(4) {
+        match decode(translate, from, code_space, &mut cap) {
+            Some(len) => self.decoded_targets(translate, code_space, exec, decoded, from, cap.ops(), len),
+            None => (Vec::new(), None),
+        }
+    }
+
+    /// [`Self::targets`] for a dispatch the caller already decoded to `ops`, of
+    /// byte length `len`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn decoded_targets(
+        &self,
+        translate: &dyn Translate,
+        code_space: &Rc<AddrSpace>,
+        exec: &[(u64, u64)],
+        decoded: &dyn Fn(u64) -> bool,
+        from: u64,
+        ops: &[FullOp],
+        len: u32,
+    ) -> (Vec<u64>, Option<usize>) {
+        if len != 4 {
             return (Vec::new(), None);
         }
         let data = self.data_space.as_ref();
@@ -90,7 +109,7 @@ impl<'a> A32Tables<'a> {
         let mut vals: Vec<(Key, Val)> = Vec::new();
         let mut index: Option<Key> = None;
         let mut predicated = false;
-        for op in cap.ops() {
+        for op in ops {
             if op.opcode == OpCode::CPUI_CBRANCH {
                 predicated = true;
             }
@@ -103,7 +122,7 @@ impl<'a> A32Tables<'a> {
                 };
                 let Some(index) = index else { return (Vec::new(), None) };
                 let Some(cases) = super::kuna_thumbswitch::guard_cases(
-                    translate, code_space, data, decoded, from, index, predicated,
+                    translate, code_space, data, decoded, from, index, predicated.then_some(ops),
                 )
                 .filter(|&n| n >= MIN_ENTRIES)
                 else {

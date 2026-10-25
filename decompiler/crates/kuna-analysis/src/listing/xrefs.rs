@@ -1208,7 +1208,7 @@ fn descend(
                         || (Vec::new(), None),
                         |tables| {
                             let decoded = |at: u64| st.decoded.contains(&at);
-                            tables.targets(translate, &code_space, &exec, &decoded, vma)
+                            tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
                         },
                     );
                     for &(base, kind) in &drefs {
