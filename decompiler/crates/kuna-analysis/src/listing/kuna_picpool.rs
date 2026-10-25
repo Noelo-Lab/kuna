@@ -419,16 +419,8 @@ impl PicPool {
             .chain(branch_targets.iter().copied().filter(|&to| !(skip_at.is_some() && to == next)))
             .map(|to| (to, &based))
             .chain(skip_at.map(|_| (next, &skipped)));
-        for (to, carry) in reach {
-            if carry.is_empty() {
-                continue;
-            }
-            match self.bases_at.get_mut(&to) {
-                Some(have) => have.retain(|h| carry.contains(h)),
-                None => {
-                    self.bases_at.insert(to, carry.clone());
-                }
-            }
+        for (to, carry) in reach.collect::<Vec<_>>() {
+            self.reach(to, carry);
         }
 
         let seeded = fresh.and_then(|p| {
@@ -439,12 +431,33 @@ impl PicPool {
     }
 
     /// Record the case edges of a switch dispatch at `vma`, which the walk reads
-    /// after the dispatch's own [`PicPool::step`]. Recorded whether or not
-    /// anything is tracked yet: a case target may still be reached with a value
-    /// along another edge, and the dispatch, which carried nothing, must veto
-    /// it there.
+    /// after the dispatch's own [`PicPool::step`], and hand each case the GOT
+    /// bases the dispatch passes on: a case body is the dispatcher's own code.
+    /// Recorded whether or not anything is tracked yet: a case target may still
+    /// be reached with a value along another edge, and a dispatch that carried
+    /// nothing must veto it there.
     pub(super) fn cases(&mut self, vma: u64, targets: &[u64]) {
         self.edges.extend(targets.iter().map(|&to| (vma, to, Edge::Branch)));
+        let Some(n) = self.nodes.iter().rev().find(|n| n.vma == vma) else { return };
+        let based: Vec<Pending> = n.outs.iter().filter(|(f, _)| f.base).map(|(f, _)| f.p).collect();
+        for &to in targets {
+            self.reach(to, &based);
+        }
+    }
+
+    /// Hand `carry` to the instruction at `to`. What the walk carries is a
+    /// candidate the meet in [`PicPool::finish`] settles, so a second edge into
+    /// an undecoded instruction only narrows it.
+    fn reach(&mut self, to: u64, carry: &[Pending]) {
+        if carry.is_empty() {
+            return;
+        }
+        match self.bases_at.get_mut(&to) {
+            Some(have) => have.retain(|h| carry.contains(h)),
+            None => {
+                self.bases_at.insert(to, carry.to_vec());
+            }
+        }
     }
 
     /// The addresses the body formed, once the whole body is known.
@@ -1450,6 +1463,27 @@ mod tests {
         w.step(0x60c, &slot_load(&s), &[]);
         let v = w.pp.finish(&HashSet::from([0x60c]));
         assert!(slot_refs(&v, 0x60c).is_empty(), "{:?}", v.refs);
+    }
+
+    /// A switch's case bodies are the dispatcher's own code: the base the
+    /// dispatch holds reaches each case, and a slot load there finds the slot.
+    #[test]
+    fn a_switch_case_inherits_the_dispatch_base() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let dispatch = vec![op(OpCode::CPUI_BRANCHIND, None, vec![vn(&s.reg, 0x20, 4)])];
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &dispatch, &[]);
+        w.pp.cases(0x608, &[0x700, 0x710]);
+        w.step(0x700, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x704, &slot_load(&s), &[]);
+        w.step(0x710, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x714, &slot_load(&s), &[]);
+        let v = w.finish();
+        assert_eq!(slot_refs(&v, 0x704), SLOT_REFS.to_vec());
+        assert_eq!(slot_refs(&v, 0x714), SLOT_REFS.to_vec());
     }
 
     /// A loop whose body does not write r4 keeps the base across its back edge.

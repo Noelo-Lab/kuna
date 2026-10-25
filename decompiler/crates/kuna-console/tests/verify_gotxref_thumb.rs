@@ -6,8 +6,9 @@
 //! Thumb lifts its literal loads, 16-bit and `ldr.w`, as copies out of the
 //! image, and reads the PC as `inst_start + 4`. `arm_timers` makes the GOT
 //! base in r6 and reads two callback slots through it across a call and a
-//! join; `far_timer` does the same with `ldr.w`; the GOT words carry the
-//! Thumb bit.
+//! join; `pick_timer` dispatches through a `tbb` table whose cases each read
+//! a callback slot through the dispatch's base; `far_timer` makes its base
+//! with `ldr.w`; the GOT words carry the Thumb bit.
 
 use std::path::PathBuf;
 
@@ -113,6 +114,31 @@ fn a_thumb_string_formed_from_a_mapped_looking_displacement_is_referenced() {
 fn a_thumb_data_object_read_through_the_got_is_referenced() {
     let idx = index();
     assert_eq!(to(&idx, TABLE), vec![(READS_TABLE, XrefKind::Data)]);
+}
+
+/// `pick_timer`@0x10164: each case of the `tbb` switch reads its callback's
+/// slot through r6, which only the dispatch hands it.
+const PICK_TIMER: u64 = 0x10164;
+const CASE_SLOT_LOADS: [(u64, u64, u64); 5] = [
+    (0x10188, 0x227d0, ON_REARM),
+    (0x101a0, 0x227d8, 0x100b0),
+    (0x101b4, 0x227e0, 0x100bc),
+    (0x101c8, 0x227e4, 0x100c8),
+    (0x101e4, EXPIRE_SLOT, ON_EXPIRE),
+];
+/// `"resetting"`, formed in case 3.
+const RESETTING: u64 = 0x217ac;
+const FORMS_RESETTING: u64 = 0x101da;
+
+#[test]
+fn a_switch_case_reads_its_slot_through_the_dispatch_base() {
+    let idx = index();
+    for (load, slot, callback) in CASE_SLOT_LOADS {
+        assert!(to(&idx, slot).contains(&(load, XrefKind::Read)), "{slot:#x}: {:?}", to(&idx, slot));
+        assert!(to(&idx, callback).contains(&(load, XrefKind::Data)), "{callback:#x}: {:?}", to(&idx, callback));
+        assert_eq!(idx.function_containing(load), Some(PICK_TIMER));
+    }
+    assert_eq!(to(&idx, RESETTING), vec![(FORMS_RESETTING, XrefKind::Data)]);
 }
 
 /// The raw displacement words are not pointers, so nothing references them.
