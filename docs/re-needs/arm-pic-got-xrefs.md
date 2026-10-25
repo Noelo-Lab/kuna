@@ -8,7 +8,7 @@ probe_id: p-fd504c2f4ae3
 acceptance_id: a-336a275d03d0
 hypothesis_status: upheld
 credibility: 0.9
-instances: 1
+instances: 2
 challenges: []
 rounds: []
 first_seen_round: null
@@ -127,6 +127,7 @@ _not yet refuted_
 ## Instances
 
 - `gotxref_arm_le32` (in-repo, synthetic)
+- `gotxref_thumb_le32` (in-repo, synthetic): the same in Thumb-2, where the literal loads lift as copies out of the image rather than loads, plus a `tbb` switch whose cases read slots through the dispatch's base
 
 ## Decision log
 

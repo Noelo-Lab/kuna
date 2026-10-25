@@ -72,16 +72,21 @@
 //! address, as a [`XrefKind::Data`] reference: in a non-PIE executable the
 //! linker writes a local function's address there with no relocation. On ARM a
 //! Thumb function's word, and a Thumb function's PC-composed address, carry
-//! bit 0, which is stripped when what remains is code.
+//! bit 0, which is stripped when what remains is code. Only base plus a pool
+//! word (GOTOFF) is an address; a plain copy of the base is a base and files
+//! nothing; a switch's cases receive the dispatch's bases.
 //!
 //! # Joins
 //!
 //! A tracked value holds at an instruction only if every predecessor in the body
 //! hands it the same one; the walk decodes the entry first, so nothing is ever
-//! carried into it from a back edge. The walk
-//! cannot apply that rule as it goes, since it decodes a join before it has seen
-//! every edge into it, so [`PicPool::finish`] applies it to the recorded body
-//! and answers only what survives.
+//! carried into it from a back edge. The walk cannot apply that rule as it goes,
+//! since it decodes a join before it has seen every edge into it, so
+//! [`PicPool::finish`] applies it to the recorded body and answers only what
+//! survives. A predicated instruction's skip is an edge of its own
+//! (`Edge::Skip`). Nothing is recorded before the body's first pool load;
+//! what the walk had queued by then holds nothing (`dry`), as does an
+//! instruction another body's walk refused to enter.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
