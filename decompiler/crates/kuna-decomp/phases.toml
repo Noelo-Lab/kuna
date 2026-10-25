@@ -7414,6 +7414,25 @@ tier = "transform"
 symptoms = "every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry|go function parameters recovered as phi-fed locals or missing because the entry is a loop head|do-while wrapping an entire go function body with a morestack call in its latch"
 
 [[settable]]
+option = "goabi"
+values = "auto|off"
+default = "auto"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-multilang-goabi"
+summary = "Select the vendored golang compiler spec for a Go image. Go does not use the platform C ABI: since 1.17 its register ABI (abi-internal) passes arguments in RAX,RBX,RCX,RDI,RSI,R8-R11 on x86-64 and returns multiple values in those same registers, so under the default gcc model a Go function's parameters are invisible (RAX/RBX are scratch to SysV), a second return value is dead-coded away, and the statements computing it are DELETED - `func pair(a,b int) (int,int)` decompiles as `long pair(void){ return v1 + v2; }` with both locals unassigned and the product gone. Ghidra vendors golang cspecs (abi-internal default, abi0 the stack ABI, the write-barrier and duff helper models) for x86-64, x86-32 and AArch64; kuna ships them compiled and nothing selected them. At `auto` (default) an image whose effective source language is Go (the sourcelang fact, KUNA_SOURCELANG force included) composes the `:golang` compiler field in its SLEIGH language id on those three little-endian architectures; every other architecture and every non-Go image is untouched, and the engine's default-model retry covers a spec that fails to resolve. The id is composed inside `load file`, so the option travels as the KUNA_GOABI environment variable (the rexthunk/sourcelang loadtime pattern). The golang cspec also registers the `abi0` stack-ABI model, and a function or callee whose name ends `.abi0` (Go's dual-ABI stack alias - an unstripped go1.22 hello-world carries 115 such .symtab names; the pclntab carries none, so a stripped image keeps abi-internal everywhere) takes that model at the model-selection seams; the binding self-gates on the model being registered, so an explicit `--target ...:golang` gets it even with goabi off."
+use_when = "Leave auto: on a Go binary the golang cspec is the difference between invisible parameters with deleted statements and recovered register arguments with the multi-return join; flip off to read a Go image under the platform C model (comparing against another tool, or triaging a suspected cspec defect). Non-Go binaries never see the option either way."
+example = "option goabi off"
+source_decompiler = "kuna"
+inspiration = "Ghidra's vendored x86-64-golang/x86-32-golang/AARCH64_golang cspecs (abi-internal, abi0) and its Golang language-id selection; the loadtime env bridge is the rexthunk/sourcelang pattern"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "go function parameters missing or void while the body reads rax/rbx locals that are never assigned|a go function returning two values loses the second and the statements computing it|go output full of unassigned register-commented locals|multi-return go call sites read registers the call never defines"
+
+[[settable]]
 option = "sourcelang"
 values = "auto|c|rust|go|swift"
 default = "auto"

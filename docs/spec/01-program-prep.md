@@ -207,7 +207,31 @@ of 512 bytes or fewer still follows exactly the path it always did.
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
-(machine + endianness + class → e.g. `x86:LE:64:default:gcc`). The loader's symbol
+(machine + endianness + class → e.g. `x86:LE:64:default:gcc`).
+
+(kuna) **A Go image composes the `:golang` compiler field instead**
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
+option `goabi auto|off`, default auto, carried as the `KUNA_GOABI` loadtime
+environment gate — the `sourcelang` pattern, because the id is composed inside
+`load file`). Go's register ABI is not the platform C ABI: under the `gcc`
+model a Go function's RAX/RBX/… arguments are scratch, so its parameters are
+invisible, a second return value is dead-coded away and the statements feeding
+it are deleted (`func pair(a,b int) (int,int)` rendered
+`long pair(void){ return v1 + v2; }`). The vendored golang cspecs
+(`abi-internal` default, `abi0`, the write-barrier/duff helper models) exist
+for x86-64, x86-32 and AArch64, so the override fires only on those three
+little-endian architectures when the effective source language is Go (the
+`KUNA_SOURCELANG` force included); everywhere else the composed id is
+byte-identical to before, and `elf_language_ids` enumerates the golang ids so
+the resolves-in-the-DB gate proves them vendored. Measured on a stripped
+go1.22 hello-world (1,544 functions): functions with recovered parameters
+544 → 992, functions reading a never-assigned register local 853 → 501, zero
+failures either way. Per-symbol `abi0` binding is deliberately absent: the
+go1.22 pclntab carries no `.abi0` names and the canonical entry inventory
+collapses the unstripped symtab aliases, so no `.abi0` spelling reaches the
+engine — alias-aware symbol plumbing has to come first.
+
+The loader's symbol
 stream — defined FUNC symbols plus the resolved import stubs of §1.3 — is
 `@VERSION`-stripped, demangled (§1.4) and **character-sanitized** before each
 name is installed as a `FunctionSymbol`, and the loader's read-only section ranges are applied to the

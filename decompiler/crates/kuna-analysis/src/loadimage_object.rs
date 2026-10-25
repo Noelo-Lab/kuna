@@ -1620,6 +1620,24 @@ fn language_id_for(
     // `gcc` (x86/RISCV) / `default` (everything else), reproducing the old
     // hard-coded id strings exactly.
     let model = fmt.compiler_model(arch);
+    // (kuna `goabi`) A Go image takes the vendored golang compiler spec on the
+    // three architectures that ship one: Go's register ABI is not the platform
+    // C ABI (RAX/RBX/… carry arguments and multiple returns on x86-64), so
+    // under the default model every Go function's parameters are invisible and
+    // a second return value is dead-coded away with the statements feeding it.
+    // Cheap gates first: the env toggle (`option goabi off` clears it), the
+    // arch allowlist, then language detection (which honours the
+    // `KUNA_SOURCELANG` force). Everything else keeps `model` untouched, and
+    // the engine's default-model retry covers a spec that fails to load.
+    let model = if kuna_decomp::kuna_goabi::goabi_env_enabled()
+        && little
+        && matches!(arch, Architecture::X86_64 | Architecture::I386 | Architecture::Aarch64)
+        && crate::sourcelang::effective_compiler(file, bytes).is_golang()
+    {
+        Some("golang")
+    } else {
+        model
+    };
     let id: String = match compose_language_id(arch, endian, model) {
         Some(id) => id,
         None => {
@@ -1874,6 +1892,14 @@ pub fn elf_language_ids() -> Vec<String> {
             }
         }
     }
+    // (kuna `goabi`) The golang-model ids a Go ELF composes on the three
+    // architectures that vendor a golang cspec (LE only — Go has no big-endian
+    // target among them), so the resolves-in-the-DB gate proves them too.
+    for arch in [Architecture::X86_64, Architecture::I386, Architecture::Aarch64] {
+        if let Some(id) = compose_language_id(arch, "LE", Some("golang")) {
+            out.push(id);
+        }
+    }
     out.sort();
     out.dedup();
     out
@@ -1968,6 +1994,58 @@ mod alias_tests;
 mod tests {
     use super::*;
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpaceManager, ConstantSpace};
+
+    /// (kuna `goabi`) A Go-marked image composes the `:golang` compiler field;
+    /// the same image without the marker keeps the platform model; a Go image
+    /// on an architecture with no vendored golang cspec keeps its default.
+    #[test]
+    fn go_image_composes_the_golang_language_id() {
+        use object::write::Object as WObject;
+        let build = |arch: object::Architecture, go: bool| -> Vec<u8> {
+            let mut obj = WObject::new(
+                object::BinaryFormat::Elf,
+                arch,
+                object::Endianness::Little,
+            );
+            let text = obj.add_section(vec![], b".text".to_vec(), object::SectionKind::Text);
+            obj.append_section_data(text, &[0xc3], 1);
+            if go {
+                let s = obj.add_section(
+                    vec![],
+                    b".go.buildinfo".to_vec(),
+                    object::SectionKind::ReadOnlyData,
+                );
+                obj.append_section_data(s, b"\xff Go buildinf:", 1);
+            }
+            obj.write().expect("write synthetic ELF")
+        };
+        let fmt = crate::loader::format::elf::ElfFormat;
+        let id = |arch: object::Architecture, go: bool, karch: Architecture| -> String {
+            let bytes = build(arch, go);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            String::from_utf8(
+                language_id_for(&file, &fmt, &bytes, "synthetic", karch, None).expect("id"),
+            )
+            .expect("utf8")
+        };
+        assert_eq!(
+            id(object::Architecture::X86_64, true, Architecture::X86_64),
+            "x86:LE:64:default:golang"
+        );
+        assert_eq!(
+            id(object::Architecture::X86_64, false, Architecture::X86_64),
+            "x86:LE:64:default:gcc"
+        );
+        assert_eq!(
+            id(object::Architecture::Aarch64, true, Architecture::Aarch64),
+            "AARCH64:LE:64:v8A:golang"
+        );
+        // No vendored golang cspec for RISC-V: a Go image keeps the default.
+        assert_eq!(
+            id(object::Architecture::Riscv64, true, Architecture::Riscv64),
+            "RISCV:LE:64:RV64GC:gcc"
+        );
+    }
 
     #[test]
     fn executable_ranges_use_sectionless_load_segments_and_rebase() {

@@ -286,6 +286,14 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "dynrelocs" => on_off(conf.analysis_dynrelocs),
         "pdatachained" => on_off(conf.analysis_pdatachained),
         "rexthunk" => on_off(conf.analysis_rexthunk),
+        // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
+        "goabi" => {
+            if conf.analysis_goabi {
+                "auto"
+            } else {
+                "off"
+            }
+        }
         "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.

@@ -789,6 +789,10 @@ Three tiers:
 | stripped go binary renders code after a runtime.panicshift or runtime.gopanic call as if the helper returned | [`gonoreturn`](#gonoreturn) |
 | a go panic arm falls through into the next block and the output interleaves panic and normal paths | [`gonoreturn`](#gonoreturn) |
 | a go function keeps its morestack entry loop because the grow arm follows a panic call kuna treats as returning | [`gonoreturn`](#gonoreturn) |
+| go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi) |
+| a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi) |
+| go output full of unassigned register-commented locals | [`goabi`](#goabi) |
+| multi-return go call sites read registers the call never defines | [`goabi`](#goabi) |
 | rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
 | a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
 | go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
@@ -2951,6 +2955,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) truncates flow at runtime panic/exit helpers on stripped Go binaries, exactly as unstripped ones already behave; off restores the fall-through reading of every runtime.panic*/throw/goexit call site (auditing, or a hand-patched runtime whose panic helpers really return).
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gonoreturn
 - **Example:** `option gonoreturn off`
+
+### `goabi` -- auto | off, default `auto`
+
+- **Symptoms:** go function parameters missing or void while the body reads rax/rbx locals that are never assigned; a go function returning two values loses the second and the statements computing it; go output full of unassigned register-commented locals; multi-return go call sites read registers the call never defines.
+- **What it does:** Select the vendored golang compiler spec for a Go image. Go does not use the platform C ABI: since 1.17 its register ABI (abi-internal) passes arguments in RAX,RBX,RCX,RDI,RSI,R8-R11 on x86-64 and returns multiple values in those same registers, so under the default gcc model a Go function's parameters are invisible (RAX/RBX are scratch to SysV), a second return value is dead-coded away, and the statements computing it are DELETED - `func pair(a,b int) (int,int)` decompiles as `long pair(void){ return v1 + v2; }` with both locals unassigned and the product gone. Ghidra vendors golang cspecs (abi-internal default, abi0 the stack ABI, the write-barrier and duff helper models) for x86-64, x86-32 and AArch64; kuna ships them compiled and nothing selected them. At `auto` (default) an image whose effective source language is Go (the sourcelang fact, KUNA_SOURCELANG force included) composes the `:golang` compiler field in its SLEIGH language id on those three little-endian architectures; every other architecture and every non-Go image is untouched, and the engine's default-model retry covers a spec that fails to resolve. The id is composed inside `load file`, so the option travels as the KUNA_GOABI environment variable (the rexthunk/sourcelang loadtime pattern). The golang cspec also registers the `abi0` stack-ABI model, and a function or callee whose name ends `.abi0` (Go's dual-ABI stack alias - an unstripped go1.22 hello-world carries 115 such .symtab names; the pclntab carries none, so a stripped image keeps abi-internal everywhere) takes that model at the model-selection seams; the binding self-gates on the model being registered, so an explicit `--target ...:golang` gets it even with goabi off.
+- **When to flip:** Leave auto: on a Go binary the golang cspec is the difference between invisible parameters with deleted statements and recovered register arguments with the multi-return join; flip off to read a Go image under the platform C model (comparing against another tool, or triaging a suspected cspec defect). Non-Go binaries never see the option either way.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-goabi
+- **Example:** `option goabi off`
 
 ### `sourcelang` -- auto | c | rust | go | swift, default `auto`
 
