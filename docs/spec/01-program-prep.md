@@ -7542,6 +7542,26 @@ takes longer where tables are read (`kuna functions` about 8% on betaflight and
 that libc), while a whole-binary run gets faster because no case body is
 decompiled as a function of its own. It is ARM-only and needs a walk, so it is inert without `--option listing on`.
 
+**A32 tables in the reference walk.** The two A32 forms the Listing walk follows
+under `armframes` (above, `kuna_a32switch.rs`) are read by the xrefs walk too,
+with the same reader and the same option. A guarded `addls pc,pc,rN,lsl #2`
+walks each `b caseN` after `b default`; a guarded `ldrls pc,[pc,rN,lsl #2]`
+walks each word after it. The A32 read comes before the table-base read: the
+dispatch's PC-relative operand names the dispatch itself, which is not a table.
+The cases are the dispatcher's own code, walked as its successors with the state
+the dispatch holds, so a GOT base made before the dispatch reaches every case
+(the `picpool` rule above). The dispatch files one `Jump` to each case, as
+Ghidra's `ArmAnalyzer` adds a computed-jump reference per case. The words of an
+`ldr` table are data the dispatch reads: they are not decoded and file no
+pointer row, which matches Ghidra, whose ARM switch recovery labels and
+disassembles the targets but adds no reference from the words. A predicated
+dispatch lifts as a skip to `b default` ahead of its jump; that skip is the
+dispatch's fall-through, so it files no `Jump` row to the next instruction.
+Without this, the walk stopped at the dispatch and followed only `b default`.
+GCC 14 no longer emits either form from C in ARM state (it compresses the table
+to bytes, `ldrb rN,[rT,rN]; add pc,pc,rN,lsl #2`); that form is not read. Thumb
+`ldr pc` tables are not read either: their PC is 4 bytes ahead, not 8.
+
 (kuna, GH-299) **Bounded i386 switch coverage** (`x86listingswitch`, default-off;
 `decompiler/crates/kuna-analysis/src/listing/kuna_x86listingswitch.rs`) extends
 the discovery Listing for linked little-endian i386 ELF and PE images. It

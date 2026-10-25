@@ -764,6 +764,11 @@ fn descend(
     let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
+    // (kuna) `armframes`: an A32 `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]`
+    // table. See [`super::kuna_a32switch`].
+    let a32_tables = sections_are_runtime
+        .then(|| super::kuna_a32switch::A32Tables::new(file, arch))
+        .flatten();
 
     let preserve_bodies = sections_are_runtime
         && arch.analysis_funcstart_patterns
@@ -1162,9 +1167,15 @@ fn descend(
                 st.indirect_call_sites.insert(vma);
             }
 
+            // A predicated computed jump lifts to a skip to the next instruction
+            // ahead of its jump; that skip is a fall-through, not a reference.
+            let skip = vma.wrapping_add(u64::from(len));
+            let dispatch = c.flow.is_computed && c.flow.is_jump && !c.flow.is_call;
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
-                st.file(vma, target, kind, &text);
+                if !(dispatch && target == skip) {
+                    st.file(vma, target, kind, &text);
+                }
                 if c.flow.is_call {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
@@ -1191,12 +1202,17 @@ fn descend(
             // table the jump indexes and take its entries up as successors of
             // THIS function: a case body is the dispatcher's own code. See
             // [`super::kuna_switchtable`].
-            if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
+            if dispatch && c.flows.iter().all(|&t| t == skip) {
                 if let Some(p) = pool.as_ref() {
-                    let mut cases: Vec<u64> = Vec::new();
-                    let mut stated: Option<usize> = None;
+                    // (kuna) `armframes`: the A32 forms are read first, because
+                    // their PC-relative operand names the dispatch itself.
+                    let mut cases: Vec<u64> = a32_tables.as_ref().map_or_else(Vec::new, |tables| {
+                        let decoded = |at: u64| st.decoded.contains(&at);
+                        tables.targets(translate, &code_space, &exec, &decoded, vma)
+                    });
+                    let mut stated: Option<usize> = (!cases.is_empty()).then_some(cases.len());
                     for &(base, kind) in &drefs {
-                        if kind == XrefKind::Data {
+                        if kind == XrefKind::Data && stated.is_none() {
                             cases.extend(kuna_switchtable::targets(
                                 base,
                                 vma,

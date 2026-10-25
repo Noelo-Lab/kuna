@@ -53,6 +53,9 @@ mod verify_assertplane;
 #[path = "verify_assertranges.rs"]
 mod verify_assertranges;
 
+#[path = "verify_branchtable.rs"]
+mod verify_branchtable;
+
 #[path = "verify_buildstamp.rs"]
 mod verify_buildstamp;
 
