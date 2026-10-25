@@ -766,9 +766,10 @@ fn descend(
         .flatten();
     // (kuna) `armframes`: an A32 `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]`
     // table. See [`super::kuna_a32switch`].
-    let a32_tables = sections_are_runtime
-        .then(|| super::kuna_a32switch::A32Tables::new(file, arch))
-        .flatten();
+    let a32_tables = pool
+        .as_ref()
+        .filter(|_| super::kuna_a32switch::applies(file, arch))
+        .map(|pool| super::kuna_a32switch::A32Tables::new(arch, pool));
 
     let preserve_bodies = sections_are_runtime
         && arch.analysis_funcstart_patterns

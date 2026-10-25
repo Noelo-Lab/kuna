@@ -43,35 +43,31 @@ use super::xrefs::{decode, in_range, FullCapture, FullOp};
 /// forms begin.
 const A32_PC_OFFSET: u64 = 8;
 
+/// Whether A32 tables are read in `file`: `armframes` recovery is on and it is
+/// a linked ARM image.
+pub(crate) fn applies(file: &object::File<'_>, arch: &kuna_decomp::architecture::Architecture) -> bool {
+    use object::Object;
+    arch.analysis_armframes
+        && file.architecture() == object::Architecture::Arm
+        && file.kind() != object::ObjectKind::Relocatable
+}
+
 /// The read-only image an A32 word table is read from.
 pub(crate) struct A32Tables<'a> {
-    pool: PoolImage<'a>,
+    pool: &'a PoolImage<'a>,
     data_space: Option<Rc<AddrSpace>>,
     max_entries: usize,
 }
 
 impl<'a> A32Tables<'a> {
-    /// `None` unless `armframes` recovery is on for a linked ARM image.
-    pub(crate) fn new(
-        file: &'a object::File<'a>,
-        arch: &kuna_decomp::architecture::Architecture,
-    ) -> Option<Self> {
-        use object::Object;
-        if !arch.analysis_armframes
-            || file.architecture() != object::Architecture::Arm
-            || file.kind() == object::ObjectKind::Relocatable
-        {
-            return None;
-        }
+    /// The reader over the walk's read-only image `pool`, for an image where
+    /// [`applies`] holds.
+    pub(crate) fn new(arch: &kuna_decomp::architecture::Architecture, pool: &'a PoolImage<'a>) -> Self {
         let max_entries = match arch.max_jumptable_size as usize {
             0 => super::kuna_switchtable::DEFAULT_MAX_ENTRIES,
             n => n,
         };
-        Some(A32Tables {
-            pool: PoolImage::new(file)?,
-            data_space: arch.manage().get_default_data_space().cloned(),
-            max_entries,
-        })
+        A32Tables { pool, data_space: arch.manage().get_default_data_space().cloned(), max_entries }
     }
 
     /// The case blocks of the computed jump at `from` when it is a guarded A32
@@ -115,7 +111,7 @@ impl<'a> A32Tables<'a> {
                 };
                 let read = cases.min(self.max_entries);
                 let targets = if words {
-                    super::kuna_switchtable::targets(base, from, &self.pool, exec, Some(read), read)
+                    super::kuna_switchtable::targets(base, from, self.pool, exec, Some(read), read)
                 } else {
                     branch_slots(base, read, from, exec)
                 };
