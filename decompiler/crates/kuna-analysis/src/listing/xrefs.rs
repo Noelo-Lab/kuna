@@ -1206,11 +1206,13 @@ fn descend(
                 if let Some(p) = pool.as_ref() {
                     // (kuna) `armframes`: the A32 forms are read first, because
                     // their PC-relative operand names the dispatch itself.
-                    let mut cases: Vec<u64> = a32_tables.as_ref().map_or_else(Vec::new, |tables| {
-                        let decoded = |at: u64| st.decoded.contains(&at);
-                        tables.targets(translate, &code_space, &exec, &decoded, vma)
-                    });
-                    let mut stated: Option<usize> = (!cases.is_empty()).then_some(cases.len());
+                    let (mut cases, mut stated) = a32_tables.as_ref().map_or_else(
+                        || (Vec::new(), None),
+                        |tables| {
+                            let decoded = |at: u64| st.decoded.contains(&at);
+                            tables.targets(translate, &code_space, &exec, &decoded, vma)
+                        },
+                    );
                     for &(base, kind) in &drefs {
                         if kind == XrefKind::Data && stated.is_none() {
                             cases.extend(kuna_switchtable::targets(
@@ -1231,7 +1233,7 @@ fn descend(
                         .iter()
                         .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
                         .and_then(|o| o.ins.first());
-                    if cases.is_empty() {
+                    if cases.is_empty() && stated.is_none() {
                         let read = branch_cases(
                             translate,
                             &code_space,

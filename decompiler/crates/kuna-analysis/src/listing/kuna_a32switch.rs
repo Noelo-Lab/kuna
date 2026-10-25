@@ -75,7 +75,8 @@ impl<'a> A32Tables<'a> {
     }
 
     /// The case blocks of the computed jump at `from` when it is a guarded A32
-    /// `ldr pc,[pc,rN,lsl #2]` or `add pc,pc,rN,lsl #2`; nothing otherwise.
+    /// `ldr pc,[pc,rN,lsl #2]` or `add pc,pc,rN,lsl #2`, read up to
+    /// `jumptablemax`, and the case count its guard states; nothing otherwise.
     pub(crate) fn targets(
         &self,
         translate: &dyn Translate,
@@ -83,10 +84,10 @@ impl<'a> A32Tables<'a> {
         exec: &[(u64, u64)],
         decoded: &dyn Fn(u64) -> bool,
         from: u64,
-    ) -> Vec<u64> {
+    ) -> (Vec<u64>, Option<usize>) {
         let mut cap = FullCapture::default();
         if decode(translate, from, code_space, &mut cap) != Some(4) {
-            return Vec::new();
+            return (Vec::new(), None);
         }
         let data = self.data_space.as_ref();
         let base = from + A32_PC_OFFSET;
@@ -102,22 +103,23 @@ impl<'a> A32Tables<'a> {
                 let words = match shape {
                     Some(Val::Entry { table, width: 4 }) if table == base => true,
                     Some(Val::Indexed(table)) if table == base => false,
-                    _ => return Vec::new(),
+                    _ => return (Vec::new(), None),
                 };
-                let Some(index) = index else { return Vec::new() };
+                let Some(index) = index else { return (Vec::new(), None) };
                 let Some(cases) = super::kuna_thumbswitch::guard_cases(
                     translate, code_space, data, decoded, from, index, predicated,
                 )
                 .filter(|&n| n >= MIN_ENTRIES)
                 else {
-                    return Vec::new();
+                    return (Vec::new(), None);
                 };
-                let cases = cases.min(self.max_entries);
-                return if words {
-                    super::kuna_switchtable::targets(base, from, &self.pool, exec, Some(cases), cases)
+                let read = cases.min(self.max_entries);
+                let targets = if words {
+                    super::kuna_switchtable::targets(base, from, &self.pool, exec, Some(read), read)
                 } else {
-                    branch_slots(base, cases, from, exec)
+                    branch_slots(base, read, from, exec)
                 };
+                return (targets, Some(cases));
             }
             if index.is_none()
                 && matches!(op.opcode, OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_ADD)
@@ -138,7 +140,7 @@ impl<'a> A32Tables<'a> {
                 }
             }
         }
-        Vec::new()
+        (Vec::new(), None)
     }
 }
 

@@ -11,6 +11,7 @@ use std::sync::OnceLock;
 
 use kuna_analysis::listing::xrefs::{self, XrefIndex, XrefKind};
 use kuna_console::engine::bootstrap_from_object;
+use kuna_decomp::architecture::Architecture;
 
 const SET_TIMEOUT: u64 = 0x100f8;
 
@@ -73,19 +74,17 @@ fn repo_root() -> PathBuf {
 /// every test that reads it.
 fn index() -> &'static XrefIndex {
     static INDEX: OnceLock<XrefIndex> = OnceLock::new();
-    INDEX.get_or_init(|| build(&[]))
+    INDEX.get_or_init(|| build(|_| {}))
 }
 
-/// The fixture's reference index with the kuna `options` set before analysis.
-fn build(options: &[(&str, &str)]) -> XrefIndex {
+/// The fixture's reference index, with `configure` applied before analysis.
+fn build(configure: fn(&mut Architecture)) -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/branchtable_arm_le32");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
-    for &(name, value) in options {
-        prog.arch_mut().set_kuna_option(name, value).expect("option applies");
-    }
+    configure(prog.arch_mut());
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
@@ -161,5 +160,16 @@ fn an_ldr_pc_table_word_is_neither_code_nor_a_pointer() {
     for word in LDR_TABLE {
         assert!(idx.refs_to(word).is_empty(), "{word:#x}: {:?}", idx.refs_to(word));
         assert!(idx.refs_from_instruction(word).is_empty(), "{word:#x}");
+    }
+}
+
+/// A table longer than `jumptablemax` reads that many cases and says how many
+/// its guard states.
+#[test]
+fn a_clamped_a32_table_states_its_guard_count() {
+    let idx = build(|arch| arch.max_jumptable_size = 3);
+    for sw in [&ADD, &LDR] {
+        let table = idx.switch_tables().iter().find(|t| t.dispatch == sw.dispatch).expect("switch read");
+        assert_eq!((table.cases, table.read, table.truncated), (Some(5), 3, true), "{:#x}", sw.dispatch);
     }
 }
