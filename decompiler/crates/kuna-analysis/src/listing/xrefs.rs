@@ -653,6 +653,14 @@ pub fn build_with_focus(
     descend(file, arch, translate, seeds, focus, false)
 }
 
+/// The walk behind every `build*`.
+///
+/// (kuna `armframes`) On an ARM image a computed jump is tried as an A32
+/// `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]` table
+/// ([`super::kuna_a32switch`]) before any other table read, because its
+/// PC-relative operand names the dispatch itself rather than a table, and the
+/// predicated skip of such a jump is its fall-through
+/// ([`super::classify::Classified::skip_falls_through`]).
 fn descend(
     file: &object::File,
     arch: &Architecture,
@@ -764,8 +772,6 @@ fn descend(
     let thumb_tables = (arch.analysis_thumbswitch && sections_are_runtime)
         .then(|| super::kuna_thumbswitch::HalfwordTables::new(file, data_space.clone(), max_entries))
         .flatten();
-    // (kuna) `armframes`: an A32 `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]`
-    // table. See [`super::kuna_a32switch`].
     let a32_tables = pool
         .as_ref()
         .filter(|_| super::kuna_a32switch::applies(file, arch))
@@ -1209,8 +1215,6 @@ fn descend(
             // [`super::kuna_switchtable`].
             if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
-                    // (kuna) `armframes`: the A32 forms are read first, because
-                    // their PC-relative operand names the dispatch itself.
                     let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
                         let decoded = |at: u64| st.decoded.contains(&at);
                         tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
