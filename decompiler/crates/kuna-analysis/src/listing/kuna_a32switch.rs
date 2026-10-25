@@ -35,7 +35,7 @@ use kuna_sleigh::translate::Translate;
 
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable::{
-    fold, invalidate, is_constant, key_of, value_of, Key, Val, MAX_TRACKED, MIN_ENTRIES,
+    fold, invalidate, is_constant, key_of, value_of, Key, TableRead, Val, MAX_TRACKED, MIN_ENTRIES,
 };
 use super::xrefs::{decode, in_range, FullCapture, FullOp};
 
@@ -72,26 +72,28 @@ impl<'a> A32Tables<'a> {
 
     /// The case blocks of the computed jump at `from` when it is a guarded A32
     /// `ldr pc,[pc,rN,lsl #2]` or `add pc,pc,rN,lsl #2`, read up to
-    /// `jumptablemax`, and the case count its guard states; nothing otherwise.
-    pub(crate) fn targets(
+    /// `jumptablemax`, and the case count its guard states; nothing otherwise,
+    /// with the gap the guard read stopped at when the walk has not yet decoded
+    /// the code falling into the dispatch.
+    pub(super) fn targets(
         &self,
         translate: &dyn Translate,
         code_space: &Rc<AddrSpace>,
         exec: &[(u64, u64)],
         decoded: &dyn Fn(u64) -> bool,
         from: u64,
-    ) -> (Vec<u64>, Option<usize>) {
+    ) -> TableRead {
         let mut cap = FullCapture::default();
         match decode(translate, from, code_space, &mut cap) {
             Some(len) => self.decoded_targets(translate, code_space, exec, decoded, from, cap.ops(), len),
-            None => (Vec::new(), None),
+            None => TableRead::default(),
         }
     }
 
     /// [`Self::targets`] for a dispatch the caller already decoded to `ops`, of
     /// byte length `len`.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn decoded_targets(
+    pub(super) fn decoded_targets(
         &self,
         translate: &dyn Translate,
         code_space: &Rc<AddrSpace>,
@@ -100,9 +102,9 @@ impl<'a> A32Tables<'a> {
         from: u64,
         ops: &[FullOp],
         len: u32,
-    ) -> (Vec<u64>, Option<usize>) {
+    ) -> TableRead {
         if len != 4 {
-            return (Vec::new(), None);
+            return TableRead::default();
         }
         let data = self.data_space.as_ref();
         let base = from + A32_PC_OFFSET;
@@ -118,15 +120,15 @@ impl<'a> A32Tables<'a> {
                 let words = match shape {
                     Some(Val::Entry { table, width: 4 }) if table == base => true,
                     Some(Val::Indexed(table)) if table == base => false,
-                    _ => return (Vec::new(), None),
+                    _ => return TableRead::default(),
                 };
-                let Some(index) = index else { return (Vec::new(), None) };
-                let Some(cases) = super::kuna_thumbswitch::guard_cases(
+                let Some(index) = index else { return TableRead::default() };
+                let cases = match super::kuna_thumbswitch::guard_cases(
                     translate, code_space, data, decoded, from, index, predicated.then_some(ops),
-                )
-                .filter(|&n| n >= MIN_ENTRIES)
-                else {
-                    return (Vec::new(), None);
+                ) {
+                    Ok(n) if n >= MIN_ENTRIES => n,
+                    Ok(_) => return TableRead::default(),
+                    Err(gap) => return TableRead { gap, ..TableRead::default() },
                 };
                 let read = cases.min(self.max_entries);
                 let targets = if words {
@@ -134,7 +136,7 @@ impl<'a> A32Tables<'a> {
                 } else {
                     branch_slots(base, read, from, exec)
                 };
-                return (targets, Some(cases));
+                return TableRead { cases: targets, stated: Some(cases), gap: None };
             }
             if index.is_none()
                 && matches!(op.opcode, OpCode::CPUI_INT_LEFT | OpCode::CPUI_INT_MULT | OpCode::CPUI_INT_ADD)
@@ -155,7 +157,7 @@ impl<'a> A32Tables<'a> {
                 }
             }
         }
-        (Vec::new(), None)
+        TableRead::default()
     }
 }
 

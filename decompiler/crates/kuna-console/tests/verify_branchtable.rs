@@ -5,6 +5,7 @@
 //! branches, `ldr_dispatch` through `ldrls pc,[pc,r5,lsl #2]` and a table of
 //! words. Both make the GOT base in r6 before the dispatch, and every case
 //! reads a callback's slot through it, calls `set_timeout` and forms a string.
+//! `early_dispatch` branches into its own `addls` dispatch ahead of the guard.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -42,11 +43,11 @@ const ADD: Switch = Switch {
     function: 0x100fc,
     dispatch: 0x10124,
     cases: [
-        case(0x1012c, 0x10148, 0x2255c, 0x10098, 0x10160, 0x2147c),
-        case(0x10130, 0x101c0, 0x22560, 0x100a8, 0x101d8, 0x21488),
-        case(0x10134, 0x101ec, 0x22558, 0x100b8, 0x10204, 0x21494),
-        case(0x10138, 0x10218, 0x22554, 0x100c8, 0x10230, 0x214a0),
-        case(0x1013c, 0x10184, 0x2254c, 0x100d8, 0x1019c, 0x214ac),
+        case(0x1012c, 0x10148, 0x226a8, 0x10098, 0x10160, 0x21558),
+        case(0x10130, 0x101c0, 0x226ac, 0x100a8, 0x101d8, 0x21564),
+        case(0x10134, 0x101ec, 0x226a4, 0x100b8, 0x10204, 0x21570),
+        case(0x10138, 0x10218, 0x226a0, 0x100c8, 0x10230, 0x2157c),
+        case(0x1013c, 0x10184, 0x22698, 0x100d8, 0x1019c, 0x21588),
     ],
 };
 
@@ -55,13 +56,20 @@ const LDR: Switch = Switch {
     function: 0x10274,
     dispatch: 0x1029c,
     cases: [
-        case(0x102b8, 0x102c0, 0x22560, 0x100a8, 0x102d8, 0x214e4),
-        case(0x10330, 0x10338, 0x22558, 0x100b8, 0x10350, 0x214f0),
-        case(0x1035c, 0x10364, 0x22554, 0x100c8, 0x1037c, 0x214fc),
-        case(0x10388, 0x10390, 0x2254c, 0x100d8, 0x103a8, 0x21508),
-        case(0x102f4, 0x102fc, 0x22550, 0x100e8, 0x10314, 0x21514),
+        case(0x102b8, 0x102c0, 0x226ac, 0x100a8, 0x102d8, 0x215c0),
+        case(0x10330, 0x10338, 0x226a4, 0x100b8, 0x10350, 0x215cc),
+        case(0x1035c, 0x10364, 0x226a0, 0x100c8, 0x1037c, 0x215d8),
+        case(0x10388, 0x10390, 0x22698, 0x100d8, 0x103a8, 0x215e4),
+        case(0x102f4, 0x102fc, 0x2269c, 0x100e8, 0x10314, 0x215f0),
     ],
 };
+
+/// `early_dispatch`: a `beq` into its `addls pc,pc,r4,lsl #2` sends the walk
+/// to the dispatch before the `cmp r4,#4` guard that falls into it, and the
+/// cases are the `b caseN` slots after `b default`.
+const EARLY_FUNCTION: u64 = 0x103ec;
+const EARLY_DISPATCH: u64 = 0x10414;
+const EARLY_SLOTS: [u64; 5] = [0x1041c, 0x10420, 0x10424, 0x10428, 0x1042c];
 
 /// The `ldr` form's table words, `.word case0` to `.word case4`.
 const LDR_TABLE: [u64; 5] = [0x102a4, 0x102a8, 0x102ac, 0x102b0, 0x102b4];
@@ -160,6 +168,26 @@ fn an_ldr_pc_table_word_is_neither_code_nor_a_pointer() {
     for word in LDR_TABLE {
         assert!(idx.refs_to(word).is_empty(), "{word:#x}: {:?}", idx.refs_to(word));
         assert!(idx.refs_from_instruction(word).is_empty(), "{word:#x}");
+    }
+}
+
+/// A dispatch decoded before its guard is read again once the guard is, and
+/// its cases are walked as the dispatcher's own code.
+#[test]
+fn an_a32_dispatch_reached_before_its_guard_walks_every_case() {
+    let idx = index();
+    let mut jumps: Vec<u64> = from(idx, EARLY_DISPATCH)
+        .into_iter()
+        .filter(|&(_, kind)| kind == XrefKind::Jump)
+        .map(|(to, _)| to)
+        .collect();
+    jumps.sort_unstable();
+    assert_eq!(jumps, EARLY_SLOTS);
+    let table = idx.switch_tables().iter().find(|t| t.dispatch == EARLY_DISPATCH).expect("switch read");
+    assert_eq!((table.cases, table.read), (Some(5), 5));
+    for slot in EARLY_SLOTS {
+        assert!(!idx.is_function_entry(slot), "{slot:#x}");
+        assert_eq!(idx.function_containing(slot), Some(EARLY_FUNCTION), "{slot:#x}");
     }
 }
 

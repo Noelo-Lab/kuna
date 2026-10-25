@@ -1029,18 +1029,25 @@ fn descend(
         while let Some((vma, mode)) = insn_queue.pop_front().or_else(|| {
             let p = pool.as_ref()?;
             for (vma, mode, branch) in std::mem::take(&mut woken) {
-                let read = branch_cases(
-                    translate,
-                    &code_space,
-                    data_space.as_ref(),
-                    &st.decoded,
-                    vma,
-                    Some(&branch),
-                    p,
-                    &exec,
-                    &reach,
-                    thumb_tables.as_ref(),
-                );
+                let mut read = kuna_switchtable::TableRead::default();
+                if let Some(tables) = &a32_tables {
+                    let decoded = |at: u64| st.decoded.contains(&at);
+                    read = tables.targets(translate, &code_space, &exec, &decoded, vma);
+                }
+                if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() {
+                    read = branch_cases(
+                        translate,
+                        &code_space,
+                        data_space.as_ref(),
+                        &st.decoded,
+                        vma,
+                        Some(&branch),
+                        p,
+                        &exec,
+                        &reach,
+                        thumb_tables.as_ref(),
+                    );
+                }
                 if read.cases.is_empty() && read.stated.is_none() {
                     if let Some(gap) = read.gap {
                         waiting.entry(gap).or_default().push((vma, mode, branch));
@@ -1204,15 +1211,21 @@ fn descend(
                 if let Some(p) = pool.as_ref() {
                     // (kuna) `armframes`: the A32 forms are read first, because
                     // their PC-relative operand names the dispatch itself.
-                    let (mut cases, mut stated) = a32_tables.as_ref().map_or_else(
-                        || (Vec::new(), None),
-                        |tables| {
-                            let decoded = |at: u64| st.decoded.contains(&at);
-                            tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
-                        },
-                    );
+                    let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
+                        let decoded = |at: u64| st.decoded.contains(&at);
+                        tables.decoded_targets(translate, &code_space, &exec, &decoded, vma, cap.ops(), len)
+                    });
+                    let branch = cap
+                        .ops()
+                        .iter()
+                        .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
+                        .and_then(|o| o.ins.first());
+                    let (mut cases, mut stated) = (a32.cases, a32.stated);
+                    if let (Some(gap), Some(branch)) = (a32.gap, branch) {
+                        waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
+                    }
                     for &(base, kind) in &drefs {
-                        if kind == XrefKind::Data && stated.is_none() {
+                        if kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
                             cases.extend(kuna_switchtable::targets(
                                 base,
                                 vma,
@@ -1226,12 +1239,7 @@ fn descend(
                     // The base is on an instruction of its own and the entries
                     // are displacements on every x86-64 compiler, so ask what the
                     // branch register holds when the operand carried nothing.
-                    let branch = cap
-                        .ops()
-                        .iter()
-                        .find(|o| o.opcode == OpCode::CPUI_BRANCHIND)
-                        .and_then(|o| o.ins.first());
-                    if cases.is_empty() && stated.is_none() {
+                    if cases.is_empty() && stated.is_none() && a32.gap.is_none() {
                         let read = branch_cases(
                             translate,
                             &code_space,

@@ -379,7 +379,7 @@ where
     }
     if let Some(tables) = ctx.a32_tables.filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.is_empty()) {
         let decoded = |at: u64| insns.decoded(at);
-        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).0 {
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).cases {
             out.insn(target);
             refs.file(vma, target, RefKind::Code);
         }
