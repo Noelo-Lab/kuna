@@ -722,6 +722,10 @@ pub struct Architecture {
     /// (kuna) `option gomorestack` mode (`GoMorestackMode` as u8): fold the Go
     /// stack-growth entry guard.  Default auto (fold when `source_lang` is Go).
     pub go_morestack: u8,
+    /// (kuna) `option gowritebarrier` mode (`GoWriteBarrierMode` as u8): fold
+    /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
+    /// is Go).
+    pub go_write_barrier: u8,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -2051,6 +2055,9 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_rexthunk: bool,
+    /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
+    /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
+    pub analysis_goabi: bool,
     /// (kuna) Gate PE import-by-ordinal naming from built-in export tables
     /// (`peordinal`); default **on**. Read through the [`crate::kuna_peordinal`]
     /// **env var** (import names are resolved inside `load file`, upstream of
@@ -2952,6 +2959,7 @@ impl Architecture {
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
+            go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3184,6 +3192,7 @@ impl Architecture {
             analysis_dynrelocs: false,
             analysis_pdatachained: false,
             analysis_rexthunk: false,
+            analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
             analysis_peordinal: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
@@ -3362,6 +3371,7 @@ impl Architecture {
         self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
         self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
         self.go_morestack = crate::kuna_gomorestack::GoMorestackMode::Auto.as_u8(); // (kuna) fold the Go entry guard on Go images
+        self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -3621,6 +3631,7 @@ impl Architecture {
         self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
         self.analysis_peordinal = true; // (kuna) an OLEAUT32/WS2_32/WSOCK32/MSVBVM60 import-by-ordinal is named from the built-in export table
         self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
+        self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
@@ -4176,6 +4187,7 @@ impl Architecture {
         ctx.source_lang = self.source_lang();
         ctx.fat_str = self.fat_str;
         ctx.go_morestack = self.go_morestack;
+        ctx.go_write_barrier = self.go_write_barrier;
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

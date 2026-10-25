@@ -757,6 +757,10 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_gomorestack`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub go_morestack: u8,
+    /// (kuna) `option gowritebarrier` mode; read by
+    /// [`crate::p2_lift::kuna_gowritebarrier`].  Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub go_write_barrier: u8,
     /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
     pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
@@ -1821,6 +1825,9 @@ impl ArchContext {
             // (kuna) `option gomorestack` default auto; the real value is
             // copied from the engine Architecture in `build_arch_handle`.
             go_morestack: 1,
+            // (kuna) `option gowritebarrier` default auto; the real value is
+            // copied from the engine Architecture in `build_arch_handle`.
+            go_write_barrier: 1,
             // (kuna) `option reloadarg` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             reload_arg: true,

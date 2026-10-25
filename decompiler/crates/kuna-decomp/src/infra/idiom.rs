@@ -185,3 +185,113 @@ pub fn match_entry_guard_halt(
     None
 }
 
+/// A matched guarded cold call: a conditional whose one arm is a single cold
+/// block that calls a runtime routine and rejoins the other arm immediately.
+///
+/// ```text
+///   S:  ...; CBRANCH ----------+      guard_block = S, guard_edge = S->A
+///   |                          |
+///   v (hot)                    v (cold)
+///   J:  ...                A:  CALL runtime-routine; ...
+///   ^                          |
+///   +--------------------------+      cold_block = A (sole out-edge to J)
+/// ```
+///
+/// Cutting `guard_edge` makes `A` unreachable; the hot path through `J` — the
+/// program's own semantics — is untouched, and whatever fed only the cold
+/// arm's call dies to ordinary dead-code elimination.
+pub struct GuardedColdCall {
+    /// The guard block `S` holding the terminal CBRANCH.
+    pub guard_block: BlockId,
+    /// The out-edge index of `S` that enters the cold arm `A`.
+    pub guard_edge: int4,
+    /// The cold arm `A`: one block, one runtime CALL, rejoins at `J`.
+    pub cold_block: BlockId,
+    /// The runtime CALL inside `A` that identified the shape.
+    pub call_op: OpId,
+}
+
+/// Match one guarded-cold-call diamond whose cold-arm callee satisfies
+/// `callee`.
+///
+/// Held as tight as [`match_entry_guard_loop`], and by the same principle —
+/// the name is only consulted inside the shape:
+/// - the CALL's block `A` has exactly one in-edge (the guard `S`) and one
+///   out-edge (the join `J`), and carries no OTHER call of any kind;
+/// - `S` ends in a CBRANCH with two out-edges, one of them `A`;
+/// - `S`'s other out-edge goes DIRECTLY to `J` — the diamond closes
+///   immediately, which is what a compiler-planted flag test looks like and a
+///   meaningful `if (...) { helper(); }` usually does not (its arms carry the
+///   program's own statements and rarely re-join in one hop with a lone call).
+///
+/// Either polarity is accepted: the cold arm is identified by what it
+/// contains, not by the branch sense (Go emits the barrier arm as the
+/// fall-through). Returns the first match; a caller that edits the CFG
+/// re-matches rather than holding stale ids.
+pub fn match_guarded_cold_call(
+    data: &Funcdata,
+    callee: &dyn Fn(&str) -> bool,
+) -> Option<GuardedColdCall> {
+    for i in 0..data.num_calls() {
+        let fc = data.get_call_specs(i);
+        if !callee(fc.get_name()) {
+            continue;
+        }
+        let call_op = fc.get_op();
+        let Some(op) = data.obank().get(call_op) else { continue };
+        let Some(cold) = op.get_parent() else { continue };
+        let blocks = data.bblocks_ref();
+        if !matches!(blocks.block(cold).kind(), BlockKind::Basic(_)) {
+            continue;
+        }
+        if blocks.block(cold).size_in() != 1 || blocks.block(cold).size_out() != 1 {
+            continue;
+        }
+        let guard = blocks.block(cold).get_in(0);
+        let join = blocks.block(cold).get_out(0);
+        if guard == cold || join == cold || join == guard {
+            continue;
+        }
+        if !matches!(blocks.block(guard).kind(), BlockKind::Basic(_)) {
+            continue;
+        }
+        if blocks.block(guard).size_out() != 2 {
+            continue;
+        }
+        let Some(tail) = data.bb_op_tail(guard) else { continue };
+        let Some(tail_op) = data.obank().get(tail) else { continue };
+        if tail_op.code() != OpCode::CPUI_CBRANCH {
+            continue;
+        }
+        // The hot arm must close the diamond in one hop.
+        let guard_edge = (0..2).find(|&j| blocks.block(guard).get_out(j) == cold);
+        let Some(guard_edge) = guard_edge else { continue };
+        if blocks.block(guard).get_out(1 - guard_edge) != join {
+            continue;
+        }
+        // The cold arm's only transfer is the matched runtime call.
+        if block_has_other_call(data, cold, call_op) {
+            continue;
+        }
+        return Some(GuardedColdCall { guard_block: guard, guard_edge, cold_block: cold, call_op });
+    }
+    None
+}
+
+/// `true` if block `bl` holds any CALL/CALLIND besides `keep` — a cold arm
+/// with a second transfer is a real `if` body, not a runtime check.
+fn block_has_other_call(data: &Funcdata, bl: BlockId, keep: OpId) -> bool {
+    for i in 0..data.num_calls() {
+        let fc = data.get_call_specs(i);
+        let op = fc.get_op();
+        if op == keep {
+            continue;
+        }
+        if let Some(o) = data.obank().get(op) {
+            if o.get_parent() == Some(bl) {
+                return true;
+            }
+        }
+    }
+    false
+}
