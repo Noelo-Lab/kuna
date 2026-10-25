@@ -20,5 +20,6 @@ pub mod callgraph;
 pub mod signature;
 pub mod analyzesigs;
 pub mod paramid;
+pub mod idiom;
 pub mod universalaction;
 pub mod actionprof;

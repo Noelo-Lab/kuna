@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The Go stack-growth prologue (docs/multilang.md W2/W5), ported as kuna
+    `option gomorestack` (P2 flow-classification, default AUTO).
+
+    Every non-leaf function the Go compiler emits opens with a guard: compare
+    SP against the goroutine's stackguard (0x10(%r14) under the register ABI),
+    and on failure call runtime.morestack_noctxt and LOOP BACK TO THE FUNCTION
+    ENTRY to re-run the prologue on the grown stack.  The check is pure runtime
+    machinery, but the back-edge makes the entry a loop head: every live
+    argument register joins its incoming value with its after-growth value, so
+    parameter recovery sees phi-fed arguments on every non-leaf Go function,
+    and the body renders wrapped in a loop with a morestack call in its latch.
+
+    Stage model: P2 flow-classification; the shared entry-guard-loop shape
+    (`infra/idiom.rs::match_entry_guard_loop`) with the cold-arm callee held to
+    `runtime.morestack*`, cut with the `securitycheck`/`stackguard` primitives
+    (`Funcdata::removeBranch` + `removeUnreachableBlocks`) in the PRE-SSA
+    window (`cleanupcode`'s), so the entry phi never forms and the guard's
+    compare and stackguard load die to ordinary dead-code elimination.
+
+    The bytes are a hand-assembled x86-64 `func add(a, b int) int` exactly as
+    the Go compiler lays its prologue out:
+
+        100000  cmp  0x10(%r14),%rsp    ; SP vs g.stackguard0
+        100004  jbe  100010             ; cannot hold the frame -> grow
+        100006  lea  (%rdi,%rsi,1),%rax ; body: a + b
+        10000a  ret
+        100010  call 101000             ; runtime.morestack_noctxt
+        100015  jmp  100000             ; re-run the entry on the grown stack
+
+    P0 assertion: `option gomorestack off|auto|always`.  `auto` (the default)
+    acts only on an image whose detected source language is Go; the analyzer
+    tier never runs on this bytechunk bootstrap, so the test forces `always`,
+    exactly as `rustabi` stage tests force their language-blind mode.
+    Pass 1 (option gomorestack off): the bug - the guard renders as a `while`
+      loop whose latch calls morestack (assertions #1, #2).
+    Pass 2 (option gomorestack always): the fix - the loop and the call are
+      gone; both counts stay at exactly one occurrence because the second pass
+      contributes none, while the real body (assertion #3) and its `return`
+      (assertion #4) appear once per pass.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+493b6610760a488d0437c3cccccccccce8eb0f0000ebe9
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="add"/>
+<symbol space="ram" offset="0x101000" name="runtime.morestack_noctxt"/>
+</binaryimage>
+<script>
+  <com>option gomorestack off</com>
+  <com>lo fu add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gomorestack always</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOMORESTACK #1: the growth call renders under off and folds under always" min="1" max="1">morestack_noctxt\(</stringmatch>
+<stringmatch name="GOMORESTACK #2: the entry guard loops under off and folds under always" min="1" max="1">while</stringmatch>
+<stringmatch name="GOMORESTACK #3: the real body survives both passes" min="2" max="2">a0 \+ a1</stringmatch>
+<stringmatch name="GOMORESTACK #4: one return per pass, never a second arm" min="2" max="2">return</stringmatch>
+</decompilertest>

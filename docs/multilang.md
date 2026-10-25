@@ -258,12 +258,27 @@ toolchain in the devcontainer):
 - `morestack` prologue elision (`EntryGuardLoop` shape, pre-SSA). Without it
   every argument register gets an entry phi merging the original and
   reloaded-after-growth values — this one rule un-breaks parameter recovery
-  for essentially every non-leaf Go function.
+  for essentially every non-leaf Go function. *Measured (F3, go1.22 stripped
+  hello-world, 1,543 fns): folds 623 of 1,144 guard-carrying functions and
+  makes the whole-binary run 3.8% faster; the 521 misses are dominated by one
+  cause — the grow arm physically follows a `runtime.panic*` call kuna does
+  not know is no-return (`panicshift`, `panicunsafestringlen`, …), so the
+  bogus fallthrough edge breaks the tight-cycle shape. The fix is the
+  no-return coverage item below, not a looser matcher.*
 - Write-barrier diamond (`DiamondStore`, post-SSA) → the plain store (the
   golang cspec's `gcwrite_*` fixups cover the call; the rule removes the
   flag check), `panicIndex`/`panicSlice`/`panicdottype` bounds diamonds
   (`GuardedColdCall` — no-return list already exists), `deferproc`/
   `deferreturn` annotation, `duffzero/duffcopy` → `memset/memcpy` builtins.
+- **Go no-return coverage** (promoted by the F3 measurement): the vendored
+  `GolangFunctionsThatDoNotReturn` predates the modern runtime panic family —
+  `runtime.panicshift`, `runtime.panicunsafestringlen`,
+  `runtime.panicunsafestringnilptr` and siblings are absent, so their call
+  sites keep a bogus fallthrough edge that both corrupts the panic path's
+  rendering and breaks the morestack fold's shape on every function whose
+  grow arm follows one. One kuna-owned additive name list (gated like the
+  vendored ones), measured against the full `runtime.panic*`/`runtime.goPanic*`
+  surface of a current Go runtime.
 - pclntab already supplies names + extents; add Go-version → default-ABI
   pick, `abi0` per-symbol binding, g-register global, string recovery,
   `gotypes` harvester (stretch goal within the pack).

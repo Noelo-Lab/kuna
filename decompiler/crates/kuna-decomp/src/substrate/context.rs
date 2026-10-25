@@ -746,6 +746,10 @@ pub struct ArchContext {
     /// stands down on.  Copied from the engine `Architecture` in
     /// `build_arch_handle`.
     pub source_lang: crate::kuna_sourcelang::SourceLang,
+    /// (kuna) `option gomorestack` mode; read by
+    /// [`crate::p2_lift::kuna_gomorestack`].  Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub go_morestack: u8,
     /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
     pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
@@ -1803,6 +1807,9 @@ impl ArchContext {
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
             source_lang: Default::default(),
+            // (kuna) `option gomorestack` default auto; the real value is
+            // copied from the engine Architecture in `build_arch_handle`.
+            go_morestack: 1,
             // (kuna) `option reloadarg` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             reload_arg: true,

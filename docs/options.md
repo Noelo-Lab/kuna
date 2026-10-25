@@ -443,6 +443,9 @@ Three tiers:
 | unreachable write()/return tail keeps a fatal wrapper looking like it returns | [`noreturn_reach`](#noreturn_reach) |
 | switch whose every arm ends in a no-return call not concluded no-return | [`noreturn_reach`](#noreturn_reach) |
 | caller decodes garbage past an sshpkt_fatal-style wrapper | [`noreturn_reach`](#noreturn_reach) |
+| every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry | [`gomorestack`](#gomorestack) |
+| go function parameters recovered as phi-fed locals or missing because the entry is a loop head | [`gomorestack`](#gomorestack) |
+| do-while wrapping an entire go function body with a morestack call in its latch | [`gomorestack`](#gomorestack) |
 | the same value is assigned to one variable twice in a row with nothing in between | [`hideshadow`](#hideshadow) |
 | a comma-expression condition repeats an assignment: (v3 = a2, v4 = a0, v4 = a0, ...) | [`hideshadow`](#hideshadow) |
 | a repeated vN = dat_XXXX; around a conditional goto | [`hideshadow`](#hideshadow) |
@@ -2238,6 +2241,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-19), a no-op unless the Listing is built (option listing on) and noreturn_propagate is on. With listing on it concludes internal fatal wrappers that kuna's tail-call rule (noreturn_propagate/noreturn_error) misses because the no-return call is mid-body, the return is dead, or the function routes through a switch — where kuna would otherwise decode the cold error path / adjacent function's bytes as live code past the wrapper call, ballooning the caller and inflating GED vs ghidra (openssh sshpkt_fatal/ssh_tun_confirm, shadow oom). This is the general 'Non-Returning Functions - Discovered' reachability that ghidra runs by default. Flip OFF (with listing on) to fall back to the strict tail-call rule (keeps the post-call fall-through code).
 - **Where / provenance:** P1/external-refinement · ghidra · correctness-fix · kuna-analysis-noreturn-reach
 - **Example:** `option listing on --option noreturn_reach on`
+
+### `gomorestack` -- off | auto | always, default `auto` (destructive opt-in)
+
+- **Symptoms:** every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry; go function parameters recovered as phi-fed locals or missing because the entry is a loop head; do-while wrapping an entire go function body with a morestack call in its latch.
+- **What it does:** Fold the Go stack-growth prologue. Every non-leaf function the Go compiler emits opens with a guard - compare SP against the goroutine's stackguard, and on failure call runtime.morestack(_noctxt) and LOOP BACK TO THE FUNCTION ENTRY to re-run the prologue on the grown stack. The check is pure runtime machinery (the function's own semantics are the fall-through path), but the back-edge makes the entry a loop head, so every live argument register joins its incoming value with its after-growth value and parameter recovery sees phi-fed arguments on every non-leaf Go function. The fold matches the tight guard/grow two-block cycle sitting on the inserted entry block (the shared entry-guard-loop shape, infra/idiom.rs) with the cold arm calling a runtime.morestack* routine - the name is only accepted IN the shape, so a coincidental name in straight-line flow cuts nothing - and removes the guard edge pre-SSA (the cleanupcode window), so the entry phi never forms and the guard's compare and stackguard load die to ordinary dead-code elimination. At auto (default) the fold acts only when the image's source language is Go (the sourcelang fact), making it a structural no-op on every non-Go binary; always drops the language test for corpora with no detection signal (a stage-test bytechunk); off keeps the guard for auditing.
+- **When to flip:** Leave auto: on a Go binary the fold turns every function's entry-loop + runtime.morestack_noctxt() noise into straight-line flow and un-breaks parameter recovery; off only to audit the real prologue instructions (e.g. verifying a hand-patched stackguard). Use always on a Go function carved into a bytechunk or a raw image where detection has no buildinfo section to find.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gomorestack
+- **Example:** `option gomorestack off`
 
 ### `hideshadow` -- on | off, default `on`
 

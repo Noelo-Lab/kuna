@@ -563,6 +563,7 @@ pub fn universal_sched(
             // fed the drop.  Before `outline`, so a region whose only call was drop
             // glue becomes outline-eligible.  Inert on a non-Rust binary.
             act!(crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode::boxed("deadcode")),
+            act!(crate::p2_lift::kuna_gomorestack::ActionGoMorestack::boxed("deadcode")),
             // (kuna) outline (option `outline`, default-OFF - destructive, and inert
             // with no region supplied).  Excise a SUPPLIED single-entry region and
             // emit a call to a synthesized pseudofunction in its place.
