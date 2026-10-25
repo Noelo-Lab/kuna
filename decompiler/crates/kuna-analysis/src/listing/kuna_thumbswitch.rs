@@ -113,7 +113,7 @@ impl<'a> HalfwordTables<'a> {
                     return (Vec::new(), None);
                 };
                 let Some(index) = index.filter(|_| table == base) else { return (Vec::new(), None) };
-                let Some(cases) = guard_cases(translate, code_space, data, decoded, from, index, None)
+                let Some(cases) = guard_cases(translate, code_space, data, decoded, from, index, None).ok()
                     .filter(|&n| n >= MIN_ENTRIES)
                 else {
                     return (Vec::new(), None);
@@ -145,8 +145,9 @@ impl<'a> HalfwordTables<'a> {
 }
 
 /// The case count the range check ahead of the dispatch at `from` admits, or
-/// `None` when the instructions just before it do not compare `index` with a
-/// constant and then branch, or write `index` after the comparison.
+/// an error when the instructions just before it do not compare `index` with a
+/// constant and then branch, or write `index` after the comparison. The error
+/// names the address no decoded instruction ends at when the read stopped there.
 ///
 /// `cmp index,#n` sets the carry when `n <= index`. The branch on it reads
 /// carry and zero flags as `bhi` to exclude indices above `n` (`n + 1` cases),
@@ -163,18 +164,20 @@ pub(super) fn guard_cases(
     from: u64,
     index: Key,
     predicated: Option<&[FullOp]>,
-) -> Option<usize> {
+) -> Result<usize, Option<u64>> {
     let mut cap = FullCapture::default();
     let mut cur = from;
     let mut inclusive: Option<bool> = None;
     if let Some(dispatch) = predicated {
-        inclusive = Some(range_branch(dispatch, from, from, translate, data)??);
+        inclusive = Some(range_branch(dispatch, from, from, translate, data).flatten().ok_or(None)?);
     }
     for _ in 0..MAX_GUARD_INSNS {
-        let prev = [2, 4].iter().filter_map(|&d| cur.checked_sub(d)).find(|&at| decoded(at))?;
-        let len = decode(translate, prev, code_space, &mut cap)?;
+        let Some(prev) = [2, 4].iter().filter_map(|&d| cur.checked_sub(d)).find(|&at| decoded(at)) else {
+            return Err(Some(cur));
+        };
+        let len = decode(translate, prev, code_space, &mut cap).ok_or(None)?;
         if prev + u64::from(len) != cur {
-            return None;
+            return Err(None);
         }
         let ops = cap.ops();
         if ops.iter().any(|op| {
@@ -182,7 +185,7 @@ pub(super) fn guard_cases(
                 || matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND
                     | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN)
         }) {
-            return None;
+            return Err(None);
         }
         if let Some(inclusive) = inclusive {
             let carry = ops.iter().rev().find(|op| {
@@ -201,23 +204,23 @@ pub(super) fn guard_cases(
                 .then_some(n.offset)
             });
             if let Some(n) = bound {
-                return usize::try_from(n).ok()?.checked_add(usize::from(inclusive));
+                return usize::try_from(n).ok().and_then(|n| n.checked_add(usize::from(inclusive))).ok_or(None);
             }
             if ops.iter().any(|op| {
                 op.opcode == OpCode::CPUI_CBRANCH
                     || op.out.as_ref().is_some_and(|out| matches!(flag_name(out, translate).as_str(), "CY" | "ZR"))
             }) {
-                return None;
+                return Err(None);
             }
         }
         if inclusive.is_none() {
             if let Some(range) = range_branch(ops, cur, from, translate, data) {
-                inclusive = Some(range?);
+                inclusive = Some(range.ok_or(None)?);
             }
         }
         cur = prev;
     }
-    None
+    Err(None)
 }
 
 /// The range branch among `ops`: `None` when they hold no conditional branch,

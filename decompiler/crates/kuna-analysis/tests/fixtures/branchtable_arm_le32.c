@@ -14,7 +14,9 @@
 
    GCC 14 compresses a switch table to bytes or halfwords in ARM state at -O1
    and above, so the dispatch is written with `asm goto`; the case bodies are
-   compiled C.
+   compiled C. `early_dispatch` is the `add` form with a `beq` into the
+   dispatch ahead of its guard, so a breadth-first walk decodes the dispatch
+   before the `cmp` that falls into it.
 
    Built with GCC 14.2 for armhf musl (homebrew `musl-cross` 0.9.11); the
    SHA-256 below is that toolchain's output:
@@ -23,7 +25,7 @@
            -ffreestanding -fno-asynchronous-unwind-tables -Wl,--build-id=none \
            -Wl,--sort-section=name -o branchtable_arm_le32 branchtable_arm_le32.c
 
-   SHA-256 81d77bd8afe7e7278e95d8a0ebe3dc155a974c93e9178d4312a0566a7ddd42cb. */
+   SHA-256 93b3aa37fc16c266959a8e8d4f47a117e96fcdae82aeff124b185f7f84bb5126. */
 
 const unsigned char table[0x11000] = { 1 };
 
@@ -88,10 +90,37 @@ done:
     log_msg("ldr dispatched");
 }
 
+void __attribute__((noinline)) early_dispatch(unsigned op, unsigned flags)
+{
+    log_msg("early dispatch");
+    __asm__ goto("tst %1, #1\n\t"
+                 "beq 1f\n\t"
+                 "mov %1, %1, lsr #1\n\t"
+                 "cmp %0, #4\n"
+                 "1:\n\t"
+                 "addls pc, pc, %0, lsl #2\n\t"
+                 "b %l[dflt]\n\t"
+                 "b %l[c0]\n\t"
+                 "b %l[c1]\n\t"
+                 "b %l[c2]\n\t"
+                 "b %l[c3]\n\t"
+                 "b %l[c4]"
+                 : : "r"(op), "r"(flags) : "cc" : dflt, c0, c1, c2, c3, c4);
+c0: log_msg("early open"); goto done;
+c1: log_msg("early close"); goto done;
+c2: log_msg("early read"); goto done;
+c3: log_msg("early write"); goto done;
+c4: log_msg("early flush"); goto done;
+dflt: log_msg("early unknown");
+done:
+    log_msg("early dispatched");
+}
+
 void _start(void)
 {
     add_dispatch(table[0], (void *)table);
     ldr_dispatch(table[1], (void *)table);
+    early_dispatch(table[2], table[3]);
     for (;;)
         ;
 }

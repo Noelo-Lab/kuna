@@ -112,8 +112,8 @@ Seen first on production ARM executables and a shared library (GCC, `-fPIC`), wh
   },
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/branchtable_arm_le32",
-    "binary_sha256": "81d77bd8afe7e7278e95d8a0ebe3dc155a974c93e9178d4312a0566a7ddd42cb",
-    "binary_size": 72528,
+    "binary_sha256": "93b3aa37fc16c266959a8e8d4f47a117e96fcdae82aeff124b185f7f84bb5126",
+    "binary_size": 72920,
     "binary_source": "in-repo"
   }
 }
