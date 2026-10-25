@@ -715,6 +715,10 @@ pub struct Architecture {
     /// apart from the fact so `option sourcelang auto` restores the detected
     /// verdict and the catalog `current` reports the option, not the image.
     pub source_lang_forced: Option<crate::kuna_sourcelang::SourceLang>,
+    /// (kuna) `option fatstr` mode (`FatStrMode` as u8): rewrite a read-only
+    /// `(ptr, len)` constant call-argument pair into a bounded string literal.
+    /// Default auto (act when `source_lang` is Rust or Go).
+    pub fat_str: u8,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -2905,6 +2909,7 @@ impl Architecture {
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
+            fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3309,6 +3314,7 @@ impl Architecture {
         self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
+        self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -4118,6 +4124,7 @@ impl Architecture {
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
         ctx.source_lang = self.source_lang();
+        ctx.fat_str = self.fat_str;
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

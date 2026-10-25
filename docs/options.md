@@ -443,6 +443,9 @@ Three tiers:
 | unreachable write()/return tail keeps a fatal wrapper looking like it returns | [`noreturn_reach`](#noreturn_reach) |
 | switch whose every arm ends in a no-return call not concluded no-return | [`noreturn_reach`](#noreturn_reach) |
 | caller decodes garbage past an sshpkt_fatal-style wrapper | [`noreturn_reach`](#noreturn_reach) |
+| rust or go string argument renders as a raw rodata address beside its length instead of the literal text | [`fatstr`](#fatstr) |
+| takes_str(&DAT_00102000, 15) where the 15 bytes at that address are plainly the string | [`fatstr`](#fatstr) |
+| string literals recovered on C binaries but never on rust or go ones | [`fatstr`](#fatstr) |
 | the same value is assigned to one variable twice in a row with nothing in between | [`hideshadow`](#hideshadow) |
 | a comma-expression condition repeats an assignment: (v3 = a2, v4 = a0, v4 = a0, ...) | [`hideshadow`](#hideshadow) |
 | a repeated vN = dat_XXXX; around a conditional goto | [`hideshadow`](#hideshadow) |
@@ -2238,6 +2241,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-19), a no-op unless the Listing is built (option listing on) and noreturn_propagate is on. With listing on it concludes internal fatal wrappers that kuna's tail-call rule (noreturn_propagate/noreturn_error) misses because the no-return call is mid-body, the return is dead, or the function routes through a switch — where kuna would otherwise decode the cold error path / adjacent function's bytes as live code past the wrapper call, ballooning the caller and inflating GED vs ghidra (openssh sshpkt_fatal/ssh_tun_confirm, shadow oom). This is the general 'Non-Returning Functions - Discovered' reachability that ghidra runs by default. Flip OFF (with listing on) to fall back to the strict tail-call rule (keeps the post-call fall-through code).
 - **Where / provenance:** P1/external-refinement · ghidra · correctness-fix · kuna-analysis-noreturn-reach
 - **Example:** `option listing on --option noreturn_reach on`
+
+### `fatstr` -- off | auto | always, default `auto`
+
+- **Symptoms:** rust or go string argument renders as a raw rodata address beside its length instead of the literal text; takes_str(&DAT_00102000, 15) where the 15 bytes at that address are plainly the string; string literals recovered on C binaries but never on rust or go ones.
+- **What it does:** Render a length-carried (ptr, len) constant call-argument pair as a bounded string literal. Rust (&str, &[u8]) and Go (string) carry a string's length beside its pointer and never NUL-terminate the bytes, so the classic literal path - which reads the image until a terminator - refuses them and every string argument renders as a raw rodata address beside a magic length: takes_str((char *)&DAT_00102000, 15). The length is right there in the adjacent argument, so the rule reads exactly that many bytes and routes them through the existing bounded literal mechanism (Funcdata::get_internal_string -> the BUILTIN_STRINGDATA user-op, the constseq path, which needs no terminator): takes_str("hello multilang", 15). A pair is rewritten only when both arguments are p-code constants adjacent in the call's inputs, 2 <= len <= 4096, the pointed-at bytes are READ-ONLY in the image (query_global_properties, the msvcstrappend literal test), and the bytes decode as UTF-8 text with no control characters beyond newline/tab/CR and at least one alphanumeric - or the pointer's facing type carries a text language facet (the multilang W3 side table on the type factory), a type provider's statement that outranks the byte heuristic. The length argument is kept: the call really does pass it. At auto (default) the rule acts only when the image's source language is Rust or Go (the sourcelang fact), a structural no-op elsewhere; always drops the language test (stage-test bytechunks); off keeps the raw pointer.
+- **When to flip:** Leave auto: on a Rust or Go binary every constant &str/string argument renders as its literal text instead of a raw &DAT_ address beside a magic length. Use always on a carved bytechunk or raw image with no language signal. Flip off when auditing exact rodata addresses, or if a read-only buffer of coincidentally printable bytes is being misread as text at a call site.
+- **Where / provenance:** P5/const-pointer · kuna · type-inference · kuna-multilang-fatstr
+- **Example:** `option fatstr always`
 
 ### `hideshadow` -- on | off, default `on`
 

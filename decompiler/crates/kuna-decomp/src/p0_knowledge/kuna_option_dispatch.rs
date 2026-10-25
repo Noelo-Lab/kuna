@@ -242,6 +242,11 @@ kuna_options! { self, p1;
         self.rust_abi = mode.as_u8();
         Ok(msg)
     },
+    "fatstr" => {
+        let (mode, msg) = crate::kuna_fatstr::parse_fatstr_mode(p1).map_err(KunaError::parse)?;
+        self.fat_str = mode.as_u8();
+        Ok(msg)
+    },
     "sourcelang" => {
         let forced = crate::kuna_sourcelang::parse_option_value(p1).map_err(KunaError::parse)?;
         crate::kuna_sourcelang::set_sourcelang_env(forced);

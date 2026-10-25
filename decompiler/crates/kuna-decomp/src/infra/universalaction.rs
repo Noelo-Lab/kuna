@@ -513,6 +513,7 @@ pub fn universal_sched(
         rrow!("stringstore", "constsequence", crate::constseq::RuleStringStore::new("constsequence")),
         rrow!("memsetcopy", "constsequence", crate::kuna_memsetsequence::RuleMemsetCopy::with_group(false, "constsequence")),
         rrow!("rodatastringcopy", "constsequence", crate::kuna_rodatastring::RuleRodataStringCopy::with_group(false, "constsequence")),
+        rrow!("fatstr", "constsequence", crate::kuna_fatstr::RuleFatStr::with_group(false, "constsequence")),
         rrow!("bitfield_store", "bitfields", crate::bitfield::RuleBitFieldStore),
         rrow!("bitfield_out", "bitfields", crate::bitfield::RuleBitFieldOut),
         rrow!("bitfield_load", "bitfields", crate::bitfield::RuleBitFieldLoad),

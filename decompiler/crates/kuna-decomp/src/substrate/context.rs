@@ -746,6 +746,9 @@ pub struct ArchContext {
     /// stands down on.  Copied from the engine `Architecture` in
     /// `build_arch_handle`.
     pub source_lang: crate::kuna_sourcelang::SourceLang,
+    /// (kuna) `option fatstr` mode; read by [`crate::p5_types::kuna_fatstr`].
+    /// Copied from the engine `Architecture` in `build_arch_handle`.
+    pub fat_str: u8,
     /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
     pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
@@ -1803,6 +1806,9 @@ impl ArchContext {
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
             source_lang: Default::default(),
+            // (kuna) `option fatstr` default auto; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            fat_str: 1,
             // (kuna) `option reloadarg` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             reload_arg: true,

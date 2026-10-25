@@ -7338,6 +7338,25 @@ tier = "analysis"
 symptoms = "stripped go binary renders sub_<addr> instead of main.main and runtime.* names|go package function names missing"
 
 [[settable]]
+option = "fatstr"
+values = "off|auto|always"
+default = "auto"
+destructive = false
+phase = "P5"
+subphase = "const-pointer"
+strength = "HARD"
+rewind = "P5"
+issue = "kuna-multilang-fatstr"
+summary = "Render a length-carried (ptr, len) constant call-argument pair as a bounded string literal. Rust (&str, &[u8]) and Go (string) carry a string's length beside its pointer and never NUL-terminate the bytes, so the classic literal path - which reads the image until a terminator - refuses them and every string argument renders as a raw rodata address beside a magic length: takes_str((char *)&DAT_00102000, 15). The length is right there in the adjacent argument, so the rule reads exactly that many bytes and routes them through the existing bounded literal mechanism (Funcdata::get_internal_string -> the BUILTIN_STRINGDATA user-op, the constseq path, which needs no terminator): takes_str(\"hello multilang\", 15). A pair is rewritten only when both arguments are p-code constants adjacent in the call's inputs, 2 <= len <= 4096, the pointed-at bytes are READ-ONLY in the image (query_global_properties, the msvcstrappend literal test), and the bytes decode as UTF-8 text with no control characters beyond newline/tab/CR and at least one alphanumeric - or the pointer's facing type carries a text language facet (the multilang W3 side table on the type factory), a type provider's statement that outranks the byte heuristic. The length argument is kept: the call really does pass it. At auto (default) the rule acts only when the image's source language is Rust or Go (the sourcelang fact), a structural no-op elsewhere; always drops the language test (stage-test bytechunks); off keeps the raw pointer."
+use_when = "Leave auto: on a Rust or Go binary every constant &str/string argument renders as its literal text instead of a raw &DAT_ address beside a magic length. Use always on a carved bytechunk or raw image with no language signal. Flip off when auditing exact rodata addresses, or if a read-only buffer of coincidentally printable bytes is being misread as text at a call site."
+example = "option fatstr always"
+source_decompiler = "kuna"
+inspiration = "Rust &str / Go string fat-pointer call ABI measured against the NUL-terminated literal path (PrintC::pushPtrCharConstant requires a terminator); the rewrite reuses constseq's BUILTIN_STRINGDATA bounded-literal mechanism"
+change_kind = "type-inference"
+tier = "transform"
+symptoms = "rust or go string argument renders as a raw rodata address beside its length instead of the literal text|takes_str(&DAT_00102000, 15) where the 15 bytes at that address are plainly the string|string literals recovered on C binaries but never on rust or go ones"
+
+[[settable]]
 option = "sourcelang"
 values = "auto|c|rust|go|swift"
 default = "auto"
