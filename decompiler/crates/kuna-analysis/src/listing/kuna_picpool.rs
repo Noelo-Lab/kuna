@@ -35,7 +35,9 @@
 //! as a *displacement* only when
 //!
 //!  * it comes out of the same read-only, pointer-sized, pointer-aligned slot
-//!    [`PoolImage`] already vouches for — the image's copy of it is what runs;
+//!    [`PoolImage`] already vouches for — the image's copy of it is what runs —
+//!    by a `LOAD` from a constant address (A32) or a `COPY` of the slot itself
+//!    (Thumb's 16-bit `ldr` and `ldr.w`, whose SLEIGH exports the slot);
 //!  * whatever the word itself looks like: in an image mapped low (a non-PIE
 //!    ARM executable at 0x10000) a displacement often lands in a mapped section
 //!    by chance, and only the PC fold below decides that it is one;
@@ -68,7 +70,9 @@
 //! written. A load through base plus a pool word is filed as a
 //! [`XrefKind::Read`] of the slot, and the slot's file word, when it is a mapped
 //! address, as a [`XrefKind::Data`] reference: in a non-PIE executable the
-//! linker writes a local function's address there with no relocation.
+//! linker writes a local function's address there with no relocation. On ARM a
+//! Thumb function's word, and a Thumb function's PC-composed address, carry
+//! bit 0, which is stripped when what remains is code.
 //!
 //! # Joins
 //!
@@ -112,7 +116,13 @@ impl<'a> GotImage<'a> {
             return None;
         }
         let hi = lo.saturating_add(sec.size().min(data.len() as u64));
-        Some(GotImage { lo, hi, data, ptr: if file.is_64() { 8 } else { 4 }, little_endian: file.is_little_endian() })
+        Some(GotImage {
+            lo,
+            hi,
+            data,
+            ptr: if file.is_64() { 8 } else { 4 },
+            little_endian: file.is_little_endian(),
+        })
     }
 
     fn contains(&self, vma: u64) -> bool {
@@ -139,10 +149,27 @@ impl<'a> GotImage<'a> {
 pub(super) struct Image<'a> {
     pub pool: &'a PoolImage<'a>,
     pub mapped: &'a [(u64, u64)],
+    /// The executable spans, where a Thumb code pointer may land.
+    pub exec: &'a [(u64, u64)],
+    /// An ARM image, whose Thumb code pointers carry bit 0.
+    pub arm: bool,
     pub data_space: Option<&'a Rc<AddrSpace>>,
     pub got: Option<&'a GotImage<'a>>,
     /// The callee-saved register spans, which a value survives a call in.
     pub preserved: &'a [(u64, u64)],
+}
+
+impl Image<'_> {
+    /// The address a pointer value names: on ARM a Thumb function's pointer is
+    /// its entry with bit 0 set, which is stripped only when what remains is
+    /// code.
+    fn target(&self, v: u64) -> u64 {
+        if self.arm && v & 1 == 1 && in_range(self.exec, v & !1) {
+            v & !1
+        } else {
+            v
+        }
+    }
 }
 
 /// How many instructions a pool value may travel before the `add` that composes
@@ -453,7 +480,7 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
                     found.push((slot, XrefKind::Read, addr.deps, addr.origin));
                     if let Some(word) = g.word_at(slot) {
                         if looks_like_address(word) && in_range(mapped, word) {
-                            found.push((word, XrefKind::Data, addr.deps, addr.origin));
+                            found.push((img.target(word), XrefKind::Data, addr.deps, addr.origin));
                         }
                     }
                 }
@@ -470,7 +497,7 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
         val.v &= mask(out.size);
         if let Key::Reg(off, size) = key {
             if val.seed && val.pc && in_range(mapped, val.v) {
-                found.push((val.v, XrefKind::Data, val.deps, val.origin));
+                found.push((img.target(val.v), XrefKind::Data, val.deps, val.origin));
                 if !val.got && got.is_some_and(|g| g.contains(val.v)) {
                     new_bases.retain(|(b, _)| !spans_overlap(b.off, b.size, off, size));
                     new_bases.push((Pending { off, size, word: val.v, hops: 0, origin: 0 }, val.deps));
@@ -487,6 +514,11 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
 /// The first such load, which on every architecture that forms these pairs is
 /// also the only one: a literal load's address is a decode-time constant, and a
 /// multi-register load (`ldm`) computes its addresses from a base register.
+///
+/// A32 lifts `ldr rX,[pc,#..]` as a `LOAD` from a constant address. Thumb's
+/// literal loads, both the 16-bit form and `ldr.w`, export the slot itself
+/// (`*:4 reloc`, the PC already word-aligned), so they lift as a `COPY` out of
+/// a data-space varnode.
 fn seed(
     vma: u64,
     ops: &[FullOp],
@@ -495,28 +527,38 @@ fn seed(
 ) -> Option<Pending> {
     let data_index = data.map(|d| d.get_index());
     for op in ops {
-        if op.opcode != OpCode::CPUI_LOAD {
-            continue;
-        }
         let Some(out) = &op.out else { continue };
+        let addr = match op.opcode {
+            OpCode::CPUI_LOAD => {
+                // `in0` is the space id: a load through some other space is not
+                // a read of the image.
+                let through_image = op
+                    .ins
+                    .first()
+                    .zip(data_index)
+                    .is_some_and(|(vn, idx)| vn.offset == u64::try_from(idx).unwrap_or(u64::MAX));
+                match op.ins.get(1).filter(|vn| through_image && is_constant(vn)) {
+                    Some(vn) => vn.offset,
+                    None => continue,
+                }
+            }
+            OpCode::CPUI_COPY => match op.ins.first() {
+                Some(vn) if in_data_space(vn, data) && vn.size == out.size => vn.offset,
+                _ => continue,
+            },
+            _ => continue,
+        };
         if !matches!(key_of(out, data), Some(Key::Reg(..))) || out.size != pool.ptr_width() {
             continue;
         }
-        // `in0` is the space id: a load through some other space is not a read of
-        // the image.
-        let through_image = op
-            .ins
-            .first()
-            .zip(data_index)
-            .is_some_and(|(vn, idx)| vn.offset == u64::try_from(idx).unwrap_or(u64::MAX));
-        if !through_image {
-            continue;
-        }
-        let Some(addr) = op.ins.get(1).filter(|vn| is_constant(vn)) else { continue };
-        let Some(word) = pool.word_at(addr.offset) else { continue };
+        let Some(word) = pool.word_at(addr) else { continue };
         return Some(Pending { off: out.offset, size: out.size, word, hops: 0, origin: vma });
     }
     None
+}
+
+fn in_data_space(vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> bool {
+    matches!((vn.space.as_ref(), data), (Some(s), Some(d)) if Rc::ptr_eq(s, d))
 }
 
 /// Does control leave the straight-line run here, so the fall-through is not the
@@ -526,13 +568,14 @@ fn seed(
 /// it writes nothing, and ARM spells a predicated instruction that way. A call is
 /// not either: it ends only the values the calling convention does not preserve
 /// (`survives_calls`), since GCC schedules `ldr r4,[pc,#..]` before a call and
-/// its `add r4,pc,r4` after it.
+/// its `add r4,pc,r4` after it. A `CALLOTHER` ends everything, except inside a
+/// call, where it is the Thumb `bl`'s mode switch and the call already decides.
 fn leaves_the_run(ops: &[FullOp]) -> bool {
-    ops.iter().any(|op| {
-        matches!(
-            op.opcode,
-            OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_RETURN
-        )
+    let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+    ops.iter().any(|op| match op.opcode {
+        OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN => true,
+        OpCode::CPUI_CALLOTHER => !calls,
+        _ => false,
     })
 }
 
@@ -741,6 +784,20 @@ mod tests {
         )]
     }
 
+    /// Thumb's `ldr rN,[pc,#imm]`: the slot is exported as a data-space
+    /// varnode, so the literal load is a `COPY`, not a `LOAD`.
+    fn thumb_ldr(s: &Spaces, reg: u64, at: u64) -> Vec<FullOp> {
+        vec![op(OpCode::CPUI_COPY, Some(vn(&s.reg, reg, 4)), vec![vn(&s.ram, at, 4)])]
+    }
+
+    /// Thumb's `add rN,pc` at `vma`: the PC reads as `inst_start + 4`.
+    fn thumb_add_pc(s: &Spaces, reg: u64, vma: u64) -> Vec<FullOp> {
+        vec![
+            op(OpCode::CPUI_INT_ADD, Some(vn(&s.uniq, 0x2f00, 4)), vec![vn(&s.konst, vma, 4), vn(&s.konst, 4, 4)]),
+            op(OpCode::CPUI_INT_ADD, Some(vn(&s.reg, reg, 4)), vec![vn(&s.reg, reg, 4), vn(&s.uniq, 0x2f00, 4)]),
+        ]
+    }
+
     /// `add rN,pc,rN` at `vma`, exactly as the ARM SLEIGH lifts it: the PC is
     /// `inst_start + 8`, formed in a temporary first.
     fn add_pc(s: &Spaces, reg: u64, vma: u64) -> Vec<FullOp> {
@@ -763,6 +820,7 @@ mod tests {
         pp: PicPool,
         pool: &'a PoolImage<'a>,
         mapped: &'a [(u64, u64)],
+        exec: &'a [(u64, u64)],
         got: Option<&'a GotImage<'a>>,
         preserved: &'a [(u64, u64)],
         s: &'a Spaces,
@@ -770,16 +828,22 @@ mod tests {
 
     impl<'a> Walk<'a> {
         fn new(s: &'a Spaces, pool: &'a PoolImage<'a>, mapped: &'a [(u64, u64)]) -> Self {
-            Walk { pp: PicPool::default(), pool, mapped, got: None, preserved: &[], s }
+            Walk { pp: PicPool::default(), pool, mapped, exec: &[], got: None, preserved: &[], s }
         }
 
         fn step(&mut self, vma: u64, ops: &[FullOp], branches: &[u64]) -> Option<u64> {
+            self.step_len(vma, 4, ops, branches)
+        }
+
+        fn step_len(&mut self, vma: u64, len: u32, ops: &[FullOp], branches: &[u64]) -> Option<u64> {
             let raw: Vec<RawOp> =
                 ops.iter().map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }).collect();
-            let fall = classify(&raw, vma, 4).fall_through;
+            let fall = classify(&raw, vma, len).fall_through;
             let img = Image {
                 pool: self.pool,
                 mapped: self.mapped,
+                exec: self.exec,
+                arm: true,
                 data_space: Some(&self.s.ram),
                 got: self.got,
                 preserved: self.preserved,
@@ -862,6 +926,24 @@ mod tests {
         w.step(0x660, &call, &[]);
         w.step(0x664, &add_pc(&s, 0x30, 0x664), &[]);
         assert_eq!(refs(&w.finish()), vec![(0x664, 0x4ab, XrefKind::Data)]);
+    }
+
+    /// Thumb's `bl` also switches the instruction set through a `CALLOTHER`;
+    /// inside a call that is no more than the call, so a word in a
+    /// callee-saved register still survives it.
+    #[test]
+    fn a_thumb_call_keeps_a_word_in_a_callee_saved_register() {
+        let (s, pool) = (spaces(), image());
+        let bl = vec![
+            op(OpCode::CPUI_CALLOTHER, None, vec![vn(&s.konst, 62, 4), vn(&s.reg, 0x69, 1)]),
+            op(OpCode::CPUI_CALL, None, vec![vn(&s.ram, 0x700, 4)]),
+        ];
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.preserved = &[(0x30, 0x34)];
+        w.step_len(0x660, 2, &thumb_ldr(&s, 0x30, 0x6a0), &[]);
+        w.step_len(0x662, 4, &bl, &[]);
+        w.step_len(0x666, 2, &thumb_add_pc(&s, 0x30, 0x666), &[]);
+        assert_eq!(refs(&w.finish()), vec![(0x666, 0x4a9, XrefKind::Data)], "0x66a + (-0x1c1)");
     }
 
     /// The two refusals, each of which would be a fabricated reference.
@@ -965,6 +1047,30 @@ mod tests {
         assert!(v.refs.is_empty() && v.displaced.is_empty());
     }
 
+    /// Thumb spells the literal load as a copy out of the image and reads the
+    /// PC as `inst_start + 4`; the pair composes the same way, and the word is
+    /// displaced, not `poolref`'s pointer.
+    #[test]
+    fn a_thumb_literal_copy_composes_with_the_thumb_pc() {
+        let (s, pool) = (spaces(), image());
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.step_len(0x660, 2, &thumb_ldr(&s, 0x20, 0x6a0), &[]);
+        w.step_len(0x662, 2, &thumb_add_pc(&s, 0x20, 0x662), &[]);
+        let v = w.finish();
+        assert_eq!(refs(&v), vec![(0x662, 0x4a5, XrefKind::Data)], "0x666 + (-0x1c1)");
+        assert!(v.displaced.contains(&0x660));
+    }
+
+    /// A copy out of the image that is not a pool slot is no literal load.
+    #[test]
+    fn a_copy_from_outside_the_pool_is_not_a_literal_load() {
+        let (s, pool) = (spaces(), image());
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.step_len(0x660, 2, &thumb_ldr(&s, 0x20, 0x600), &[]);
+        w.step_len(0x662, 2, &thumb_add_pc(&s, 0x20, 0x662), &[]);
+        assert!(w.finish().refs.is_empty());
+    }
+
     /// Nothing is tracked past the hop bound.
     #[test]
     fn a_word_is_not_believed_forever() {
@@ -1050,6 +1156,31 @@ mod tests {
         let v = w.finish();
         assert_eq!(slot_refs(&v, 0x604), vec![(0x800, XrefKind::Data)]);
         assert_eq!(slot_refs(&v, 0x704), SLOT_REFS.to_vec());
+    }
+
+    /// The Thumb GOT idiom: a slot holding a Thumb function's entry with bit 0
+    /// set names the function, and the bit is stripped only where the rest is
+    /// code.
+    #[test]
+    fn a_thumb_slot_word_names_the_function_without_its_thumb_bit() {
+        const ODD: [u8; 0x20] = {
+            let mut g = [0u8; 0x20];
+            g[0x10] = 0x51;
+            g[0x11] = 0x14;
+            g
+        };
+        let (s, pool) = (spaces(), got_pool());
+        let got = GotImage { lo: 0x800, hi: 0x820, data: &ODD[..], ptr: 4, little_endian: true };
+        for (exec, named) in [(&[(0x1000u64, 0x2000u64)][..], 0x1450), (&[][..], 0x1451)] {
+            let mut w = Walk::new(&s, &pool, &GOT_MAP);
+            w.got = Some(&got);
+            w.exec = exec;
+            w.step_len(0x604, 2, &thumb_ldr(&s, R4, 0x6a0), &[]);
+            w.step_len(0x606, 2, &thumb_ldr(&s, R2, 0x6a4), &[]);
+            w.step_len(0x608, 2, &thumb_add_pc(&s, R4, 0x608), &[]);
+            w.step_len(0x60a, 2, &slot_load(&s), &[]);
+            assert_eq!(slot_refs(&w.finish(), 0x60a), vec![(0x810, XrefKind::Read), (named, XrefKind::Data)]);
+        }
     }
 
     /// The join rule. 0x620 is reached from 0x608, where r4 is the GOT, and from

@@ -733,6 +733,8 @@ fn descend(
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
         pool,
         mapped: &mapped,
+        exec: &exec_set,
+        arm: file.architecture() == object::Architecture::Arm,
         data_space: data_space.as_ref(),
         got: got.as_ref(),
         preserved: &preserved,

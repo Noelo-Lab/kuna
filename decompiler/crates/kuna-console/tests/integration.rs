@@ -183,6 +183,8 @@ mod verify_go_pclntab;
 
 #[path = "verify_gotxref.rs"]
 mod verify_gotxref;
+#[path = "verify_gotxref_thumb.rs"]
+mod verify_gotxref_thumb;
 
 #[path = "verify_hostile_symbol_sizes.rs"]
 mod verify_hostile_symbol_sizes;
