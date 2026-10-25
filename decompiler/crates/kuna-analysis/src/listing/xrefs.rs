@@ -78,7 +78,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
-use super::kuna_picpool::{self, GotImage, PicPool};
+use super::kuna_picpool::{GotImage, PicPool};
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -1014,6 +1014,7 @@ fn descend(
                 }
                 let text = if read.cases.is_empty() { String::new() } else { assembly(translate, vma, &code_space) };
                 st.take_switch(vma, entry, &read.cases, read.stated, max_entries, &text);
+                picpool.cases(vma, &read.cases);
                 insn_queue.extend(read.cases.iter().map(|&target| (target, mode)));
             }
             insn_queue.pop_front()
@@ -1088,7 +1089,7 @@ fn descend(
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
-            let pic = match pool.as_ref() {
+            let seeded = match pool.as_ref() {
                 Some(p) => picpool.step(
                     vma,
                     len,
@@ -1100,16 +1101,15 @@ fn descend(
                     &preserved,
                     if c.flow.is_call { &[] } else { &c.flows },
                 ),
-                None => kuna_picpool::Step { refs: Vec::new(), seeded: None },
+                None => None,
             };
-            let picrefs = pic.refs;
-            let pointer = pic.seeded.and_then(|word| {
+            let pointer = seeded.and_then(|word| {
                 let i = drefs.iter().position(|&r| r == (word, XrefKind::Data))?;
                 Some(drefs.remove(i).0)
             });
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let mut text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() && pointer.is_none() {
+            let mut text = if c.flows.is_empty() && drefs.is_empty() && pointer.is_none() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
@@ -1202,14 +1202,12 @@ fn descend(
                         text = assembly(translate, vma, &code_space);
                     }
                     st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                    picpool.cases(vma, &cases);
                     insn_queue.extend(cases.iter().map(|&target| (target, mode)));
                 }
             }
 
             for &(to, kind) in &drefs {
-                st.file(vma, to, kind, &text);
-            }
-            for &(to, kind) in &picrefs {
                 st.file(vma, to, kind, &text);
             }
             // Both halves the deferred base-relative pass needs are pure
@@ -1231,10 +1229,17 @@ fn descend(
             }
         }
 
+        let verdict = picpool.finish(entry);
         for (vma, word, text) in held {
-            if !picpool.displaced(vma) {
+            if !verdict.displaced.contains(&vma) {
                 st.file(vma, word, XrefKind::Data, &text);
             }
+        }
+        // Rendered here for the same reason as `picbase`'s rows below: few
+        // instructions compose an address.
+        for &(vma, to, kind) in &verdict.refs {
+            let text = assembly(translate, vma, &code_space);
+            st.file(vma, to, kind, &text);
         }
 
         // (kuna) `picbase`: the references this body forms THROUGH the base
