@@ -32,6 +32,15 @@
 //! come from the pclntab (stripped) or the symbol table (unstripped), so a
 //! stripped Go binary folds too.
 //!
+//! # The truncated form
+//!
+//! An unstripped image's discovered no-return propagation reaches
+//! `runtime.morestack*` through its `newstack` tail and marks it diverging,
+//! so flow halts at the call and the loop above never lifts. The matcher
+//! accepts that form too ([`crate::idiom::match_entry_guard_halt`]): the same
+//! guard at the function start, the cold arm a diverging block whose only
+//! call is the growth routine. Same shape discipline, same edit.
+//!
 //! # The edit, and the window
 //!
 //! One `remove_branch` on the guard's cold edge plus the unreachable-block
@@ -52,7 +61,7 @@
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::funcdata::Funcdata;
-use crate::idiom::match_entry_guard_loop;
+use crate::idiom::{match_entry_guard_halt, match_entry_guard_loop};
 
 /// The three-valued `gomorestack` gate, stored on the `Architecture` as a `u8`
 /// (the `rustabi` pattern).
@@ -169,7 +178,12 @@ impl Action for ActionGoMorestack {
             return 0;
         }
         let mut changed = 0;
-        while let Some(m) = match_entry_guard_loop(data, &is_morestack_name) {
+        // The loop form, and the truncated form an unstripped image's
+        // discovered no-return facts produce (the back-edge never lifted, the
+        // cold arm halts at the call) — same guard, same edit.
+        while let Some(m) = match_entry_guard_loop(data, &is_morestack_name)
+            .or_else(|| match_entry_guard_halt(data, &is_morestack_name))
+        {
             data.remove_branch(m.guard_block, m.guard_edge)
                 .expect("ActionGoMorestack: removeBranch");
             data.remove_unreachable_blocks(false, true)

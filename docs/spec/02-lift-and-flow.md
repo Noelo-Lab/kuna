@@ -2611,12 +2611,28 @@ readers and die to the ordinary dead-code fixpoint. Deleting the edge asserts
 what the runtime guarantees: the function body runs on a stack that holds its
 frame.
 
+**The truncated form.** On an unstripped image the discovered no-return
+propagation reaches `runtime.morestack*` through its `newstack` tail, marks it
+diverging, and flow then HALTS at the prologue's call: the back-edge is never
+lifted, no entry block is inserted, and the loop shape above cannot exist —
+which silently kept the guard on every function of such an image while its
+stripped twin folded. The matcher therefore accepts a second, equally tight
+sub-shape (`decompiler/crates/kuna-decomp/src/infra/idiom.rs
+(match_entry_guard_halt)`): the cold arm is a basic block with no out-edges
+whose ONLY call is the matched runtime routine, its one predecessor ends in a
+CBRANCH, and that predecessor is the function start (a block nothing enters —
+without the back-edge there is no inserted entry block). The edit is the same
+guard-edge cut. The no-other-call refusal is what keeps a real panic arm —
+also diverging, also guarded — out of reach: a genuine runtime prologue arm
+contains nothing but the growth call.
+
 **Modes.** `auto` (shipped default) acts only when the image's source language
 is Go — the `sourcelang` fact (chapter 01), so the pass is a structural no-op
 on every non-Go binary and the XML datatest corpus cannot see it; `always`
 drops the language test for corpora with no detection signal (the stage test's
 bytechunk); `off` keeps the guard for auditing a hand-patched stackguard.
-Pinned by `tests/stages/kuna-gomorestack.xml` (two-pass, off = the `while` loop
-and the `morestack_noctxt()` call render, always = both gone and the body
-survives) and by the kuna-console `verify_go_morestack` gate, which builds a
-real stripped Go binary and proves the detection-driven `auto` path end to end.
+Pinned by `tests/stages/kuna-gomorestack.xml` (four passes: off/always over
+the loop form, then `option noreturn runtime.morestack_noctxt` reproduces the
+truncated form and off/always pin it) and by the kuna-console
+`verify_go_morestack` gate, which builds a real stripped Go binary and proves
+the detection-driven `auto` path end to end.
