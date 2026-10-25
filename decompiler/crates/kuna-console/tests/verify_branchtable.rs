@@ -7,6 +7,7 @@
 //! reads a callback's slot through it, calls `set_timeout` and forms a string.
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use kuna_analysis::listing::xrefs::{self, XrefIndex, XrefKind};
 use kuna_console::engine::bootstrap_from_object;
@@ -68,12 +69,23 @@ fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
 }
 
-fn index() -> XrefIndex {
+/// The fixture's reference index under the default options, built once for
+/// every test that reads it.
+fn index() -> &'static XrefIndex {
+    static INDEX: OnceLock<XrefIndex> = OnceLock::new();
+    INDEX.get_or_init(|| build(&[]))
+}
+
+/// The fixture's reference index with the kuna `options` set before analysis.
+fn build(options: &[(&str, &str)]) -> XrefIndex {
     let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/branchtable_arm_le32");
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
         .expect("bootstrap fixture with built processor specs");
+    for &(name, value) in options {
+        prog.arch_mut().set_kuna_option(name, value).expect("option applies");
+    }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let bytes = std::fs::read(&bin).expect("fixture readable");
