@@ -133,6 +133,26 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
     Classified { flow, flows, fall_through }
 }
 
+impl Classified {
+    /// (kuna `armframes`) A predicated computed jump (A32 `addls pc,pc,rN,lsl #2`)
+    /// lifts to a `CBRANCH` to the next instruction ahead of its `BRANCHIND`.
+    /// Take that skip as the jump's fall-through rather than one of its `flows`,
+    /// as a predicated call's skip already is. The walks that read A32 tables
+    /// apply it; [`classify`] itself keeps the skip.
+    pub fn skip_falls_through(&mut self, vma: u64, len: u32) {
+        let skip = vma.wrapping_add(u64::from(len));
+        if !(self.flow.is_computed && self.flow.is_jump && !self.flow.is_call)
+            || self.fall_through.is_some()
+            || !self.flows.contains(&skip)
+        {
+            return;
+        }
+        self.flows.retain(|&t| t != skip);
+        self.flow.has_fallthrough = true;
+        self.fall_through = Some(skip);
+    }
+}
+
 /// The absolute target VMA carried by a branch/call op's `in0`, or `None` if the
 /// `in0` is constant-space (p-code-relative, intra-instruction — gotcha 1) or
 /// absent.
@@ -189,6 +209,35 @@ mod tests {
         assert!(c.flow.has_fallthrough);
         assert_eq!(c.flows, vec![0x2000]);
         assert_eq!(c.fall_through, Some(0x1004));
+    }
+
+    /// A predicated computed jump keeps its skip as a flow until a walk that
+    /// reads A32 tables takes it as the fall-through.
+    #[test]
+    fn predicated_computed_jump_skip_falls_through_on_request() {
+        let (ram, _cst) = spaces();
+        let ops = vec![
+            op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))),
+            op(OpCode::CPUI_BRANCHIND, Some(vn(&ram, 0))),
+        ];
+        let mut c = classify(&ops, 0x1000, 4);
+        assert_eq!((c.flows.clone(), c.fall_through), (vec![0x1004], None));
+        c.skip_falls_through(0x1000, 4);
+        assert!(c.flows.is_empty());
+        assert_eq!(c.fall_through, Some(0x1004));
+        assert!(c.flow.has_fallthrough && c.flow.is_computed);
+    }
+
+    /// A conditional branch to the next instruction is not a computed jump's
+    /// skip and is left alone.
+    #[test]
+    fn skip_falls_through_leaves_other_flows() {
+        let (ram, _cst) = spaces();
+        let ops = vec![op(OpCode::CPUI_CBRANCH, Some(vn(&ram, 0x1004))), op(OpCode::CPUI_BRANCH, Some(vn(&ram, 0x2000)))];
+        let mut c = classify(&ops, 0x1000, 4);
+        let before = (c.flows.clone(), c.fall_through);
+        c.skip_falls_through(0x1000, 4);
+        assert_eq!((c.flows, c.fall_through), before);
     }
 
     /// Unconditional BRANCH: the target, NO fall-through.
