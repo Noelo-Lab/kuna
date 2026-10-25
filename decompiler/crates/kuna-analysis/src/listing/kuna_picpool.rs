@@ -36,8 +36,9 @@
 //!
 //!  * it comes out of the same read-only, pointer-sized, pointer-aligned slot
 //!    [`PoolImage`] already vouches for — the image's copy of it is what runs;
-//!  * `poolref` **declined** it, so the two mechanisms never claim one word: a
-//!    value that is already a mapped address is a pointer, not a displacement;
+//!  * whatever the word itself looks like: in an image mapped low (a non-PIE
+//!    ARM executable at 0x10000) a displacement often lands in a mapped section
+//!    by chance, and only the PC fold below decides that it is one;
 //!  * a later instruction in the same straight-line run folds it, through
 //!    `COPY`/`INT_ADD`/`INT_SUB` alone, together with a constant this
 //!    instruction materialized from its **own address** (SLEIGH spells a PC read
@@ -56,6 +57,18 @@
 //! settled by the PC, and applying it would discard every reference in an image
 //! mapped low — which the filing Android PIE is, its whole layout living under
 //! 0x2828.
+//!
+//! # GOT bases
+//!
+//! ARM `-fPIC` code makes the GOT address once per function with the same pair
+//! (`ldr r4,[pc,#a]; add r4,pc,r4`), keeps it in a callee-saved register, and
+//! reads slots through it (`ldr r2,[pc,#b]; ldr r2,[r4,r2]`). A composed value
+//! that lands in `.got` is therefore tracked as a base along every edge of the
+//! body, and across calls when its register is preserved, until the register is
+//! written. A load through base plus a pool word is filed as a
+//! [`XrefKind::Read`] of the slot, and the slot's file word, when it is a mapped
+//! address, as a [`XrefKind::Data`] reference: in a non-PIE executable the
+//! linker writes a local function's address there with no relocation.
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -64,8 +77,54 @@ use kuna_base::space::{spacetype, AddrSpace};
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
+use object::read::{Object, ObjectSection};
+
 use super::kuna_poolref::PoolImage;
-use super::xrefs::{in_range, looks_like_address, FullOp};
+use super::xrefs::{in_range, looks_like_address, FullOp, XrefKind};
+
+/// The file bytes of `.got`, which [`PoolImage`] leaves out because the section
+/// is writable. A slot for a local function holds its address in a non-PIE
+/// executable and the same word as an in-place `R_ARM_RELATIVE` addend in a PIE;
+/// an import's slot holds 0 and names nothing.
+pub(super) struct GotImage<'a> {
+    lo: u64,
+    hi: u64,
+    data: &'a [u8],
+    ptr: u32,
+    little_endian: bool,
+}
+
+impl<'a> GotImage<'a> {
+    pub(super) fn new(file: &'a object::File<'a>) -> Option<Self> {
+        let sec = file.section_by_name(".got")?;
+        let lo = sec.address();
+        let data = sec.data().ok()?;
+        if lo == 0 || data.is_empty() {
+            return None;
+        }
+        let hi = lo.saturating_add(sec.size().min(data.len() as u64));
+        Some(GotImage { lo, hi, data, ptr: if file.is_64() { 8 } else { 4 }, little_endian: file.is_little_endian() })
+    }
+
+    fn contains(&self, vma: u64) -> bool {
+        vma >= self.lo && vma < self.hi
+    }
+
+    /// The pointer-sized, pointer-aligned slot word at `vma`.
+    fn word_at(&self, vma: u64) -> Option<u64> {
+        if !self.contains(vma) || vma % u64::from(self.ptr) != 0 {
+            return None;
+        }
+        let off = usize::try_from(vma - self.lo).ok()?;
+        let b = self.data.get(off..off.checked_add(self.ptr as usize)?)?;
+        Some(match (self.ptr, self.little_endian) {
+            (8, true) => u64::from_le_bytes(b.try_into().ok()?),
+            (8, false) => u64::from_be_bytes(b.try_into().ok()?),
+            (_, true) => u64::from(u32::from_le_bytes(b.try_into().ok()?)),
+            (_, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
+        })
+    }
+}
 
 /// How many instructions a pool value may travel before the `add` that composes
 /// it. GCC and Clang emit the pair adjacent (the displacement is measured from
@@ -109,6 +168,9 @@ struct Pending {
 #[derive(Default)]
 pub(super) struct PicPool {
     at: HashMap<u64, Vec<Pending>>,
+    /// GOT bases, keyed by the instruction they reach like `at`, but carried
+    /// along every edge with no hop bound.
+    bases_at: HashMap<u64, Vec<Pending>>,
 }
 
 impl PicPool {
@@ -116,6 +178,7 @@ impl PicPool {
     ///
     /// Called for every instruction of the function in whatever order the walk
     /// reaches them; the answer is empty for all but the `add` of a PIC pair.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn step(
         &mut self,
         vma: u64,
@@ -124,25 +187,57 @@ impl PicPool {
         pool: &PoolImage,
         mapped: &[(u64, u64)],
         data_space: Option<&Rc<AddrSpace>>,
-    ) -> Vec<u64> {
+        got: Option<&GotImage>,
+        preserved: &[(u64, u64)],
+        branch_targets: &[u64],
+    ) -> Vec<(u64, XrefKind)> {
         // Hashing every instruction's address would be this walk's whole cost on
         // an architecture that never forms one of these pairs; nothing is in
         // flight until a pool load puts it there.
         let pending =
             if self.at.is_empty() { Vec::new() } else { self.at.remove(&vma).unwrap_or_default() };
-        let (mut refs, mut carry) = if pending.is_empty() {
+        let mut bases =
+            if self.bases_at.is_empty() { Vec::new() } else { self.bases_at.remove(&vma).unwrap_or_default() };
+        let (mut refs, mut carry) = if pending.is_empty() && bases.is_empty() {
             (Vec::new(), Vec::new())
         } else {
-            evaluate(vma, ops, &pending, mapped, data_space)
+            let ev = evaluate(vma, ops, &pending, &bases, mapped, data_space, got);
+            bases.retain(|b| {
+                !ev.written.iter().any(|&(off, size)| spans_overlap(b.off, b.size, off, size))
+            });
+            bases.extend(ev.new_bases);
+            (ev.found, ev.survivors)
         };
+        let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+        if !bases.is_empty() {
+            if calls {
+                bases.retain(|b| survives_calls(b, preserved));
+            }
+            let falls = !ops.iter().any(|op| {
+                matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN)
+            });
+            let next = vma.wrapping_add(u64::from(len));
+            let succ = falls.then_some(next).into_iter().chain(branch_targets.iter().copied());
+            for to in succ {
+                match self.bases_at.get_mut(&to) {
+                    Some(have) => have.retain(|h| bases.contains(h)),
+                    None => {
+                        self.bases_at.insert(to, bases.clone());
+                    }
+                }
+            }
+        }
 
         // A load out of the pool starts (or restarts) the value its register
         // holds, so the pair `ldr; add` needs no separate entry point.
-        if let Some(fresh) = seed(ops, pool, mapped, data_space) {
+        if let Some(fresh) = seed(ops, pool, data_space) {
             carry.retain(|p| !overlaps(p, &fresh));
             carry.push(fresh);
         }
 
+        if calls {
+            carry.retain(|p| survives_calls(p, preserved));
+        }
         if !carry.is_empty() && !leaves_the_run(ops) {
             let next = vma.wrapping_add(u64::from(len));
             let slot = self.at.entry(next).or_default();
@@ -163,21 +258,48 @@ impl PicPool {
     }
 }
 
+/// What one instruction did to the tracked values.
+struct Eval {
+    found: Vec<(u64, XrefKind)>,
+    survivors: Vec<Pending>,
+    written: Vec<(u64, u32)>,
+    new_bases: Vec<Pending>,
+}
+
 /// The composed addresses this instruction forms, and the tracked values that
 /// survive it.
 fn evaluate(
     vma: u64,
     ops: &[FullOp],
     pending: &[Pending],
+    bases: &[Pending],
     mapped: &[(u64, u64)],
     data: Option<&Rc<AddrSpace>>,
-) -> (Vec<u64>, Vec<Pending>) {
-    let mut vals: Vec<(Key, Known)> =
-        pending.iter().map(|p| (Key::Reg(p.off, p.size), Known::seed(p.word))).collect();
+    got: Option<&GotImage>,
+) -> Eval {
+    let mut vals: Vec<(Key, Known)> = bases
+        .iter()
+        .map(|b| (Key::Reg(b.off, b.size), Known { v: b.word, seed: true, pc: true, got: true }))
+        .chain(pending.iter().map(|p| (Key::Reg(p.off, p.size), Known::seed(p.word))))
+        .collect();
     let mut written: Vec<(u64, u32)> = Vec::new();
-    let mut found: Vec<u64> = Vec::new();
+    let mut found: Vec<(u64, XrefKind)> = Vec::new();
+    let mut new_bases: Vec<Pending> = Vec::new();
 
     for op in ops {
+        if op.opcode == OpCode::CPUI_LOAD {
+            if let (Some(g), Some(addr)) = (got, op.ins.get(1).and_then(|vn| value_of(vn, vma, &vals, data))) {
+                let slot = addr.v & mask(op.ins[1].size);
+                if addr.got && addr.seed && addr.pc && g.contains(slot) {
+                    found.push((slot, XrefKind::Read));
+                    if let Some(word) = g.word_at(slot) {
+                        if looks_like_address(word) && in_range(mapped, word) {
+                            found.push((word, XrefKind::Data));
+                        }
+                    }
+                }
+            }
+        }
         let folded = fold(op, vma, &vals, data);
         let Some(out) = &op.out else { continue };
         let key = key_of(out, data);
@@ -187,8 +309,14 @@ fn evaluate(
         invalidate(&mut vals, key);
         let (Some(key), Some(mut val)) = (key, folded) else { continue };
         val.v &= mask(out.size);
-        if matches!(key, Key::Reg(..)) && val.seed && val.pc && in_range(mapped, val.v) {
-            found.push(val.v);
+        if let Key::Reg(off, size) = key {
+            if val.seed && val.pc && in_range(mapped, val.v) {
+                found.push((val.v, XrefKind::Data));
+                if !val.got && got.is_some_and(|g| g.contains(val.v)) {
+                    new_bases.retain(|b| !spans_overlap(b.off, b.size, off, size));
+                    new_bases.push(Pending { off, size, word: val.v, hops: 0 });
+                }
+            }
         }
         vals.push((key, val));
     }
@@ -202,11 +330,10 @@ fn evaluate(
         })
         .copied()
         .collect();
-    (found, survivors)
+    Eval { found, survivors, written, new_bases }
 }
 
-/// The pool word this instruction loads into a register, when it loads one that
-/// [`super::kuna_poolref`] declined to follow as a pointer.
+/// The pool word this instruction loads into a register.
 ///
 /// The first such load, which on every architecture that forms these pairs is
 /// also the only one: a literal load's address is a decode-time constant, and a
@@ -214,7 +341,6 @@ fn evaluate(
 fn seed(
     ops: &[FullOp],
     pool: &PoolImage,
-    mapped: &[(u64, u64)],
     data: Option<&Rc<AddrSpace>>,
 ) -> Option<Pending> {
     let data_index = data.map(|d| d.get_index());
@@ -238,31 +364,31 @@ fn seed(
         }
         let Some(addr) = op.ins.get(1).filter(|vn| is_constant(vn)) else { continue };
         let Some(word) = pool.word_at(addr.offset) else { continue };
-        if looks_like_address(word) && in_range(mapped, word) {
-            continue; // a pointer, which is `poolref`'s to follow
-        }
         return Some(Pending { off: out.offset, size: out.size, word, hops: 0 });
     }
     None
 }
 
 /// Does control leave the straight-line run here, so the fall-through is not the
-/// next thing executed (or a call has clobbered the registers in between)?
+/// next thing executed?
 ///
 /// A `CBRANCH` is deliberately not in the set: its fall-through IS a successor,
-/// it writes nothing, and ARM spells a predicated instruction that way.
+/// it writes nothing, and ARM spells a predicated instruction that way. A call is
+/// not either: it ends only the values the calling convention does not preserve
+/// (`survives_calls`), since GCC schedules `ldr r4,[pc,#..]` before a call and
+/// its `add r4,pc,r4` after it.
 fn leaves_the_run(ops: &[FullOp]) -> bool {
     ops.iter().any(|op| {
         matches!(
             op.opcode,
-            OpCode::CPUI_BRANCH
-                | OpCode::CPUI_BRANCHIND
-                | OpCode::CPUI_CALL
-                | OpCode::CPUI_CALLIND
-                | OpCode::CPUI_CALLOTHER
-                | OpCode::CPUI_RETURN
+            OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_RETURN
         )
     })
+}
+
+/// Is the value's whole register callee-saved?
+fn survives_calls(p: &Pending, preserved: &[(u64, u64)]) -> bool {
+    preserved.iter().any(|&(lo, hi)| p.off >= lo && p.off + u64::from(p.size) <= hi)
 }
 
 // --- the one-instruction constant fold ---------------------------------------
@@ -277,12 +403,23 @@ struct Known {
     seed: bool,
     /// This instruction's own PC contributed to this value.
     pc: bool,
+    /// A GOT base contributed to this value.
+    got: bool,
 }
 
 impl Known {
     fn seed(v: u64) -> Self {
-        Known { v, seed: true, pc: false }
+        Known { v, seed: true, pc: false, got: false }
     }
+}
+
+/// The value a varnode holds, as [`fold`] reads its inputs.
+fn value_of(vn: &VarnodeData, vma: u64, vals: &[(Key, Known)], data: Option<&Rc<AddrSpace>>) -> Option<Known> {
+    if is_constant(vn) {
+        return Some(Known { v: vn.offset & mask(vn.size), seed: false, pc: is_own_pc(vn.offset, vma), got: false });
+    }
+    let key = key_of(vn, data)?;
+    vals.iter().rev().find(|(k, _)| *k == key).map(|(_, v)| *v)
 }
 
 /// A varnode's identity, in the two classes the fold models. `register` and `ram`
@@ -316,28 +453,17 @@ fn fold(
     vals: &[(Key, Known)],
     data: Option<&Rc<AddrSpace>>,
 ) -> Option<Known> {
-    let get = |i: usize| -> Option<Known> {
-        let vn = op.ins.get(i)?;
-        if is_constant(vn) {
-            return Some(Known {
-                v: vn.offset & mask(vn.size),
-                seed: false,
-                pc: is_own_pc(vn.offset, vma),
-            });
-        }
-        let key = key_of(vn, data)?;
-        vals.iter().rev().find(|(k, _)| *k == key).map(|(_, v)| *v)
-    };
+    let get = |i: usize| -> Option<Known> { value_of(op.ins.get(i)?, vma, vals, data) };
     let a = get(0)?;
     match op.opcode {
         OpCode::CPUI_COPY => Some(a),
         OpCode::CPUI_INT_ADD => {
             let b = get(1)?;
-            Some(Known { v: a.v.wrapping_add(b.v), seed: a.seed || b.seed, pc: a.pc || b.pc })
+            Some(Known { v: a.v.wrapping_add(b.v), seed: a.seed || b.seed, pc: a.pc || b.pc, got: a.got || b.got })
         }
         OpCode::CPUI_INT_SUB => {
             let b = get(1)?;
-            Some(Known { v: a.v.wrapping_sub(b.v), seed: a.seed || b.seed, pc: a.pc || b.pc })
+            Some(Known { v: a.v.wrapping_sub(b.v), seed: a.seed || b.seed, pc: a.pc || b.pc, got: a.got || b.got })
         }
         _ => None,
     }
@@ -468,10 +594,10 @@ mod tests {
     fn a_pool_displacement_added_to_the_pc_is_the_address_it_forms() {
         let s = spaces();
         let mut pp = PicPool::default();
-        assert!(pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram)).is_empty());
+        assert!(pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]).is_empty());
         assert_eq!(
-            pp.step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram)),
-            vec![0x4ab],
+            pp.step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram), None, &[], &[]),
+            vec![(0x4ab, XrefKind::Data)],
             "0x66c + (-0x1c1)"
         );
     }
@@ -487,11 +613,11 @@ mod tests {
             Some(vn(&s.reg, 0x30, 4)),
             vec![vn(&s.reg, 0x30, 4), vn(&s.konst, 4, 4)],
         )];
-        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram));
-        pp.step(0x664, 4, &nop, &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
+        pp.step(0x664, 4, &nop, &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         assert_eq!(
-            pp.step(0x668, 4, &add_pc(&s, 0x20, 0x668), &image(), &MAPPED, Some(&s.ram)),
-            vec![0x4af]
+            pp.step(0x668, 4, &add_pc(&s, 0x20, 0x668), &image(), &MAPPED, Some(&s.ram), None, &[], &[]),
+            vec![(0x4af, XrefKind::Data)]
         );
     }
 
@@ -503,10 +629,10 @@ mod tests {
         let mut pp = PicPool::default();
         let clobber =
             vec![op(OpCode::CPUI_COPY, Some(vn(&s.reg, 0x20, 4)), vec![vn(&s.konst, 0, 4)])];
-        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram));
-        pp.step(0x664, 4, &clobber, &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
+        pp.step(0x664, 4, &clobber, &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         assert!(pp
-            .step(0x668, 4, &add_pc(&s, 0x20, 0x668), &image(), &MAPPED, Some(&s.ram))
+            .step(0x668, 4, &add_pc(&s, 0x20, 0x668), &image(), &MAPPED, Some(&s.ram), None, &[], &[])
             .is_empty());
     }
 
@@ -517,9 +643,9 @@ mod tests {
         let mut pp = PicPool::default();
         let mut call = ldr(&s, 0x20, 0x6a0);
         call.push(op(OpCode::CPUI_CALL, None, vec![vn(&s.ram, 0x700, 4)]));
-        pp.step(0x660, 4, &call, &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &call, &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         assert!(pp
-            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram))
+            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram), None, &[], &[])
             .is_empty());
     }
 
@@ -530,27 +656,19 @@ mod tests {
 
         // `add r0,r0,#8` — the pool word used as a number, not as a base.
         let mut pp = PicPool::default();
-        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         let no_pc = vec![op(
             OpCode::CPUI_INT_ADD,
             Some(vn(&s.reg, 0x20, 4)),
             vec![vn(&s.reg, 0x20, 4), vn(&s.konst, 8, 4)],
         )];
-        assert!(pp.step(0x664, 4, &no_pc, &image(), &MAPPED, Some(&s.ram)).is_empty());
-
-        // The word at 0x6a4 IS a mapped address, so it is `poolref`'s pointer to
-        // follow and never a displacement.
-        let mut pp = PicPool::default();
-        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a4), &image(), &MAPPED, Some(&s.ram));
-        assert!(pp
-            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram))
-            .is_empty());
+        assert!(pp.step(0x664, 4, &no_pc, &image(), &MAPPED, Some(&s.ram), None, &[], &[]).is_empty());
 
         // A sum landing in no section is not an address, whatever formed it.
         let mut pp = PicPool::default();
-        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         assert!(pp
-            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &[(0x9000, 0x9100)], Some(&s.ram))
+            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &[(0x9000, 0x9100)], Some(&s.ram), None, &[], &[])
             .is_empty());
     }
 
@@ -561,7 +679,7 @@ mod tests {
     fn a_composed_address_that_stays_in_a_temporary_files_nothing() {
         let s = spaces();
         let mut pp = PicPool::default();
-        pp.step(0x660, 4, &ldr(&s, 0x24, 0x6a0), &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &ldr(&s, 0x24, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         let indirect = vec![
             op(
                 OpCode::CPUI_INT_ADD,
@@ -579,7 +697,7 @@ mod tests {
                 vec![vn(&s.konst, ram_id(&s), 8), vn(&s.uniq, 0x10900, 4)],
             ),
         ];
-        assert!(pp.step(0x664, 4, &indirect, &image(), &MAPPED, Some(&s.ram)).is_empty());
+        assert!(pp.step(0x664, 4, &indirect, &image(), &MAPPED, Some(&s.ram), None, &[], &[]).is_empty());
     }
 
     /// A narrow or unaligned pool read is not a slot at all, which is
@@ -593,10 +711,90 @@ mod tests {
             Some(vn(&s.reg, 0x20, 2)),
             vec![vn(&s.konst, ram_id(&s), 8), vn(&s.konst, 0x6a0, 4)],
         )];
-        pp.step(0x660, 4, &narrow, &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x660, 4, &narrow, &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         assert!(pp
-            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram))
+            .step(0x664, 4, &add_pc(&s, 0x20, 0x664), &image(), &MAPPED, Some(&s.ram), None, &[], &[])
             .is_empty());
+    }
+
+    /// The ARM GOT idiom of a `-fPIC` body: `ldr r4,[pc,#a]; add r4,pc,r4`
+    /// makes r4 the GOT, and `ldr r2,[pc,#b]; ldr r2,[r4,r2]` reads a slot. The
+    /// base survives a call (r4 is callee-saved) and a branch, and the slot's
+    /// word, a function address, is filed as the address the body takes.
+    #[test]
+    fn a_load_through_a_pc_composed_got_base_files_the_slot_and_its_word() {
+        const P: [u8; 8] = [
+            0x94, 0x01, 0x00, 0x00, // 0x6a0 -> 0x194: 0x66c + 0x194 = 0x800, the GOT
+            0x10, 0x00, 0x00, 0x00, // 0x6a4 -> 0x10, the slot's GOT offset
+        ];
+        const G: [u8; 0x20] = {
+            let mut g = [0u8; 0x20];
+            g[0x10] = 0x50; // slot 0x810 -> 0x1450, a function
+            g[0x11] = 0x14;
+            g
+        };
+        const MAP: [(u64, u64); 1] = [(0x400, 0x2000)];
+        let pool = PoolImage::from_ranges(vec![(0x6a0, 0x6a8, &P[..])], 4, true).unwrap();
+        let got = GotImage { lo: 0x800, hi: 0x820, data: &G[..], ptr: 4, little_endian: true };
+        let s = spaces();
+        let r4 = 0x30;
+        let preserved = [(0x30u64, 0x34u64)];
+        let mut pp = PicPool::default();
+        let st = |pp: &mut PicPool, vma, ops: &[FullOp], br: &[u64]| {
+            pp.step(vma, 4, ops, &pool, &MAP, Some(&s.ram), Some(&got), &preserved, br)
+        };
+        st(&mut pp, 0x660, &ldr(&s, r4, 0x6a0), &[]);
+        assert_eq!(st(&mut pp, 0x664, &add_pc(&s, r4, 0x664), &[]), vec![(0x800, XrefKind::Data)]);
+        // A call, then an unconditional branch to 0x700: the base follows both.
+        let call = vec![op(OpCode::CPUI_CALL, None, vec![vn(&s.ram, 0x400, 4)])];
+        st(&mut pp, 0x668, &call, &[]);
+        let jump = vec![op(OpCode::CPUI_BRANCH, None, vec![vn(&s.ram, 0x700, 4)])];
+        st(&mut pp, 0x66c, &jump, &[0x700]);
+        st(&mut pp, 0x700, &ldr(&s, 0x28, 0x6a4), &[]);
+        let slot = vec![
+            op(OpCode::CPUI_INT_ADD, Some(vn(&s.uniq, 0x2f00, 4)), vec![vn(&s.reg, r4, 4), vn(&s.reg, 0x28, 4)]),
+            op(
+                OpCode::CPUI_LOAD,
+                Some(vn(&s.reg, 0x28, 4)),
+                vec![vn(&s.konst, ram_id(&s), 8), vn(&s.uniq, 0x2f00, 4)],
+            ),
+        ];
+        assert_eq!(
+            st(&mut pp, 0x704, &slot, &[]),
+            vec![(0x810, XrefKind::Read), (0x1450, XrefKind::Data)]
+        );
+    }
+
+    /// A displacement that happens to be a mapped address itself, as in a
+    /// non-PIE image mapped low, is still a displacement once the PC is added.
+    #[test]
+    fn a_displacement_that_is_also_a_mapped_address_still_composes() {
+        const P: [u8; 4] = [0x00, 0x05, 0x00, 0x00]; // 0x6a0 -> 0x500, mapped
+        const MAP: [(u64, u64); 1] = [(0x400, 0x1000)];
+        let pool = PoolImage::from_ranges(vec![(0x6a0, 0x6a4, &P[..])], 4, true).unwrap();
+        let s = spaces();
+        let mut pp = PicPool::default();
+        pp.step(0x660, 4, &ldr(&s, 0x20, 0x6a0), &pool, &MAP, Some(&s.ram), None, &[], &[]);
+        assert_eq!(
+            pp.step(0x664, 4, &add_pc(&s, 0x20, 0x664), &pool, &MAP, Some(&s.ram), None, &[], &[]),
+            vec![(0xb6c, XrefKind::Data)]
+        );
+    }
+
+    /// A word in a callee-saved register survives the call between its load and
+    /// its `add`.
+    #[test]
+    fn a_call_keeps_a_word_in_a_callee_saved_register() {
+        let s = spaces();
+        let mut pp = PicPool::default();
+        let preserved = [(0x30u64, 0x34u64)];
+        let mut call = ldr(&s, 0x30, 0x6a0);
+        call.push(op(OpCode::CPUI_CALL, None, vec![vn(&s.ram, 0x700, 4)]));
+        pp.step(0x660, 4, &call, &image(), &MAPPED, Some(&s.ram), None, &preserved, &[]);
+        assert_eq!(
+            pp.step(0x664, 4, &add_pc(&s, 0x30, 0x664), &image(), &MAPPED, Some(&s.ram), None, &preserved, &[]),
+            vec![(0x4ab, XrefKind::Data)]
+        );
     }
 
     /// Nothing is tracked past the hop bound.
@@ -605,14 +803,14 @@ mod tests {
         let s = spaces();
         let mut pp = PicPool::default();
         let nothing: Vec<FullOp> = Vec::new();
-        pp.step(0x600, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram));
+        pp.step(0x600, 4, &ldr(&s, 0x20, 0x6a0), &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
         let mut vma = 0x604;
         for _ in 0..MAX_HOPS {
-            pp.step(vma, 4, &nothing, &image(), &MAPPED, Some(&s.ram));
+            pp.step(vma, 4, &nothing, &image(), &MAPPED, Some(&s.ram), None, &[], &[]);
             vma += 4;
         }
         assert!(pp
-            .step(vma, 4, &add_pc(&s, 0x20, vma), &image(), &MAPPED, Some(&s.ram))
+            .step(vma, 4, &add_pc(&s, 0x20, vma), &image(), &MAPPED, Some(&s.ram), None, &[], &[])
             .is_empty());
     }
 }

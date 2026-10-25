@@ -78,7 +78,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
-use super::kuna_picpool::PicPool;
+use super::kuna_picpool::{GotImage, PicPool};
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -718,6 +718,8 @@ fn descend(
     // read-only mapped section, and every relocatable object, whose sections are
     // not the runtime ones) leaves every reference below exactly as it was.
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+    // (kuna) `picpool`: the GOT's file bytes, read through a PC-composed base.
+    let got = if mapped.is_empty() { None } else { GotImage::new(file) };
     let max_entries = match arch.max_jumptable_size {
         0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
         n => n as usize,
@@ -1091,6 +1093,9 @@ fn descend(
                     p,
                     &mapped,
                     data_space.as_ref(),
+                    got.as_ref(),
+                    &preserved,
+                    if c.flow.is_call { &[] } else { &c.flows },
                 ),
                 None => Vec::new(),
             };
@@ -1193,8 +1198,8 @@ fn descend(
             for &(to, kind) in &drefs {
                 st.file(vma, to, kind, &text);
             }
-            for &to in &picrefs {
-                st.file(vma, to, XrefKind::Data, &text);
+            for &(to, kind) in &picrefs {
+                st.file(vma, to, kind, &text);
             }
             // Both halves the deferred base-relative pass needs are pure
             // functions of this instruction's ops, so they are computed here
