@@ -4340,16 +4340,18 @@ pub fn bootstrap_from_object_with_isa(
         sections: loader.section_metadata().to_vec(),
     };
 
-    // (kuna `rustabi`) Record the loader's source-language verdict on the
+    // (kuna `sourcelang`) Record the loader's source-language verdict on the
     // Architecture. Unlike the analyzer facts below this is not a pass output but
-    // a one-bit property of the image, and it has to reach the ENGINE (the
-    // per-function rules in `kuna_rustabi`) rather than the Listing, so it is
-    // written straight onto the arch here at load, upstream of every `option`
-    // command. The XML `<binaryimage>` bootstrap never reaches this line, which is
-    // why `option rustabi auto` is inert on the datatest corpus by construction.
-    let compiler = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes);
-    sleigh.base_mut().unwrap().source_is_rust = compiler.is_rust();
-    sleigh.base_mut().unwrap().source_is_go = compiler.is_golang();
+    // a one-value property of the image, and it has to reach the ENGINE (the
+    // per-function rules in `kuna_rustabi` / `kuna_reloadarg`) rather than the
+    // Listing, so it is written straight onto the arch here at load, upstream of
+    // every `option` command (the `KUNA_SOURCELANG` loadtime override is already
+    // applied by `effective_compiler_bytes`; the later `option sourcelang` arm
+    // layers the per-run force on top). The XML `<binaryimage>` bootstrap never
+    // reaches this line, which is why `option rustabi auto` is inert on the
+    // datatest corpus by construction.
+    let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
+    sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.

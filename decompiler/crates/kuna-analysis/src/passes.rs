@@ -1408,7 +1408,7 @@ pub fn run_default_analyses(
     // Source-language detection runs once, before pass selection, and shapes the
     // pass list (the kuna analog of `SourceLanguageAnalyzer` running early and
     // gating the language-specific analyzers).
-    let compiler = crate::sourcelang::detect_compiler(&file, bytes);
+    let compiler = crate::sourcelang::effective_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `--option listing on` (default-off ⇒ `None` ⇒ no decode work, byte
     // -identical to today). Owned here so it outlives the pass loop, borrowed
@@ -1457,7 +1457,7 @@ pub fn run_default_analyses_per_pass(
     // below produces an already-rebased fact. `None` ⇒ the raw pre-link view.
     let view = crate::loader::kuna_relocrebase::rebased_view(&raw, bytes);
     let (file, bytes) = crate::loader::kuna_relocrebase::select(raw, bytes, &view);
-    let compiler = crate::sourcelang::detect_compiler(&file, bytes);
+    let compiler = crate::sourcelang::effective_compiler(&file, bytes);
     // Listing/xref tier (design §1.3): built once, before the pass loop, only
     // when `arch.analysis_listing` (i.e. `--option listing on`). Default-off ⇒
     // `.then(...)` is `None` ⇒ no decode work, `ctx.listing == None`, and the
@@ -1638,7 +1638,7 @@ mod tests {
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
-        for c in [Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
+        for c in [Compiler::Rustc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c, NON_PE)), base, "{c:?} pass ids must match the base set");
         }
     }
@@ -1653,7 +1653,7 @@ mod tests {
         assert_eq!(go.last(), Some(&"gopclntab"), "Go appends the gopclntab pass");
         assert_eq!(go.len(), base.len() + 1, "Go adds exactly one pass");
         // No non-Go compiler carries the gopclntab pass.
-        for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Unknown] {
+        for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
             assert!(!ids(&passes_for(c, NON_PE)).contains(&"gopclntab"), "{c:?} must not carry gopclntab");
         }
     }

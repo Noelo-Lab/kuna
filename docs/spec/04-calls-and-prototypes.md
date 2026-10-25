@@ -1560,9 +1560,10 @@ classified:
   trial above a definitely-unused one. A junk `rdx` below a real `rcx`
   (`mov $10,%ecx; pop %rdx; jmp q`) therefore stays the hole the ABI fills, and
   dropping it would have taken the real argument with it. A trial that the
-  call's resolved format string names is kept. A Go image (`source_is_go`, from
-  the loader's language detection) is left alone, because Go passes arguments in
-  registers the cspec calls scratch. `off` restores the first-pass verdict.
+  call's resolved format string names is kept. A Go image
+  (`Architecture::source_lang`, the loader's language verdict with any
+  `option sourcelang` force applied) is left alone, because Go passes arguments
+  in registers the cspec calls scratch. `off` restores the first-pass verdict.
 
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side

@@ -11,7 +11,7 @@ use std::process::Command;
 use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
     kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
-    kuna_relocrebase, kuna_rexthunk, kuna_symbolnamebound, kuna_symbolnamechars,
+    kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_symbolnamebound, kuna_symbolnamechars,
     kuna_symbolnamerepair, kuna_typedepth, options::RELOC_OBJECTS_ENV,
 };
 
@@ -24,6 +24,7 @@ enum Encoding {
     SymbolNameChars,
     Trimmed,
     LibcTypes,
+    SourceLang,
 }
 
 fn binding(name: &str) -> Option<(&'static str, Encoding)> {
@@ -47,6 +48,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "dwarfvariants" => (kuna_dwarfvariants::DWARFVARIANTS_ENV, DefaultOn),
         "calltargettype" => (kuna_calltargettype::CALLTARGETTYPE_ENV, DefaultOff),
         "macho-arm64e" => ("KUNA_MACHO_ARM64E", Arm64e),
+        "sourcelang" => (kuna_sourcelang::SOURCELANG_ENV, SourceLang),
         _ => return None,
     })
 }
@@ -78,6 +80,13 @@ impl Encoding {
                 } else {
                     token
                 }
+            }
+            // A forced language travels as its token; `auto` (and any value the
+            // console `option` arm will refuse anyway) clears the variable so
+            // detection decides.
+            Self::SourceLang => {
+                return kuna_sourcelang::SourceLang::parse_forced(value)
+                    .map(|lang| lang.as_str().into());
             }
         })
     }

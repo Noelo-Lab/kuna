@@ -223,6 +223,12 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
+        // (kuna `sourcelang`) Reports the OPTION state, not the detected fact:
+        // `auto` until a run forces a language.
+        "sourcelang" => match conf.source_lang_forced {
+            Some(lang) => lang.as_str(),
+            None => "auto",
+        },
         // (kuna `bejoin`) Three-valued, so it reports its own token.
         "bejoin" => conf.be_join.as_str(),
         "condexeplace" => on_off(conf.condexe_block_placement),

@@ -776,6 +776,9 @@ Three tiers:
 | loading a te reports the thumb context walk stopped | [`entrythumbflow`](#entrythumbflow) |
 | stripped go binary renders sub_<addr> instead of main.main and runtime.* names | [`gopclntab`](#gopclntab) |
 | go package function names missing | [`gopclntab`](#gopclntab) |
+| rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
+| a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
+| go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
 | kuna decompile on a large c++ .so needs ~750 MB for one function | [`lazyfuncs`](#lazyfuncs) |
 | read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
@@ -2903,6 +2906,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) names Go functions from the pclntab (main.main, runtime.gopanic, ...); off leaves a stripped Go binary's functions as sub_<addr>.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-gopclntab
 - **Example:** `option gopclntab off`
+
+### `sourcelang` -- auto | c | rust | go | swift, default `auto`
+
+- **Symptoms:** rust binary renders with c output and no rust abi handling because a stripped image lost its language signals; a c binary is detected as another language and language-gated rules misfire; go runtime passes do not run on a go binary whose buildinfo section was stripped.
+- **What it does:** Override the detected source language of the image. kuna detects what produced a binary once at load (the port of Ghidra's SourceLanguageAnalyzer: Go build-info sections, rustc .comment records / mangled symbols / .rodata signatures, Swift metadata sections / mangled symbols / runtime imports, else the C toolchain conveniences) and that verdict is a single stored fact consumed everywhere language matters: analysis-pass selection inside `load file` (the Go pclntab pass, the Rust/Go no-return widening), the engine-plane Architecture::source_lang that per-function rules gate on (`rustabi auto`, `reloadarg`'s Go stand-down), and the output-language auto policy. `auto` (default) trusts detection; `c`, `rust`, `go` and `swift` force the verdict for all of those consumers at once. Because pass selection happens inside `load file`, upstream of every per-function option command, the forced value travels as the KUNA_SOURCELANG environment variable set by the CLI before loading (the rexthunk/relocobjects loadtime pattern); the console `option sourcelang` arm updates the engine fact for the already-loaded program and bridges the env for a later `load file` in the same process. Forcing a language never invents facts a binary lacks (forcing `go` on a non-Go image enables the pclntab pass, which then simply finds no table); what it reliably changes is which language-gated rules may act. A `cpp` value is deliberately absent until something consumes a C-vs-C++ distinction.
+- **When to flip:** Force `c` when detection claims the wrong language (a C image embedding Rust-looking strings or a `$s`-prefixed symbol) and language-gated rules are misfiring; force `rust`/`go`/`swift` on a stripped or post-processed binary whose language signals were removed (no .comment record, sections renamed) so the language passes act anyway. Leave `auto` otherwise - detection is high-precision by construction.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-sourcelang
+- **Example:** `option sourcelang rust`
 
 ### `lazyfuncs` -- on | off, default `off`
 

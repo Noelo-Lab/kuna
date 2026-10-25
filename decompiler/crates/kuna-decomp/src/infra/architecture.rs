@@ -704,16 +704,17 @@ pub struct Architecture {
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
     /// `ArchContext` handle.
     pub rust_abi: u8,
-    /// (kuna) Did the loader's source-language detection report rustc for the
-    /// image being decompiled?  A FACT, not an option: written once at `load
-    /// file` from `kuna_analysis::sourcelang::detect_compiler`, and the thing
-    /// `option rustabi auto` tests.  The XML `<binaryimage>` bootstrap never runs
-    /// the analyzer tier, so it stays false there.
-    pub source_is_rust: bool,
-    /// (kuna) Did the loader's source-language detection report Go?  A load-time
-    /// fact like `source_is_rust`: Go's register ABI is not the cspec's, so
-    /// `option reloadarg` stands down on a Go image.
-    pub source_is_go: bool,
+    /// (kuna) The loader's source-language verdict for the image being
+    /// decompiled.  A FACT, not an option: written once at `load file` from
+    /// `kuna_analysis::sourcelang` (the `KUNA_SOURCELANG` override already
+    /// applied), and the thing `option rustabi auto` tests and
+    /// `option reloadarg` stands down on.  The XML `<binaryimage>` bootstrap
+    /// never runs the analyzer tier, so it stays `Unknown` there.
+    pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
+    /// (kuna) The per-run `option sourcelang` override (`None` = auto).  Kept
+    /// apart from the fact so `option sourcelang auto` restores the detected
+    /// verdict and the catalog `current` reports the option, not the image.
+    pub source_lang_forced: Option<crate::kuna_sourcelang::SourceLang>,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -2902,8 +2903,8 @@ impl Architecture {
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             call_wide: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
-            source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
-            source_is_go: false, // (kuna) a load-time fact; set by the console's `load file`
+            source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
+            source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3237,6 +3238,12 @@ impl Architecture {
     /// transcription of C++ `Architecture::resetDefaultsInternal`,
     /// `architecture.cc:1420`).  The kuna defaults follow DIV-2/DIV-3
     /// (`docs/divergences.md`).
+    /// (kuna) The effective source language for this image: the per-run
+    /// `option sourcelang` override when one is set, else the detected fact.
+    pub fn source_lang(&self) -> crate::kuna_sourcelang::SourceLang {
+        self.source_lang_forced.unwrap_or(self.source_lang_detected)
+    }
+
     pub fn reset_defaults_internal(&mut self) {
         self.evalcurrentproto = true; // (kuna) DIV-71 default-on: honor the compiler spec's `<eval_current_prototype>` nomination, so an unknown prototype is evaluated with the spec's MERGED model and a `__fastcall`/`__thiscall` function's ECX/EDX arguments are recovered instead of being read as undefined locals. Byte-identical (0/675): only 6 vendored specs nominate a model, and the 3 datatests on an affected language are unchanged. Restore the `<default_proto>`-only evaluation with `option evalcurrentproto off`
         self.trim_recurse_max = 5;
@@ -3301,6 +3308,7 @@ impl Architecture {
         self.call_wide = false;
         self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
+        self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -4109,8 +4117,7 @@ impl Architecture {
         // (kuna) carry the Rust return-ABI gate and the detected source language
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
-        ctx.source_is_rust = self.source_is_rust;
-        ctx.source_is_go = self.source_is_go;
+        ctx.source_lang = self.source_lang();
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

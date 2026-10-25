@@ -2931,9 +2931,43 @@ moves.
   before pass selection, and shapes the pass list: `rustc version` records in
   `.comment` or Rust-mangled symbols → the Rust no-return list;
   `.go.buildinfo`/`.note.go.buildid` (any format's spelling) → the Go list plus
-  the pclntab pass; PE detection reads the MSVC Rich header / MinGW `GCC:` records,
-  Mach-O the `LC_BUILD_VERSION` family. The `Gcc`/`Clang` values are a kuna
-  convenience nothing gates on.
+  the pclntab pass; a Swift 5 reflection-metadata section (any format's
+  spelling of the namespace: `__swift5_…` on Mach-O, `swift5_…` on ELF,
+  `.sw5…` in a PE), a Swift-mangled symbol (`$s`/`$S`/`_T0`, held to the
+  scheme's next token so an assembler local like `$LN3` is not one), or a
+  Swift runtime entry point in either symbol table (`swift_retain`,
+  `swift_release`, …, so a stripped binary importing `libswiftCore` still
+  reads as Swift) → `Compiler::Swift`, checked after Rust and before the
+  toolchain conveniences, and on Mach-O before the Apple-platform fallback
+  that would otherwise claim every Swift image for clang. Nothing gates on
+  `Swift` yet — a Swift binary's pass set is pinned byte-identical to a
+  clang one — the verdict exists so the engine fact below is right and the
+  language packs (docs/multilang.md) have a plane to gate on. PE detection
+  reads the MSVC Rich header / MinGW `GCC:` records, Mach-O the
+  `LC_BUILD_VERSION` family. The `Gcc`/`Clang` values are a kuna convenience
+  nothing gates on.
+
+  Every consumer acts on the **effective** verdict
+  (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
+  (effective_compiler, effective_compiler_bytes)`): the `KUNA_SOURCELANG`
+  environment override when set, else detection. The override is the
+  `sourcelang` option (`auto|c|rust|go|swift`, default `auto`), and it travels
+  as an environment variable for the same reason `rexthunk` does — pass
+  selection happens inside `load file`, upstream of every per-function
+  `option` command, so the CLI binds it to the environment before loading
+  (`decompiler/crates/kuna-cli/src/loadtime.rs (binding)`). The engine's copy
+  of the verdict is `Architecture::source_lang_detected`, written once at
+  `load file` (`decompiler/crates/kuna-console/src/engine.rs
+  (bootstrap_from_object_with_isa)`) as a `SourceLang`
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_sourcelang.rs`), with
+  the console `option sourcelang` arm layering a per-run force on top
+  (`Architecture::source_lang` reports the effective value, and the catalog's
+  `current` reports the option — `auto` until a run forces a language). The
+  per-function rules that used to read the `source_is_rust`/`source_is_go`
+  bools (`rustabi auto`, `reloadarg`'s Go stand-down) read that one fact now.
+  Forcing a language never invents facts (forcing `go` on a non-Go image
+  enables the pclntab pass, which finds no table); it changes which
+  language-gated rules may act.
   "Rust-mangled" is decided by the mangling grammar, not by a prefix
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (is_rust_mangled)`). The v0 scheme spells a symbol `_R` followed by a path, and a

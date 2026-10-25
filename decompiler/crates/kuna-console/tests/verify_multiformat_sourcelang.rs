@@ -128,7 +128,7 @@ fn rust_go_compiler_value_drives_language_passes() {
     // Go appends the pclntab pass; no other compiler carries it.
     let go = pass_ids(Compiler::Go);
     assert_eq!(go.last(), Some(&"gopclntab"), "Go compiler value appends gopclntab");
-    for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Unknown] {
+    for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Swift, Compiler::Unknown] {
         assert!(
             !pass_ids(c).contains(&"gopclntab"),
             "{c:?} must not carry gopclntab"

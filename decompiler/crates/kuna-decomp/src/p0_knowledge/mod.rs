@@ -25,6 +25,9 @@ pub mod kuna_pdatachained;
 // (kuna) x86-64 PE REX-prefixed tail-jump import-thunk rejection option gate
 // (load-time, env-bridged).
 pub mod kuna_rexthunk;
+// (kuna) The source-language image fact (SourceLang) and its `sourcelang`
+// override (load-time, env-bridged).
+pub mod kuna_sourcelang;
 // (kuna) PE import-by-ordinal naming from built-in export tables (load-time,
 // env-bridged).
 pub mod kuna_peordinal;

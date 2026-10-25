@@ -242,6 +242,15 @@ kuna_options! { self, p1;
         self.rust_abi = mode.as_u8();
         Ok(msg)
     },
+    "sourcelang" => {
+        let forced = crate::kuna_sourcelang::parse_option_value(p1).map_err(KunaError::parse)?;
+        crate::kuna_sourcelang::set_sourcelang_env(forced);
+        self.source_lang_forced = forced;
+        Ok(match forced {
+            Some(lang) => format!("Source language forced to {}", lang.as_str()),
+            None => "Source language follows detection (auto)".to_string(),
+        })
+    },
     "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
