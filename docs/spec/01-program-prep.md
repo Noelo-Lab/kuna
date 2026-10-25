@@ -6740,7 +6740,10 @@ Betaflight pilot exchanges one gained body for one lost body. Default recovery
 therefore targets A32 inventory roots. Short callbacks and vector-only handlers
 remain separate discovery sources.
 
-With `armframes` enabled, the Listing walk also follows an A32 jump table. GCC
+With `armframes` enabled (`inventory`, the default, or `on`), the Listing walk
+also follows an A32 jump table. Unlike frame recovery, table following needs no
+other option: not `funcstart_patterns`, which is off by default, and in the
+reference walk not `listing` either. GCC
 lowers an A32 switch to `cmp rN,#n` and a predicated `ldrls pc,[pc,rN,lsl #2]`
 with its table of case addresses 8 bytes past the dispatch, or to `addls
 pc,pc,rN,lsl #2` followed by one `b` per case. The dispatch's p-code is folded
@@ -7555,8 +7558,18 @@ Ghidra's `ArmAnalyzer` adds a computed-jump reference per case. The words of an
 `ldr` table are data the dispatch reads: they are not decoded and file no
 pointer row, which matches Ghidra, whose ARM switch recovery labels and
 disassembles the targets but adds no reference from the words. A predicated
-dispatch lifts as a skip to `b default` ahead of its jump; that skip is the
-dispatch's fall-through, so it files no `Jump` row to the next instruction.
+dispatch lifts as a skip to `b default` ahead of its jump. Where A32 tables are
+read, both walks take that skip as the dispatch's fall-through
+(`Classified::skip_falls_through` in
+`decompiler/crates/kuna-analysis/src/listing/classify.rs`), so the dispatch
+files no `Jump` row to the next instruction and the table read keeps its gate
+of a computed jump with no static flow. Under `armframes off`, and on every
+other architecture, the skip stays a flow with its row and no A32 table is
+read. The switch record states the guard's case count, so a table longer than
+`jumptablemax` is marked truncated. A dispatch the walk reaches before the
+guard that falls into it (a branch into the dispatch, or breadth-first order)
+waits at the address the guard read stopped at and is read again, A32 reader
+first, once that code is decoded.
 Without this, the walk stopped at the dispatch and followed only `b default`.
 GCC 14 no longer emits either form from C in ARM state (it compresses the table
 to bytes, `ldrb rN,[rT,rN]; add pc,pc,rN,lsl #2`); that form is not read. Thumb
