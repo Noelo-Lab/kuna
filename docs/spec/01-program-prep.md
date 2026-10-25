@@ -6594,6 +6594,28 @@ PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
 raw-name lookup would miss.
 Name-based: free, exact, and useless on stripped custom wrappers.
 
+**Pclntab names** (`gonoreturn`,
+`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gonoreturn.rs
+(GoNoReturnPass)`, kuna, default-on, Go-detected binaries only): the known-names
+pass above reads the object's symbol tables, and a production Go binary is
+stripped — both tables gone, zero facts emitted, so the whole vendored Go list
+(`runtime.gopanic`, `runtime.panicshift`, `runtime.panicunsafestringlen`, …)
+went unused on exactly the binaries it was vendored for, and every
+`runtime.panic*` call site kept a bogus fall-through edge (rendered as flow
+into the INT3 padding after the function, and it breaks the `gomorestack`
+fold's shape wherever the stack-growth arm follows such a call). The names
+survive stripping in the pclntab, so this pass walks the same table the
+`gopclntab` pass recovers names from — same `recover_go_table` parse, same
+executable-range admission — and matches each recovered `(addr, name)` against
+the same vendored list with the same reader (`name_matches`), emitting
+ordinary address-keyed `NoReturnFact`s through the same commit arm. Pass order
+installs the pclntab names before the no-return arm resolves addresses, so the
+facts land whether or not a `.symtab` exists; unstripped, they are idempotent
+duplicates of `noreturn_known`'s. Registered only for `Compiler::Go` (beside
+`gopclntab`, preserving that pass's appended-last contract), so every non-Go
+pass set is byte-identical; `option gonoreturn off` restores the fall-through
+reading, and `option noreturn_known` keeps gating only the symbol-table pass.
+
 **Discovered, ≥3 evidence** (`noreturn_disc`,
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/mod.rs`, the
 `FindNoReturnFunctionsAnalyzer` evidence tally; Listing-gated, default-on per

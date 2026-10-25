@@ -180,6 +180,8 @@ mod verify_global_regmerge;
 
 #[path = "verify_go_pclntab.rs"]
 mod verify_go_pclntab;
+#[path = "verify_go_noreturn_stripped.rs"]
+mod verify_go_noreturn_stripped;
 
 #[path = "verify_hostile_symbol_sizes.rs"]
 mod verify_hostile_symbol_sizes;

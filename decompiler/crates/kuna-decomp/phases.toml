@@ -7338,6 +7338,25 @@ tier = "analysis"
 symptoms = "stripped go binary renders sub_<addr> instead of main.main and runtime.* names|go package function names missing"
 
 [[settable]]
+option = "gonoreturn"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-multilang-gonoreturn"
+summary = "Apply the vendored Go no-return list to the pclntab-recovered function list. The known-no-return pass (noreturn_known) matches GolangFunctionsThatDoNotReturn against the object's symbol tables, but a production Go binary is stripped (-ldflags=-s -w): both tables are gone, the pass emits zero facts, and every entry of the vendored list - runtime.gopanic, runtime.panicshift, runtime.panicunsafestringlen, all of them - goes unused on exactly the binaries it was vendored for. The fallout is structural: a call to runtime.panicshift keeps its fall-through edge, the panic path renders as if the helper returned, and any function whose stack-growth arm physically follows such a call keeps its morestack loop (the gomorestack fold refuses the broken shape, correctly). The names are still in the image - the pclntab names every function - so this pass walks the same table the gopclntab pass recovers names from (same executable-range admission) and matches each (addr, name) against the same vendored list with the same reader, emitting ordinary address-keyed no-return facts. The commit installs pclntab names before the no-return arm resolves, so the facts land whether or not a .symtab exists; on an unstripped binary they are idempotent duplicates of noreturn_known's. Registered ONLY for a Go-detected binary (beside gopclntab), so it is a structural no-op on every non-Go target; `option noreturn_known` continues to gate only the symbol-table pass, keeping the two sources separately flippable."
+use_when = "On (default) truncates flow at runtime panic/exit helpers on stripped Go binaries, exactly as unstripped ones already behave; off restores the fall-through reading of every runtime.panic*/throw/goexit call site (auditing, or a hand-patched runtime whose panic helpers really return)."
+example = "option gonoreturn off"
+source_decompiler = "kuna"
+inspiration = "Ghidra noReturnFunctionConstraints.xml compiler id=golang arm (the list), applied through the pclntab name source its symbol-table reader cannot reach on a stripped binary"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "stripped go binary renders code after a runtime.panicshift or runtime.gopanic call as if the helper returned|a go panic arm falls through into the next block and the output interleaves panic and normal paths|a go function keeps its morestack entry loop because the grow arm follows a panic call kuna treats as returning"
+
+[[settable]]
 option = "sourcelang"
 values = "auto|c|rust|go|swift"
 default = "auto"

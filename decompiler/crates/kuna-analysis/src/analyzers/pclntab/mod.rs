@@ -619,5 +619,7 @@ impl AnalysisPass for GoPclntabPass {
     }
 }
 
+pub mod kuna_gonoreturn;
+
 #[cfg(test)]
 mod tests;

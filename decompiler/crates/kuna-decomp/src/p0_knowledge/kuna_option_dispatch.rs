@@ -1208,6 +1208,9 @@ kuna_options! { self, p1;
     "gopclntab" => {
         on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
     },
+    "gonoreturn" => {
+        on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
+    },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {

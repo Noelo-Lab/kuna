@@ -776,6 +776,9 @@ Three tiers:
 | loading a te reports the thumb context walk stopped | [`entrythumbflow`](#entrythumbflow) |
 | stripped go binary renders sub_<addr> instead of main.main and runtime.* names | [`gopclntab`](#gopclntab) |
 | go package function names missing | [`gopclntab`](#gopclntab) |
+| stripped go binary renders code after a runtime.panicshift or runtime.gopanic call as if the helper returned | [`gonoreturn`](#gonoreturn) |
+| a go panic arm falls through into the next block and the output interleaves panic and normal paths | [`gonoreturn`](#gonoreturn) |
+| a go function keeps its morestack entry loop because the grow arm follows a panic call kuna treats as returning | [`gonoreturn`](#gonoreturn) |
 | rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
 | a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
 | go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
@@ -2906,6 +2909,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) names Go functions from the pclntab (main.main, runtime.gopanic, ...); off leaves a stripped Go binary's functions as sub_<addr>.
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-analysis-gopclntab
 - **Example:** `option gopclntab off`
+
+### `gonoreturn` -- on | off, default `on`
+
+- **Symptoms:** stripped go binary renders code after a runtime.panicshift or runtime.gopanic call as if the helper returned; a go panic arm falls through into the next block and the output interleaves panic and normal paths; a go function keeps its morestack entry loop because the grow arm follows a panic call kuna treats as returning.
+- **What it does:** Apply the vendored Go no-return list to the pclntab-recovered function list. The known-no-return pass (noreturn_known) matches GolangFunctionsThatDoNotReturn against the object's symbol tables, but a production Go binary is stripped (-ldflags=-s -w): both tables are gone, the pass emits zero facts, and every entry of the vendored list - runtime.gopanic, runtime.panicshift, runtime.panicunsafestringlen, all of them - goes unused on exactly the binaries it was vendored for. The fallout is structural: a call to runtime.panicshift keeps its fall-through edge, the panic path renders as if the helper returned, and any function whose stack-growth arm physically follows such a call keeps its morestack loop (the gomorestack fold refuses the broken shape, correctly). The names are still in the image - the pclntab names every function - so this pass walks the same table the gopclntab pass recovers names from (same executable-range admission) and matches each (addr, name) against the same vendored list with the same reader, emitting ordinary address-keyed no-return facts. The commit installs pclntab names before the no-return arm resolves, so the facts land whether or not a .symtab exists; on an unstripped binary they are idempotent duplicates of noreturn_known's. Registered ONLY for a Go-detected binary (beside gopclntab), so it is a structural no-op on every non-Go target; `option noreturn_known` continues to gate only the symbol-table pass, keeping the two sources separately flippable.
+- **When to flip:** On (default) truncates flow at runtime panic/exit helpers on stripped Go binaries, exactly as unstripped ones already behave; off restores the fall-through reading of every runtime.panic*/throw/goexit call site (auditing, or a hand-patched runtime whose panic helpers really return).
+- **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gonoreturn
+- **Example:** `option gonoreturn off`
 
 ### `sourcelang` -- auto | c | rust | go | swift, default `auto`
 
