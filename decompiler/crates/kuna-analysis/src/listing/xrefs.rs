@@ -1105,7 +1105,10 @@ fn descend(
                     .iter()
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
-            let c = classify(&raw, vma, len);
+            let mut c = classify(&raw, vma, len);
+            if a32_tables.is_some() {
+                c.skip_falls_through(vma, len);
+            }
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
                 woken.extend(waiting.remove(&fall).into_iter().flatten());
             }
@@ -1167,15 +1170,9 @@ fn descend(
                 st.indirect_call_sites.insert(vma);
             }
 
-            // A predicated computed jump lifts to a skip to the next instruction
-            // ahead of its jump; that skip is a fall-through, not a reference.
-            let skip = vma.wrapping_add(u64::from(len));
-            let dispatch = c.flow.is_computed && c.flow.is_jump && !c.flow.is_call;
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
-                if !(dispatch && target == skip) {
-                    st.file(vma, target, kind, &text);
-                }
+                st.file(vma, target, kind, &text);
                 if c.flow.is_call {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
@@ -1202,7 +1199,7 @@ fn descend(
             // table the jump indexes and take its entries up as successors of
             // THIS function: a case body is the dispatcher's own code. See
             // [`super::kuna_switchtable`].
-            if dispatch && c.flows.iter().all(|&t| t == skip) {
+            if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
                     // (kuna) `armframes`: the A32 forms are read first, because
                     // their PC-relative operand names the dispatch itself.

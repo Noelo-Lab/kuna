@@ -173,3 +173,21 @@ fn a_clamped_a32_table_states_its_guard_count() {
         assert_eq!((table.cases, table.read, table.truncated), (Some(5), 3, true), "{:#x}", sw.dispatch);
     }
 }
+
+/// `armframes off` restores the walk without A32 tables: the dispatch jumps to
+/// the `b default` after it and to no case, and no table is read.
+#[test]
+fn armframes_off_reads_no_a32_table() {
+    let idx = build(|arch| {
+        arch.set_kuna_option("armframes", "off").expect("armframes flips off");
+    });
+    for sw in [&ADD, &LDR] {
+        let jumps: Vec<(u64, XrefKind)> =
+            from(&idx, sw.dispatch).into_iter().filter(|&(_, kind)| kind == XrefKind::Jump).collect();
+        assert_eq!(jumps, vec![(sw.dispatch + 4, XrefKind::Jump)], "{:#x}", sw.dispatch);
+        assert!(idx.switch_tables().iter().all(|t| t.dispatch != sw.dispatch), "{:#x}", sw.dispatch);
+        for c in &sw.cases {
+            assert!(idx.refs_to(c.body).iter().all(|r| r.from != sw.dispatch), "{:#x}", c.body);
+        }
+    }
+}
