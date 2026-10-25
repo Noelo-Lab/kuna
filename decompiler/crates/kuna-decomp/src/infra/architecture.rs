@@ -715,6 +715,13 @@ pub struct Architecture {
     /// apart from the fact so `option sourcelang auto` restores the detected
     /// verdict and the catalog `current` reports the option, not the image.
     pub source_lang_forced: Option<crate::kuna_sourcelang::SourceLang>,
+    /// (kuna) `option fatstr` mode (`FatStrMode` as u8): rewrite a read-only
+    /// `(ptr, len)` constant call-argument pair into a bounded string literal.
+    /// Default auto (act when `source_lang` is Rust or Go).
+    pub fat_str: u8,
+    /// (kuna) `option gomorestack` mode (`GoMorestackMode` as u8): fold the Go
+    /// stack-growth entry guard.  Default auto (fold when `source_lang` is Go).
+    pub go_morestack: u8,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -2463,6 +2470,12 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Gate the Go pclntab no-return pass (`gonoreturn`): apply the
+    /// vendored Go no-return list to the pclntab-recovered function list, so a
+    /// stripped Go binary (no symbol table for `noreturn_known`) still gets its
+    /// `runtime.panic*`/`throw`/`goexit` facts. Go-only pass ⇒ structural no-op
+    /// elsewhere; the XML datatest oracle never runs the analyzer tier.
+    pub analysis_gonoreturn: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2937,6 +2950,8 @@ impl Architecture {
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
+            fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
+            go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3217,6 +3232,7 @@ impl Architecture {
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
+            analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_pdb: true,
             macho_arm64e: false,
@@ -3344,6 +3360,8 @@ impl Architecture {
         self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
         self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
+        self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
+        self.go_morestack = crate::kuna_gomorestack::GoMorestackMode::Auto.as_u8(); // (kuna) fold the Go entry guard on Go images
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -3654,6 +3672,7 @@ impl Architecture {
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
@@ -4155,6 +4174,8 @@ impl Architecture {
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
         ctx.source_lang = self.source_lang();
+        ctx.fat_str = self.fat_str;
+        ctx.go_morestack = self.go_morestack;
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

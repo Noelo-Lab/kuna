@@ -3550,6 +3550,45 @@ output is byte-identical to `off` — the destination stack slices the run wrote
 survive as unread declarations, because the local variable map still sees the
 frame carved by the original wide stores.
 
+**Length-carried string literals (kuna, option [`fatstr`](../options.md),
+default auto; `docs/multilang.md` W3/W4).**
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_fatstr.rs (RuleFatStr)`
+covers the fourth shape: the string never reaches a frame at all, because a
+fat-pointer language passes it as a `(ptr, len)` pair. Rust (`&str`, `&[u8]`)
+and Go (`string`) carry the length beside the pointer and never NUL-terminate
+the bytes, so the terminator-scanning literal path declines and every constant
+string argument renders as a raw rodata address beside a magic length. The
+rule reads exactly `len` bytes and reuses the same bounded mechanism the
+sequence rules above produce
+(`Funcdata::get_internal_string` → `BUILTIN_STRINGDATA`), which needs no
+terminator. A CALL argument pair is rewritten only when: both are adjacent
+p-code constants (the shape the two words take after constant propagation);
+`2 <= len <= 4096`; the pointed-at bytes are **read-only** in the image
+(`ArchContext::query_global_properties`, the same literal test
+`msvcstrappend` applies), so the rendered literal is a fact of the binary; and
+the bytes decode as UTF-8 text — no control characters beyond
+newline/tab/CR, at least one alphanumeric — or the pointer's facing type
+carries a text **language facet**. The length argument is kept, because the
+call really does pass it. At `auto` (the default) the rule acts only when the
+image's source language is Rust or Go (the `sourcelang` fact, chapter 01), so
+it is a structural no-op on every other binary; `always` drops the language
+test for no-signal corpora (a stage-test bytechunk); `off` keeps the raw
+pointer. Failure mode mirrors `rodatastring`: any guard miss declines
+silently and the output is byte-identical to `off`.
+
+The **language-facet table** the rule consults is the multilang W3 plane's
+first slice (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs
+(LangFacet)`): a name-keyed side record on the type factory
+(`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(kuna_register_lang_facet, kuna_lang_facet)`) stating what a C-shaped type
+*means* in the source language — `RustStr`, `RustSlice` — exactly the
+`VariantLayout` pattern, and for the same reason: `type_metatype`'s consumers
+match it non-exhaustively, so language meaning rides beside the type, never
+inside the lattice. Facets are registered by type providers (the DWARF
+import and the language packs, in later slices); nothing populates the table
+in this one, so the facet arm of `fatstr`'s evidence test is reachable only
+through an explicit registration today.
+
 **Bitfields** (`decompiler/crates/kuna-decomp/src/p5_types/bitfield.rs`).
 Pattern: a struct with sub-byte fields is accessed through shift/mask soup on
 a byte container. The six `cleanup` rules fire only when the container's type
