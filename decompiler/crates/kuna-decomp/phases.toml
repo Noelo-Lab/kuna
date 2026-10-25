@@ -7433,6 +7433,25 @@ tier = "analysis"
 symptoms = "go function parameters missing or void while the body reads rax/rbx locals that are never assigned|a go function returning two values loses the second and the statements computing it|go output full of unassigned register-commented locals|multi-return go call sites read registers the call never defines"
 
 [[settable]]
+option = "gowritebarrier"
+values = "off|auto|always"
+default = "auto"
+destructive = true
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "kuna-multilang-gowritebarrier"
+summary = "Fold the Go GC write-barrier diamond. Every pointer store the garbage collector must see compiles to a flag test: when runtime.writeBarrier is set, call a runtime.gcWriteBarrier<N> thunk (which hands back the GC pointer buffer, R11 on amd64) and record the old and new pointer values in it; both paths then perform the program's own stores at the join. The cold arm is GC bookkeeping with no bearing on what the function computes, and it actively corrupts the output today: the thunk's buffer register is not a modeled return, so the recording stores read an undefined local and the value split can mangle even the real store's address expression. The fold matches the shared guarded-cold-call shape (infra/idiom.rs): a one-block cold arm holding exactly one call, whose guard rejoins the hot path in one hop - the callee name (runtime.gcWriteBarrier, gcWriteBarrier1..8, the bare assembly thunk gcWriteBarrier; never wbBufFlush, which user code cannot call inline) is only accepted INSIDE that shape, so a coincidental name in ordinary flow cuts nothing. The guard edge is removed pre-SSA (the cleanupcode/gomorestack window, registered directly after gomorestack), so the buffer-feeding loads die to ordinary dead-code elimination and the program's stores at the join are untouched. At auto (default) the fold acts only when the image's source language is Go; always drops the language test (stage-test bytechunks); off keeps the barrier for auditing GC behavior."
+use_when = "Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find."
+example = "option gowritebarrier off"
+source_decompiler = "kuna"
+inspiration = "The Go compiler's GC write barrier (cmd/compile wbcall lowering, runtime.gcWriteBarrier1-8 buffer protocol); the removal primitives are the securitycheck/stackguard pair moved to the pre-SSA window"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call|stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled|go output doubled in size by GC bookkeeping diamonds"
+
+[[settable]]
 option = "sourcelang"
 values = "auto|c|rust|go|swift"
 default = "auto"

@@ -2620,3 +2620,47 @@ Pinned by `tests/stages/kuna-gomorestack.xml` (two-pass, off = the `while` loop
 and the `morestack_noctxt()` call render, always = both gone and the body
 survives) and by the kuna-console `verify_go_morestack` gate, which builds a
 real stripped Go binary and proves the detection-driven `auto` path end to end.
+
+## 2.10 Go write-barrier folding
+
+**(kuna) `option gowritebarrier off|auto|always`, default auto,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_gowritebarrier.rs
+(ActionGoWriteBarrier)`.** Every pointer store the Go garbage collector must
+see compiles to a flag-test diamond: when `runtime.writeBarrier` is set, a
+`runtime.gcWriteBarrier<N>` thunk hands back the GC pointer buffer (R11 on
+amd64) and the cold arm records the old and new values in it; both paths then
+perform the program's own stores at the join. The cold arm is GC bookkeeping,
+and worse than noise in the output: the thunk's buffer register is not a
+modeled return, so the recording stores read an undefined local, and the
+value split can mangle even the real store's address expression.
+
+**The second shared idiom shape.** The matcher is
+`decompiler/crates/kuna-decomp/src/infra/idiom.rs (match_guarded_cold_call)`:
+a one-block cold arm holding exactly one call (`block_has_other_call` refuses
+an arm with a second transfer — that is a real `if` body), whose guard ends in
+a CBRANCH and whose other out-edge closes the diamond in ONE hop. Either
+branch polarity is accepted — Go emits the barrier arm as the fall-through —
+because the cold arm is identified by what it contains, and the callee name
+(`kuna_gowritebarrier.rs (is_write_barrier_name)`: `runtime.gcWriteBarrier`,
+`gcWriteBarrier1`–`8`, their `.abi0` spellings, and the bare assembly thunk
+`gcWriteBarrier`, whose pclntab name carries no package path) is only
+consulted inside the shape. `runtime.wbBufFlush*` is deliberately not
+matched: user code never calls it inline — it is the thunks' own slow path.
+
+**The edit and the window.** One `remove_branch` on the guard's cold edge
+plus `remove_unreachable_blocks`, pre-SSA, registered directly after
+`gomorestack` (the same window, for the same reasons: no INDIRECT effects to
+unpick, no MULTIEQUAL to patch, and the loads feeding only the GC buffer die
+to the ordinary dead-code fixpoint). The program's stores live at the join,
+which both arms reached, so nothing the program performs is deleted — the
+stage test pins the store surviving once per pass, never duplicated, never
+dropped.
+
+**Modes.** `auto` (shipped default) acts only when the image's source
+language is Go (the `sourcelang` fact, chapter 01); `always` drops the
+language test for no-signal corpora (the stage test's bytechunk); `off` keeps
+the barrier for auditing GC behavior. Pinned by
+`tests/stages/kuna-gowritebarrier.xml` (two-pass, hand-assembled diamond in
+the compiler's own polarity) and by the kuna-console `verify_go_writebarrier`
+gate, which builds a real stripped Go binary and proves the detection-driven
+`auto` path end to end.

@@ -722,6 +722,10 @@ pub struct Architecture {
     /// (kuna) `option gomorestack` mode (`GoMorestackMode` as u8): fold the Go
     /// stack-growth entry guard.  Default auto (fold when `source_lang` is Go).
     pub go_morestack: u8,
+    /// (kuna) `option gowritebarrier` mode (`GoWriteBarrierMode` as u8): fold
+    /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
+    /// is Go).
+    pub go_write_barrier: u8,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -2955,6 +2959,7 @@ impl Architecture {
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
+            go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -3366,6 +3371,7 @@ impl Architecture {
         self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
         self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
         self.go_morestack = crate::kuna_gomorestack::GoMorestackMode::Auto.as_u8(); // (kuna) fold the Go entry guard on Go images
+        self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -4181,6 +4187,7 @@ impl Architecture {
         ctx.source_lang = self.source_lang();
         ctx.fat_str = self.fat_str;
         ctx.go_morestack = self.go_morestack;
+        ctx.go_write_barrier = self.go_write_barrier;
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;

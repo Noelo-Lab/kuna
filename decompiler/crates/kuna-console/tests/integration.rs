@@ -184,6 +184,8 @@ mod verify_go_pclntab;
 mod verify_go_noreturn_stripped;
 #[path = "verify_go_morestack.rs"]
 mod verify_go_morestack;
+#[path = "verify_go_writebarrier.rs"]
+mod verify_go_writebarrier;
 
 #[path = "verify_hostile_symbol_sizes.rs"]
 mod verify_hostile_symbol_sizes;

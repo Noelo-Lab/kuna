@@ -258,6 +258,11 @@ kuna_options! { self, p1;
         self.analysis_goabi = on;
         Ok(format!("Golang compiler-spec selection turned {}", if on { "auto" } else { "off" }))
     },
+    "gowritebarrier" => {
+        let (mode, msg) = crate::kuna_gowritebarrier::parse_gowritebarrier_mode(p1).map_err(KunaError::parse)?;
+        self.go_write_barrier = mode.as_u8();
+        Ok(msg)
+    },
     "sourcelang" => {
         let forced = crate::kuna_sourcelang::parse_option_value(p1).map_err(KunaError::parse)?;
         crate::kuna_sourcelang::set_sourcelang_env(forced);

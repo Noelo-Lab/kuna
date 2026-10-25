@@ -2109,7 +2109,8 @@ mod tests {
         // and kuna-gomorestack / the Go stack-growth entry guard folds (option gomorestack)
         // and kuna-fatstr / a read-only (ptr,len) constant pair prints as a bounded literal
         // and kuna-variantnames / variant-part discriminants print as variant names
-        assert_eq!(count, 587, "corpus file count drifted");
+        // and kuna-gowritebarrier / the Go GC write-barrier diamond folds (option gowritebarrier)
+        assert_eq!(count, 588, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
