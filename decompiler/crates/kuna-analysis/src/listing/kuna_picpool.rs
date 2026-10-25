@@ -453,7 +453,8 @@ struct Eval {
 }
 
 /// The addresses this instruction forms from the values it was handed, the
-/// registers it writes, and the GOT bases it establishes.
+/// registers it writes, and the GOT bases it establishes: a PC-composed value
+/// in `.got`, or a plain copy of a base.
 fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
     let (mapped, data, got) = (img.mapped, img.data_space, img.got);
     let mut vals: Vec<(Key, Known)> = ins
@@ -461,7 +462,7 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
         .enumerate()
         .map(|(i, f)| {
             let k = if f.base {
-                Known { v: f.p.word, seed: true, pc: true, got: true, origin: 0, deps: 1 << i }
+                Known { v: f.p.word, seed: false, pc: false, got: true, origin: 0, deps: 1 << i }
             } else {
                 Known { deps: 1 << i, ..Known::seed(f.p.word, f.p.origin) }
             };
@@ -476,7 +477,7 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
         if op.opcode == OpCode::CPUI_LOAD {
             if let (Some(g), Some(addr)) = (got, op.ins.get(1).and_then(|vn| value_of(vn, vma, &vals, data))) {
                 let slot = addr.v & mask(op.ins[1].size);
-                if addr.got && addr.seed && addr.pc && g.contains(slot) {
+                if addr.got && addr.seed && !addr.pc && g.contains(slot) {
                     found.push((slot, XrefKind::Read, addr.deps, addr.origin));
                     if let Some(word) = g.word_at(slot) {
                         if looks_like_address(word) && in_range(mapped, word) {
@@ -496,12 +497,16 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
         let (Some(key), Some(mut val)) = (key, folded) else { continue };
         val.v &= mask(out.size);
         if let Key::Reg(off, size) = key {
-            if val.seed && val.pc && in_range(mapped, val.v) {
+            let composed = val.seed && val.pc && !val.got;
+            let gotoff = val.seed && val.got && !val.pc;
+            if (composed || gotoff) && in_range(mapped, val.v) {
                 found.push((img.target(val.v), XrefKind::Data, val.deps, val.origin));
-                if !val.got && got.is_some_and(|g| g.contains(val.v)) {
-                    new_bases.retain(|(b, _)| !spans_overlap(b.off, b.size, off, size));
-                    new_bases.push((Pending { off, size, word: val.v, hops: 0, origin: 0 }, val.deps));
-                }
+            }
+            let copied = val.got && !val.seed && !val.pc && ins.iter().any(|f| f.base && f.p.word == val.v);
+            let made = composed && in_range(mapped, val.v) && got.is_some_and(|g| g.contains(val.v));
+            if made || copied {
+                new_bases.retain(|(b, _)| !spans_overlap(b.off, b.size, off, size));
+                new_bases.push((Pending { off, size, word: val.v, hops: 0, origin: 0 }, val.deps));
             }
         }
         vals.push((key, val));
@@ -586,9 +591,11 @@ fn survives_calls(p: &Pending, preserved: &[(u64, u64)]) -> bool {
 
 // --- the one-instruction constant fold ---------------------------------------
 
-/// A value the fold knows, and where it came from. Both provenance bits must be
-/// set for the result to be a PIC address: `seed` alone is the pool word being
-/// used as a number, `pc` alone is any PC-relative arithmetic.
+/// A value the fold knows, and where it came from. A PIC address is a pool word
+/// plus either the PC (`seed` and `pc`) or a GOT base (`seed` and `got`, the
+/// GOTOFF form): `seed` alone is the pool word used as a number, `pc` alone is
+/// any PC-relative arithmetic, and `got` alone is the base itself or base plus
+/// an immediate, which names nothing.
 #[derive(Debug, Clone, Copy)]
 struct Known {
     v: u64,
@@ -1104,6 +1111,7 @@ mod tests {
     };
     const GOT_MAP: [(u64, u64); 1] = [(0x400, 0x2000)];
     const R4: u64 = 0x30;
+    const R5: u64 = 0x34;
     const R2: u64 = 0x28;
 
     fn got_pool() -> PoolImage<'static> {
@@ -1181,6 +1189,48 @@ mod tests {
             w.step_len(0x60a, 2, &slot_load(&s), &[]);
             assert_eq!(slot_refs(&w.finish(), 0x60a), vec![(0x810, XrefKind::Read), (named, XrefKind::Data)]);
         }
+    }
+
+    /// `mov r5,r4` copies the base: the copy files nothing, and r5 is a base
+    /// the slot load can go through.
+    #[test]
+    fn a_copy_of_the_base_is_a_base_and_files_nothing() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mov = vec![op(OpCode::CPUI_COPY, Some(vn(&s.reg, R5, 4)), vec![vn(&s.reg, R4, 4)])];
+        let through_r5 = vec![
+            op(OpCode::CPUI_INT_ADD, Some(vn(&s.uniq, 0x2f00, 4)), vec![vn(&s.reg, R5, 4), vn(&s.reg, R2, 4)]),
+            op(OpCode::CPUI_LOAD, Some(vn(&s.reg, R2, 4)), vec![vn(&s.konst, ram_id(&s), 8), vn(&s.uniq, 0x2f00, 4)]),
+        ];
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &mov, &[]);
+        w.step(0x60c, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x610, &through_r5, &[]);
+        let v = w.finish();
+        assert!(slot_refs(&v, 0x608).is_empty(), "{:?}", v.refs);
+        assert_eq!(slot_refs(&v, 0x610), SLOT_REFS.to_vec());
+    }
+
+    /// Only base plus a pool word (GOTOFF) is an address: base plus an
+    /// immediate is arithmetic on the base and names nothing, even where it
+    /// lands in a mapped section.
+    #[test]
+    fn base_plus_an_immediate_files_nothing_and_base_plus_a_pool_word_does() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let add_imm = vec![op(OpCode::CPUI_INT_ADD, Some(vn(&s.reg, R5, 4)), vec![vn(&s.reg, R4, 4), vn(&s.konst, 8, 4)])];
+        let gotoff = vec![op(OpCode::CPUI_INT_ADD, Some(vn(&s.reg, 0x20, 4)), vec![vn(&s.reg, R4, 4), vn(&s.reg, R2, 4)])];
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &add_imm, &[]);
+        w.step(0x60c, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x610, &gotoff, &[]);
+        let v = w.finish();
+        assert!(slot_refs(&v, 0x608).is_empty(), "{:?}", v.refs);
+        assert_eq!(slot_refs(&v, 0x610), vec![(0x810, XrefKind::Data)]);
     }
 
     /// The join rule. 0x620 is reached from 0x608, where r4 is the GOT, and from
