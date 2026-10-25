@@ -78,7 +78,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
-use super::kuna_picpool::{GotImage, PicPool};
+use super::kuna_picpool::{self, GotImage, PicPool};
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -981,6 +981,9 @@ fn descend(
         // `add` that turns each into an address. Per function, because the values
         // it tracks are live only inside one straight-line run.
         let mut picpool = PicPool::default();
+        // (kuna) `picpool`: `poolref` rows for pool words still in flight, filed
+        // once the body drains unless a PC fold consumed the word.
+        let mut held: Vec<(u64, u64, String)> = Vec::new();
         // (kuna) `switchtable`: a dispatch can be decoded before the code that
         // falls into it -- breadth-first, or by a `.cold` fragment's jump back
         // into its parent's loop ahead of the parent's own walk -- and the slice
@@ -1076,7 +1079,7 @@ fn descend(
                     flow.jumps.extend(c.flows.iter().map(|&to| (vma, to)));
                 }
             }
-            let drefs = if mapped.is_empty() {
+            let mut drefs = if mapped.is_empty() {
                 Vec::new()
             } else {
                 let fall_through = vma.wrapping_add(len as u64);
@@ -1085,7 +1088,7 @@ fn descend(
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
-            let picrefs = match pool.as_ref() {
+            let pic = match pool.as_ref() {
                 Some(p) => picpool.step(
                     vma,
                     len,
@@ -1097,15 +1100,23 @@ fn descend(
                     &preserved,
                     if c.flow.is_call { &[] } else { &c.flows },
                 ),
-                None => Vec::new(),
+                None => kuna_picpool::Step { refs: Vec::new(), seeded: None },
             };
+            let picrefs = pic.refs;
+            let pointer = pic.seeded.and_then(|word| {
+                let i = drefs.iter().position(|&r| r == (word, XrefKind::Data))?;
+                Some(drefs.remove(i).0)
+            });
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let mut text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() {
+            let mut text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() && pointer.is_none() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
             };
+            if let Some(word) = pointer {
+                held.push((vma, word, text.clone()));
+            }
 
             if cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CALLIND) {
                 st.indirect_call_sites.insert(vma);
@@ -1217,6 +1228,12 @@ fn descend(
                         fall_through,
                     ),
                 });
+            }
+        }
+
+        for (vma, word, text) in held {
+            if !picpool.displaced(vma) {
+                st.file(vma, word, XrefKind::Data, &text);
             }
         }
 
