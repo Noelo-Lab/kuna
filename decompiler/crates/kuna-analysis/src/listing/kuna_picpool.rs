@@ -228,6 +228,24 @@ pub(super) struct PicPool {
     nodes: Vec<Node>,
     /// `(from, to, kind)`.
     edges: Vec<(u64, u64, Edge)>,
+    /// Set by the body's first pool load; nothing is recorded before it.
+    live: bool,
+    /// What the walk had queued at the first pool load: each was queued by an
+    /// instruction that carried nothing, so nothing holds there.
+    dry: HashSet<u64>,
+}
+
+/// One decoded instruction, as [`PicPool::step`] reads it.
+#[derive(Clone, Copy)]
+pub(super) struct Insn<'a> {
+    pub vma: u64,
+    pub len: u32,
+    /// `classify`'s fall-through: `None` when the instruction, once it runs,
+    /// does not fall through.
+    pub fall: Option<u64>,
+    pub ops: &'a [FullOp],
+    /// The static branch targets; none for a call.
+    pub branches: &'a [u64],
 }
 
 /// How control reaches the next instruction, which decides what it carries.
@@ -283,9 +301,12 @@ impl PicPool {
     /// [`Verdict::displaced`].
     ///
     /// Called for every instruction of the function in whatever order the walk
-    /// reaches them, with its length, its fall-through (`classify`'s, `None`
-    /// when the instruction, once it runs, does not fall through) and its static
-    /// branch targets.
+    /// reaches them. Until the body's first pool load nothing can be in flight,
+    /// so nothing is recorded; at that load, `queued` names what the walk has
+    /// queued and not yet decoded. Every one of those was queued by an
+    /// instruction that carried nothing, whose edge the meet would count
+    /// against it, so marking them `dry` answers exactly what recording every
+    /// edge from the entry would, at no cost per instruction before the load.
     ///
     /// A predicated instruction (`if (!cond) goto inst_next` ahead of its body)
     /// reaches the next instruction along two edges: [`Edge::Fall`] when it ran
@@ -293,15 +314,14 @@ impl PicPool {
     /// write to a base therefore kills it only on the path where it ran, and a
     /// predicated return (`popeq {r4-r6,pc}`) leaves the base to the path that
     /// falls past it.
-    pub(super) fn step(
-        &mut self,
-        img: &Image,
-        vma: u64,
-        len: u32,
-        fall: Option<u64>,
-        ops: &[FullOp],
-        branch_targets: &[u64],
-    ) -> Option<u64> {
+    pub(super) fn step(&mut self, img: &Image, insn: Insn, queued: impl FnOnce() -> Vec<u64>) -> Option<u64> {
+        let Insn { vma, len, fall, ops, branches: branch_targets } = insn;
+        let fresh = seed(vma, ops, img.pool, img.data_space);
+        if !self.live {
+            fresh?;
+            self.live = true;
+            self.dry = queued().into_iter().collect();
+        }
         let next = vma.wrapping_add(u64::from(len));
         let skip_at = ops.iter().position(|op| op.opcode == OpCode::CPUI_CBRANCH && branches_to(op, next));
         if let Some(next) = fall {
@@ -324,7 +344,6 @@ impl PicPool {
             if self.at.is_empty() { Vec::new() } else { self.at.remove(&vma).unwrap_or_default() };
         let bases =
             if self.bases_at.is_empty() { Vec::new() } else { self.bases_at.remove(&vma).unwrap_or_default() };
-        let fresh = seed(vma, ops, img.pool, img.data_space);
         if pending.is_empty() && bases.is_empty() && fresh.is_none() {
             return None;
         }
@@ -426,17 +445,25 @@ impl PicPool {
         let seeded = fresh.and_then(|p| {
             outs.iter().any(|(f, deps)| *deps == 0 && !f.base && f.p.origin == p.origin).then_some(p.word)
         });
-        self.nodes.push(Node { vma, ins, outs, skip, refs: ev.found });
+        // A node that passes nothing on and forms nothing delivers nothing,
+        // which an absent one already does.
+        if !(outs.is_empty() && skip.is_empty() && ev.found.is_empty()) {
+            self.nodes.push(Node { vma, ins, outs, skip, refs: ev.found });
+        }
         seeded
     }
 
     /// Record the case edges of a switch dispatch at `vma`, which the walk reads
     /// after the dispatch's own [`PicPool::step`], and hand each case the GOT
     /// bases the dispatch passes on: a case body is the dispatcher's own code.
-    /// Recorded whether or not anything is tracked yet: a case target may still
-    /// be reached with a value along another edge, and a dispatch that carried
-    /// nothing must veto it there.
+    /// Recorded whether or not the dispatch carried anything: a case target may
+    /// still be reached with a value along another edge, and a dispatch that
+    /// carried nothing must veto it there. Before the first pool load the walk
+    /// queues the targets, which [`PicPool::step`] then marks `dry`.
     pub(super) fn cases(&mut self, vma: u64, targets: &[u64]) {
+        if !self.live {
+            return;
+        }
         self.edges.extend(targets.iter().map(|&to| (vma, to, Edge::Branch)));
         let Some(n) = self.nodes.iter().rev().find(|n| n.vma == vma) else { return };
         let based: Vec<Pending> = n.outs.iter().filter(|(f, _)| f.base).map(|(f, _)| f.p).collect();
@@ -482,7 +509,7 @@ impl PicPool {
             }
         }
         let mut valid: Vec<u32> =
-            self.nodes.iter().map(|n| if entered.contains(&n.vma) { 0 } else { all(n.ins.len()) }).collect();
+            self.nodes.iter().map(|n| if entered.contains(&n.vma) || self.dry.contains(&n.vma) { 0 } else { all(n.ins.len()) }).collect();
         let delivers = |valid: &[u32], from: u64, kind: Edge, f: &Fact| {
             index.get(&from).is_some_and(|&i| {
                 let n = &self.nodes[i];
@@ -924,13 +951,15 @@ mod tests {
         mapped: &'a [(u64, u64)],
         exec: &'a [(u64, u64)],
         got: Option<&'a GotImage<'a>>,
+        /// What the walk has queued, as `step` snapshots it at the first load.
+        queue: Vec<u64>,
         preserved: &'a [(u64, u64)],
         s: &'a Spaces,
     }
 
     impl<'a> Walk<'a> {
         fn new(s: &'a Spaces, pool: &'a PoolImage<'a>, mapped: &'a [(u64, u64)]) -> Self {
-            Walk { pp: PicPool::default(), pool, mapped, exec: &[], got: None, preserved: &[], s }
+            Walk { pp: PicPool::default(), pool, mapped, exec: &[], got: None, queue: Vec::new(), preserved: &[], s }
         }
 
         fn step(&mut self, vma: u64, ops: &[FullOp], branches: &[u64]) -> Option<u64> {
@@ -950,7 +979,7 @@ mod tests {
                 got: self.got,
                 preserved: self.preserved,
             };
-            self.pp.step(&img, vma, len, fall, ops, branches)
+            self.pp.step(&img, Insn { vma, len, fall, ops, branches }, || self.queue.clone())
         }
 
         fn finish(self) -> Verdict {
@@ -1441,6 +1470,7 @@ mod tests {
         w.got = Some(&got);
         w.step(0x5f0, &dispatch, &[]);
         w.pp.cases(0x5f0, &[0x600, 0x640]);
+        w.queue = vec![0x640];
         w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
         w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
         w.step(0x608, &jump(&s, 0x640), &[0x640]);
@@ -1484,6 +1514,40 @@ mod tests {
         let v = w.finish();
         assert_eq!(slot_refs(&v, 0x704), SLOT_REFS.to_vec());
         assert_eq!(slot_refs(&v, 0x714), SLOT_REFS.to_vec());
+    }
+
+    /// Before the body's first pool load nothing is recorded at all: on an
+    /// architecture or a body that never forms one of these pairs the walk
+    /// costs one scan of each instruction's ops.
+    #[test]
+    fn nothing_is_recorded_before_the_first_pool_load() {
+        let (s, pool) = (spaces(), image());
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.step(0x5f0, &cbranch(&s, 0x640), &[0x640]);
+        w.step(0x5f4, &jump(&s, 0x600), &[0x600]);
+        w.pp.cases(0x5f4, &[0x600]);
+        assert!(w.pp.edges.is_empty() && w.pp.nodes.is_empty() && !w.pp.live);
+    }
+
+    /// An instruction queued before the first pool load was queued by one that
+    /// carried nothing, so it holds nothing, though the edge was never recorded.
+    #[test]
+    fn what_was_queued_before_the_first_pool_load_holds_nothing() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        let other = vec![op(OpCode::CPUI_COPY, Some(vn(&s.reg, 0x20, 4)), vec![vn(&s.konst, 0, 4)])];
+        w.step(0x5f8, &cbranch(&s, 0x640), &[0x640]);
+        w.queue = vec![0x640];
+        w.step(0x5fc, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x600, &other, &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &jump(&s, 0x640), &[0x640]);
+        w.step(0x640, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x644, &slot_load(&s), &[]);
+        let v = w.finish();
+        assert!(slot_refs(&v, 0x644).is_empty(), "{:?}", v.refs);
+        assert_eq!(slot_refs(&v, 0x604), vec![(0x800, XrefKind::Data)]);
     }
 
     /// A loop whose body does not write r4 keeps the base across its back edge.

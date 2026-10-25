@@ -78,7 +78,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
-use super::kuna_picpool::{self, GotImage, PicPool};
+use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -1100,7 +1100,14 @@ fn descend(
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
             let seeded = pic_image.as_ref().and_then(|img| {
-                picpool.step(img, vma, len, c.fall_through, cap.ops(), if c.flow.is_call { &[] } else { &c.flows })
+                let insn = Insn {
+                    vma,
+                    len,
+                    fall: c.fall_through,
+                    ops: cap.ops(),
+                    branches: if c.flow.is_call { &[] } else { &c.flows },
+                };
+                picpool.step(img, insn, || insn_queue.iter().map(|&(at, _)| at).collect())
             });
             let pointer = seeded.and_then(|word| {
                 let i = drefs.iter().position(|&r| r == (word, XrefKind::Data))?;
