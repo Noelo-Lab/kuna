@@ -226,8 +226,20 @@ pub(super) struct PicPool {
     /// along every edge with no hop bound.
     bases_at: HashMap<u64, Vec<Pending>>,
     nodes: Vec<Node>,
-    /// `(from, to, fall_through)`.
-    edges: Vec<(u64, u64, bool)>,
+    /// `(from, to, kind)`.
+    edges: Vec<(u64, u64, Edge)>,
+}
+
+/// How control reaches the next instruction, which decides what it carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Edge {
+    /// The instruction ran and fell through: every value it passes on.
+    Fall,
+    /// A static branch or a switch case: only GOT bases.
+    Branch,
+    /// A predicated instruction's condition failed and it did not run: every
+    /// value it was handed and its condition did not overwrite.
+    Skip,
 }
 
 /// One instruction's effect on the values it was handed: `ins` are the values,
@@ -237,6 +249,8 @@ struct Node {
     vma: u64,
     ins: Vec<Fact>,
     outs: Vec<(Fact, u32)>,
+    /// What the [`Edge::Skip`] edge carries, when the instruction is predicated.
+    skip: Vec<(Fact, u32)>,
     refs: Vec<(u64, XrefKind, u32, u64)>,
 }
 
@@ -269,23 +283,38 @@ impl PicPool {
     /// [`Verdict::displaced`].
     ///
     /// Called for every instruction of the function in whatever order the walk
-    /// reaches them, with its fall-through (`classify`'s) and its static branch
-    /// targets.
+    /// reaches them, with its length, its fall-through (`classify`'s, `None`
+    /// when the instruction, once it runs, does not fall through) and its static
+    /// branch targets.
+    ///
+    /// A predicated instruction (`if (!cond) goto inst_next` ahead of its body)
+    /// reaches the next instruction along two edges: [`Edge::Fall`] when it ran
+    /// and fell through, [`Edge::Skip`] when it did not run. A conditional
+    /// write to a base therefore kills it only on the path where it ran, and a
+    /// predicated return (`popeq {r4-r6,pc}`) leaves the base to the path that
+    /// falls past it.
     pub(super) fn step(
         &mut self,
         img: &Image,
         vma: u64,
+        len: u32,
         fall: Option<u64>,
         ops: &[FullOp],
         branch_targets: &[u64],
     ) -> Option<u64> {
+        let next = vma.wrapping_add(u64::from(len));
+        let skip_at = ops.iter().position(|op| op.opcode == OpCode::CPUI_CBRANCH && branches_to(op, next));
         if let Some(next) = fall {
-            self.edges.push((vma, next, true));
+            self.edges.push((vma, next, Edge::Fall));
         }
-        // A predicated instruction branches to its own fall-through, which is
-        // still the fall-through edge.
+        if skip_at.is_some() {
+            self.edges.push((vma, next, Edge::Skip));
+        }
         self.edges.extend(
-            branch_targets.iter().filter(|&&to| Some(to) != fall).map(|&to| (vma, to, false)),
+            branch_targets
+                .iter()
+                .filter(|&&to| !(skip_at.is_some() && to == next) && Some(to) != fall)
+                .map(|&to| (vma, to, Edge::Branch)),
         );
 
         // Hashing every instruction's address would be this walk's whole cost on
@@ -343,19 +372,61 @@ impl PicPool {
             }
         }
 
+        // The path where the instruction did not run: what it was handed, less
+        // what its condition wrote. Its pool words follow the instruction when
+        // that falls through, since a predicated pair (`ldrne; addne`) runs
+        // under one condition; only a base meets both paths.
+        let mut skip: Vec<(Fact, u32)> = Vec::new();
+        if let Some(k) = skip_at {
+            let cond_writes: Vec<(u64, u32)> = ops[..k]
+                .iter()
+                .filter_map(|op| match op.out.as_ref().and_then(|o| key_of(o, img.data_space)) {
+                    Some(Key::Reg(off, size)) => Some((off, size)),
+                    _ => None,
+                })
+                .collect();
+            let untouched =
+                |f: &Fact| !cond_writes.iter().any(|&(off, size)| spans_overlap(f.p.off, f.p.size, off, size));
+            for (i, f) in ins.iter().enumerate() {
+                if f.base && untouched(f) {
+                    skip.push((*f, 1 << i));
+                } else if !f.base && fall.is_none() && untouched(f) && f.p.hops < MAX_HOPS {
+                    let mut f = *f;
+                    f.p.hops += 1;
+                    skip.push((f, 1 << i));
+                }
+            }
+            if fall.is_some() {
+                skip.extend(outs.iter().filter(|(f, _)| !f.base).copied());
+            }
+        }
+
         let carried: Vec<Pending> = outs.iter().filter(|(f, _)| !f.base).map(|(f, _)| f.p).collect();
         if let Some(next) = fall.filter(|_| !carried.is_empty()) {
             self.at.entry(next).or_default().extend(carried);
         }
+        if fall.is_none() {
+            let carried: Vec<Pending> = skip.iter().filter(|(f, _)| !f.base).map(|(f, _)| f.p).collect();
+            if !carried.is_empty() {
+                self.at.entry(next).or_default().extend(carried);
+            }
+        }
         let based: Vec<Pending> =
             outs.iter().filter(|(f, _)| f.base).map(|(f, _)| f.p).take(MAX_TRACKED).collect();
-        if !based.is_empty() {
-            for to in fall.into_iter().chain(branch_targets.iter().copied()) {
-                match self.bases_at.get_mut(&to) {
-                    Some(have) => have.retain(|h| based.contains(h)),
-                    None => {
-                        self.bases_at.insert(to, based.clone());
-                    }
+        let skipped: Vec<Pending> = skip.iter().filter(|(f, _)| f.base).map(|(f, _)| f.p).collect();
+        let reach = fall
+            .into_iter()
+            .chain(branch_targets.iter().copied().filter(|&to| !(skip_at.is_some() && to == next)))
+            .map(|to| (to, &based))
+            .chain(skip_at.map(|_| (next, &skipped)));
+        for (to, carry) in reach {
+            if carry.is_empty() {
+                continue;
+            }
+            match self.bases_at.get_mut(&to) {
+                Some(have) => have.retain(|h| carry.contains(h)),
+                None => {
+                    self.bases_at.insert(to, carry.clone());
                 }
             }
         }
@@ -363,7 +434,7 @@ impl PicPool {
         let seeded = fresh.and_then(|p| {
             outs.iter().any(|(f, deps)| *deps == 0 && !f.base && f.p.origin == p.origin).then_some(p.word)
         });
-        self.nodes.push(Node { vma, ins, outs, refs: ev.found });
+        self.nodes.push(Node { vma, ins, outs, skip, refs: ev.found });
         seeded
     }
 
@@ -371,7 +442,7 @@ impl PicPool {
     /// after the dispatch's own [`PicPool::step`].
     pub(super) fn cases(&mut self, vma: u64, targets: &[u64]) {
         if !self.nodes.is_empty() {
-            self.edges.extend(targets.iter().map(|&to| (vma, to, false)));
+            self.edges.extend(targets.iter().map(|&to| (vma, to, Edge::Branch)));
         }
     }
 
@@ -389,18 +460,20 @@ impl PicPool {
             return verdict;
         }
         let index: HashMap<u64, usize> = self.nodes.iter().enumerate().map(|(i, n)| (n.vma, i)).collect();
-        let mut preds: HashMap<u64, Vec<(u64, bool)>> = HashMap::new();
-        for &(from, to, fall) in &self.edges {
+        let mut preds: HashMap<u64, Vec<(u64, Edge)>> = HashMap::new();
+        for &(from, to, kind) in &self.edges {
             if index.contains_key(&to) {
-                preds.entry(to).or_default().push((from, fall));
+                preds.entry(to).or_default().push((from, kind));
             }
         }
         let mut valid: Vec<u32> = self.nodes.iter().map(|n| all(n.ins.len())).collect();
-        let delivers = |valid: &[u32], from: u64, fall: bool, f: &Fact| {
+        let delivers = |valid: &[u32], from: u64, kind: Edge, f: &Fact| {
             index.get(&from).is_some_and(|&i| {
-                self.nodes[i].outs.iter().any(|(o, deps)| {
-                    deps & !valid[i] == 0 && (o.base || fall) && o.same(f)
-                })
+                let n = &self.nodes[i];
+                let carried = if kind == Edge::Skip { &n.skip } else { &n.outs };
+                carried
+                    .iter()
+                    .any(|(o, deps)| deps & !valid[i] == 0 && (o.base || kind != Edge::Branch) && o.same(f))
             })
         };
         let mut changed = true;
@@ -413,7 +486,7 @@ impl PicPool {
                     if keep & (1 << j) == 0 {
                         continue;
                     }
-                    if ps.is_empty() || !ps.iter().all(|&(from, fall)| delivers(&valid, from, fall, f)) {
+                    if ps.is_empty() || !ps.iter().all(|&(from, kind)| delivers(&valid, from, kind, f)) {
                         keep &= !(1 << j);
                     }
                 }
@@ -564,6 +637,12 @@ fn seed(
 
 fn in_data_space(vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -> bool {
     matches!((vn.space.as_ref(), data), (Some(s), Some(d)) if Rc::ptr_eq(s, d))
+}
+
+/// Is `op` a branch to the absolute address `to`? A constant-space target is
+/// p-code-relative, inside the instruction.
+fn branches_to(op: &FullOp, to: u64) -> bool {
+    op.ins.first().is_some_and(|vn| !is_constant(vn) && vn.offset == to)
 }
 
 /// Does control leave the straight-line run here, so the fall-through is not the
@@ -855,7 +934,7 @@ mod tests {
                 got: self.got,
                 preserved: self.preserved,
             };
-            self.pp.step(&img, vma, fall, ops, branches)
+            self.pp.step(&img, vma, len, fall, ops, branches)
         }
 
         fn finish(self) -> Verdict {
@@ -1282,6 +1361,57 @@ mod tests {
         w.step(0x664, &cbranch(&s, 0x668), &[0x668]);
         w.step(0x668, &add_pc(&s, 0x20, 0x668), &[]);
         assert_eq!(refs(&w.finish()), vec![(0x668, 0x4af, XrefKind::Data)]);
+    }
+
+    /// `popeq {r4-r6,pc}` as A32 lifts it: the condition, a branch to the next
+    /// instruction when it fails, then the pops and the return.
+    fn popeq(s: &Spaces, next: u64) -> Vec<FullOp> {
+        let pop = |reg: u64| {
+            op(OpCode::CPUI_LOAD, Some(vn(&s.reg, reg, 4)), vec![vn(&s.konst, ram_id(s), 8), vn(&s.reg, 0x54, 4)])
+        };
+        vec![
+            op(OpCode::CPUI_BOOL_NEGATE, Some(vn(&s.uniq, 0x100, 1)), vec![vn(&s.reg, 0x101, 1)]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&s.ram, next, 4), vn(&s.uniq, 0x100, 1)]),
+            pop(R4),
+            pop(R5),
+            pop(0x38),
+            op(OpCode::CPUI_RETURN, None, vec![vn(&s.reg, 0x5c, 4)]),
+        ]
+    }
+
+    /// A conditional return writes r4 only on the path where it runs, which
+    /// leaves the body; the path that falls past it keeps the base.
+    #[test]
+    fn a_base_survives_past_a_predicated_return_that_pops_it() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &popeq(&s, 0x60c), &[0x60c]);
+        w.step(0x60c, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x610, &slot_load(&s), &[]);
+        assert_eq!(slot_refs(&w.finish(), 0x610), SLOT_REFS.to_vec());
+    }
+
+    /// A conditional write to r4 that falls through (`ldrne r4,[sp]`) leaves
+    /// r4 the base on one path only, so it is not believed after it.
+    #[test]
+    fn a_predicated_write_that_falls_through_ends_the_base() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let ldrne = vec![
+            op(OpCode::CPUI_BOOL_NEGATE, Some(vn(&s.uniq, 0x100, 1)), vec![vn(&s.reg, 0x101, 1)]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&s.ram, 0x60c, 4), vn(&s.uniq, 0x100, 1)]),
+            op(OpCode::CPUI_LOAD, Some(vn(&s.reg, R4, 4)), vec![vn(&s.konst, ram_id(&s), 8), vn(&s.reg, 0x54, 4)]),
+        ];
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &ldrne, &[0x60c]);
+        w.step(0x60c, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x610, &slot_load(&s), &[]);
+        assert!(slot_refs(&w.finish(), 0x610).is_empty());
     }
 
     /// A loop whose body does not write r4 keeps the base across its back edge.

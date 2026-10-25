@@ -1099,7 +1099,7 @@ fn descend(
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
             let seeded = pic_image.as_ref().and_then(|img| {
-                picpool.step(img, vma, c.fall_through, cap.ops(), if c.flow.is_call { &[] } else { &c.flows })
+                picpool.step(img, vma, len, c.fall_through, cap.ops(), if c.flow.is_call { &[] } else { &c.flows })
             });
             let pointer = seeded.and_then(|word| {
                 let i = drefs.iter().position(|&r| r == (word, XrefKind::Data))?;
