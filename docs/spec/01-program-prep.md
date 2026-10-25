@@ -6160,9 +6160,9 @@ way, because the frame's edge into it is in no other body's record.
 Three shapes are not covered. A GOT base inherited from a caller (one the
 function never forms itself) is not tracked: on ARM the register that holds it is
 only callee-saved, not reserved, so assuming it would need every caller to
-agree. A slot load that several paths reach with different GOT offsets, as when
+agree. A pool word does not cross a branch, so a slot load reached by a branch, as when
 GCC merges the tails of switch cases into one shared `ldr r3,[r6,r3]`, files
-nothing, since the offsets disagree at the join. And code that a function walked
+nothing, even when every path brings the same offset. And code that a function walked
 later reaches by jumping into a body already walked is not part of that body's
 meet.
 

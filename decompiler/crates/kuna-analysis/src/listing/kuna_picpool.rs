@@ -1464,9 +1464,9 @@ mod tests {
         assert!(slot_refs(&w.finish(), 0x610).is_empty());
     }
 
-    /// A switch dispatched before any pool load: its case edges are recorded
-    /// although nothing is tracked yet, so a case target that another path
-    /// reaches with the base does not believe it — the dispatch carried none.
+    /// A switch dispatched before any pool load: `cases` records nothing yet,
+    /// and a case target queued before the first load still does not believe
+    /// the base another path brings — the walk's dry snapshot vetoes it.
     #[test]
     fn a_switch_before_any_pool_load_still_vetoes_its_case_targets() {
         let (s, pool, got) = (spaces(), got_pool(), got_image());
