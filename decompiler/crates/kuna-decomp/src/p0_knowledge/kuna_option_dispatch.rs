@@ -252,6 +252,11 @@ kuna_options! { self, p1;
         self.go_morestack = mode.as_u8();
         Ok(msg)
     },
+    "gowritebarrier" => {
+        let (mode, msg) = crate::kuna_gowritebarrier::parse_gowritebarrier_mode(p1).map_err(KunaError::parse)?;
+        self.go_write_barrier = mode.as_u8();
+        Ok(msg)
+    },
     "sourcelang" => {
         let forced = crate::kuna_sourcelang::parse_option_value(p1).map_err(KunaError::parse)?;
         crate::kuna_sourcelang::set_sourcelang_env(forced);

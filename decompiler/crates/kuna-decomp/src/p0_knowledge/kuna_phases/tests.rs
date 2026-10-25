@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_333() {
-    assert_eq!(kuna_num_settables(), 333);
-    assert_eq!(SETTABLE_TABLE.len(), 333);
+fn settable_count_is_334() {
+    assert_eq!(kuna_num_settables(), 334);
+    assert_eq!(SETTABLE_TABLE.len(), 334);
 }
 
 #[test]
-fn tier_counts_are_120_core_128_transform_85_analysis() {
+fn tier_counts_are_120_core_129_transform_85_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_120_core_128_transform_85_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (120, 128, 85));
+    assert_eq!((core, transform, analysis), (120, 129, 85));
 }
 
 #[test]
@@ -726,6 +726,9 @@ fn option_values_live_value_present_for_154() {
                             // rustabi shape; its live value is
                             // `Architecture::go_morestack`.
                             | "gomorestack"
+                            // (kuna) `gowritebarrier`: the same MODE shape;
+                            // its live value is `Architecture::go_write_barrier`.
+                            | "gowritebarrier"
                             // (kuna) `impliedrefs`/`termdup` take an INTEGER
                             // (`2|3|4|<n>`), which the codegen live reader (a
                             // bool `live_true`/`live_false` pair) cannot
@@ -1084,7 +1087,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `gomorestack`; its P2 row sits beside `sourcelang`.
     // +1 for `gonoreturn`; its P1 row sits beside `sourcelang`.
     // +1 for `variantnames`; its P5 row sits beside `dwarfvariants`.
-    assert_eq!(json.matches("},\n").count(), 332);
+    // +1 for `gowritebarrier`; its P2 row sits beside `gomorestack`.
+    assert_eq!(json.matches("},\n").count(), 333);
 }
 
 #[test]

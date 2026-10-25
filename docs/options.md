@@ -449,6 +449,9 @@ Three tiers:
 | every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry | [`gomorestack`](#gomorestack) |
 | go function parameters recovered as phi-fed locals or missing because the entry is a loop head | [`gomorestack`](#gomorestack) |
 | do-while wrapping an entire go function body with a morestack call in its latch | [`gomorestack`](#gomorestack) |
+| every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
+| stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
+| go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
 | the same value is assigned to one variable twice in a row with nothing in between | [`hideshadow`](#hideshadow) |
 | a comma-expression condition repeats an assignment: (v3 = a2, v4 = a0, v4 = a0, ...) | [`hideshadow`](#hideshadow) |
 | a repeated vN = dat_XXXX; around a conditional goto | [`hideshadow`](#hideshadow) |
@@ -2267,6 +2270,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: on a Go binary the fold turns every function's entry-loop + runtime.morestack_noctxt() noise into straight-line flow and un-breaks parameter recovery; off only to audit the real prologue instructions (e.g. verifying a hand-patched stackguard). Use always on a Go function carved into a bytechunk or a raw image where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gomorestack
 - **Example:** `option gomorestack off`
+
+### `gowritebarrier` -- off | auto | always, default `auto` (destructive opt-in)
+
+- **Symptoms:** every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call; stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled; go output doubled in size by GC bookkeeping diamonds.
+- **What it does:** Fold the Go GC write-barrier diamond. Every pointer store the garbage collector must see compiles to a flag test: when runtime.writeBarrier is set, call a runtime.gcWriteBarrier<N> thunk (which hands back the GC pointer buffer, R11 on amd64) and record the old and new pointer values in it; both paths then perform the program's own stores at the join. The cold arm is GC bookkeeping with no bearing on what the function computes, and it actively corrupts the output today: the thunk's buffer register is not a modeled return, so the recording stores read an undefined local and the value split can mangle even the real store's address expression. The fold matches the shared guarded-cold-call shape (infra/idiom.rs): a one-block cold arm holding exactly one call, whose guard rejoins the hot path in one hop - the callee name (runtime.gcWriteBarrier, gcWriteBarrier1..8, the bare assembly thunk gcWriteBarrier; never wbBufFlush, which user code cannot call inline) is only accepted INSIDE that shape, so a coincidental name in ordinary flow cuts nothing. The guard edge is removed pre-SSA (the cleanupcode/gomorestack window, registered directly after gomorestack), so the buffer-feeding loads die to ordinary dead-code elimination and the program's stores at the join are untouched. At auto (default) the fold acts only when the image's source language is Go; always drops the language test (stage-test bytechunks); off keeps the barrier for auditing GC behavior.
+- **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
+- **Example:** `option gowritebarrier off`
 
 ### `hideshadow` -- on | off, default `on`
 
