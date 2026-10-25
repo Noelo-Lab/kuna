@@ -379,7 +379,7 @@ where
         .filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.iter().all(|&t| t == skip))
     {
         let decoded = |at: u64| insns.decoded(at);
-        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma) {
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).0 {
             out.insn(target);
             refs.file(vma, target, RefKind::Code);
         }
