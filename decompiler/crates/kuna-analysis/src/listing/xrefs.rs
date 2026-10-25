@@ -78,7 +78,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
-use super::kuna_picpool::{GotImage, PicPool};
+use super::kuna_picpool::{self, GotImage, PicPool};
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -730,6 +730,13 @@ fn descend(
         preserved: if arch.analysis_switchreach { &preserved } else { &[] },
         far: arch.analysis_switchreach,
     };
+    let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
+        pool,
+        mapped: &mapped,
+        data_space: data_space.as_ref(),
+        got: got.as_ref(),
+        preserved: &preserved,
+    });
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
@@ -1089,20 +1096,9 @@ fn descend(
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
-            let seeded = match pool.as_ref() {
-                Some(p) => picpool.step(
-                    vma,
-                    len,
-                    cap.ops(),
-                    p,
-                    &mapped,
-                    data_space.as_ref(),
-                    got.as_ref(),
-                    &preserved,
-                    if c.flow.is_call { &[] } else { &c.flows },
-                ),
-                None => None,
-            };
+            let seeded = pic_image.as_ref().and_then(|img| {
+                picpool.step(img, vma, c.fall_through, cap.ops(), if c.flow.is_call { &[] } else { &c.flows })
+            });
             let pointer = seeded.and_then(|word| {
                 let i = drefs.iter().position(|&r| r == (word, XrefKind::Data))?;
                 Some(drefs.remove(i).0)
@@ -1229,7 +1225,7 @@ fn descend(
             }
         }
 
-        let verdict = picpool.finish(entry);
+        let verdict = picpool.finish();
         for (vma, word, text) in held {
             if !verdict.displaced.contains(&vma) {
                 st.file(vma, word, XrefKind::Data, &text);

@@ -73,7 +73,8 @@
 //! # Joins
 //!
 //! A tracked value holds at an instruction only if every predecessor in the body
-//! hands it the same one; the function entry's caller hands it nothing. The walk
+//! hands it the same one; the walk decodes the entry first, so nothing is ever
+//! carried into it from a back edge. The walk
 //! cannot apply that rule as it goes, since it decodes a join before it has seen
 //! every edge into it, so [`PicPool::finish`] applies it to the recorded body
 //! and answers only what survives.
@@ -132,6 +133,16 @@ impl<'a> GotImage<'a> {
             (_, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
         })
     }
+}
+
+/// What every [`PicPool::step`] over one image reads.
+pub(super) struct Image<'a> {
+    pub pool: &'a PoolImage<'a>,
+    pub mapped: &'a [(u64, u64)],
+    pub data_space: Option<&'a Rc<AddrSpace>>,
+    pub got: Option<&'a GotImage<'a>>,
+    /// The callee-saved register spans, which a value survives a call in.
+    pub preserved: &'a [(u64, u64)],
 }
 
 /// How many instructions a pool value may travel before the `add` that composes
@@ -231,31 +242,23 @@ impl PicPool {
     /// [`Verdict::displaced`].
     ///
     /// Called for every instruction of the function in whatever order the walk
-    /// reaches them, with its static successors.
-    #[allow(clippy::too_many_arguments)]
+    /// reaches them, with its fall-through (`classify`'s) and its static branch
+    /// targets.
     pub(super) fn step(
         &mut self,
+        img: &Image,
         vma: u64,
-        len: u32,
+        fall: Option<u64>,
         ops: &[FullOp],
-        pool: &PoolImage,
-        mapped: &[(u64, u64)],
-        data_space: Option<&Rc<AddrSpace>>,
-        got: Option<&GotImage>,
-        preserved: &[(u64, u64)],
         branch_targets: &[u64],
     ) -> Option<u64> {
-        let falls = !ops.iter().any(|op| {
-            matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN)
-        });
-        let next = vma.wrapping_add(u64::from(len));
-        if falls {
+        if let Some(next) = fall {
             self.edges.push((vma, next, true));
         }
         // A predicated instruction branches to its own fall-through, which is
         // still the fall-through edge.
         self.edges.extend(
-            branch_targets.iter().filter(|&&to| !(falls && to == next)).map(|&to| (vma, to, false)),
+            branch_targets.iter().filter(|&&to| Some(to) != fall).map(|&to| (vma, to, false)),
         );
 
         // Hashing every instruction's address would be this walk's whole cost on
@@ -265,7 +268,7 @@ impl PicPool {
             if self.at.is_empty() { Vec::new() } else { self.at.remove(&vma).unwrap_or_default() };
         let bases =
             if self.bases_at.is_empty() { Vec::new() } else { self.bases_at.remove(&vma).unwrap_or_default() };
-        let fresh = seed(vma, ops, pool, data_space);
+        let fresh = seed(vma, ops, img.pool, img.data_space);
         if pending.is_empty() && bases.is_empty() && fresh.is_none() {
             return None;
         }
@@ -274,11 +277,11 @@ impl PicPool {
             .map(|&p| Fact { p, base: true })
             .chain(pending.iter().map(|&p| Fact { p, base: false }))
             .collect();
-        let ev = evaluate(vma, ops, &ins, mapped, data_space, got);
+        let ev = evaluate(vma, ops, &ins, img);
         let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
         let kept = |f: &Fact| {
             !ev.written.iter().any(|&(off, size)| spans_overlap(f.p.off, f.p.size, off, size))
-                && (!calls || survives_calls(&f.p, preserved))
+                && (!calls || survives_calls(&f.p, img.preserved))
         };
 
         let mut outs: Vec<(Fact, u32)> = Vec::new();
@@ -289,7 +292,7 @@ impl PicPool {
         }
         for &(p, deps) in &ev.new_bases {
             let f = Fact { p, base: true };
-            if !calls || survives_calls(&p, preserved) {
+            if !calls || survives_calls(&p, img.preserved) {
                 outs.retain(|(o, _)| !(o.base && spans_overlap(o.p.off, o.p.size, p.off, p.size)));
                 outs.push((f, deps));
             }
@@ -301,7 +304,7 @@ impl PicPool {
                     carry.push((*f, 1 << i));
                 }
             }
-            if let Some(p) = fresh.filter(|p| !calls || survives_calls(p, preserved)) {
+            if let Some(p) = fresh.filter(|p| !calls || survives_calls(p, img.preserved)) {
                 carry.retain(|(o, _)| !overlaps(&o.p, &p));
                 carry.push((Fact { p, base: false }, 0));
             }
@@ -314,13 +317,13 @@ impl PicPool {
         }
 
         let carried: Vec<Pending> = outs.iter().filter(|(f, _)| !f.base).map(|(f, _)| f.p).collect();
-        if falls && !carried.is_empty() {
+        if let Some(next) = fall.filter(|_| !carried.is_empty()) {
             self.at.entry(next).or_default().extend(carried);
         }
         let based: Vec<Pending> =
             outs.iter().filter(|(f, _)| f.base).map(|(f, _)| f.p).take(MAX_TRACKED).collect();
         if !based.is_empty() {
-            for to in falls.then_some(next).into_iter().chain(branch_targets.iter().copied()) {
+            for to in fall.into_iter().chain(branch_targets.iter().copied()) {
                 match self.bases_at.get_mut(&to) {
                     Some(have) => have.retain(|h| based.contains(h)),
                     None => {
@@ -348,11 +351,12 @@ impl PicPool {
     /// The addresses the body formed, once the whole body is known.
     ///
     /// Starting from what the walk carried, a value is dropped at an instruction
-    /// unless every recorded predecessor passes on the same one (`entry` has the
-    /// caller as a predecessor, which passes nothing), and everything computed
-    /// from a dropped value goes with it, until nothing changes. An address is
-    /// answered only when all the values it was formed from survived.
-    pub(super) fn finish(self, entry: u64) -> Verdict {
+    /// unless every recorded predecessor passes on the same one, and everything
+    /// computed from a dropped value goes with it, until nothing changes. An
+    /// address is answered only when all the values it was formed from survived.
+    /// The entry needs no rule of its own: the walk decodes it first, so nothing
+    /// is carried into it.
+    pub(super) fn finish(self) -> Verdict {
         let mut verdict = Verdict::default();
         if self.nodes.iter().all(|n| n.refs.is_empty()) {
             return verdict;
@@ -382,7 +386,7 @@ impl PicPool {
                     if keep & (1 << j) == 0 {
                         continue;
                     }
-                    if n.vma == entry || ps.is_empty() || !ps.iter().all(|&(from, fall)| delivers(&valid, from, fall, f)) {
+                    if ps.is_empty() || !ps.iter().all(|&(from, fall)| delivers(&valid, from, fall, f)) {
                         keep &= !(1 << j);
                     }
                 }
@@ -423,14 +427,8 @@ struct Eval {
 
 /// The addresses this instruction forms from the values it was handed, the
 /// registers it writes, and the GOT bases it establishes.
-fn evaluate(
-    vma: u64,
-    ops: &[FullOp],
-    ins: &[Fact],
-    mapped: &[(u64, u64)],
-    data: Option<&Rc<AddrSpace>>,
-    got: Option<&GotImage>,
-) -> Eval {
+fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
+    let (mapped, data, got) = (img.mapped, img.data_space, img.got);
     let mut vals: Vec<(Key, Known)> = ins
         .iter()
         .enumerate()
@@ -686,6 +684,8 @@ fn mask(size: u32) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::listing::classify::classify;
+    use crate::listing::model::RawOp;
 
     /// The reduction of the filing image: a read-only pool at 0x6a0 holding the
     /// displacement -0x1c1, and `.rodata` at 0x400.
@@ -774,21 +774,21 @@ mod tests {
         }
 
         fn step(&mut self, vma: u64, ops: &[FullOp], branches: &[u64]) -> Option<u64> {
-            self.pp.step(
-                vma,
-                4,
-                ops,
-                self.pool,
-                self.mapped,
-                Some(&self.s.ram),
-                self.got,
-                self.preserved,
-                branches,
-            )
+            let raw: Vec<RawOp> =
+                ops.iter().map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }).collect();
+            let fall = classify(&raw, vma, 4).fall_through;
+            let img = Image {
+                pool: self.pool,
+                mapped: self.mapped,
+                data_space: Some(&self.s.ram),
+                got: self.got,
+                preserved: self.preserved,
+            };
+            self.pp.step(&img, vma, fall, ops, branches)
         }
 
-        fn finish(self, entry: u64) -> Verdict {
-            self.pp.finish(entry)
+        fn finish(self) -> Verdict {
+            self.pp.finish()
         }
     }
 
@@ -804,7 +804,7 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAPPED);
         w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
         w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
-        assert_eq!(refs(&w.finish(0x660)), vec![(0x664, 0x4ab, XrefKind::Data)], "0x66c + (-0x1c1)");
+        assert_eq!(refs(&w.finish()), vec![(0x664, 0x4ab, XrefKind::Data)], "0x66c + (-0x1c1)");
     }
 
     /// The pair need not be adjacent: instruction scheduling separates the load
@@ -821,7 +821,7 @@ mod tests {
         w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
         w.step(0x664, &nop, &[]);
         w.step(0x668, &add_pc(&s, 0x20, 0x668), &[]);
-        assert_eq!(refs(&w.finish(0x660)), vec![(0x668, 0x4af, XrefKind::Data)]);
+        assert_eq!(refs(&w.finish()), vec![(0x668, 0x4af, XrefKind::Data)]);
     }
 
     /// Overwriting the register between the load and the `add` ends the value:
@@ -835,7 +835,7 @@ mod tests {
         w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
         w.step(0x664, &clobber, &[]);
         w.step(0x668, &add_pc(&s, 0x20, 0x668), &[]);
-        assert!(w.finish(0x660).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
     }
 
     /// A call clobbers the caller-saved registers, so nothing in them survives it.
@@ -847,7 +847,7 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAPPED);
         w.step(0x660, &call, &[]);
         w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
-        assert!(w.finish(0x660).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
     }
 
     /// A word in a callee-saved register survives the call between its load and
@@ -861,7 +861,7 @@ mod tests {
         w.preserved = &[(0x30, 0x34)];
         w.step(0x660, &call, &[]);
         w.step(0x664, &add_pc(&s, 0x30, 0x664), &[]);
-        assert_eq!(refs(&w.finish(0x660)), vec![(0x664, 0x4ab, XrefKind::Data)]);
+        assert_eq!(refs(&w.finish()), vec![(0x664, 0x4ab, XrefKind::Data)]);
     }
 
     /// The two refusals, each of which would be a fabricated reference.
@@ -878,13 +878,13 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAPPED);
         w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
         w.step(0x664, &no_pc, &[]);
-        assert!(w.finish(0x660).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
 
         // A sum landing in no section is not an address, whatever formed it.
         let mut w = Walk::new(&s, &pool, &[(0x9000, 0x9100)]);
         w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
         w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
-        assert!(w.finish(0x660).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
     }
 
     /// `ldr r1,[pc,#imm]; ldr r1,[pc,r1]` composes its address into a temporary
@@ -913,7 +913,7 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAPPED);
         w.step(0x660, &ldr(&s, 0x24, 0x6a0), &[]);
         w.step(0x664, &indirect, &[]);
-        assert!(w.finish(0x660).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
     }
 
     /// A narrow or unaligned pool read is not a slot at all, which is
@@ -929,7 +929,7 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAPPED);
         w.step(0x660, &narrow, &[]);
         w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
-        assert!(w.finish(0x660).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
     }
 
     /// A displacement that happens to be a mapped address itself, as in a
@@ -944,7 +944,7 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAP);
         assert_eq!(w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]), Some(0x500));
         w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
-        let v = w.finish(0x660);
+        let v = w.finish();
         assert_eq!(refs(&v), vec![(0x664, 0xb6c, XrefKind::Data)]);
         assert!(v.displaced.contains(&0x660));
     }
@@ -961,7 +961,7 @@ mod tests {
         let mut w = Walk::new(&s, &pool, &MAPPED);
         assert_eq!(w.step(0x660, &ldr(&s, 0x20, 0x6a4), &[]), Some(0x500));
         w.step(0x664, &no_pc, &[]);
-        let v = w.finish(0x660);
+        let v = w.finish();
         assert!(v.refs.is_empty() && v.displaced.is_empty());
     }
 
@@ -978,7 +978,7 @@ mod tests {
             vma += 4;
         }
         w.step(vma, &add_pc(&s, 0x20, vma), &[]);
-        assert!(w.finish(0x600).refs.is_empty());
+        assert!(w.finish().refs.is_empty());
     }
 
     // --- GOT bases -----------------------------------------------------------
@@ -1047,7 +1047,7 @@ mod tests {
         w.step(0x60c, &jump(&s, 0x700), &[0x700]);
         w.step(0x700, &ldr(&s, R2, 0x6a4), &[]);
         w.step(0x704, &slot_load(&s), &[]);
-        let v = w.finish(0x600);
+        let v = w.finish();
         assert_eq!(slot_refs(&v, 0x604), vec![(0x800, XrefKind::Data)]);
         assert_eq!(slot_refs(&v, 0x704), SLOT_REFS.to_vec());
     }
@@ -1069,7 +1069,7 @@ mod tests {
         w.step(0x620, &ldr(&s, R2, 0x6a4), &[]);
         w.step(0x610, &jump(&s, 0x620), &[0x620]);
         w.step(0x624, &slot_load(&s), &[]);
-        let v = w.finish(0x600);
+        let v = w.finish();
         assert!(slot_refs(&v, 0x624).is_empty(), "got {:?}", v.refs);
     }
 
@@ -1088,7 +1088,7 @@ mod tests {
         w.step(0x620, &ldr(&s, R2, 0x6a4), &[]);
         w.step(0x610, &jump(&s, 0x620), &[0x620]);
         w.step(0x624, &slot_load(&s), &[]);
-        assert_eq!(slot_refs(&w.finish(0x600), 0x624), SLOT_REFS.to_vec());
+        assert_eq!(slot_refs(&w.finish(), 0x624), SLOT_REFS.to_vec());
     }
 
     /// A predicated instruction (`ldrne`) spells its condition as a branch to its
@@ -1100,7 +1100,7 @@ mod tests {
         w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
         w.step(0x664, &cbranch(&s, 0x668), &[0x668]);
         w.step(0x668, &add_pc(&s, 0x20, 0x668), &[]);
-        assert_eq!(refs(&w.finish(0x660)), vec![(0x668, 0x4af, XrefKind::Data)]);
+        assert_eq!(refs(&w.finish()), vec![(0x668, 0x4af, XrefKind::Data)]);
     }
 
     /// A loop whose body does not write r4 keeps the base across its back edge.
@@ -1114,11 +1114,11 @@ mod tests {
         w.step(0x608, &ldr(&s, R2, 0x6a4), &[]);
         w.step(0x60c, &slot_load(&s), &[]);
         w.step(0x610, &cbranch(&s, 0x608), &[0x608]);
-        assert_eq!(slot_refs(&w.finish(0x600), 0x60c), SLOT_REFS.to_vec());
+        assert_eq!(slot_refs(&w.finish(), 0x60c), SLOT_REFS.to_vec());
     }
 
-    /// The entry has the caller as a predecessor, which hands it nothing: a
-    /// branch back to the entry cannot make a base hold there.
+    /// The walk decodes the entry before any edge into it, so a branch back to
+    /// the entry cannot make a base hold there.
     #[test]
     fn nothing_holds_at_the_entry() {
         let (s, pool, got) = (spaces(), got_pool(), got_image());
@@ -1129,6 +1129,6 @@ mod tests {
         w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
         w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
         w.step(0x608, &jump(&s, 0x5f8), &[0x5f8]);
-        assert!(slot_refs(&w.finish(0x5f8), 0x5fc).is_empty());
+        assert!(slot_refs(&w.finish(), 0x5fc).is_empty());
     }
 }
