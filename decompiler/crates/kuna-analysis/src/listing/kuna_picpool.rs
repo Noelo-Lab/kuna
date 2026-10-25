@@ -439,11 +439,12 @@ impl PicPool {
     }
 
     /// Record the case edges of a switch dispatch at `vma`, which the walk reads
-    /// after the dispatch's own [`PicPool::step`].
+    /// after the dispatch's own [`PicPool::step`]. Recorded whether or not
+    /// anything is tracked yet: a case target may still be reached with a value
+    /// along another edge, and the dispatch, which carried nothing, must veto
+    /// it there.
     pub(super) fn cases(&mut self, vma: u64, targets: &[u64]) {
-        if !self.nodes.is_empty() {
-            self.edges.extend(targets.iter().map(|&to| (vma, to, Edge::Branch)));
-        }
+        self.edges.extend(targets.iter().map(|&to| (vma, to, Edge::Branch)));
     }
 
     /// The addresses the body formed, once the whole body is known.
@@ -453,8 +454,9 @@ impl PicPool {
     /// computed from a dropped value goes with it, until nothing changes. An
     /// address is answered only when all the values it was formed from survived.
     /// The entry needs no rule of its own: the walk decodes it first, so nothing
-    /// is carried into it.
-    pub(super) fn finish(self) -> Verdict {
+    /// is carried into it. An instruction in `entered` has a predecessor in
+    /// another body's walk, outside this record, so nothing holds there.
+    pub(super) fn finish(self, entered: &HashSet<u64>) -> Verdict {
         let mut verdict = Verdict::default();
         if self.nodes.iter().all(|n| n.refs.is_empty()) {
             return verdict;
@@ -466,7 +468,8 @@ impl PicPool {
                 preds.entry(to).or_default().push((from, kind));
             }
         }
-        let mut valid: Vec<u32> = self.nodes.iter().map(|n| all(n.ins.len())).collect();
+        let mut valid: Vec<u32> =
+            self.nodes.iter().map(|n| if entered.contains(&n.vma) { 0 } else { all(n.ins.len()) }).collect();
         let delivers = |valid: &[u32], from: u64, kind: Edge, f: &Fact| {
             index.get(&from).is_some_and(|&i| {
                 let n = &self.nodes[i];
@@ -938,7 +941,7 @@ mod tests {
         }
 
         fn finish(self) -> Verdict {
-            self.pp.finish()
+            self.pp.finish(&HashSet::new())
         }
     }
 
@@ -1412,6 +1415,41 @@ mod tests {
         w.step(0x60c, &ldr(&s, R2, 0x6a4), &[]);
         w.step(0x610, &slot_load(&s), &[]);
         assert!(slot_refs(&w.finish(), 0x610).is_empty());
+    }
+
+    /// A switch dispatched before any pool load: its case edges are recorded
+    /// although nothing is tracked yet, so a case target that another path
+    /// reaches with the base does not believe it — the dispatch carried none.
+    #[test]
+    fn a_switch_before_any_pool_load_still_vetoes_its_case_targets() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let dispatch = vec![op(OpCode::CPUI_BRANCHIND, None, vec![vn(&s.reg, 0x20, 4)])];
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x5f0, &dispatch, &[]);
+        w.pp.cases(0x5f0, &[0x600, 0x640]);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &jump(&s, 0x640), &[0x640]);
+        w.step(0x640, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x644, &slot_load(&s), &[]);
+        let v = w.finish();
+        assert!(slot_refs(&v, 0x644).is_empty(), "{:?}", v.refs);
+    }
+
+    /// An instruction another body's walk refused to enter has a predecessor
+    /// there that this body never saw, so nothing holds at it.
+    #[test]
+    fn nothing_holds_where_another_walk_enters() {
+        let (s, pool, got) = (spaces(), got_pool(), got_image());
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step(0x600, &ldr(&s, R4, 0x6a0), &[]);
+        w.step(0x604, &add_pc(&s, R4, 0x604), &[]);
+        w.step(0x608, &ldr(&s, R2, 0x6a4), &[]);
+        w.step(0x60c, &slot_load(&s), &[]);
+        let v = w.pp.finish(&HashSet::from([0x60c]));
+        assert!(slot_refs(&v, 0x60c).is_empty(), "{:?}", v.refs);
     }
 
     /// A loop whose body does not write r4 keeps the base across its back edge.

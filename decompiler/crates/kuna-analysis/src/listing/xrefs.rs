@@ -1045,6 +1045,7 @@ fn descend(
                 && frame_candidates.binary_search(&vma).is_ok()
                 && !frame_cache.body_covers(entry, vma)
             {
+                st.refused.insert(vma);
                 continue;
             }
             if sections_are_runtime && !in_range(&exec_set, vma) {
@@ -1227,7 +1228,7 @@ fn descend(
             }
         }
 
-        let verdict = picpool.finish();
+        let verdict = picpool.finish(&st.refused);
         for (vma, word, text) in held {
             if !verdict.displaced.contains(&vma) {
                 st.file(vma, word, XrefKind::Data, &text);
@@ -1528,6 +1529,10 @@ struct State {
     indirect_call_sites: BTreeSet<u64>,
     flow: Option<FlowGraph>,
     switches: Vec<SwitchTable>,
+    /// (kuna) `picpool`: instructions a recovered frame's walk refused to enter.
+    /// The frame's own edges into one are in no other body's record, so a body
+    /// that decodes it later cannot trust what it carries there.
+    refused: HashSet<u64>,
 }
 
 impl State {
@@ -1543,6 +1548,7 @@ impl State {
                 ..FlowGraph::default()
             }),
             switches: Vec::new(),
+            refused: HashSet::new(),
         }
     }
 
@@ -2286,6 +2292,7 @@ mod tests {
             indirect_call_sites: BTreeSet::new(),
             flow: None,
             switches: Vec::new(),
+            refused: HashSet::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -2343,6 +2350,7 @@ mod tests {
             indirect_call_sites: BTreeSet::from([0x1188]),
             flow: None,
             switches: Vec::new(),
+            refused: HashSet::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new(), false);
@@ -2378,6 +2386,7 @@ mod tests {
                 seeds: vec![0x3000, 0x1000, 0x3000, 0x2000],
             }),
             switches: Vec::new(),
+            refused: HashSet::new(),
         };
         let index = st.finish(BTreeMap::new(), true);
         assert_eq!(index.function_containing(0x1001), Some(0x1000));
