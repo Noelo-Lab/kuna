@@ -1,0 +1,63 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "a-f297e3e8ecb3",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--to",
+    "on_read",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/branchtable_arm_le32",
+    "binary_sha256": "81d77bd8afe7e7278e95d8a0ebe3dc155a974c93e9178d4312a0566a7ddd42cb",
+    "binary_size": 72528,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/branchtable_arm_le32",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 2
+      },
+      {
+        "path": "xrefs[0].from_address_hex",
+        "op": "eq",
+        "value": "0x101ec"
+      },
+      {
+        "path": "xrefs[0].from_function.name",
+        "op": "eq",
+        "value": "add_dispatch"
+      },
+      {
+        "path": "xrefs[1].from_address_hex",
+        "op": "eq",
+        "value": "0x10338"
+      },
+      {
+        "path": "xrefs[1].from_function.name",
+        "op": "eq",
+        "value": "ldr_dispatch"
+      }
+    ]
+  },
+  "notes": "Promoted acceptance of arm-branch-table-xrefs. Each dispatch makes the GOT base in r6 and switches through an A32 table (`addls pc,pc,r5,lsl #2` or `ldrls pc,[pc,r5,lsl #2]`); one case of each reads `on_read`'s slot through r6. Before the fix the walk followed only `b default`. The other cases are in verify_branchtable.rs."
+}

@@ -1,5 +1,5 @@
-//! (kuna `armframes`) Follow an A32 jump table in the walk, so the case blocks of
-//! a switch belong to the function that dispatches to them.
+//! (kuna `armframes`) Follow an A32 jump table in the Listing and xrefs walks, so
+//! the case blocks of a switch belong to the function that dispatches to them.
 //!
 //! GCC lowers an A32 switch to a predicated computed jump right after the range
 //! check, with its table immediately after the default branch:
