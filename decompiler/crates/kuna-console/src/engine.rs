@@ -3020,6 +3020,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `off` renders exactly what no Win32 prototype at all renders.
         "win32sigs" => arch.analysis_win32sigs,
         "strings" => arch.analysis_strings,
+        // (kuna `fatstr`) The Rust `&str`-record string pass — gated on the SAME
+        // option mode the engine's (ptr,len) literal rule reads, so one option
+        // governs both recognizers; `off` (0) drops the bounded facts here.
+        "fatstrrecords" => arch.fat_str != 0,
         "entry_disc" => arch.analysis_entry_disc,
         // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
         // standalone stashed pass whose facts (the exception landing pads) are
@@ -4907,12 +4911,24 @@ fn commit_analysis_output(
     //    byte-identical to the 1-byte markup alone. (kuna `widestrings32`) The
     //    4-byte width (`wchar4[N]`, element count `len / 4`) goes before both on
     //    the same grounds, under its own gate.
+    //    (kuna `fatstr`) The length-BOUNDED facts (`strings::kuna_strrecords`,
+    //    Rust `&str` records) go before every scanned width: a record states the
+    //    literal's exact extent where the NUL scan can only guess a run, and the
+    //    occupied-address guard below then retires the glued row the NUL scan
+    //    produced for the same address (the measured witness: three adjacent
+    //    unterminated literals read back as one 39-byte string). A bounded
+    //    fact's `len` is the exact element count — there is no terminator.
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
-    for (fact, char_size) in wide32
+    //    The shared `len / char_size` element count stays exact for both: a
+    //    terminated fact's len includes its NUL slot, a bounded fact's len IS
+    //    the element count (char_size 1, no terminator byte to add).
+    for (fact, char_size) in out
+        .bounded_strings
         .iter()
-        .map(|f| (f, 4u32))
+        .map(|f| (f, 1u32))
+        .chain(wide32.iter().map(|f| (f, 4u32)))
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {

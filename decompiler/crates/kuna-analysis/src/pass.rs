@@ -380,6 +380,12 @@ pub struct AnalysisOutput {
     pub externref: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
+    /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
+    /// `(ptr, len)` records (`strings::kuna_strrecords`): `len` is the exact
+    /// byte count, there is NO terminator, and the commit arm plants these
+    /// BEFORE [`Self::strings`] so a glued NUL-run row at the same address is
+    /// retired by the occupied-address guard.
+    pub bounded_strings: Vec<StringFact>,
     /// (kuna `widestrings`) Detected NUL-terminated UTF-16LE string literals — the
     /// `StringsAnalyzer` `allCharWidths` width kuna did not carry. Kept apart from
     /// [`Self::strings`] because the commit boundary types them differently (a
@@ -658,6 +664,7 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);
+        self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
         self.prototypes.extend(other.prototypes);

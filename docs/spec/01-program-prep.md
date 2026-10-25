@@ -1537,6 +1537,21 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   when its first pointer-sized bytes, NUL and padding included, spell an address
   of the image; it then prints as that address. A relocatable object has no
   image addresses yet, so nothing is refused there.
+- **Rust `&str` records** (`fatstrrecords`, kuna, rustc-detected images only,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_strrecords.rs
+  (StrRecordPass)`, committed under the `fatstr` option's mode gate): Rust
+  literals carry their length in the fat pointer, not a terminator, and rustc
+  packs them back to back — so the NUL scan above GLUES adjacent Rust literals
+  into one wrong row. The static `(ptr, len)` records that state every
+  literal's length (a PIE's `R_*_RELATIVE` slots in `.data.rel.ro` with the
+  length in the unrelocated companion word; absolute word pairs in read-only
+  data on a non-PIE) are re-read as length-BOUNDED facts — exact extents, no
+  terminator — and the commit plants them BEFORE the NUL stream, so the
+  occupied-address guard retires the glued row and the symbol at each literal
+  spans exactly the literal. Guards: target in read-only data, `1..=4096`
+  bytes, valid UTF-8 at least 90% printable-or-whitespace, and the direct
+  (relocation-less) arm additionally keeps the NUL scan's minimum of four.
+  The engine half of the option is chapter [05](05-types.md)'s `RuleFatStr`.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —

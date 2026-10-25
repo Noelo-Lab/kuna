@@ -3589,6 +3589,23 @@ import and the language packs, in later slices); nothing populates the table
 in this one, so the facet arm of `fatstr`'s evidence test is reachable only
 through an explicit registration today.
 
+The option's second recognizer is analysis-side
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_strrecords.rs
+(StrRecordPass)`, pass id `fatstrrecords`, registered for a rustc-detected
+image, committed under the same `fatstr` mode gate). rustc packs its
+unterminated literals back to back in `.rodata`, so the NUL-run string scan
+glues adjacent literals into one wrong row — the measured witness read its
+three literals as a single 39-byte string. The static `(ptr, len)` records
+every Rust literal's length lives in (a PIE's `R_*_RELATIVE` slots in
+`.data.rel.ro`, with the length in the unrelocated companion word; absolute
+word pairs on a non-PIE) are re-read as length-BOUNDED string facts — exact
+byte extents, no terminator — and committed AHEAD of the NUL stream, so the
+occupied-address guard retires the glued rows and the data symbol at each
+literal spans exactly the literal. Chapter [01](01-program-prep.md) carries
+the pass's place in the string family; the guards are the engine rule's own
+(read-only backing, `1..=4096`, UTF-8 text, and for the no-relocation direct
+arm the NUL scan's minimum of four bytes).
+
 **Bitfields** (`decompiler/crates/kuna-decomp/src/p5_types/bitfield.rs`).
 Pattern: a struct with sub-byte fields is accessed through shift/mask soup on
 a byte container. The six `cleanup` rules fire only when the container's type

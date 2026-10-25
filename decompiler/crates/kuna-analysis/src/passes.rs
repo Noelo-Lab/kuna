@@ -402,6 +402,15 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::pclntab::kuna_gonoreturn::GoNoReturnPass));
         passes.push(Box::new(crate::pclntab::GoPclntabPass));
     }
+    // (kuna `fatstr`) Rust-only: length-bounded string facts from static
+    // `(ptr, len)` records (`strings::kuna_strrecords`), the analysis-side half
+    // of the fatstr option. Registered ONLY for `Compiler::Rustc`, so every
+    // non-Rust binary's pass set is byte-identical to before; committed under
+    // the `fatstr` mode gate (`Architecture::fat_str`), so `--option fatstr
+    // off` drops the facts at the read-symbols boundary.
+    if compiler.is_rust() {
+        passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass));
+    }
 
     // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint
     // `Varnode::externref` over PE IAT slots and typed Mach-O lazy/non-lazy
@@ -1637,15 +1646,23 @@ mod tests {
         }
     }
 
-    /// All NON-Go compilers select the same pass set (Rust differs only in the
-    /// no-return pass's folded-in list, not the pass *ids*). Go additionally
-    /// carries the `gopclntab` pass (Go-only, appended last); every other compiler
-    /// is byte-identical to the Gcc base.
+    /// Compilers with no language pack select the same pass set. Go carries its
+    /// two Go-only passes (the next test), and Rust appends `fatstrrecords`
+    /// (the `&str`-record string pass) — exactly one pass, at the end, so the
+    /// base set is byte-identical underneath.
     #[test]
     fn non_go_compilers_have_same_pass_ids() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
-        for c in [Compiler::Rustc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
+        for c in [Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
             assert_eq!(ids(&passes_for(c, NON_PE)), base, "{c:?} pass ids must match the base set");
+        }
+        let rust = ids(&passes_for(Compiler::Rustc, NON_PE));
+        assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
+        assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
+        assert_eq!(rust.len(), base.len() + 1, "Rust adds exactly one pass");
+        // No non-Rust compiler carries the record pass.
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Swift, Compiler::Unknown] {
+            assert!(!ids(&passes_for(c, NON_PE)).contains(&"fatstrrecords"), "{c:?} must not carry fatstrrecords");
         }
     }
 
