@@ -6066,11 +6066,13 @@ carries instead is the pool word itself, from the load to whatever composes it.
 
 A pool word is admitted as a *displacement* only where it comes out of the same
 read-only, pointer-sized, pointer-aligned slot literal-pool following already
-vouches for **and** literal-pool following declined it, so the two rules never
-claim one word: a value that is already a mapped address is a pointer, not a
-displacement. It is then carried forward along fall-through alone, for a bounded
-run of instructions, and dropped at the first write of its register and at any
-branch, call or return — the walk is breadth-first, so the values are keyed by
+vouches for, whatever the word itself looks like: in an ARM executable linked at
+a fixed low address (0x10000) a displacement often lands in a mapped section by
+chance, and only the PC fold below decides that it is one. It is then carried
+forward along fall-through alone, for a bounded run of instructions, and dropped
+at the first write of its register, at any branch or return, and at a call
+unless its register is callee-saved (GCC schedules the load before a call and
+its `add` after) — the walk is breadth-first, so the values are keyed by
 the address they reach rather than held as "the previous instruction's state",
 which is what makes the carry independent of the order the queue happens to visit
 a function in. The composition itself is a one-instruction constant fold over
@@ -6092,6 +6094,40 @@ result has to pass. Measured over a 417-image sweep of the crackme corpus, the
 vendored fixtures and a set of host binaries: no edge is added on any x86-64 or
 PE image (a RIP-relative load already encodes the address it forms), no
 attribution is lost anywhere, and the composed edges are all on ARM images.
+
+When a pool word that is itself a mapped address is carried on, literal-pool
+following's pointer edge for it is held until the function's walk ends and is
+filed only if no PC fold consumed the word, so a displacement is never also
+reported as an absolute pointer from its load.
+
+ARM `-fPIC` code also reaches data and functions through the GOT. The function
+makes the GOT address once with the same pair (`ldr r4,[pool]; add r4,pc,r4`) and
+keeps it in a callee-saved register; each use loads a GOT offset from the pool
+and reads the slot (`ldr r2,[r4,r2]`). A composed value that lands in `.got` is
+therefore tracked as a **GOT base** along every edge of the function, branches
+included, and across a call when its register is callee-saved, until the register
+is written. A load whose address is a GOT base plus a carried pool word files a
+read of the slot and, when the slot's file word is a mapped address, a data
+reference to that word from the load. `.got` is writable, so literal-pool
+following does not hold it; its file bytes are what the loader starts from, and
+in a non-PIE executable the linker writes a local function's or object's address
+there with no relocation (an import's slot holds 0 and names nothing).
+
+Because the walk decodes each instruction once, breadth-first, it can decode a
+join before it has seen every edge into it, so what it carries is only a
+candidate. Each instruction that sees a tracked value is recorded with the
+values it was handed, what it passes on and which addresses it forms, each
+naming the incoming values it was computed from; every edge is recorded as it is
+taken, switch cases included. When the walk of the function ends, a value is
+kept at an instruction only if every recorded predecessor passes on the same one
+— the function entry has its caller as a predecessor, which passes nothing — and
+everything computed from a dropped value goes with it, repeated until nothing
+changes. Only addresses whose inputs all survived are filed. This is stricter
+than Ghidra's `SymbolicPropogator`, which follows each path with its own copy of
+the state and keeps the union of what the paths find. A GOT base inherited from
+a caller (one the function never forms itself) is not tracked: on ARM the
+register that holds it is only callee-saved, not reserved, so assuming it would
+need every caller to agree.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
