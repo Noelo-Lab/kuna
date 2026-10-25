@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_330() {
-    assert_eq!(kuna_num_settables(), 330);
-    assert_eq!(SETTABLE_TABLE.len(), 330);
+fn settable_count_is_332() {
+    assert_eq!(kuna_num_settables(), 332);
+    assert_eq!(SETTABLE_TABLE.len(), 332);
 }
 
 #[test]
-fn tier_counts_are_120_core_126_transform_84_analysis() {
+fn tier_counts_are_120_core_128_transform_84_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_120_core_126_transform_84_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (120, 126, 84));
+    assert_eq!((core, transform, analysis), (120, 128, 84));
 }
 
 #[test]
@@ -284,6 +284,10 @@ fn option_values_live_value_present_for_154() {
         // with no codegen live reader (read console-side via kuna_live_value),
         // same as `gopclntab`. Default-ON (Go-only pass).
         "gonoreturn",
+        // (kuna) The length-carried literal rule — three-valued, read
+        // console-side via `kuna_live_value` (its token), no codegen live
+        // reader.
+        "fatstr",
         // (kuna) The named libc/POSIX aggregate types — a load-time analysis gate
         // read through the `KUNA_LIBCTYPES` env bridge (the named shells are
         // interned while the prototype pass builds its signatures, upstream of
@@ -712,6 +716,11 @@ fn option_values_live_value_present_for_154() {
                             | "guardarm"
                             | "loopcondhoist"
                             | "rustabi"
+                            // (kuna) `gomorestack` takes a MODE
+                            // (`off|auto|always`) over a u8 field, the
+                            // rustabi shape; its live value is
+                            // `Architecture::go_morestack`.
+                            | "gomorestack"
                             // (kuna) `impliedrefs`/`termdup` take an INTEGER
                             // (`2|3|4|<n>`), which the codegen live reader (a
                             // bool `live_true`/`live_false` pair) cannot
@@ -1066,8 +1075,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `lazyfuncs`; its P1 row sits beside `addrtakenentry`.
     // +1 for `pairrefine`; its P3 row sits beside `splitstorekeep`.
     // +1 for `sourcelang`; its P1 row sits beside `gopclntab`.
+    // +1 for `fatstr`; its P5 row sits beside `sourcelang`.
+    // +1 for `gomorestack`; its P2 row sits beside `sourcelang`.
     // +1 for `gonoreturn`; its P1 row sits beside `sourcelang`.
-    assert_eq!(json.matches("},\n").count(), 329);
+    assert_eq!(json.matches("},\n").count(), 331);
 }
 
 #[test]

@@ -1,0 +1,70 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "--addr",
+    "0x13c9",
+    "--assert",
+    "flow 0x1405 call",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "binary_sha256": "1a592a85f424cc2db8953d5a38c86676bcee5e37b242b6fb6244a2c9fccfeeef",
+    "binary_size": 14408,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/aif_gap_x86_64",
+    "selector": "0x13c9",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "ne": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "assertions[0].status",
+        "op": "eq",
+        "value": "rejected"
+      },
+      {
+        "path": "assertions[0].fatal",
+        "op": "eq",
+        "value": true
+      },
+      {
+        "path": "assertions[0].detail",
+        "op": "contains",
+        "value": "Could not apply flowoverride"
+      },
+      {
+        "path": "error",
+        "op": "contains",
+        "value": "refused by the pipeline"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "contains",
+        "value": "sub_1378"
+      },
+      {
+        "path": "functions[0].error",
+        "op": "eq",
+        "value": null
+      }
+    ]
+  },
+  "notes": "The assertion ledger must not report `applied` for a flow override the pipeline REFUSED -- it is the surface an agent reads to decide whether its assertion took. Companion to rejected-flow-override-exits, which pins the same run's text surface.",
+  "probe_id": "a-7f42e0ef2180"
+}
