@@ -37,9 +37,15 @@
     Pass 1 (option gomorestack off): the bug - the guard renders as a `while`
       loop whose latch calls morestack (assertions #1, #2).
     Pass 2 (option gomorestack always): the fix - the loop and the call are
-      gone; both counts stay at exactly one occurrence because the second pass
-      contributes none, while the real body (assertion #3) and its `return`
-      (assertion #4) appear once per pass.
+      gone, while the real body (assertion #3) and its `return` (assertion #4)
+      appear once per pass.
+    Passes 3 and 4 pin the TRUNCATED form: `option noreturn
+    runtime.morestack_noctxt` reproduces what an unstripped image's discovered
+    no-return propagation does to the callee (the newstack tail makes it look
+    diverging), so flow halts at the call, the back-edge never lifts, and the
+    guard renders as a straight `if` with no loop.
+    Pass 3 (noreturn + gomorestack off): the call renders, no `while`.
+    Pass 4 (noreturn + gomorestack always): the halt-form fold - gone again.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 493b6610760a488d0437c3cccccccccce8eb0f0000ebe9
@@ -55,10 +61,17 @@
   <com>option gomorestack always</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option noreturn runtime.morestack_noctxt</com>
+  <com>option gomorestack off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gomorestack always</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GOMORESTACK #1: the growth call renders under off and folds under always" min="1" max="1">morestack_noctxt\(</stringmatch>
-<stringmatch name="GOMORESTACK #2: the entry guard loops under off and folds under always" min="1" max="1">while</stringmatch>
-<stringmatch name="GOMORESTACK #3: the real body survives both passes" min="2" max="2">a0 \+ a1</stringmatch>
-<stringmatch name="GOMORESTACK #4: one return per pass, never a second arm" min="2" max="2">return</stringmatch>
+<stringmatch name="GOMORESTACK #1: the growth call renders under each off pass and folds under each always pass" min="2" max="2">morestack_noctxt\(</stringmatch>
+<stringmatch name="GOMORESTACK #2: only the un-truncated off pass loops" min="1" max="1">while</stringmatch>
+<stringmatch name="GOMORESTACK #3: the real body survives all four passes" min="4" max="4">a0 \+ a1</stringmatch>
+<stringmatch name="GOMORESTACK #4: one body return per pass, never a second arm" min="4" max="4">return a0</stringmatch>
 </decompilertest>
