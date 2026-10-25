@@ -113,7 +113,7 @@ impl<'a> HalfwordTables<'a> {
                     return (Vec::new(), None);
                 };
                 let Some(index) = index.filter(|_| table == base) else { return (Vec::new(), None) };
-                let Some(cases) = guard_cases(translate, code_space, data, decoded, from, index, false)
+                let Some(cases) = guard_cases(translate, code_space, data, decoded, from, index, None)
                     .filter(|&n| n >= MIN_ENTRIES)
                 else {
                     return (Vec::new(), None);
@@ -153,7 +153,8 @@ impl<'a> HalfwordTables<'a> {
 /// or carry as `bcs` to exclude indices at or above it (`n` cases). The branch
 /// must leave the path to the dispatch. Inverted or signed conditions, intervening
 /// control flow, and overwritten comparison flags establish no upper bound.
-/// A `predicated` dispatch (A32 `ldrls pc,...`) is its own range branch.
+/// A `predicated` dispatch (A32 `ldrls pc,...`), given as its decoded p-code, is
+/// its own range branch.
 pub(super) fn guard_cases(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -161,14 +162,13 @@ pub(super) fn guard_cases(
     decoded: &dyn Fn(u64) -> bool,
     from: u64,
     index: Key,
-    predicated: bool,
+    predicated: Option<&[FullOp]>,
 ) -> Option<usize> {
     let mut cap = FullCapture::default();
     let mut cur = from;
     let mut inclusive: Option<bool> = None;
-    if predicated {
-        decode(translate, from, code_space, &mut cap)?;
-        inclusive = Some(range_branch(cap.ops(), from, from, translate, data)??);
+    if let Some(dispatch) = predicated {
+        inclusive = Some(range_branch(dispatch, from, from, translate, data)??);
     }
     for _ in 0..MAX_GUARD_INSNS {
         let prev = [2, 4].iter().filter_map(|&d| cur.checked_sub(d)).find(|&at| decoded(at))?;
