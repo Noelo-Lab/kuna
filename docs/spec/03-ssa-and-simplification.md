@@ -79,6 +79,20 @@ parameter accounts for. A copy of those pieces to memory was then dead to
 `ActionDeadCode`, and `use3(&s)` printed as `use3(&v1)` with only `v1.z = s.z`
 stored. kuna splits the join on the first pass that heritages any of its pieces.
 
+**Preferred register splits.** Heritage pass 0 also runs the compiler spec's
+`<prefersplit>` table (`PreferSplitManager`, ported from `prefersplit.cc`): each
+listed whole register is rewritten into two independent pieces, and a free or
+input register read only through one of them becomes that scalar input on the
+next pass. AArch64 states `inhalf` for `q0`..`q30`, so a callee reading only `d0`
+recovers an 8-byte parameter instead of a 16-byte aggregate; the undefined upper
+half never becomes a value. The records are decoded from the cspec once
+(`Architecture::decode_split_records`) and delivered to every function's handle.
+The split pass keeps its record table in place while walking, because each
+candidate is matched against that table.
+When a constant is split above the 64 bits carried by its literal, the upper
+piece is zero; splitting a 128-bit register must neither shift a 64-bit literal
+by 64 nor repeat the lower piece into the upper one.
+
 **Address-range worklists.** The unit of work is an address range, not a
 varnode. Two disjoint-cover maps drive each pass
 (`heritage.rs (LocationMap::add)`): `globaldisjoint` accumulates every range

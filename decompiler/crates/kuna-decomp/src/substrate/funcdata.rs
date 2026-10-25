@@ -510,6 +510,15 @@ pub struct Funcdata {
         (int4, kuna_base::types::uintb),
         std::rc::Rc<crate::kuna_protoorder::RecoveredTypes>,
     >,
+    /// (kuna callee-contract) May this drive bootstrap direct callees from the P4
+    /// active-input trial storage?  Armed only by a single-function drive on a
+    /// compiler spec that states `<prefersplit>`; every other surface keeps its
+    /// own schedule.
+    kuna_callee_contract_armed: bool,
+    /// (kuna callee-contract) Direct callees whose P4 active-input trials sit in a
+    /// preferred-split register, queued by `ActionActiveParam` for the drive's
+    /// bootstrap (its pause).
+    kuna_callee_split_calls: Vec<Address>,
     /// (kuna `callrettype`) The recovered return value of each callee this
     /// function calls, copied off the `Architecture` like `kuna_protoorder_types`.
     kuna_callret_types: crate::kuna_callrettype::StatedReturns,
@@ -803,6 +812,8 @@ impl Funcdata {
             kuna_callee_entry_through: std::collections::HashMap::new(),
             kuna_callee_forward: std::collections::HashMap::new(),
             kuna_protoorder_types: std::collections::HashMap::new(),
+            kuna_callee_contract_armed: false,
+            kuna_callee_split_calls: Vec::new(),
             kuna_callret_types: std::collections::HashMap::new(),
             kuna_narrowret: std::collections::HashMap::new(),
             kuna_narrowret_reads: std::collections::HashMap::new(),
@@ -1212,6 +1223,30 @@ impl Funcdata {
     ) -> Option<&crate::kuna_calleedeadarg::ForwardTransfer> {
         let sp = entry.get_space()?;
         self.kuna_callee_forward.get(&(sp.get_index(), entry.get_offset())).map(|r| r.as_ref())
+    }
+
+    /// (kuna callee-contract) Arm or disarm the P4 trial-storage bootstrap for
+    /// this drive.
+    pub fn kuna_set_callee_contract_armed(&mut self, armed: bool) {
+        self.kuna_callee_contract_armed = armed;
+    }
+
+    /// (kuna callee-contract) Is the P4 trial-storage bootstrap armed?
+    pub fn kuna_callee_contract_armed(&self) -> bool {
+        self.kuna_callee_contract_armed
+    }
+
+    /// (kuna callee-contract) Queue a direct callee whose active input trial sits
+    /// in a preferred-split register, and pause `ActionActiveParam` before it
+    /// binds the argument list so the drive can state the callee's types.
+    pub fn kuna_queue_callee_split_call(&mut self, entry: Address) {
+        self.kuna_callee_split_calls.push(entry);
+    }
+
+    /// (kuna callee-contract) Take the queued direct callees (the drive's pause
+    /// request).
+    pub fn kuna_take_callee_split_calls(&mut self) -> Vec<Address> {
+        std::mem::take(&mut self.kuna_callee_split_calls)
     }
 
     /// (kuna `protoorder types`) Record the types a callee's own recovery stated
@@ -4166,6 +4201,7 @@ impl Funcdata {
         // (kuna `slotptr`) The evidence names ops by SeqNum, which a rebuilt op
         // bank reissues.
         self.slot_evidence.borrow_mut().clear();
+        self.kuna_callee_split_calls.clear();
         self.kuna_passthrough_claims.clear();
         self.kuna_passthrough_vararg_calls.clear();
         self.kuna_msvc_byval_sites.clear();

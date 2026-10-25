@@ -2634,6 +2634,20 @@ pub struct Architecture {
     /// core-type set (with the HOST ids) instead of the defaults.  `None` on
     /// the standalone path.
     coretypes_xml: Option<Vec<u8>>,
+    /// (kuna) The cspec `<prefersplit>` rows (C++ `Architecture::splitrecords`):
+    /// a whole register that the spec prefers to read as two independent pieces.
+    /// Decoded once in [`build_default_proto`](Architecture::build_default_proto)
+    /// and inherited by every per-function handle, where heritage pass 0 hands
+    /// them to the [`PreferSplitManager`](crate::p5_types::prefersplit::PreferSplitManager).
+    split_records: Vec<crate::p5_types::prefersplit::PreferSplitRecord>,
+    /// (kuna) How many decompile drives are active: 0 outside a drive, 1 for the
+    /// drive the caller asked for, and more when a drive runs a recovery drive
+    /// inside itself (the P4 callee-contract bootstrap).  The outermost drive
+    /// owns the Architecture's externally visible output, so only it publishes
+    /// analysis comments; a nested drive's statements are private to the caller
+    /// it is typed for.  Shared with the [`KunaDriveScope`] guard so an unwinding
+    /// drive still leaves it balanced.
+    kuna_drive_depth: std::rc::Rc<std::cell::Cell<u32>>,
     /// Vector registers that have preferred lane sizes (C++
     /// `Architecture::lanerecords`), built by [`decode_register_data`] from the
     /// pspec `<register_data>` `vector_lane_sizes` attributes during
@@ -2683,6 +2697,20 @@ pub struct Architecture {
     /// where `modify_spaces` applies them. `None` until that bootstrap step has
     /// run; an empty list is a valid, complete recipe for most languages.
     decode_truncations: Option<Arc<[(String, u32)]>>,
+}
+
+/// One active decompile drive, from [`Architecture::kuna_drive_scope`].
+///
+/// Dropping it leaves the scope; the depth is shared with the `Architecture`, so
+/// an unwinding drive still balances the count.
+pub(crate) struct KunaDriveScope {
+    depth: std::rc::Rc<std::cell::Cell<u32>>,
+}
+
+impl Drop for KunaDriveScope {
+    fn drop(&mut self) {
+        self.depth.set(self.depth.get().saturating_sub(1));
+    }
 }
 
 impl Architecture {
@@ -3220,6 +3248,8 @@ impl Architecture {
             cspec_xml: None,
             pspec_xml: None,
             coretypes_xml: None,
+            split_records: Vec::new(),
+            kuna_drive_depth: std::rc::Rc::new(std::cell::Cell::new(0)),
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
@@ -4014,6 +4044,7 @@ impl Architecture {
         // of the small (size,mask) records.  ActionLaneDivide reads these to
         // split XMM/ZMM vector lanes.
         ctx.lanerecords = self.lanerecords.clone();
+        ctx.split_records = self.split_records.clone();
         // Share the engine's OpBehavior emulation table with `glb` (the C++
         // `Architecture` owns the `TypeOp`s, so `glb->inst[opc]->getBehavior()`
         // reaches them directly).  The `Rc<dyn OpBehavior>` entries are cheap
@@ -5722,6 +5753,10 @@ impl Architecture {
                 // A missing/empty <returnaddress> leaves `default_return_addr` as
                 // `None` (== the C++ `defaultReturnAddr.space == 0`).
                 self.default_return_addr = self.decode_default_return_addr(&root);
+                self.split_records = self.decode_split_records(&root);
+                crate::p5_types::prefersplit::PreferSplitManager::initialize(
+                    &mut self.split_records,
+                );
                 if let Ok(model) = self.decode_default_proto(&root) {
                     let rc = Rc::new(model);
                     self.register_model(Rc::clone(&rc));
@@ -6196,6 +6231,74 @@ impl Architecture {
             }
         }
         None
+    }
+
+    /// Did the compiler spec state any `<prefersplit>` register?  The split-aware
+    /// callee-contract prepass is only needed where heritage replaces a wide
+    /// register with its scalar halves.
+    pub fn has_split_records(&self) -> bool {
+        !self.split_records.is_empty()
+    }
+
+    /// The compiler spec's preferred-split rows, in `PreferSplitRecord` order.
+    pub fn split_records(&self) -> &[crate::p5_types::prefersplit::PreferSplitRecord] {
+        &self.split_records
+    }
+
+    /// Enter a decompile drive.  Every [`decompile_func_full_with_objects`] call
+    /// nests one deeper; the drive that started from 0 is the outermost one.
+    ///
+    /// The returned [`KunaDriveScope`] leaves the scope on drop, so a drive that
+    /// unwinds still keeps the depth balanced.
+    ///
+    /// [`decompile_func_full_with_objects`]: crate::decompile_drive::decompile_func_full_with_objects
+    pub(crate) fn kuna_drive_scope(&self) -> KunaDriveScope {
+        let depth = std::rc::Rc::clone(&self.kuna_drive_depth);
+        depth.set(depth.get() + 1);
+        KunaDriveScope { depth }
+    }
+
+    /// Does the active drive own the Architecture's externally visible output?
+    /// True outside a drive (a standalone flow build keeps its old behaviour)
+    /// and for the outermost drive; false for a nested recovery drive.
+    pub(crate) fn kuna_drive_publishes(&self) -> bool {
+        self.kuna_drive_depth.get() <= 1
+    }
+
+    /// Decode the cspec's `<prefersplit style="...">` block into the
+    /// [`PreferSplitRecord`](crate::p5_types::prefersplit::PreferSplitRecord)
+    /// table heritage pass 0 consumes (C++ `Architecture::parseCompilerConfig`
+    /// `ELEM_PREFERSPLIT` arm).
+    ///
+    /// The style names the number of low bytes of each whole register that form
+    /// the first piece: `inhalf` (half the register), `in1234` (4 bytes) and
+    /// `in12345678` (8 bytes).  An unknown style or a register the language does
+    /// not define states nothing, so the function keeps the whole-register view.
+    fn decode_split_records(
+        &self,
+        root: &Rc<kuna_base::xml::Element>,
+    ) -> Vec<crate::p5_types::prefersplit::PreferSplitRecord> {
+        let Some(split) = find_child(root, "prefersplit") else { return Vec::new() };
+        let style = attr_str(&split, "style").unwrap_or_default();
+        let mut out = Vec::new();
+        for child in split.get_children().iter() {
+            if child.get_name() != "register" {
+                continue;
+            }
+            let Some(name) = attr_str(child, "name") else { continue };
+            let Ok(storage) = self.translate.get_register_varnode(name.as_bytes()) else { continue };
+            let splitoffset = match style.as_str() {
+                "inhalf" => storage.size as int4 / 2,
+                "in1234" => 4,
+                "in12345678" => 8,
+                _ => return Vec::new(),
+            };
+            if splitoffset <= 0 || splitoffset >= storage.size as int4 {
+                continue;
+            }
+            out.push(crate::p5_types::prefersplit::PreferSplitRecord { storage, splitoffset });
+        }
+        out
     }
 
     /// Locate the cspec's `<default_proto><prototype>` and decode it (C++
