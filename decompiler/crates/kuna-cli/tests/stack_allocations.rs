@@ -54,6 +54,7 @@ enum Case {
     Restored,
     Displaced,
     SteppedProbe,
+    MergedSteppedProbe,
 }
 
 #[test]
@@ -114,6 +115,11 @@ fn elf64_stepped_stack_probe_is_declined() {
 }
 
 #[test]
+fn elf64_reconverging_stack_probe_is_declined() {
+    check_case(None, "-O0", Case::MergedSteppedProbe);
+}
+
+#[test]
 fn pe32_restored_frame_allocation() {
     check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Restored);
 }
@@ -168,6 +174,10 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
 "pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovslq %edi,%rax\naddq $15,%rax\nmovq %rax,%rcx\nandq $-4096,%rax\nandq $-16,%rcx\n"
 "movq %rsp,%rdx\nsubq %rax,%rdx\n1: cmpq %rdx,%rsp\nje 2f\nsubq $4096,%rsp\norq $0,4088(%rsp)\njmp 1b\n"
 "2: andl $4095,%ecx\nsubq %rcx,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
+        Case::MergedSteppedProbe => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovl %edi,%eax\naddq $15,%rax\nmovq %rax,%rcx\nandq $-4096,%rax\nandq $-16,%rcx\n"
+"movq %rsp,%rdx\nsubq %rax,%rdx\nxorl %r8d,%r8d\n1: xorl $1,%r8d\ntestl %r8d,%r8d\njnz 2f\nsubq $4096,%rsp\norq $0,4088(%rsp)\n"
+"2: cmpq %rdx,%rsp\njne 1b\nandl $4095,%ecx\nsubq %rcx,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
         Case::Drifting => r#"__asm__(
 "pushq %rbp\nmovq %rsp,%rbp\nmovl %edi,%esi\nmovl %edi,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovb $7,(%rdi)\nmovl %esi,%ecx\n"
 "1: subq $16,%rsp\ndecl %ecx\njnz 1b\nmovq %rsp,%rdi\nmovb $7,(%rdi)\ncall observe\nmovq %rbp,%rsp\npopq %rbp\nretq\n");"#,
@@ -213,6 +223,7 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
             | Case::Restored
             | Case::Displaced
             | Case::SteppedProbe
+            | Case::MergedSteppedProbe
     ) {
         "__attribute__((naked)) "
     } else {
@@ -284,7 +295,10 @@ API {naked}int allocate(int n) {{{body}}}
         );
     }
     let text = std::fs::read_to_string(&generated).unwrap();
-    let declined = matches!(case, Case::Drifting | Case::SteppedProbe | Case::Scoped);
+    let declined = matches!(
+        case,
+        Case::Drifting | Case::SteppedProbe | Case::MergedSteppedProbe | Case::Scoped
+    );
     let allocations = if declined {
         0
     } else if matches!(

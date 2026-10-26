@@ -184,19 +184,23 @@ fn stepped_cycle(fd: &Funcdata, base: VarnodeId) -> bool {
         fd: &Funcdata,
         value: VarnodeId,
         at: i128,
-        path: &mut BTreeMap<VarnodeId, i128>,
+        active: &mut BTreeMap<VarnodeId, (usize, i128)>,
         done: &mut BTreeSet<VarnodeId>,
-    ) -> bool {
+        pending: &mut Vec<VarnodeId>,
+    ) -> Option<usize> {
         let value = strip(fd, value);
-        if let Some(&entered) = path.get(&value) {
-            return entered != at;
+        if let Some(&(index, entered)) = active.get(&value) {
+            return (entered == at).then_some(index);
         }
         if !done.insert(value) {
-            return false;
+            return Some(usize::MAX);
         }
-        if path.len() >= 256 {
-            return true;
+        if active.len() >= 256 {
+            return None;
         }
+        let index = done.len() - 1;
+        active.insert(value, (index, at));
+        pending.push(value);
         let mut next = Vec::new();
         if let Some((origin, step)) = constant_step(fd, value) {
             next.push((origin, step));
@@ -209,15 +213,33 @@ fn stepped_cycle(fd: &Funcdata, base: VarnodeId) -> bool {
         {
             next.extend((0..phi.num_input()).filter_map(|slot| Some((phi.get_in(slot)?, 0))));
         }
-        path.insert(value, at);
-        let cyclic = next.into_iter().any(|(origin, step)| {
-            at.checked_add(step)
-                .map_or(true, |to| walk(fd, origin, to, path, done))
-        });
-        path.remove(&value);
-        cyclic
+        // Keep a completed branch active until its whole strongly connected
+        // component closes. A later PHI input can re-enter that branch with a
+        // different displacement even after a zero-step cycle visited it.
+        let mut low = index;
+        for (origin, step) in next {
+            let to = at.checked_add(step)?;
+            low = low.min(walk(fd, origin, to, active, done, pending)?);
+        }
+        if low == index {
+            while let Some(member) = pending.pop() {
+                active.remove(&member);
+                if member == value {
+                    break;
+                }
+            }
+        }
+        Some(low)
     }
-    walk(fd, base, 0, &mut BTreeMap::new(), &mut BTreeSet::new())
+    walk(
+        fd,
+        base,
+        0,
+        &mut BTreeMap::new(),
+        &mut BTreeSet::new(),
+        &mut Vec::new(),
+    )
+    .is_none()
 }
 #[derive(Clone, Copy)]
 struct Allocation {
@@ -1094,6 +1116,69 @@ mod tests {
         fd.op_set_input(op, right, 1).unwrap();
         fd.new_unique_out(width, op).unwrap();
         op
+    }
+    fn merged_step(
+        fd: &mut Funcdata,
+        width: int4,
+        cyclic: bool,
+        step: i64,
+        reversed: bool,
+    ) -> VarnodeId {
+        let join = fd.new_op(2, fd.get_address().clone());
+        fd.op_set_opcode_code(join, OpCode::CPUI_MULTIEQUAL);
+        let output = fd.new_unique_out(width, join).unwrap();
+        let header = fd.new_op(if cyclic { 2 } else { 1 }, fd.get_address().clone());
+        fd.op_set_opcode_code(header, OpCode::CPUI_MULTIEQUAL);
+        let initial = fd.new_unique(width, None);
+        fd.op_set_input(header, initial, 0).unwrap();
+        if cyclic {
+            fd.op_set_input(header, output, 1).unwrap();
+        }
+        let base = fd.new_unique_out(width, header).unwrap();
+        let add = fd.new_op(2, fd.get_address().clone());
+        fd.op_set_opcode_code(add, OpCode::CPUI_INT_ADD);
+        fd.op_set_input(add, base, 0).unwrap();
+        let amount = fd.new_constant(width, step as u64 & calc_mask(width));
+        fd.op_set_input(add, amount, 1).unwrap();
+        let advanced = fd.new_unique_out(width, add).unwrap();
+        let (left, right) = if reversed {
+            (advanced, base)
+        } else {
+            (base, advanced)
+        };
+        fd.op_set_input(join, left, 0).unwrap();
+        fd.op_set_input(join, right, 1).unwrap();
+        output
+    }
+    #[test]
+    fn reconverging_phi_does_not_hide_a_stepped_cycle() {
+        for width in [4, 8] {
+            for reversed in [false, true] {
+                let mut fd = build_fd();
+                let base = merged_step(&mut fd, width, true, -4096, reversed);
+                assert!(stepped_cycle(&fd, base));
+            }
+        }
+    }
+    #[test]
+    fn reconverging_zero_step_cycle_is_not_a_probe() {
+        for width in [4, 8] {
+            for reversed in [false, true] {
+                let mut fd = build_fd();
+                let base = merged_step(&mut fd, width, true, 0, reversed);
+                assert!(!stepped_cycle(&fd, base));
+            }
+        }
+    }
+    #[test]
+    fn acyclic_phi_offsets_are_not_a_stepped_cycle() {
+        for width in [4, 8] {
+            for reversed in [false, true] {
+                let mut fd = build_fd();
+                let base = merged_step(&mut fd, width, false, -4096, reversed);
+                assert!(!stepped_cycle(&fd, base));
+            }
+        }
     }
     #[test]
     fn copied_zero_mask_is_not_pointer_alignment() {

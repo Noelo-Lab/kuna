@@ -21,6 +21,13 @@ is not the buffer, so a base carried around a loop by a nonzero constant step is
 declined; recovering it as an allocation emitted `__builtin_alloca(size & 4095)`
 and smashed the stack once `size` reached a page.
 
+The cycle proof retains every member of an unfinished strongly connected
+component, including completed PHI branches. Otherwise, visiting a zero-step
+path first can hide a later page-sized step through the same nodes and wrongly
+allocate only the residual again. Reconverging conditional probes are negative
+regressions; zero-step cycles and acyclic joins with different offsets remain
+valid controls.
+
 Lower and upper SSA analyses bound stack adjustments and derived addresses on
 both sides of each allocation, including outgoing arguments and memory access
 widths. Alignment contributes its maximum downward slack.
