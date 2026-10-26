@@ -7928,3 +7928,30 @@ symbol's call-fixup injection is kept, and its no-return flag is carried under
 (library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
 construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
+
+**(kuna) Go boolean-return narrowing** (`option gobool off|auto|always`,
+default auto,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gobool.rs
+(RuleGoBoolReturn)`). Go's ABI materializes a `bool` result as 0/1 in the LOW
+BYTE of the return register and leaves the upper bytes unspecified: the
+compiler emits a bare `SETcc` with no zeroing `XOR`, so the lifted value is
+`PIECE(stale7, bool1)` feeding the `RETURN`, printed as
+`v = CONCAT71((undefined7)(v >> 8), a == b); return v & 0xffffffff;`.
+`SubvariableFlow`'s return pull rightly refuses the narrow — nothing proves
+the high bytes zero, and rustc never shows the shape because it zeroes first
+(the `rustabi` chapter's `xor %eax,%eax; setb %al` reading). The rule rewrites
+such a `RETURN` to read `ZEXT(bool)` instead, asserting the ABI fact the way
+`rustabi` asserts the ScalarPair: the low byte must be a genuine boolean
+definition (a comparison, carry/borrow, boolean-logic or float-predicate
+opcode), any other 7+1 concatenation is left alone, and the dead
+concatenation is collected by ordinary dead-code elimination — the stale
+bytes' content is deliberately replaced by zero, the declared reading. The
+narrow then cascades: the return type recovers as `bool`, and on the measured
+stripped go1.22 hello-world 57 functions change (CONCAT71-carrying functions
+64 → 34; the remainder are mid-function assignments outside a `RETURN`, which
+this rule deliberately does not touch), with the `type:.eq.*` equality
+helpers' whole signatures improving. At `auto` the rule acts only when the
+image's source language is Go; `always` drops the language test (the
+stage-test bytechunk); `off` keeps the faithful concatenation. Pinned by
+`tests/stages/kuna-gobool.xml` (two-pass over a hand-assembled
+`mov %rdi,%rax; cmp $1,%rdi; sete %al; ret`).

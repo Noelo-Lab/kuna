@@ -225,6 +225,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
         // (kuna `fatstr`) Three-valued, so it reports its own token.
         "fatstr" => kuna_decomp::kuna_fatstr::FatStrMode::from_u8(conf.fat_str).as_str(),
+        // (kuna `gobool`) Three-valued, so it reports its own token.
+        "gobool" => kuna_decomp::kuna_gobool::GoBoolMode::from_u8(conf.go_bool).as_str(),
         // (kuna `gomorestack`) Three-valued, so it reports its own token.
         "gomorestack" => kuna_decomp::kuna_gomorestack::GoMorestackMode::from_u8(conf.go_morestack).as_str(),
         // (kuna `gowritebarrier`) Three-valued, so it reports its own token.

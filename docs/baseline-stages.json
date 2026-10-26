@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3219,
-    3219
+    3222,
+    3222
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -873,6 +873,9 @@
     "data:GH9230 #1: memsetrecover off restores the element-store form (old behavior, opt-in)",
     "data:GH9230 #2: default pipeline collapses the zero-fill into builtin_memset (fix is DIV-2 default)",
     "data:GHANGR-NORETURN-ERROR #1: option noreturn_error off parses and round-trips, and is inert on the XML path (no Listing built): the source form x <= 8 renders identically in both passes (default-on + flag-off parity)",
+    "data:GOBOOL #1: the stale-high concatenation renders under off and narrows under always",
+    "data:GOBOOL #2: the comparison survives both passes",
+    "data:GOBOOL #3: one return per pass",
     "data:GOMORESTACK #1: the growth call renders under each off pass and folds under each always pass",
     "data:GOMORESTACK #2: only the un-truncated off pass loops",
     "data:GOMORESTACK #3: the real body survives all four passes",
@@ -970,7 +973,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 336 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 337 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
