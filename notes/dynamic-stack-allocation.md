@@ -36,6 +36,13 @@ are widened to unknown; if an unknown bound reaches a stack-pointer write, the
 transformation declines. This preserves the distinction between an indexed memory
 access and an outgoing area whose size cannot be bounded.
 
+Reservation analysis is read-only: displaced aliases are modeled as virtual
+constant-offset additions until the entire reservation succeeds. Rewriting them
+before a declined reservation can fight arithmetic cleanup indefinitely, as in
+SPARC32 `dash`'s parser during jump-table recovery. The commit phase applies the
+proved aliases and allocations together. An IR regression checks that a declined
+reservation leaves the original alias definitions unchanged.
+
 Equivalent address calculations must use the same allocated buffer. Replacement
 requires matching allocation origins and dominance of every replaced use; PHI
 uses are checked on their incoming edges. Matching scalar expressions does not

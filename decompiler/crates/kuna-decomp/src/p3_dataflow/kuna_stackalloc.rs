@@ -630,6 +630,7 @@ fn propagate_bounds(
     fd: &Funcdata,
     ops: &[OpId],
     roots: &BTreeMap<VarnodeId, usize>,
+    displaced: &BTreeMap<OpId, (VarnodeId, i128)>,
     upper: bool,
 ) -> Option<Values> {
     let mut values = Values::new();
@@ -640,6 +641,8 @@ fn propagate_bounds(
             let Some(output) = o.get_out() else { continue };
             let next = if let Some(&root) = roots.get(&output) {
                 Bounds::from([(root, 0)])
+            } else if let Some(&(base, offset)) = displaced.get(&id) {
+                shift(values.get(&base).cloned().unwrap_or_default(), Some(offset))
             } else {
                 evaluate(fd, id, values, upper)
             };
@@ -715,6 +718,7 @@ fn reserves(
     fd: &Funcdata,
     allocations: &[Allocation],
     aliases: &[(VarnodeId, VarnodeId)],
+    displaced: &[(OpId, VarnodeId, i128)],
     width: int4,
 ) -> Option<Vec<Reservation>> {
     let ops: Vec<_> = fd.obank().iter_alive().collect();
@@ -728,8 +732,15 @@ fn reserves(
             roots.insert(alias, root);
         }
     }
-    let values = propagate_bounds(fd, &ops, &roots, false)?;
-    let upper = propagate_bounds(fd, &ops, &roots, true)?;
+    let mut virtual_adds = BTreeMap::new();
+    for &(op, base, delta) in displaced {
+        let output = fd.obank().get(op)?.get_out()?;
+        let size = fd.vbank().get(output)?.get_size();
+        let offset = sign_extend((delta as u64 & calc_mask(size)) as i64, size * 8 - 1) as i128;
+        virtual_adds.insert(op, (base, offset));
+    }
+    let values = propagate_bounds(fd, &ops, &roots, &virtual_adds, false)?;
+    let upper = propagate_bounds(fd, &ops, &roots, &virtual_adds, true)?;
     let bias = stack_bias(fd, width) as i128;
     let mut low = vec![0_i128; allocations.len()];
     let mut high = vec![bias; allocations.len()];
@@ -980,6 +991,40 @@ fn lower(fd: &mut Funcdata, allocation: Allocation, width: int4, headroom: Reser
     let reserve = fd.new_constant(width, headroom.shift);
     fd.op_set_input(op, reserve, 1).unwrap();
 }
+/// A declined reservation must not leave aliases fighting arithmetic cleanup.
+fn materialize_allocations(
+    fd: &mut Funcdata,
+    allocations: &[Allocation],
+    aliases: &[(VarnodeId, VarnodeId)],
+    width: int4,
+) -> bool {
+    let displaced = displaced_aliases(fd, allocations, aliases);
+    let Some(headroom) = reserves(fd, allocations, aliases, &displaced, width) else {
+        return false;
+    };
+    for (op, root, delta) in displaced {
+        let size = fd
+            .vbank()
+            .get(fd.obank().get(op).unwrap().get_out().unwrap())
+            .unwrap()
+            .get_size();
+        while fd.obank().get(op).unwrap().num_input() > 2 {
+            fd.op_remove_input(op, 2);
+        }
+        fd.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
+        fd.op_set_input(op, root, 0).unwrap();
+        let displacement = fd.new_constant(size, delta as u64 & calc_mask(size));
+        fd.op_set_input(op, displacement, 1).unwrap();
+    }
+    for &(alias, original) in aliases {
+        fd.total_replace(alias, original).unwrap();
+    }
+    for (&allocation, reserve) in allocations.iter().zip(headroom) {
+        lower(fd, allocation, width, reserve);
+    }
+    true
+}
+
 pub struct ActionStackAlloc {
     base: ActionBase,
 }
@@ -1030,29 +1075,8 @@ impl Action for ActionStackAlloc {
         if allocations.is_empty() || allocations.iter().any(|a| loop_restores_stack(fd, a)) {
             return 0;
         }
-        for (op, root, delta) in displaced_aliases(fd, &allocations, &aliases) {
-            let size = fd
-                .vbank()
-                .get(fd.obank().get(op).unwrap().get_out().unwrap())
-                .unwrap()
-                .get_size();
-            while fd.obank().get(op).unwrap().num_input() > 2 {
-                fd.op_remove_input(op, 2);
-            }
-            fd.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
-            fd.op_set_input(op, root, 0).unwrap();
-            let displacement = fd.new_constant(size, delta as u64 & calc_mask(size));
-            fd.op_set_input(op, displacement, 1).unwrap();
-        }
-        let Some(headroom) = reserves(fd, &allocations, &aliases, width) else {
-            return 0;
-        };
-        for (alias, original) in aliases {
-            fd.total_replace(alias, original).unwrap();
-        }
-        self.base.count += allocations.len() as int4;
-        for (allocation, reserve) in allocations.into_iter().zip(headroom) {
-            lower(fd, allocation, width, reserve);
+        if materialize_allocations(fd, &allocations, &aliases, width) {
+            self.base.count += allocations.len() as int4;
         }
         0
     }
@@ -1234,9 +1258,68 @@ mod tests {
                 base: zero,
             }],
             &[],
+            &[],
             4,
         )
         .unwrap();
         assert_eq!((reservations[0].count, reservations[0].shift), (16, 16));
+    }
+
+    #[test]
+    fn declined_reservation_does_not_rewrite_displaced_aliases() {
+        let mut fd = build_fd();
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let base = fd.new_varnode(4, &Address::new(Rc::clone(&ram), 0x2000), None);
+        let base = fd.set_input_varnode(base).unwrap();
+        let amount = fd.new_varnode(4, &Address::new(ram, 0x2004), None);
+        let amount = fd.set_input_varnode(amount).unwrap();
+        let root = fd.bblocks_root_pub();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        let op = fd.new_op(2, fd.get_address().clone());
+        fd.op_set_opcode_code(op, OpCode::CPUI_INT_SUB);
+        fd.op_set_input(op, base, 0).unwrap();
+        fd.op_set_input(op, amount, 1).unwrap();
+        let output = fd.new_unique_out(4, op).unwrap();
+        fd.op_insert_end(op, block);
+        let allocation = Allocation {
+            op,
+            output,
+            amount,
+            base,
+        };
+        let mut aliases = Vec::new();
+        for delta in [0x7fffffff_i64, -0x7fffffff] {
+            let add = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(add, OpCode::CPUI_INT_ADD);
+            fd.op_set_input(add, base, 0).unwrap();
+            let offset = fd.new_constant(4, delta as u64 & calc_mask(4));
+            fd.op_set_input(add, offset, 1).unwrap();
+            let shifted_base = fd.new_unique_out(4, add).unwrap();
+            fd.op_insert_end(add, block);
+            let alias = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(alias, OpCode::CPUI_INT_SUB);
+            fd.op_set_input(alias, shifted_base, 0).unwrap();
+            fd.op_set_input(alias, amount, 1).unwrap();
+            let pointer = fd.new_unique_out(4, alias).unwrap();
+            fd.op_insert_end(alias, block);
+            let load = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(load, OpCode::CPUI_LOAD);
+            let space = fd.new_constant(4, 4);
+            fd.op_set_input(load, space, 0).unwrap();
+            fd.op_set_input(load, pointer, 1).unwrap();
+            fd.new_unique_out(1, load).unwrap();
+            fd.op_insert_end(load, block);
+            aliases.push((alias, shifted_base));
+        }
+        assert_eq!(displaced_aliases(&fd, &[allocation], &[]).len(), 2);
+        // Opposite offsets need at least 2^32 bytes after alignment, which
+        // cannot be represented by the four-byte allocation count.
+        assert!(!materialize_allocations(&mut fd, &[allocation], &[], 4));
+        for (alias, shifted_base) in aliases {
+            let op = fd.obank().get(alias).unwrap();
+            assert_eq!(op.code(), OpCode::CPUI_INT_SUB);
+            assert_eq!(op.get_in(0), Some(shifted_base));
+            assert_eq!(op.get_in(1), Some(amount));
+        }
     }
 }
