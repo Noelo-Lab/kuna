@@ -11,7 +11,7 @@ use std::process::Command;
 use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
     kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
-    kuna_goabi, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_symbolnamebound, kuna_symbolnamechars,
+    kuna_goabi, kuna_goreg, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_symbolnamebound, kuna_symbolnamechars,
     kuna_variantnames,
     kuna_symbolnamerepair, kuna_typedepth, options::RELOC_OBJECTS_ENV,
 };
@@ -39,6 +39,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "pdatachained" => (kuna_pdatachained::PDATACHAINED_ENV, DefaultOn),
         "rexthunk" => (kuna_rexthunk::REXTHUNK_ENV, DefaultOn),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
+        "goreg" => (kuna_goreg::GOREG_ENV, DefaultOn),
         "peordinal" => (kuna_peordinal::PEORDINAL_ENV, DefaultOn),
         "msvcfpconst" => (kuna_msvcfpconst::MSVCFPCONST_ENV, DefaultOn),
         "symbolnamerepair" => (kuna_symbolnamerepair::SYMBOLNAMEREPAIR_ENV, DefaultOn),

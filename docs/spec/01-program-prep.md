@@ -231,6 +231,31 @@ go1.22 pclntab carries no `.abi0` names and the canonical entry inventory
 collapses the unstripped symtab aliases, so no `.abi0` spelling reaches the
 engine — alias-aware symbol plumbing has to come first.
 
+(kuna) **With the golang cspec active, the goroutine register becomes the
+named, typed global `g`** (option `goreg on|off`, default on, carried as the
+`KUNA_GOREG` loadtime environment gate;
+`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs`, installed by
+the architecture build right after the cspec `<global>` decode —
+`decompiler/crates/kuna-decomp/src/infra/architecture.rs (kuna_install_goreg)`).
+The register ABI pins the current goroutine in a register — `R14` on amd64,
+`x28` on arm64, the values the vendored golang `register.info` files state —
+which the cspec lists as `unaffected` and no `<pentry>` names, so every access
+rendered as a phantom local (`v3; // r14`) fed by unexplained arithmetic. The
+install mirrors a cspec `<global><register/>` (the register's storage joins
+the global scope; the vendored spec itself stays pristine) and maps a type-
+and name-locked `g` symbol typed `runtime.g *` over it. `runtime.g` and
+`runtime.gobuf` are synthesized shells carrying exactly the fields whose
+offsets the go1.22 runtime source states for the register-ABI era (through
+`goid` at 0x98; `sched` is the seven-word `gobuf`); the liblink-stated prefix
+(`stackguard0` 0x10, `_panic` 0x20, `m` 0x30) is stable across Go releases,
+the tail is go1.22-pinned, and an access past the modeled prefix renders as an
+offset off `g` — still anchored. A golang target with no pinned register
+(x86-32 reaches `g` through TLS) is untouched. Measured on the stripped
+go1.22 hello-world: functions declaring a phantom `// r14` local 267 → 23,
+functions reading named `g->` fields 7 → 297, the preemption-request store
+rendering `g->stackguard0 = 0xfffffffffffffade` exactly as the runtime source
+spells it.
+
 The loader's symbol
 stream — defined FUNC symbols plus the resolved import stubs of §1.3 — is
 `@VERSION`-stripped, demangled (§1.4) and **character-sanitized** before each

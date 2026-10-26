@@ -7414,6 +7414,25 @@ tier = "transform"
 symptoms = "every function of a Go binary opens with if (condition) { runtime_morestack_noctxt(); } inside a loop to the entry|go function parameters recovered as phi-fed locals or missing because the entry is a loop head|do-while wrapping an entire go function body with a morestack call in its latch"
 
 [[settable]]
+option = "goreg"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-multilang-goreg"
+summary = "Name and type the goroutine register when the golang compiler spec is active. Under the Go register ABI the current goroutine lives in a pinned register (R14 on amd64, x28 on arm64 - the values the vendored golang register.info files state), and the runtime reads through it constantly; the cspec lists it as unaffected and no pentry names it, so every access rendered as a phantom local (v3; // r14) fed by unexplained arithmetic. With the option on (default) kuna adds the register's storage to the global scope (the cspec global-register mechanism, applied kuna-side so the vendored spec stays pristine) and maps a type- and name-locked `g` symbol typed `runtime.g *` over it, with runtime.g / runtime.gobuf synthesized as shells carrying exactly the fields whose offsets the go1.22 runtime source states for the register-ABI era (through goid at 0x98; sched is the seven-word gobuf). A stackguard load then renders g->stackguard0, and g->m, g->_defer read like the runtime source; an access past the modeled prefix renders as an offset off g, still anchored. Load-time (the KUNA_GOREG env bridge, the goabi seam): the install runs at architecture build, right after the cspec global decode. Structurally inert off-Go by construction - the gate requires the golang compiler spec, which only goabi composes for a Go-detected image, and a golang target with no pinned register (x86-32 reaches g through TLS) is untouched."
+use_when = "Leave on: Go runtime internals and every function the gomorestack fold declines render goroutine state as named g-> fields instead of phantom register locals. Flip off to audit the raw register arithmetic, or if a custom runtime's g layout disagrees with the modeled go1.22 prefix."
+example = "option goreg off"
+source_decompiler = "kuna"
+inspiration = "Ghidra's golang register.info current_goroutine entries (never consumed by the decompiler); the cspec <global><register/> mechanism; docs/multilang.md W4"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "go functions declare a local commented r14 or x28 that is read but never assigned|stackguard reads render as *(long *)(v3 + 0x10) instead of g->stackguard0|go runtime internals full of unexplained register arithmetic"
+
+[[settable]]
 option = "goabi"
 values = "auto|off"
 default = "auto"
