@@ -5,6 +5,8 @@
 //! (A32) and `pool_skip_t` (Thumb, `it ne`) load a pool offset, skip a
 //! predicated `bxne r3` and form a string with `add rN,pc,r2` after it.
 //! `bail` leaves through `bxne r0` or `bl abort`, and `bail_caller` calls it.
+//! `unguarded` is an `ldr pc,[pc,r0,lsl #2]` table with no range check right
+//! after `pool_tail`'s pool word.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -24,6 +26,8 @@ const POOL_MSG_T: u64 = 0x1016a;
 /// The predicated computed jumps: `bxne r3` in `pool_skip` and `pool_skip_t`,
 /// `bxne r0` in `bail`.
 const PREDICATED_JUMPS: [u64; 3] = [0x1007c, 0x10092, 0x100a4];
+/// `unguarded`'s dispatch, its entry.
+const UNGUARDED: u64 = 0x100b8;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -67,6 +71,17 @@ fn a_pool_word_survives_the_skip_of_a_predicated_computed_jump() {
         let rows = from(idx, add);
         assert!(rows.contains(&(string, XrefKind::Data)), "{add:#x}: {rows:?}");
     }
+}
+
+/// A table with no range check gives no case count, so no reader walks its
+/// cases, whether or not the code before its entry was decoded: the dispatch
+/// files only the row its PC-relative operand gives, as before A32 tables
+/// were read.
+#[test]
+fn an_unguarded_a32_table_at_an_entry_reads_no_case() {
+    let idx = index();
+    assert_eq!(from(idx, UNGUARDED), vec![(UNGUARDED, XrefKind::Data)]);
+    assert!(idx.switch_tables().iter().all(|t| t.dispatch != UNGUARDED), "{:?}", idx.switch_tables());
 }
 
 /// The Listing records a predicated computed jump as `classify` does, with its
