@@ -75,14 +75,14 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
-/// Bootstrap, commit, decompile `runtime.unlock2`, return the transcript.
-fn decompile_unlock2(bin: &str) -> String {
+/// Bootstrap, commit, decompile `func`, return the transcript.
+fn decompile_fn(bin: &str, func: &str) -> String {
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog: ConsoleProgram = bootstrap_from_object(bin, "", &spec_roots)
         .expect("bootstrap go fixture with built processor specs");
     prog.commit_pending_analysis().expect("analysis commit succeeds");
-    let cmds: Vec<String> = ["load function runtime.unlock2", "decompile", "print C"]
+    let cmds: Vec<String> = [&format!("load function {func}"), "decompile", "print C"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -136,19 +136,25 @@ fn goroutine_state_renders_through_the_named_g_global() {
     // Default: goroutine state reads through the named, typed global. The
     // stackguard0 store is at the liblink-stated offset 0x10, stable across
     // Go releases, so the assertion holds wherever the runtime drifts later.
-    let on = decompile_unlock2(bin);
+    let on = decompile_fn(bin, "runtime.unlock2");
     assert!(
         on.contains("g->"),
         "goreg on must render g-relative accesses through the named global; transcript:\n{on}"
     );
+    // The stackguard0 witness is `runtime.exitsyscall`, not `unlock2`: go1.25's
+    // futex-lock rewrite moved unlock2's preemption store elsewhere, while the
+    // syscall-exit path has touched `g->stackguard0` in every release this test
+    // has met (verified on go1.22.10 and go1.25.3; 87 runtime functions render
+    // the field on both, this one is small and unambiguous).
+    let sysexit = decompile_fn(bin, "runtime.exitsyscall");
     assert!(
-        on.contains("g->stackguard0"),
-        "the preemption-request store renders at its liblink offset; transcript:\n{on}"
+        sysexit.contains("g->stackguard0"),
+        "the syscall-exit path renders stackguard0 at its liblink offset; transcript:\n{sysexit}"
     );
 
     // Off: the raw reading returns — no named global anywhere in the body.
     let _guard = EnvGuard::set("KUNA_GOREG", "off");
-    let off = decompile_unlock2(bin);
+    let off = decompile_fn(bin, "runtime.unlock2");
     assert!(
         !off.contains("g->"),
         "goreg off must restore the phantom-register reading; transcript:\n{off}"
