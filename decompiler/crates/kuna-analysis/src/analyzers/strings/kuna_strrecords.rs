@@ -36,12 +36,27 @@
 //!
 //! # Gating
 //!
-//! One option, two recognizers: this pass is registered only for a
-//! rustc-detected image (`passes_for`), and its commit is gated on the same
+//! One option, two recognizers: this pass is registered only for rustc- and
+//! Go-detected images (`passes_for`), and its commit is gated on the same
 //! `Architecture::fat_str` mode the engine rule reads (`off` drops the facts
-//! at the read-symbols boundary, exactly like every analysis gate). Go string
-//! headers share the record shape but belong to the Go pack's blob
-//! segmentation item, deliberately not here.
+//! at the read-symbols boundary, exactly like every analysis gate).
+//!
+//! # The Go arm
+//!
+//! Go string headers are the same `(ptr, len)` record over the same
+//! unterminated `.rodata` blob, with one placement difference: the measured
+//! go1.22 toolchain binaries are non-PIE and keep most headers in the
+//! WRITABLE data image (`.data`: 480 of 545 records on the hello witness;
+//! `.noptrdata` holds the pointer-free statics), with the remaining 65 in
+//! `.rodata` itself. A Go registration therefore widens the SLOT regions to
+//! those two sections by name ([`StrRecordPass::go`]); the TARGET test is
+//! unchanged — the text must sit in genuinely read-only data — which is what
+//! keeps a writable slot's mutability irrelevant (the record may move; the
+//! literal it currently states cannot). Go also shares literal bytes between
+//! headers (substring records): records are deduped longest-first per start
+//! address, and a record starting inside an earlier one is retired by the
+//! commit arm's occupied-address guard, so prefix/suffix sharing renders
+//! through the containing literal.
 
 use object::read::{Object, ObjectSection};
 use object::RelocationFlags;
@@ -85,6 +100,15 @@ fn ro_regions<'a>(file: &'a object::File) -> Vec<RoRegion<'a>> {
                 object::SectionKind::ReadOnlyData | object::SectionKind::ReadOnlyString
             ) || s.name().is_ok_and(|n| n == ".data.rel.ro")
         })
+        .filter_map(|s| Some(RoRegion { vma: s.address(), data: s.data().ok()? }))
+        .collect()
+}
+
+/// The additional SLOT regions a Go image keeps headers in: the writable data
+/// image. Slots only — [`record_at`] still demands the target bytes in RO.
+fn go_slot_regions<'a>(file: &'a object::File) -> Vec<RoRegion<'a>> {
+    file.sections()
+        .filter(|s| s.name().is_ok_and(|n| n == ".data" || n == ".noptrdata"))
         .filter_map(|s| Some(RoRegion { vma: s.address(), data: s.data().ok()? }))
         .collect()
 }
@@ -163,18 +187,19 @@ fn scan_reloc_records(file: &object::File, regions: &[RoRegion], width: u64) -> 
     out
 }
 
-/// The direct arm: absolute `(ptr, len)` word pairs in read-only data (the
-/// non-PIE layout; on a PIE the unrelocated slots read zero and match nothing).
-fn scan_direct_records(regions: &[RoRegion], width: u64) -> Vec<StringFact> {
+/// The direct arm: absolute `(ptr, len)` word pairs whose slots sit in
+/// `slots` and whose targets sit in `targets` (the non-PIE layout; on a PIE
+/// the unrelocated slots read zero and match nothing).
+fn scan_direct_records(slots: &[RoRegion], targets: &[RoRegion], width: u64) -> Vec<StringFact> {
     let mut out = Vec::new();
     let w = width as usize;
-    for region in regions {
+    for region in slots {
         let data = region.data;
         let mut i = 0usize;
         while i + 2 * w <= data.len() {
             let ptr = read_word(&data[i..i + w]);
             let len = read_word(&data[i + w..i + 2 * w]);
-            if let Some(fact) = record_at(regions, ptr, len, DIRECT_MIN_LEN) {
+            if let Some(fact) = record_at(targets, ptr, len, DIRECT_MIN_LEN) {
                 out.push(fact);
                 if out.len() >= MAX_RECORDS {
                     return out;
@@ -186,9 +211,24 @@ fn scan_direct_records(regions: &[RoRegion], width: u64) -> Vec<StringFact> {
     out
 }
 
-/// (kuna `fatstr`) The `&str`-record string pass. Registered for rustc-detected
-/// images; committed under the `fatstr` mode gate.
-pub struct StrRecordPass;
+/// (kuna `fatstr`) The string-record pass. Registered for rustc- and
+/// Go-detected images; committed under the `fatstr` mode gate.
+pub struct StrRecordPass {
+    /// Widen the direct arm's SLOT regions to the Go data image
+    /// ([`go_slot_regions`]); targets stay read-only either way.
+    go_slots: bool,
+}
+
+impl StrRecordPass {
+    /// The rustc registration: slots in read-only data only.
+    pub fn rust() -> StrRecordPass {
+        StrRecordPass { go_slots: false }
+    }
+    /// The Go registration: slots also in `.data`/`.noptrdata`.
+    pub fn go() -> StrRecordPass {
+        StrRecordPass { go_slots: true }
+    }
+}
 
 impl AnalysisPass for StrRecordPass {
     fn phase(&self) -> Phase {
@@ -204,11 +244,17 @@ impl AnalysisPass for StrRecordPass {
         }
         let width: u64 = if ctx.file.is_64() { 8 } else { 4 };
         let mut facts = scan_reloc_records(ctx.file, &regions, width);
-        facts.extend(scan_direct_records(&regions, width));
-        // One fact per start address; the first (reloc-vouched) wins, and a
-        // longest-first order inside equal starts is irrelevant because records
-        // state exact lengths.
-        facts.sort_by_key(|f| f.addr);
+        if self.go_slots {
+            let slots = go_slot_regions(ctx.file);
+            facts.extend(scan_direct_records(&slots, &regions, width));
+        }
+        facts.extend(scan_direct_records(&regions, &regions, width));
+        // One fact per start address, LONGEST first: Go headers share bytes
+        // (prefix records at one start), and the longer record renders the
+        // shorter as a prefix read while the reverse would truncate. A record
+        // starting inside an earlier one is left to the commit arm's
+        // occupied-address guard.
+        facts.sort_by_key(|f| (f.addr, core::cmp::Reverse(f.len)));
         facts.dedup_by_key(|f| f.addr);
         AnalysisOutput { bounded_strings: facts, ..Default::default() }
     }
@@ -264,13 +310,49 @@ mod tests {
         }
         data[0x100..0x100 + recs.len()].copy_from_slice(&recs);
         let regions = vec![region(0x2000, &data)];
-        let found = scan_direct_records(&regions, 8);
+        let found = scan_direct_records(&regions, &regions, 8);
         // The 17-byte record is found (once per slot it appears in); the 1-byte
         // record fails the direct-arm minimum. Dedup collapses the repeat.
         let mut facts = found;
         facts.sort_by_key(|f| f.addr);
         facts.dedup_by_key(|f| f.addr);
         assert_eq!(facts.len(), 1);
+        assert_eq!((facts[0].addr, facts[0].len), (0x2000, 17));
+    }
+
+    /// The Go slot split: records whose SLOTS sit outside the target regions
+    /// (the `.data` header area) are found when passed as the slot set, and
+    /// the targets are still held to the read-only set.
+    #[test]
+    fn go_slots_scan_separately_from_targets() {
+        let mut ro = vec![0u8; 0x40];
+        ro[..17].copy_from_slice(b"hello multilang, ");
+        let targets = vec![region(0x2000, &ro)];
+        // Header area at 0x5000 ("data"): one record to the RO text, one
+        // record whose target points back into the header area itself.
+        let mut hdr = vec![0u8; 0x40];
+        hdr[..8].copy_from_slice(&0x2000u64.to_le_bytes());
+        hdr[8..16].copy_from_slice(&17u64.to_le_bytes());
+        hdr[16..24].copy_from_slice(&0x5000u64.to_le_bytes());
+        hdr[24..32].copy_from_slice(&17u64.to_le_bytes());
+        let slots = vec![region(0x5000, &hdr)];
+        let found = scan_direct_records(&slots, &targets, 8);
+        assert_eq!(found.len(), 1, "only the RO-backed target is a record");
+        assert_eq!((found[0].addr, found[0].len), (0x2000, 17));
+    }
+
+    /// Same-start records keep the LONGEST (Go prefix sharing): the shorter
+    /// renders as a prefix read of the longer.
+    #[test]
+    fn same_start_dedup_keeps_the_longest() {
+        let mut facts = vec![
+            StringFact { addr: 0x2000, len: 5 },
+            StringFact { addr: 0x2000, len: 17 },
+            StringFact { addr: 0x2020, len: 4 },
+        ];
+        facts.sort_by_key(|f| (f.addr, core::cmp::Reverse(f.len)));
+        facts.dedup_by_key(|f| f.addr);
+        assert_eq!(facts.len(), 2);
         assert_eq!((facts[0].addr, facts[0].len), (0x2000, 17));
     }
 }

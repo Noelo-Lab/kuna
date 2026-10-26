@@ -77,6 +77,57 @@ fn build_rust(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
         .unwrap_or(false)
 }
 
+/// The Go twin of [`MAIN_RS`]: the same runtime-indexed table, whose headers
+/// the Go linker emits as absolute `(ptr, len)` pairs in the data image.
+const MAIN_GO: &str = r#"package main
+
+import (
+	"fmt"
+	"os"
+)
+
+var table = [3]string{"kuna fatstr witness, ", "kuna second piece", "kuna third piece"}
+
+func main() {
+	i := len(os.Args) % 3
+	fmt.Println(table[i] + "!")
+}
+"#;
+
+/// `true` if a runnable `go` toolchain is on PATH.
+fn go_available() -> bool {
+    Command::new("go")
+        .arg("version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// Build [`MAIN_GO`] stripped (`-ldflags=-s -w`) for the host, hermetically.
+fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    if std::fs::write(dir.join("main.go"), MAIN_GO).is_err() {
+        return false;
+    }
+    Command::new("go")
+        .args(["build", "-ldflags=-s -w", "-o"])
+        .arg(out_bin)
+        .arg("main.go")
+        .current_dir(dir)
+        .env("GOCACHE", dir.join(".gocache"))
+        .env("GOPATH", dir.join(".gopath"))
+        .env("CGO_ENABLED", "0")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
 /// The virtual address of [`WITNESS`] inside the built binary's `.rodata`.
 fn witness_vma(bin: &std::path::Path) -> Option<u64> {
     let bytes = std::fs::read(bin).ok()?;
@@ -155,6 +206,44 @@ fn rust_str_records_segment_the_glued_nul_run() {
         ),
         // Or no symbol at all, if the scan rejected the run for other reasons —
         // either way, nothing states the literal's true extent.
+        None => {}
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The Go arm: the same record shape, slots in the Go data image, under the
+/// same option. A stripped Go build's table headers state the literal's exact
+/// 21 bytes; `off` leaves the blob to the NUL scan, which cannot.
+#[test]
+fn go_string_records_bound_the_blob_literal() {
+    if !go_available() {
+        eprintln!("verify_fatstr_records: skipping Go arm (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_fatstr_go_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_fatstr");
+    if !build_go(&dir, &out_bin) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the fixture");
+    }
+    let bin = out_bin.to_str().expect("utf8 path");
+    let vma = witness_vma(&out_bin).expect("the witness literal is in .rodata");
+
+    let bounded = committed_extent(bin, vma, None)
+        .expect("fatstr auto commits a bounded symbol at the literal");
+    assert_eq!(
+        bounded,
+        WITNESS.len() as i32,
+        "the Go header-stated extent is the literal's own 21 bytes"
+    );
+
+    match committed_extent(bin, vma, Some("off")) {
+        Some(glued) => assert!(
+            glued != WITNESS.len() as i32,
+            "with fatstr off nothing states the literal's exact extent"
+        ),
         None => {}
     }
 

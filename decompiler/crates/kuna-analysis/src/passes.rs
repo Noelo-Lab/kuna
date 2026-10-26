@@ -394,6 +394,12 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // facts idempotently (a real `.symtab` name still wins, so only a *stripped*
     // Go binary's `sub_<addr>` functions take the recovered name).
     if compiler.is_golang() {
+        // (kuna `fatstr`) The Go arm of the string-record pass: the same
+        // (ptr, len) record shape rustc emits, with the slots widened to the
+        // Go data image (.data/.noptrdata). FIRST in the Go block so
+        // `gopclntab` keeps its appended-last contract. Committed under the
+        // same `fatstr` mode gate as the rustc arm.
+        passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass::go()));
         // (kuna `gonoreturn`) BEFORE `gopclntab`, preserving that pass's
         // appended-last contract: apply the vendored Go no-return list to the
         // pclntab's own function list, so a STRIPPED Go binary (no .symtab for
@@ -409,7 +415,7 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // the `fatstr` mode gate (`Architecture::fat_str`), so `--option fatstr
     // off` drops the facts at the read-symbols boundary.
     if compiler.is_rust() {
-        passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass));
+        passes.push(Box::new(crate::strings::kuna_strrecords::StrRecordPass::rust()));
     }
 
     // S1 PE/Mach-O import-slot call binding (PeImportCallPass): paint
@@ -1660,24 +1666,27 @@ mod tests {
         assert_eq!(&rust[..base.len()], &base[..], "Rust set is the base set + extras");
         assert_eq!(rust.last(), Some(&"fatstrrecords"), "Rust appends the record pass");
         assert_eq!(rust.len(), base.len() + 1, "Rust adds exactly one pass");
-        // No non-Rust compiler carries the record pass.
-        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Go, Compiler::Swift, Compiler::Unknown] {
+        // No compiler without a string-record arm carries the record pass
+        // (Go carries it too — the next test).
+        for c in [Compiler::Gcc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
             assert!(!ids(&passes_for(c, NON_PE)).contains(&"fatstrrecords"), "{c:?} must not carry fatstrrecords");
         }
     }
 
-    /// The Go pass set is exactly the base set plus the two Go-only passes:
-    /// `gonoreturn` (the pclntab no-return list) then `gopclntab` (the
-    /// function-name recovery, keeping its appended-last contract); no other
-    /// compiler carries either.
+    /// The Go pass set is exactly the base set plus the three Go-arm passes:
+    /// `fatstrrecords` (the string-record pass's Go arm), then `gonoreturn`
+    /// (the pclntab no-return list), then `gopclntab` (the function-name
+    /// recovery, keeping its appended-last contract); no other compiler
+    /// carries the two Go-only ones.
     #[test]
-    fn go_adds_only_the_two_go_passes() {
+    fn go_adds_only_the_three_go_passes() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
         let go = ids(&passes_for(Compiler::Go, NON_PE));
         assert_eq!(&go[..base.len()], &base[..], "Go set is the base set + extras");
         assert_eq!(go.last(), Some(&"gopclntab"), "Go appends the gopclntab pass last");
         assert_eq!(go.get(go.len() - 2), Some(&"gonoreturn"), "gonoreturn precedes gopclntab");
-        assert_eq!(go.len(), base.len() + 2, "Go adds exactly two passes");
+        assert_eq!(go.get(go.len() - 3), Some(&"fatstrrecords"), "the record pass opens the Go block");
+        assert_eq!(go.len(), base.len() + 3, "Go adds exactly three passes");
         // No non-Go compiler carries either Go-only pass.
         for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
             let set = ids(&passes_for(c, NON_PE));
