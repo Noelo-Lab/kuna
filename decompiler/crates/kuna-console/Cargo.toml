@@ -117,5 +117,9 @@ name = "verify_goreg"
 path = "tests/verify_goreg.rs"
 
 [[test]]
+name = "verify_swiftdemangle"
+path = "tests/verify_swiftdemangle.rs"
+
+[[test]]
 name = "verify_gotypes"
 path = "tests/verify_gotypes.rs"

@@ -1105,6 +1105,12 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "swiftdemangle" => {
+        let val = on_or_off(p1)?;
+        self.analysis_swiftdemangle = val;
+        crate::kuna_swiftdemangle::set_swiftdemangle_env(val);
+        Ok(format!("Swift symbol demangling turned {}", if val { "on" } else { "off" }))
+    },
     "symbolnamechars" => {
         let mode = crate::kuna_symbolnamechars::NameChars::parse(p1).ok_or_else(|| {
             KunaError::lowlevel(format!(

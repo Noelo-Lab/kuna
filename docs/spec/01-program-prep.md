@@ -2852,6 +2852,34 @@ moves.
   member is brought to `msvc_demangler`'s (`dtor` is `destructor`) so a member
   reads the same whichever crate demangled it.
 
+  **(kuna, docs/multilang.md) Swift names demangle through a ported, bounded
+  name-only subset** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift.rs
+  (demangle_swift_name)`), because no crate exists at the maturity of the three
+  above: the Vector35 `swift-demangler` builds the real C++ demangler through
+  cmake (a native-toolchain dependency this workspace does not carry, floor
+  rustc above this repo's), and the pure-Rust alternatives are unvetted 0.x
+  crates — for symbol RENAMING a wrong answer is strictly worse than none. The
+  subset parses context chains (`module.Type.member`, `V`/`C`/`O` nominal
+  kinds, the stdlib `s` contraction), functions with argument labels rendered
+  Swift-style (`Swift.print(_:separator:terminator:)`), property accessors
+  (`.getter`/`.setter`), `init`/`deinit`, and the common global markers
+  (`type metadata`, nominal descriptor, metadata accessor, full metadata,
+  metaclass, value witness table) as dotted suffixes; everything else —
+  punycode identifiers, witnesses/thunks, specializations, generic machinery —
+  **passes through unchanged** (parse-or-passthrough: the label-less function
+  arm additionally refuses any signature carrying digits, since a digit there
+  could open an un-labeled custom parameter type whose path components are
+  indistinguishable from labels). The arm is shape-gated on
+  `sourcelang::is_swift_mangled` — prefixes no other scheme owns — and
+  option-gated by `swiftdemangle` (default on) through the `KUNA_SWIFTDEMANGLE`
+  loadtime env bridge, the `rexthunk` pattern, because names are demangled
+  inside `load file` upstream of every option line. The test corpus is
+  hand-derived from the mangling grammar (each case cites its production), so
+  no third-party fixture text is vendored; the end-to-end gate synthesizes an
+  ELF whose symbol table carries the mangled names, since no Swift toolchain
+  exists on this host or CI — a real-swiftc fixture is the Swift pack's own
+  follow-up.
+
   **(kuna, DIV-83) Which crate is asked first is decided by a marker, not by
   which one answers.** Rust's *legacy* scheme reuses the Itanium `_ZN…E`
   envelope, escaping the characters an Itanium identifier cannot hold (`$LT$`

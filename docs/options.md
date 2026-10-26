@@ -805,6 +805,9 @@ Three tiers:
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi) |
 | multi-return go call sites read registers the call never defines | [`goabi`](#goabi) |
+| swift binary symbol names render as $s4main5PointV mangled soup | [`swiftdemangle`](#swiftdemangle) |
+| swift function names unreadable in kuna functions output | [`swiftdemangle`](#swiftdemangle) |
+| swift type metadata symbols show raw manglings instead of named paths | [`swiftdemangle`](#swiftdemangle) |
 | rust binary renders with c output and no rust abi handling because a stripped image lost its language signals | [`sourcelang`](#sourcelang) |
 | a c binary is detected as another language and language-gated rules misfire | [`sourcelang`](#sourcelang) |
 | go runtime passes do not run on a go binary whose buildinfo section was stripped | [`sourcelang`](#sourcelang) |
@@ -3007,6 +3010,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Leave auto: on a Go binary the golang cspec is the difference between invisible parameters with deleted statements and recovered register arguments with the multi-return join; flip off to read a Go image under the platform C model (comparing against another tool, or triaging a suspected cspec defect). Non-Go binaries never see the option either way.
 - **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-goabi
 - **Example:** `option goabi off`
+
+### `swiftdemangle` -- on | off, default `on`
+
+- **Symptoms:** swift binary symbol names render as $s4main5PointV mangled soup; swift function names unreadable in kuna functions output; swift type metadata symbols show raw manglings instead of named paths.
+- **What it does:** Demangle Swift symbol names ($s/$S v5, _T0 v4, and their Mach-O leading-underscore spellings) to readable dotted paths in every name surface, the way Rust/Itanium/MSVC names already demangle. The demangler is a kuna-ported, bounded NAME-ONLY subset of the Swift mangling grammar with a parse-or-passthrough contract: context chains (module.Type.member with V/C/O nominal kinds and the stdlib `s` contraction), functions with argument labels rendered Swift-style (Swift.print(_:separator:terminator:)), property getters/setters, init/deinit, and the common global markers (type metadata, nominal descriptor, metadata accessor, full metadata, metaclass, value witness table) rendered as dotted suffixes. Anything outside that subset - punycode identifiers, protocol witnesses and thunks, specializations, generic machinery, or any name the parser cannot derive with certainty - keeps its mangled spelling unchanged, so a wrong demangle is impossible by construction rather than by coverage. No crate exists at rustc-demangle/cpp_demangle maturity: the Vector35 swift-demangler builds the real C++ demangler via cmake (a native-toolchain dependency this workspace does not carry, floor rustc above this repo's), and the pure-Rust alternatives are unvetted 0.x single-author crates - for symbol RENAMING a wrong answer is worse than none, hence the port. Names are demangled while the loader installs the symbol table, inside `load file`, upstream of every option command, so the gate travels as the KUNA_SWIFTDEMANGLE environment variable (the rexthunk/symbolnamerepair loadtime pattern); the demangler is additionally shape-gated on the Swift mangling prefixes, which no other scheme owns, so the option is structurally inert on every non-Swift binary.
+- **When to flip:** Leave on: a Swift binary's $s soup becomes module.Type.member paths wherever the bounded subset is certain. Turn off to audit the raw mangled spellings, or if a third-party tool consuming kuna's output expects the mangled forms.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-swiftdemangle
+- **Example:** `option swiftdemangle off`
 
 ### `sourcelang` -- auto | c | rust | go | swift, default `auto`
 

@@ -2080,6 +2080,9 @@ pub struct Architecture {
     /// install runs inside `load file`, upstream of `option`); this bool exists
     /// only for catalog visibility and the `phase catalog` live `current` field.
     pub analysis_symbolnamerepair: bool,
+    /// (kuna) `option swiftdemangle` (catalog visibility; the live gate is the
+    /// `KUNA_SWIFTDEMANGLE` env bridge read inside `load file`).
+    pub analysis_swiftdemangle: bool,
     /// (kuna) How much of a raw symbol name's byte content is rewritten at the
     /// mint (`symbolnamechars`); default [`NameChars::Safe`]. A name's bytes
     /// otherwise reach emitted C verbatim, where a `*/`, a newline or a `//`
@@ -3207,6 +3210,7 @@ impl Architecture {
             go_reg: true, // (kuna) option goreg; reset_defaults re-asserts the shipped default (on)
             analysis_peordinal: false,
             analysis_symbolnamerepair: false,
+            analysis_swiftdemangle: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
             analysis_msvcfpconst: false,
@@ -3648,6 +3652,7 @@ impl Architecture {
         self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
         self.go_reg = true; // (kuna) option goreg default on: the golang cspec's goroutine register renders as `g`
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
+        self.analysis_swiftdemangle = true; // (kuna) Swift name demangling default-ON (shape-gated: inert off Swift images)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
         self.analysis_msvcfpconst = true; // (kuna) DIV-96 MSVC `__real@` FP-constant recovery default-ON (the mangled name IS the datum)
