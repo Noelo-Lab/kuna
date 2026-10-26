@@ -544,6 +544,22 @@ fn first_calls(data: &Funcdata) -> Vec<OpId> {
 /// call no other call can precede ([`first_calls`]), where the read is the
 /// function's own input. Inert with the option off.
 pub fn claim_untouched_registers(data: &mut Funcdata) {
+    claim_untouched_registers_mode(data, false)
+}
+
+/// (kuna callee-contract) [`claim_untouched_registers`] re-run after a callee's
+/// statement arrived mid-pipeline (the P4 trial-storage bootstrap).
+///
+/// The first run at `ActionFuncLink` could not know the callee, and by now the
+/// function's own input Varnode at the stated storage is already read, so
+/// `newVarnode` would mint a duplicate without the input flag.  Prefer the
+/// actual input Varnode here: `capture` recognises that as the forwarded input
+/// it is, exactly as the pre-link run would have.
+pub fn claim_untouched_registers_late(data: &mut Funcdata) {
+    claim_untouched_registers_mode(data, true)
+}
+
+fn claim_untouched_registers_mode(data: &mut Funcdata, late: bool) {
     if !data.get_arch().pass_through {
         return;
     }
@@ -562,7 +578,7 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
         .collect();
     data.kuna_set_passthrough_vararg_calls(vararg);
     let first = first_calls(data);
-    let mut claims: Vec<PassThroughClaim> = Vec::new();
+    let mut claims = if late { data.kuna_passthrough_claims().to_vec() } else { Vec::new() };
     for idx in 0..data.num_calls() {
         if !data.get_call_specs(idx).is_input_active() || !first.contains(&data.get_call_specs(idx).get_op()) {
             continue;
@@ -586,7 +602,21 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
                 continue;
             }
             let nin = data.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
-            let vn = data.new_varnode(size, &addr, None);
+            let vn = if late {
+                match own_input_varnode(data, &addr, size) {
+                    Some(vn) => vn,
+                    None => {
+                        // The entry-time input at this storage is gone (dead code
+                        // removed the only read before the call site knew the
+                        // callee).  Recreate it as an input, which is the state
+                        // the pre-link claim saw.
+                        let vn = data.new_varnode(size, &addr, None);
+                        data.set_input_varnode(vn).unwrap_or(vn)
+                    }
+                }
+            } else {
+                data.new_varnode(size, &addr, None)
+            };
             if data.op_insert_input(op, vn, nin).is_err() {
                 continue;
             }
@@ -613,6 +643,18 @@ pub fn claim_untouched_registers(data: &mut Funcdata) {
         claim_tail_return(data, &mut claims, ret);
     }
     data.kuna_set_passthrough_claims(claims);
+}
+
+/// The function's own incoming Varnode at `addr:size`, if it is still unread
+/// memory of the entry (not recomputed).
+fn own_input_varnode(data: &Funcdata, addr: &Address, size: int4) -> Option<VarnodeId> {
+    data.vbank()
+        .iter_def_flag(crate::varnode::varnode_flags::input)
+        .find(|&v| {
+            data.vbank()
+                .get(v)
+                .is_some_and(|n| n.get_addr() == addr && n.get_size() == size && !n.is_written())
+        })
 }
 
 /// Can the claim of the register at `pos` in the callee's stated list be made

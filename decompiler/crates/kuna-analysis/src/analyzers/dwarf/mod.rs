@@ -134,6 +134,7 @@ use kuna_typedepth::TypeWalk;
 mod kuna_dwarfstructs;
 
 mod kuna_dwarfvariants;
+mod kuna_variantnames;
 
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;

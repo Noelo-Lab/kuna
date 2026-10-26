@@ -2300,6 +2300,7 @@ decomp_command!(
             entry,
             size,
             &crate::decompile_step::DecompileSeed {
+                purpose: kuna_decomp::decompile_drive::DrivePurpose::SingleFunction,
                 mapped_symbols: &mapped_symbols,
                 usepoint_symbols: &usepoint_symbols,
                 dynamic_symbols: &dynamic_symbols,

@@ -17,6 +17,7 @@ pub mod noreturn_disc;
 pub mod noreturn_propagate;
 pub mod objc;
 pub mod operand_refs;
+pub mod gotypes;
 pub mod pclntab;
 pub mod pdb;
 pub mod protos;

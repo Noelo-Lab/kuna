@@ -1809,10 +1809,24 @@ fn resolve_targets_with_policy(
 /// Returns `None` when the file is not a Rust binary or cannot be parsed, which
 /// leaves the C default in place: this can only ever ADD a language, never take
 /// one away.
-pub fn detected_output_language(binary: &str) -> Option<&'static str> {
-    let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
-    let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
-    match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
+pub fn detected_output_language(
+    binary: &str,
+    options: &[(String, String)],
+) -> Option<&'static str> {
+    // A per-run `--option sourcelang` force wins over the image: this policy
+    // runs in the parent process, before the loadtime environment is bound
+    // onto the engine (sub)process, so the options list is consulted directly.
+    let compiler = match crate::loadtime::last_option_value(options, "sourcelang")
+        .and_then(kuna_decomp::kuna_sourcelang::SourceLang::parse_forced)
+    {
+        Some(lang) => kuna_analysis::sourcelang::Compiler::from_forced_lang(lang),
+        None => {
+            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
+            let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
+            kuna_analysis::sourcelang::effective_compiler(&file, &bytes)
+        }
+    };
+    match compiler {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
         _ => None,
     }
@@ -2739,7 +2753,7 @@ pub(crate) fn parse_args_with_filters(
         && cmd != "decompile-graph"
         && !options.iter().any(|(n, _)| n == "setlanguage")
     {
-        if let Some(lang) = detected_output_language(&binary) {
+        if let Some(lang) = detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
         }
     }

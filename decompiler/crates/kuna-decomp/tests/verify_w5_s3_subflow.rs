@@ -4,11 +4,8 @@
 //! `SubvariableFlow` discovery engine and its trigger rules
 //! (`decompiler/cpp/subflow.cc`):
 //!
-//!   * F1 — unguarded shift in `RuleSubvarShift::applyOp` (`mask >> sa` /
-//!     `(mask>>sa)<<sa`, subflow.cc:1694-1695) with a shift amount >= 64: the
-//!     C++ is shift-past-width UB (x86-masked in practice, never crashes); the
-//!     Rust uses a bare `>>` which PANICS in a debug build.  This pins the
-//!     divergence as a panic boundary.
+//!   * F1 — shifts beyond mask precision in `RuleSubvarShift::applyOp`
+//!     decline without changing the IR instead of reproducing C++ shift UB.
 //!   * the forward bitsize==1 boolean-movement branch (subflow.cc:594-613) —
 //!     the `booldir` inversion under INT_EQUAL vs INT_NOTEQUAL — and the
 //!     backward INT_ADD single-bit→XOR vs multi-bit→ADD split
@@ -116,38 +113,25 @@ fn wire_out(fd: &mut Funcdata, defop: kuna_decomp::context::OpId, vn: VarnodeId)
     vn
 }
 
-// ---- F1: RuleSubvarShift unguarded shift-by->=64 is a panic divergence ------
-//
-// C++ subflow.cc:1692-1695:
-//   int4 sa = (int4)op->getIn(1)->getOffset();
-//   uintb mask = vn->getNZMask();
-//   if ((mask >> sa) != (uintb)1) return 0;   // <-- shift-past-width UB if sa>=64
-//   mask = (mask >> sa) << sa;
-// There is NO `sa >= sizeof(uintb)*8` guard here (unlike the trace functions).
-// With a 1-byte register vn, getNZMask()==u64::MAX in this tree.  A constant
-// shift of 64 makes the C++ `mask >> 64` UB (x86 masks to `>> 0`, so mask stays
-// MAX, `!= 1` -> returns 0, no crash).  The Rust bare `>>` PANICS in debug.
-//
-// This pins the panic boundary (the W5-s3-subflow F1 divergence).  If the port
-// later switches these to wrapping shifts (`wshr`/`wshl`, ADR 0003), this test
-// should be flipped to assert `apply_op == 0` with no panic.
 #[test]
-#[should_panic(expected = "shift")]
-fn w5s3_subvar_shift_amount_64_panics_where_cpp_is_masked_ub_f1() {
+fn w5s3_subvar_shift_amount_64_is_rejected_without_mutating_ir() {
     let mut fd = build_fd();
-    // 1-byte input register: get_size()==1 (passes the rule's size guard),
-    // nz_mask == u64::MAX (registers are seeded MAX in this tree).
     let vn = mk_input(&mut fd, 0x40, 1);
-    let cst = fd.new_constant(4, 64); // shift amount 64 (>= 64 -> C++ UB)
+    let cst = fd.new_constant(4, 64);
     let shr = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_INT_RIGHT);
     let outvn = mk_reg(&mut fd, 0x80, 1);
     wire_in(&mut fd, shr, vn, 0);
     wire_in(&mut fd, shr, cst, 1);
-    let _outvn = wire_out(&mut fd, shr, outvn);
+    let outvn = wire_out(&mut fd, shr, outvn);
+    let before = fd.vbank().num_varnodes();
 
     let mut rule = RuleSubvarShift::new("g");
-    // C++: `mask >> 64` is UB-but-masked -> returns 0 (no crash).  Rust: panics.
-    let _ = rule.apply_op(shr, &mut fd);
+    assert_eq!(rule.apply_op(shr, &mut fd), 0);
+    assert_eq!(fd.obank().get(shr).unwrap().code(), OpCode::CPUI_INT_RIGHT);
+    assert_eq!(fd.obank().get(shr).unwrap().get_in(0), Some(vn));
+    assert_eq!(fd.obank().get(shr).unwrap().get_in(1), Some(cst));
+    assert_eq!(fd.obank().get(shr).unwrap().get_out(), Some(outvn));
+    assert_eq!(fd.vbank().num_varnodes(), before);
 }
 
 // A control: a *small* shift (sa < 64) on the same shape does NOT panic and

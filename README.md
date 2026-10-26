@@ -14,6 +14,7 @@ Learn more about this approach in this [post](https://noelo.org/blog/kuna-releas
 **Questions? Join our Discord**:
 
 [![Discord](https://img.shields.io/discord/1542982153912975470?label=Discord&logo=discord&logoColor=white&color=5865F2&style=flat)](https://discord.gg/vAQ8BKUPXv)
+[![Featured on Made with REA](https://madewithrea.com/badges/featured.svg)](https://madewithrea.com/builds/kuna-agent-first-rust-decompiler-ported-from-ghidra)
 
 ## Install & Usage
 Kuna is distributed as a single Rust binary and can be run on most systems.
@@ -39,7 +40,7 @@ It ships inside the binary, so `kuna install-skill` sets it up for Claude Code, 
 Since Kuna is written in Rust, you can also use it in the web browser through WebAssembly.
 This will do all of the work on your machine, which means the binary remains private.
 
-Visit [kuna.noelo.org/decompile](https://kuna.noelo.org/decompile) to use it.
+Visit [decompile.run](https://decompile.run) to use it.
 
 The code for deploying your own site can be found in `./integrations/web`
 

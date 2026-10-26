@@ -207,7 +207,77 @@ of 512 bytes or fewer still follows exactly the path it always did.
 The mapping unit is the ELF **`PT_LOAD` segment** (what the OS actually maps), not the BFD
 section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
-(machine + endianness + class → e.g. `x86:LE:64:default:gcc`). The loader's symbol
+(machine + endianness + class → e.g. `x86:LE:64:default:gcc`).
+
+(kuna) **A Go image composes the `:golang` compiler field instead**
+(`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
+option `goabi auto|off`, default auto, carried as the `KUNA_GOABI` loadtime
+environment gate — the `sourcelang` pattern, because the id is composed inside
+`load file`). Go's register ABI is not the platform C ABI: under the `gcc`
+model a Go function's RAX/RBX/… arguments are scratch, so its parameters are
+invisible, a second return value is dead-coded away and the statements feeding
+it are deleted (`func pair(a,b int) (int,int)` rendered
+`long pair(void){ return v1 + v2; }`). The vendored golang cspecs
+(`abi-internal` default, `abi0`, the write-barrier/duff helper models) exist
+for x86-64, x86-32 and AArch64, so the override fires only on those three
+little-endian architectures when the effective source language is Go (the
+`KUNA_SOURCELANG` force included); everywhere else the composed id is
+byte-identical to before, and `elf_language_ids` enumerates the golang ids so
+the resolves-in-the-DB gate proves them vendored. Measured on a stripped
+go1.22 hello-world (1,544 functions): functions with recovered parameters
+544 → 992, functions reading a never-assigned register local 853 → 501, zero
+failures either way. Per-symbol `abi0` binding is deliberately absent: the
+go1.22 pclntab carries no `.abi0` names and the canonical entry inventory
+collapses the unstripped symtab aliases, so no `.abi0` spelling reaches the
+engine — alias-aware symbol plumbing has to come first.
+
+(kuna) **With the golang cspec active, the goroutine register becomes the
+named, typed global `g`** (option `goreg on|off`, default on, carried as the
+`KUNA_GOREG` loadtime environment gate;
+`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs`, installed by
+the architecture build right after the cspec `<global>` decode —
+`decompiler/crates/kuna-decomp/src/infra/architecture.rs (kuna_install_goreg)`).
+The register ABI pins the current goroutine in a register — `R14` on amd64,
+`x28` on arm64, the values the vendored golang `register.info` files state —
+which the cspec lists as `unaffected` and no `<pentry>` names, so every access
+rendered as a phantom local (`v3; // r14`) fed by unexplained arithmetic. The
+install mirrors a cspec `<global><register/>` (the register's storage joins
+the global scope; the vendored spec itself stays pristine) and maps a type-
+and name-locked `g` symbol typed `runtime.g *` over it. `runtime.g`,
+`runtime.gobuf`, `runtime.m` and `runtime.gsignalStack` are synthesized shells
+carrying exactly the fields whose offsets the runtime source states for the
+register-ABI era, and the layouts are **versioned off the image's own
+toolchain**: the build-info blob's version string
+(`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
+(go_toolchain_version)`) travels as the `KUNA_GOVERSION` loadtime variable —
+set by the object bootstrap before the sleigh build, because the shells are
+interned inside the cspec decode, upstream of every per-image fact write —
+and selects the release's layout
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs (GoLayout)`):
+go1.23 inserted `g.syscallbp`, go1.25 dropped `gobuf.ret`, and with both
+perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
+`m` 0x30, `stktopsp`..`goid` 0x80..0x98) land identically while
+`syscallsp`/`syscallpc` and everything inside `runtime.m` after `morebuf`
+shift with the gobuf width. The `runtime.m` shell is verified field-for-field
+against go1.22.10 and go1.25.3 through `profilehz` (linux/amd64 `sigset`; a
+PE Go binary's empty `sigset` would shift the tail from `tls` on — the shell
+is a reading aid and `goreg off` removes it); `g.m` carries the completed
+`runtime.m *`, so `g->m->curg` chains render named end to end, while `m`'s
+own goroutine pointers stay `void *` (a pointer taken to a still-incomplete
+composite would survive the factory's clone-and-re-key completion pointing at
+the stale type). An access past a modeled prefix renders as an offset off the
+shell — still anchored. An image with no parsable build-info version takes
+the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
+`g` through TLS) is untouched. Measured on the stripped
+go1.22 hello-world: functions declaring a phantom `// r14` local 267 → 23,
+functions reading named `g->` fields 7 → 297, the preemption-request store
+rendering `g->stackguard0 = 0xfffffffffffffade` exactly as the runtime source
+spells it; with the `runtime.m` shell, functions indexing raw bytes off
+`g->m` fall 166 → 42 and ~77 render named `curg`/`locks` reads — and on a
+go1.25 build the versioned layouts keep those same names at that release's
+shifted offsets (53 `curg` readers, `syscallbp` rendering where it exists).
+
+The loader's symbol
 stream — defined FUNC symbols plus the resolved import stubs of §1.3 — is
 `@VERSION`-stripped, demangled (§1.4) and **character-sanitized** before each
 name is installed as a `FunctionSymbol`, and the loader's read-only section ranges are applied to the
@@ -1537,6 +1607,21 @@ The always-on core, in pass order (`passes.rs (passes_for)`):
   when its first pointer-sized bytes, NUL and padding included, spell an address
   of the image; it then prints as that address. A relocatable object has no
   image addresses yet, so nothing is refused there.
+- **Rust `&str` records** (`fatstrrecords`, kuna, rustc-detected images only,
+  `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_strrecords.rs
+  (StrRecordPass)`, committed under the `fatstr` option's mode gate): Rust
+  literals carry their length in the fat pointer, not a terminator, and rustc
+  packs them back to back — so the NUL scan above GLUES adjacent Rust literals
+  into one wrong row. The static `(ptr, len)` records that state every
+  literal's length (a PIE's `R_*_RELATIVE` slots in `.data.rel.ro` with the
+  length in the unrelocated companion word; absolute word pairs in read-only
+  data on a non-PIE) are re-read as length-BOUNDED facts — exact extents, no
+  terminator — and the commit plants them BEFORE the NUL stream, so the
+  occupied-address guard retires the glued row and the symbol at each literal
+  spans exactly the literal. Guards: target in read-only data, `1..=4096`
+  bytes, valid UTF-8 at least 90% printable-or-whitespace, and the direct
+  (relocation-less) arm additionally keeps the NUL scan's minimum of four.
+  The engine half of the option is chapter [05](05-types.md)'s `RuleFatStr`.
 - **Wide strings** (`widestrings`, the `StringsAnalyzer` `allCharWidths` arm,
   `decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_widestrings.rs
   (scan_wide_strings)`): the same matcher over 2-byte little-endian code units —
@@ -2633,6 +2718,38 @@ moves.
   `dwarfstructs off` stays exactly the pre-DIV-86 name-only mapping its own row
   promises.
 
+- **Discriminant-value naming** (`variantnames`, default-on,
+  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_variantnames.rs`;
+  `docs/multilang.md`, the first `VariantLayout` consumer) closes the loop the
+  side table above left open at its cheapest point. The variant-part importer
+  installs the `tag` member with the plain integer type DWARF declares for it,
+  so every test or store of the discriminant renders a bare constant —
+  `(*e).tag == 1`, `rethidden->tag = 0` — when the compiler stated what those
+  values MEAN. With the gate on, the importer instead gives the tag member a
+  synthesized enum, `<enum>::Discriminant`, of the tag's own width
+  (`TYPE_ENUM_UINT` plus a namemap of exactly the variant part's
+  `(DW_AT_discr_value, variant name)` pairs, masked to the tag's width the way
+  `build_enum` masks a C enumerator), and the stock enum-constant rendering
+  prints `(*e).tag == Err` / `rethidden->tag = A` with no new emission
+  machinery. A bit-TESTED tag takes the stock flag-enum arithmetic form —
+  `(l->tag & Nil) == Cons` where `off` prints `!(l->tag & 1)` — which carries
+  the vocabulary at some cost in plainness; that form is the existing C-enum
+  behavior, not a new renderer, and `off` restores the integers. Stand-downs,
+  each deliberate: a NICHE layout has no tag field, so nothing is retyped (an
+  `Option<&T>` null test keeps its rendering — selecting the facet a niche
+  value implies is the `match` renderer's job on the same side table); a tag
+  DWARF already declares as an enum keeps the compiler's own type; the DEFAULT
+  variant has no single value and so gets no member; and a foreign type
+  already owning the synthesized name is never fought (the re-imported
+  compilation unit reuses it on an exact shape match, the `build_enum` rule).
+  Gated like its parents (`KUNA_VARIANTNAMES`, load-time env bridge), and
+  suppressed wholesale by `dwarfvariants off` — no layout, no tag member,
+  nothing to retype. The sibling `dwarfvariants` witnesses pin this arm OFF so
+  each file measures its own option; `tests/stages/kuna-variantnames.xml` and
+  the kuna-console `verify_variantnames` gate own the naming assertions
+  (store, read, declaration type, and the niche no-op) over the committed
+  `dwarfvariants_x86_64` fixture.
+
   **The limitation is the channel.** This needs full debug info
   (`-C debuginfo=2`, cargo `debug = true`). Where a binary's DWARF carries no type
   DIEs the arm is not degraded, it is inert: it recovers nothing and attempts no
@@ -2744,6 +2861,34 @@ moves.
   template arguments, vtordisp thunks); its spelling of a compiler-generated
   member is brought to `msvc_demangler`'s (`dtor` is `destructor`) so a member
   reads the same whichever crate demangled it.
+
+  **(kuna, docs/multilang.md) Swift names demangle through a ported, bounded
+  name-only subset** (`decompiler/crates/kuna-analysis/src/analyzers/demangle/kuna_swift.rs
+  (demangle_swift_name)`), because no crate exists at the maturity of the three
+  above: the Vector35 `swift-demangler` builds the real C++ demangler through
+  cmake (a native-toolchain dependency this workspace does not carry, floor
+  rustc above this repo's), and the pure-Rust alternatives are unvetted 0.x
+  crates — for symbol RENAMING a wrong answer is strictly worse than none. The
+  subset parses context chains (`module.Type.member`, `V`/`C`/`O` nominal
+  kinds, the stdlib `s` contraction), functions with argument labels rendered
+  Swift-style (`Swift.print(_:separator:terminator:)`), property accessors
+  (`.getter`/`.setter`), `init`/`deinit`, and the common global markers
+  (`type metadata`, nominal descriptor, metadata accessor, full metadata,
+  metaclass, value witness table) as dotted suffixes; everything else —
+  punycode identifiers, witnesses/thunks, specializations, generic machinery —
+  **passes through unchanged** (parse-or-passthrough: the label-less function
+  arm additionally refuses any signature carrying digits, since a digit there
+  could open an un-labeled custom parameter type whose path components are
+  indistinguishable from labels). The arm is shape-gated on
+  `sourcelang::is_swift_mangled` — prefixes no other scheme owns — and
+  option-gated by `swiftdemangle` (default on) through the `KUNA_SWIFTDEMANGLE`
+  loadtime env bridge, the `rexthunk` pattern, because names are demangled
+  inside `load file` upstream of every option line. The test corpus is
+  hand-derived from the mangling grammar (each case cites its production), so
+  no third-party fixture text is vendored; the end-to-end gate synthesizes an
+  ELF whose symbol table carries the mangled names, since no Swift toolchain
+  exists on this host or CI — a real-swiftc fixture is the Swift pack's own
+  follow-up.
 
   **(kuna, DIV-83) Which crate is asked first is decided by a marker, not by
   which one answers.** Rust's *legacy* scheme reuses the Itanium `_ZN…E`
@@ -2941,9 +3086,43 @@ moves.
   before pass selection, and shapes the pass list: `rustc version` records in
   `.comment` or Rust-mangled symbols → the Rust no-return list;
   `.go.buildinfo`/`.note.go.buildid` (any format's spelling) → the Go list plus
-  the pclntab pass; PE detection reads the MSVC Rich header / MinGW `GCC:` records,
-  Mach-O the `LC_BUILD_VERSION` family. The `Gcc`/`Clang` values are a kuna
-  convenience nothing gates on.
+  the pclntab pass; a Swift 5 reflection-metadata section (any format's
+  spelling of the namespace: `__swift5_…` on Mach-O, `swift5_…` on ELF,
+  `.sw5…` in a PE), a Swift-mangled symbol (`$s`/`$S`/`_T0`, held to the
+  scheme's next token so an assembler local like `$LN3` is not one), or a
+  Swift runtime entry point in either symbol table (`swift_retain`,
+  `swift_release`, …, so a stripped binary importing `libswiftCore` still
+  reads as Swift) → `Compiler::Swift`, checked after Rust and before the
+  toolchain conveniences, and on Mach-O before the Apple-platform fallback
+  that would otherwise claim every Swift image for clang. Nothing gates on
+  `Swift` yet — a Swift binary's pass set is pinned byte-identical to a
+  clang one — the verdict exists so the engine fact below is right and the
+  language packs (docs/multilang.md) have a plane to gate on. PE detection
+  reads the MSVC Rich header / MinGW `GCC:` records, Mach-O the
+  `LC_BUILD_VERSION` family. The `Gcc`/`Clang` values are a kuna convenience
+  nothing gates on.
+
+  Every consumer acts on the **effective** verdict
+  (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
+  (effective_compiler, effective_compiler_bytes)`): the `KUNA_SOURCELANG`
+  environment override when set, else detection. The override is the
+  `sourcelang` option (`auto|c|rust|go|swift`, default `auto`), and it travels
+  as an environment variable for the same reason `rexthunk` does — pass
+  selection happens inside `load file`, upstream of every per-function
+  `option` command, so the CLI binds it to the environment before loading
+  (`decompiler/crates/kuna-cli/src/loadtime.rs (binding)`). The engine's copy
+  of the verdict is `Architecture::source_lang_detected`, written once at
+  `load file` (`decompiler/crates/kuna-console/src/engine.rs
+  (bootstrap_from_object_with_isa)`) as a `SourceLang`
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_sourcelang.rs`), with
+  the console `option sourcelang` arm layering a per-run force on top
+  (`Architecture::source_lang` reports the effective value, and the catalog's
+  `current` reports the option — `auto` until a run forces a language). The
+  per-function rules that used to read the `source_is_rust`/`source_is_go`
+  bools (`rustabi auto`, `reloadarg`'s Go stand-down) read that one fact now.
+  Forcing a language never invents facts (forcing `go` on a non-Go image
+  enables the pclntab pass, which finds no table); it changes which
+  language-gated rules may act.
   "Rust-mangled" is decided by the mangling grammar, not by a prefix
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (is_rust_mangled)`). The v0 scheme spells a symbol `_R` followed by a path, and a
@@ -2974,6 +3153,45 @@ moves.
 The format- and language-gated recoveries (each registered only for its format, so
 every other binary's pass list is byte-identical to before the pass existed):
 
+- **Go runtime types** (`gotypes`, Go-detected binaries only, default-on;
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/mod.rs (GoTypesPass)`):
+  phase 1 of the `docs/multilang.md` W3 Go provider. A stripped Go binary
+  carries no DWARF, but the linker bakes the runtime's type graph in, and the
+  pass walks it: moduledata is found WITHOUT symbols (its first field points at
+  the pclntab header, which `locate_header` already finds on a stripped image;
+  the anchor is the data-section word holding that address whose next three
+  words parse as the `funcnametab` slice — go1.26+ emits `firstmoduledata`
+  into its own `.go.module` section, which the scan covers), and the type
+  metadata is then found by CROSS-VALIDATION inside the moduledata window in
+  whichever of its two historical forms is present — never by hardcoded field
+  offsets. Through go1.25: the `types`/`etypes` pair plus the `typelinks`
+  slice, sampled entries required to decode as plausible `_type` records.
+  From go1.26 the slice is gone: moduledata carries `types, typedesclen,
+  etypes` and the records sit consecutively in `[types + 8, types +
+  typedesclen)`, enumerated by advancing each record's own descriptor size
+  (`internal/abi.Type::DescriptorSize` — the per-kind wrapper, the optional
+  uncommon block and its methods, and the kind's trailing arrays), the walk
+  accepted only when records decode back to back and refused whole on the
+  first divergence. That is what lets one implementation hold across
+  go1.18..go1.27's layout drift (verified under go1.22, go1.25 and go1.27;
+  the e2e gate is `verify_gotypes`). Typelinks hold the pointer forms
+  interface conversion reaches (`*main.Point`), so the walk follows a
+  pointer record's elem to the named struct pointee. It interns
+  package-qualified named struct shells (fields at their recorded offsets,
+  zero-size embedded markers dropped, overlapping or over-extent layouts
+  refused whole) plus the well-known header shells `go.string`/`go.slice`/
+  `go.iface`/`go.eface` with their `LangFacet` records
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
+  1 is OUTPUT-NEUTRAL by construction — nothing binds the shells to a
+  variable yet, and the e2e proves the decompiled code byte-identical on vs
+  off — the knowledge is for the type surfaces and the consumers that follow
+  (typed globals, interface dispatch, signature recovery). Deliberately out of
+  phase 1: itab/method resolution, generic instantiations, map/chan internals,
+  named non-struct aliases, 32-bit and big-endian images. Interning happens at
+  `load file`, so the gate is the `KUNA_GOTYPES` env bridge
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_gotypes.rs`, the
+  `dwarfstructs` pattern), the walk is bounded (20,000 typelinks), and the
+  pass registers before `gopclntab`, preserving its appended-last contract.
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
   needs the PC→name table for stack traces, so it survives stripping; the pass
@@ -6569,6 +6787,28 @@ streams the loader installs and emits the *install* address — for a UND import
 PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
 raw-name lookup would miss.
 Name-based: free, exact, and useless on stripped custom wrappers.
+
+**Pclntab names** (`gonoreturn`,
+`decompiler/crates/kuna-analysis/src/analyzers/pclntab/kuna_gonoreturn.rs
+(GoNoReturnPass)`, kuna, default-on, Go-detected binaries only): the known-names
+pass above reads the object's symbol tables, and a production Go binary is
+stripped — both tables gone, zero facts emitted, so the whole vendored Go list
+(`runtime.gopanic`, `runtime.panicshift`, `runtime.panicunsafestringlen`, …)
+went unused on exactly the binaries it was vendored for, and every
+`runtime.panic*` call site kept a bogus fall-through edge (rendered as flow
+into the INT3 padding after the function, and it breaks the `gomorestack`
+fold's shape wherever the stack-growth arm follows such a call). The names
+survive stripping in the pclntab, so this pass walks the same table the
+`gopclntab` pass recovers names from — same `recover_go_table` parse, same
+executable-range admission — and matches each recovered `(addr, name)` against
+the same vendored list with the same reader (`name_matches`), emitting
+ordinary address-keyed `NoReturnFact`s through the same commit arm. Pass order
+installs the pclntab names before the no-return arm resolves addresses, so the
+facts land whether or not a `.symtab` exists; unstripped, they are idempotent
+duplicates of `noreturn_known`'s. Registered only for `Compiler::Go` (beside
+`gopclntab`, preserving that pass's appended-last contract), so every non-Go
+pass set is byte-identical; `option gonoreturn off` restores the fall-through
+reading, and `option noreturn_known` keeps gating only the symbol-table pass.
 
 **Discovered, ≥3 evidence** (`noreturn_disc`,
 `decompiler/crates/kuna-analysis/src/analyzers/noreturn_disc/mod.rs`, the

@@ -49,8 +49,9 @@ decompiler/crates/kuna-wasm/     the wasm (and native) binary: `kuna_wasm`
 integrations/web/                the project site + browser harness (assembles a static dist/)
 ```
 
-The deployed site has a **landing page** at `/`, a repository-derived **development
-visualization** at `/dev-viz/`, and the **decompiler application** at `/decompile/` (§4.1).
+The site has a **landing page** at `/`, a repository-derived **development
+visualization** at `/dev-viz/`, and the **decompiler application** at `/decompile/` (§4.1);
+at deploy time the decompiler moves to its own domain, `decompile.run` (§4.1, *Hosting*).
 Only the last one loads the wasm; everything below describes it.
 
 `kuna-wasm` is a **purely additive leaf crate**. It depends only on existing engine crates
@@ -449,15 +450,17 @@ the `specs-small.json` preload bundle. Serve `dist/` with any static file server
 /assets/              css/site.css · fonts/ · img/ · js/highlight-c.js · js/fnfilter.js
 /compare-samples.js   the compare section's data (samples + rival outputs)
 /CNAME                kuna.noelo.org — the custom domain, copied into the bundle
+                      (decompile.run gets its own; see *Hosting on GitHub Pages*)
 /kuna-web.js /kuna-worker.js /kuna-worker-client.js /zip.js
 /kuna_wasm.wasm /specs/ /specs-small.json /vendor/
 ```
 
 The engine-facing files stay at the **root** — `/decompile/` reaches them with `../`, so
 the Worker is a sibling of `kuna-web.js`/`zip.js`, the existing tests can import the glue
-directly, and a project subpath still works. The RPC client resolves the wasm/spec URLs
-against the document before sending them to the Worker; resolving those `../` paths in
-the root-level Worker would otherwise escape a GitHub Pages project subpath.
+directly, and a project subpath still works. `app.js` resolves the wasm/spec URLs against
+its own module URL, so they stay right when the page itself moves to the root of
+decompile.run; the RPC client then sends absolute URLs to the Worker, whose own `../`
+resolution would otherwise escape a GitHub Pages project subpath.
 
 **The function search.** A whole-binary inventory is thousands of rows (the 1.1 MiB PE in
 DIV-53 indexes 3,158), and the function list is the only way to reach a function, so it is
@@ -502,15 +505,31 @@ byte-verbatim, which is what `--verify` checks against.
 
 **Hosting on GitHub Pages.** `.github/workflows/pages.yml` runs this same build in CI
 (stable Rust + `wasm32-wasip1`, `binaryen` for `wasm-opt`, `make specs` to compile the
-whole `.sla` tree) and deploys `dist/` via `actions/deploy-pages`. All asset references are
-relative, so it serves correctly either from the custom domain or from a project subpath
-(`https://<owner>.github.io/<repo>/`); no COOP/COEP headers are needed (no threads /
-SharedArrayBuffer). Enable once under *Settings → Pages → Source = GitHub Actions*.
+whole `.sla` tree), runs the tests on the single bundle, and then splits it with
+`integrations/web/split-sites.sh`, because one repository's Pages has only one custom
+domain:
 
-The site is **`kuna.noelo.org`**: `integrations/web/CNAME` is copied into the bundle by
-`build.sh`, and DNS points that name at GitHub Pages. With the Actions deploy flow the
-repo's *Settings → Pages → Custom domain* field is the authoritative half — set it there
-too, or the CNAME file alone may not claim the name.
+- **`decompile.run`** serves the decompiler at its root. The split moves `decompile/`, the
+  glue, the Worker, the shim, the wasm and the specs into `dist-run/`, copies `assets/`,
+  and derives `/index.html` from `decompile/index.html` by rewriting its relative
+  references (and pointing its *Kuna home* links at `https://kuna.noelo.org/`); it fails
+  if any other `../` reference appears. The modules stay in `/decompile/`, so their own
+  `../` imports are unchanged. The workflow force-pushes `dist-run/` as one commit to
+  `Noelo-Lab/decompile.run` with the `DECOMPILE_RUN_DEPLOY_KEY` deploy key, and that
+  repository's Pages serves its `main` branch. Its `README.md` and `CNAME` come from
+  `integrations/web/decompile-run/`.
+- **`kuna.noelo.org`** is what remains of `dist/`, deployed via `actions/deploy-pages`:
+  the landing page and `/dev-viz/`, whose decompiler links now name
+  `https://decompile.run/`, and a `/decompile/index.html` replaced by
+  `decompile-run/redirect.html`, which forwards with `location.search` and `location.hash`
+  so invite links and `?student=true` survive. `integrations/web/CNAME` claims the name;
+  with the Actions deploy flow the repo's *Settings → Pages → Custom domain* field is the
+  authoritative half — set it there too.
+
+Both names are proxied by Cloudflare in front of GitHub Pages. All asset references are
+relative, and no COOP/COEP headers are needed (no threads / SharedArrayBuffer). Saved
+sessions live in the origin's `localStorage`, so the move to decompile.run starts every
+visitor with an empty session list.
 
 Payload: **~1.7 MB** wasm (gzipped, shared) + a **~180 KB** gzipped spec bundle once, then
 **~475 KB** per distinct language (`.sla`, fetched on demand and cached). The ~15 MB of

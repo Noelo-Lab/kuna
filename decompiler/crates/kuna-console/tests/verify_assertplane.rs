@@ -430,6 +430,7 @@ fn output_only_prototype_pieces_do_not_abort_the_drive() {
         addr,
         0,
         &kuna_console::decompile_step::DecompileSeed {
+            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
             mapped_symbols: &[],
             usepoint_symbols: &[],
             dynamic_symbols: &[],

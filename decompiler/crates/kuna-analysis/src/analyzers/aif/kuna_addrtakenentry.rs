@@ -83,7 +83,7 @@ impl AddrTaken {
     /// then turns the calls into the middle of `runtime.duffzero` into entries.
     pub(crate) fn new(file: &object::File, bytes: &[u8]) -> Option<AddrTaken> {
         if file.architecture() != object::Architecture::X86_64
-            || crate::sourcelang::detect_compiler(file, bytes).is_golang()
+            || crate::sourcelang::effective_compiler(file, bytes).is_golang()
         {
             return None;
         }

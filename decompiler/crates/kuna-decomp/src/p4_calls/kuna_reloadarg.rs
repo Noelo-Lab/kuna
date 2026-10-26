@@ -40,7 +40,7 @@ use crate::varmap::AliasChecker;
 /// Flag trial `i` of call spec `idx` for [`recheck`] when one of `loads`, the
 /// LOADs its walk took as solid, reads the caller's frame.
 pub(crate) fn note(data: &mut Funcdata, idx: int4, i: int4, loads: &[OpId]) {
-    if loads.is_empty() || !data.get_arch().reload_arg || data.get_arch().source_is_go {
+    if loads.is_empty() || !data.get_arch().reload_arg || data.get_arch().source_lang.is_go() {
         return;
     }
     let Some(sp) = super::kuna_spillargtrial::stack_pointer_storage(data) else { return };

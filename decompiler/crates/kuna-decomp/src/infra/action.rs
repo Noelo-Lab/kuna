@@ -303,7 +303,7 @@ impl ActionBase {
 
     /// Reset for a new function (C++ `Action::reset`): status back to start and
     /// clear the warning-given latch.
-    fn reset_base(&mut self) {
+    pub(crate) fn reset_base(&mut self) {
         self.status = statusflags::status_start;
         self.flags &= !ruleflags::rule_warnings_given;
     }
@@ -563,6 +563,8 @@ pub trait Action {
 pub struct ActionContext {
     /// Where `issueWarning` / `warningHeader` text lands.
     pub warnings: WarningSink,
+    /// A recoverable pass failure that aborts the current function.
+    pub error: Option<KunaError>,
     /// Whether the restart loop ([`ActionRestartGroup`]) can re-follow flow after
     /// a `data.clear()` (C++ `ActionStart::startProcessing` → `followFlow`).
     ///
@@ -810,10 +812,16 @@ impl Action for ActionGroup {
                 self.base.count += res;
                 if self.base.check_action_break() {
                     self.state += 1;
+                    self.base.status = statusflags::status_mid;
                     return -1;
                 }
             } else if res < 0 {
-                // Partial completion of member == partial completion of group
+                // Partial completion of a member is partial completion of the
+                // group (C++ `action.cc:516`).  Record it on the group itself so
+                // every caller resumes at `state`, whether it drives the group
+                // through `perform` (which sets the same flag) or calls `apply`
+                // directly (as `ActionRestartGroup` does).
+                self.base.status = statusflags::status_mid;
                 return -1;
             }
             self.state += 1;
@@ -1595,6 +1603,18 @@ impl ActionDatabase {
     /// Get the current root Action (C++ `getCurrent`).
     pub fn get_current(&self) -> Option<&dyn Action> {
         self.actionmap.get(&self.currentactname).map(|b| b.as_ref())
+    }
+
+    /// Replace the current root Action, returning the previous one.
+    ///
+    /// (kuna) The P4 callee-contract bootstrap runs a callee's own pipeline while
+    /// the caller's action tree is paused mid-pass.  Sharing the cached root
+    /// would `reset` its state, so the drive swaps a fresh derived tree in for
+    /// the callee drives and swaps the paused one back afterwards.
+    pub fn swap_current_action(&mut self, replacement: Box<dyn Action>) -> Option<Box<dyn Action>> {
+        self.actionmap
+            .get_mut(&self.currentactname)
+            .map(|slot| std::mem::replace(slot, replacement))
     }
 
     /// Mutable access to the current root Action (so a driver can `perform` it).
