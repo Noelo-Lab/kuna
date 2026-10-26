@@ -200,6 +200,9 @@ the same handful of hard-coded counters (`catalog_bytecompat.rs`, `phase_catalog
 count asserts, `tests/stages/README.md`). Round 2 produced **three distinct failure
 shapes, and only one of them announced itself**:
 
+The XML parser's corpus-count pin has since been removed; it still parses
+every corpus file. `counters` reports that inventory directly from disk.
+
 | shape | what happened | why it is dangerous |
 |---|---|---|
 | **A conflict** | the DIV number for #257 raced from **55 → 56 → 57 → 58** as #252/#253/#254 claimed each in turn | the loud case — git stops you. Retired with the registry itself: nothing claims a DIV number any more |

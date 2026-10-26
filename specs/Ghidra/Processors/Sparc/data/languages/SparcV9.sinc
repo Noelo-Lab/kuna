@@ -741,11 +741,11 @@ icc: "l"    is cond=0x3 { tmp:1=(i_nf ^^ i_vf); export tmp; }
 icc: "gu"   is cond=0xc { tmp:1=!(i_cf || i_zf); export tmp; }
 icc: "leu"  is cond=0x4 { tmp:1=(i_cf || i_zf); export tmp; }
 icc: "cc"   is cond=0xd { tmp:1=!(i_cf); export tmp; }
-icc: "cs"   is cond=0x5 { export i_cf; }
+icc: "cs"   is cond=0x5 { tmp:1=i_cf; export tmp; }
 icc: "pos"  is cond=0xe { tmp:1=!(i_nf); export tmp; }
-icc: "neg"  is cond=0x6 { export i_nf; }
+icc: "neg"  is cond=0x6 { tmp:1=i_nf; export tmp; }
 icc: "vc"   is cond=0xf { tmp:1=!(i_vf); export tmp; }
-icc: "vs"   is cond=0x7 { export i_vf; }
+icc: "vs"   is cond=0x7 { tmp:1=i_vf; export tmp; }
 
 xcc: "a"    is cond=0x8 { tmp:1=1; export tmp; }
 xcc: "ne"   is cond=0x9 { tmp:1=!x_zf; export tmp; }
@@ -757,11 +757,11 @@ xcc: "l"    is cond=0x3 { tmp:1=(x_nf ^^ x_vf); export tmp; }
 xcc: "gu"   is cond=0xc { tmp:1=!(x_cf || x_zf); export tmp; }
 xcc: "leu"  is cond=0x4 { tmp:1=(x_cf || x_zf); export tmp; }
 xcc: "cc"   is cond=0xd { tmp:1=!(x_cf); export tmp; }
-xcc: "cs"   is cond=0x5 { export x_cf; }
+xcc: "cs"   is cond=0x5 { tmp:1=x_cf; export tmp; }
 xcc: "pos"  is cond=0xe { tmp:1=!(x_nf); export tmp; }
-xcc: "neg"  is cond=0x6 { export x_nf; }
+xcc: "neg"  is cond=0x6 { tmp:1=x_nf; export tmp; }
 xcc: "vc"   is cond=0xf { tmp:1=!(x_vf); export tmp; }
-xcc: "vs"   is cond=0x7 { export x_vf; }
+xcc: "vs"   is cond=0x7 { tmp:1=x_vf; export tmp; }
 
 cc: icc  is cc1=0 & cc0=0 & icc { export icc; }
 cc: xcc  is cc1=1 & cc0=0 & xcc { export xcc; }

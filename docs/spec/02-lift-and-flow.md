@@ -37,6 +37,13 @@ the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
 
+SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
+overflow flags before expanding the delay slot. A flag-writing slot still
+publishes its new flags to subsequent instructions, but cannot change the
+current branch's decision. Ordinary and predicted branches share these
+condition operands; annulled branches retain their conditional slot execution.
+This is a SLEIGH correctness repair, without an inference option.
+
 Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
 `CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
 constants. A32 and Thumb constructors use unattached numeric aliases of the token

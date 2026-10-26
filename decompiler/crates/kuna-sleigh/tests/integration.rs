@@ -23,6 +23,9 @@ mod macro_symbol;
 #[path = "ppc_nested_operands.rs"]
 mod ppc_nested_operands;
 
+#[path = "sparc_delay_slot_condition.rs"]
+mod sparc_delay_slot_condition;
+
 #[path = "sparc_float_to_integer.rs"]
 mod sparc_float_to_integer;
 
