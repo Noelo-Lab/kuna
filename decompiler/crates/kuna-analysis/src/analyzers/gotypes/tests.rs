@@ -119,7 +119,8 @@ fn moduledata_window_scan_cross_validates() {
     let img = img_of(&spans);
     let meta = locate_type_meta(&img, anchor).expect("finds the triple");
     assert_eq!((meta.types, meta.etypes), (types, etypes));
-    assert_eq!(meta.typelinks, vec![0x60, 0]);
+    // Negative offsets are filtered at collection; both links here are valid.
+    assert_eq!(meta.offsets, vec![0x60, 0]);
 }
 
 #[test]
@@ -140,4 +141,116 @@ fn phase1_name_vocabulary() {
     assert!(!name_ok("main.Box[int]"), "generic instantiation");
     assert!(!name_ok("struct { x int }"), "anonymous");
     assert!(!name_ok(""), "empty");
+}
+
+/// Build the go1.26+ shape: NO typelinks slice — the records sit consecutively
+/// in `[types + 8, types + typedesclen)` and moduledata carries the
+/// `types, typedesclen, etypes` triple. Returns `(spans, anchor, types)`.
+fn synth_descriptors() -> (Vec<(u64, Vec<u8>)>, u64, u64) {
+    const T: u64 = 0x100000;
+    const M: u64 = 0x300000;
+    const H: u64 = 0x50000;
+
+    let mut blob = vec![0u8; 0x400];
+    // The walk starts at types + 8.
+    // int record @ +0x08 (plain kind: stride 48).
+    let r0 = 0x08;
+    blob[r0..r0 + 8].copy_from_slice(&8u64.to_le_bytes());
+    blob[r0 + 23] = KIND_INT;
+    blob[r0 + 40..r0 + 44].copy_from_slice(&0x200i32.to_le_bytes());
+    // main.Point record @ +0x38 (struct: base 80 + 2 fields * 24 = stride 128).
+    let s = 0x38;
+    blob[s..s + 8].copy_from_slice(&16u64.to_le_bytes());
+    blob[s + 20] = TFLAG_NAMED;
+    blob[s + 23] = KIND_STRUCT;
+    blob[s + 40..s + 44].copy_from_slice(&0x210i32.to_le_bytes());
+    blob[s + 56..s + 64].copy_from_slice(&(T + 0x300).to_le_bytes());
+    blob[s + 64..s + 72].copy_from_slice(&2u64.to_le_bytes());
+    blob[s + 72..s + 80].copy_from_slice(&2u64.to_le_bytes());
+    // (the walker treats the fields array as part of the record's stride; park
+    // it at +0x300, past typedesclen, as the real linker does with name data)
+    // ptr record @ +0xb8 (pointer: stride 56), elem = main.Point.
+    let p = 0xb8;
+    blob[p..p + 8].copy_from_slice(&8u64.to_le_bytes());
+    blob[p + 23] = KIND_POINTER;
+    blob[p + 40..p + 44].copy_from_slice(&0x220i32.to_le_bytes());
+    blob[p + 48..p + 56].copy_from_slice(&(T + s as u64).to_le_bytes());
+    // five more plain records to clear the walk's acceptance floor (>= 8).
+    for k in 0..5u64 {
+        let r = (0xf0 + k * 48) as usize;
+        blob[r..r + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[r + 23] = KIND_UINT;
+        blob[r + 40..r + 44].copy_from_slice(&0x200i32.to_le_bytes());
+    }
+    let typedesclen: u64 = 0xf0 + 5 * 48; // walk ends exactly here
+    // names
+    blob[0x200..0x205].copy_from_slice(&[0, 3, b'i', b'n', b't']);
+    blob[0x210] = 0;
+    blob[0x211] = 10;
+    blob[0x212..0x21c].copy_from_slice(b"main.Point");
+    blob[0x220..0x22d].copy_from_slice(&[0, 11, b'*', b'm', b'a', b'i', b'n', b'.', b'P', b'o', b'i', b'n', b't']);
+    blob[0x230..0x233].copy_from_slice(&[0, 1, b'X']);
+    blob[0x238..0x23b].copy_from_slice(&[0, 1, b'Y']);
+    // fields array @ +0x300
+    for (i, (np, off)) in [(T + 0x230, 0u64), (T + 0x238, 8u64)].iter().enumerate() {
+        let f = 0x300 + i * 24;
+        blob[f..f + 8].copy_from_slice(&np.to_le_bytes());
+        blob[f + 8..f + 16].copy_from_slice(&(T + 0x08).to_le_bytes()); // typ = int
+        blob[f + 16..f + 24].copy_from_slice(&off.to_le_bytes());
+    }
+
+    // moduledata: pcHeader*, funcnametab slice, pad, then the 1.26+ triple.
+    let mut md = Vec::new();
+    md.extend_from_slice(&H.to_le_bytes());
+    md.extend_from_slice(&T.to_le_bytes());
+    md.extend_from_slice(&4u64.to_le_bytes());
+    md.extend_from_slice(&4u64.to_le_bytes());
+    for _ in 0..6 {
+        md.extend_from_slice(&0u64.to_le_bytes());
+    }
+    md.extend_from_slice(&T.to_le_bytes()); // types
+    md.extend_from_slice(&typedesclen.to_le_bytes()); // typedesclen
+    md.extend_from_slice(&(T + 0x400).to_le_bytes()); // etypes
+    for _ in 0..8 {
+        md.extend_from_slice(&0u64.to_le_bytes());
+    }
+    (vec![(T, blob), (M, md), (H, vec![0u8; 16])], M, T)
+}
+
+#[test]
+fn descriptor_region_walk_enumerates_without_typelinks() {
+    let (spans, anchor, types) = synth_descriptors();
+    let img = img_of(&spans);
+    // The old slice form must NOT claim this image...
+    assert!(locate_type_meta(&img, anchor).is_none(), "no typelinks slice exists");
+    // ...and the descriptor walk must: 8 records, main.Point among them.
+    let meta = locate_type_meta_descriptors(&img, anchor).expect("descriptor triple + walk");
+    assert_eq!(meta.types, types);
+    assert_eq!(meta.offsets.len(), 8, "int, Point, *Point, five fillers");
+    assert!(meta.offsets.contains(&0x38), "main.Point's record offset");
+    let t = read_type(&img, meta.types, meta.etypes, 0x38).expect("decodes");
+    assert_eq!(t.name, "main.Point");
+}
+
+#[test]
+fn descriptor_stride_matches_the_abi_math() {
+    let (spans, _anchor, types) = synth_descriptors();
+    let img = img_of(&spans);
+    let etypes = types + 0x400;
+    let int_t = read_type(&img, types, etypes, 0x08).expect("int");
+    assert_eq!(descriptor_stride(&img, &int_t), Some(48), "plain kind");
+    let point = read_type(&img, types, etypes, 0x38).expect("struct");
+    assert_eq!(descriptor_stride(&img, &point), Some(80 + 2 * 24), "struct base + fields");
+    let ptr = read_type(&img, types, etypes, 0xb8).expect("ptr");
+    assert_eq!(descriptor_stride(&img, &ptr), Some(56), "pointer wrapper");
+}
+
+#[test]
+fn descriptor_walk_stops_conservatively_on_garbage() {
+    let (mut spans, anchor, _types) = synth_descriptors();
+    // Corrupt the SECOND record's kind byte: the walk must stop below the
+    // acceptance floor and the locator must refuse the image whole.
+    spans[0].1[0x38 + 23] = 0x1f; // invalid kind (> UnsafePointer after mask)
+    let img = img_of(&spans);
+    assert!(locate_type_meta_descriptors(&img, anchor).is_none());
 }

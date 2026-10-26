@@ -3122,13 +3122,22 @@ every other binary's pass list is byte-identical to before the pass existed):
   pass walks it: moduledata is found WITHOUT symbols (its first field points at
   the pclntab header, which `locate_header` already finds on a stripped image;
   the anchor is the data-section word holding that address whose next three
-  words parse as the `funcnametab` slice), and the `types`/`etypes` pair plus
-  the `typelinks` slice are then found by CROSS-VALIDATION inside the
-  moduledata window — sampled entries must decode as plausible `_type` records
-  — never by hardcoded field offsets, which is what lets one implementation
-  hold across go1.18..go1.25's moduledata layout drift (verified under go1.22
-  and go1.25; the e2e gate is `verify_gotypes`). Typelinks hold the pointer
-  forms interface conversion reaches (`*main.Point`), so the walk follows a
+  words parse as the `funcnametab` slice — go1.26+ emits `firstmoduledata`
+  into its own `.go.module` section, which the scan covers), and the type
+  metadata is then found by CROSS-VALIDATION inside the moduledata window in
+  whichever of its two historical forms is present — never by hardcoded field
+  offsets. Through go1.25: the `types`/`etypes` pair plus the `typelinks`
+  slice, sampled entries required to decode as plausible `_type` records.
+  From go1.26 the slice is gone: moduledata carries `types, typedesclen,
+  etypes` and the records sit consecutively in `[types + 8, types +
+  typedesclen)`, enumerated by advancing each record's own descriptor size
+  (`internal/abi.Type::DescriptorSize` — the per-kind wrapper, the optional
+  uncommon block and its methods, and the kind's trailing arrays), the walk
+  accepted only when records decode back to back and refused whole on the
+  first divergence. That is what lets one implementation hold across
+  go1.18..go1.27's layout drift (verified under go1.22, go1.25 and go1.27;
+  the e2e gate is `verify_gotypes`). Typelinks hold the pointer forms
+  interface conversion reaches (`*main.Point`), so the walk follows a
   pointer record's elem to the named struct pointee. It interns
   package-qualified named struct shells (fields at their recorded offsets,
   zero-size embedded markers dropped, overlapping or over-extent layouts
