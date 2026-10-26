@@ -1813,6 +1813,14 @@ sign-extension-invariant mode). The mask's bit-span picks the logical size
 passes `big`, anything else — including a zero mask or a span over 64 bits —
 constructs an invalid engine that traces nothing.
 
+Subvariable mask shifts validate the original unsigned constant before any
+narrowing conversion or byte-to-bit multiplication. A bit shift of 64 or more,
+a SUBPIECE offset of eight bytes or more, or a PIECE high half shifted beyond
+the 64-bit mask precision stops the trace without changing the IR. Trigger
+rules enforce the same limits. Valid shifts through bit 63 and byte seven
+remain eligible; an oversized amount never wraps into a smaller shift in a
+release build.
+
 **When it refuses** (`subflow.rs (SubvariableFlow::set_replacement)`), roughly
 in decision order (the constant-sext check actually sits in the constant arm
 first; the sext size-mismatched-input refusal is bypassed in aggressive mode;
