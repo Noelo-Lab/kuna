@@ -7570,7 +7570,9 @@ skip (`Classified::predicated_skip` in
 whose only flow is its skip is read as a table, and the reference walk files
 no `Jump` row for the skip. Under `armframes off`, and on every other
 architecture, the skip keeps its row and no A32 table is read. The switch record states the guard's case count, so a table longer than
-`jumptablemax` is marked truncated. A dispatch the walk reaches before the
+`jumptablemax` is marked truncated. A dispatch whose table gives no case (a run
+shorter than two entries, or `b caseN` slots past the section end) states no
+count, and the other table readers run on it as on any computed jump. A dispatch the walk reaches before the
 guard that falls into it (a branch into the dispatch, or breadth-first order)
 waits at the address the guard read stopped at and is read again, A32 reader
 first, once that code is decoded.

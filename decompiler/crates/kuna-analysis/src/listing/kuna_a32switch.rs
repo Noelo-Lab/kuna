@@ -72,9 +72,10 @@ impl<'a> A32Tables<'a> {
 
     /// The case blocks of the computed jump at `from` when it is a guarded A32
     /// `ldr pc,[pc,rN,lsl #2]` or `add pc,pc,rN,lsl #2`, read up to
-    /// `jumptablemax`, and the case count its guard states; nothing otherwise,
-    /// with the gap the guard read stopped at when the walk has not yet decoded
-    /// the code falling into the dispatch.
+    /// `jumptablemax`, and the case count its guard states. Nothing for any
+    /// other jump, or when no case could be read, so the other table readers
+    /// still run; the gap the guard read stopped at when the walk has not yet
+    /// decoded the code falling into the dispatch.
     pub(super) fn targets(
         &self,
         translate: &dyn Translate,
@@ -136,6 +137,9 @@ impl<'a> A32Tables<'a> {
                 } else {
                     branch_slots(base, read, from, exec)
                 };
+                if targets.is_empty() {
+                    return TableRead::default();
+                }
                 return TableRead { cases: targets, stated: Some(cases), gap: None };
             }
             if index.is_none()

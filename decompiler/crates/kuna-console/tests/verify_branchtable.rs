@@ -202,6 +202,17 @@ fn a_clamped_a32_table_states_its_guard_count() {
     }
 }
 
+/// A table read gives no case under a `jumptablemax` below two entries, so it
+/// states no count and leaves the dispatch to the other readers.
+#[test]
+fn an_unreadable_a32_table_states_no_count() {
+    let idx = build(|arch| arch.max_jumptable_size = 1);
+    assert!(idx.switch_tables().iter().all(|t| t.dispatch != LDR.dispatch), "{:?}", idx.switch_tables());
+    for c in &LDR.cases {
+        assert!(idx.refs_to(c.body).iter().all(|r| r.from != LDR.dispatch), "{:#x}", c.body);
+    }
+}
+
 /// `armframes off` restores the walk without A32 tables: the dispatch jumps to
 /// the `b default` after it and to no case, and no table is read.
 #[test]
