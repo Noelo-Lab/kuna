@@ -2265,7 +2265,7 @@ fn ones(size: int4) -> u64 {
 
 /// The value of `vn` when it is a constant or integer arithmetic and logic on
 /// constants alone, within `depth` operations, truncated to its size.
-fn literal_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<u64> {
+pub(crate) fn literal_value(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<u64> {
     let v = data.vbank().get(vn)?;
     let size = v.get_size();
     let mask = |x: u64, sz: int4| if sz >= 8 { x } else { x & ((1u64 << (8 * sz)) - 1) };

@@ -195,6 +195,8 @@ void g(void);
 long long q(long long a,long long b){return a/b;}
 long long keep(long long a,long long b){long long r=a/b;g();return r;}
 long long guard(long long a,long long b){if(b==0)return -1;return a/b;}
+long long choose(long long a,long long b,int flag){if(flag)return a/b;return 0x123456789abcdefLL;}
+long long mixed(long long a,long long b,int flag){long long r=a/b;if(flag)r=(unsigned int)r;return r;}
 int low(long long a,long long b){return (int)(a/b);}
 int high(long long a,long long b){return (int)((a/b)>>32);}
 "#,
@@ -211,7 +213,7 @@ int high(long long a,long long b){return (int)((a/b)>>32);}
         );
         for explicit in [false, true] {
             let mut bodies = String::new();
-            for function in ["q", "keep", "guard", "low", "high"] {
+            for function in ["q", "keep", "guard", "low", "high", "choose", "mixed"] {
                 let mut args = vec!["decompile", image.to_str().unwrap(), function, "--json"];
                 if explicit {
                     args.extend([
@@ -242,6 +244,8 @@ void g(void) {{ ++effects; }}
 #define ARGS(a,b) (uint32_t)((uint64_t)(a)>>32),(uint32_t)(a),(uint32_t)((uint64_t)(b)>>32),(uint32_t)(b)
 _Static_assert(sizeof(low(0,0,0,1)) == 4, "the low-word caller returns one word");
 _Static_assert(sizeof(high(0,0,0,1)) == 4, "the high-word caller returns one word");
+_Static_assert(sizeof(choose(0,0,0,1,0)) == 8, "a nontrivial constant exit stays wide");
+_Static_assert(sizeof(mixed(0,0,0,1,0)) == 8, "one changed word does not discard the other");
 int main(void) {{
     const int64_t edges[] = {{0,1,-1,2,-3,INT64_MIN,INT64_MAX,INT64_C(0x123456789abcdef),-INT64_C(0x123456789abcdef)}};
     uint64_t random = UINT64_C(0x79b153c5a7d931e5);
@@ -259,6 +263,10 @@ int main(void) {{
         if(low(ARGS(a,b)) != (uint32_t)expected || calls!=4) return 4;
         if(high(ARGS(a,b)) != (uint32_t)(expected>>32) || calls!=5) return 5;
         if(guard(ARGS(a,0)) != UINT64_MAX || calls!=5 || effects!=1) return 6;
+        if(choose(ARGS(a,b),1) != expected || calls!=6 || effects!=1) return 7;
+        if(choose(ARGS(a,b),0) != UINT64_C(0x123456789abcdef) || calls!=6) return 8;
+        if(mixed(ARGS(a,b),0) != expected || calls!=7) return 9;
+        if(mixed(ARGS(a,b),1) != (uint32_t)expected || calls!=8) return 10;
     }}
     return 0;
 }}
