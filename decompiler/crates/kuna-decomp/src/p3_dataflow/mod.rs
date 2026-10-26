@@ -25,6 +25,7 @@ pub mod kuna_globalstorekeep;
 pub mod kuna_globalorderkeep;
 pub mod kuna_globalcallstore;
 pub mod kuna_intfloatround;
+pub mod kuna_floatquiet;
 pub mod kuna_mulblob; // (kuna) keep a widened multiply operand a value, not an aggregate
 pub mod kuna_booleanmask;
 pub mod kuna_ovlesssimplify;
@@ -48,6 +49,7 @@ pub(crate) mod kuna_stackalloc;
 pub(crate) mod kuna_spillstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
+pub mod kuna_pairrefine;
 pub mod kuna_splitstorekeep;
 pub mod kuna_pointeestorekeep;
 pub mod kuna_constspaceload;

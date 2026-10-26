@@ -47,10 +47,12 @@ pub mod kuna_calleearitylive; // (kuna) extend a partial argument list when the 
 pub mod kuna_formatwitness; // (kuna) equal constant formats can witness a partial call's arity
 pub mod kuna_inputparamgap; // (kuna) an unused-argument-register run must not veto a later live-in
 pub mod kuna_stackarggap; // (kuna) an unwritten argument register ends a call site's argument list
+pub mod kuna_gobool; // (kuna) Go boolean-return stale-high narrowing (docs/multilang.md W4)
 pub mod kuna_rustabi; // (kuna) the rustc two-register return: keep the pair, connect it at the call
 pub mod kuna_langabi; // (kuna) the ABI seam: per-language `extern` rendering
 pub mod kuna_formattail; // (kuna) a resolved format call keeps an open tail through trial scoring
 pub mod kuna_protoorder; // (kuna) a callee's recovered prototype, parked for the callers decompiled after it
+pub mod kuna_calleetrial; // (kuna) an active call-argument trial in a preferred-split register is what a single-function drive may bootstrap
 pub mod kuna_callbacktype; // (kuna) a callback takes the prototype of the slot it is passed to
 pub mod kuna_calleevote; // (kuna) a callee parameter takes the type every caller passes
 pub mod kuna_callerptr; // (kuna) a parameter every caller passes a pointer is a pointer

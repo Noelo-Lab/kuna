@@ -640,6 +640,10 @@ pub struct ArchContext {
     /// as the C++ `Architecture::getLanedRegister` does.  Empty for hand-built
     /// fixtures and non-vector architectures.
     pub lanerecords: Vec<crate::transform::LanedRegister>,
+    /// (kuna) The compiler spec's `<prefersplit>` rows: whole registers heritage
+    /// pass 0 splits into two independent pieces.  Copied from the engine
+    /// `Architecture` in `build_arch_handle`; empty when the spec states none.
+    pub split_records: Vec<crate::p5_types::prefersplit::PreferSplitRecord>,
     /// The p-code OpBehavior emulation table (C++ `glb->inst[opc]->getBehavior()`),
     /// indexed by op-code.
     ///
@@ -741,13 +745,25 @@ pub struct ArchContext {
     /// (kuna) `option rustabi` (0 off / 1 auto / 2 always): keep a rustc
     /// two-register `ScalarPair` return intact; read by [`crate::kuna_rustabi`].
     pub rust_abi: u8,
-    /// (kuna) The loader's source-language verdict for this image (rustc or not);
-    /// what `option rustabi auto` tests.  Copied from the engine `Architecture`
-    /// in `build_arch_handle`.
-    pub source_is_rust: bool,
-    /// (kuna) The loader's Go verdict for this image; `option reloadarg`
-    /// stands down on Go.  Copied from the engine `Architecture`.
-    pub source_is_go: bool,
+    /// (kuna) The source language of this image (`option sourcelang` override
+    /// applied): what `option rustabi auto` tests and `option reloadarg`
+    /// stands down on.  Copied from the engine `Architecture` in
+    /// `build_arch_handle`.
+    pub source_lang: crate::kuna_sourcelang::SourceLang,
+    /// (kuna) `option fatstr` mode; read by [`crate::p5_types::kuna_fatstr`].
+    /// Copied from the engine `Architecture` in `build_arch_handle`.
+    pub fat_str: u8,
+    /// (kuna) `option gomorestack` mode; read by
+    /// [`crate::p2_lift::kuna_gomorestack`].  Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub go_morestack: u8,
+    /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
+    /// Copied from the engine `Architecture` in `build_arch_handle`.
+    pub go_bool: u8,
+    /// (kuna) `option gowritebarrier` mode; read by
+    /// [`crate::p2_lift::kuna_gowritebarrier`].  Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub go_write_barrier: u8,
     /// (kuna) `option reloadarg`; read by [`crate::p4_calls::kuna_reloadarg`].
     pub reload_arg: bool,
     /// (kuna) angr-style default naming: an unknown callee / global prints as
@@ -1283,6 +1299,8 @@ pub struct ArchContext {
     pub tied_phi_trim: bool,
     /// (kuna) `splitstorekeep` — carry `stack_store` onto refinement pieces.
     pub split_store_keep: bool,
+    /// (kuna) `pairrefine` — refine integer register pairs at their midpoint.
+    pub pair_refine: bool,
     /// (kuna) `wideslice` — slice reduction through synthetic-width SSA trees.
     pub wide_slice_reduce: bool,
     /// (kuna) `devectorize` — re-roll a vectorized reduction into its scalar loop.
@@ -1535,6 +1553,11 @@ pub struct ArchContext {
     /// `nanignore all` option and shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     pub nan_ignore_all: bool,
+    /// Ignore NaN effects around comparisons (C++ `nan_ignore_compare`; the
+    /// shipped `nanignore compare` default). Also lets a floating round trip
+    /// drop its signaling-NaN quieting
+    /// ([`crate::p3_dataflow::kuna_floatquiet`]); fixtures default to off.
+    pub nan_ignore_compare: bool,
     /// The data-type factory (C++ `glb->types`), shared from the real
     /// [`crate::architecture::Architecture`] through `build_arch_handle`.
     /// `ActionInferTypes` reaches `getBase`/`getTypePointer`/`down_chain` through
@@ -1753,6 +1776,7 @@ impl ArchContext {
             min_laned_register_size: 4,
             x87_empty_storage: None,
             lanerecords: Vec::new(),
+            split_records: Vec::new(),
             opbehaviors: Vec::new(),
             floatformats: Vec::new(),
             callee_proto_models: Vec::new(),
@@ -1799,8 +1823,18 @@ impl ArchContext {
             // (kuna) `option rustabi` default-off; the real value is copied from
             // the engine Architecture in `build_arch_handle`.
             rust_abi: 0,
-            source_is_rust: false,
-            source_is_go: false,
+            source_lang: Default::default(),
+            // (kuna) `option fatstr` default auto; the real value is copied
+            // from the engine Architecture in `build_arch_handle`.
+            fat_str: 1,
+            // (kuna) `option gomorestack` default auto; the real value is
+            // copied from the engine Architecture in `build_arch_handle`.
+            go_morestack: 1,
+            // (kuna) `option gobool` default auto; copied the same way.
+            go_bool: 1,
+            // (kuna) `option gowritebarrier` default auto; the real value is
+            // copied from the engine Architecture in `build_arch_handle`.
+            go_write_barrier: 1,
             // (kuna) `option reloadarg` default-on; the real value is copied
             // from the engine Architecture in `build_arch_handle`.
             reload_arg: true,
@@ -1963,6 +1997,7 @@ impl ArchContext {
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
             tied_phi_trim: false,        // tiedphitrim (Architecture::reset_defaults sets the shipped default: on)
             split_store_keep: false,     // splitstorekeep (Architecture::reset_defaults sets the shipped default: on)
+            pair_refine: false,          // pairrefine (Architecture::reset_defaults sets the shipped default: on)
             wide_slice_reduce: false,    // wideslice (Architecture::reset_defaults sets the shipped default: on)
             devectorize_reduction: false, // devectorize (opt-in default-off)
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
@@ -2020,6 +2055,7 @@ impl ArchContext {
             // only `nanignore all` flips it. nan_ignore_compare drives the rule's
             // enabled state at registration, not this flag.
             nan_ignore_all: false,
+            nan_ignore_compare: false,
             types: None,
             internal_strings: None,
             max_jumptable_size: 0,

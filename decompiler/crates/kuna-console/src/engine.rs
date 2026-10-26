@@ -94,6 +94,16 @@ struct SymbolStream {
     /// listed: `remove_name` drops the whole entry as it tombstones.
     by_name: HashMap<String, Vec<usize>>,
     live: usize,
+    /// Changes with every mutation; [`ConsoleProgram::function_entries_shared`]
+    /// keys its cache on it.
+    revision: u64,
+}
+
+/// Process-wide revisions, so a replaced stream never repeats an earlier key.
+static NEXT_REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_revision() -> u64 {
+    NEXT_REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl SymbolStream {
@@ -109,12 +119,14 @@ impl SymbolStream {
         self.by_name.entry(sym.name.clone()).or_default().push(self.records.len());
         self.records.push(Some(sym));
         self.live += 1;
+        self.revision = next_revision();
     }
 
     /// Tombstone every record named `name` — the `retain(|s| s.name != name)`
     /// half of a registration.
     fn remove_name(&mut self, name: &str) {
         let Some(stale) = self.by_name.remove(name) else { return };
+        self.revision = next_revision();
         for slot in stale {
             if self.records[slot].take().is_some() {
                 self.live -= 1;
@@ -127,6 +139,7 @@ impl SymbolStream {
     /// at other addresses live.
     fn remove_name_at(&mut self, name: &str, addr: &Address) {
         let Some(slots) = self.by_name.get_mut(name) else { return };
+        self.revision = next_revision();
         let records = &mut self.records;
         let mut removed = 0;
         slots.retain(|&slot| {
@@ -597,6 +610,12 @@ pub struct ConsoleProgram {
     /// (`elfmain` naming a libc-start `main` at an address the caller declared
     /// `stage1`). The discovered names stay as aliases; only the report changes.
     declared_names: BTreeMap<u64, String>,
+    /// Changes whenever `declared_names` (it orders canonical entry names) or
+    /// `declared_extents` (it sizes them) does.
+    declared_revision: u64,
+    /// [`Self::function_entries_canonical`] for (symbols revision, declared
+    /// revision): name lookups resolve against it without regrouping the image.
+    canonical_entries: std::cell::RefCell<Option<(u64, u64, Rc<Vec<FunctionEntry>>)>>,
     /// (kuna `--assert`) The caller-supplied assertions this program was loaded
     /// with, in the order they were given -- the one override plane an agent
     /// states facts through (`crate::assertions`).  Empty for every invocation
@@ -848,6 +867,33 @@ impl ConsoleProgram {
     /// resolves.  Nothing is lost — one function is simply reported, and
     /// decompiled, once.
     pub fn function_entries_canonical(&self) -> Vec<FunctionEntry> {
+        self.function_entries_shared().as_ref().clone()
+    }
+
+    /// The canonical entries, rebuilt only after the symbols, declared names or
+    /// declared extents changed. Assertion targets resolve names one at a time, so rebuilding the
+    /// whole list per lookup made applying A assertions O(A x symbols).
+    fn function_entries_shared(&self) -> Rc<Vec<FunctionEntry>> {
+        let key = (self.symbols.revision, self.declared_revision);
+        if let Some((symbols, declared, entries)) = self.canonical_entries.borrow().as_ref() {
+            if (*symbols, *declared) == key {
+                return Rc::clone(entries);
+            }
+        }
+        let entries = Rc::new(self.build_function_entries_canonical());
+        *self.canonical_entries.borrow_mut() = Some((key.0, key.1, Rc::clone(&entries)));
+        entries
+    }
+
+    /// Whether any symbol or loader alias is spelled exactly `name` (the
+    /// spelling a name selector would match first). O(1) on the name index.
+    pub(crate) fn has_symbol_spelled(&self, name: &str) -> bool {
+        let name = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(name, "::");
+        self.symbols.lookup(name).is_some()
+            || self.loader_aliases.values().any(|names| names.iter().any(|alias| alias == name))
+    }
+
+    fn build_function_entries_canonical(&self) -> Vec<FunctionEntry> {
         let normalize = |vma: u64| self.thumb_normalized(vma);
 
         // Group every name by normalized entry offset, keeping one Address per
@@ -1201,8 +1247,9 @@ impl ConsoleProgram {
                 // binary's ORIGINAL name must still resolve. Idempotent, so the
                 // bounded spelling resolves as well.
                 let want = &*kuna_decomp::kuna_symbolnamebound::bound_scope_path(want, "::");
-                let entries = self.function_entries_canonical();
-                let mut candidates = self.entries_named(&entries, want);
+                let entries = self.function_entries_shared();
+                let entries: &[FunctionEntry] = &entries;
+                let mut candidates = self.entries_named(entries, want);
                 if candidates.is_empty() {
                     // (kuna, RE-need `string-owner-function-name`) Nothing carries
                     // that name, so read it as the placeholder it looks like: a
@@ -2174,6 +2221,7 @@ impl ConsoleProgram {
     /// (`declared_extents`); `size <= 0` clears it back to unbounded.
     pub fn declare_extent(&mut self, vma: u64, size: int4) {
         self.callwide_changed();
+        self.declared_revision = next_revision();
         if size > 0 {
             self.declared_extents.insert(vma, size);
         } else {
@@ -2326,6 +2374,7 @@ impl ConsoleProgram {
         self.declared_entries.insert(vma);
         if explicit.is_some() {
             self.declared_names.insert(vma, name.clone());
+            self.declared_revision = next_revision();
             self.seed_declared_libc_prototype(&name, &addr);
         }
         Ok(name)
@@ -2971,6 +3020,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `off` renders exactly what no Win32 prototype at all renders.
         "win32sigs" => arch.analysis_win32sigs,
         "strings" => arch.analysis_strings,
+        // (kuna `fatstr`) The Rust `&str`-record string pass — gated on the SAME
+        // option mode the engine's (ptr,len) literal rule reads, so one option
+        // governs both recognizers; `off` (0) drops the bounded facts here.
+        "fatstrrecords" => arch.fat_str != 0,
         "entry_disc" => arch.analysis_entry_disc,
         // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
         // standalone stashed pass whose facts (the exception landing pads) are
@@ -3105,6 +3158,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
         "gopclntab" => arch.analysis_gopclntab,
+        "gotypes" => arch.analysis_gotypes,
+        "gonoreturn" => arch.analysis_gonoreturn,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
@@ -3720,6 +3775,8 @@ fn empty_program(
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
+        declared_revision: 0,
+        canonical_entries: std::cell::RefCell::new(None),
         assertions: Vec::new(),
         assertion_outcomes: Vec::new(),
         pending_prototypes: BTreeMap::new(),
@@ -4119,6 +4176,18 @@ pub fn bootstrap_from_object_with_isa(
     // machine → SLEIGH language id), unless an explicit target overrides it;
     // buildSpecFile -> buildTranslator -> the Architecture::init tail follow.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
+    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
+    // shells are interned inside the cspec decode during the sleigh build
+    // below, upstream of every per-image fact write, and their layouts drift
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). Carry it
+    // on the loadtime-env tier; a non-Go image clears the variable so a stale
+    // value from an earlier load in this process cannot leak in.
+    match kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes) {
+        Some((maj, min)) => {
+            std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
+        }
+        None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
+    }
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
@@ -4289,16 +4358,18 @@ pub fn bootstrap_from_object_with_isa(
         sections: loader.section_metadata().to_vec(),
     };
 
-    // (kuna `rustabi`) Record the loader's source-language verdict on the
+    // (kuna `sourcelang`) Record the loader's source-language verdict on the
     // Architecture. Unlike the analyzer facts below this is not a pass output but
-    // a one-bit property of the image, and it has to reach the ENGINE (the
-    // per-function rules in `kuna_rustabi`) rather than the Listing, so it is
-    // written straight onto the arch here at load, upstream of every `option`
-    // command. The XML `<binaryimage>` bootstrap never reaches this line, which is
-    // why `option rustabi auto` is inert on the datatest corpus by construction.
-    let compiler = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes);
-    sleigh.base_mut().unwrap().source_is_rust = compiler.is_rust();
-    sleigh.base_mut().unwrap().source_is_go = compiler.is_golang();
+    // a one-value property of the image, and it has to reach the ENGINE (the
+    // per-function rules in `kuna_rustabi` / `kuna_reloadarg`) rather than the
+    // Listing, so it is written straight onto the arch here at load, upstream of
+    // every `option` command (the `KUNA_SOURCELANG` loadtime override is already
+    // applied by `effective_compiler_bytes`; the later `option sourcelang` arm
+    // layers the per-run force on top). The XML `<binaryimage>` bootstrap never
+    // reaches this line, which is why `option rustabi auto` is inert on the
+    // datatest corpus by construction.
+    let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
+    sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.
@@ -4853,12 +4924,24 @@ fn commit_analysis_output(
     //    byte-identical to the 1-byte markup alone. (kuna `widestrings32`) The
     //    4-byte width (`wchar4[N]`, element count `len / 4`) goes before both on
     //    the same grounds, under its own gate.
+    //    (kuna `fatstr`) The length-BOUNDED facts (`strings::kuna_strrecords`,
+    //    Rust `&str` records) go before every scanned width: a record states the
+    //    literal's exact extent where the NUL scan can only guess a run, and the
+    //    occupied-address guard below then retires the glued row the NUL scan
+    //    produced for the same address (the measured witness: three adjacent
+    //    unterminated literals read back as one 39-byte string). A bounded
+    //    fact's `len` is the exact element count — there is no terminator.
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
-    for (fact, char_size) in wide32
+    //    The shared `len / char_size` element count stays exact for both: a
+    //    terminated fact's len includes its NUL slot, a bounded fact's len IS
+    //    the element count (char_size 1, no terminator byte to add).
+    for (fact, char_size) in out
+        .bounded_strings
         .iter()
-        .map(|f| (f, 4u32))
+        .map(|f| (f, 1u32))
+        .chain(wide32.iter().map(|f| (f, 4u32)))
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {

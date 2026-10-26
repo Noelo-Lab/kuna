@@ -150,7 +150,8 @@ Declared prototypes keep their parameter order. For stripped functions whose
 core and VFP banks do not reveal source order, recovery uses the model's VFP
 then core order consistently. Whole-program callers use the established
 `protoorder types` and `passthrough on` contract propagation; a single-function
-run without a callee contract cannot recover an untouched forwarded argument.
+run that stated no contract for the callee cannot recover an untouched forwarded
+argument, and the split-trial bootstrap below is what gives it one.
 Forwarding and wrapper-return claims are established before synthetic narrowing
 inputs are inserted. If heritage splits a forwarded double around a float result,
 same-width copies and contiguous incoming pieces still establish the original
@@ -190,6 +191,57 @@ in d0 as a double on some path before narrowing into s0, such as `float f(float
 a, double b, int k) { if (k > 4) { a = b * b + 1; a = a * b - 2; } return a;
 }`, is recovered as taking and returning a double, as with `armfloatreturn`
 alone, so its callers now compile and compute the wrong value.
+
+A single-function run has no callee-first order behind it. Where the target's
+compiler spec states preferred register splits (AArch64's `q` registers), the
+drive states the `protoorder` types of the direct callees its own call sites pass
+preferred-split storage to — at most 32 per drive, deadline-bounded and without
+recursing. The fact that selects a callee is the call's **active-input trial
+storage**, the verdict `ActionActiveParam` already reaches by data flow: an
+active trial whose range is the whole `<prefersplit>` register, one of the
+pieces heritage pass 0 replaced it with, or a narrower scalar inside one of
+those pieces (a single-precision `float` in `s0` inside `d0`). A range that
+crosses the split is not a scalar the split creates and selects nothing. A value
+merged through a `MULTIEQUAL`
+(`if (c) q0=x; else q0=y; call f(q0)`) is one such trial, so this is not a
+dominance test; a body that merely loads a `q` register but passes only integers
+selects nothing. A direct callee that lies on a call cycle with the root or with
+another direct callee states nothing. Each callee runs against a snapshot of the
+statements that existed before the bootstrap, and the new statements are merged
+only at the end, so one callee never reads another's partial answer.
+
+The trials exist only after heritage and trial scoring, so the bootstrap cannot
+run before the pipeline. `ActionActiveParam` scores the pass's calls and collects
+all ready split-storage callees before finalizing any argument list. This keeps
+deferred argument repairs intact across the pause and lets sibling callees be
+checked together for cycles against one snapshot. It pauses before binding
+the argument lists (a partial-completion return that the action
+tree resumes with its state intact), the drive runs the callee recovery against a
+detached action root, copies the new statements onto the paused `Funcdata`, and
+re-runs the three `ActionFuncLink` seams that read them (the passthrough claim,
+the VFP input link, the variadic read record) — otherwise a register forwarded
+untouched would have lost its claim before the facts existed. It then resumes the
+same pass at the same call. No arity is locked, and the bootstrap is inert under
+`protoorder off`, on a spec with no split records, and on every surface but the
+single-function drive; whole-binary, `--jobs`, `decompile-project` and browser
+schedules are unchanged.
+
+The pause itself is the framework's partial-completion contract, not a drive-private
+signal: `ActionGroup::apply` records `status_mid` on the group whenever a member
+returns a partial completion, so every caller resumes at that member — including
+`ActionRestartGroup`, which drives its inner group through `apply` rather than
+`perform`.
+
+A nested drive is likewise a scope, not a second owner of the `Architecture`:
+`Architecture::kuna_drive_publishes` is false below the outermost drive, so the
+callee's flow and pipeline comments never enter the program-wide comment database,
+and the one-shot staged prototype list was already consumed by the outer drive.
+What the nested drive states is handed back explicitly as the caller's parameter
+types; nothing else survives it.
+Nested recovery shares the enclosing drive's memory accounting and takes the
+earlier of the enclosing and requested deadlines, so calling a helper cannot
+renew either watchdog allowance. Recovery and statement publication are caught
+within the same state-restoration boundary.
 
 With `stackaddrargtrial on` (default off), an existing register input trial can
 use a bounded same-width copy/displacement chain to a specific stack-pointer
@@ -980,9 +1032,10 @@ because it hands a register on to a partner is answered by the callee-body walk
 below, which follows the partner's body and proves nothing about a cycle it
 re-enters. "Nothing parked" and "cannot tell" are
 therefore the same answer and both decline, which also makes the rule inert
-wherever no callee was decompiled first: a single-function `kuna decompile` (it
-forks one process per function), a `decompile-all` narrowed by `--addr` or
-`--functions`, a `--jobs N` run, and `--option protoorder off`.
+wherever no callee was decompiled first: a single-function `kuna decompile`
+except for the direct callees its split-trial bootstrap states (above), a
+`decompile-all` narrowed by `--addr` or `--functions`, a `--jobs N` run, and
+`--option protoorder off`.
 
 `protoorder` does **not** decline a variadic callee, and this rule must not be
 read as resting on that. The variadic guards described above — the under-recovery
@@ -1560,9 +1613,10 @@ classified:
   trial above a definitely-unused one. A junk `rdx` below a real `rcx`
   (`mov $10,%ecx; pop %rdx; jmp q`) therefore stays the hole the ABI fills, and
   dropping it would have taken the real argument with it. A trial that the
-  call's resolved format string names is kept. A Go image (`source_is_go`, from
-  the loader's language detection) is left alone, because Go passes arguments in
-  registers the cspec calls scratch. `off` restores the first-pass verdict.
+  call's resolved format string names is kept. A Go image
+  (`Architecture::source_lang`, the loader's language verdict with any
+  `option sourcelang` force applied) is left alone, because Go passes arguments
+  in registers the cspec calls scratch. `off` restores the first-pass verdict.
 
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
@@ -7874,3 +7928,30 @@ symbol's call-fixup injection is kept, and its no-return flag is carried under
 (library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
 construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
+
+**(kuna) Go boolean-return narrowing** (`option gobool off|auto|always`,
+default auto,
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_gobool.rs
+(RuleGoBoolReturn)`). Go's ABI materializes a `bool` result as 0/1 in the LOW
+BYTE of the return register and leaves the upper bytes unspecified: the
+compiler emits a bare `SETcc` with no zeroing `XOR`, so the lifted value is
+`PIECE(stale7, bool1)` feeding the `RETURN`, printed as
+`v = CONCAT71((undefined7)(v >> 8), a == b); return v & 0xffffffff;`.
+`SubvariableFlow`'s return pull rightly refuses the narrow — nothing proves
+the high bytes zero, and rustc never shows the shape because it zeroes first
+(the `rustabi` chapter's `xor %eax,%eax; setb %al` reading). The rule rewrites
+such a `RETURN` to read `ZEXT(bool)` instead, asserting the ABI fact the way
+`rustabi` asserts the ScalarPair: the low byte must be a genuine boolean
+definition (a comparison, carry/borrow, boolean-logic or float-predicate
+opcode), any other 7+1 concatenation is left alone, and the dead
+concatenation is collected by ordinary dead-code elimination — the stale
+bytes' content is deliberately replaced by zero, the declared reading. The
+narrow then cascades: the return type recovers as `bool`, and on the measured
+stripped go1.22 hello-world 57 functions change (CONCAT71-carrying functions
+64 → 34; the remainder are mid-function assignments outside a `RETURN`, which
+this rule deliberately does not touch), with the `type:.eq.*` equality
+helpers' whole signatures improving. At `auto` the rule acts only when the
+image's source language is Go; `always` drops the language test (the
+stage-test bytechunk); `off` keeps the faithful concatenation. Pinned by
+`tests/stages/kuna-gobool.xml` (two-pass over a hand-assembled
+`mov %rdi,%rax; cmp $1,%rdi; sete %al; ret`).

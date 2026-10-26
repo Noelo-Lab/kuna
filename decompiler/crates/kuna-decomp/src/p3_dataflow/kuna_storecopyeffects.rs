@@ -1,11 +1,57 @@
-//! Resolve a STORE's existing INDIRECT effects when it becomes a direct COPY.
-//! Waiting for the marker's next rule visit lets dead-code removal delete the
-//! newly written value before those effects read it.
+//! Preserve memory SSA when a STORE becomes a direct COPY. A previously
+//! heritaged global needs covering INDIRECT effects before its new definition
+//! can be attached; otherwise it must remain an explicit memory write.
 
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
+use kuna_base::address::Address;
+use crate::varnode::varnode_flags;
 use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
+
+/// A known global range needs effects covering every byte of the new write.
+/// Without them its existing readers and exit values still name the old SSA
+/// version, and dead-code removal can discard the new COPY.
+pub(crate) fn can_materialize(data: &Funcdata, store: OpId, addr: &Address, size: i32) -> bool {
+    let Some(space) = addr.get_space() else { return false };
+    if space.get_type() != spacetype::IPTR_PROCESSOR || data.heritage_pass(addr) < 0 {
+        return true;
+    }
+    let op = data.obank().get(store).expect("storecopyeffects: store");
+    if data.get_arch().query_global_properties(addr, size, op.get_addr()) & varnode_flags::persist == 0 {
+        return true;
+    }
+    let mut covered = u128::from(addr.get_offset());
+    let end = covered + size as u128;
+    while covered < end {
+        let mut next = covered;
+        let mut prev = data.op_previous_op(store);
+        while let Some(effect) = prev {
+            let marker = data.obank().get(effect).expect("storecopyeffects: marker");
+            if marker.code() != OpCode::CPUI_INDIRECT {
+                break;
+            }
+            prev = data.op_previous_op(effect);
+            let Some(iop) = marker.get_in(1).and_then(|id| data.vbank().get(id)) else { continue };
+            if iop.get_space().get_type() != spacetype::IPTR_IOP
+                || crate::funcdata_varnode::op_iop_decode(iop.get_offset()) != store
+            {
+                continue;
+            }
+            let Some(out) = marker.get_out().and_then(|id| data.vbank().get(id)) else { continue };
+            let lo = u128::from(out.get_offset());
+            let hi = lo + out.get_size() as u128;
+            if out.get_space().get_index() == space.get_index() && lo <= covered && covered < hi {
+                next = next.max(hi);
+            }
+        }
+        if next == covered {
+            return false;
+        }
+        covered = next;
+    }
+    true
+}
 
 pub(crate) fn collapse(data: &mut Funcdata, copy: OpId) {
     let mut effects = Vec::new();

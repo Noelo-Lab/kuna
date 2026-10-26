@@ -1,0 +1,63 @@
+{
+  "schema": "kuna-talk-simd-evidence/1",
+  "date_utc": "2026-10-18",
+  "scope": "One authored unsigned byte-sum function; default adapter settings for Ghidra; explicit ablation settings for Kuna. This is not a corpus benchmark.",
+  "source": "byte_sum.c",
+  "compiler": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+  "compile_command": "clang -O3 -msse2 -mno-avx -fno-unroll-loops -no-pie byte_sum.c -o byte_sum",
+  "input_sha256": "288c128ec01adf810882e04a898fc767719d51019ba757a4ec099c2683215d9f",
+  "kuna_sha256": "23f6db4d8909d99aa8292f913de1e4b46e78edbe3e6df8609b3e38d453727aca",
+  "kuna_console_sha256": "96a51dbc4252f55fe3f2634075cc669fca1fe6609184a36b4807c60ef0bd4a19",
+  "ghidra_version": "12.1",
+  "correctness_replay": {
+    "command": "bash docs/talk/verify-simd.sh",
+    "harness": "byte_sum_check.c",
+    "source_reference": "byte_sum.c compiled by Clang at -O3 with SSE2, no AVX, and no loop unrolling",
+    "recovered_source": "Exact kuna_devectorize transcript above, with fixed-width typedefs and renamed function only",
+    "compilers": [
+      "gcc -O0",
+      "gcc -O2",
+      "clang -O0",
+      "clang -O2"
+    ],
+    "comparisons_per_build": 1569,
+    "total_comparisons": 6276,
+    "patterns": [
+      "zero bytes",
+      "all bytes 255",
+      "deterministic pseudorandom bytes"
+    ],
+    "lengths": "23 boundary lengths including vector handoffs, signed-sum boundary and unsigned wrap; 500 pseudorandom lengths per pattern",
+    "failures": 0
+  },
+  "arms": {
+    "kuna_both_off": {
+      "command": "decompiler/target/release/kuna decompile /tmp/kuna-talk-evidence.pVnUBn/byte_sum byte_sum --mode reliable --option wideslice off --option devectorize off",
+      "code": "int4 byte_sum(int8 a0,uint4 a1)\n{\n  unsigned int v1; // xmm2_da\n  char v2 [13]; // xmm2 | xmm2_bd | xmm2_bg | xmm2_qa\n  char v3 [13]; // register 0x128a | xmm2 | xmm2_bc | xmm2_be | xmm2_qa\n  char v4 [13]; // register 0x1286 | xmm2 | xmm2_bb | xmm2_bc | xmm2_da\n  uint8 v5; // xmm2_qa\n  int4 v6; // eax | xmm1_da\n  uint8 v7; // rax\n  uint8 v8; // rdx\n  int4 v9; // xmm1_db\n  int4 v10; // xmm0_da | xmm1_dc\n  int4 v11; // xmm0_db | xmm1_dd\n  char v12; // xmm2_bb | xmm2_bc\n  \n  if (!a1)\n    return 0;\n  if (4 <= a1) { // branch-flip\n    v8 = a1 & 0xfffffffc;\n    v7 = 0;\n    v6 = 0;\n    v9 = 0;\n    v10 = 0;\n    v11 = 0;\n    do {\n      v1 = *(unsigned int *)(a0 + v7);\n      v12 = (char)((uint4)v1 >> 8);\n      v5 = (uint8)CONCAT12(v12,(int2)v1) & 0xffffffffffff00ff;\n      v2._8_4_ = 0;\n      v2._0_8_ = v5;\n      v2[0xc] = (char)((uint4)v1 >> 0x18);\n      v3[8] = (char)((uint4)v1 >> 0x10);\n      v3._0_8_ = v5;\n      v3[9] = 0;\n      v3._10_3_ = SUB133(v2._0_13_,10);\n      v4[4] = v12;\n      v4._0_4_ = (uint4)v5;\n      v4[5] = 0;\n      v4._6_7_ = SUB137(ZEXT513(SUB135(v3._0_13_,8)) << 0x40,6);\n      v6 += (uint4)v5 & 0xffff;\n      v9 += SUB134(v4._0_13_,4);\n      v10 += SUB134(v3._0_13_,8);\n      v11 += (uint4)(undefined3)(SUB133(v2._0_13_,10) >> 0x10);\n      v7 += 4;\n    } while (v8 != v7);\n    v6 = v11 + v9 + v10 + v6;\n    if (v8 == a1)\n      return v6;\n  }\n  else {\n    v8 = 0;\n    v6 = 0;\n  }\n  do {\n    v6 += (uint4)*(uint1 *)(a0 + v8);\n    v8 += 1;\n  } while (a1 != v8);\n  return v6;\n}",
+      "lines": 59,
+      "artificial_13_byte_arrays": 3,
+      "do_while_loops": 2
+    },
+    "kuna_wideslice": {
+      "command": "decompiler/target/release/kuna decompile /tmp/kuna-talk-evidence.pVnUBn/byte_sum byte_sum --mode reliable --option wideslice on --option devectorize off",
+      "code": "int4 byte_sum(int8 a0,uint4 a1)\n{\n  uint4 v1; // xmm2_da\n  int4 v2; // eax | xmm1_da\n  uint8 v3; // rax\n  uint8 v4; // rdx\n  int4 v5; // xmm1_db\n  int4 v6; // xmm0_da | xmm1_dc\n  int4 v7; // xmm0_db | xmm1_dd\n  \n  if (!a1)\n    return 0;\n  if (4 <= a1) { // branch-flip\n    v4 = a1 & 0xfffffffc;\n    v3 = 0;\n    v2 = 0;\n    v5 = 0;\n    v6 = 0;\n    v7 = 0;\n    do {\n      v1 = *(uint4 *)(a0 + v3);\n      v2 += v1 & 0xff;\n      v5 += v1 >> 8 & 0xff;\n      v6 += v1 >> 0x10 & 0xff;\n      v7 += v1 >> 0x18;\n      v3 += 4;\n    } while (v4 != v3);\n    v2 = v7 + v5 + v6 + v2;\n    if (v4 == a1)\n      return v2;\n  }\n  else {\n    v4 = 0;\n    v2 = 0;\n  }\n  do {\n    v2 += (uint4)*(uint1 *)(a0 + v4);\n    v4 += 1;\n  } while (a1 != v4);\n  return v2;\n}",
+      "lines": 41,
+      "artificial_13_byte_arrays": 0,
+      "do_while_loops": 2
+    },
+    "kuna_devectorize": {
+      "command": "decompiler/target/release/kuna decompile /tmp/kuna-talk-evidence.pVnUBn/byte_sum byte_sum --mode reliable --option wideslice on --option devectorize on",
+      "code": "int4 byte_sum(uint1 *a0,uint4 a1)\n{\n  int4 v1; // eax\n  uint8 v2; // rdx\n  \n  if (a1) {\n    v2 = 0;\n    v1 = 0;\n    do {\n      v1 += (uint4)a0[v2];\n      v2 += 1;\n    } while (a1 != v2);\n    return v1;\n  }\n  return 0;\n}",
+      "lines": 16,
+      "artificial_13_byte_arrays": 0,
+      "do_while_loops": 1
+    },
+    "ghidra_12_1": {
+      "command": "DECLIB_SERVER_REGISTRY=/tmp/kuna-talk-evidence.pVnUBn/declib decompiler decompile byte_sum --id 65c4605341 --json",
+      "code": "int byte_sum(long param_1,uint param_2)\n\n{\n  undefined4 uVar1;\n  undefined1 auVar2 [13];\n  undefined1 auVar3 [13];\n  undefined1 auVar4 [13];\n  ulong uVar5;\n  undefined1 auVar6 [13];\n  int iVar7;\n  ulong uVar8;\n  ulong uVar9;\n  int iVar10;\n  int iVar11;\n  int iVar12;\n  undefined1 uVar13;\n  \n  if (param_2 == 0) {\n    return 0;\n  }\n  if (param_2 < 4) {\n    uVar9 = 0;\n    iVar7 = 0;\n  }\n  else {\n    uVar9 = (ulong)(param_2 & 0xfffffffc);\n    uVar8 = 0;\n    iVar7 = 0;\n    iVar10 = 0;\n    iVar11 = 0;\n    iVar12 = 0;\n    do {\n      uVar1 = *(undefined4 *)(param_1 + uVar8);\n      uVar13 = (undefined1)((uint)uVar1 >> 8);\n      uVar5 = (ulong)CONCAT12(uVar13,(short)uVar1) & 0xffffffffffff00ff;\n      auVar2._8_4_ = 0;\n      auVar2._0_8_ = uVar5;\n      auVar2[0xc] = (char)((uint)uVar1 >> 0x18);\n      auVar3[8] = (char)((uint)uVar1 >> 0x10);\n      auVar3._0_8_ = uVar5;\n      auVar3[9] = 0;\n      auVar3._10_3_ = auVar2._10_3_;\n      auVar6._5_8_ = 0;\n      auVar6._0_5_ = auVar3._8_5_;\n      auVar4[4] = uVar13;\n      auVar4._0_4_ = (uint)uVar5;\n      auVar4[5] = 0;\n      auVar4._6_7_ = SUB137(auVar6 << 0x40,6);\n      iVar7 = iVar7 + ((uint)uVar5 & 0xffff);\n      iVar10 = iVar10 + auVar4._4_4_;\n      iVar11 = iVar11 + auVar3._8_4_;\n      iVar12 = iVar12 + (uint)(uint3)(auVar2._10_3_ >> 0x10);\n      uVar8 = uVar8 + 4;\n    } while (uVar9 != uVar8);\n    iVar7 = iVar12 + iVar10 + iVar11 + iVar7;\n    if (uVar9 == param_2) {\n      return iVar7;\n    }\n  }\n  do {\n    iVar7 = iVar7 + (uint)*(byte *)(param_1 + uVar9);\n    uVar9 = uVar9 + 1;\n  } while (param_2 != uVar9);\n  return iVar7;\n}",
+      "lines": 65,
+      "artificial_13_byte_arrays": 4,
+      "do_while_loops": 2
+    }
+  }
+}

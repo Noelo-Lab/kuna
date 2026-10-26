@@ -130,6 +130,9 @@ mod verify_eh_frame_full;
 #[path = "verify_elf_language_ids.rs"]
 mod verify_elf_language_ids;
 
+#[path = "verify_entry_lookup_cache.rs"]
+mod verify_entry_lookup_cache;
+
 #[path = "verify_entry_selectors.rs"]
 mod verify_entry_selectors;
 
@@ -177,6 +180,14 @@ mod verify_global_regmerge;
 
 #[path = "verify_go_pclntab.rs"]
 mod verify_go_pclntab;
+#[path = "verify_go_noreturn_stripped.rs"]
+mod verify_go_noreturn_stripped;
+#[path = "verify_go_morestack.rs"]
+mod verify_go_morestack;
+#[path = "verify_fatstr_records.rs"]
+mod verify_fatstr_records;
+#[path = "verify_go_writebarrier.rs"]
+mod verify_go_writebarrier;
 
 #[path = "verify_hostile_symbol_sizes.rs"]
 mod verify_hostile_symbol_sizes;

@@ -216,7 +216,7 @@ pub fn parse_rust_abi_mode(p1: &str) -> KunaResult<(RustAbiMode, String)> {
 pub fn live(data: &Funcdata) -> bool {
     match RustAbiMode::from_u8(data.get_arch().rust_abi) {
         RustAbiMode::Off => false,
-        RustAbiMode::Auto => data.get_arch().source_is_rust,
+        RustAbiMode::Auto => data.get_arch().source_lang.is_rust(),
         RustAbiMode::Always => true,
     }
 }
@@ -999,7 +999,7 @@ pub fn seed_callee_return_writes(
     let mode = RustAbiMode::from_u8(arch.rust_abi);
     let on = match mode {
         RustAbiMode::Off => false,
-        RustAbiMode::Auto => arch.source_is_rust,
+        RustAbiMode::Auto => arch.source_lang().is_rust(),
         RustAbiMode::Always => true,
     };
     // `option callretpair` reaches the same call-output arm and needs the same

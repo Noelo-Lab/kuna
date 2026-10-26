@@ -44,6 +44,7 @@ fn run(slot_ptr: bool) -> Vec<(String, Vec<VarInfo>, String)> {
         let mapped = prog.dwarf_locals_for(addr.get_offset());
         let Ok(fd) = decompile_func_full_with_override_dyn(
             prog.arch_mut(), &name, addr, 0, &mapped, &[], &[], None, &[], &[], &[],
+            kuna_decomp::decompile_drive::DrivePurpose::Batch,
         ) else {
             continue;
         };

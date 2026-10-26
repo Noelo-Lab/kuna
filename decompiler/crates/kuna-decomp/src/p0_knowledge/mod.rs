@@ -25,6 +25,22 @@ pub mod kuna_pdatachained;
 // (kuna) x86-64 PE REX-prefixed tail-jump import-thunk rejection option gate
 // (load-time, env-bridged).
 pub mod kuna_rexthunk;
+// (kuna) The source-language image fact (SourceLang) and its `sourcelang`
+// override (load-time, env-bridged).
+pub mod kuna_sourcelang;
+// (kuna) Swift symbol demangling gate (load-time, env-bridged).
+pub mod kuna_swiftdemangle;
+// (kuna) The Go runtime-type harvest gate (load-time, env-bridged).
+pub mod kuna_gotypes;
+// (kuna) golang cspec auto-selection + the .abi0 stack-ABI model binding
+// (load-time, env-bridged).
+pub mod kuna_goabi;
+// (kuna) Discriminant-value naming for recovered variant parts (load-time,
+// env-bridged; the first VariantLayout consumer).
+pub mod kuna_variantnames;
+// (kuna) Language facets: what a C-shaped type means in the source language
+// (the VariantLayout-style side table on the type factory).
+pub mod kuna_langfacet;
 // (kuna) PE import-by-ordinal naming from built-in export tables (load-time,
 // env-bridged).
 pub mod kuna_peordinal;

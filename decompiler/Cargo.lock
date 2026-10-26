@@ -303,6 +303,7 @@ dependencies = [
  "kuna-sleigh",
  "regex",
  "serde",
+ "serde_json",
  "slotmap",
  "smallvec",
  "thiserror 2.0.18",

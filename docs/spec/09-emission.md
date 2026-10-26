@@ -101,6 +101,8 @@ to that member's pointee, even when an object name introduces a union backing.
 The whole backing type cannot replace that pointer type: doing so would turn a
 native `head->next` dereference into an unresolved `PTRSUB(head,0)` expression.
 
+An isolated pointer declaration may name the value copied into an integer member of a declared frame array or record. C emission checks the type that the destination actually prints, rather than treating the pointer type carried by the COPY as the member's declaration. When a pointer is copied to a same-width integer member, it emits an explicit cast to that member's integer type. This preserves the native address value and produces valid C without changing numeric conversions or other output languages (`kuna_pointerstorecast.rs`). The same holds for any integer variable or member that a pointer-valued statement assigns: a plain copy, and a pointer addition or member address (`frame[0] = (unsigned long)&value[1];`). A copied variable that is itself declared as a same-width integer takes no cast, since only its storage was typed as a pointer; a source declared as a record, union or array keeps the cast, because it prints as the pointer member it reads (`x = (long)w.p;`), and a null pointer constant copied into integer storage prints as `0` rather than a cast `NULL`.
+
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackversions.rs` separates memory
 SSA bookkeeping from writes under `stackviews`. Generated-backing definitions
 without the native stack-store mark describe reconstructed memory versions, not
@@ -144,6 +146,23 @@ call result keeps its existing rendering, by the rule `kuna_bitcast.rs` applies
 to same-width casts, because the slice does not infer a callee's return
 prototype. Explicit floating conversion opcodes retain their numeric
 conversion, and structured member extraction retains priority.
+
+(kuna) Under `option nanignore none`, a retained widening `FLOAT_FLOAT2FLOAT`
+whose input may be a signaling NaN and whose result reaches a conversion back
+to the source format materializes its C result in a volatile compound literal
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::op_float_quiet_ir)`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (feeds_round_trip)`):
+`(float)(*&(volatile double){ (double)x })`. A C compiler erases a plain
+`(float)(double)x` pair even with strict rounding flags. The literal evaluates
+its input once and forces the wider format to exist in storage. The read goes
+through `*&` because GCC drops a bare volatile literal assigned to a variable
+(`v = (volatile double){ (double)x };`), which is how a widening shared by
+several readers prints. Widenings that
+feed arithmetic, comparisons, calls or stores, and every narrowing, keep
+ordinary casts, because the compiler must perform those conversions. Already
+quiet inputs also keep ordinary casts, and the default `nanignore compare`
+never produces the literal. This applies to C emission; other output languages
+retain their cast syntax.
 
 A `SUBPIECE` whose destination is typed as a byte array, such as a temporary that
 carries one word of a double into a declared `unsigned char` member, cannot cast
@@ -3929,3 +3948,14 @@ form so each arm stays a statement LOAD copying into the member's type
 A STORE helper likewise initializes its compound literal with the rendered
 source member’s same-width scalar type (`printc.rs (op_store_ir)`), preserving
 its bytes when propagated IR types disagree.
+
+A same-width integer representation assigned to a declared pointer member needs
+an explicit pointer cast in C. CAST statements are checked using the type their
+result expression prints, rather than the input type, so a pointer-to-integer
+cast cannot leave an integer expression assigned to a pointer field, and a
+pointer-typed CAST assigned to an integer variable receives the integer cast
+(`len = (long)(char *)&len[1];`) instead of a bare pointer. When the
+variable's Symbol is a structure, array or union, that whole Symbol supplies the
+member type, since the declaration representative covers only the field. A
+scalar local or global keeps the type its declaration prints, which can differ
+from its Symbol's scalar type (`kuna_pointerstorecast.rs (target)`).

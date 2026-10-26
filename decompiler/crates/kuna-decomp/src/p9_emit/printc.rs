@@ -5938,9 +5938,21 @@ impl PrintC {
             self.push_op(&tokens::ASSIGNMENT, Some(op_key(op)));
             self.push_vn_explicit_ir(fd, arch, out, op);
         }
+        let storage_cast = (self.out_lang == crate::kuna_lang::OutLang::C && !self.options.nocasts)
+            .then(|| outvn.and_then(|out| crate::p9_emit::kuna_pointerstorecast::target(
+                fd, op, arch.decl_high_type, || self.partial_piece_type(fd, arch, out, op, -1),
+            ))).flatten();
+        if let Some(target) = &storage_cast {
+            if crate::p9_emit::kuna_pointerstorecast::null_source(fd, op) {
+                self.push_constant_ir_fmt_sign(0, target.get_size(), op, display_format::NONE, false);
+                return;
+            }
+            self.push_cast_open(target, op);
+        }
         self.stmt_op = outvn.map(|_| op);
         self.op_push_ir(fd, arch, op, None);
         self.stmt_op = None;
+        if let Some(target) = &storage_cast { self.push_cast_close(target); }
     }
 
     /// C++ `op->getOpcode()->push(this,op,readop)` — the per-opcode RPN push
@@ -6189,6 +6201,9 @@ impl PrintC {
                     // all reduce to opTypeCast (printc.hh:332-341) — they render as
                     // a parenthesized type cast, not a functional `OPC(args)`.
                     OpEmitKind::TypeCast if opc == OpCode::CPUI_FLOAT_FLOAT2FLOAT => {
+                        if self.op_float_quiet_ir(fd, arch, op) {
+                            return;
+                        }
                         let implied = self.float_widening_is_c_promoted(fd, arch, op, read_op);
                         self.op_type_cast_ir_with(fd, arch, op, implied)
                     }
@@ -6991,6 +7006,32 @@ impl PrintC {
             class,
             kuna_num::float::floatclass::infinity | kuna_num::float::floatclass::nan
         )
+    }
+
+    /// (kuna) Under `nanignore none`, print a widening that quiets a possibly
+    /// signaling NaN and feeds a round trip as a read through a volatile compound
+    /// literal, so a C compiler cannot erase the `(float)(double)x` pair. GCC drops
+    /// a bare `v = (volatile double){ x }` literal; the `*&` access keeps it.
+    fn op_float_quiet_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return false;
+        }
+        let Some(cast) = fd.obank().get(op) else { return false };
+        let (Some(input), Some(output)) = (cast.get_in(0), cast.get_out()) else { return false };
+        if crate::p3_dataflow::kuna_floatquiet::can_elide(fd, input)
+            || !crate::p3_dataflow::kuna_floatquiet::feeds_round_trip(fd, op)
+        {
+            return false;
+        }
+        let size = fd.vbank().get(output).unwrap().get_size();
+        let Ok(ty) = arch.types().get_base(size, type_metatype::TYPE_FLOAT) else { return false };
+        let name = type_name_for_decl(&ty, self.rt_ctx).0;
+        static MATERIALIZE: OpToken = op_token("", " })", 2, 66, false, TokenType::Postsurround, 0, 0);
+        self.push_op(&MATERIALIZE, Some(op_key(op)));
+        self.push_atom(&Atom::syntax(format!("(*&(volatile {name}){{ "),
+            TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+        self.op_type_cast_ir_with(fd, arch, op, false);
+        true
     }
 
     /// C++ `PrintC::opTypeCast` (printc.cc:468): the C cast-notation `(type)operand`

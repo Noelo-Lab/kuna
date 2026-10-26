@@ -223,6 +223,20 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "inputparamgap" => on_off(conf.input_param_gap),
         // (kuna `rustabi`) Three-valued, so it reports its own token.
         "rustabi" => kuna_decomp::kuna_rustabi::RustAbiMode::from_u8(conf.rust_abi).as_str(),
+        // (kuna `fatstr`) Three-valued, so it reports its own token.
+        "fatstr" => kuna_decomp::kuna_fatstr::FatStrMode::from_u8(conf.fat_str).as_str(),
+        // (kuna `gobool`) Three-valued, so it reports its own token.
+        "gobool" => kuna_decomp::kuna_gobool::GoBoolMode::from_u8(conf.go_bool).as_str(),
+        // (kuna `gomorestack`) Three-valued, so it reports its own token.
+        "gomorestack" => kuna_decomp::kuna_gomorestack::GoMorestackMode::from_u8(conf.go_morestack).as_str(),
+        // (kuna `gowritebarrier`) Three-valued, so it reports its own token.
+        "gowritebarrier" => kuna_decomp::kuna_gowritebarrier::GoWriteBarrierMode::from_u8(conf.go_write_barrier).as_str(),
+        // (kuna `sourcelang`) Reports the OPTION state, not the detected fact:
+        // `auto` until a run forces a language.
+        "sourcelang" => match conf.source_lang_forced {
+            Some(lang) => lang.as_str(),
+            None => "auto",
+        },
         // (kuna `bejoin`) Three-valued, so it reports its own token.
         "bejoin" => conf.be_join.as_str(),
         "condexeplace" => on_off(conf.condexe_block_placement),
@@ -276,8 +290,18 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "dynrelocs" => on_off(conf.analysis_dynrelocs),
         "pdatachained" => on_off(conf.analysis_pdatachained),
         "rexthunk" => on_off(conf.analysis_rexthunk),
+        // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
+        "goreg" => on_off(conf.go_reg),
+        "goabi" => {
+            if conf.analysis_goabi {
+                "auto"
+            } else {
+                "off"
+            }
+        }
         "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
+        "swiftdemangle" => on_off(conf.analysis_swiftdemangle),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
         "msvcfpconst" => on_off(conf.analysis_msvcfpconst),
@@ -289,6 +313,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "typedepth" => on_off(conf.analysis_typedepth),
         "dwarfstructs" => on_off(conf.analysis_dwarfstructs),
         "dwarfvariants" => on_off(conf.analysis_dwarfvariants),
+        "variantnames" => on_off(conf.analysis_variantnames),
         // (kuna `cppsig`) Three-valued, so it reports its own token rather than
         // on/off.
         "cppsig" => conf.analysis_cppsig.as_str(),
@@ -320,6 +345,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "rawdiscover" => on_off(conf.analysis_rawdiscover),
         "gopclntab" => on_off(conf.analysis_gopclntab),
+        "gotypes" => on_off(conf.analysis_gotypes),
+        "gonoreturn" => on_off(conf.analysis_gonoreturn),
         "aifbracket" => on_off(conf.analysis_aifbracket),
         "aifnoppad" => on_off(conf.analysis_aifnoppad),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),

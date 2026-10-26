@@ -188,8 +188,9 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
                 Compiler::Rustc => Some(crate::sourcelang::rust_noreturn_list()),
                 // Go: the runtime.gopanic/throw/goexit/… exact-name list.
                 Compiler::Go => Some(crate::sourcelang::golang_noreturn_list()),
-                // No per-compiler arm for the ELF format (Gcc/Clang/Unknown).
-                Compiler::Gcc | Compiler::Clang | Compiler::Unknown => None,
+                // No per-compiler arm for the ELF format (Gcc/Clang/Unknown;
+                // Swift has no vendored list yet, so it takes the generic set).
+                Compiler::Gcc | Compiler::Clang | Compiler::Swift | Compiler::Unknown => None,
             } {
                 let (extra_exact, extra_wildcard) = parse_list(list);
                 e.extend(extra_exact);

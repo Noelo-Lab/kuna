@@ -5,7 +5,7 @@
 
 mod kuna_varrefs;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ use kuna_base::types::int4;
 
 use kuna_num::opcodes::OpCode;
 
-use crate::action::ActionContext;
+use crate::action::{Action, ActionContext};
 use crate::architecture::Architecture;
 use crate::flow::{FlowEnvironment, FlowInfo};
 use crate::funcdata::{funcdata_flags, Funcdata};
@@ -23,6 +23,19 @@ use crate::context::{HighVariableId, TypeOp};
 
 use kuna_sleigh::translate::Translate;
 use kuna_sleigh::loadimage::ImageBytes;
+
+/// Which surface a decompile drive serves.
+///
+/// Only the single-function drive lacks a callee-first order behind it, so only
+/// it bootstraps its direct callees' stated parameter types.  Batch surfaces
+/// already own that order (or deliberately do not build it) and must keep their
+/// documented schedule.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DrivePurpose {
+    #[default]
+    Batch,
+    SingleFunction,
+}
 
 /// A [`FlowEnvironment`] backed by a borrowed [`Architecture`] — the real
 /// engine-backed shape the C++ `FlowInfo` uses (`glb->translate` for the
@@ -864,13 +877,19 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
-    // Publish buffered flow comments only after replacement construction succeeds.
+    // Publish buffered flow comments only after replacement construction succeeds,
+    // and only from the drive that owns the Architecture.  A nested recovery drive
+    // (the P4 callee-contract bootstrap) exists to state types: its statements are
+    // private to the caller it types for, so its comments must not enter the
+    // program-wide comment database.
     let func_addr = data.get_address().clone();
-    if arch.mapped_flow_boundary_image {
-        crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
-    }
-    for (tp, ad, txt) in data.drain_pending_comments() {
-        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    if arch.kuna_drive_publishes() {
+        if arch.mapped_flow_boundary_image {
+            crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+        }
+        for (tp, ad, txt) in data.drain_pending_comments() {
+            arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+        }
     }
     Ok(data)
 }
@@ -926,6 +945,9 @@ fn run_jumptable_pipeline(
     let _ = arch.allacts.set_current(&saved);
     match result {
         Ok(r) => {
+            if let Some(error) = ctx.error {
+                return Err(error);
+            }
             if r < 0 {
                 return Err(KunaError::lowlevel("jumptable pipeline hit a breakpoint"));
             }
@@ -960,19 +982,34 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     // caps in-loop restarts; this caps cross-flow restarts).
     const MAX_REFLOW: int4 = 8;
     let mut total: int4 = 0;
-    for _ in 0..=MAX_REFLOW {
+    let mut reflows: int4 = 0;
+    // (kuna callee-contract) `ActionActiveParam` pauses (`-1`) when a call site's
+    // active trial storage is a preferred-split register and the drive has not
+    // yet stated that callee.  The resumed `perform` continues at the same
+    // action with its state intact, so this does not consume the reflow budget.
+    let mut resume = false;
+    // The callee drives need a root of their own: `run_pipeline` resets whatever
+    // root is current, and the caller's tree is paused mid-pass.
+    let mut contract_root: Option<Box<dyn Action>> = None;
+    let mut contract_budget = MAX_CONTRACT_CALLEES;
+    loop {
         let res = {
             let deadline = arch.kuna_fn_deadline;
             let root = arch
                 .allacts
                 .get_current_mut()
                 .ok_or_else(|| kuna_base::error::KunaError::lowlevel("no current action"))?;
-            root.reset(fd);
+            if !resume {
+                root.reset(fd);
+            }
             let mut ctx = ActionContext::new();
             // (kuna decompile-all watchdog) thread the per-function deadline
             // into the action loop (`None` = no budget, the parity default).
             ctx.deadline = deadline;
             let r = root.perform(fd, &mut ctx);
+            if let Some(error) = ctx.error {
+                return Err(error);
+            }
             (r, ctx.reflow_requested)
         };
         let (r, reflow_requested) = res;
@@ -986,9 +1023,35 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         if let Some(err) = budget_error(arch) {
             return Err(err);
         }
+        // (kuna callee-contract) The paused pass queued direct callees whose trial
+        // storage is a preferred-split register.  State their types, hand the new
+        // statements to the paused caller, and resume the same pass.
+        let pending = fd.kuna_take_callee_split_calls();
+        if !pending.is_empty() {
+            if contract_root.is_none() {
+                contract_root = Some(
+                    arch.allacts
+                        .derive_fresh("decompile")?
+                        .ok_or_else(|| KunaError::lowlevel("missing callee recovery action"))?,
+                );
+            }
+            let fresh = contract_root.take().expect("contract root just installed");
+            let paused = arch.allacts.swap_current_action(fresh)
+                .ok_or_else(|| KunaError::lowlevel("missing paused caller action"))?;
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                bootstrap_split_callees(arch, fd, pending, &mut contract_budget);
+            }));
+            contract_root = arch.allacts.swap_current_action(paused);
+            if let Err(payload) = result {
+                std::panic::resume_unwind(payload);
+            }
+            resume = true;
+            continue;
+        }
         if r < 0 {
             return Ok(r); // breakpoint — propagate verbatim (no re-flow)
         }
+        resume = false;
         total += r;
         // (kuna `stackstoreguard`) A function whose final layout spoils what the
         // guard needs is analyzed again from scratch without it by the drive.
@@ -1008,11 +1071,20 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
+        if reflows >= MAX_REFLOW {
+            // Exceeded the cross-flow restart budget; keep the last analyzed IR.
+            fd.set_restart_pending(false);
+            drain_pipeline_comments(arch, fd);
+            return Ok(total);
+        }
+        reflows += 1;
         // Re-follow flow against the same Funcdata (its Override — incl. the
         // deindirect's indirect override — survives `clear()`), then loop to
         // re-perform.  `clear()` resets the restart flag, so a fresh request must
         // come from the re-flowed pass to loop again.
+        let armed = fd.kuna_callee_contract_armed();
         refollow_flow(arch, fd)?;
+        fd.kuna_set_callee_contract_armed(armed);
         // (kuna `rustabi`) The re-flow hands back a FRESH Funcdata, so the
         // callee-body evidence has to be taken again or the call-output seam
         // silently loses its veto on every restarted function.  Cached, so this
@@ -1039,10 +1111,6 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         crate::p4_calls::kuna_calleepreserves::seed_callee_preserves(arch, fd);
         crate::kuna_calleememory::seed(arch, fd);
     }
-    // Exceeded the cross-flow restart budget; keep the last analyzed IR.
-    fd.set_restart_pending(false);
-    drain_pipeline_comments(arch, fd);
-    Ok(total)
 }
 
 /// Flush any analysis comments the **action pipeline** buffered on the `Funcdata`
@@ -1051,6 +1119,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
 /// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
 /// pipeline land here.  No-op when nothing was buffered.
 fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
+    if !arch.kuna_drive_publishes() {
+        return;
+    }
     let func_addr = fd.get_address().clone();
     for (tp, ad, txt) in fd.drain_pending_comments() {
         arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
@@ -1109,6 +1180,248 @@ pub fn decompile_func_with_symbols(
     decompile_func_full(arch, name, funcaddr, size, mapped_symbols, None)
 }
 
+/// How many direct callees a single-function drive may decompile just to state
+/// their parameter types (the `protoorder` callee-first contract, bounded).
+const MAX_CONTRACT_CALLEES: usize = 32;
+
+thread_local! {
+    /// 0 on the function the caller asked for; 1 while its direct callees'
+    /// contracts are being recovered, so their own decompiles do not recurse.
+    static CONTRACT_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+type StatedMap = HashMap<(int4, kuna_base::types::uintb), Rc<crate::kuna_protoorder::RecoveredTypes>>;
+type StatedKey = (int4, kuna_base::types::uintb);
+
+/// The direct callees whose prototype this bootstrap may recover, from the
+/// entries `ActionActiveParam` queued.
+///
+/// Declared prototypes and callees a callee-first drive already stated are
+/// skipped: their contract is already owned elsewhere.
+fn eligible_callees(
+    arch: &Architecture,
+    candidates: Vec<Address>,
+    root_entry: &Address,
+) -> Vec<Address> {
+    let mut entries = Vec::new();
+    for entry in candidates {
+        if entry.is_invalid() || &entry == root_entry {
+            continue;
+        }
+        if arch.symboltab.function_proto_pieces_across_scopes(&entry).is_some() {
+            continue;
+        }
+        if crate::p4_calls::kuna_protoorder::stated_key(&entry)
+            .is_some_and(|key| arch.kuna_protoorder_types.contains_key(&key))
+        {
+            continue;
+        }
+        entries.push(entry);
+    }
+    entries.sort_by_key(crate::p4_calls::kuna_protoorder::stated_key);
+    entries.dedup_by_key(|entry| crate::p4_calls::kuna_protoorder::stated_key(entry));
+    entries
+}
+
+/// Recover the prototypes of the direct callees whose P4 active-input trials
+/// name preferred-split storage.
+///
+/// `kuna decompile <binary> <addr>` runs one function; unlike `decompile-all`
+/// it has no callee-first order behind it, so a call's parameter types are
+/// whatever the caller wrote into registers.  `ActionActiveParam` scores the
+/// CALL op's input trials, and a trial that is the compiler spec's
+/// `<prefersplit>` whole register (or one of the pieces heritage pass 0
+/// replaced it with) is the one place a callee's own recovery still has
+/// something to say: it states facts from the callee's own body, not a width
+/// heuristic.  At most [`MAX_CONTRACT_CALLEES`] callees are tried per drive and
+/// the pass is inert under `protoorder off`.
+///
+/// The callees run against a snapshot of the statements that existed before
+/// this pass, and their new statements are merged only at the end.  A callee
+/// therefore never reads a partial statement another callee of the same pass
+/// produced.  Statements for direct callees that lie on a call cycle with the
+/// root or with each other are dropped: `protoorder types` declines for a
+/// recursive component, and a bounded bootstrap cannot claim more than it can
+/// see.
+fn bootstrap_split_callees(
+    arch: &mut Architecture,
+    root: &mut Funcdata,
+    candidates: Vec<Address>,
+    budget: &mut usize,
+) {
+    if !arch.protoorder.is_on() || root.num_calls() == 0 || !arch.has_split_records() {
+        return;
+    }
+    if *budget == 0 {
+        return;
+    }
+    let root_entry = root.get_address().clone();
+    let entries = eligible_callees(arch, candidates, &root_entry);
+    if entries.is_empty() {
+        return;
+    }
+    let prior = std::mem::take(&mut arch.kuna_protoorder_types);
+    let mut recovered = Vec::new();
+    for entry in entries {
+        if *budget == 0 || deadline_passed() {
+            break;
+        }
+        *budget -= 1;
+        if let Some((stated, calls)) = recover_one_contract(arch, &prior, &entry) {
+            recovered.push((entry, stated, calls));
+        }
+    }
+    arch.kuna_protoorder_types = prior;
+    let mut any_stated = false;
+    let cyclic = contract_cycles(&root_entry, &recovered);
+    for (entry, stated, _) in recovered {
+        let (Some(stated), Some(key)) = (stated, crate::p4_calls::kuna_protoorder::stated_key(&entry)) else {
+            continue;
+        };
+        if !cyclic.contains(&key) {
+            arch.kuna_protoorder_types.insert(key, stated);
+            any_stated = true;
+        }
+    }
+    // The caller's own pipeline already ran `seed_protoorder_types` at the drive
+    // start, so hand the new statements to the live `Funcdata` here: the paused
+    // `ActionActiveParam` resumes and the later type fold reads them.
+    crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, root);
+    if any_stated {
+        // `ActionFuncLink` already ran, before these statements existed.  Re-run
+        // the three seams there that read them, so a forwarded register the
+        // callee states (the passthrough claim, the VFP input link, the variadic
+        // read record) is in place exactly as a drive that knew the statement
+        // before linking would have made it.
+        crate::p4_calls::kuna_passthrough::claim_untouched_registers_late(root);
+        for i in 0..root.num_calls() {
+            crate::kuna_armfloatargs::link_call_inputs(root, i);
+        }
+        crate::p4_calls::kuna_calleereadarg::record_variadic_setups(root);
+    }
+}
+
+/// Decompile one callee far enough to state its recovered parameter types, then
+/// restore the caller's drive state.  The restored state is the per-drive
+/// switches the callee drive rewrites; the statements are handed back explicitly
+/// by the caller.  Everything the Architecture publishes program-wide is already
+/// out of reach here: [`Architecture::kuna_drive_publishes`] is false for this
+/// nested drive, so its flow/pipeline comments never enter the comment database,
+/// and the one-shot staged prototype list was consumed by the outer drive.  A
+/// panic or a declined recovery leaves the table untouched.  The callee sees only
+/// `prior` statements, never one this pass just parked.
+fn recover_one_contract(
+    arch: &mut Architecture,
+    prior: &StatedMap,
+    entry: &Address,
+) -> Option<(Option<Rc<crate::kuna_protoorder::RecoveredTypes>>, Vec<Address>)> {
+    arch.kuna_protoorder_types = prior.clone();
+    let saved_deadline = arch.kuna_fn_deadline;
+    let saved_action = arch.allacts.get_current_name().to_string();
+    let saved_max_instructions = arch.max_instructions;
+    let saved_flowoptions = arch.flowoptions;
+    let staged_names = std::mem::take(&mut arch.kuna_pending_name_recs);
+    let staged_dyn = std::mem::take(&mut arch.kuna_pending_dyn_recs);
+    let staged_model = arch.kuna_pending_proto_model.take();
+    let saved_record_names = arch.kuna_record_names;
+    let saved_prior_names = std::mem::take(&mut arch.kuna_prior_names);
+    let saved_format_sites = std::mem::take(&mut arch.format_override_callpoints);
+    let saved_readonly = arch.readonlypropagate;
+    let name = format!("sub_{:x}", entry.get_offset());
+    CONTRACT_DEPTH.with(|depth| depth.set(depth.get() + 1));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let callee = decompile_func(arch, &name, entry.clone(), 0).ok()?;
+        let calls = (0..callee.num_calls())
+            .filter_map(|i| {
+                let entry = callee.get_call_specs(i).get_entry_address();
+                (!entry.is_invalid()).then(|| entry.clone())
+            })
+            .collect();
+        let _ = crate::p4_calls::kuna_protoorder::park_recovered(
+            arch,
+            entry,
+            &name,
+            &callee,
+            callee.get_func_proto(),
+            crate::p4_calls::kuna_protoorder::ProtoOrderMode::Types,
+        );
+        let stated = crate::p4_calls::kuna_protoorder::stated_key(entry)
+            .and_then(|key| arch.kuna_protoorder_types.get(&key).cloned());
+        Some((stated, calls))
+    }));
+    CONTRACT_DEPTH.with(|depth| depth.set(depth.get() - 1));
+    arch.kuna_fn_deadline = saved_deadline;
+    let _ = arch.allacts.set_current(&saved_action);
+    arch.max_instructions = saved_max_instructions;
+    arch.flowoptions = saved_flowoptions;
+    arch.kuna_pending_name_recs = staged_names;
+    arch.kuna_pending_dyn_recs = staged_dyn;
+    arch.kuna_pending_proto_model = staged_model;
+    arch.kuna_record_names = saved_record_names;
+    arch.kuna_prior_names = saved_prior_names;
+    arch.format_override_callpoints = saved_format_sites;
+    arch.readonlypropagate = saved_readonly;
+    result.ok().flatten()
+}
+
+/// The direct-callee statements whose callee lies on a call cycle with the root
+/// or with another direct callee.
+fn contract_cycles(
+    root_entry: &Address,
+    recovered: &[(Address, Option<Rc<crate::kuna_protoorder::RecoveredTypes>>, Vec<Address>)],
+) -> HashSet<StatedKey> {
+    let mut keys = HashSet::new();
+    if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(root_entry) {
+        keys.insert(key);
+    }
+    for (entry, _, _) in recovered {
+        if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(entry) {
+            keys.insert(key);
+        }
+    }
+    let mut edges: HashMap<StatedKey, Vec<StatedKey>> = HashMap::new();
+    if let Some(root) = crate::p4_calls::kuna_protoorder::stated_key(root_entry) {
+        let out = recovered
+            .iter()
+            .filter_map(|(entry, _, _)| crate::p4_calls::kuna_protoorder::stated_key(entry))
+            .collect();
+        edges.insert(root, out);
+    }
+    for (entry, _, calls) in recovered {
+        let Some(from) = crate::p4_calls::kuna_protoorder::stated_key(entry) else { continue };
+        let out: Vec<StatedKey> = calls
+            .iter()
+            .filter_map(crate::p4_calls::kuna_protoorder::stated_key)
+            .filter(|key| keys.contains(key))
+            .collect();
+        edges.entry(from).or_default().extend(out);
+    }
+    let mut cyclic = HashSet::new();
+    for (entry, _, _) in recovered {
+        let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(entry) else { continue };
+        if reaches(&edges, key, key) {
+            cyclic.insert(key);
+        }
+    }
+    cyclic
+}
+
+fn reaches(edges: &HashMap<StatedKey, Vec<StatedKey>>, start: StatedKey, target: StatedKey) -> bool {
+    let mut stack = edges.get(&start).cloned().unwrap_or_default();
+    let mut seen = HashSet::new();
+    while let Some(next) = stack.pop() {
+        if next == target {
+            return true;
+        }
+        if seen.insert(next) {
+            if let Some(out) = edges.get(&next) {
+                stack.extend(out.iter().copied());
+            }
+        }
+    }
+    false
+}
+
 /// The full decompile drive: like [`decompile_func_with_symbols`] but also
 /// applies a parsed-and-locked input/output prototype (`parse line extern
 /// <decl>`) to the fresh `Funcdata` before the pipeline runs (C++
@@ -1155,6 +1468,7 @@ pub fn decompile_func_full_with_override(
         flow_overrides,
         &[],
         &[],
+        DrivePurpose::Batch,
     )
 }
 
@@ -1174,6 +1488,7 @@ pub fn decompile_func_full_with_override_dyn(
     flow_overrides: &[(Address, kuna_base::types::uint4)],
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    purpose: DrivePurpose,
 ) -> KunaResult<Funcdata> {
     decompile_func_full_with_override_dyn_prefollowed(
         arch,
@@ -1188,6 +1503,7 @@ pub fn decompile_func_full_with_override_dyn(
         proto_overrides,
         mapped_params,
         None,
+        purpose,
     )
 }
 
@@ -1222,8 +1538,9 @@ pub fn decompile_func_full_with_override_dyn_prefollowed(
     proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
     prefollowed: Option<Funcdata>,
+    purpose: DrivePurpose,
 ) -> KunaResult<Funcdata> {
-    decompile_func_full_with_objects(arch, name, funcaddr, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, flow_overrides, proto_overrides, mapped_params, prefollowed, &[])
+    decompile_func_full_with_objects(arch, name, funcaddr, size, mapped_symbols, usepoint_symbols, dynamic_symbols, pending_proto, flow_overrides, proto_overrides, mapped_params, prefollowed, &[], purpose)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1242,6 +1559,44 @@ pub fn decompile_func_full_with_objects(
     mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
     prefollowed: Option<Funcdata>,
     object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
+    purpose: DrivePurpose,
+) -> KunaResult<Funcdata> {
+    let _drive = arch.kuna_drive_scope();
+    decompile_func_full_with_objects_inner(
+        arch,
+        name,
+        funcaddr,
+        size,
+        mapped_symbols,
+        usepoint_symbols,
+        dynamic_symbols,
+        pending_proto,
+        flow_overrides,
+        proto_overrides,
+        mapped_params,
+        prefollowed,
+        object_assertions,
+        purpose,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::mutable_key_type)]
+fn decompile_func_full_with_objects_inner(
+    arch: &mut Architecture,
+    name: &str,
+    funcaddr: Address,
+    size: int4,
+    mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
+    usepoint_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4, Address, bool)],
+    dynamic_symbols: &[crate::database::DynamicSymbolSpec],
+    pending_proto: Option<&crate::fspec::PrototypePieces>,
+    flow_overrides: &[(Address, kuna_base::types::uint4)],
+    proto_overrides: &[(Address, crate::fspec::PrototypePieces)],
+    mapped_params: &[(int4, String, crate::fspec::ParameterPieces)],
+    prefollowed: Option<Funcdata>,
+    object_assertions: &[crate::kuna_stackobjectasserts::ObjectAssertion],
+    purpose: DrivePurpose,
 ) -> KunaResult<Funcdata> {
     crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
     // (kuna decompile-all watchdog) Arm the per-function deadline from the
@@ -1255,12 +1610,17 @@ pub fn decompile_func_full_with_objects(
     //
     // A memory limit (`--max-fn-memory`) arms too: with no wall-clock budget
     // its deadline is a year out, so the same probes run and ask about memory.
-    let memory = crate::kuna_fnmemory::Armed::enter();
+    let outer_deadline = arch.kuna_fn_deadline;
+    let memory = arch.kuna_drive_publishes().then(crate::kuna_fnmemory::Armed::enter);
     let now = std::time::Instant::now();
-    arch.kuna_fn_deadline = match fn_budget(arch) {
+    let requested_deadline = match fn_budget(arch) {
         Some(budget) => Some(now + budget),
-        None if memory.is_armed() => Some(now + MEMORY_ONLY_HORIZON),
+        None if memory.as_ref().is_some_and(|guard| guard.is_armed()) => Some(now + MEMORY_ONLY_HORIZON),
         None => None,
+    };
+    arch.kuna_fn_deadline = match (outer_deadline, requested_deadline) {
+        (Some(outer), Some(requested)) => Some(outer.min(requested)),
+        (outer, requested) => outer.or(requested),
     };
     let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
     // (ghidra-mode, Phase 4) Take the staged name recommendations UP FRONT so
@@ -1419,6 +1779,20 @@ pub fn decompile_func_full_with_objects(
         // writes while the p-code is still as lifted; heritage splits a 128-bit
         // write into the same lanes.
         crate::p4_calls::kuna_zerofillreturn::seed(arch, &mut fd);
+        // (kuna `protoorder` single-function drive) A `kuna decompile` of one
+        // function has no callee-first run behind it, so it may state the
+        // prototypes of the direct callees its own call sites pass preferred-split
+        // storage to.  The FACT is the call's active-input trial storage, which
+        // only exists once heritage and `ActionActiveParam` have run, so the
+        // pipeline pauses there and `run_pipeline` does the recovery.  Batch
+        // surfaces own their schedule and never arm it; inert under `protoorder
+        // off` and on a spec that states no `<prefersplit>`.
+        fd.kuna_set_callee_contract_armed(
+            purpose == DrivePurpose::SingleFunction
+                && CONTRACT_DEPTH.with(|d| d.get()) == 0
+                && arch.protoorder.is_on()
+                && arch.has_split_records(),
+        );
         // (kuna `protoorder types`) The parameter types callees decompiled earlier stated.
         crate::p4_calls::kuna_protoorder::seed_protoorder_types(arch, &mut fd);
         // (kuna `callrettype`) And the return types they stated.
@@ -1490,7 +1864,7 @@ pub fn decompile_func_full_with_objects(
     };
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one.
-    arch.kuna_fn_deadline = None;
+    arch.kuna_fn_deadline = outer_deadline;
     result.and_then(|fd| {
         crate::kuna_stackobjectasserts::validate(&fd).map_err(KunaError::lowlevel)?;
         Ok(fd)
@@ -1526,6 +1900,9 @@ pub fn run_named_pipeline_variant(
             .ok_or_else(|| KunaError::lowlevel(format!("no current {variant} action")))?;
         root.reset(&mut fd);
         let r = root.perform(&mut fd, &mut ctx);
+        if let Some(error) = ctx.error {
+            return Err(error);
+        }
         if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
             return Err(KunaError::lowlevel(error.clone()));
         }

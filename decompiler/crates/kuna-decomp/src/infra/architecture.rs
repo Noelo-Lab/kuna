@@ -704,16 +704,31 @@ pub struct Architecture {
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
     /// `ArchContext` handle.
     pub rust_abi: u8,
-    /// (kuna) Did the loader's source-language detection report rustc for the
-    /// image being decompiled?  A FACT, not an option: written once at `load
-    /// file` from `kuna_analysis::sourcelang::detect_compiler`, and the thing
-    /// `option rustabi auto` tests.  The XML `<binaryimage>` bootstrap never runs
-    /// the analyzer tier, so it stays false there.
-    pub source_is_rust: bool,
-    /// (kuna) Did the loader's source-language detection report Go?  A load-time
-    /// fact like `source_is_rust`: Go's register ABI is not the cspec's, so
-    /// `option reloadarg` stands down on a Go image.
-    pub source_is_go: bool,
+    /// (kuna) The loader's source-language verdict for the image being
+    /// decompiled.  A FACT, not an option: written once at `load file` from
+    /// `kuna_analysis::sourcelang` (the `KUNA_SOURCELANG` override already
+    /// applied), and the thing `option rustabi auto` tests and
+    /// `option reloadarg` stands down on.  The XML `<binaryimage>` bootstrap
+    /// never runs the analyzer tier, so it stays `Unknown` there.
+    pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
+    /// (kuna) The per-run `option sourcelang` override (`None` = auto).  Kept
+    /// apart from the fact so `option sourcelang auto` restores the detected
+    /// verdict and the catalog `current` reports the option, not the image.
+    pub source_lang_forced: Option<crate::kuna_sourcelang::SourceLang>,
+    /// (kuna) `option fatstr` mode (`FatStrMode` as u8): rewrite a read-only
+    /// `(ptr, len)` constant call-argument pair into a bounded string literal.
+    /// Default auto (act when `source_lang` is Rust or Go).
+    pub fat_str: u8,
+    /// (kuna) `option gomorestack` mode (`GoMorestackMode` as u8): fold the Go
+    /// stack-growth entry guard.  Default auto (fold when `source_lang` is Go).
+    pub go_morestack: u8,
+    /// (kuna) `option gobool` mode (`GoBoolMode` as u8): narrow a Go boolean
+    /// return's stale-high concatenation.  Default auto.
+    pub go_bool: u8,
+    /// (kuna) `option gowritebarrier` mode (`GoWriteBarrierMode` as u8): fold
+    /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
+    /// is Go).
+    pub go_write_barrier: u8,
     /// (kuna GH-9203) Decline placing a const COPY in a loop block
     /// (C++ `condexe_block_placement`).
     pub condexe_block_placement: bool,
@@ -1096,6 +1111,10 @@ pub struct Architecture {
     /// `ActionDeadCode` (option `splitstorekeep`, default-on, DIV-153).  See
     /// [`crate::p3_dataflow::kuna_splitstorekeep`].
     pub split_store_keep: bool,
+    /// (kuna) `pairrefine` — refine an integer register pair accessed whole and by
+    /// half at its midpoint (`Heritage::placeMultiequals`, default-on).  See
+    /// [`crate::p3_dataflow::kuna_pairrefine`].
+    pub pair_refine: bool,
     /// (kuna) Push a demanded SUBPIECE through 9..15-byte (and wider
     /// non-power-of-two) PIECE/shift/bitwise trees (option `wideslice`,
     /// default-on).  See [`crate::p3_dataflow::kuna_wideslice`].
@@ -2041,6 +2060,12 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_rexthunk: bool,
+    /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
+    /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
+    pub analysis_goabi: bool,
+    /// (kuna) `option goreg`: name+type the goroutine register as the `g`
+    /// global when the golang cspec is active.  Load-time (env-bridged).
+    pub go_reg: bool,
     /// (kuna) Gate PE import-by-ordinal naming from built-in export tables
     /// (`peordinal`); default **on**. Read through the [`crate::kuna_peordinal`]
     /// **env var** (import names are resolved inside `load file`, upstream of
@@ -2057,6 +2082,9 @@ pub struct Architecture {
     /// install runs inside `load file`, upstream of `option`); this bool exists
     /// only for catalog visibility and the `phase catalog` live `current` field.
     pub analysis_symbolnamerepair: bool,
+    /// (kuna) `option swiftdemangle` (catalog visibility; the live gate is the
+    /// `KUNA_SWIFTDEMANGLE` env bridge read inside `load file`).
+    pub analysis_swiftdemangle: bool,
     /// (kuna) How much of a raw symbol name's byte content is rewritten at the
     /// mint (`symbolnamechars`); default [`NameChars::Safe`]. A name's bytes
     /// otherwise reach emitted C verbatim, where a `*/`, a newline or a `//`
@@ -2146,6 +2174,10 @@ pub struct Architecture {
     /// `load file`, upstream of `option`); this bool exists only for catalog
     /// visibility and the `phase catalog` live `current` field.
     pub analysis_dwarfvariants: bool,
+    /// (kuna) `option variantnames`: name a recovered variant part's
+    /// discriminant VALUES by synthesizing an enum for its tag member.
+    /// Catalog visibility for the `KUNA_VARIANTNAMES` load-time gate.
+    pub analysis_variantnames: bool,
     /// (kuna) Gate the demangled-C++-signature arm (`cppsig`); default
     /// [`CppSigMode::Proven`]. Commits the prototypes read off a MANGLED SYMBOL —
     /// the class type for `this` plus the declared parameter types — which is the
@@ -2456,6 +2488,16 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Go runtime-type harvest (`gotypes`): walk moduledata→typelinks and
+    /// intern named struct shells. Catalog visibility for the `KUNA_GOTYPES`
+    /// loadtime env bridge (`p0_knowledge/kuna_gotypes.rs`).
+    pub analysis_gotypes: bool,
+    /// (kuna) Gate the Go pclntab no-return pass (`gonoreturn`): apply the
+    /// vendored Go no-return list to the pclntab-recovered function list, so a
+    /// stripped Go binary (no symbol table for `noreturn_known`) still gets its
+    /// `runtime.panic*`/`throw`/`goexit` facts. Go-only pass ⇒ structural no-op
+    /// elsewhere; the XML datatest oracle never runs the analyzer tier.
+    pub analysis_gonoreturn: bool,
     /// (kuna) Gate the Mach-O Objective-C metadata recovery pass (`objc`); default
     /// **off**. The kuna analog of Ghidra's `ObjcTypeMetadataAnalyzer`
     /// (name-recovery half): when the binary is a Mach-O, walk the `__objc_*`
@@ -2628,6 +2670,20 @@ pub struct Architecture {
     /// core-type set (with the HOST ids) instead of the defaults.  `None` on
     /// the standalone path.
     coretypes_xml: Option<Vec<u8>>,
+    /// (kuna) The cspec `<prefersplit>` rows (C++ `Architecture::splitrecords`):
+    /// a whole register that the spec prefers to read as two independent pieces.
+    /// Decoded once in [`build_default_proto`](Architecture::build_default_proto)
+    /// and inherited by every per-function handle, where heritage pass 0 hands
+    /// them to the [`PreferSplitManager`](crate::p5_types::prefersplit::PreferSplitManager).
+    split_records: Vec<crate::p5_types::prefersplit::PreferSplitRecord>,
+    /// (kuna) How many decompile drives are active: 0 outside a drive, 1 for the
+    /// drive the caller asked for, and more when a drive runs a recovery drive
+    /// inside itself (the P4 callee-contract bootstrap).  The outermost drive
+    /// owns the Architecture's externally visible output, so only it publishes
+    /// analysis comments; a nested drive's statements are private to the caller
+    /// it is typed for.  Shared with the [`KunaDriveScope`] guard so an unwinding
+    /// drive still leaves it balanced.
+    kuna_drive_depth: std::rc::Rc<std::cell::Cell<u32>>,
     /// Vector registers that have preferred lane sizes (C++
     /// `Architecture::lanerecords`), built by [`decode_register_data`] from the
     /// pspec `<register_data>` `vector_lane_sizes` attributes during
@@ -2677,6 +2733,20 @@ pub struct Architecture {
     /// where `modify_spaces` applies them. `None` until that bootstrap step has
     /// run; an empty list is a valid, complete recipe for most languages.
     decode_truncations: Option<Arc<[(String, u32)]>>,
+}
+
+/// One active decompile drive, from [`Architecture::kuna_drive_scope`].
+///
+/// Dropping it leaves the scope; the depth is shared with the `Architecture`, so
+/// an unwinding drive still balances the count.
+pub(crate) struct KunaDriveScope {
+    depth: std::rc::Rc<std::cell::Cell<u32>>,
+}
+
+impl Drop for KunaDriveScope {
+    fn drop(&mut self) {
+        self.depth.set(self.depth.get().saturating_sub(1));
+    }
 }
 
 impl Architecture {
@@ -2900,8 +2970,12 @@ impl Architecture {
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             call_wide: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
-            source_is_rust: false, // (kuna) a load-time fact; set by the console's `load file`
-            source_is_go: false, // (kuna) a load-time fact; set by the console's `load file`
+            source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
+            source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
+            fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
+            go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
+            go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
+            go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
             model_stack_probe_loop: false,
@@ -2992,6 +3066,7 @@ impl Architecture {
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
             tied_phi_trim: false, // (kuna) option tiedphitrim; reset_defaults sets the shipped default (on)
             split_store_keep: false, // (kuna) option splitstorekeep; reset_defaults sets the shipped default (on)
+            pair_refine: false, // (kuna) option pairrefine; reset_defaults sets the shipped default (on)
             wide_slice_reduce: false, // (kuna) option wideslice; reset_defaults sets the shipped default (on)
             devectorize_reduction: false, // (kuna) option devectorize (opt-in default-off)
             strlen_scan: false, // (kuna) option strlenscan; reset_defaults sets the shipped default
@@ -3134,8 +3209,11 @@ impl Architecture {
             analysis_dynrelocs: false,
             analysis_pdatachained: false,
             analysis_rexthunk: false,
+            analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
+            go_reg: true, // (kuna) option goreg; reset_defaults re-asserts the shipped default (on)
             analysis_peordinal: false,
             analysis_symbolnamerepair: false,
+            analysis_swiftdemangle: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
             analysis_symbolnamebound: None,
             analysis_msvcfpconst: false,
@@ -3147,6 +3225,7 @@ impl Architecture {
             analysis_typedepth: false,
             analysis_dwarfstructs: false,
             analysis_dwarfvariants: false,
+            analysis_variantnames: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             analysis_msvcsig: false,
             msvcsig_import_slots: std::collections::BTreeSet::new(),
@@ -3181,6 +3260,8 @@ impl Architecture {
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
+            analysis_gotypes: false,
+            analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_pdb: true,
             macho_arm64e: false,
@@ -3213,6 +3294,8 @@ impl Architecture {
             cspec_xml: None,
             pspec_xml: None,
             coretypes_xml: None,
+            split_records: Vec::new(),
+            kuna_drive_depth: std::rc::Rc::new(std::cell::Cell::new(0)),
             lanerecords: Vec::new(),
             inst: Vec::new(),
             opbehaviors: Vec::new(),
@@ -3235,6 +3318,12 @@ impl Architecture {
     /// transcription of C++ `Architecture::resetDefaultsInternal`,
     /// `architecture.cc:1420`).  The kuna defaults follow DIV-2/DIV-3
     /// (`docs/divergences.md`).
+    /// (kuna) The effective source language for this image: the per-run
+    /// `option sourcelang` override when one is set, else the detected fact.
+    pub fn source_lang(&self) -> crate::kuna_sourcelang::SourceLang {
+        self.source_lang_forced.unwrap_or(self.source_lang_detected)
+    }
+
     pub fn reset_defaults_internal(&mut self) {
         self.evalcurrentproto = true; // (kuna) DIV-71 default-on: honor the compiler spec's `<eval_current_prototype>` nomination, so an unknown prototype is evaluated with the spec's MERGED model and a `__fastcall`/`__thiscall` function's ECX/EDX arguments are recovered instead of being read as undefined locals. Byte-identical (0/675): only 6 vendored specs nominate a model, and the 3 datatests on an affected language are unchanged. Restore the `<default_proto>`-only evaluation with `option evalcurrentproto off`
         self.trim_recurse_max = 5;
@@ -3299,6 +3388,11 @@ impl Architecture {
         self.call_wide = false;
         self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
+        self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
+        self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
+        self.go_morestack = crate::kuna_gomorestack::GoMorestackMode::Auto.as_u8(); // (kuna) fold the Go entry guard on Go images
+        self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
+        self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
@@ -3377,6 +3471,7 @@ impl Architecture {
         self.hide_shadow = true; // (kuna) default-on: the upstream ActionHideShadow body, which kuna carried as an inert stub. Consolidates two copies of one value into one chain so ActionCopyMarker can hide the repeated assignment (0/675 ablation, stages PARITY OK; 434 of 444 stripped ELFs byte-identical and the other 10 each lose a duplicated assignment); `option hideshadow off` restores the stub's behaviour exactly
         self.tied_phi_trim = true; // (kuna) DIV-182 default-on: Merge::mergeOp trims a loop head's direct read of an aliased location, so the values the loop loads do not print as stores into it (0/675 ablation); `option tiedphitrim off` restores upstream's merge
         self.split_store_keep = true; // (kuna) DIV-153 default-on: Heritage::refineWrite carries the stack_store mark onto its refinement pieces, so an overlapping-range frame store stays a direct write and is not swept by ActionDeadCode (0/675 ablation); `option splitstorekeep off` restores upstream's unmarked pieces
+        self.pair_refine = true; // (kuna) default-on: Heritage::placeMultiequals refines an 8-byte register range accessed whole and as a named 4-byte half at its midpoint, so the two registers of a pair keep separate variables; `option pairrefine off` restores upstream's whole-range heritage
         self.wide_slice_reduce = true; // (kuna) default-on: every rewrite is a bitvector identity on a synthetic 9..15-byte intermediate that no upstream rule can take apart; byte-identical (0/675) on the datatest corpus, and the power-of-two widths ActionLaneDivide owns are refused; `option wideslice off` leaves the wide intermediates to upstream's rules
         self.stack_store_guard = true;
         self.region_structure = true; // (kuna) DIV-12 default-on (region-based Phoenix/SAILR structurer; primary structuring path, falls back to CollapseStructure on irreducible code)
@@ -3558,7 +3653,10 @@ impl Architecture {
         self.analysis_pdatachained = true; // (kuna) DIV-117 GH-403: a chained-UNWIND_INFO .pdata record is an interior chunk, not a function
         self.analysis_peordinal = true; // (kuna) an OLEAUT32/WS2_32/WSOCK32/MSVBVM60 import-by-ordinal is named from the built-in export table
         self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
+        self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
+        self.go_reg = true; // (kuna) option goreg default on: the golang cspec's goroutine register renders as `g`
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
+        self.analysis_swiftdemangle = true; // (kuna) Swift name demangling default-ON (shape-gated: inert off Swift images)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
         self.analysis_msvcfpconst = true; // (kuna) DIV-96 MSVC `__real@` FP-constant recovery default-ON (the mangled name IS the datum)
@@ -3569,6 +3667,7 @@ impl Architecture {
         self.analysis_typedepth = true; // (kuna) DIV: full-depth DWARF type resolution default-ON (the depth budget truncated ordinary C declarations to void; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_dwarfstructs = true; // (kuna) DIV: DWARF aggregate-layout import default-ON (a zero-size aggregate is not conservative -- the ABI classifier acts on it; real-ELF DWARF path only, so every parity gate is byte-identical)
         self.analysis_dwarfvariants = true; // (kuna) DIV-87: DWARF variant-part import default-ON (the compiler states the discriminant; real-ELF DWARF path only, so every parity gate is byte-identical)
+        self.analysis_variantnames = true; // (kuna) discriminant-value naming default-ON (acts only where a variant part was imported, so the parity gates cannot see it)
         self.analysis_cppproto = true; // (kuna) DIV: DWARF C++ prototype arm default-ON (recovers ground truth the name-only walk drops; real-ELF DWARF path only, so every parity gate is byte-identical)
         // (kuna) DIV: demangled C++ signatures default to the PROVEN tier — only
         // the prototypes the mangling entails (ctor/dtor/cv-qualified member/
@@ -3608,6 +3707,8 @@ impl Architecture {
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
+        self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
@@ -3999,6 +4100,7 @@ impl Architecture {
         // of the small (size,mask) records.  ActionLaneDivide reads these to
         // split XMM/ZMM vector lanes.
         ctx.lanerecords = self.lanerecords.clone();
+        ctx.split_records = self.split_records.clone();
         // Share the engine's OpBehavior emulation table with `glb` (the C++
         // `Architecture` owns the `TypeOp`s, so `glb->inst[opc]->getBehavior()`
         // reaches them directly).  The `Rc<dyn OpBehavior>` entries are cheap
@@ -4107,8 +4209,11 @@ impl Architecture {
         // (kuna) carry the Rust return-ABI gate and the detected source language
         // so `kuna_rustabi` reaches both via `glb`.
         ctx.rust_abi = self.rust_abi;
-        ctx.source_is_rust = self.source_is_rust;
-        ctx.source_is_go = self.source_is_go;
+        ctx.source_lang = self.source_lang();
+        ctx.fat_str = self.fat_str;
+        ctx.go_morestack = self.go_morestack;
+        ctx.go_bool = self.go_bool;
+        ctx.go_write_barrier = self.go_write_barrier;
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
         ctx.name_style_ghidra = self.name_style_ghidra;
@@ -4257,6 +4362,7 @@ impl Architecture {
         ctx.int_float_round = self.int_float_round; // intfloatround
         ctx.tied_phi_trim = self.tied_phi_trim; // tiedphitrim
         ctx.split_store_keep = self.split_store_keep; // splitstorekeep
+        ctx.pair_refine = self.pair_refine; // pairrefine
         ctx.wide_slice_reduce = self.wide_slice_reduce; // wideslice
         ctx.devectorize_reduction = self.devectorize_reduction; // devectorize
         ctx.strlen_scan = self.strlen_scan; // strlenscan
@@ -4344,6 +4450,7 @@ impl Architecture {
         // Carry the `nanignore all` flag (C++ `glb->nan_ignore_all`) so
         // `RuleIgnoreNan` reaches it via `glb`.
         ctx.nan_ignore_all = self.nan_ignore_all;
+        ctx.nan_ignore_compare = self.nan_ignore_compare;
         // Share the populated data-type factory so `ActionInferTypes` (run via
         // `glb`) reaches the same interned core types this side cached.
         ctx.types = Some(self.types_rc());
@@ -4840,6 +4947,40 @@ impl Architecture {
     /// pointer inference (a separate stub).  General over any processor's cspec:
     /// the space names are read from the XML and resolved through the engine, with
     /// NO processor-name special-casing.
+    /// (kuna `goreg`) Name and type the golang cspec's goroutine register.
+    ///
+    /// Mirrors `decode_global`'s `<register>` arm — the register's storage
+    /// joins the global scope — then maps a type+name-locked `g` symbol typed
+    /// `runtime.g *` over it (`crate::kuna_goreg`). Gated on the golang cspec
+    /// being the active compiler spec (the `archid` compiler field) and the
+    /// `KUNA_GOREG` load-time bridge; a no-register golang target (x86-32
+    /// reaches `g` through TLS) and every other image are untouched.
+    fn kuna_install_goreg(&mut self) -> KunaResult<()> {
+        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid) else {
+            return Ok(());
+        };
+        if !crate::kuna_goreg::goreg_enabled() {
+            return Ok(());
+        }
+        let scope = match self.symboltab.get_global_scope() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let point = self.get_register_varnode(reg.as_bytes())?;
+        let Some(spc) = point.space.clone() else { return Ok(()) };
+        let first = point.offset;
+        let last = first.wrapping_sub(1).wrapping_add(u64::from(point.size));
+        self.infer_ptr_spaces.push(Rc::clone(&spc));
+        self.symboltab.add_range(scope, Rc::clone(&spc), first, last);
+        let gptr =
+            crate::kuna_goreg::g_pointer_type(self.types(), crate::kuna_goreg::GoLayout::from_env())?;
+        let addr = Address::new(spc, first);
+        let (sid, _eref) =
+            self.symboltab.add_symbol_mapped(scope, "g", gptr, &addr, &Address::new_invalid())?;
+        self.symboltab.set_attribute(sid, crate::kuna_goreg::g_symbol_flags());
+        Ok(())
+    }
+
     fn decode_global(&mut self) -> KunaResult<()> {
         use kuna_base::address::{Range, RangeProperties};
         use kuna_base::marshal::{IdRegistry, XmlDecode};
@@ -5706,6 +5847,10 @@ impl Architecture {
                 // A missing/empty <returnaddress> leaves `default_return_addr` as
                 // `None` (== the C++ `defaultReturnAddr.space == 0`).
                 self.default_return_addr = self.decode_default_return_addr(&root);
+                self.split_records = self.decode_split_records(&root);
+                crate::p5_types::prefersplit::PreferSplitManager::initialize(
+                    &mut self.split_records,
+                );
                 if let Ok(model) = self.decode_default_proto(&root) {
                     let rc = Rc::new(model);
                     self.register_model(Rc::clone(&rc));
@@ -6180,6 +6325,74 @@ impl Architecture {
             }
         }
         None
+    }
+
+    /// Did the compiler spec state any `<prefersplit>` register?  The split-aware
+    /// callee-contract prepass is only needed where heritage replaces a wide
+    /// register with its scalar halves.
+    pub fn has_split_records(&self) -> bool {
+        !self.split_records.is_empty()
+    }
+
+    /// The compiler spec's preferred-split rows, in `PreferSplitRecord` order.
+    pub fn split_records(&self) -> &[crate::p5_types::prefersplit::PreferSplitRecord] {
+        &self.split_records
+    }
+
+    /// Enter a decompile drive.  Every [`decompile_func_full_with_objects`] call
+    /// nests one deeper; the drive that started from 0 is the outermost one.
+    ///
+    /// The returned [`KunaDriveScope`] leaves the scope on drop, so a drive that
+    /// unwinds still keeps the depth balanced.
+    ///
+    /// [`decompile_func_full_with_objects`]: crate::decompile_drive::decompile_func_full_with_objects
+    pub(crate) fn kuna_drive_scope(&self) -> KunaDriveScope {
+        let depth = std::rc::Rc::clone(&self.kuna_drive_depth);
+        depth.set(depth.get() + 1);
+        KunaDriveScope { depth }
+    }
+
+    /// Does the active drive own the Architecture's externally visible output?
+    /// True outside a drive (a standalone flow build keeps its old behaviour)
+    /// and for the outermost drive; false for a nested recovery drive.
+    pub(crate) fn kuna_drive_publishes(&self) -> bool {
+        self.kuna_drive_depth.get() <= 1
+    }
+
+    /// Decode the cspec's `<prefersplit style="...">` block into the
+    /// [`PreferSplitRecord`](crate::p5_types::prefersplit::PreferSplitRecord)
+    /// table heritage pass 0 consumes (C++ `Architecture::parseCompilerConfig`
+    /// `ELEM_PREFERSPLIT` arm).
+    ///
+    /// The style names the number of low bytes of each whole register that form
+    /// the first piece: `inhalf` (half the register), `in1234` (4 bytes) and
+    /// `in12345678` (8 bytes).  An unknown style or a register the language does
+    /// not define states nothing, so the function keeps the whole-register view.
+    fn decode_split_records(
+        &self,
+        root: &Rc<kuna_base::xml::Element>,
+    ) -> Vec<crate::p5_types::prefersplit::PreferSplitRecord> {
+        let Some(split) = find_child(root, "prefersplit") else { return Vec::new() };
+        let style = attr_str(&split, "style").unwrap_or_default();
+        let mut out = Vec::new();
+        for child in split.get_children().iter() {
+            if child.get_name() != "register" {
+                continue;
+            }
+            let Some(name) = attr_str(child, "name") else { continue };
+            let Ok(storage) = self.translate.get_register_varnode(name.as_bytes()) else { continue };
+            let splitoffset = match style.as_str() {
+                "inhalf" => storage.size as int4 / 2,
+                "in1234" => 4,
+                "in12345678" => 8,
+                _ => return Vec::new(),
+            };
+            if splitoffset <= 0 || splitoffset >= storage.size as int4 {
+                continue;
+            }
+            out.push(crate::p5_types::prefersplit::PreferSplitRecord { storage, splitoffset });
+        }
+        out
     }
 
     /// Locate the cspec's `<default_proto><prototype>` and decode it (C++
@@ -7025,6 +7238,11 @@ impl Architecture {
         // `mapped|addrtied|persist`.  Must run before `adjust_caches` (which only
         // resizes per-scope maptables, not the rangetree) — ordering matches C++.
         self.decode_global()?;
+        // (kuna `goreg`) With the golang cspec active, make the goroutine
+        // register a named, typed global (`g: runtime.g *`) — the same
+        // global-scope mechanism as a cspec `<global><register/>`, applied
+        // kuna-side so the vendored spec stays pristine.
+        self.kuna_install_goreg()?;
         self.build_default_proto();
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer

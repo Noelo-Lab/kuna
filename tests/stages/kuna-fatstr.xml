@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Length-carried (ptr, len) string literals (docs/multilang.md W3/W4), ported
+    as kuna `option fatstr` (P5 const-pointer, default AUTO).
+
+    Rust (&str, &[u8]) and Go (string) carry a string's length beside its
+    pointer and never NUL-terminate the bytes, so the classic literal path -
+    which reads the image until a terminator - refuses them, and every string
+    argument renders as a raw rodata address beside a magic length.  The length
+    is right there in the adjacent argument: the rule reads exactly that many
+    bytes and routes them through the existing bounded literal mechanism
+    (Funcdata::get_internal_string -> BUILTIN_STRINGDATA, constseq's), which
+    needs no terminator.  A pair is rewritten only when both arguments are
+    adjacent p-code constants, 2 <= len <= 4096, the pointed-at bytes are
+    READ-ONLY in the image, and they decode as UTF-8 text (or the pointer's
+    type carries a text language facet, the W3 side table).
+
+    The bytes are a hand-assembled x86-64 caller passing a Rust-style &str
+    constant pair, exactly as rustc materializes one:
+
+        100000  lea  0x1ff9(%rip),%rdi   ; ptr = 0x102000 (15 text bytes, no NUL)
+        100007  mov  $0xf,%esi           ; len = 15
+        10000c  call 101000              ; takes_str(ptr, len)
+        100011  xor  %eax,%eax
+        100013  ret
+
+    P0 assertion: `option fatstr off|auto|always`.  `auto` (the default) acts
+    only on an image whose detected source language is Rust or Go; the
+    analyzer tier never runs on this bytechunk bootstrap, so the test forces
+    `always`, exactly as `rustabi` stage tests force their language-blind mode.
+    Pass 1 (option fatstr off): the bug - the argument renders as the raw
+      rodata address (assertion #2) and no literal appears.
+    Pass 2 (option fatstr always): the fix - the bounded literal renders
+      (assertion #1) and the raw address is gone; the call and its length
+      argument appear once per pass (assertions #3, #4).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+488d3df91f0000be0f000000e8ef0f000031c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x102000" readonly="true">
+68656c6c6f206d756c74696c616e67
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="caller"/>
+<symbol space="ram" offset="0x101000" name="takes_str"/>
+</binaryimage>
+<script>
+  <com>option fatstr off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option fatstr always</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FATSTR #1: the bounded literal renders under always and never under off" min="1" max="1">hello multilang</stringmatch>
+<stringmatch name="FATSTR #2: the raw rodata address renders under off and folds under always" min="1" max="1">102000</stringmatch>
+<stringmatch name="FATSTR #3: the call survives both passes" min="2" max="2">takes_str</stringmatch>
+<stringmatch name="FATSTR #4: the length argument is kept in both passes" min="2" max="2">0xf</stringmatch>
+</decompilertest>

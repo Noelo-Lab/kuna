@@ -80,6 +80,8 @@
 //! intermediate `::` scopes are created, not correctness of the base name.
 
 pub mod kuna_cppsig;
+// (kuna) Swift name-only demangling, a bounded parse-or-passthrough subset.
+pub mod kuna_swift;
 mod kuna_msvcsig;
 
 /// `GnuDemangler.GLOBAL_PREFIX` (`GnuDemangler.java:35`).
@@ -137,6 +139,11 @@ fn skip(raw: &str) -> bool {
     if is_gnu2_or_3_pattern(raw) {
         return false;
     }
+    // (kuna) Swift manglings (`$s…`/`_$s…`/`_T0…`) — shapes no other scheme
+    // owns; the per-run gate is applied in the Swift arm itself.
+    if crate::sourcelang::is_swift_mangled(raw) {
+        return false;
+    }
 
     true
 }
@@ -180,6 +187,17 @@ fn is_gnu2_or_3_pattern(raw: &str) -> bool {
 /// A C symbol carries neither marker, so this arm is unreachable for one.
 pub fn demangle_raw(raw: &str) -> Option<String> {
     if skip(raw) {
+        return None;
+    }
+
+    // Swift (kuna, docs/multilang.md): the prefixes exist in no other scheme,
+    // so a Swift-shaped name either demangles here (the bounded name-only
+    // subset — the full-signature form is a later Swift-pack item) or passes
+    // through; it is never fed to the Itanium/Rust/MSVC arms.
+    if crate::sourcelang::is_swift_mangled(raw) {
+        if kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
+            return kuna_swift::demangle_swift_name(raw);
+        }
         return None;
     }
 
@@ -332,6 +350,16 @@ pub fn normalize_rust_name(name: &str) -> String {
 /// signature, but [`strip_bracket_groups`] is applied uniformly for safety.
 pub fn demangle_name(raw: &str) -> Option<String> {
     if skip(raw) {
+        return None;
+    }
+
+    // Swift (kuna): see `demangle_raw` — Swift shapes never reach the other
+    // arms, and the subset is name-only by construction (no signature text to
+    // strip; the label form `f(a:b:)` survives the default `safe` sanitizer).
+    if crate::sourcelang::is_swift_mangled(raw) {
+        if kuna_decomp::kuna_swiftdemangle::swiftdemangle_enabled() {
+            return kuna_swift::demangle_swift_name(raw);
+        }
         return None;
     }
 

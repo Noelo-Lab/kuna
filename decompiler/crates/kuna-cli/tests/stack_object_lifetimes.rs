@@ -1146,7 +1146,14 @@ fn partial_writes_control_flow_and_unknown_memory_effects_match_native() {
         ("indexed_load", "0", 0x3344),
         ("indexed_load", "1", 0x1122),
     ] {
-        native_arguments(function, arguments, expected);
+        // A bounded byte store maps its reach as a byte array; reliable mode
+        // prints word views of it as members unless partialaccess is on.
+        let options: &[(&str, &str)] = if function == "indexed_bytes" {
+            &[("partialaccess", "on")]
+        } else {
+            &[]
+        };
+        native_code(function, arguments, expected, decompile_options(function, true, options));
     }
     common::process::required_output(&mut Command::new(common::fixture("lifetimes_stack_x86_64")));
 }

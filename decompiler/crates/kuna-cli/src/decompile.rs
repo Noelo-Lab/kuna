@@ -1071,7 +1071,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
     if !saw_language && !options.iter().any(|(n, _)| n == "setlanguage") {
-        if let Some(lang) = decompile_all::detected_output_language(&binary) {
+        if let Some(lang) = decompile_all::detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
         }
     }

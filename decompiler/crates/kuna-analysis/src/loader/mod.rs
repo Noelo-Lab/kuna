@@ -82,6 +82,8 @@ pub(crate) mod kuna_peordinal;
 pub mod macho_fat;
 pub mod macho_stubs;
 pub mod mips_markers;
+// (kuna) Go toolchain version off the build-info blob (goreg shell layouts).
+pub mod gobuildinfo;
 pub mod noreturn;
 pub mod pe_iat;
 // (kuna) `armfloatreturn`: does an ARM ELF state the VFP procedure-call standard?

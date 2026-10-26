@@ -114,6 +114,20 @@ parameter accounts for. A copy of those pieces to memory was then dead to
 `ActionDeadCode`, and `use3(&s)` printed as `use3(&v1)` with only `v1.z = s.z`
 stored. kuna splits the join on the first pass that heritages any of its pieces.
 
+**Preferred register splits.** Heritage pass 0 also runs the compiler spec's
+`<prefersplit>` table (`PreferSplitManager`, ported from `prefersplit.cc`): each
+listed whole register is rewritten into two independent pieces, and a free or
+input register read only through one of them becomes that scalar input on the
+next pass. AArch64 states `inhalf` for `q0`..`q30`, so a callee reading only `d0`
+recovers an 8-byte parameter instead of a 16-byte aggregate; the undefined upper
+half never becomes a value. The records are decoded from the cspec once
+(`Architecture::decode_split_records`) and delivered to every function's handle.
+The split pass keeps its record table in place while walking, because each
+candidate is matched against that table.
+When a constant is split above the 64 bits carried by its literal, the upper
+piece is zero; splitting a 128-bit register must neither shift a 64-bit literal
+by 64 nor repeat the lower piece into the upper one.
+
 **Address-range worklists.** The unit of work is an address range, not a
 varnode. Two disjoint-cover maps drive each pass
 (`heritage.rs (LocationMap::add)`): `globaldisjoint` accumulates every range
@@ -160,6 +174,13 @@ MULTIEQUALs; it reads only that leading run (phi ops are always at the head of a
 block and the walk stops at the first op that is not one), so it collects the run
 off the block's intrusive op list rather than materializing every op of every
 successor once per CFG edge per pass.
+
+An invalid entry-input range, including one crossing the end of its address
+space, returns a recoverable error from any of the three input-creation paths
+(ordinary read, same-time INDIRECT, or successor phi). The error propagates
+through recursive renaming and the heritage action to the function driver.
+Analysis stops before later passes can consume partial SSA; batch decompilation
+reports that function as failed and continues with the remaining functions.
 
 **Op properties on a heritage-created op.** The three op-codes heritage installs
 (the phi, the read-size SUBPIECE, the write-size PIECE) take their property flags
@@ -227,6 +248,40 @@ exists too: when a *larger* range arrives over addresses already heritaged at a
 smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
 pass are deleted and the old outputs re-derived as SUBPIECEs of the new full
 range (`heritage.rs (Heritage::remove_revisited_markers)`).
+
+**Register pairs refined at their midpoint** (`option pairrefine`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,
+default **on**). The size test above never refines a range that some access
+covers whole, so a SPARC32 even/odd integer register pair that an `ldd` or `std`
+moves as one 8-byte value is heritaged as an 8-byte range even where its two
+registers also hold unrelated 32-bit values (a loop index in `%l4`, a counter in
+`%l5`). Every 4-byte access is joined to the pair through `PIECE`/`SUBPIECE`,
+the phis are placed on the whole pair, and variable merging fuses the two
+registers into one 64-bit variable updated by `CONCAT44`. With the option on, a
+range is refined at its midpoint only when it is a named 8-byte pair register
+whose halves are named 4-byte registers, at least one whole-pair load writes it,
+it is accessed whole only by memory
+moves (written by a `LOAD` or the `COPY` of a memory varnode a frame load
+becomes, read by a `STORE` or a `COPY` into memory), one of its halves is written
+as a 4-byte value, no access feeds or is produced by a floating-point op, and
+every access that crosses the midpoint covers the whole pair. Only those
+whole-pair moves are cut in two; the 4-byte accesses keep their varnodes, so
+each register is heritaged on its own, and the input-join healing of ordinary
+refinement is not applied. A pair that a call takes or returns whole, or that
+an 8-byte op reads or writes, keeps the whole-range heritage. SPARC32 64-bit
+arithmetic runs on the two registers (`addcc`/`addx`, `subcc`/`subx`), so a
+`long long` that `ldd` loads and that is added half by half is refined like any
+other selected pair; the double-precision rules rebuild the 64-bit value from
+the halves where they can. A pair in a floating-point register file is never
+selected, whatever ops touch it: the file is the run of contiguous, equally
+sized named registers that holds a float-class entry of the function's or the
+default prototype model (ARM `s0`..`s31` and `d0`..`d31` from the `s0`/`d0`
+entries, SPARC `fs`/`fd`, MIPS32 `f0_1`, an x86-64 `XMM0_Qa` lane), so a
+callee-saved ARM `d8` that `vpush` saves and `vpop` restores, with `s16` and
+`s17` written by `vmov.f32` copies, stays whole. Neither is an 8-byte register
+read through a half that is not a register of its own (x86-64 `rax`/`eax`).
+A pair assembled only from half-register writes and stored whole is not
+selected. `option pairrefine off` restores the whole-range heritage.
 
 **Refinement pieces keep the store mark** (`option splitstorekeep`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_splitstorekeep.rs
@@ -1646,6 +1701,17 @@ value. A disjoint guard is replaced by its previous input. Guards for another
 operation are untouched, and a write with no surviving uses can still be
 removed as dead.
 
+Conversion also requires complete effect coverage when the destination is an
+already-heritaged persistent global
+(`kuna_storecopyeffects.rs (can_materialize)`). The contiguous INDIRECTs that name
+this STORE must cover every byte of the write; adjacent ranges can cover a wide
+write together, but a gap or an effect belonging to another operation cannot.
+If global alias guarding exhausted its budget, no such chain may exist.
+`RuleStoreVarnode` then leaves the original STORE intact rather than creating
+an unread COPY that dead-code removal can discard. Newly discovered locations
+and nonpersistent frame storage retain the existing conversion path. This does
+not raise the global guard budget or make an artificial SSA definition live.
+
 **Retyping an op mid-rule.** A rule that rewrites an op in place usually changes
 its op-code, and the op-code is not just a tag: `set_opcode` caches the
 op-code's *property word* (`unary`/`binary`/`booloutput`/`commutative`/`marker`/
@@ -1789,6 +1855,14 @@ sign-extension-invariant mode). The mask's bit-span picks the logical size
 passes `big`, anything else — including a zero mask or a span over 64 bits —
 constructs an invalid engine that traces nothing.
 
+Subvariable mask shifts validate the original unsigned constant before any
+narrowing conversion or byte-to-bit multiplication. A bit shift of 64 or more,
+a SUBPIECE offset of eight bytes or more, or a PIECE high half shifted beyond
+the 64-bit mask precision stops the trace without changing the IR. Trigger
+rules enforce the same limits. Valid shifts through bit 63 and byte seven
+remain eligible; an oversized amount never wraps into a smaller shift in a
+release build.
+
 **When it refuses** (`subflow.rs (SubvariableFlow::set_replacement)`), roughly
 in decision order (the constant-sext check actually sits in the constant arm
 first; the sext size-mismatched-input refusal is bypassed in aggressive mode;
@@ -1911,8 +1985,25 @@ narrowing can differ: `(float)(double)0x1.000001000000001p0L` is `0x1p+0`,
 while `(float)0x1.000001000000001p0L` is `0x1.000002p+0`. A `SubfloatFlow`
 backward trace that reaches a narrowing conversion declines to lower its
 result below the narrowed width, since the lowered conversion would bypass
-that rounding. Widening-then-narrowing round trips still collapse. This is a
-value-correctness repair with no option.
+that rounding. Widening-then-narrowing round trips still collapse under the
+default NaN policy. This is a value-correctness repair with no option.
+
+(kuna) A widening-then-narrowing round trip can also quiet a signaling NaN:
+an x87 `fld`/`fstp` pair or `cvtss2sd; cvtsd2ss` returns `0x7fc00001` for the
+input `0x7f800001`. Kuna keeps that effect only under `option nanignore none`,
+the policy that keeps every NaN behaviour. The shipped `nanignore compare`
+default and `all` drop it as upstream does, since the source most likely held
+a plain copy (`*d = *s` compiles to `fldl; fstpl` on i386) and C does not
+promise signaling-NaN preservation. Under `none`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (can_elide)`
+permits removing the final conversion only when the input is already quiet.
+Floating arithmetic, integer conversion and a conversion to another floating
+format produce quiet values; copies and merges require their sources to be
+quiet. Non-NaN constants also qualify. Unknown loads, inputs and bitwise sign
+operations do not. The provenance walk has a shared 32-node budget; cycles and
+larger ambiguous graphs conservatively retain the conversion. `RuleFloatCast`
+uses this guard before making an identity COPY; `SubfloatFlow::trace_backward`
+uses it before replacing a conversion by a COPY at the reduced precision.
 
 Integer-to-float conversions also retain their rounding width (`option
 intfloatround`, default on;

@@ -47,6 +47,9 @@ mod narrow_args;
 #[path = "narrow_ret.rs"]
 mod narrow_ret;
 
+#[path = "prefersplit_scope.rs"]
+mod prefersplit_scope;
+
 #[path = "arm_frame_retain.rs"]
 mod arm_frame_retain;
 #[path = "arm_frame_pool.rs"]
@@ -606,6 +609,9 @@ mod float_integer_truncation;
 #[path = "intermediate_float_rounding.rs"]
 mod intermediate_float_rounding;
 
+#[path = "pointer_slot_casts.rs"]
+mod pointer_slot_casts;
+
 #[path = "implied_word_casts.rs"]
 mod implied_word_casts;
 
@@ -641,5 +647,7 @@ mod stack_allocations;
 
 #[path = "stack_allocations_isa.rs"]
 mod stack_allocations_isa;
+#[path = "float_nan_quieting.rs"]
+mod float_nan_quieting;
 #[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;

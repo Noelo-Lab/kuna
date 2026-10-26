@@ -242,6 +242,47 @@ kuna_options! { self, p1;
         self.rust_abi = mode.as_u8();
         Ok(msg)
     },
+    "fatstr" => {
+        let (mode, msg) = crate::kuna_fatstr::parse_fatstr_mode(p1).map_err(KunaError::parse)?;
+        self.fat_str = mode.as_u8();
+        Ok(msg)
+    },
+    "gobool" => {
+        let (mode, msg) = crate::kuna_gobool::parse_gobool_mode(p1).map_err(KunaError::parse)?;
+        self.go_bool = mode.as_u8();
+        Ok(msg)
+    },
+    "gomorestack" => {
+        let (mode, msg) = crate::kuna_gomorestack::parse_gomorestack_mode(p1).map_err(KunaError::parse)?;
+        self.go_morestack = mode.as_u8();
+        Ok(msg)
+    },
+    "goreg" => {
+        let val = on_or_off(p1)?;
+        crate::kuna_goreg::set_goreg_env(val);
+        self.go_reg = val;
+        Ok(format!("Goroutine register naming turned {}", if val { "on" } else { "off" }))
+    },
+    "goabi" => {
+        let on = crate::kuna_goabi::parse_goabi(p1).map_err(KunaError::parse)?;
+        crate::kuna_goabi::set_goabi_env(on);
+        self.analysis_goabi = on;
+        Ok(format!("Golang compiler-spec selection turned {}", if on { "auto" } else { "off" }))
+    },
+    "gowritebarrier" => {
+        let (mode, msg) = crate::kuna_gowritebarrier::parse_gowritebarrier_mode(p1).map_err(KunaError::parse)?;
+        self.go_write_barrier = mode.as_u8();
+        Ok(msg)
+    },
+    "sourcelang" => {
+        let forced = crate::kuna_sourcelang::parse_option_value(p1).map_err(KunaError::parse)?;
+        crate::kuna_sourcelang::set_sourcelang_env(forced);
+        self.source_lang_forced = forced;
+        Ok(match forced {
+            Some(lang) => format!("Source language forced to {}", lang.as_str()),
+            None => "Source language follows detection (auto)".to_string(),
+        })
+    },
     "condexeplace" => on_off!(condexe_block_placement, "Conditional-const COPY block placement"),
     "sparcstructret" => on_off!(sparc_struct_return, "SPARC struct-return tail recovery"),
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
@@ -569,6 +610,7 @@ kuna_options! { self, p1;
     "splitstorekeep" => {
         on_off!(split_store_keep, "Refinement-split stack store mark")
     },
+    "pairrefine" => on_off!(pair_refine, "Register-pair midpoint refinement"),
     "wideslice" => on_off!(wide_slice_reduce, "Wide SSA slice reduction"),
     "devectorize" => on_off!(devectorize_reduction, "Vectorized reduction re-roll"),
     "strlenscan" => on_off!(strlen_scan, "inline repnz scasb string length as strlen"),
@@ -1064,6 +1106,12 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "swiftdemangle" => {
+        let val = on_or_off(p1)?;
+        self.analysis_swiftdemangle = val;
+        crate::kuna_swiftdemangle::set_swiftdemangle_env(val);
+        Ok(format!("Swift symbol demangling turned {}", if val { "on" } else { "off" }))
+    },
     "symbolnamechars" => {
         let mode = crate::kuna_symbolnamechars::NameChars::parse(p1).ok_or_else(|| {
             KunaError::lowlevel(format!(
@@ -1121,6 +1169,15 @@ kuna_options! { self, p1;
         crate::kuna_dwarfstructs::set_dwarfstructs_env(val);
         Ok(format!(
             "DWARF aggregate-layout import turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
+    "variantnames" => {
+        let val = on_or_off(p1)?;
+        self.analysis_variantnames = val;
+        crate::kuna_variantnames::set_variantnames_env(val);
+        Ok(format!(
+            "Variant discriminant-value naming turned {}",
             if val { "on" } else { "off" }
         ))
     },
@@ -1198,6 +1255,15 @@ kuna_options! { self, p1;
     },
     "gopclntab" => {
         on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
+    },
+    "gotypes" => {
+        let val = on_or_off(p1)?;
+        self.analysis_gotypes = val;
+        crate::kuna_gotypes::set_gotypes_env(val);
+        Ok(format!("Go runtime-type harvest turned {}", if val { "on" } else { "off" }))
+    },
+    "gonoreturn" => {
+        on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),

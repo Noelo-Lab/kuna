@@ -1,0 +1,43 @@
+{
+ "schema": "re-probe/1",
+ "kind": "cli",
+ "cmd": [
+  "{{KUNA}}",
+  "decompile",
+  "{{BIN}}",
+  "black_box",
+  "--json",
+  "--option",
+  "sourcelang",
+  "c"
+ ],
+ "cwd": "{{WORK}}",
+ "env": {
+  "SLEIGHHOME": "{{SPECS}}"
+ },
+ "stdin": null,
+ "timeout_s": 120,
+ "repeat": 1,
+ "target": {
+  "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/rust_hello_x86_64",
+  "binary_sha256": "3ba5d36933dc09a4163156b4f5bd54adb89f372acfef1981bacca9a84f236739",
+  "binary_size": 2576,
+  "binary_source": "in-repo",
+  "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/rust_hello_x86_64",
+  "selector": "black_box",
+  "selector_kind": "name"
+ },
+ "expect": {
+  "exit_code": {
+   "eq": 0
+  },
+  "stdout_matches": [
+   "\"language\": \"c-language\""
+  ],
+  "stdout_absent": [
+   "rust-language"
+  ]
+ },
+ "notes": "The other direction of the sourcelang override: this rustc fixture detects as Rust (output defaults to rust-language), and `--option sourcelang c` forces the C verdict for the whole run - c-language output, no Rust ABI/no-return handling in the engine.",
+ "probe_id": "p-1b1a63343d09"
+}

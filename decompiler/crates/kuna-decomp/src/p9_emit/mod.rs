@@ -30,6 +30,7 @@ pub mod kuna_paramrefdecl;
 pub mod kuna_addressdecl;
 pub mod kuna_callerstack;
 pub mod kuna_bitcast;
+pub mod kuna_pointerstorecast;
 pub(crate) mod kuna_floatslice;
 pub mod kuna_aggregatecast;
 pub(crate) mod kuna_memberbase;

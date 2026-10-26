@@ -58,6 +58,7 @@ c3
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
+  <com>option variantnames off</com>
   <com>option dwarfvariants off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64</com>

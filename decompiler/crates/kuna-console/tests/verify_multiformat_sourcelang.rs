@@ -128,11 +128,11 @@ fn rust_go_compiler_value_drives_language_passes() {
     // Go appends the pclntab pass; no other compiler carries it.
     let go = pass_ids(Compiler::Go);
     assert_eq!(go.last(), Some(&"gopclntab"), "Go compiler value appends gopclntab");
-    for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Unknown] {
-        assert!(
-            !pass_ids(c).contains(&"gopclntab"),
-            "{c:?} must not carry gopclntab"
-        );
+    assert!(go.contains(&"gonoreturn"), "Go compiler value carries gonoreturn");
+    for c in [Compiler::Gcc, Compiler::Clang, Compiler::Rustc, Compiler::Swift, Compiler::Unknown] {
+        let set = pass_ids(c);
+        assert!(!set.contains(&"gopclntab"), "{c:?} must not carry gopclntab");
+        assert!(!set.contains(&"gonoreturn"), "{c:?} must not carry gonoreturn");
     }
 
     // The no-return pass is present for every compiler (its body widens for

@@ -53,9 +53,6 @@ mod testparamstore;
 #[path = "testtypes.rs"]
 mod testtypes;
 
-#[path = "universalaction_listing.rs"]
-mod universalaction_listing;
-
 #[path = "verify_cspecprotos.rs"]
 mod verify_cspecprotos;
 
@@ -466,9 +463,6 @@ mod verify_w8_s9_printlanguage_cast;
 
 #[path = "verify_w8_s9_stringmanage_pack.rs"]
 mod verify_w8_s9_stringmanage_pack;
-
-#[path = "verify_w8x_allowlist.rs"]
-mod verify_w8x_allowlist;
 
 #[path = "verify_w9x_arch_engine_glue.rs"]
 mod verify_w9x_arch_engine_glue;
