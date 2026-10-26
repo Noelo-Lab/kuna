@@ -342,6 +342,25 @@ non-zero mask (§5.3) admits values above 1. When the incoming type is a union
 markers, where the unresolved union flows on so one phi input cannot lock the
 facet for all of them.
 
+The LOAD/STORE value→pointee edge is guarded for floats: a float value becomes
+the base's pointee only when every `LOAD`/`STORE` through that base uses the same
+width and every dynamic access proves the same element width. A base read at
+several widths is an object with several views; it keeps its storage type and the
+float access prints as its own cast (`*(double *)a0`) instead of re-typing the
+whole object and forcing every other access through a bit-cast. A dynamic access
+whose `PTRADD` scale is the same width is a float array and keeps the promotion;
+an unknown stride refuses it. The evidence is the base's own pointer family, not
+the function's op bank: the audit follows `COPY`, `CAST`, constant `INT_ADD`/
+`PTRSUB` and `PTRADD` forward from the base and peels each address back to prove
+it names the same base, so a function growing unrelated ops cannot change the
+answer and there is no whole-scan budget to hit. A family the walk cannot complete
+refuses the promotion.
+Every dynamic term in a nested address must prove that width; a later matching
+scale cannot erase an unknown or conflicting term, and a scale must fit the
+element-size representation without truncation. An access whose address cannot
+be peeled within the walk's depth bound also refuses promotion, even if another
+access through the same base was proven.
+
 With stackviews enabled, `decompiler/crates/kuna-decomp/src/p5_types/kuna_stackwordtypes.rs`
 separates a generated frame backing from the value stored through another
 pointer. A one-, two-, four-, or eight-byte STORE value uses its resolved scalar
@@ -3540,6 +3559,62 @@ slice assignments. Failure mode: any guard miss declines silently and the
 output is byte-identical to `off` — the destination stack slices the run wrote
 survive as unread declarations, because the local variable map still sees the
 frame carved by the original wide stores.
+
+**Length-carried string literals (kuna, option [`fatstr`](../options.md),
+default auto; `docs/multilang.md` W3/W4).**
+`decompiler/crates/kuna-decomp/src/p5_types/kuna_fatstr.rs (RuleFatStr)`
+covers the fourth shape: the string never reaches a frame at all, because a
+fat-pointer language passes it as a `(ptr, len)` pair. Rust (`&str`, `&[u8]`)
+and Go (`string`) carry the length beside the pointer and never NUL-terminate
+the bytes, so the terminator-scanning literal path declines and every constant
+string argument renders as a raw rodata address beside a magic length. The
+rule reads exactly `len` bytes and reuses the same bounded mechanism the
+sequence rules above produce
+(`Funcdata::get_internal_string` → `BUILTIN_STRINGDATA`), which needs no
+terminator. A CALL argument pair is rewritten only when: both are adjacent
+p-code constants (the shape the two words take after constant propagation);
+`2 <= len <= 4096`; the pointed-at bytes are **read-only** in the image
+(`ArchContext::query_global_properties`, the same literal test
+`msvcstrappend` applies), so the rendered literal is a fact of the binary; and
+the bytes decode as UTF-8 text — no control characters beyond
+newline/tab/CR, at least one alphanumeric — or the pointer's facing type
+carries a text **language facet**. The length argument is kept, because the
+call really does pass it. At `auto` (the default) the rule acts only when the
+image's source language is Rust or Go (the `sourcelang` fact, chapter 01), so
+it is a structural no-op on every other binary; `always` drops the language
+test for no-signal corpora (a stage-test bytechunk); `off` keeps the raw
+pointer. Failure mode mirrors `rodatastring`: any guard miss declines
+silently and the output is byte-identical to `off`.
+
+The **language-facet table** the rule consults is the multilang W3 plane's
+first slice (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs
+(LangFacet)`): a name-keyed side record on the type factory
+(`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(kuna_register_lang_facet, kuna_lang_facet)`) stating what a C-shaped type
+*means* in the source language — `RustStr`, `RustSlice` — exactly the
+`VariantLayout` pattern, and for the same reason: `type_metatype`'s consumers
+match it non-exhaustively, so language meaning rides beside the type, never
+inside the lattice. Facets are registered by type providers (the DWARF
+import and the language packs, in later slices); nothing populates the table
+in this one, so the facet arm of `fatstr`'s evidence test is reachable only
+through an explicit registration today.
+
+The option's second recognizer is analysis-side
+(`decompiler/crates/kuna-analysis/src/analyzers/strings/kuna_strrecords.rs
+(StrRecordPass)`, pass id `fatstrrecords`, registered for a rustc-detected
+image, committed under the same `fatstr` mode gate). rustc packs its
+unterminated literals back to back in `.rodata`, so the NUL-run string scan
+glues adjacent literals into one wrong row — the measured witness read its
+three literals as a single 39-byte string. The static `(ptr, len)` records
+every Rust literal's length lives in (a PIE's `R_*_RELATIVE` slots in
+`.data.rel.ro`, with the length in the unrelocated companion word; absolute
+word pairs on a non-PIE) are re-read as length-BOUNDED string facts — exact
+byte extents, no terminator — and committed AHEAD of the NUL stream, so the
+occupied-address guard retires the glued rows and the data symbol at each
+literal spans exactly the literal. Chapter [01](01-program-prep.md) carries
+the pass's place in the string family; the guards are the engine rule's own
+(read-only backing, `1..=4096`, UTF-8 text, and for the no-relocation direct
+arm the NUL scan's minimum of four bytes).
 
 **Bitfields** (`decompiler/crates/kuna-decomp/src/p5_types/bitfield.rs`).
 Pattern: a struct with sub-byte fields is accessed through shift/mask soup on

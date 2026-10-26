@@ -517,7 +517,7 @@ fn resolve_language(
     let Ok(file) = kuna_analysis::loadimage_object::parse_object(&*bytes) else {
         return Ok(None);
     };
-    Ok(match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
+    Ok(match kuna_analysis::sourcelang::effective_compiler(&file, &bytes) {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
         _ => None,
     })

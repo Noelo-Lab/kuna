@@ -894,6 +894,7 @@ impl<R: Read + 'static, W: Write + 'static> GhidraProcess<R, W> {
                         // The host's EXACT committed parameter storage (empty
                         // for an unlocked signature — kuna recovers those).
                         &host_param_storage,
+                        kuna_decomp::decompile_drive::DrivePurpose::Batch,
                     ) {
                         Ok(mut fd) => {
                             // The printed signature/tokens use the display

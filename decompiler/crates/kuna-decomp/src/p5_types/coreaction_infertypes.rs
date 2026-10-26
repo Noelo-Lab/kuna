@@ -1106,6 +1106,16 @@ fn propagate_load_store(
     // STORE: propagating value (slot 2) to ptr is inslot == 2.
     let to_pointer = if is_load { inslot == -1 } else { inslot == 2 };
     if to_pointer {
+        // (kuna) A float VALUE may become the pointer's pointee only when the
+        // base's whole access map is that one width.  Otherwise the object is a
+        // record/union with several views (a u32 at one offset, a pointer at
+        // another), and promoting it to `double *` changes the element stride
+        // and turns every other access into a bit-cast.
+        if alttype.get_metatype() == type_metatype::TYPE_FLOAT
+            && !float_pointee_admits(data, op, alttype.get_size())
+        {
+            return None;
+        }
         let spc = space_from_const(data, op, 0)?;
         propagate_to_pointer(tlst, alttype, out_size, spc.get_word_size() as int4)
     } else {
@@ -1125,6 +1135,27 @@ fn propagate_load_store(
         // (kuna `structsynth nest`) A record's pointer to itself names its shell.
         Some(crate::kuna_structsynth::resolve_self_pointer(tlst, &value).unwrap_or(value))
     }
+}
+
+/// Does every `LOAD`/`STORE` through this base's constant offsets use exactly
+/// `value_size` bytes?
+///
+/// The object plane is owned by the access map, not by one value's type.  A
+/// base read at several widths is a record (or a union member) and keeps its
+/// storage type; the float access then prints as its own cast
+/// (`*(double *)a0`) instead of re-typing the whole object and forcing every
+/// other access through a bit-cast.  A dynamic access is admitted only when its
+/// `PTRADD` scale proves the element width is `value_size`: that is a float
+/// array, not a mixed-width object.  An unknown stride refuses.
+///
+/// The evidence walk starts at the base, not at the function's op bank, so its
+/// answer does not depend on how many unrelated ops the function holds.
+fn float_pointee_admits(data: &Funcdata, op: OpId, value_size: int4) -> bool {
+    let Some(pointer) = data.obank().get(op).and_then(|o| o.get_in(1)) else { return false };
+    let Some((base, _dynamic, _stride)) = crate::kuna_structsynth::peel_base_stride(data, pointer) else {
+        return false;
+    };
+    crate::kuna_structsynth::every_access_through(data, base, value_size)
 }
 
 /// C++ `TypeOpPiece::propagateType` (typeop.cc:2076).

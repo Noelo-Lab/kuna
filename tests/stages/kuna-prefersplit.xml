@@ -1,0 +1,56 @@
+<decompilertest>
+  <!--
+    AArch64 scalar FP call delivered through a split q register.
+
+    Stage: P3 heritage runs the compiler spec's <prefersplit> rows; P4
+    `protoorder` states a single-function drive's direct-callee types.
+    P0: `option protoorder off` reproduces the untyped caller; the default
+    states the callee prototype and types the split-register argument.
+
+    The `ccw_helper`/`ccw_formatter` pair proves the split register and the
+    single-function bootstrap; `ccw_vector` keeps a real 16-byte vector whole;
+    `ccw_tagged` keeps a bit-inspecting address integer; `ccw_mixed` keeps a
+    mixed-width base a record; `ccw_array` keeps a dynamic double array a double
+    access.  `ccw_phi` selects the split value on two branches, so the call's
+    trial storage is what proves the bootstrap (not dominance); `ccw_ints`
+    touches a `q` register but passes only integers, so it must not trigger it.
+  -->
+  <binaryimage arch="x86:LE:64:default:gcc">
+    <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+    <symbol space="ram" offset="0x100000" name="harness_stub"/>
+  </binaryimage>
+  <script>
+    <com>clear architecture</com>
+    <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prefersplit_a64.o</com>
+    <com>read symbols</com>
+    <com>option protoorder off</com>
+    <com>load function ccw_entry</com><com>decompile</com><com>print C</com>
+    <com>option protoorder cycles</com>
+    <com>load function ccw_entry</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_helper</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_formatter</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_vector</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_tagged</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_mixed</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_array</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_phi</com><com>decompile</com><com>print C</com>
+    <com>load function ccw_ints</com><com>decompile</com><com>print C</com>
+    <com>quit</com>
+  </script>
+  <stringmatch name="split caller stays untyped with protoorder off" min="1" max="1">^void ccw_entry\(unsigned long \*a0,unsigned long a1\)</stringmatch>
+  <stringmatch name="split caller takes the callee type by default" min="1" max="1">^void ccw_entry\(float8 \*a0,unsigned long a1\)</stringmatch>
+  <stringmatch name="the split register delivers a scalar double parameter" min="1" max="1">^void ccw_helper\(float8 a0,uint8 \*a1\)</stringmatch>
+  <stringmatch name="the helper negates the shared double" min="1" max="1">a0 = -a0;</stringmatch>
+  <stringmatch name="the helper forwards the double unchanged" min="1" max="1">ccw_formatter\(a0,a1\);</stringmatch>
+  <stringmatch name="the whole-register object is gone" min="0" max="0">^void ccw_helper\(char a0\[16\]\)</stringmatch>
+  <stringmatch name="a full 16-byte vector parameter is not split" min="1" max="1">^void ccw_vector\(char a0\[16\]</stringmatch>
+  <stringmatch name="a tagged address does not become a float" min="0" max="0">^.*ccw_tagged\((double|float8)</stringmatch>
+  <stringmatch name="a mixed-width base stays a record, not a double pointer" min="1" max="1">^.*ccw_mixed\(struct_[0-9]+ \*a0\)</stringmatch>
+  <stringmatch name="the mixed record keeps its double field" min="1" max="1">a0->field_0x0 != 0\.0</stringmatch>
+  <stringmatch name="the mixed record keeps its short field" min="1" max="1">a0->field_0x16</stringmatch>
+  <stringmatch name="a dynamic double array is a double access" min="1" max="1">\*\((double|float8) \*\)\(a0 \+ a1 \* 8\)</stringmatch>
+  <stringmatch name="a non-dominated split value is typed float8" min="1" max="1">float8 v1; // d0</stringmatch>
+  <stringmatch name="the non-dominated value reaches the split callee" min="1" max="1">ccw_helper\(v1,a0,a2\);</stringmatch>
+  <stringmatch name="a non-dominated split value is not left untyped" min="0" max="0">unsigned long v1; // d0</stringmatch>
+  <stringmatch name="an integer call beside a q touch is unchanged" min="1" max="1">ccw_intshelper\(\*a0,a1 \+ 1\);</stringmatch>
+</decompilertest>

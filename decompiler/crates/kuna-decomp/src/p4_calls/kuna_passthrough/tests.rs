@@ -41,6 +41,30 @@ fn claim(sp: &Rc<AddrSpace>, off: u64, size: int4, args: &[u64], rets: &[u64]) -
 }
 
 #[test]
+fn late_linking_preserves_existing_forwarded_register_claims() {
+    use crate::context::ArchContext;
+    use kuna_base::space::{AddrSpaceManager, ConstantSpace, UniqueSpace};
+
+    let mut manage = AddrSpaceManager::new();
+    manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    manage.insert_space(Rc::new(UniqueSpace::new(2, 0, false))).unwrap();
+    let ram = ram_space();
+    let reg = reg_space();
+    manage.insert_space(Rc::clone(&ram)).unwrap();
+    manage.insert_space(Rc::clone(&reg)).unwrap();
+    let mut arch = ArchContext::new(manage);
+    arch.pass_through = true;
+    let mut data = Funcdata::new("f", "f", Rc::new(arch), Address::new(ram, 0x1000), 0x10000000, 0).unwrap();
+    data.kuna_set_passthrough_claims(vec![claim(&reg, RDI, 8, &[1], &[])]);
+    claim_untouched_registers_late(&mut data);
+    let claims = data.kuna_passthrough_claims();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].arg_owners, vec![op(1)]);
+    claim_untouched_registers_late(&mut data);
+    assert_eq!(data.kuna_passthrough_claims().len(), 1);
+}
+
+#[test]
 fn option_parses_on_and_off_and_rejects_anything_else() {
     assert!(OptionPassThrough.apply("on").unwrap().0);
     assert!(!OptionPassThrough.apply("off").unwrap().0);

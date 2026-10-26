@@ -80,6 +80,7 @@
 //! stub), the method takes them as explicit `&mut` parameters — see its doc.
 
 use kuna_base::address::Address;
+use kuna_base::error::KunaResult;
 use kuna_base::space::{spacetype, AddrSpace};
 use kuna_base::types::{int4, uint4, uintb};
 use std::collections::BTreeMap;
@@ -894,6 +895,9 @@ pub struct Heritage {
     /// as `(space, first byte, last byte)`.
     global_load_ranges: Vec<(Rc<AddrSpace>, u64, u64)>,
     partial_global_loads: Vec<crate::kuna_partialglobalload::Guard>,
+    /// (kuna) C++ `Heritage::splitmanage`: the compiler spec's preferred
+    /// register splits, run once at heritage pass 0.
+    splitmanage: crate::p5_types::prefersplit::PreferSplitManager,
 }
 
 impl Heritage {
@@ -934,6 +938,7 @@ impl Heritage {
             global_loads: None,
             global_load_ranges: Vec::new(),
             partial_global_loads: Vec::new(),
+            splitmanage: Default::default(),
         }
     }
 
@@ -4010,7 +4015,7 @@ impl Heritage {
         fd: &mut crate::funcdata::Funcdata,
         bl: BlockId,
         varstack: &mut VariableStack,
-    ) {
+    ) -> KunaResult<()> {
         use kuna_num::opcodes::OpCode;
         let mut writelist: Vec<crate::context::VarnodeId> = Vec::new();
 
@@ -4039,12 +4044,7 @@ impl Heritage {
                     let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                         Some(top) => top,
                         None => {
-                            let nv = self.new_entry_input(
-                                fd, in_size, &key,
-                            )
-                            .unwrap_or_else(|e| {
-                                panic!("rename_recurse: set_input_varnode (empty stack): {e}")
-                            });
+                            let nv = self.new_entry_input(fd, in_size, &key)?;
                             varstack.entry(key.clone()).or_default().push(nv);
                             nv
                         }
@@ -4071,14 +4071,7 @@ impl Heritage {
                         if from_op == Some(op) {
                             let stacklen = varstack.get(&key).map(|s| s.len()).unwrap_or(0);
                             if stacklen == 1 {
-                                let nv = self.new_entry_input(
-                                    fd, in_size, &key,
-                                )
-                                .unwrap_or_else(|e| {
-                                    panic!(
-                                        "rename_recurse: set_input_varnode (indirect same-time): {e}"
-                                    )
-                                });
+                                let nv = self.new_entry_input(fd, in_size, &key)?;
                                 varstack.entry(key.clone()).or_default().insert(0, nv);
                                 vnnew = nv;
                             } else {
@@ -4145,12 +4138,7 @@ impl Heritage {
                 let vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                     Some(top) => top,
                     None => {
-                        let nv = self.new_entry_input(
-                            fd, in_size, &key,
-                        )
-                        .unwrap_or_else(|e| {
-                            panic!("rename_recurse: set_input_varnode (multi empty stack): {e}")
-                        });
+                        let nv = self.new_entry_input(fd, in_size, &key)?;
                         varstack.entry(key.clone()).or_default().push(nv);
                         nv
                     }
@@ -4166,7 +4154,7 @@ impl Heritage {
         let i = fd.bblocks_ref().block(bl).get_index() as usize;
         let children: Vec<BlockId> = self.domchild[i].clone();
         for child in children {
-            self.rename_recurse(fd, child, varstack);
+            self.rename_recurse(fd, child, varstack)?;
         }
 
         // Pop this block's writes off the stack.
@@ -4176,6 +4164,7 @@ impl Heritage {
                 stack.pop();
             }
         }
+        Ok(())
     }
 
     /// Borrow a block's ops in execution order (C++ `bl->beginOp()..endOp()`),
@@ -4193,13 +4182,14 @@ impl Heritage {
     /// happened.
     // `mutable_key_type`: see the note on [`rename_recurse`](Heritage::rename_recurse).
     #[allow(clippy::mutable_key_type)]
-    pub fn rename(&mut self, fd: &mut crate::funcdata::Funcdata) {
+    pub fn rename(&mut self, fd: &mut crate::funcdata::Funcdata) -> KunaResult<()> {
         let bblocks = fd.bblocks_ref();
         let root = bblocks.root.expect("rename: bblocks root");
         let start = bblocks.block(root).get_block(0);
         let mut varstack: VariableStack = VariableStack::new();
-        self.rename_recurse(fd, start, &mut varstack);
+        self.rename_recurse(fd, start, &mut varstack)?;
         self.disjoint.clear();
+        Ok(())
     }
 
     /// Concatenate a list of Varnodes together at the given location (C++
@@ -5463,7 +5453,7 @@ impl Heritage {
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         deadline: Option<std::time::Instant>,
-    ) {
+    ) -> KunaResult<()> {
         // A function with no basic blocks has no data-flow to heritage.  The C++
         // never reaches `heritage()` in that state (it runs after `followFlow`/
         // `structureReset` built the CFG), and `buildADT` indexes the block list
@@ -5475,7 +5465,7 @@ impl Heritage {
             bblocks.root.map(|r| bblocks.block(r).get_size()).unwrap_or(0)
         };
         if block_count == 0 {
-            return;
+            return Ok(());
         }
         // (kuna `calleeprotostack`) The alias gather is only valid for the
         // data-flow as it stands, so it is dropped at every pass boundary.
@@ -5506,9 +5496,14 @@ impl Heritage {
             self.build_adt(fd);
         }
         self.process_joins(fd);
-        // STUB(W6): PreferSplitManager (pass-0 splitmanage.init/split)
-        // is a no-op for an architecture with no <splitrecords> (the critical
-        // path); it splits SIMD-style registers when present.
+        // C++ heritage.cc:2667 pass-0 `splitmanage.init/split`: rewrite every
+        // whole-register value the compiler spec prefers split into two pieces
+        // (AArch64's q0..q30 -> two 8-byte halves) before SSA is rebuilt.
+        if self.pass == 0 && !fd.get_arch().split_records.is_empty() {
+            let records = fd.get_arch().split_records.clone();
+            self.splitmanage.init(&records);
+            self.splitmanage.split(fd);
+        }
 
         let mut reprocess_stack_count = 0;
         let mut stack_space: Option<Rc<AddrSpace>> = None;
@@ -5523,7 +5518,7 @@ impl Heritage {
             // boundary.  The abandoned pass's partial state is never printed —
             // the drive turns the expiry into a per-function `Err`.
             if self.deadline_passed() {
-                return;
+                return Ok(());
             }
             if !self.infolist[i].is_heritaged() {
                 continue;
@@ -5620,9 +5615,9 @@ impl Heritage {
         }
         self.place_multiequals(fd);
         if self.deadline_passed() {
-            return;
+            return Ok(());
         }
-        self.rename(fd);
+        self.rename(fd)?;
         // (kuna w10-chainb-gap1) reprocessFreeStores: re-derive the STORE guards
         // now that this pass completed, dropping spurious INDIRECTs on STOREs
         // that turned out not to need a guard (only reached when discovery saw
@@ -5652,8 +5647,11 @@ impl Heritage {
         // list takes the early return, so this is inert with the arm off.
         crate::kuna_partialglobalload::apply(fd, std::mem::take(&mut self.partial_global_loads));
         self.handle_new_load_copies(fd);
-        // splitmanage.splitAdditional() on pass 0: STUB(W6) PreferSplitManager.
+        if self.pass == 0 && !fd.get_arch().split_records.is_empty() {
+            self.splitmanage.split_additional(fd);
+        }
         self.pass += 1;
+        Ok(())
     }
 
     /// `bumpDeadcodeDelay` routed through the function's **persistent**
@@ -5999,7 +5997,7 @@ mod tests {
             fd.new_unique_out(8, copy).unwrap();
             fd.op_insert_end(copy, block);
             heritage.domchild = vec![vec![]];
-            heritage.rename(&mut fd);
+            heritage.rename(&mut fd).unwrap();
             assert_eq!(fd.obank().get(copy).unwrap().get_in(0), Some(whole));
             assert_eq!(fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input).count(), 2);
             let old_slots: Vec<_> = fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
@@ -6504,6 +6502,93 @@ mod tests {
     // case: it walks the spaces, builds an empty disjoint cover, places no
     // phis, renames nothing, and advances `pass`.)
 
+    fn overflowing_input_fixture() -> (Funcdata, Address) {
+        let mut manager = build_manager();
+        let ram = manager.get_space_by_name("ram").unwrap().clone();
+        let stack = Rc::new(kuna_base::space::SpacebaseSpace::new(
+            "stack", 3, 4, &ram, 0, true, false,
+        ));
+        manager.insert_space(stack.clone()).unwrap();
+        manager.insert_space(Rc::new(kuna_base::space::IopSpace::new(4))).unwrap();
+        let arch = Rc::new(ArchContext::new(manager));
+        let entry = Address::new(ram, 0x1000);
+        let mut fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
+        let existing = fd.new_varnode(4, &Address::new(stack.clone(), 0), None);
+        fd.set_input_varnode(existing).unwrap();
+        (fd, Address::new(stack, 0xffff_fffa))
+    }
+
+    fn append_overflowing_read(fd: &mut Funcdata, block: BlockId, addr: &Address) {
+        let op = fd.new_op(1, fd.get_address().clone());
+        fd.op_set_opcode_code(op, kuna_num::opcodes::OpCode::CPUI_COPY);
+        let input = fd.new_varnode(10, addr, None);
+        fd.vbank_mut().get_mut(input).unwrap().set_active_heritage();
+        fd.op_set_input(op, input, 0).unwrap();
+        fd.new_unique_out(10, op).unwrap();
+        fd.op_insert_end(op, block);
+    }
+
+    #[test]
+    fn rename_returns_invalid_entry_input_errors_from_all_paths() {
+        use kuna_num::opcodes::OpCode;
+        for path in ["read", "child", "phi", "indirect"] {
+            let (mut fd, addr) = overflowing_input_fixture();
+            let blocks = build_cfg(&mut fd, 2, &[(0, 1)]);
+            let mut h = Heritage::new();
+            h.build_info_list(&fd);
+            h.build_adt(&fd);
+            let mut stack = VariableStack::new();
+            match path {
+                "read" | "child" => {
+                    append_overflowing_read(&mut fd, blocks[usize::from(path == "child")], &addr);
+                }
+                "phi" => {
+                    let op = fd.new_op(1, fd.get_address().clone());
+                    fd.op_set_opcode_code(op, OpCode::CPUI_MULTIEQUAL);
+                    let input = fd.new_varnode(10, &addr, None);
+                    fd.op_set_input(op, input, 0).unwrap();
+                    fd.new_unique_out(10, op).unwrap();
+                    fd.op_insert_begin(op, blocks[1]);
+                }
+                "indirect" => {
+                    append_overflowing_read(&mut fd, blocks[0], &addr);
+                    let effect = fd.bb_ops(blocks[0])[0];
+                    let indirect = fd.new_indirect_op(effect, &addr, 10, 0);
+                    let old = fd.obank().get(indirect).unwrap().get_in(0).unwrap();
+                    let constant = fd.new_constant(10, 0);
+                    fd.op_set_input(indirect, constant, 0).unwrap();
+                    fd.delete_varnode(old).unwrap();
+                    let output = fd.obank().get(indirect).unwrap().get_out().unwrap();
+                    stack.insert(addr.clone(), vec![output]);
+                }
+                _ => unreachable!(),
+            }
+            let error = h.rename_recurse(&mut fd, blocks[0], &mut stack).unwrap_err();
+            assert!(error.to_string().contains("requested input stack[0xfffffffa,0x100000004)"),
+                "{path}: {error}");
+        }
+    }
+
+    #[test]
+    fn heritage_action_returns_error_and_can_process_the_next_function() {
+        use crate::action::ActionContext;
+        let (mut fd, addr) = overflowing_input_fixture();
+        let block = build_cfg(&mut fd, 1, &[])[0];
+        append_overflowing_read(&mut fd, block, &addr);
+        let mut action = crate::coreaction_early::ActionHeritage::boxed("base");
+        let mut ctx = ActionContext::new();
+        assert_eq!(action.perform(&mut fd, &mut ctx), -1);
+        assert!(ctx.error.unwrap().to_string().contains("requested input stack"));
+        assert_eq!(fd.get_heritage_pass(), 0);
+        let mut good = build_fd();
+        build_cfg(&mut good, 1, &[]);
+        action.reset(&mut good);
+        let mut next_ctx = ActionContext::new();
+        assert_eq!(action.perform(&mut good, &mut next_ctx), 0);
+        assert!(next_ctx.error.is_none());
+        assert_eq!(good.get_heritage_pass(), 1);
+    }
+
     #[test]
     fn rename_on_empty_blocks_is_a_noop() {
         let mut fd = build_fd();
@@ -6513,7 +6598,7 @@ mod tests {
         h.build_adt(&fd);
         // No Varnodes to rename; the dom-tree walk visits both blocks and
         // returns without creating or linking anything.
-        h.rename(&mut fd);
+        h.rename(&mut fd).unwrap();
         assert_eq!(fd.vbank().num_varnodes(), 0, "rename created no Varnodes on an empty function");
     }
 
@@ -6538,7 +6623,7 @@ mod tests {
         assert_eq!(h.get_pass(), 0, "fresh heritage starts at pass 0");
         // Empty function: the driver walks the spaces (no free Varnodes),
         // places no phis, renames nothing, and bumps the pass counter.
-        h.heritage(&mut fd, None);
+        h.heritage(&mut fd, None).unwrap();
         assert_eq!(h.get_pass(), 1, "one heritage pass advances `pass` to 1");
         assert_eq!(fd.vbank().num_varnodes(), 0, "empty function: no Varnodes created");
     }
@@ -6622,7 +6707,7 @@ mod tests {
         // Run the full driver.
         let mut h = Heritage::new();
         h.build_info_list(&fd);
-        h.heritage(&mut fd, None);
+        h.heritage(&mut fd, None).unwrap();
 
         // Exactly one MULTIEQUAL, at block 3 (the join).
         let phis: Vec<crate::context::OpId> = fd

@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The Go GC write-barrier diamond (docs/multilang.md W2/W5), ported as kuna
+    `option gowritebarrier` (P2 flow-classification, default AUTO).
+
+    Every pointer store the garbage collector must see compiles to a flag
+    test: when `runtime.writeBarrier` is set, call a `runtime.gcWriteBarrier<N>`
+    thunk (which hands back the GC pointer buffer, R11 on amd64), record the
+    old and new values in that buffer, then rejoin the hot path - and BOTH
+    paths perform the program's own store at the join.  The cold arm is GC
+    bookkeeping, and poison on top of noise: the thunk's buffer register is
+    not a modeled return, so the recording stores read an undefined local.
+
+    Stage model: the shared guarded-cold-call shape
+    (`infra/idiom.rs::match_guarded_cold_call`) - a one-block cold arm holding
+    exactly one call, whose guard rejoins the hot path in one hop - with the
+    callee held to the `gcWriteBarrier` family, cut with the
+    `securitycheck`/`stackguard` primitives (`Funcdata::removeBranch` +
+    `removeUnreachableBlocks`) in the PRE-SSA window, directly after
+    `gomorestack`.
+
+    The bytes are a hand-assembled x86-64 guarded store, exactly the shape the
+    Go compiler emits (polarity included: the cold arm is the fall-through):
+
+        100000  test rdi,rdi            ; the writeBarrier flag test
+        100003  jz   100010             ; barrier off -> straight to the store
+        100005  call 101000             ; runtime.gcWriteBarrier2
+        10000a  mov  [r11],rsi          ; record the value in the GC buffer
+        10000d  nop  dword [rax]
+        100010  mov  [rdi],rsi          ; the program's own store (the join)
+        100013  ret
+
+    P0 assertion: `option gowritebarrier off|auto|always`.  `auto` (the
+    default) acts only on an image whose detected source language is Go; the
+    analyzer tier never runs on this bytechunk bootstrap, so the test forces
+    `always`, exactly as the `gomorestack` and `rustabi` stage tests do.
+    Pass 1 (option gowritebarrier off): the bug - the guard renders as an `if`
+      whose arm calls the thunk and writes the buffer (assertions #1, #2, and
+      the third `= a1;` of #3).
+    Pass 2 (option gowritebarrier always): the fix - the `if`, the call and
+      the buffer write are gone; the program's own store appears once per pass
+      (assertion #4), never deleted and never duplicated.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4885ff740be8f60f00004989330f1f00488937c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="store"/>
+<symbol space="ram" offset="0x101000" name="runtime.gcWriteBarrier2"/>
+</binaryimage>
+<script>
+  <com>option gowritebarrier off</com>
+  <com>lo fu store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gowritebarrier always</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOWRITEBARRIER #1: the thunk call renders under off and folds under always" min="1" max="1">gcWriteBarrier2\(</stringmatch>
+<stringmatch name="GOWRITEBARRIER #2: the flag guard renders under off and folds under always" min="1" max="1">if \(</stringmatch>
+<stringmatch name="GOWRITEBARRIER #3: off carries the buffer write plus both real stores" min="3" max="3">= a1;</stringmatch>
+<stringmatch name="GOWRITEBARRIER #4: the program's own store survives both passes, once each" min="2" max="2">\*a0 = a1;</stringmatch>
+</decompilertest>

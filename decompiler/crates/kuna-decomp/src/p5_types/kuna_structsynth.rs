@@ -557,6 +557,128 @@ fn peel(
     None
 }
 
+/// The pointer root, whether any index is dynamic, and the common known stride.
+/// Every dynamic term must agree; an unknown or conflicting term stays unknown.
+pub(crate) fn peel_base_stride(
+    data: &Funcdata,
+    mut vn: VarnodeId,
+) -> Option<(VarnodeId, bool, Option<int4>)> {
+    let mut indexed = false;
+    let mut stride = None;
+    for _ in 0..MAX_PEEL_DEPTH {
+        let v = data.vbank().get(vn)?;
+        if v.is_input() || v.is_constant() {
+            return Some((vn, indexed, stride));
+        }
+        let op = data.obank().get(v.get_def()?)?;
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => {}
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRSUB => {
+                if !data.vbank().get(op.get_in(1)?)?.is_constant() {
+                    indexed = true;
+                    stride = None;
+                }
+            }
+            OpCode::CPUI_PTRADD => {
+                let index = data.vbank().get(op.get_in(1)?)?;
+                let scale = data.vbank().get(op.get_in(2)?)?;
+                if !index.is_constant() || !scale.is_constant() {
+                    let term = scale.is_constant()
+                        .then(|| int4::try_from(scale.get_offset()).ok())
+                        .flatten().filter(|size| *size > 0);
+                    stride = if !indexed || stride == term { term } else { None };
+                    indexed = true;
+                }
+            }
+            _ => return Some((vn, indexed, stride)),
+        }
+        vn = op.get_in(0)?;
+    }
+    None
+}
+
+/// How many uses of a pointer family the width audit may visit before it
+/// declines.  The walk follows one base's own uses, so the budget is about the
+/// object's access count, not the function's size.
+const MAX_ACCESS_USES: u32 = 256;
+
+/// Does every `LOAD`/`STORE` reached through `base`'s pointer family access
+/// exactly `width` bytes at one element stride, with at least one such access?
+///
+/// This is the forward mirror of [`peel_base_stride`]: follow the same address
+/// ops (`COPY`, `CAST`, `INT_ADD`, `PTRSUB`, `PTRADD`) from the base and peel
+/// each address back to prove it names this base.  Walking the base's own uses
+/// instead of every op in the function keeps the cost proportional to the
+/// object, so the answer cannot change because the surrounding function grew.
+/// `false` when the family cannot be walked completely or no access is seen:
+/// both mean the object's width policy is unproven.
+pub(crate) fn every_access_through(data: &Funcdata, base: VarnodeId, width: int4) -> bool {
+    let mut seen = crate::kuna_fasthash::FxHashSet::default();
+    let mut stack = vec![base];
+    let mut steps = 0u32;
+    let mut any = false;
+    while let Some(vn) = stack.pop() {
+        if !seen.insert(vn) {
+            continue;
+        }
+        let Some(v) = data.vbank().get(vn) else { return false };
+        for use_id in v.descend_iter() {
+            steps += 1;
+            if steps > MAX_ACCESS_USES {
+                return false;
+            }
+            let Some(op) = data.obank().get(use_id) else { continue };
+            if op.is_dead() {
+                continue;
+            }
+            match op.code() {
+                OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
+                    if op.get_in(1) != Some(vn) {
+                        continue;
+                    }
+                    let value = if op.code() == OpCode::CPUI_LOAD { op.get_out() } else { op.get_in(2) };
+                    let Some(access_width) =
+                        value.and_then(|x| data.vbank().get(x)).map(|x| x.get_size())
+                    else {
+                        return false;
+                    };
+                    if access_width != width {
+                        return false;
+                    }
+                    let Some((root, indexed, stride)) =
+                        op.get_in(1).and_then(|addr| peel_base_stride(data, addr))
+                    else {
+                        return false;
+                    };
+                    if root != base {
+                        return false;
+                    }
+                    if indexed && stride != Some(width) {
+                        return false;
+                    }
+                    any = true;
+                }
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_CAST
+                | OpCode::CPUI_INT_ADD
+                | OpCode::CPUI_PTRSUB
+                | OpCode::CPUI_PTRADD => {
+                    // `peel` follows the address operand, which is input 0 for
+                    // every op in this set; a use anywhere else is a value use.
+                    if op.get_in(0) != Some(vn) {
+                        continue;
+                    }
+                    if let Some(out) = op.get_out() {
+                        stack.push(out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    any
+}
+
 /// The signed value of a constant varnode of `size` bytes.
 fn sign_extend(val: uintb, size: int4) -> intb {
     if size <= 0 || size >= 8 {

@@ -204,6 +204,38 @@ impl Action for RestartOnceAction {
     }
 }
 
+/// A leaf action that reports partial completion (`-1`) on its first apply and
+/// completes on the next one.  Drives the group's pause/resume state.
+struct PauseOnceAction {
+    base: ActionBase,
+    paused: Rc<RefCell<bool>>,
+    log: Log,
+}
+
+impl Action for PauseOnceAction {
+    fn base(&self) -> &ActionBase {
+        &self.base
+    }
+    fn base_mut(&mut self) -> &mut ActionBase {
+        &mut self.base
+    }
+    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        self.log.borrow_mut().push("pause".to_string());
+        if !*self.paused.borrow() {
+            *self.paused.borrow_mut() = true;
+            return -1;
+        }
+        0
+    }
+    fn clone_filtered(&self, _g: &ActionGroupList) -> Option<Box<dyn Action>> {
+        Some(Box::new(PauseOnceAction {
+            base: self.base.clone(),
+            paused: self.paused.clone(),
+            log: self.log.clone(),
+        }))
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Worked dummy rule for the module docs (a real, minimal const-fold shape)
 // -----------------------------------------------------------------------------
@@ -346,6 +378,32 @@ fn group_applies_actions_in_sequence() {
     let mut ctx = ActionContext::new();
     assert_eq!(group.apply(&mut fd, &mut ctx), 0);
     assert_eq!(*log.borrow(), vec!["one", "two", "three"]);
+}
+
+#[test]
+fn a_group_returning_partial_completion_is_mid_at_the_paused_child() {
+    // A group entered through `apply` (not `perform`) must record the pause on
+    // itself, so its caller resumes at the child that stopped instead of
+    // replaying the list.  `ActionRestartGroup` is such a caller; the flag is
+    // the framework invariant that makes a partial-completion pause resumable.
+    let mut fd = build_fd();
+    let log: Log = Rc::new(RefCell::new(Vec::new()));
+    let paused = Rc::new(RefCell::new(false));
+    let budget = Rc::new(RefCell::new(0));
+    let mut group = ActionGroup::new(0, "grp");
+    group.add_action(Box::new(PauseOnceAction {
+        base: ActionBase::new(0, "pause", "g"),
+        paused: paused.clone(),
+        log: log.clone(),
+    }));
+    group.add_action(CountdownAction::boxed("g", "after", budget, log.clone()));
+
+    let mut ctx = ActionContext::new();
+    assert_eq!(group.apply(&mut fd, &mut ctx), -1);
+    assert_eq!(group.base.status, statusflags::status_mid);
+    assert_eq!(group.state, 0, "the group stopped at the paused child");
+    assert_eq!(group.apply(&mut fd, &mut ctx), 0);
+    assert_eq!(*log.borrow(), vec!["pause", "pause", "after"]);
 }
 
 #[test]

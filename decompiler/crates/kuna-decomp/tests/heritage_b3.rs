@@ -363,7 +363,7 @@ fn run_to_b3(stem: &str, which: usize) -> Result<(XmlArchitecture, Funcdata), St
     // single op_heritage directly reproduces the C++ "first heritage" boundary.
     let mut fd =
         build_and_follow_flow(arch, &name, entry, 0).map_err(|e| format!("flow: {e}"))?;
-    fd.op_heritage();
+    fd.op_heritage().unwrap();
     Ok((xarch, fd))
 }
 

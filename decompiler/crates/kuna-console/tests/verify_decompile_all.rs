@@ -79,6 +79,7 @@ fn decompile_all_enumerates_and_decompiles_every_function() {
         &[],
         &[],
         &[],
+        kuna_decomp::decompile_drive::DrivePurpose::Batch,
     )
     .expect("main must decompile");
     let code = print_c(prog.arch_mut(), &fd);
@@ -102,6 +103,7 @@ fn decompile_all_enumerates_and_decompiles_every_function() {
     let mapped = prog.dwarf_locals_for(auth_addr.get_offset());
     let fd = decompile_func_full_with_override_dyn(
         prog.arch_mut(), "authenticate", auth_addr, 0, &mapped, &[], &[], None, &[], &[], &[],
+        kuna_decomp::decompile_drive::DrivePurpose::Batch,
     )
     .expect("authenticate must decompile");
     let auth_vars = extract_variables(prog.arch(), &fd);

@@ -3020,6 +3020,10 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // `off` renders exactly what no Win32 prototype at all renders.
         "win32sigs" => arch.analysis_win32sigs,
         "strings" => arch.analysis_strings,
+        // (kuna `fatstr`) The Rust `&str`-record string pass — gated on the SAME
+        // option mode the engine's (ptr,len) literal rule reads, so one option
+        // governs both recognizers; `off` (0) drops the bounded facts here.
+        "fatstrrecords" => arch.fat_str != 0,
         "entry_disc" => arch.analysis_entry_disc,
         // (kuna) `.eh_frame` LSDA landing-pad discovery (GccExceptionAnalyzer) — a
         // standalone stashed pass whose facts (the exception landing pads) are
@@ -3154,6 +3158,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
         "gopclntab" => arch.analysis_gopclntab,
+        "gotypes" => arch.analysis_gotypes,
+        "gonoreturn" => arch.analysis_gonoreturn,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
@@ -4170,6 +4176,18 @@ pub fn bootstrap_from_object_with_isa(
     // machine → SLEIGH language id), unless an explicit target overrides it;
     // buildSpecFile -> buildTranslator -> the Architecture::init tail follow.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
+    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
+    // shells are interned inside the cspec decode during the sleigh build
+    // below, upstream of every per-image fact write, and their layouts drift
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). Carry it
+    // on the loadtime-env tier; a non-Go image clears the variable so a stale
+    // value from an earlier load in this process cannot leak in.
+    match kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes) {
+        Some((maj, min)) => {
+            std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
+        }
+        None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
+    }
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,
@@ -4340,16 +4358,18 @@ pub fn bootstrap_from_object_with_isa(
         sections: loader.section_metadata().to_vec(),
     };
 
-    // (kuna `rustabi`) Record the loader's source-language verdict on the
+    // (kuna `sourcelang`) Record the loader's source-language verdict on the
     // Architecture. Unlike the analyzer facts below this is not a pass output but
-    // a one-bit property of the image, and it has to reach the ENGINE (the
-    // per-function rules in `kuna_rustabi`) rather than the Listing, so it is
-    // written straight onto the arch here at load, upstream of every `option`
-    // command. The XML `<binaryimage>` bootstrap never reaches this line, which is
-    // why `option rustabi auto` is inert on the datatest corpus by construction.
-    let compiler = kuna_analysis::sourcelang::detect_compiler_bytes(&bytes);
-    sleigh.base_mut().unwrap().source_is_rust = compiler.is_rust();
-    sleigh.base_mut().unwrap().source_is_go = compiler.is_golang();
+    // a one-value property of the image, and it has to reach the ENGINE (the
+    // per-function rules in `kuna_rustabi` / `kuna_reloadarg`) rather than the
+    // Listing, so it is written straight onto the arch here at load, upstream of
+    // every `option` command (the `KUNA_SOURCELANG` loadtime override is already
+    // applied by `effective_compiler_bytes`; the later `option sourcelang` arm
+    // layers the per-run force on top). The XML `<binaryimage>` bootstrap never
+    // reaches this line, which is why `option rustabi auto` is inert on the
+    // datatest corpus by construction.
+    let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
+    sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.
@@ -4904,12 +4924,24 @@ fn commit_analysis_output(
     //    byte-identical to the 1-byte markup alone. (kuna `widestrings32`) The
     //    4-byte width (`wchar4[N]`, element count `len / 4`) goes before both on
     //    the same grounds, under its own gate.
+    //    (kuna `fatstr`) The length-BOUNDED facts (`strings::kuna_strrecords`,
+    //    Rust `&str` records) go before every scanned width: a record states the
+    //    literal's exact extent where the NUL scan can only guess a run, and the
+    //    occupied-address guard below then retires the glued row the NUL scan
+    //    produced for the same address (the measured witness: three adjacent
+    //    unterminated literals read back as one 39-byte string). A bounded
+    //    fact's `len` is the exact element count — there is no terminator.
     let wide = if prog.arch().analysis_widestrings { out.wide_strings.as_slice() } else { &[] };
     let wide32 =
         if prog.arch().analysis_widestrings32 { out.wide_strings32.as_slice() } else { &[] };
-    for (fact, char_size) in wide32
+    //    The shared `len / char_size` element count stays exact for both: a
+    //    terminated fact's len includes its NUL slot, a bounded fact's len IS
+    //    the element count (char_size 1, no terminator byte to add).
+    for (fact, char_size) in out
+        .bounded_strings
         .iter()
-        .map(|f| (f, 4u32))
+        .map(|f| (f, 1u32))
+        .chain(wide32.iter().map(|f| (f, 4u32)))
         .chain(wide.iter().map(|f| (f, 2u32)))
         .chain(out.strings.iter().map(|f| (f, 1u32)))
     {

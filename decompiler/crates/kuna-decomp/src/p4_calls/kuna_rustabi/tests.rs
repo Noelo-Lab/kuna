@@ -46,7 +46,11 @@ fn build_fd_lang(mode: RustAbiMode, is_rust: bool) -> Funcdata {
     m.insert_space(Rc::new(JoinSpace::new(3, false))).unwrap();
     let mut ctx = ArchContext::new(m);
     ctx.rust_abi = mode.as_u8();
-    ctx.source_is_rust = is_rust;
+    ctx.source_lang = if is_rust {
+        crate::kuna_sourcelang::SourceLang::Rust
+    } else {
+        crate::kuna_sourcelang::SourceLang::Unknown
+    };
     let glb = Rc::new(ctx);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -307,7 +311,11 @@ fn build_call_fd_gates(mode: RustAbiMode, call_ret_pair: bool, is_rust: bool) ->
     m.set_register_lookup(Rc::new(NamelessRegisters));
     let mut ctx = ArchContext::new(m);
     ctx.rust_abi = mode.as_u8();
-    ctx.source_is_rust = is_rust;
+    ctx.source_lang = if is_rust {
+        crate::kuna_sourcelang::SourceLang::Rust
+    } else {
+        crate::kuna_sourcelang::SourceLang::Unknown
+    };
     // `callretpair` reaches the same arm and ships on, so the rustabi tests hold
     // it off and the callretpair ones turn it on explicitly.
     ctx.call_ret_pair = call_ret_pair;

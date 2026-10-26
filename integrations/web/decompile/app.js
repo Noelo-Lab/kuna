@@ -311,7 +311,10 @@ function persist() {
 // ── startup ────────────────────────────────────────────────────────────────
 
 try {
-  state.kuna = new KunaWorkerClient({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
+  state.kuna = new KunaWorkerClient({
+    wasmUrl: new URL('../kuna_wasm.wasm', import.meta.url).href,
+    specRoot: new URL('../specs', import.meta.url).href,
+  });
   await state.kuna.ready();
   setStatus('Ready. Open a program', 'ok');
   els.pick.removeAttribute('aria-disabled');

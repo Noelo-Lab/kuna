@@ -2578,3 +2578,117 @@ not contribute. Generational operation identity and original receiver storage
 are retained separately from instruction-start flags, which clones can copy.
 The callback changes neither lifted P-code nor flow; it supplies provenance
 before optimization can create indistinguishable same-address reconstructions.
+
+## 2.9 Go stack-growth prologue folding
+
+**(kuna) `option gomorestack off|auto|always`, default auto,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_gomorestack.rs
+(ActionGoMorestack)`.** Every non-leaf function the Go compiler emits opens
+with a stack-growth guard: compare SP against the goroutine's stackguard
+(`0x10(%r14)` under the amd64 register ABI, the TLS-reached `g` before it), on
+failure call `runtime.morestack`/`runtime.morestack_noctxt`, and **loop back to
+the function entry** to re-run the prologue on the grown stack. The check is
+runtime machinery — the function's own semantics are the fall-through path —
+but the back-edge makes the entry a loop head: every live argument register
+joins its incoming value with its after-growth value, so parameter recovery
+sees phi-fed arguments on every non-leaf Go function and the body renders
+wrapped in a loop whose latch calls the runtime. The fold restores
+straight-line entry flow.
+
+**Matching is a shape, not a name.** The matcher is the first shared
+entry-guard-loop shape in `decompiler/crates/kuna-decomp/src/infra/idiom.rs
+(match_entry_guard_loop)` (the language-runtime idiom vocabulary of
+`docs/multilang.md` W2): the cold arm is a basic block whose ONE predecessor
+and ONE successor are the same block — the guard — which itself ends in a
+CBRANCH and sits directly on the inserted empty entry block
+(`FlowInfo::generate_blocks` inserts one whenever the start address has an
+incoming edge, which the loop back-edge guarantees here). Only inside that
+shape is the callee name consulted (`kuna_gomorestack.rs (is_morestack_name)`:
+`runtime.morestack` and its `_noctxt`/`c`/`.abi0` spellings — names only the
+Go runtime package can define, supplied by the pclntab on a stripped binary or
+the symbol table on an unstripped one). A coincidental `runtime.morestack`
+call in straight-line flow therefore cuts nothing, and a name-free guard
+cuts nothing either.
+
+**The edit and the window.** One `remove_branch` on the guard's cold edge plus
+`remove_unreachable_blocks` — the `securitycheck`/`stackguard` primitives —
+performed **pre-SSA** (`get_heritage_pass() == 0`, registered at the top of
+`mainloop` directly after `cleanupcode`, which owns the same window), so the
+entry phi never forms and the guard's compare and stackguard load lose their
+readers and die to the ordinary dead-code fixpoint. Deleting the edge asserts
+what the runtime guarantees: the function body runs on a stack that holds its
+frame.
+
+**The truncated form.** On an unstripped image the discovered no-return
+propagation reaches `runtime.morestack*` through its `newstack` tail, marks it
+diverging, and flow then HALTS at the prologue's call: the back-edge is never
+lifted, no entry block is inserted, and the loop shape above cannot exist —
+which silently kept the guard on every function of such an image while its
+stripped twin folded. The matcher therefore accepts a second, equally tight
+sub-shape (`decompiler/crates/kuna-decomp/src/infra/idiom.rs
+(match_entry_guard_halt)`): the cold arm is a basic block with no out-edges
+whose ONLY call is the matched runtime routine, its one predecessor ends in a
+CBRANCH, and that predecessor is the function start (a block nothing enters —
+without the back-edge there is no inserted entry block). The edit is the same
+guard-edge cut. The no-other-call refusal is what keeps a real panic arm —
+also diverging, also guarded — out of reach: a genuine runtime prologue arm
+contains nothing but the growth call.
+
+**Modes.** `auto` (shipped default) acts only when the image's source language
+is Go — the `sourcelang` fact (chapter 01), so the pass is a structural no-op
+on every non-Go binary and the XML datatest corpus cannot see it; `always`
+drops the language test for corpora with no detection signal (the stage test's
+bytechunk); `off` keeps the guard for auditing a hand-patched stackguard.
+Pinned by `tests/stages/kuna-gomorestack.xml` (four passes: off/always over
+the loop form, then `option noreturn runtime.morestack_noctxt` reproduces the
+truncated form and off/always pin it) and by the kuna-console
+`verify_go_morestack` gate, which builds a real stripped Go binary and proves
+the detection-driven `auto` path end to end.
+Pinned by `tests/stages/kuna-gomorestack.xml` (two-pass, off = the `while` loop
+and the `morestack_noctxt()` call render, always = both gone and the body
+survives) and by the kuna-console `verify_go_morestack` gate, which builds a
+real stripped Go binary and proves the detection-driven `auto` path end to end.
+
+## 2.10 Go write-barrier folding
+
+**(kuna) `option gowritebarrier off|auto|always`, default auto,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_gowritebarrier.rs
+(ActionGoWriteBarrier)`.** Every pointer store the Go garbage collector must
+see compiles to a flag-test diamond: when `runtime.writeBarrier` is set, a
+`runtime.gcWriteBarrier<N>` thunk hands back the GC pointer buffer (R11 on
+amd64) and the cold arm records the old and new values in it; both paths then
+perform the program's own stores at the join. The cold arm is GC bookkeeping,
+and worse than noise in the output: the thunk's buffer register is not a
+modeled return, so the recording stores read an undefined local, and the
+value split can mangle even the real store's address expression.
+
+**The second shared idiom shape.** The matcher is
+`decompiler/crates/kuna-decomp/src/infra/idiom.rs (match_guarded_cold_call)`:
+a one-block cold arm holding exactly one call (`block_has_other_call` refuses
+an arm with a second transfer — that is a real `if` body), whose guard ends in
+a CBRANCH and whose other out-edge closes the diamond in ONE hop. Either
+branch polarity is accepted — Go emits the barrier arm as the fall-through —
+because the cold arm is identified by what it contains, and the callee name
+(`kuna_gowritebarrier.rs (is_write_barrier_name)`: `runtime.gcWriteBarrier`,
+`gcWriteBarrier1`–`8`, their `.abi0` spellings, and the bare assembly thunk
+`gcWriteBarrier`, whose pclntab name carries no package path) is only
+consulted inside the shape. `runtime.wbBufFlush*` is deliberately not
+matched: user code never calls it inline — it is the thunks' own slow path.
+
+**The edit and the window.** One `remove_branch` on the guard's cold edge
+plus `remove_unreachable_blocks`, pre-SSA, registered directly after
+`gomorestack` (the same window, for the same reasons: no INDIRECT effects to
+unpick, no MULTIEQUAL to patch, and the loads feeding only the GC buffer die
+to the ordinary dead-code fixpoint). The program's stores live at the join,
+which both arms reached, so nothing the program performs is deleted — the
+stage test pins the store surviving once per pass, never duplicated, never
+dropped.
+
+**Modes.** `auto` (shipped default) acts only when the image's source
+language is Go (the `sourcelang` fact, chapter 01); `always` drops the
+language test for no-signal corpora (the stage test's bytechunk); `off` keeps
+the barrier for auditing GC behavior. Pinned by
+`tests/stages/kuna-gowritebarrier.xml` (two-pass, hand-assembled diamond in
+the compiler's own polarity) and by the kuna-console `verify_go_writebarrier`
+gate, which builds a real stripped Go binary and proves the detection-driven
+`auto` path end to end.

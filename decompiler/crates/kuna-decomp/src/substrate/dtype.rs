@@ -4272,6 +4272,23 @@ pub trait TypeFactory {
     fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
         Vec::new()
     }
+
+    /// (kuna multilang W3) Record what the named type means in the source
+    /// language — the `VariantLayout` pattern: a name-keyed side record, never
+    /// a new metatype.  Registered by type providers (DWARF import, a language
+    /// pack's synthesized shells); the default container refuses.
+    fn kuna_register_lang_facet(
+        &self,
+        _name: &str,
+        _facet: crate::kuna_langfacet::LangFacet,
+    ) -> KunaResult<()> {
+        Err(KunaError::lowlevel("kuna_register_lang_facet unsupported".to_string()))
+    }
+
+    /// (kuna multilang W3) The language facet recorded for the named type.
+    fn kuna_lang_facet(&self, _name: &str) -> Option<crate::kuna_langfacet::LangFacet> {
+        None
+    }
 }
 
 // =============================================================================
@@ -4919,6 +4936,10 @@ pub struct TypeFactoryImpl {
     /// the interned type name.  Read by nothing in the analysis -- see
     /// [`TypeFactory::kuna_record_variant_layout`].
     variant_layouts: RefCell<BTreeMap<String, Rc<crate::kuna_dwarfvariants::VariantLayout>>>,
+    /// (kuna multilang W3) Language facets, keyed by the type name.  Like
+    /// `variant_layouts`, the records key by name so they survive
+    /// `clear_noncore`.  See [`crate::kuna_langfacet::LangFacet`].
+    lang_facets: RefCell<BTreeMap<String, crate::kuna_langfacet::LangFacet>>,
 }
 
 impl Default for TypeFactoryImpl {
@@ -4956,6 +4977,7 @@ impl TypeFactoryImpl {
             manager: RefCell::new(None),
             remote_types: RefCell::new(None),
             variant_layouts: RefCell::new(BTreeMap::new()),
+            lang_facets: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -7466,6 +7488,17 @@ impl TypeFactory for TypeFactoryImpl {
     }
     fn kuna_variant_layouts(&self) -> Vec<Rc<crate::kuna_dwarfvariants::VariantLayout>> {
         self.variant_layouts.borrow().values().map(Rc::clone).collect()
+    }
+    fn kuna_register_lang_facet(
+        &self,
+        name: &str,
+        facet: crate::kuna_langfacet::LangFacet,
+    ) -> KunaResult<()> {
+        self.lang_facets.borrow_mut().insert(name.to_string(), facet);
+        Ok(())
+    }
+    fn kuna_lang_facet(&self, name: &str) -> Option<crate::kuna_langfacet::LangFacet> {
+        self.lang_facets.borrow().get(name).cloned()
     }
 }
 

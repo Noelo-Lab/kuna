@@ -79,6 +79,20 @@ parameter accounts for. A copy of those pieces to memory was then dead to
 `ActionDeadCode`, and `use3(&s)` printed as `use3(&v1)` with only `v1.z = s.z`
 stored. kuna splits the join on the first pass that heritages any of its pieces.
 
+**Preferred register splits.** Heritage pass 0 also runs the compiler spec's
+`<prefersplit>` table (`PreferSplitManager`, ported from `prefersplit.cc`): each
+listed whole register is rewritten into two independent pieces, and a free or
+input register read only through one of them becomes that scalar input on the
+next pass. AArch64 states `inhalf` for `q0`..`q30`, so a callee reading only `d0`
+recovers an 8-byte parameter instead of a 16-byte aggregate; the undefined upper
+half never becomes a value. The records are decoded from the cspec once
+(`Architecture::decode_split_records`) and delivered to every function's handle.
+The split pass keeps its record table in place while walking, because each
+candidate is matched against that table.
+When a constant is split above the 64 bits carried by its literal, the upper
+piece is zero; splitting a 128-bit register must neither shift a 64-bit literal
+by 64 nor repeat the lower piece into the upper one.
+
 **Address-range worklists.** The unit of work is an address range, not a
 varnode. Two disjoint-cover maps drive each pass
 (`heritage.rs (LocationMap::add)`): `globaldisjoint` accumulates every range
@@ -125,6 +139,13 @@ MULTIEQUALs; it reads only that leading run (phi ops are always at the head of a
 block and the walk stops at the first op that is not one), so it collects the run
 off the block's intrusive op list rather than materializing every op of every
 successor once per CFG edge per pass.
+
+An invalid entry-input range, including one crossing the end of its address
+space, returns a recoverable error from any of the three input-creation paths
+(ordinary read, same-time INDIRECT, or successor phi). The error propagates
+through recursive renaming and the heritage action to the function driver.
+Analysis stops before later passes can consume partial SSA; batch decompilation
+reports that function as failed and continues with the remaining functions.
 
 **Op properties on a heritage-created op.** The three op-codes heritage installs
 (the phi, the read-size SUBPIECE, the write-size PIECE) take their property flags
@@ -1798,6 +1819,14 @@ sign-extension-invariant mode). The mask's bit-span picks the logical size
 (`subflow.rs (SubvariableFlow::new)`): 1/2/3/4 bytes, 8 only when the caller
 passes `big`, anything else — including a zero mask or a span over 64 bits —
 constructs an invalid engine that traces nothing.
+
+Subvariable mask shifts validate the original unsigned constant before any
+narrowing conversion or byte-to-bit multiplication. A bit shift of 64 or more,
+a SUBPIECE offset of eight bytes or more, or a PIECE high half shifted beyond
+the 64-bit mask precision stops the trace without changing the IR. Trigger
+rules enforce the same limits. Valid shifts through bit 63 and byte seven
+remain eligible; an oversized amount never wraps into a smaller shift in a
+release build.
 
 **When it refuses** (`subflow.rs (SubvariableFlow::set_replacement)`), roughly
 in decision order (the constant-sext check actually sits in the constant arm
