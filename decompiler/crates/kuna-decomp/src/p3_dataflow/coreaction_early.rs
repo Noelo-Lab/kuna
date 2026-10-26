@@ -388,7 +388,10 @@ impl Action for ActionHeritage {
         // is why `break action heritage` never fires; see kuna/goldens.py B3).
         // (kuna decompile-all watchdog) thread the per-function deadline into
         // the heritage per-space loop; `None` everywhere but a budgeted drive.
-        data.op_heritage_with_deadline(ctx.deadline);
+        if let Err(error) = data.op_heritage_with_deadline(ctx.deadline) {
+            ctx.error = Some(error);
+            return -1;
+        }
         if data.get_arch().pass_through {
             crate::kuna_entryreads::capture(data);
         }

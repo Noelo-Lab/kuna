@@ -563,6 +563,8 @@ pub trait Action {
 pub struct ActionContext {
     /// Where `issueWarning` / `warningHeader` text lands.
     pub warnings: WarningSink,
+    /// A recoverable pass failure that aborts the current function.
+    pub error: Option<KunaError>,
     /// Whether the restart loop ([`ActionRestartGroup`]) can re-follow flow after
     /// a `data.clear()` (C++ `ActionStart::startProcessing` → `followFlow`).
     ///

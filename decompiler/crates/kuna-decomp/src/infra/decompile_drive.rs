@@ -945,6 +945,9 @@ fn run_jumptable_pipeline(
     let _ = arch.allacts.set_current(&saved);
     match result {
         Ok(r) => {
+            if let Some(error) = ctx.error {
+                return Err(error);
+            }
             if r < 0 {
                 return Err(KunaError::lowlevel("jumptable pipeline hit a breakpoint"));
             }
@@ -1004,6 +1007,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             // into the action loop (`None` = no budget, the parity default).
             ctx.deadline = deadline;
             let r = root.perform(fd, &mut ctx);
+            if let Some(error) = ctx.error {
+                return Err(error);
+            }
             (r, ctx.reflow_requested)
         };
         let (r, reflow_requested) = res;
@@ -1894,6 +1900,9 @@ pub fn run_named_pipeline_variant(
             .ok_or_else(|| KunaError::lowlevel(format!("no current {variant} action")))?;
         root.reset(&mut fd);
         let r = root.perform(&mut fd, &mut ctx);
+        if let Some(error) = ctx.error {
+            return Err(error);
+        }
         if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
             return Err(KunaError::lowlevel(error.clone()));
         }

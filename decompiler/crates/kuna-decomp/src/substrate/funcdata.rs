@@ -2174,7 +2174,7 @@ impl Funcdata {
     /// move-back).  `build_info_list` is idempotent and ensures the per-space
     /// info list exists — the merged-tree substitute for the
     /// `startProcessing` → `heritage.buildInfoList()` call (a W4 seam there).
-    pub fn op_heritage(&mut self) {
+    pub fn op_heritage(&mut self) -> KunaResult<()> {
         self.op_heritage_with_deadline(None)
     }
 
@@ -2184,7 +2184,7 @@ impl Funcdata {
     /// per-address-space loop (`ActionHeritage` passes its
     /// [`ActionContext::deadline`](crate::action::ActionContext); every other
     /// caller passes `None` and is byte-identical to before).
-    pub fn op_heritage_with_deadline(&mut self, deadline: Option<std::time::Instant>) {
+    pub fn op_heritage_with_deadline(&mut self, deadline: Option<std::time::Instant>) -> KunaResult<()> {
         let mut heritage = std::mem::take(&mut self.heritage);
         heritage.build_info_list(self);
         // C++ `Funcdata::startProcessing` runs `localoverride.applyDeadCodeDelay`
@@ -2207,8 +2207,9 @@ impl Funcdata {
                 let _ = heritage.set_dead_code_delay(&spc, delay);
             }
         }
-        heritage.heritage(self, deadline);
+        let result = heritage.heritage(self, deadline);
         self.heritage = heritage;
+        result
     }
 
     /// (kuna `indexaliasguard global`) Is the global storage of `vn` covered by

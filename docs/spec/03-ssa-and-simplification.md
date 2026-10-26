@@ -140,6 +140,13 @@ block and the walk stops at the first op that is not one), so it collects the ru
 off the block's intrusive op list rather than materializing every op of every
 successor once per CFG edge per pass.
 
+An invalid entry-input range, including one crossing the end of its address
+space, returns a recoverable error from any of the three input-creation paths
+(ordinary read, same-time INDIRECT, or successor phi). The error propagates
+through recursive renaming and the heritage action to the function driver.
+Analysis stops before later passes can consume partial SSA; batch decompilation
+reports that function as failed and continues with the remaining functions.
+
 **Op properties on a heritage-created op.** The three op-codes heritage installs
 (the phi, the read-size SUBPIECE, the write-size PIECE) take their property flags
 from the same op-code table every other producer of p-code resolves through
