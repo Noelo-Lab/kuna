@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_335() {
-    assert_eq!(kuna_num_settables(), 335);
-    assert_eq!(SETTABLE_TABLE.len(), 335);
+fn settable_count_is_336() {
+    assert_eq!(kuna_num_settables(), 336);
+    assert_eq!(SETTABLE_TABLE.len(), 336);
 }
 
 #[test]
-fn tier_counts_are_120_core_129_transform_86_analysis() {
+fn tier_counts_are_120_core_129_transform_87_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_120_core_129_transform_86_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (120, 129, 86));
+    assert_eq!((core, transform, analysis), (120, 129, 87));
 }
 
 #[test]
@@ -290,6 +290,9 @@ fn option_values_live_value_present_for_154() {
         // console-side via `kuna_live_value` (auto|off token), so it has no
         // codegen live reader.
         "goabi",
+        // (kuna) The goroutine-register naming — a load-time env bridge
+        // (`KUNA_GOREG`, the goabi seam), read console-side via kuna_live_value.
+        "goreg",
         // (kuna) The Go pclntab no-return pass gate - an analysis-pass gate
         // with no codegen live reader (read console-side via kuna_live_value),
         // same as `gopclntab`. Default-ON (Go-only pass).
@@ -1094,7 +1097,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `variantnames`; its P5 row sits beside `dwarfvariants`.
     // +1 for `goabi`; its P1 row sits beside `sourcelang`.
     // +1 for `gowritebarrier`; its P2 row sits beside `gomorestack`.
-    assert_eq!(json.matches("},\n").count(), 334);
+        // +1 for `goreg`; its P1 row sits beside `goabi`.
+    assert_eq!(json.matches("},\n").count(), 335);
 }
 
 #[test]

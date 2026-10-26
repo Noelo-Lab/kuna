@@ -252,6 +252,12 @@ kuna_options! { self, p1;
         self.go_morestack = mode.as_u8();
         Ok(msg)
     },
+    "goreg" => {
+        let val = on_or_off(p1)?;
+        crate::kuna_goreg::set_goreg_env(val);
+        self.go_reg = val;
+        Ok(format!("Goroutine register naming turned {}", if val { "on" } else { "off" }))
+    },
     "goabi" => {
         let on = crate::kuna_goabi::parse_goabi(p1).map_err(KunaError::parse)?;
         crate::kuna_goabi::set_goabi_env(on);

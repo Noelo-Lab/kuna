@@ -289,6 +289,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "pdatachained" => on_off(conf.analysis_pdatachained),
         "rexthunk" => on_off(conf.analysis_rexthunk),
         // (kuna `goabi`) Two-valued but spelled auto|off, so it reports its token.
+        "goreg" => on_off(conf.go_reg),
         "goabi" => {
             if conf.analysis_goabi {
                 "auto"

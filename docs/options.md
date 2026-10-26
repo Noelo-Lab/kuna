@@ -792,6 +792,9 @@ Three tiers:
 | stripped go binary renders code after a runtime.panicshift or runtime.gopanic call as if the helper returned | [`gonoreturn`](#gonoreturn) |
 | a go panic arm falls through into the next block and the output interleaves panic and normal paths | [`gonoreturn`](#gonoreturn) |
 | a go function keeps its morestack entry loop because the grow arm follows a panic call kuna treats as returning | [`gonoreturn`](#gonoreturn) |
+| go functions declare a local commented r14 or x28 that is read but never assigned | [`goreg`](#goreg) |
+| stackguard reads render as *(long *)(v3 + 0x10) instead of g->stackguard0 | [`goreg`](#goreg) |
+| go runtime internals full of unexplained register arithmetic | [`goreg`](#goreg) |
 | go function parameters missing or void while the body reads rax/rbx locals that are never assigned | [`goabi`](#goabi) |
 | a go function returning two values loses the second and the statements computing it | [`goabi`](#goabi) |
 | go output full of unassigned register-commented locals | [`goabi`](#goabi) |
@@ -2966,6 +2969,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) truncates flow at runtime panic/exit helpers on stripped Go binaries, exactly as unstripped ones already behave; off restores the fall-through reading of every runtime.panic*/throw/goexit call site (auditing, or a hand-patched runtime whose panic helpers really return).
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gonoreturn
 - **Example:** `option gonoreturn off`
+
+### `goreg` -- on | off, default `on`
+
+- **Symptoms:** go functions declare a local commented r14 or x28 that is read but never assigned; stackguard reads render as *(long *)(v3 + 0x10) instead of g->stackguard0; go runtime internals full of unexplained register arithmetic.
+- **What it does:** Name and type the goroutine register when the golang compiler spec is active. Under the Go register ABI the current goroutine lives in a pinned register (R14 on amd64, x28 on arm64 - the values the vendored golang register.info files state), and the runtime reads through it constantly; the cspec lists it as unaffected and no pentry names it, so every access rendered as a phantom local (v3; // r14) fed by unexplained arithmetic. With the option on (default) kuna adds the register's storage to the global scope (the cspec global-register mechanism, applied kuna-side so the vendored spec stays pristine) and maps a type- and name-locked `g` symbol typed `runtime.g *` over it, with runtime.g / runtime.gobuf synthesized as shells carrying exactly the fields whose offsets the go1.22 runtime source states for the register-ABI era (through goid at 0x98; sched is the seven-word gobuf). A stackguard load then renders g->stackguard0, and g->m, g->_defer read like the runtime source; an access past the modeled prefix renders as an offset off g, still anchored. Load-time (the KUNA_GOREG env bridge, the goabi seam): the install runs at architecture build, right after the cspec global decode. Structurally inert off-Go by construction - the gate requires the golang compiler spec, which only goabi composes for a Go-detected image, and a golang target with no pinned register (x86-32 reaches g through TLS) is untouched.
+- **When to flip:** Leave on: Go runtime internals and every function the gomorestack fold declines render goroutine state as named g-> fields instead of phantom register locals. Flip off to audit the raw register arithmetic, or if a custom runtime's g layout disagrees with the modeled go1.22 prefix.
+- **Where / provenance:** P1/environment-binding · kuna · analysis-enablement · kuna-multilang-goreg
+- **Example:** `option goreg off`
 
 ### `goabi` -- auto | off, default `auto`
 

@@ -111,3 +111,7 @@ path = "tests/verify_typedepth.rs"
 [[test]]
 name = "verify_goabi"
 path = "tests/verify_goabi.rs"
+
+[[test]]
+name = "verify_goreg"
+path = "tests/verify_goreg.rs"

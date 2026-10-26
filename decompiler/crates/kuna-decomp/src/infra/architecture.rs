@@ -2058,6 +2058,9 @@ pub struct Architecture {
     /// (kuna `goabi`) Select the vendored golang compiler spec for a Go image
     /// (the catalog-visible mirror of the `KUNA_GOABI` load-time env gate).
     pub analysis_goabi: bool,
+    /// (kuna) `option goreg`: name+type the goroutine register as the `g`
+    /// global when the golang cspec is active.  Load-time (env-bridged).
+    pub go_reg: bool,
     /// (kuna) Gate PE import-by-ordinal naming from built-in export tables
     /// (`peordinal`); default **on**. Read through the [`crate::kuna_peordinal`]
     /// **env var** (import names are resolved inside `load file`, upstream of
@@ -3193,6 +3196,7 @@ impl Architecture {
             analysis_pdatachained: false,
             analysis_rexthunk: false,
             analysis_goabi: false, // (kuna) option goabi; reset_defaults sets the shipped default (auto)
+            go_reg: true, // (kuna) option goreg; reset_defaults re-asserts the shipped default (on)
             analysis_peordinal: false,
             analysis_symbolnamerepair: false,
             analysis_symbolnamechars: crate::kuna_symbolnamechars::NameChars::Off,
@@ -3632,6 +3636,7 @@ impl Architecture {
         self.analysis_peordinal = true; // (kuna) an OLEAUT32/WS2_32/WSOCK32/MSVBVM60 import-by-ordinal is named from the built-in export table
         self.analysis_rexthunk = true; // (kuna) DIV-179: the `FF 25` one byte into a REX-prefixed tail jump through an import slot is not an import thunk
         self.analysis_goabi = true; // (kuna) option goabi default auto: a Go image takes the vendored golang cspec
+        self.go_reg = true; // (kuna) option goreg default on: the golang cspec's goroutine register renders as `g`
         self.analysis_symbolnamerepair = true; // (kuna) DIV: degenerate-symbol-name repair default-ON (it only fires where the load would otherwise fail outright)
         self.analysis_symbolnamechars = crate::kuna_symbolnamechars::NameChars::Safe; // (kuna) DIV-94: symbol-name sanitizing defaults to `safe` -- the structural set only, a measured no-op on every name a real toolchain emits
         self.analysis_symbolnamebound = Some(crate::kuna_symbolnamebound::DEFAULT_SCOPE_DEPTH); // (kuna) DIV-95 GH-338: symbol-name scope bound default 256 (3.2x the deepest :: nesting found in any real binary measured, 79; unbounded, one name turns 600 KB of .strtab into 292 MB)
@@ -4920,6 +4925,39 @@ impl Architecture {
     /// pointer inference (a separate stub).  General over any processor's cspec:
     /// the space names are read from the XML and resolved through the engine, with
     /// NO processor-name special-casing.
+    /// (kuna `goreg`) Name and type the golang cspec's goroutine register.
+    ///
+    /// Mirrors `decode_global`'s `<register>` arm — the register's storage
+    /// joins the global scope — then maps a type+name-locked `g` symbol typed
+    /// `runtime.g *` over it (`crate::kuna_goreg`). Gated on the golang cspec
+    /// being the active compiler spec (the `archid` compiler field) and the
+    /// `KUNA_GOREG` load-time bridge; a no-register golang target (x86-32
+    /// reaches `g` through TLS) and every other image are untouched.
+    fn kuna_install_goreg(&mut self) -> KunaResult<()> {
+        let Some(reg) = crate::kuna_goreg::goroutine_register(&self.archid) else {
+            return Ok(());
+        };
+        if !crate::kuna_goreg::goreg_enabled() {
+            return Ok(());
+        }
+        let scope = match self.symboltab.get_global_scope() {
+            Some(s) => s,
+            None => return Ok(()),
+        };
+        let point = self.get_register_varnode(reg.as_bytes())?;
+        let Some(spc) = point.space.clone() else { return Ok(()) };
+        let first = point.offset;
+        let last = first.wrapping_sub(1).wrapping_add(u64::from(point.size));
+        self.infer_ptr_spaces.push(Rc::clone(&spc));
+        self.symboltab.add_range(scope, Rc::clone(&spc), first, last);
+        let gptr = crate::kuna_goreg::g_pointer_type(self.types())?;
+        let addr = Address::new(spc, first);
+        let (sid, _eref) =
+            self.symboltab.add_symbol_mapped(scope, "g", gptr, &addr, &Address::new_invalid())?;
+        self.symboltab.set_attribute(sid, crate::kuna_goreg::g_symbol_flags());
+        Ok(())
+    }
+
     fn decode_global(&mut self) -> KunaResult<()> {
         use kuna_base::address::{Range, RangeProperties};
         use kuna_base::marshal::{IdRegistry, XmlDecode};
@@ -7177,6 +7215,11 @@ impl Architecture {
         // `mapped|addrtied|persist`.  Must run before `adjust_caches` (which only
         // resizes per-scope maptables, not the rangetree) — ordering matches C++.
         self.decode_global()?;
+        // (kuna `goreg`) With the golang cspec active, make the goroutine
+        // register a named, typed global (`g: runtime.g *`) — the same
+        // global-scope mechanism as a cspec `<global><register/>`, applied
+        // kuna-side so the vendored spec stays pristine.
+        self.kuna_install_goreg()?;
         self.build_default_proto();
         // Share `defaultfp` + the engine address-space manager into the type
         // factory so the C-declaration grammar's nested function-pointer
