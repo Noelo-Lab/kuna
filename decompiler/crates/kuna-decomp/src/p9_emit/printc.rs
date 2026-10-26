@@ -6606,30 +6606,64 @@ impl PrintC {
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let dynamic_read = crate::p3_dataflow::kuna_volatileload::dynamic_read(fd, op);
         if let Some((address, size)) = dynamic_read.filter(|_| display == userop_flags::NO_OPERATOR) {
-            let pointer_size = fd.vbank().get(address).expect("retained read pointer").get_size();
-            let types = arch.types();
-            let value = types.get_base(size, crate::dtype::type_metatype::TYPE_UINT)
-                .expect("retained scalar read type");
-            let value = if self.out_lang == crate::kuna_lang::OutLang::Rust {
-                value
+            use crate::printlanguage::SyntaxHighlight;
+            let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+            let unaligned_scalar = arch.archid.starts_with("x86:")
+                || arch.archid.starts_with("AARCH64:");
+            if size != 1 && unaligned_scalar {
+                // These ISAs permit unaligned ordinary scalar reads. A single
+                // packed scalar keeps their width without adding alignment.
+                // Keep natural scalar alignment on strict/unknown ISAs: an
+                // alignment-one type there can turn one access into byte reads.
+                if rust {
+                    // Evaluate in the caller's namespace before introducing
+                    // the packed type: its constructor must not capture a
+                    // callee or type used by the pointer expression.
+                    static READ16: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(u16); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    static READ32: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(u32); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    static READ64: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(u64); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    self.push_op(match size {
+                        2 => &READ16, 4 => &READ32, 8 => &READ64,
+                        _ => unreachable!("retained scalar read width"),
+                    }, Some(op_key(op)));
+                    self.push_atom(&Atom::syntax("({ let address = (", TagType::Syntax, SyntaxHighlight::no_color));
+                    self.push_vn_ir(fd, arch, address, op);
+                } else {
+                    static C_READ: OpToken =
+                        op_token("", "))->value", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    self.push_op(&C_READ, Some(op_key(op)));
+                    let value = arch.types().get_base(size, crate::dtype::type_metatype::TYPE_UINT)
+                        .expect("retained scalar read type");
+                    let word = type_name_for_decl(&value, self.rt_ctx).0;
+                    self.push_atom(&Atom::syntax(
+                        format!("((volatile struct __attribute__((packed, may_alias)) {{ {word} value; }} *) ("),
+                        TagType::TypeToken, SyntaxHighlight::type_color,
+                    ));
+                    self.push_vn_ir(fd, arch, address, op);
+                }
             } else {
-                types.get_qualified_type(value, crate::kuna_typequal::VOLATILE)
-                    .expect("retained volatile read type")
-            };
-            let pointer = types.get_type_pointer(pointer_size, value, 1)
-                .expect("retained read pointer type");
-            if self.out_lang == crate::kuna_lang::OutLang::Rust {
-                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-                self.push_atom(&Atom::syntax(
-                    "core::ptr::read_volatile", TagType::FuncToken,
-                    crate::printlanguage::SyntaxHighlight::funcname_color,
-                ));
-            } else {
-                self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                let pointer_size = fd.vbank().get(address).expect("retained read pointer").get_size();
+                let types = arch.types();
+                let value = types.get_base(size, crate::dtype::type_metatype::TYPE_UINT)
+                    .expect("retained scalar read type");
+                let value = if rust { value } else {
+                    types.get_qualified_type(value, crate::kuna_typequal::VOLATILE)
+                        .expect("retained volatile read type")
+                };
+                let pointer = types.get_type_pointer(pointer_size, value, 1)
+                    .expect("retained read pointer type");
+                if rust {
+                    self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                    self.push_atom(&Atom::syntax(
+                        "core::ptr::read_volatile", TagType::FuncToken, SyntaxHighlight::funcname_color,
+                    ));
+                } else {
+                    self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                }
+                self.push_cast_open(&pointer, op);
+                self.push_vn_ir(fd, arch, address, op);
+                self.push_cast_close(&pointer);
             }
-            self.push_cast_open(&pointer, op);
-            self.push_vn_ir(fd, arch, address, op);
-            self.push_cast_close(&pointer);
             return;
         }
         // A dynamic read's final input is internal address-space metadata.
@@ -10026,10 +10060,12 @@ impl PrintC {
                 // signed/unsigned integer path below, dropping both the leading
                 // typecast and the force_hex, so the pointer constant printed as `0`.
                 if self.options.null && off == 0 {
-                    // option_NULL set (OFF by kuna default): emit the NULL token.
+                    // A Rust null is a call expression, not an identifier for
+                    // the name sanitizer to rewrite.
+                    let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
                     self.push_atom(&Atom::with_op_vn(
                         self.lang().null_literal.to_string(),
-                        TagType::VarToken,
+                        if rust { TagType::Syntax } else { TagType::VarToken },
                         crate::printlanguage::SyntaxHighlight::var_color,
                         op_key(op),
                         vn_key(vn),

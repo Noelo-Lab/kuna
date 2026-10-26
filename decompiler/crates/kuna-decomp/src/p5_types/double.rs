@@ -5026,25 +5026,9 @@ impl Rule for RuleDoubleLoad {
         if data.is_stack_byte_copy_op(load0) || data.is_stack_byte_copy_op(load1) {
             return 0;
         }
-        for (load, piece) in [(load0, piece0), (load1, piece1)] {
+        for load in [load0, load1] {
             if crate::p3_dataflow::kuna_volatileload::is_volatile(data, load) {
                 return 0;
-            }
-            let original = data.obank().get(load).expect("dload: original load");
-            if original.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load != 0 {
-                let source = original.get_out().expect("dload: original output");
-                // The logical value may discard padding through SUBPIECE.
-                // Retire that projection only when neither it nor its source
-                // has another consumer or an independent liveness obligation.
-                if lone_descend(data, piece) != Some(op)
-                    || original.is_indirect_source()
-                    || data.vbank().get(piece).expect("dload: piece output").is_auto_live()
-                    || (source != piece
-                        && (lone_descend(data, source) != vn_get_def(data, piece)
-                            || data.vbank().get(source).expect("dload: source output").is_auto_live()))
-                {
-                    return 0;
-                }
             }
         }
         let latest = match RuleDoubleLoad::no_write_conflict(data, loadlo, loadhi, spc, None) {
@@ -5084,17 +5068,13 @@ impl Rule for RuleDoubleLoad {
         set_opcode_typed(data, op, OpCode::CPUI_COPY);
         op_set_input(data, op, vnout, 0);
 
-        // These native reads now belong to newload. Remove an exclusive
-        // padding projection first so its source LOAD has no descendants.
-        for (load, piece) in [(load0, piece0), (load1, piece1)] {
-            let original = data.obank().get(load).expect("dload: original load");
-            if original.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load != 0 {
-                if original.get_out() != Some(piece) {
-                    let projection = vn_get_def(data, piece).expect("dload: padding projection");
-                    data.op_destroy(projection);
-                }
-                data.op_destroy(load);
-            }
+        // The replacement represents these reads, but not every original
+        // output is dead yet: return recovery, heritage and other consumers
+        // may still need it. Retire only native-effect provenance and leave
+        // ordinary dead-code removal to own the LOADs and padding projections.
+        for load in [load0, load1] {
+            data.obank_mut().get_mut(load).expect("dload: original load")
+                .clear_additional_flag(crate::op::pcodeop_addlflags::kuna_native_load);
         }
 
         1

@@ -2810,13 +2810,34 @@ accesses, even on processors whose register file is modeled with dynamic
 LOADs; SPARC window rotation is one such case. Processor-space type alone
 does not distinguish that storage from RAM.
 
+Wide-load fusion retires the original reads' native-effect provenance, not
+their independent output liveness. Ordinary dead-code removal still owns the
+old LOADs and any padding projections, including outputs needed by heritage,
+other consumers or return-register recovery. Known volatile loads do not fuse.
+
 The retained effect carries its dynamic address and address-space metadata,
 and type inference still treats that operand as a pointer. C output uses an
 access-local `volatile` scalar dereference; Rust uses `core::ptr::read_volatile`.
+For multi-byte effects on x86 and AArch64, a single packed scalar supplies
+alignment one without splitting the read into byte accesses: their ordinary
+scalar instructions do not prove natural alignment. C uses a packed, may-alias
+scalar field, and Rust reads a packed single-field value. Other processor
+families retain the natural scalar-access alignment contract; applying a packed
+type indiscriminately can split one SPARC access into several device reads.
+The width describes the scalar object, not a universal physical-transaction
+guarantee: Clang's i386 backend can lower a volatile 64-bit scalar to two 32-bit
+reads even with SSE2 enabled, both with and without the packed type.
 Neither changes the formal parameter's qualifiers or requires a fabricated
-helper implementation. The independently authored protected-page round trip in
-`kuna-cli/tests/volatile_loads_cli.rs` checks conditional execution and width
-boundaries, including pointers reloaded from a frame slot.
+helper implementation. The independently authored protected-page round trips
+in `kuna-cli/tests/volatile_loads_cli.rs` check conditional execution, width
+boundaries, pointers reloaded from a frame slot, and valid unaligned addresses;
+the latter also compiles and executes the Rust output and alignment-sanitized C.
+Retaining a pointer-null guard also retains its Rust null-call expression;
+literal expressions do not pass through identifier-name sanitization.
+Rust evaluates a retained read's pointer before entering the packed type's
+nested scope, so the generated type cannot capture a recovered callee name in
+that expression. A round trip calls functions named `NativeRead` and `address`
+and checks that each is still called exactly once.
 
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`

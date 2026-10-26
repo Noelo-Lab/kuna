@@ -543,6 +543,31 @@ fn discarded_pointer_reads_preserve_their_guard_and_access_width() {
             );
             generated.push_str(std::str::from_utf8(&result.stdout).unwrap());
         }
+        if target == "sparc" {
+            let source = dir.path().join("sparc-width.c");
+            let assembly = dir.path().join("sparc-width.s");
+            std::fs::write(&source, format!(r#"
+typedef unsigned char uint1; typedef unsigned short uint2;
+typedef unsigned int uint4; typedef unsigned long long uint8;
+typedef signed char int1; typedef short int2; typedef int int4; typedef long long int8;
+typedef uint1 undefined1; typedef uint2 undefined2;
+typedef uint4 undefined4; typedef uint8 undefined8;
+{generated}
+"#)).unwrap();
+            process::required_output(
+                Command::new("clang")
+                    .args(["--target=sparc-unknown-linux-gnu", "-O2", "-S"])
+                    .arg(&source).arg("-o").arg(&assembly),
+            );
+            let assembly = std::fs::read_to_string(assembly).unwrap();
+            // Only Probe8 reads a byte. A packed multi-byte scalar here would
+            // make Clang split the other native accesses into extra LDUBs.
+            assert_eq!(
+                assembly.lines().filter(|line| line.split_whitespace().next() == Some("ldub")).count(),
+                1,
+                "native SPARC scalar reads were split into byte accesses:\n{assembly}",
+            );
+        }
         let driver = dir.path().join(format!("{target}.c"));
         std::fs::write(
             &driver,
@@ -640,6 +665,253 @@ int main(void) {{
                     .arg(&driver).arg("-o").arg(&executable),
             );
             process::required_output(&mut Command::new(&executable));
+        }
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn retained_scalar_reads_do_not_require_natural_alignment() {
+    use common::process;
+    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "native read verification requires a C compiler");
+    let directory = tempfile::tempdir().unwrap();
+    let mut c = String::new();
+    let mut rust = String::new();
+    let mut declarations = String::new();
+    for (width, hex) in [
+        (8, "85f674028a07c3"), (16, "85f67403668b07c3"),
+        (32, "85f674028b07c3"), (64, "85f67403488b07c3"),
+    ] {
+        let name = format!("Probe{width}");
+        let input = directory.path().join(format!("{name}.bin"));
+        let bytes: Vec<_> = (0..hex.len()).step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i+2], 16).unwrap()).collect();
+        std::fs::write(&input, bytes).unwrap();
+        for language in ["c", "rust"] {
+            let output = process::required_output(
+                Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .arg("decompile").arg(&input)
+                    .args([
+                        "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                        "--target", "x86:LE:64:default:gcc", "--mode", "reliable",
+                        "--assert", &format!("function 0x1000={name}"),
+                        "--assert", &format!("prototype {name} void {name}(void *base,unsigned int active)"),
+                        "--assert-strict", "--language", language,
+                    ]),
+            );
+            let printed = std::str::from_utf8(&output.stdout).unwrap();
+            if language == "c" { c.push_str(printed); } else { rust.push_str(printed); }
+        }
+        declarations.push_str(&format!("void {name}(void *, unsigned);\n"));
+        rust.push_str(&format!(r#"
+#[export_name = "{name}"]
+unsafe extern "C" fn Native{name}(base: *mut (), active: u32) {{
+    {name}(base, active);
+}}
+"#));
+    }
+    let fixture = include_str!("fixtures/native_read_alignment.c");
+    let c_source = directory.path().join("alignment.c");
+    std::fs::write(&c_source, fixture.replace("GENERATED_FUNCTIONS", &c)).unwrap();
+    for compiler in &compilers {
+        for level in ["-O0", "-O2"] {
+            let executable = directory.path().join(format!("{compiler}{level}"));
+            process::required_output(
+                Command::new(compiler)
+                    .args(["-std=c11", "-DC_MAIN", level, "-fsanitize=alignment", "-fsanitize-undefined-trap-on-error"])
+                    .arg(&c_source).arg("-o").arg(&executable),
+            );
+            process::required_output(&mut Command::new(executable));
+        }
+    }
+    let oracle_source = directory.path().join("oracle.c");
+    let oracle = directory.path().join("oracle.o");
+    std::fs::write(&oracle_source, fixture.replace("GENERATED_FUNCTIONS", &declarations)).unwrap();
+    process::required_output(
+        Command::new(compilers[0]).args(["-std=c11", "-O2", "-c"])
+            .arg(&oracle_source).arg("-o").arg(&oracle),
+    );
+    rust.push_str(r#"
+extern "C" { fn run_native_read_alignment() -> i32; }
+fn main() { assert_eq!(unsafe { run_native_read_alignment() }, 0); }
+"#);
+    let rust_source = directory.path().join("alignment.rs");
+    std::fs::write(&rust_source, &rust).unwrap();
+    for level in ["0", "2"] {
+        let executable = directory.path().join(format!("rust-{level}"));
+        process::required_output(
+            Command::new("rustc")
+                .args(["--edition", "2021", "-C", &format!("opt-level={level}"), "-C"])
+                .arg(format!("link-arg={}", oracle.display()))
+                .arg(&rust_source).arg("-o").arg(&executable),
+        );
+        process::required_output(&mut Command::new(executable));
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn a_retained_null_guard_is_a_rust_expression_not_a_sanitized_name() {
+    use common::process;
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("null-guard.bin");
+    // test rdi,rdi; je return; mov eax,[rdi]; ret.
+    std::fs::write(&input, [0x48,0x85,0xff,0x74,0x02,0x8b,0x07,0xc3]).unwrap();
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&input)
+            .args([
+                "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "x86:LE:64:default:gcc", "--mode", "reliable",
+                "--assert", "function 0x1000=probe",
+                "--assert", "prototype probe void probe(void *base)",
+                "--assert-strict", "--language", "rust",
+            ]),
+    );
+    let printed = std::str::from_utf8(&output.stdout).unwrap();
+    let source = directory.path().join("null_guard.rs");
+    std::fs::write(&source, format!(r#"
+{printed}
+fn main() {{
+    let data = [0u64; 4];
+    unsafe {{
+        probe(core::ptr::null_mut());
+        probe((data.as_ptr() as *mut u8).add(1) as _);
+    }}
+}}
+"#)).unwrap();
+    for level in ["0", "2"] {
+        let executable = directory.path().join(format!("null-guard-{level}"));
+        process::required_output(
+            Command::new("rustc").args(["--edition", "2021", "-C"])
+                .arg(format!("opt-level={level}"))
+                .arg(&source).arg("-o").arg(&executable),
+        );
+        process::required_output(&mut Command::new(executable));
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn retained_rust_reads_do_not_capture_names_in_the_address_expression() {
+    use common::process;
+    let compiler = ["gcc", "clang"].into_iter()
+        .find(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .expect("native read verification requires a C compiler");
+    let directory = tempfile::tempdir().unwrap();
+    let original = directory.path().join("callee.c");
+    let binary = directory.path().join("callee.so");
+    std::fs::write(&original, r#"
+static unsigned int word;
+__attribute__((noinline)) void *NativeRead(void) { return &word; }
+__attribute__((noinline)) void *address(void) { return &word; }
+void probe(void) {
+    (void)*(volatile unsigned int *)NativeRead();
+    (void)*(volatile unsigned int *)address();
+}
+"#).unwrap();
+    process::required_output(
+        Command::new(compiler).args(["-O2", "-shared", "-fPIC"])
+            .arg(&original).arg("-o").arg(&binary),
+    );
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&binary).arg("probe")
+            .args([
+                "--mode", "reliable", "--language", "rust", "--assert-strict",
+                "--assert", "prototype probe void probe(void)",
+                "--assert", "prototype NativeRead void *NativeRead(void)",
+                "--assert", "prototype address void *address(void)",
+            ]),
+    );
+    let printed = std::str::from_utf8(&output.stdout).unwrap();
+    let source = directory.path().join("callee.rs");
+    std::fs::write(&source, format!(r#"
+#![allow(non_snake_case)]
+{printed}
+use std::sync::atomic::{{AtomicUsize, Ordering}};
+static CALLS: AtomicUsize = AtomicUsize::new(0);
+static WORD: u32 = 0;
+unsafe fn NativeRead() -> *mut () {{
+    CALLS.fetch_add(1, Ordering::Relaxed);
+    &WORD as *const u32 as *mut ()
+}}
+unsafe fn address() -> *mut () {{
+    CALLS.fetch_add(1, Ordering::Relaxed);
+    &WORD as *const u32 as *mut ()
+}}
+fn main() {{
+    unsafe {{ probe(); }}
+    assert_eq!(CALLS.load(Ordering::Relaxed), 2);
+}}
+"#)).unwrap();
+    for level in ["0", "2"] {
+        let executable = directory.path().join(format!("callee-{level}"));
+        process::required_output(
+            Command::new("rustc").args(["--edition", "2021", "-C"])
+                .arg(format!("opt-level={level}"))
+                .arg(&source).arg("-o").arg(&executable),
+        );
+        process::required_output(&mut Command::new(executable));
+    }
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn fusing_native_loads_preserves_the_wide_return_abi() {
+    use common::process;
+    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "return ABI verification requires a C compiler");
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("pair.elf");
+    std::fs::write(&input, include_bytes!("fixtures/native_read_pair.elf")).unwrap();
+    let mut generated = String::new();
+    for name in ["probe", "narrow"] {
+        let output = process::required_output(
+            Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .arg("decompile").arg(&input).arg(name).args(["--language", "c"]),
+        );
+        generated.push_str(std::str::from_utf8(&output.stdout).unwrap());
+    }
+    let source = directory.path().join("pair.c");
+    std::fs::write(&source, format!(r#"
+#include <stdlib.h>
+typedef unsigned long undefined8;
+typedef unsigned __int128 undefined16;
+static unsigned long guard_word;
+unsigned long *guard_address = &guard_word;
+void fill(unsigned int ignored, void *value, ...) {{
+    (void)ignored;
+    ((unsigned long *)value)[0] = 0x1234;
+    ((unsigned long *)value)[1] = 0x5678;
+}}
+void __stack_chk_fail(unsigned long ignored) {{ (void)ignored; abort(); }}
+{generated}
+int main(void) {{
+    // A real typed consumer must accept both return registers. Do not execute
+    // this opaque-callee frame reconstruction: that would also test its
+    // independent stack-object layout recovery.
+    unsigned __int128 (*wide)(void) = probe;
+    unsigned long value = 0x123456789abcdef0UL;
+    _Static_assert(sizeof(probe()) == 16, "lost second return register");
+    if (sizeof(wide()) != 16 || sizeof(narrow(&value)) != 8) return 1;
+    return narrow(&value) != value;
+}}
+"#)).unwrap();
+    for compiler in compilers {
+        for level in ["-O0", "-O2"] {
+            let executable = directory.path().join(format!("{compiler}{level}"));
+            process::required_output(
+                Command::new(compiler)
+                    .args(["-std=c11", level, "-Werror=incompatible-pointer-types"])
+                    .arg(&source).arg("-o").arg(&executable),
+            );
+            process::required_output(&mut Command::new(executable));
         }
     }
 }
