@@ -3158,6 +3158,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // the live gate is the pre-invocation check in `run_listing_consumers`.
         "tailcallentry" => arch.analysis_tailcallentry,
         "gopclntab" => arch.analysis_gopclntab,
+        "gotypes" => arch.analysis_gotypes,
         "gonoreturn" => arch.analysis_gonoreturn,
         // (kuna) Mach-O Objective-C metadata recovery — default-OFF (output-changing:
         // renames IMP functions + adds class/selector symbols). Registered here so it

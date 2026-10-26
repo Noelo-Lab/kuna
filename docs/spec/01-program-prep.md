@@ -3094,6 +3094,36 @@ moves.
 The format- and language-gated recoveries (each registered only for its format, so
 every other binary's pass list is byte-identical to before the pass existed):
 
+- **Go runtime types** (`gotypes`, Go-detected binaries only, default-on;
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/mod.rs (GoTypesPass)`):
+  phase 1 of the `docs/multilang.md` W3 Go provider. A stripped Go binary
+  carries no DWARF, but the linker bakes the runtime's type graph in, and the
+  pass walks it: moduledata is found WITHOUT symbols (its first field points at
+  the pclntab header, which `locate_header` already finds on a stripped image;
+  the anchor is the data-section word holding that address whose next three
+  words parse as the `funcnametab` slice), and the `types`/`etypes` pair plus
+  the `typelinks` slice are then found by CROSS-VALIDATION inside the
+  moduledata window — sampled entries must decode as plausible `_type` records
+  — never by hardcoded field offsets, which is what lets one implementation
+  hold across go1.18..go1.25's moduledata layout drift (verified under go1.22
+  and go1.25; the e2e gate is `verify_gotypes`). Typelinks hold the pointer
+  forms interface conversion reaches (`*main.Point`), so the walk follows a
+  pointer record's elem to the named struct pointee. It interns
+  package-qualified named struct shells (fields at their recorded offsets,
+  zero-size embedded markers dropped, overlapping or over-extent layouts
+  refused whole) plus the well-known header shells `go.string`/`go.slice`/
+  `go.iface`/`go.eface` with their `LangFacet` records
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
+  1 is OUTPUT-NEUTRAL by construction — nothing binds the shells to a
+  variable yet, and the e2e proves the decompiled code byte-identical on vs
+  off — the knowledge is for the type surfaces and the consumers that follow
+  (typed globals, interface dispatch, signature recovery). Deliberately out of
+  phase 1: itab/method resolution, generic instantiations, map/chan internals,
+  named non-struct aliases, 32-bit and big-endian images. Interning happens at
+  `load file`, so the gate is the `KUNA_GOTYPES` env bridge
+  (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_gotypes.rs`, the
+  `dwarfstructs` pattern), the walk is bounded (20,000 typelinks), and the
+  pass registers before `gopclntab`, preserving its appended-last contract.
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
   needs the PC→name table for stack traces, so it survives stripping; the pass

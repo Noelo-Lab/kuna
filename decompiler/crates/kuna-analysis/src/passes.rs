@@ -406,6 +406,11 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `noreturn_known` to scan) still gets its runtime.panic*/throw/goexit
         // facts. Go-only: a structural no-op on every other binary.
         passes.push(Box::new(crate::pclntab::kuna_gonoreturn::GoNoReturnPass));
+        // (kuna `gotypes`) The runtime-type harvest — BEFORE `gopclntab`,
+        // preserving that pass's appended-last contract. Env-bridged
+        // (`KUNA_GOTYPES`): the shells are interned at load, so the gate is
+        // read in the pass itself, like `dwarfstructs`.
+        passes.push(Box::new(crate::gotypes::GoTypesPass));
         passes.push(Box::new(crate::pclntab::GoPclntabPass));
     }
     // (kuna `fatstr`) Rust-only: length-bounded string facts from static
@@ -1673,25 +1678,27 @@ mod tests {
         }
     }
 
-    /// The Go pass set is exactly the base set plus the three Go-arm passes:
+    /// The Go pass set is exactly the base set plus the four Go-arm passes:
     /// `fatstrrecords` (the string-record pass's Go arm), then `gonoreturn`
-    /// (the pclntab no-return list), then `gopclntab` (the function-name
-    /// recovery, keeping its appended-last contract); no other compiler
-    /// carries the two Go-only ones.
+    /// (the pclntab no-return list), then `gotypes` (the runtime-type
+    /// harvest), then `gopclntab` (the function-name recovery, keeping its
+    /// appended-last contract); no other compiler carries the Go-only ones.
     #[test]
-    fn go_adds_only_the_three_go_passes() {
+    fn go_adds_only_the_four_go_passes() {
         let base = ids(&passes_for(Compiler::Gcc, NON_PE));
         let go = ids(&passes_for(Compiler::Go, NON_PE));
         assert_eq!(&go[..base.len()], &base[..], "Go set is the base set + extras");
         assert_eq!(go.last(), Some(&"gopclntab"), "Go appends the gopclntab pass last");
-        assert_eq!(go.get(go.len() - 2), Some(&"gonoreturn"), "gonoreturn precedes gopclntab");
-        assert_eq!(go.get(go.len() - 3), Some(&"fatstrrecords"), "the record pass opens the Go block");
-        assert_eq!(go.len(), base.len() + 3, "Go adds exactly three passes");
-        // No non-Go compiler carries either Go-only pass.
+        assert_eq!(go.get(go.len() - 2), Some(&"gotypes"), "gotypes precedes gopclntab");
+        assert_eq!(go.get(go.len() - 3), Some(&"gonoreturn"), "gonoreturn precedes gotypes");
+        assert_eq!(go.get(go.len() - 4), Some(&"fatstrrecords"), "the record pass opens the Go block");
+        assert_eq!(go.len(), base.len() + 4, "Go adds exactly four passes");
+        // No non-Go compiler carries the Go-only passes.
         for c in [Compiler::Gcc, Compiler::Rustc, Compiler::Clang, Compiler::Swift, Compiler::Unknown] {
             let set = ids(&passes_for(c, NON_PE));
             assert!(!set.contains(&"gopclntab"), "{c:?} must not carry gopclntab");
             assert!(!set.contains(&"gonoreturn"), "{c:?} must not carry gonoreturn");
+            assert!(!set.contains(&"gotypes"), "{c:?} must not carry gotypes");
         }
     }
 

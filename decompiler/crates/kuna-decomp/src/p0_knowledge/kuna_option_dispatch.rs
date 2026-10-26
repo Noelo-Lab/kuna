@@ -1244,6 +1244,12 @@ kuna_options! { self, p1;
     "gopclntab" => {
         on_off!(analysis_gopclntab, "Go pclntab function-name recovery pass")
     },
+    "gotypes" => {
+        let val = on_or_off(p1)?;
+        self.analysis_gotypes = val;
+        crate::kuna_gotypes::set_gotypes_env(val);
+        Ok(format!("Go runtime-type harvest turned {}", if val { "on" } else { "off" }))
+    },
     "gonoreturn" => {
         on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
     },

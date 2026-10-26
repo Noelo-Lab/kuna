@@ -32,13 +32,29 @@ pub enum LangFacet {
         /// The element type's name.
         elem: String,
     },
+    /// A Go `string` header: `{ptr, len}`, length-carried UTF-8, never
+    /// NUL-terminated.
+    GoString,
+    /// A Go slice header: `{ptr, len, cap}` with `len`/`cap` counted in
+    /// elements; the element is recorded by type name, as `RustSlice` does.
+    GoSlice {
+        /// The element type's name.
+        elem: String,
+    },
+    /// A Go interface header: `{tab/type, data}` — two words. `eface` is the
+    /// empty-interface form (`any`: runtime type word), otherwise an `iface`
+    /// (itab word).
+    GoIface {
+        /// `true` for the empty-interface (`any`) form.
+        eface: bool,
+    },
 }
 
 impl LangFacet {
     /// `true` for the facets whose pointed-at bytes are text (a bounded
     /// string literal is the right rendering for a constant one).
     pub fn is_text(&self) -> bool {
-        matches!(self, LangFacet::RustStr)
+        matches!(self, LangFacet::RustStr | LangFacet::GoString)
     }
 }
 
@@ -49,6 +65,9 @@ mod tests {
     #[test]
     fn text_facets() {
         assert!(LangFacet::RustStr.is_text());
+        assert!(LangFacet::GoString.is_text());
         assert!(!LangFacet::RustSlice { elem: "u64".into() }.is_text());
+        assert!(!LangFacet::GoSlice { elem: "u64".into() }.is_text());
+        assert!(!LangFacet::GoIface { eface: true }.is_text());
     }
 }

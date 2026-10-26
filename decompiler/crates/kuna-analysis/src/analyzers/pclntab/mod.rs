@@ -92,7 +92,7 @@ enum End {
 /// loadable sections, sorted, so a `read(vma, len)` resolves through whichever
 /// section covers `[vma, vma+len)`. This is the kuna analog of reading program
 /// memory through Ghidra's `BinaryReader`/`MemoryByteProvider`.
-struct ImageBytes<'a> {
+pub(crate) struct ImageBytes<'a> {
     /// `(vma, bytes)` for each section with file-backed data, sorted by vma.
     sections: Vec<(u64, &'a [u8])>,
 }
@@ -101,7 +101,7 @@ impl<'a> ImageBytes<'a> {
     /// Build the address-resolvable byte view from a parsed object. Only sections
     /// with a nonzero address and readable data are included (BSS / `.tbss` carry
     /// no bytes; the pclntab is always in an initialized section).
-    fn new(file: &'a object::File<'a>) -> Self {
+    pub(crate) fn new(file: &'a object::File<'a>) -> Self {
         let mut sections: Vec<(u64, &[u8])> = Vec::new();
         for sec in file.sections() {
             let addr = sec.address();
@@ -122,7 +122,7 @@ impl<'a> ImageBytes<'a> {
     /// loaded section covers the whole span. (The pclntab and its referenced
     /// tables are contiguous within one section, so a single-section read is
     /// sufficient and avoids stitching across gaps.)
-    fn read(&self, vma: u64, len: usize) -> Option<&'a [u8]> {
+    pub(crate) fn read(&self, vma: u64, len: usize) -> Option<&'a [u8]> {
         for &(base, data) in &self.sections {
             if vma < base {
                 continue;
@@ -141,7 +141,7 @@ impl<'a> ImageBytes<'a> {
     /// the parser primitives be exercised over hand-constructed pclntab layouts
     /// without synthesizing a whole ELF.
     #[cfg(test)]
-    fn from_spans(mut sections: Vec<(u64, &'a [u8])>) -> Self {
+    pub(crate) fn from_spans(mut sections: Vec<(u64, &'a [u8])>) -> Self {
         sections.sort_by_key(|&(a, _)| a);
         ImageBytes { sections }
     }
@@ -422,7 +422,7 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// 2. the `runtime.pclntab` / `runtime.firstmoduledata`-adjacent symbol — kuna
 ///    resolves the `runtime.pclntab` symbol directly when present;
 /// 3. a byte scan of the read-only data sections for the validated header magic.
-fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
+pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
     // (1) The named section. Go's ELF uses `.gopclntab`; some toolchains/PE use
     // `gopclntab` (no dot); Mach-O names it `__gopclntab` (in `__DATA_CONST`).
     for name in [".gopclntab", "gopclntab", "__gopclntab"] {

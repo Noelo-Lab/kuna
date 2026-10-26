@@ -2480,6 +2480,10 @@ pub struct Architecture {
     /// instead of `sub_<addr>`). Real-ELF Go path only ⇒ the XML datatest oracle is
     /// structurally untouched.
     pub analysis_gopclntab: bool,
+    /// (kuna) Go runtime-type harvest (`gotypes`): walk moduledata→typelinks and
+    /// intern named struct shells. Catalog visibility for the `KUNA_GOTYPES`
+    /// loadtime env bridge (`p0_knowledge/kuna_gotypes.rs`).
+    pub analysis_gotypes: bool,
     /// (kuna) Gate the Go pclntab no-return pass (`gonoreturn`): apply the
     /// vendored Go no-return list to the pclntab-recovered function list, so a
     /// stripped Go binary (no symbol table for `noreturn_known`) still gets its
@@ -3245,6 +3249,7 @@ impl Architecture {
             analysis_aifpoolslide: true,
             analysis_tailcallentry: false,
             analysis_gopclntab: false,
+            analysis_gotypes: false,
             analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_pdb: true,
@@ -3688,6 +3693,7 @@ impl Architecture {
         self.analysis_aifpoolslide = true;
         self.analysis_tailcallentry = false; // tail-call function-entry recovery default-off
         self.analysis_gopclntab = true; // Go pclntab name recovery default-on (Go-only pass)
+        self.analysis_gotypes = true; // Go runtime-type harvest default-on (Go-only pass)
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
