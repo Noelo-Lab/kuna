@@ -4176,6 +4176,18 @@ pub fn bootstrap_from_object_with_isa(
     // machine → SLEIGH language id), unless an explicit target overrides it;
     // buildSpecFile -> buildTranslator -> the Architecture::init tail follow.
     let arch_type = String::from_utf8_lossy(&loader.get_arch_type()).into_owned();
+    // (kuna goreg) The Go toolchain version is a BUILD-TIME fact: the goreg
+    // shells are interned inside the cspec decode during the sleigh build
+    // below, upstream of every per-image fact write, and their layouts drift
+    // by release (go1.23's g.syscallbp, go1.25's dropped gobuf.ret). Carry it
+    // on the loadtime-env tier; a non-Go image clears the variable so a stale
+    // value from an earlier load in this process cannot leak in.
+    match kuna_analysis::loader::gobuildinfo::go_toolchain_version(&bytes) {
+        Some((maj, min)) => {
+            std::env::set_var(kuna_decomp::kuna_goreg::GOVERSION_ENV, format!("{maj}.{min}"))
+        }
+        None => std::env::remove_var(kuna_decomp::kuna_goreg::GOVERSION_ENV),
+    }
     let mut sleigh = build_sleigh_for_loader(
         path,
         target,

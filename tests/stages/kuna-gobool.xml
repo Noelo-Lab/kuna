@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The Go boolean-return stale-high artifact (docs/multilang.md W4), ported
+    as kuna `option gobool` (P4 output-prototype, default AUTO).
+
+    Go's ABI materializes a bool result as 0/1 in the LOW BYTE of the return
+    register and leaves the upper bytes unspecified: the compiler emits a bare
+    `SETcc AL` with no zeroing XOR.  kuna faithfully lifts the full-register
+    dataflow, so the returned value is PIECE(stale7, bool1) and the C prints
+
+        v = CONCAT71((undefined7)(v >> 8), a0 == 1);
+        return v & 0xffffffff;
+
+    SubvariableFlow's return pull rightly refuses to narrow it (nothing proves
+    the high bytes zero; rustc never shows the shape because it zeroes first).
+    `gobool` rewrites such a RETURN to read ZEXT(bool) - asserting the ABI
+    fact the way `rustabi` asserts the ScalarPair - and the dead concatenation
+    is collected by ordinary dead-code elimination.
+
+    The bytes are a hand-assembled x86-64 `func isOne(x int) bool` exactly as
+    the Go compiler shapes it (a wide definition of the return register
+    upstream of the SETcc, so the stale high bytes are real):
+
+        100000  mov  %rdi,%rax        ; RAX written wide (the stale source)
+        100003  cmp  $0x1,%rdi
+        100007  sete %al              ; bool materialized in the low byte
+        10000a  ret
+
+    P0 assertion: `option gobool off|auto|always`.  `auto` (the default) acts
+    only on an image whose detected source language is Go; the analyzer tier
+    never runs on this bytechunk bootstrap, so the test forces `always`,
+    exactly as the `rustabi` and `gomorestack` stage tests force their
+    language-blind modes.
+    Pass 1 (option gobool off): the artifact - the return is the CONCAT71
+      concatenation (assertion #1).
+    Pass 2 (option gobool always): the fix - the concatenation is gone and the
+      comparison survives as the returned value; #1 stays at exactly one
+      occurrence because the second pass contributes none, while the
+      comparison (assertion #2) and the `return` (assertion #3) appear once
+      per pass.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4889f84883ff010f94c0c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="is_one"/>
+</binaryimage>
+<script>
+  <com>option gobool off</com>
+  <com>lo fu is_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gobool always</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOBOOL #1: the stale-high concatenation renders under off and narrows under always" min="1" max="1">CONCAT71</stringmatch>
+<stringmatch name="GOBOOL #2: the comparison survives both passes" min="2" max="2">a0 == 1</stringmatch>
+<stringmatch name="GOBOOL #3: one return per pass" min="2" max="2">return</stringmatch>
+</decompilertest>

@@ -722,6 +722,9 @@ pub struct Architecture {
     /// (kuna) `option gomorestack` mode (`GoMorestackMode` as u8): fold the Go
     /// stack-growth entry guard.  Default auto (fold when `source_lang` is Go).
     pub go_morestack: u8,
+    /// (kuna) `option gobool` mode (`GoBoolMode` as u8): narrow a Go boolean
+    /// return's stale-high concatenation.  Default auto.
+    pub go_bool: u8,
     /// (kuna) `option gowritebarrier` mode (`GoWriteBarrierMode` as u8): fold
     /// the Go GC write-barrier diamond.  Default auto (fold when `source_lang`
     /// is Go).
@@ -2966,6 +2969,7 @@ impl Architecture {
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
             go_morestack: 0, // (kuna) option gomorestack; reset_defaults sets the shipped default (auto)
+            go_bool: 0, // (kuna) option gobool; reset_defaults sets the shipped default (auto)
             go_write_barrier: 0, // (kuna) option gowritebarrier; reset_defaults sets the shipped default (auto)
             condexe_block_placement: false,
             dynamic_hash_maxdup_high: false,
@@ -3380,6 +3384,7 @@ impl Architecture {
         self.source_lang_forced = None; // (kuna) option sourcelang default auto; the detected fact survives resets
         self.fat_str = crate::kuna_fatstr::FatStrMode::Auto.as_u8(); // (kuna) bounded (ptr,len) literals on Rust/Go images
         self.go_morestack = crate::kuna_gomorestack::GoMorestackMode::Auto.as_u8(); // (kuna) fold the Go entry guard on Go images
+        self.go_bool = crate::kuna_gobool::GoBoolMode::Auto.as_u8(); // (kuna) narrow Go boolean returns on Go images
         self.go_write_barrier = crate::kuna_gowritebarrier::GoWriteBarrierMode::Auto.as_u8(); // (kuna) fold the Go write barrier on Go images
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
@@ -4198,6 +4203,7 @@ impl Architecture {
         ctx.source_lang = self.source_lang();
         ctx.fat_str = self.fat_str;
         ctx.go_morestack = self.go_morestack;
+        ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;
         ctx.reload_arg = self.reload_arg;
         ctx.name_style_angr = self.name_style_angr;
@@ -4956,7 +4962,8 @@ impl Architecture {
         let last = first.wrapping_sub(1).wrapping_add(u64::from(point.size));
         self.infer_ptr_spaces.push(Rc::clone(&spc));
         self.symboltab.add_range(scope, Rc::clone(&spc), first, last);
-        let gptr = crate::kuna_goreg::g_pointer_type(self.types())?;
+        let gptr =
+            crate::kuna_goreg::g_pointer_type(self.types(), crate::kuna_goreg::GoLayout::from_env())?;
         let addr = Address::new(spc, first);
         let (sid, _eref) =
             self.symboltab.add_symbol_mapped(scope, "g", gptr, &addr, &Address::new_invalid())?;

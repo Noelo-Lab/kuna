@@ -452,6 +452,9 @@ Three tiers:
 | every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
 | stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
 | go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
+| go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
+| return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
+| undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
 | the same value is assigned to one variable twice in a row with nothing in between | [`hideshadow`](#hideshadow) |
 | a comma-expression condition repeats an assignment: (v3 = a2, v4 = a0, v4 = a0, ...) | [`hideshadow`](#hideshadow) |
 | a repeated vN = dat_XXXX; around a conditional goto | [`hideshadow`](#hideshadow) |
@@ -2288,6 +2291,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
+
+### `gobool` -- off | auto | always, default `auto` (destructive opt-in)
+
+- **Symptoms:** go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison; return value masked with 0xffffffff around a boolean; undefined7 casts feeding a concatenation at every boolean return.
+- **What it does:** Narrow a Go boolean return's stale-high concatenation. Go's ABI materializes a bool result as 0/1 in the LOW BYTE of the return register and leaves the upper bytes unspecified: the compiler emits a bare SETcc with no zeroing XOR, so the lifted value is PIECE(stale7, bool1) feeding the RETURN and the C prints the CONCAT71 artifact (v = CONCAT71((undefined7)(v >> 8), x == y); return v & 0xffffffff). SubvariableFlow's return pull rightly refuses to narrow it - nothing proves the high bytes zero - and rustc never shows the shape because it zeroes first. The rule rewrites such a RETURN to read ZEXT(bool) instead, asserting the ABI fact the way rustabi asserts the ScalarPair: the stale bytes are unspecified, so zeroing them is the declared reading, and the dead concatenation is collected by ordinary dead-code elimination. The low byte must be a genuine boolean definition (a comparison, carry/borrow, boolean logic or float predicate opcode); any other 7+1 concatenation is left alone. At auto (default) the rule acts only when the image's source language is Go; always drops the language test (stage-test bytechunks); off keeps the faithful concatenation.
+- **When to flip:** Leave auto: Go functions returning bool stop printing CONCAT71 noise and return their comparison directly. Use always on a Go function carved into a bytechunk where detection has nothing to read; off only to audit the raw register dataflow.
+- **Where / provenance:** P4/output-prototype · kuna · correctness-fix · kuna-multilang-gobool
+- **Example:** `option gobool off`
 
 ### `hideshadow` -- on | off, default `on`
 

@@ -247,6 +247,11 @@ kuna_options! { self, p1;
         self.fat_str = mode.as_u8();
         Ok(msg)
     },
+    "gobool" => {
+        let (mode, msg) = crate::kuna_gobool::parse_gobool_mode(p1).map_err(KunaError::parse)?;
+        self.go_bool = mode.as_u8();
+        Ok(msg)
+    },
     "gomorestack" => {
         let (mode, msg) = crate::kuna_gomorestack::parse_gomorestack_mode(p1).map_err(KunaError::parse)?;
         self.go_morestack = mode.as_u8();
