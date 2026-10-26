@@ -243,18 +243,39 @@ which the cspec lists as `unaffected` and no `<pentry>` names, so every access
 rendered as a phantom local (`v3; // r14`) fed by unexplained arithmetic. The
 install mirrors a cspec `<global><register/>` (the register's storage joins
 the global scope; the vendored spec itself stays pristine) and maps a type-
-and name-locked `g` symbol typed `runtime.g *` over it. `runtime.g` and
-`runtime.gobuf` are synthesized shells carrying exactly the fields whose
-offsets the go1.22 runtime source states for the register-ABI era (through
-`goid` at 0x98; `sched` is the seven-word `gobuf`); the liblink-stated prefix
-(`stackguard0` 0x10, `_panic` 0x20, `m` 0x30) is stable across Go releases,
-the tail is go1.22-pinned, and an access past the modeled prefix renders as an
-offset off `g` — still anchored. A golang target with no pinned register
-(x86-32 reaches `g` through TLS) is untouched. Measured on the stripped
+and name-locked `g` symbol typed `runtime.g *` over it. `runtime.g`,
+`runtime.gobuf`, `runtime.m` and `runtime.gsignalStack` are synthesized shells
+carrying exactly the fields whose offsets the runtime source states for the
+register-ABI era, and the layouts are **versioned off the image's own
+toolchain**: the build-info blob's version string
+(`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
+(go_toolchain_version)`) travels as the `KUNA_GOVERSION` loadtime variable —
+set by the object bootstrap before the sleigh build, because the shells are
+interned inside the cspec decode, upstream of every per-image fact write —
+and selects the release's layout
+(`decompiler/crates/kuna-decomp/src/p1_partition/kuna_goreg.rs (GoLayout)`):
+go1.23 inserted `g.syscallbp`, go1.25 dropped `gobuf.ret`, and with both
+perturbations the liblink-stable anchors (`stackguard0` 0x10, `_panic` 0x20,
+`m` 0x30, `stktopsp`..`goid` 0x80..0x98) land identically while
+`syscallsp`/`syscallpc` and everything inside `runtime.m` after `morebuf`
+shift with the gobuf width. The `runtime.m` shell is verified field-for-field
+against go1.22.10 and go1.25.3 through `profilehz` (linux/amd64 `sigset`; a
+PE Go binary's empty `sigset` would shift the tail from `tls` on — the shell
+is a reading aid and `goreg off` removes it); `g.m` carries the completed
+`runtime.m *`, so `g->m->curg` chains render named end to end, while `m`'s
+own goroutine pointers stay `void *` (a pointer taken to a still-incomplete
+composite would survive the factory's clone-and-re-key completion pointing at
+the stale type). An access past a modeled prefix renders as an offset off the
+shell — still anchored. An image with no parsable build-info version takes
+the go1.22 baseline. A golang target with no pinned register (x86-32 reaches
+`g` through TLS) is untouched. Measured on the stripped
 go1.22 hello-world: functions declaring a phantom `// r14` local 267 → 23,
 functions reading named `g->` fields 7 → 297, the preemption-request store
 rendering `g->stackguard0 = 0xfffffffffffffade` exactly as the runtime source
-spells it.
+spells it; with the `runtime.m` shell, functions indexing raw bytes off
+`g->m` fall 166 → 42 and ~77 render named `curg`/`locks` reads — and on a
+go1.25 build the versioned layouts keep those same names at that release's
+shifted offsets (53 `curg` readers, `syscallbp` rendering where it exists).
 
 The loader's symbol
 stream — defined FUNC symbols plus the resolved import stubs of §1.3 — is

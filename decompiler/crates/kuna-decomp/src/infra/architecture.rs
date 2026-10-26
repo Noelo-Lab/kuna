@@ -4950,7 +4950,8 @@ impl Architecture {
         let last = first.wrapping_sub(1).wrapping_add(u64::from(point.size));
         self.infer_ptr_spaces.push(Rc::clone(&spc));
         self.symboltab.add_range(scope, Rc::clone(&spc), first, last);
-        let gptr = crate::kuna_goreg::g_pointer_type(self.types())?;
+        let gptr =
+            crate::kuna_goreg::g_pointer_type(self.types(), crate::kuna_goreg::GoLayout::from_env())?;
         let addr = Address::new(spc, first);
         let (sid, _eref) =
             self.symboltab.add_symbol_mapped(scope, "g", gptr, &addr, &Address::new_invalid())?;
