@@ -7558,14 +7558,18 @@ Ghidra's `ArmAnalyzer` adds a computed-jump reference per case. The words of an
 `ldr` table are data the dispatch reads: they are not decoded and file no
 pointer row, which matches Ghidra, whose ARM switch recovery labels and
 disassembles the targets but adds no reference from the words. A predicated
-dispatch lifts as a skip to `b default` ahead of its jump. Where A32 tables are
-read, both walks take that skip as the dispatch's fall-through
-(`Classified::skip_falls_through` in
-`decompiler/crates/kuna-analysis/src/listing/classify.rs`), so the dispatch
-files no `Jump` row to the next instruction and the table read keeps its gate
-of a computed jump with no static flow. Under `armframes off`, and on every
-other architecture, the skip stays a flow with its row and no A32 table is
-read. The switch record states the guard's case count, so a table longer than
+dispatch lifts as a skip to `b default` ahead of its jump. `classify` keeps that
+skip as one of the jump's flows with no fall-through, on every architecture and
+under every option, so PIC pool composition, no-return propagation and every
+other consumer of the instruction see one shape: a pool word loaded before
+`bxne r3` still reaches the `add rN,pc,rM` after it along the skip, and a
+function that leaves through `bxne r0` or `bl abort` is proved no-return
+exactly as before. Where A32 tables are read, both walks only recognise the
+skip (`Classified::predicated_skip` in
+`decompiler/crates/kuna-analysis/src/listing/classify.rs`): a computed jump
+whose only flow is its skip is read as a table, and the reference walk files
+no `Jump` row for the skip. Under `armframes off`, and on every other
+architecture, the skip keeps its row and no A32 table is read. The switch record states the guard's case count, so a table longer than
 `jumptablemax` is marked truncated. A dispatch the walk reaches before the
 guard that falls into it (a branch into the dispatch, or breadth-first order)
 waits at the address the guard read stopped at and is read again, A32 reader
