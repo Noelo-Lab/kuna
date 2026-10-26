@@ -659,8 +659,8 @@ pub fn build_with_focus(
 /// `addls pc,pc,rN,lsl #2` / `ldrls pc,[pc,rN,lsl #2]` table
 /// ([`super::kuna_a32switch`]) before any other table read, because its
 /// PC-relative operand names the dispatch itself rather than a table, and the
-/// predicated skip of such a jump is its fall-through
-/// ([`super::classify::Classified::skip_falls_through`]).
+/// predicated skip of such a jump, which stays one of its `flows`, files no row
+/// ([`super::classify::Classified::predicated_skip`]).
 fn descend(
     file: &object::File,
     arch: &Architecture,
@@ -1119,10 +1119,8 @@ fn descend(
                     .iter()
                     .map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }),
             );
-            let mut c = classify(&raw, vma, len);
-            if a32_tables.is_some() {
-                c.skip_falls_through(vma, len);
-            }
+            let c = classify(&raw, vma, len);
+            let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
             if let Some(fall) = c.fall_through.filter(|_| !waiting.is_empty()) {
                 woken.extend(waiting.remove(&fall).into_iter().flatten());
             }
@@ -1171,7 +1169,7 @@ fn descend(
             });
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let mut text = if c.flows.is_empty() && drefs.is_empty() && pointer.is_none() {
+            let mut text = if c.flows.iter().all(|&t| Some(t) == skip) && drefs.is_empty() && pointer.is_none() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
@@ -1186,7 +1184,9 @@ fn descend(
 
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
-                st.file(vma, target, kind, &text);
+                if Some(target) != skip {
+                    st.file(vma, target, kind, &text);
+                }
                 if c.flow.is_call {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
@@ -1213,7 +1213,7 @@ fn descend(
             // table the jump indexes and take its entries up as successors of
             // THIS function: a case body is the dispatcher's own code. See
             // [`super::kuna_switchtable`].
-            if c.flows.is_empty() && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
+            if c.flows.iter().all(|&t| Some(t) == skip) && c.flow.is_computed && c.flow.is_jump && !c.flow.is_call {
                 if let Some(p) = pool.as_ref() {
                     let a32 = a32_tables.as_ref().map_or_else(kuna_switchtable::TableRead::default, |tables| {
                         let decoded = |at: u64| st.decoded.contains(&at);

@@ -134,6 +134,18 @@ pub fn classify(ops: &[RawOp], vma: u64, len: u32) -> Classified {
 }
 
 impl Classified {
+    /// The skip of a predicated computed jump (A32 `addls pc,pc,rN,lsl #2`,
+    /// Thumb `it ne; bxne r3`): the `CBRANCH` to the next instruction it lifts
+    /// to ahead of its `BRANCHIND`. [`classify`] keeps the skip among `flows`
+    /// with no fall-through, so every consumer sees one shape; a walk that reads
+    /// A32 tables asks for it to tell a table dispatch from other jumps.
+    pub fn predicated_skip(&self, vma: u64, len: u32) -> Option<u64> {
+        let skip = vma.wrapping_add(u64::from(len));
+        (self.flow.is_computed && self.flow.is_jump && !self.flow.is_call && self.fall_through.is_none())
+            .then_some(skip)
+            .filter(|skip| self.flows.contains(skip))
+    }
+
     /// (kuna `armframes`) A predicated computed jump (A32 `addls pc,pc,rN,lsl #2`)
     /// lifts to a `CBRANCH` to the next instruction ahead of its `BRANCHIND`.
     /// Take that skip as the jump's fall-through rather than one of its `flows`,
