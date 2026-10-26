@@ -167,6 +167,29 @@ fn goroutine_state_renders_through_the_named_g_global() {
         "no scheduler entry point renders g->stackguard0 at its liblink offset; transcripts:{transcripts}"
     );
 
+    // The m-shell witness self-selects the same way: `m.curg` readers are
+    // everywhere in the scheduler, and these candidates rendered `->curg` on
+    // both go1.22.10 and go1.25.3 (the shells are layout-versioned off the
+    // build-info toolchain version, so each release reads its own offsets).
+    let m_candidates = [
+        "runtime.execute",
+        "runtime.dropm",
+        "runtime.exitsyscall0",
+        "runtime.canpanic",
+        "runtime.deferprocStack",
+    ];
+    let mut m_transcripts = String::new();
+    let m_hit = m_candidates.iter().any(|f| {
+        let t = decompile_fn(bin, f);
+        let ok = t.contains("->curg");
+        m_transcripts.push_str(&format!("\n===== {f} (hit: {ok})\n{t}\n"));
+        ok
+    });
+    assert!(
+        m_hit,
+        "no scheduler entry point renders the m-shell's curg field; transcripts:{m_transcripts}"
+    );
+
     // Off: the raw reading returns — no named global anywhere in the body.
     let _guard = EnvGuard::set("KUNA_GOREG", "off");
     let off = decompile_fn(bin, "runtime.unlock2");
