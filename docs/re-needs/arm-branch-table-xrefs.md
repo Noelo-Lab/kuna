@@ -140,4 +140,4 @@ _not yet refuted_
 ## Decision log
 
 - filed by hand from vendor binaries and their synthetic reduction; prior art: `arm-pic-got-xrefs`
-- the reference walk reads both forms under `armframes` alone (no `listing` or `funcstart_patterns` prerequisite, unlike frame recovery); the predicated skip is the dispatch's fall-through only where A32 tables are read, so `armframes off` and other architectures keep the skip row; a dispatch reached before its guard is read again once the guard is decoded (`early_dispatch` in the fixture)
+- the reference walk reads both forms under `armframes` alone (no `listing` or `funcstart_patterns` prerequisite, unlike frame recovery); the predicated skip stays one of the dispatch's flows for every consumer (pool composition, no-return propagation) and files no row only where A32 tables are read, so `armframes off` and other architectures keep the skip row; a dispatch reached before its guard is read again once the guard is decoded (`early_dispatch` in the fixture)

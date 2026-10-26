@@ -289,13 +289,10 @@ where
     }
 
     // An undecodable or zero-length decode stops this path (mark gap).
-    let Some((decoded, mut c)) = super::kuna_decodememo::decode(ctx, vma, &mut |text| insns.intern_mnemonic(text))
+    let Some((decoded, c)) = super::kuna_decodememo::decode(ctx, vma, &mut |text| insns.intern_mnemonic(text))
     else {
         return false;
     };
-    if ctx.a32_tables.is_some() {
-        c.skip_falls_through(vma, decoded.len);
-    }
 
     let fall_through = vma.wrapping_add(u64::from(decoded.len));
     let stack_values: Vec<u64> = if ctx.policy.stack_callbacks {
@@ -377,7 +374,10 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
-    if let Some(tables) = ctx.a32_tables.filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.is_empty()) {
+    let skip = c.predicated_skip(vma, decoded.len);
+    if let Some(tables) = ctx.a32_tables.filter(|_| {
+        c.flow.is_computed && c.flow.is_jump && !c.flow.is_call && c.flows.iter().all(|&t| Some(t) == skip)
+    }) {
         let decoded = |at: u64| insns.decoded(at);
         for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).cases {
             out.insn(target);
