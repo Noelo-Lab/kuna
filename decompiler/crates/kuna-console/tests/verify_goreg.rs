@@ -141,15 +141,30 @@ fn goroutine_state_renders_through_the_named_g_global() {
         on.contains("g->"),
         "goreg on must render g-relative accesses through the named global; transcript:\n{on}"
     );
-    // The stackguard0 witness is `runtime.exitsyscall`, not `unlock2`: go1.25's
-    // futex-lock rewrite moved unlock2's preemption store elsewhere, while the
-    // syscall-exit path has touched `g->stackguard0` in every release this test
-    // has met (verified on go1.22.10 and go1.25.3; 87 runtime functions render
-    // the field on both, this one is small and unambiguous).
-    let sysexit = decompile_fn(bin, "runtime.exitsyscall");
+    // The stackguard0 witness SELF-SELECTS from scheduler entry points: which
+    // single function touches `g->stackguard0` shifts with the runtime (go1.25
+    // moved unlock2's store; CI's newer Go moved exitsyscall's), but the
+    // preemption protocol itself guarantees the field is written somewhere in
+    // this set on every release (87 candidates rendered it on both go1.22.10
+    // and go1.25.3; these are the small, unambiguous ones).
+    let candidates = [
+        "runtime.exitsyscall",
+        "runtime.reentersyscall",
+        "runtime.gopark",
+        "runtime.execute",
+        "runtime.park_m",
+        "runtime.acquireSudog",
+    ];
+    let mut transcripts = String::new();
+    let hit = candidates.iter().any(|f| {
+        let t = decompile_fn(bin, f);
+        let ok = t.contains("g->stackguard0");
+        transcripts.push_str(&format!("\n===== {f} (hit: {ok})\n{t}\n"));
+        ok
+    });
     assert!(
-        sysexit.contains("g->stackguard0"),
-        "the syscall-exit path renders stackguard0 at its liblink offset; transcript:\n{sysexit}"
+        hit,
+        "no scheduler entry point renders g->stackguard0 at its liblink offset; transcripts:{transcripts}"
     );
 
     // Off: the raw reading returns — no named global anywhere in the body.
