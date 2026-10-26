@@ -24,12 +24,21 @@ use kuna_base::address::Address;
 use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
 use object::read::{Object, ObjectSection};
 
-/// The first format piece of the fixture's `println!` — 21 bytes, no NUL.
+/// The first entry of the fixture's runtime-indexed table — 21 bytes, no NUL.
 const WITNESS: &[u8] = b"kuna fatstr witness, ";
 
-const MAIN_RS: &str = r#"fn main() {
-    let who = std::env::args().nth(1).unwrap_or_default();
-    println!("kuna fatstr witness, {who}!");
+/// A RUNTIME-INDEXED `&str` table, not a `println!` piece: rustc 1.99 lowered
+/// the format machinery so a literal piece no longer materializes a
+/// `(ptr, len)` record anywhere in the image (no relocation, no pointer word —
+/// measured on 1.99.1 vs 1.90.0), and a bare `static &str` is const-folded
+/// into code at `-O`. An index only the arguments decide forces the table —
+/// three records in `.data.rel.ro` under every rustc this test has met — which
+/// is also the real-world shape the record pass most often feeds on.
+const MAIN_RS: &str = r#"static TABLE: [&str; 3] =
+    ["kuna fatstr witness, ", "kuna second piece", "kuna third piece"];
+fn main() {
+    let i = std::env::args().len() % 3;
+    println!("{}!", TABLE[i]);
 }
 "#;
 
