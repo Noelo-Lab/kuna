@@ -931,3 +931,44 @@ int main(void) {{
         }
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn opaque_record_reads_use_byte_addresses_without_invented_members() {
+    use common::process;
+    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "opaque record verification requires a C compiler");
+    let directory = tempfile::tempdir().unwrap();
+    let fixture = include_str!("fixtures/native_read_opaque.c");
+    let original = directory.path().join("original.c");
+    let image = directory.path().join("opaque.so");
+    std::fs::write(&original, fixture).unwrap();
+    process::required_output(
+        Command::new(compilers[0]).args(["-shared", "-fPIC", "-O2", "-g0", "-DORIGINAL_ONLY"])
+            .arg(&original).arg("-o").arg(&image),
+    );
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile").arg(&image).arg("Probe")
+            .args(["--assert", "prototype Probe void Probe(void **slot)", "--assert-strict"]),
+    );
+    let printed = std::str::from_utf8(&output.stdout).unwrap();
+    assert!(printed.contains("volatile"), "{printed}");
+    let source = directory.path().join("recovered.c");
+    std::fs::write(&source, fixture.replace("GENERATED_FUNCTIONS", printed)).unwrap();
+    for compiler in compilers {
+        for level in ["-O0", "-O2"] {
+            for (name, input, reference) in [("reference", &original, true), ("recovered", &source, false)] {
+                let executable = directory.path().join(format!("{compiler}{level}-{name}"));
+                let mut command = Command::new(compiler);
+                command.args(["-std=gnu17", level, "-fsanitize=undefined", "-fno-sanitize-recover=all"]);
+                if reference {
+                    command.arg("-DNATIVE_REFERENCE");
+                }
+                process::required_output(command.arg(input).arg("-o").arg(&executable));
+                process::required_output(&mut Command::new(executable));
+            }
+        }
+    }
+}

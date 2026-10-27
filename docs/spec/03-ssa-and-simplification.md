@@ -2869,6 +2869,10 @@ Rust evaluates a retained read's pointer before entering the packed type's
 nested scope, so the generated type cannot capture a recovered callee name in
 that expression. A round trip calls functions named `NativeRead` and `address`
 and checks that each is still called exactly once.
+Offsets into an opaque record remain byte-address arithmetic, not invented
+`field_0x...` members: a known record size does not supply a member declaration.
+The libc obstack round trip retains the guarded read and calls the real
+allocation/free APIs against their installed header without guessing a layout.
 
 Discarded Rust native effects read `MaybeUninit` scalars and discard their opaque
 result directly, rather than assigning an initialized integer or fabricating a

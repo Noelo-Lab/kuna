@@ -10655,6 +10655,48 @@ impl PrintC {
         let flex = self.is_value_flexible_ir(fd, in0) || self.is_value_indirect_input(fd, in0);
         let word_size = ptype.get_word_size().unwrap_or(1);
         let metameta = ct.get_metatype();
+        if ct.is_incomplete()
+            && matches!(metameta, crate::dtype::type_metatype::TYPE_STRUCT
+                | crate::dtype::type_metatype::TYPE_UNION)
+        {
+            // An opaque named record has a size, not invented field declarations.
+            // Keep PTRSUB's actual address relative to in0, including for a
+            // relative pointer; the parent-relative adjustment below is only
+            // needed when selecting a real member of the parent record.
+            let offset = AddrSpace::address_to_byte_int(in1const as int4 as int8, word_size);
+            let types = arch.types();
+            let byte_pointer = types.get_type_char(1)
+                .and_then(|byte| types.get_type_pointer(ptr_size, byte, 1));
+            let output_pointer = fd.obank().get(op).and_then(|o| o.get_out())
+                .map(|output| fd.vn_type_def_facing(output))
+                .filter(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_PTR)
+                .unwrap_or_else(|| std::rc::Rc::clone(&ptype));
+            if valueon {
+                self.push_op(self.lang_token(&tokens::DEREFERENCE), Some(op_key(op)));
+            }
+            self.push_cast_open(&output_pointer, op);
+            let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
+            if rust {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_op(&tokens::OBJECT_MEMBER, Some(op_key(op)));
+            } else {
+                self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
+            }
+            if let Ok(byte_pointer) = &byte_pointer {
+                self.push_cast_open(byte_pointer, op);
+            }
+            self.push_vn_ir_m(fd, arch, in0, op, m);
+            if let Ok(byte_pointer) = &byte_pointer {
+                self.push_cast_close(byte_pointer);
+            }
+            if rust {
+                self.push_atom(&Atom::syntax("wrapping_offset", TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::no_color));
+            }
+            self.push_constant_ir_fmt_sign(offset as uintb, ptr_size, op, display_format::NONE, true);
+            self.push_cast_close(&output_pointer);
+            return;
+        }
 
         if metameta == crate::dtype::type_metatype::TYPE_STRUCT
             || metameta == crate::dtype::type_metatype::TYPE_UNION
