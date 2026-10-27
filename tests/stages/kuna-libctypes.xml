@@ -40,11 +40,10 @@
     every named aggregate in it is minted by the table rather than adopted  -  the
     only arm in which `option libctypes glibc` installs a field layout at all.
     Pass 4 is `opaque` (the shipped default) and pass 5 is `glibc`, over the same
-    two functions: the `getc_unlocked` refill body, whose two stream accesses go
-    from `*(uint1 **)&amp;a0-&gt;field_0x8` to `a0-&gt;_IO_read_ptr` (#10, #11), and a
-    `stat` buffer read, which goes from a cast at an offset to `a1-&gt;st_size`
-    (#12, #13) and takes the field's SIGNED type with it, so the `-1` sentinel
-    stops printing as `0xffffffffffffffff` (#14).
+    two functions: the `getc_unlocked` refill body, whose raw stream accesses
+    become the published `a0-&gt;_IO_read_ptr` member (#11), and a `stat` buffer
+    read, which becomes `a1-&gt;st_size` (#13). The latter takes the field's SIGNED
+    type with it, so the `-1` sentinel stops printing as `0xffffffffffffffff` (#14).
 
     The script restores the default (`opaque`) in its last command: the gate is a
     process environment variable, and the corpus runs in one process, so a stale
@@ -65,11 +64,12 @@
     The library is loaded by address because its four functions are exported and
     each name also resolves to a PLT stub.
 
-    `pending` is the witness: it reads two fields of the stream and calls
-    nothing, so the relocation is the only thing in the image that says what the
-    word holds (#16/#17 off, #18/#19 on). The other three are the wrong-output
-    controls. `flush_mark` stores THROUGH the stream pointer and must still store
-    to the same address (#20/#21); `hand_off` reads the stream OBJECT into one of
+    `pending` reads two locations in the stream and calls nothing, so the
+    relocation is the only thing in the image that says what the word holds.
+    The off arm retains its untyped-address checks (#16/#17). Opaque access
+    spelling is not a layout oracle; compilation and real API round trips
+    cover incomplete-record reads and stores in `volatile_loads_cli.rs`.
+    `hand_off` reads the stream OBJECT into one of
     the image's own functions and must still read it whole  -  `sink(stdin)`,
     never `sink(*stdin)` (#22/#23); `say` passes it to a libc call whose
     prototype already named it, which must not move at all (#24), and whose
@@ -87,8 +87,7 @@
     imported  -  which is how gnulib's obstack reaches every coreutils, grep and
     tar binary  -  and it is the only thing in the file that says what `grow`'s
     pointer addresses (#27, #28). `emit` is the ordinary import channel with two
-    named slots at once (#29, #30). Neither body reads a field, so #15 does not
-    move.
+    named slots at once (#29, #30).
 
     `libctypes_obstack_import_x86_64` is the same witness on the other channel:
     `_obstack_newchunk` imported from glibc, as the corpus's `dpkg` programs
@@ -97,12 +96,9 @@
     pins `int4` where #28 pins `uint8`, and a table that spelled both the same
     would fail one of them.
 
-    #6 is narrowed to the two aggregates a DWARF definition already described
-    (`st`, `f`), because pass 4 is the `opaque` arm and legitimately prints
-    `a0-&gt;field_0x8`. #15 pins the count of LINES carrying an offset-named field
-    the same way: four in pass 4 and four in the two `opaque` stream passes (one
-    `pending` line and one `flush_mark` line per link kind), so a new fallback in
-    any pass moves it.
+    #6 checks the two aggregates a DWARF definition already described (`st`,
+    `f`). Opaque shells have no member declarations; their offset expressions
+    must not be pinned to synthetic field names.
 
     Pass 13 is the fit rule, on `libctypes_container_x86_64`. A libc aggregate is
     often the FIRST member of a larger object (grep's kwset starts with its
@@ -111,8 +107,7 @@
     element of an obstack array: `a0[0x1b].field_0x28` for offset 0x970. The
     function reads past the aggregate's end, so the vote declines to the
     width-stable void * (#33, #34), for a pthread_mutex_t head too (#35).
-    `grow_in` stays inside its obstack and keeps the name (#36); its one
-    offset-named line is counted by #15.
+    `grow_in` stays inside its obstack and keeps the name (#36).
 
     Pass 14 is the width gate, on the stripped i386 `libctypes_widths_i386`. The
     named slots carry glibc's x86-64 widths, and a named pointer handed a frame
@@ -316,18 +311,11 @@ c3
 <stringmatch name="LIBCTYPES #7: on a binary whose DWARF DOES define the stream type, that definition is what the table points at" min="1" max="1">int4 fclose\(_IO_FILE \*a0\)</stringmatch>
 <stringmatch name="LIBCTYPES #8: including the parameter the whole option exists for" min="1" max="1">int4 get_prefix\(_IO_FILE \*f\)</stringmatch>
 <stringmatch name="LIBCTYPES #9: with its real field layout, not a shell" min="1" max="1">f-&gt;_IO_read_end &lt;= v4</stringmatch>
-<stringmatch name="LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset" min="2" max="2">\*\(uint1 \*\*\)&amp;a0-&gt;field_0x8</stringmatch>
 <stringmatch name="LIBCTYPES #11: glibc on, the same two accesses are the published field" min="2" max="2">a0-&gt;_IO_read_ptr</stringmatch>
-<stringmatch name="LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset" min="1" max="1">&amp;a1-&gt;field_0x30</stringmatch>
 <stringmatch name="LIBCTYPES #13: glibc on, that read is the field" min="1" max="1">return a1-&gt;st_size;</stringmatch>
 <stringmatch name="LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1" min="1" max="1">return -1;</stringmatch>
-<stringmatch name="LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4, the four of the opaque stream passes and the one of pass 13's control" min="9" max="9">field_0x</stringmatch>
 <stringmatch name="LIBCTYPES #16: off, the copy-relocated stream slot is an untyped word and its fields are raw offsets" min="1" max="1">return \*\(int8 \*\)\(stdout \+ 0x28\) - \*\(int8 \*\)\(stdout \+ 0x20\);</stringmatch>
 <stringmatch name="LIBCTYPES #17: off, the GOT slot of a shared object is not even named" min="1" max="1">return \*\(int8 \*\)\(\*dat_3fd8 \+ 0x28\) - \*\(int8 \*\)\(\*dat_3fd8 \+ 0x20\);</stringmatch>
-<stringmatch name="LIBCTYPES #18: on, the copy-relocated slot is the stream itself, so the reads are fields of it" min="1" max="1">return \*\(int8 \*\)&amp;stdout-&gt;field_0x28 - \*\(int8 \*\)&amp;stdout-&gt;field_0x20;</stringmatch>
-<stringmatch name="LIBCTYPES #19: on, the GOT slot holds the stream's ADDRESS, and the name and the extra indirection both say so" min="1" max="1">return \*\(int8 \*\)&amp;\(\*stdout_ptr\)-&gt;field_0x28 - \*\(int8 \*\)&amp;\(\*stdout_ptr\)-&gt;field_0x20;</stringmatch>
-<stringmatch name="LIBCTYPES #20: a store THROUGH the stream pointer still stores to the same address" min="1" max="1">\*\(unsigned long \*\)&amp;stdout-&gt;field_0x28 = a0;</stringmatch>
-<stringmatch name="LIBCTYPES #21: and so does the GOT form" min="1" max="1">\*\(unsigned long \*\)&amp;\(\*stdout_ptr\)-&gt;field_0x28 = a0;</stringmatch>
 <stringmatch name="LIBCTYPES #22: a read of the stream OBJECT stays the object -- `sink\(stdin\)`, never `sink\(\*stdin\)`" min="2" max="2">sink\(stdin\);</stringmatch>
 <stringmatch name="LIBCTYPES #23: and in the library it is the one indirection the program performs, no more" min="1" max="1">sink\(\*stdin_ptr\);</stringmatch>
 <stringmatch name="LIBCTYPES #24: a stream handed to a libc call the table already typed does not move" min="2" max="2">fputs\(a0,stdout\);</stringmatch>

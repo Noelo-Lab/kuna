@@ -10663,10 +10663,14 @@ impl PrintC {
             // Keep PTRSUB's actual address relative to in0, including for a
             // relative pointer; the parent-relative adjustment below is only
             // needed when selecting a real member of the parent record.
-            let offset = AddrSpace::address_to_byte_int(in1const as int4 as int8, word_size);
+            let displacement = kuna_base::address::sign_extend(in1const as int8, ptr_size * 8 - 1);
+            let offset = AddrSpace::address_to_byte_int(displacement, word_size);
             let types = arch.types();
+            // Canonical byte and pointer types are required by the active model,
+            // just as for the scalar read's pointer type.
             let byte_pointer = types.get_type_char(1)
-                .and_then(|byte| types.get_type_pointer(ptr_size, byte, 1));
+                .and_then(|byte| types.get_type_pointer(ptr_size, byte, 1))
+                .expect("opaque record byte-address pointer type");
             let output_pointer = fd.obank().get(op).and_then(|o| o.get_out())
                 .map(|output| fd.vn_type_def_facing(output))
                 .filter(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_PTR)
@@ -10682,13 +10686,9 @@ impl PrintC {
             } else {
                 self.push_op(&tokens::BINARY_PLUS, Some(op_key(op)));
             }
-            if let Ok(byte_pointer) = &byte_pointer {
-                self.push_cast_open(byte_pointer, op);
-            }
+            self.push_cast_open(&byte_pointer, op);
             self.push_vn_ir_m(fd, arch, in0, op, m);
-            if let Ok(byte_pointer) = &byte_pointer {
-                self.push_cast_close(byte_pointer);
-            }
+            self.push_cast_close(&byte_pointer);
             if rust {
                 self.push_atom(&Atom::syntax("wrapping_offset", TagType::Syntax,
                     crate::printlanguage::SyntaxHighlight::no_color));

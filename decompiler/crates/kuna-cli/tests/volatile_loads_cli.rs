@@ -949,14 +949,18 @@ fn opaque_record_reads_use_byte_addresses_without_invented_members() {
         Command::new(compilers[0]).args(["-shared", "-fPIC", "-O2", "-g0", "-DORIGINAL_ONLY"])
             .arg(&original).arg("-o").arg(&image),
     );
-    let output = process::required_output(
-        Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile").arg(&image).arg("Probe")
-            .args(["--assert", "prototype Probe void Probe(void **slot)", "--assert-strict"]),
-    );
-    let printed = std::str::from_utf8(&output.stdout).unwrap();
-    assert!(printed.contains("volatile"), "{printed}");
+    let mut printed = String::new();
+    for name in ["Probe", "ProbeRead", "ReadAlignment", "WriteAlignment"] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.arg("decompile").arg(&image).arg(name);
+        if name == "Probe" {
+            command.args(["--assert", "prototype Probe void Probe(void **slot)", "--assert-strict"]);
+        }
+        let output = process::required_output(&mut command);
+        printed.push_str(std::str::from_utf8(&output.stdout).unwrap());
+    }
     let source = directory.path().join("recovered.c");
-    std::fs::write(&source, fixture.replace("GENERATED_FUNCTIONS", printed)).unwrap();
+    std::fs::write(&source, fixture.replace("GENERATED_FUNCTIONS", &printed)).unwrap();
     for compiler in compilers {
         for level in ["-O0", "-O2"] {
             for (name, input, reference) in [("reference", &original, true), ("recovered", &source, false)] {

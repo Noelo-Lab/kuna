@@ -15,6 +15,26 @@ void Probe(void **slot) {
     free(*slot);
     *slot = NULL;
 }
+
+__attribute__((noinline, visibility("default")))
+void ProbeRead(obstack *object, unsigned active) {
+    if (!object || !active) return;
+    (void)*(volatile uintptr_t *)((unsigned char *)object + sizeof(void *));
+    _obstack_newchunk(object, 32);
+}
+
+__attribute__((noinline, visibility("default")))
+int ReadAlignment(obstack *object) {
+    int value = object->alignment_mask;
+    _obstack_newchunk(object, 0);
+    return value;
+}
+
+__attribute__((noinline, visibility("default")))
+void WriteAlignment(obstack *object, int value) {
+    object->alignment_mask = value;
+    _obstack_newchunk(object, 0);
+}
 #else
 GENERATED_FUNCTIONS
 #endif
@@ -28,6 +48,13 @@ int main(void) {
     obstack *object = malloc(sizeof(*object));
     assert(object);
     assert(_obstack_begin(object, 0, 0, allocate_chunk, free));
+    int alignment = object->alignment_mask;
+    assert(ReadAlignment(object) == alignment);
+    WriteAlignment(object, alignment);
+    assert(object->alignment_mask == alignment);
+    ProbeRead(NULL, 1);
+    ProbeRead(object, 0);
+    ProbeRead(object, 1);
     slot = object;
     Probe((void *)&slot);
     assert(slot == NULL);
