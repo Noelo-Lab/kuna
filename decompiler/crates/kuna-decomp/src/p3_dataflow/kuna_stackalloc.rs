@@ -725,7 +725,7 @@ fn call_preserves_slot(
         if address.get_space()?.get_index() != stack.get_index() {
             continue;
         }
-        let at = sign_extend(address.get_offset() as i64, stack.get_addr_size() * 8 - 1);
+        let at = sign_extend(address.get_offset() as i64, stack.get_addr_size() as int4 * 8 - 1);
         if at < 0 || param.get_size() <= 0 {
             return None;
         }
@@ -774,7 +774,7 @@ fn call_preserves_slot(
         }
     }
     let offset = u64::try_from(offset?).ok()?;
-    if !crate::kuna_calleeprotostack::above_callee_frame(offset, size, stack.get_addr_size(), floor) {
+    if !crate::kuna_calleeprotostack::above_callee_frame(offset, size, stack.get_addr_size() as int4, floor) {
         return None;
     }
     private_saved_slot(fd, call, pointer, size, budget, active)
