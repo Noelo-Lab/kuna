@@ -1425,7 +1425,7 @@ mod tests {
                         offset: 0,
                         size: width as u32,
                     },
-                    width as u32,
+                    width,
                     true,
                 )
                 .unwrap();
