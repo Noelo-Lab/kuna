@@ -249,6 +249,7 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
         let byte = arch.types().get_base(1, type_metatype::TYPE_UINT).unwrap();
         let pointer = arch.types().get_type_pointer(8, byte, 1).unwrap();
         let base = fd.new_varnode(8, &Address::new(ram(&fd), 0x400), Some(Rc::clone(&pointer)));
+        let base = fd.set_input_varnode(base).unwrap();
         let next = fd.new_varnode(8, &Address::new(ram(&fd), 0x408), Some(pointer));
         let add = mk_op(&mut fd, 2, 0x10, OpCode::CPUI_INT_ADD);
         let offset = fd.new_constant(8, width as u64);
