@@ -3447,15 +3447,14 @@ input halves into one logical input via `combine_input_varnodes`.
 LOADs/STOREs into one whole-width access — requiring address contiguity in
 the right endian order and proving no interfering write between the two ops.
 
-A successful LOAD fusion owns the accesses it replaces. Decoded native
-LOAD outputs must feed only this PIECE, directly or through the exclusive
-SUBPIECE already accepted by the rule, without auto-live or indirect-source
-obligations. This permits padded long-double arguments to recover their
-logical 80-bit value. After inserting the whole-value read and rewiring the
-PIECE, the rule destroys an obsolete SUBPIECE before its native source LOAD;
-otherwise discarded-read retention would emit the replaced reads again.
-Shared native sources and provably volatile reads decline fusion. The
-synthesized LOAD does not acquire native-decode provenance.
+A successful LOAD fusion retires the replaced reads' native-effect provenance,
+so retention does not emit the old accesses again. It does not clear independent
+auto-live, indirect-source, or return-recovery obligations, and does not eagerly
+destroy source LOADs or padding SUBPIECEs: ordinary dead-code removal owns those
+nodes and their remaining consumers. Normal fusion eligibility still applies,
+including recovery of padded long-double values and full-width register returns.
+Provably volatile reads decline fusion. The synthesized LOAD does not acquire
+native-decode provenance.
 
 LOADs originating in the short frame byte-copy expansion of chapter 03 keep
 their original byte widths. Their source pointer need only be byte-aligned;
