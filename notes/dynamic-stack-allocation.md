@@ -183,9 +183,19 @@ negative cases, including a 20,000-iteration allocation that would exhaust the
 stack if emitted as alloca. True function-lifetime allocations in loops retain
 their existing round-trip coverage.
 
-Allocation lowering runs immediately after active call-argument recovery, while
-the original SP relationships can still distinguish outgoing arguments from
-untouched registers and the caller frame. An unasserted caller/callee regression
-checks both inferred arities. CI installs Clang, LLD, QEMU user emulators and the
+Allocation lowering follows active call-argument recovery and waits for every
+live call's input recovery to finish. Recovery spans multiple heritage passes:
+visiting its action once is not a completion barrier. Lowering SP earlier can
+turn an alignment spill into phantom arguments or leave real outgoing stack
+arguments disconnected from the call. Dead calls do not block the transformation.
+
+An unasserted caller/callee regression checks both inferred arities. A separate
+Thumb fixture saves an unused incoming register before a three-argument call and
+allocates its buffer afterward. Its regenerated caller must compile with the
+real callee declaration, then preserve native helper counts and ordered effects
+for 513 sizes at both C optimization levels. These are consumer checks, not
+assertions about scheduler layout.
+
+CI installs Clang, LLD, QEMU user emulators and the
 SPARC GNU linker; its dedicated round-trip step requires every tool and emulator
 and prints the per-target native/recompiled comparison counts.

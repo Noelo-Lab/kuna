@@ -1049,6 +1049,18 @@ impl Action for ActionStackAlloc {
         if !fd.get_arch().stack_alloc || fd.get_heritage_pass() == 0 {
             return 0;
         }
+        // Active parameter recovery takes multiple heritage passes. Merely
+        // running after its action does not mean its stack trials are final.
+        if (0..fd.num_calls()).any(|idx| {
+            let call = fd.get_call_specs(idx);
+            call.is_input_active()
+                && fd.obank().get(call.get_op()).is_some_and(|op| {
+                    !op.is_dead()
+                        && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+                })
+        }) {
+            return 0;
+        }
         let Some(stack) = fd.get_arch().manage().get_stack_space() else {
             return 0;
         };

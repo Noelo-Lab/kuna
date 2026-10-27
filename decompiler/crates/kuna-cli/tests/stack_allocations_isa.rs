@@ -388,3 +388,150 @@ fn check(target: Target) {
         );
     }
 }
+
+#[test]
+fn arm_unasserted_call_before_allocation() {
+    let target = Target {
+        triple: "armv7-linux-gnueabihf",
+        emulator: "qemu-arm",
+        flags: &["-mthumb"],
+        start: "bl check; mov r7,#1; svc #0",
+        sparc32: false,
+    };
+    for tool in ["clang", "ld.lld"] {
+        if process::optional_output(Command::new(tool).arg("--version")).is_none() {
+            assert!(
+                std::env::var_os("KUNA_REQUIRE_STACKALLOC_ISA").is_none(),
+                "required tool missing: {tool}"
+            );
+            return;
+        }
+    }
+    let emulate =
+        process::optional_output(Command::new(target.emulator).arg("--version")).is_some();
+    assert!(
+        emulate || std::env::var_os("KUNA_REQUIRE_STACKALLOC_ISA").is_none(),
+        "required emulator missing: {}",
+        target.emulator
+    );
+    let root = common::scratch_file("stackalloc-before-call", "dir");
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("sample.c");
+    let native = root.join("native.o");
+    let start = root.join("start.s");
+    let start_obj = root.join("start.o");
+    let driver = root.join("driver.c");
+    let driver_obj = root.join("driver.o");
+    let binary = root.join("sample.elf");
+    std::fs::write(
+        &source,
+        include_str!("fixtures/stack_allocations_isa/spill_before_vla.c"),
+    )
+    .unwrap();
+    std::fs::write(
+        &start,
+        ".syntax unified\n.thumb\n.text\n.global _start\n.type _start,%function\n.thumb_func\n_start:\nbl check\nmov r7,#1\nsvc #0\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &driver,
+        "unsigned sample(unsigned);\nextern volatile unsigned call_count,ordered_digest;\nint check(void){for(unsigned n=1;n<=513;n++){call_count=0;ordered_digest=1;sample(n);if(call_count!=2||ordered_digest!=(33u+n*3u+123u)*33u+(n&255u)+n)return 1;}return 0;}\n",
+    )
+    .unwrap();
+    compile(&target, &source, &native, "-O2", false);
+    compile(&target, &start, &start_obj, "-O0", false);
+    compile(&target, &driver, &driver_obj, "-O2", false);
+    link(
+        &target,
+        std::ffi::OsStr::new("ld.lld"),
+        &[&start_obj, &native, &driver_obj],
+        &binary,
+    );
+    if emulate {
+        process::required_output(Command::new(target.emulator).arg(&binary));
+    }
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile")
+            .arg(&binary)
+            .arg("sample")
+            .args(["--json", "--option", "stackalloc", "on", "--sleighpath"])
+            .arg(
+                std::env::var_os("SLEIGHHOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| common::repo_root().join("specs")),
+            ),
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let function = document["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|function| function["name"] == "sample")
+        .unwrap();
+    assert!(function["error"].is_null(), "{function}");
+    let code = function["code"].as_str().unwrap();
+    assert!(code.contains("__builtin_alloca("), "{code}");
+    let signature = code
+        .lines()
+        .find(|line| line.contains("sample("))
+        .unwrap()
+        .split("//")
+        .next()
+        .unwrap()
+        .trim();
+    let parameters = signature
+        .split_once("sample(")
+        .unwrap()
+        .1
+        .split_once(')')
+        .unwrap()
+        .0;
+    let arguments = parameters
+        .split(',')
+        .enumerate()
+        .map(|(index, _)| if index == 0 { "n" } else { "0" })
+        .collect::<Vec<_>>()
+        .join(",");
+    let generated = root.join("generated.c");
+    let generated_obj = root.join("generated.o");
+    // The real three-argument declaration is a C consumer contract, not an
+    // analysis assertion: a phantom fourth/fifth argument must fail to compile.
+    std::fs::write(
+        &generated,
+        format!(
+            "unsigned pre_three(unsigned,unsigned,unsigned);\nunsigned observe(unsigned char *,unsigned);\n{}\n",
+            code.replacen("sample(", "regen_sample(", 1)
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        &driver,
+        format!(
+            "{signature};\nunsigned sample(unsigned);\nextern volatile unsigned call_count,ordered_digest;\nint check(void){{for(unsigned n=1;n<=513;n++){{call_count=0;ordered_digest=1;sample(n);unsigned calls=call_count,digest=ordered_digest;call_count=0;ordered_digest=1;regen_sample({arguments});if(calls!=call_count||digest!=ordered_digest)return 1;}}return 0;}}\n",
+            signature = signature.replacen("sample(", "regen_sample(", 1)
+        ),
+    )
+    .unwrap();
+    compile(&target, &driver, &driver_obj, "-O2", false);
+    for optimization in ["-O0", "-O2"] {
+        compile(&target, &generated, &generated_obj, optimization, false);
+        let executable = root.join(format!("compare-{}", optimization.trim_start_matches('-')));
+        link(
+            &target,
+            std::ffi::OsStr::new("ld.lld"),
+            &[&start_obj, &native, &generated_obj, &driver_obj],
+            &executable,
+        );
+        if emulate {
+            process::required_output(Command::new(target.emulator).arg(&executable));
+        }
+    }
+    if emulate {
+        eprintln!(
+            "{}: 1026 native/regenerated pre-allocation call-effect comparisons passed ({})",
+            target.triple,
+            root.display()
+        );
+    }
+}
