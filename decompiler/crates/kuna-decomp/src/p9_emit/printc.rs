@@ -6181,7 +6181,8 @@ impl PrintC {
             // (`symbol.field`) or the cast/functional dispatch.
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op, read_op),
             OpCode::CPUI_PIECE
-                if self.op_partial_concat_ir(fd, arch, op) || self.op_rust_piece_ir(fd, arch, op) => {},
+                if self.op_partial_concat_ir(fd, arch, op)
+                    || self.out_lang == crate::kuna_lang::OutLang::Rust && self.op_rust_piece_ir(fd, arch, op) => {},
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
             OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),
@@ -6571,9 +6572,6 @@ impl PrintC {
     fn op_rust_piece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
         use crate::dtype::type_metatype;
         use crate::printlanguage::SyntaxHighlight;
-        if self.out_lang != crate::kuna_lang::OutLang::Rust {
-            return false;
-        }
         let operation = fd.obank().get(op).unwrap();
         if operation.num_input() != 2 { return false; }
         let (Some(high), Some(low), Some(output)) = (operation.get_in(0), operation.get_in(1), operation.get_out()) else {
@@ -9714,8 +9712,14 @@ impl PrintC {
                 _ => None,
             }
         };
+        let piece = fd.obank().get(op).unwrap().code() == OpCode::CPUI_PIECE;
+        if piece && (ov.is_persist() || ov.is_volatile()
+            || ov.get_high().and_then(|high| fd.high_bank().get(high)).is_some_and(|high| high.kuna_global()))
+        {
+            return false;
+        }
         let target = self.piece_walk(fd, arch, out, op, -1, false).and_then(|(n, w)| wide(&w).map(|o| (n, w, o)));
-        if fd.obank().get(op).unwrap().code() == OpCode::CPUI_PIECE {
+        if piece {
             let Some((name, walk, off)) = target else { return false };
             let carrier_size = match size { 3 => 4, 5..=7 => 8, _ => return false };
             let factory = arch.types();

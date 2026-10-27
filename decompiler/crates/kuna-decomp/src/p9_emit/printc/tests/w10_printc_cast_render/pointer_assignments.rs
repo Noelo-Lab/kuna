@@ -472,7 +472,7 @@ fn rust_word_pairs_preserve_signed_parts_without_external_intrinsics() {
     let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let directory = std::env::temp_dir().join(format!("kuna-rust-piece-{}-{nonce}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
-    for size in [1, 2, 4, 8] {
+    for (size, signed, unsigned) in [(1, "i8", "u16"), (2, "i16", "u32"), (4, "i32", "u64"), (8, "i64", "u128")] {
         let arch = bare_arch();
         let mut fd = build_fd();
         let signed_type = named("signed_word", size, type_metatype::TYPE_INT);
@@ -497,8 +497,6 @@ fn rust_word_pairs_preserve_signed_parts_without_external_intrinsics() {
         printer.set_output_stream();
         printer.op_push_ir(&fd, &arch, op, None);
         let expression = printer.emit_mut().output_str();
-        let signed = crate::kuna_rusttypes::int_name(size, true).unwrap();
-        let unsigned = crate::kuna_rusttypes::int_name(size * 2, false).unwrap();
         let program = format!(r#"
 #![allow(unused_parens)]
 fn emitted(high:{signed},low:{signed})->{unsigned}{{{expression}}}
