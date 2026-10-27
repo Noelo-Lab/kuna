@@ -2,8 +2,6 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
-#define obstack_chunk_alloc malloc
-#define obstack_chunk_free free
 #include <obstack.h>
 typedef struct obstack obstack;
 
@@ -22,14 +20,14 @@ GENERATED_FUNCTIONS
 #endif
 
 #ifndef ORIGINAL_ONLY
+static void *allocate_chunk(long size) { return malloc((size_t)size); }
 int main(void) {
     Probe(NULL);
     void *slot = NULL;
     Probe((void *)&slot);
     obstack *object = malloc(sizeof(*object));
     assert(object);
-    obstack_init(object);
-    assert(obstack_alloc(object, 32));
+    assert(_obstack_begin(object, 0, 0, allocate_chunk, free));
     slot = object;
     Probe((void *)&slot);
     assert(slot == NULL);
