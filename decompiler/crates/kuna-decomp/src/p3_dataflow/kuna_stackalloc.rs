@@ -2391,21 +2391,34 @@ mod tests {
             fd.get_call_specs_mut(index).proto_mut().set_extra_pop(width);
             fd.get_call_specs_mut(index).proto_mut().set_input_lock(true);
             let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
-            let previous = fd.new_op(1, Address::new(Rc::clone(&ram), 0x4010));
+            let previous = fd.new_op(1, Address::new(Rc::clone(&ram), 0x4000));
             fd.op_set_opcode_code(previous, OpCode::CPUI_COPY);
             fd.op_set_input(previous, saved_sp, 0).unwrap();
             let previous_sp = fd.new_varnode_out(width, &sp_address, previous).unwrap();
             fd.op_insert_end(previous, blocks[7]);
+            let older = fd.new_op(2, Address::new(Rc::clone(&ram), 0x4004));
+            fd.op_set_opcode_code(older, OpCode::CPUI_INT_SUB);
+            fd.op_set_input(older, previous_sp, 0).unwrap();
+            fd.op_set_input(older, amount, 1).unwrap();
+            let older_object = fd.new_varnode_out(width, &sp_address, older).unwrap();
+            fd.op_insert_end(older, blocks[7]);
+            let publish = fd.new_op(3, Address::new(Rc::clone(&ram), 0x4008));
+            fd.op_set_opcode_code(publish, OpCode::CPUI_STORE);
+            let space = fd.new_constant(4, ram.get_index() as u64);
+            let global = fd.new_constant(width, 0x5000);
+            fd.op_set_input(publish, space, 0).unwrap();
+            fd.op_set_input(publish, global, 1).unwrap();
+            fd.op_set_input(publish, older_object, 2).unwrap();
+            fd.op_insert_end(publish, blocks[7]);
             let slot = fd.new_op(2, Address::new(Rc::clone(&ram), 0x4014));
             fd.op_set_opcode_code(slot, OpCode::CPUI_INT_ADD);
-            fd.op_set_input(slot, previous_sp, 0).unwrap();
+            fd.op_set_input(slot, older_object, 0).unwrap();
             let distance = fd.new_constant(width, (-(width as i64)) as u64 & calc_mask(width));
             fd.op_set_input(slot, distance, 1).unwrap();
             let private = fd.new_varnode_out(width, &sp_address, slot).unwrap();
             fd.op_insert_end(slot, blocks[7]);
             let save = fd.new_op(3, Address::new(Rc::clone(&ram), 0x4014));
             fd.op_set_opcode_code(save, OpCode::CPUI_STORE);
-            let space = fd.new_constant(4, ram.get_index() as u64);
             fd.op_set_input(save, space, 0).unwrap();
             fd.op_set_input(save, private, 1).unwrap();
             fd.op_set_input(save, base, 2).unwrap();
@@ -2426,20 +2439,20 @@ mod tests {
 
             let escape = fd.new_op(3, fd.get_address().clone());
             fd.op_set_opcode_code(escape, OpCode::CPUI_STORE);
-            let global = fd.new_constant(width, 0x5000);
             fd.op_set_input(escape, space, 0).unwrap();
-            fd.op_set_input(escape, global, 1).unwrap();
+            fd.op_set_input(escape, older_object, 1).unwrap();
             fd.op_set_input(escape, private, 2).unwrap();
             fd.op_insert_before(escape, call);
             assert!(
                 private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_none(),
-                "a prior global address escape invalidates a no-argument call's private-slot proof"
+                "a saved-word pointer stored into a globally escaped older object is observable by a no-argument call"
             );
             fd.op_set_input(escape, previous_sp, 2).unwrap();
             assert!(
                 private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_none(),
                 "an escaped containing-frame base is not disjoint by one pointee's size"
             );
+            let mut interior = None;
             for offset in [-2_i64, 2] {
                 let add = fd.new_op(2, fd.get_address().clone());
                 fd.op_set_opcode_code(add, OpCode::CPUI_INT_ADD);
@@ -2447,6 +2460,9 @@ mod tests {
                 let distance = fd.new_constant(width, (offset * width as i64) as u64 & calc_mask(width));
                 fd.op_set_input(add, distance, 1).unwrap();
                 let escaped = fd.new_unique_out(width, add).unwrap();
+                if offset > 0 {
+                    interior = Some(escaped);
+                }
                 fd.op_insert_before(add, escape);
                 fd.op_set_input(escape, escaped, 2).unwrap();
                 assert!(
@@ -2454,9 +2470,23 @@ mod tests {
                     "neither downward nor interior offset pointers prove object disjointness"
                 );
             }
+            let frame_size = fd.new_constant(width, (-4 * width as i64) as u64 & calc_mask(width));
+            fd.op_set_input(slot, frame_size, 1).unwrap();
+            fd.op_set_input(escape, interior.unwrap(), 2).unwrap();
+            assert!(
+                private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_none(),
+                "a word inside a larger frame is reachable through its escaped interior pointer"
+            );
+            fd.op_set_input(slot, distance, 1).unwrap();
             let harmless = fd.new_constant(width, 7);
             fd.op_set_input(escape, harmless, 2).unwrap();
             assert!(private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_some());
+            fd.op_set_input(escape, global, 1).unwrap();
+            assert!(
+                private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_none(),
+                "an unproved intervening write cannot be assumed disjoint"
+            );
+            fd.op_set_input(escape, older_object, 1).unwrap();
             let restore = fd.new_op(1, fd.get_address().clone());
             fd.op_set_opcode_code(restore, OpCode::CPUI_COPY);
             fd.op_set_input(restore, base, 0).unwrap();
