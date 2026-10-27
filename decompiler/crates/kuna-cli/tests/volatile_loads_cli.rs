@@ -710,7 +710,16 @@ fn retained_scalar_reads_do_not_require_natural_alignment() {
                     ]),
             );
             let printed = std::str::from_utf8(&output.stdout).unwrap();
-            if language == "c" { c.push_str(printed); } else { rust.push_str(printed); }
+            if language == "c" {
+                c.push_str(printed);
+            } else {
+                // A discarded machine read must not create an initialized
+                // integer requirement. The compiled page oracle below still
+                // checks that the opaque read occurs at the original width.
+                assert!(printed.contains("MaybeUninit"), "{printed}");
+                assert!(!printed.contains("assume_init"), "{printed}");
+                rust.push_str(printed);
+            }
         }
         declarations.push_str(&format!("void {name}(void *, unsigned);\n"));
         rust.push_str(&format!(r#"

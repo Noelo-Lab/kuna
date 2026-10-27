@@ -5889,6 +5889,14 @@ impl PrintC {
                 self.emit_storage_assignment_ir(fd, arch, op, assignment);
                 return;
             }
+        } else if self.out_lang == crate::kuna_lang::OutLang::Rust
+            && crate::p3_dataflow::kuna_volatileload::dynamic_read(fd, op).is_some()
+        {
+            // The p-code output records width and typing, not a scalar consumer.
+            // Discard opaque bits directly rather than requiring an initialized
+            // integer or inventing a value for the unused assignment target.
+            self.op_push_ir(fd, arch, op, None);
+            return;
         }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             if let Some(assignment) = self.local_array_assignment(fd, arch, op) {
@@ -6619,9 +6627,9 @@ impl PrintC {
                     // Evaluate in the caller's namespace before introducing
                     // the packed type: its constructor must not capture a
                     // callee or type used by the pointer expression.
-                    static READ16: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(u16); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
-                    static READ32: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(u32); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
-                    static READ64: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(u64); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    static READ16: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(core::mem::MaybeUninit<u16>); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    static READ32: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(core::mem::MaybeUninit<u32>); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
+                    static READ64: OpToken = op_token("", "); { #[repr(C, packed)] struct NativeRead(core::mem::MaybeUninit<u64>); core::ptr::read_volatile(address as *const NativeRead).0 } })", 2, 66, false, TokenType::Postsurround, 0, 0);
                     self.push_op(match size {
                         2 => &READ16, 4 => &READ32, 8 => &READ64,
                         _ => unreachable!("retained scalar read width"),
@@ -6645,25 +6653,27 @@ impl PrintC {
                     ));
                     self.push_vn_ir(fd, arch, address, op);
                 }
+            } else if rust {
+                static READ8: OpToken = op_token("", ") as *const core::mem::MaybeUninit<u8>)", 2, 66, false, TokenType::Postsurround, 0, 0);
+                static READ16: OpToken = op_token("", ") as *const core::mem::MaybeUninit<u16>)", 2, 66, false, TokenType::Postsurround, 0, 0);
+                static READ32: OpToken = op_token("", ") as *const core::mem::MaybeUninit<u32>)", 2, 66, false, TokenType::Postsurround, 0, 0);
+                static READ64: OpToken = op_token("", ") as *const core::mem::MaybeUninit<u64>)", 2, 66, false, TokenType::Postsurround, 0, 0);
+                self.push_op(match size {
+                    1 => &READ8, 2 => &READ16, 4 => &READ32, 8 => &READ64,
+                    _ => unreachable!("retained scalar read width"),
+                }, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("core::ptr::read_volatile((", TagType::Syntax, SyntaxHighlight::no_color));
+                self.push_vn_ir(fd, arch, address, op);
             } else {
                 let pointer_size = fd.vbank().get(address).expect("retained read pointer").get_size();
                 let types = arch.types();
                 let value = types.get_base(size, crate::dtype::type_metatype::TYPE_UINT)
                     .expect("retained scalar read type");
-                let value = if rust { value } else {
-                    types.get_qualified_type(value, crate::kuna_typequal::VOLATILE)
-                        .expect("retained volatile read type")
-                };
+                let value = types.get_qualified_type(value, crate::kuna_typequal::VOLATILE)
+                    .expect("retained volatile read type");
                 let pointer = types.get_type_pointer(pointer_size, value, 1)
                     .expect("retained read pointer type");
-                if rust {
-                    self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-                    self.push_atom(&Atom::syntax(
-                        "core::ptr::read_volatile", TagType::FuncToken, SyntaxHighlight::funcname_color,
-                    ));
-                } else {
-                    self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
-                }
+                self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
                 self.push_cast_open(&pointer, op);
                 self.push_vn_ir(fd, arch, address, op);
                 self.push_cast_close(&pointer);

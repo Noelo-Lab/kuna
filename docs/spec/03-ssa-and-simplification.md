@@ -2870,6 +2870,12 @@ nested scope, so the generated type cannot capture a recovered callee name in
 that expression. A round trip calls functions named `NativeRead` and `address`
 and checks that each is still called exactly once.
 
+Discarded Rust native effects read `MaybeUninit` scalars and discard their opaque
+result directly, rather than assigning an initialized integer or fabricating a
+replacement value. The p-code output remains available for width and typing.
+This avoids imposing an initialization requirement on otherwise readable
+storage; packed wrappers still provide alignment one only on permissive ISAs.
+
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`
 (repeat-apply) and `ActionLateDoNothing` splice out empty do-nothing blocks
