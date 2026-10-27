@@ -602,7 +602,7 @@ fn preceding_stack(fd: &Funcdata, point: OpId, budget: &mut usize) -> Option<Var
     if fd.bblocks_ref().block(parent).size_in() != 0 {
         return None;
     }
-    fd.find_spacebase_input(&fd.get_arch().manage().get_stack_space()?)
+    fd.find_spacebase_input(fd.get_arch().manage().get_stack_space()?)
 }
 
 /// The link word was newly reserved by this instruction and stayed reserved.
