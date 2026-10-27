@@ -139,6 +139,7 @@ fn opaque_pointer_offsets_keep_pointer_width_and_byte_scaling() {
     std::fs::create_dir(&directory).unwrap();
     for displacement in [8i64, 0x8000_0008, 0x1_0000_0008, -8] {
         let arch = bare_arch();
+        arch.types_impl().set_default_alignment_map();
         arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
         arch.types_impl().cache_core_types().unwrap();
         let mut fd = build_fd();

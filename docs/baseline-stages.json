@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3219,
-    3219
+    3212,
+    3212
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1078,19 +1078,12 @@
     "data:KUNA-X86LISTINGSWITCH #7: direct case-only callee is discovered with the option on",
     "data:KUNA-X86LISTINGSWITCH #8: case-only helper call survives both decompilations",
     "data:KUNA-X86LISTINGSWITCH #9: case result after the helper is explicit in both arms",
-    "data:LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset",
     "data:LIBCTYPES #11: glibc on, the same two accesses are the published field",
-    "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",
     "data:LIBCTYPES #13: glibc on, that read is the field",
     "data:LIBCTYPES #14: and the value carries the FIELD's type, so the sentinel is a signed -1",
-    "data:LIBCTYPES #15: and the lines carrying an offset-named field anywhere in this file are exactly the four of pass 4, the four of the opaque stream passes and the one of pass 13's control",
     "data:LIBCTYPES #16: off, the copy-relocated stream slot is an untyped word and its fields are raw offsets",
     "data:LIBCTYPES #17: off, the GOT slot of a shared object is not even named",
-    "data:LIBCTYPES #18: on, the copy-relocated slot is the stream itself, so the reads are fields of it",
-    "data:LIBCTYPES #19: on, the GOT slot holds the stream's ADDRESS, and the name and the extra indirection both say so",
     "data:LIBCTYPES #1: off, the stream parameter is an opaque void *",
-    "data:LIBCTYPES #20: a store THROUGH the stream pointer still stores to the same address",
-    "data:LIBCTYPES #21: and so does the GOT form",
     "data:LIBCTYPES #22: a read of the stream OBJECT stays the object -- `sink\\(stdin\\)`, never `sink\\(\\*stdin\\)`",
     "data:LIBCTYPES #23: and in the library it is the one indirection the program performs, no more",
     "data:LIBCTYPES #24: a stream handed to a libc call the table already typed does not move",
