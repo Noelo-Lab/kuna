@@ -55,10 +55,13 @@ sizes at both C optimization levels. Windows cases recompile with Clang and trea
 incompatible pointer diagnostics as errors. These checks do not establish support
 for arbitrary stack manipulation.
 
-A focused whole-command timing on the optimized ELF example (ten measured runs
-after two warmups) had median times of 167 ms before this change, 158 ms with
-the option off, and 162 ms with it on. These process-level measurements show no
-observed slowdown on this fixture; they do not establish a corpus-wide speed bound.
+Allocation recovery participates in ordinary type propagation: arguments and
+callees can acquire named record types even outside the allocation itself.
+Function-body C is not a self-contained translation unit. For recompilation,
+use a project export including its type header, or `--option structdefs on` for
+the per-function definitions and JSON `types` records. With `structdefs` off,
+that JSON list is empty by design. Replacing a recovered record with an integer
+typedef does not supply the required type context.
 
 A restored frame pointer can reach a later allocation through a memory load.
 The allocation is identified by its runtime subtraction feeding physical SP,
@@ -140,21 +143,30 @@ and `O2-on` project exports, so the full per-function diff is reproducible. Valu
 helper call counts and ordered input digests are compared for all 513 sizes; this
 also checks that control-flow simplification has not removed or reordered calls.
 
-For the earlier seven-function cross-ISA fixture, the following whole-command timings
-use two warmups and seven interleaved measurements per setting, with no build or
-other test running concurrently. These are medians; the option remains off by
-default. The measurement includes loading, analysis and C emission.
+Engine CPU measurements use a 138-function, 19-binary cohort covering all ten
+corpus ISAs, including large looping functions, allocation consumers, the
+SPARC32 `dash` parser, and DecBench's unoptimized `dash` `readtoken1`. Three
+independent persistent workers run the base, default-off head, and enabled head
+on the same pinned CPU in one allocation. Each arm has two warmups and seven
+measured rounds; arm order rotates and reverses between rounds.
 
-| Target | Off (ms) | On (ms) | Delta |
+`CLOCK_THREAD_CPUTIME_ID` clocks only the actual `decompile_one` API and,
+separately, the existing `print_c` call. Startup, loading, preparation,
+serialization, and destruction are excluded. The combined median is calculated
+from each round's sum, not by adding the two separate medians.
+
+| Median cohort CPU (s) | Base | Head, default off | Head, enabled |
 | --- | ---: | ---: | ---: |
-| aarch64-linux-gnu | 180.6 | 179.1 | -0.8% |
-| x86_64-linux-gnu | 197.0 | 192.8 | -2.1% |
-| riscv32-linux-gnu | 63.1 | 56.0 | -11.4% |
-| armv7-linux-gnueabihf | 137.4 | 133.3 | -3.0% |
-| riscv64-linux-gnu | 71.9 | 70.5 | -1.8% |
-| sparc-linux-gnu | 102.1 | 110.7 | +8.5% |
-| sparcv9-linux-gnu | 115.9 | 120.9 | +4.3% |
-| i686-linux-gnu | 189.2 | 175.5 | -7.2% |
+| Decompilation API | 33.797 | 34.094 | 38.637 |
+| C emission | 0.285 | 0.289 | 0.287 |
+| Combined | 34.082 | 34.382 (+0.88%) | 38.922 (+14.20%) |
+
+All measured C and status outputs are stable within each arm. The enabled
+analysis cost is real, not a startup effect or a corpus-wide upper bound.
+`readtoken1` has combined medians of 2.093 s at base, 2.049 s default-off,
+and 2.119 s enabled. The SPARC32 parser's corresponding medians are 0.258,
+0.269, and 0.401 s; its full-corpus CLI run also completes within the unchanged
+60-second per-function budget.
 
 Alignment masks must retain at least one address bit: an AND with zero erases
 the pointer and cannot establish alignment. Only an AND whose other operand is
