@@ -68,8 +68,8 @@ The allocation is identified by its runtime subtraction feeding physical SP,
 not by requiring that the base's entire history remain visible in SSA. The
 explicit option declares ordinary stack-buffer lifetimes; it does not implement
 saved-context switching or intentional aliasing between live allocation objects.
-An isolated saved-frame fixture maps the fixed frame through the existing console
-interface, then checks that both allocations receive storage.
+The PE32 restored-frame consumer compares native and regenerated values, helper
+call counts and relative buffer addresses, not the number of emitted allocas.
 
 Requiring provenance only from the subtraction's base made equivalent instruction
 orders disagree: assigning a restored base to SP before subtracting admitted it,
@@ -113,10 +113,12 @@ Run `cargo test -p kuna-cli --test integration stack_allocations_isa:: -- --noca
 The tests use Clang, LLD, and each QEMU user emulator. SPARC32 uses GNU
 `sparc64-linux-gnu-ld -m elf32_sparc` because LLD lacks that emulation; an alternate
 linker path can be supplied with `KUNA_TEST_SPARC_LD`. Its Clang-generated 32-bit
-code runs with `qemu-sparc32plus`. Missing compiler/linker tools cause an explicit skip; missing QEMU skips only
-execution while retaining compilation and decompilation checks. Installed tools
-failing to compile, link, or run are failures. For complete local
-coverage, all eight emulators and both linkers must be present.
+code runs with `qemu-sparc32plus`. The over-aligned SPARC fixtures were validated
+with Clang 23.1.4; Clang 19.1.7 rejects those stack objects before decompilation.
+The other six targets were validated with Clang 19.1.7. Missing compiler/linker
+tools cause an explicit skip; missing QEMU skips only execution while retaining
+compilation and decompilation checks. Installed tools failing to compile, link,
+or run are failures. Complete coverage requires all eight emulators and both linkers.
 
 The SPARC runs disable `noreturn_disc`:
 the fixture helpers are authored as returning functions and verified to return
@@ -149,8 +151,8 @@ SPARC32 `dash` parser, and DecBench's unoptimized `dash` `readtoken1`. Three
 independent persistent workers run the base, default-off head, and enabled head
 on the same pinned CPU in one allocation. Each arm has two warmups and seven
 measured rounds; arm order rotates and reverses between rounds.
-These measurements compare base `5a1033c9` with runtime `d10c935b`, using
-identically locked dependencies on one Xeon E5-2630 v4 core.
+These measurements compare base `5a1033c9` with runtime `441c0463`, using the same
+locked dependency graph on one Xeon E5-2630 v4 core.
 
 `CLOCK_THREAD_CPUTIME_ID` clocks only the actual `decompile_one` API and,
 separately, the existing `print_c` call. Startup, loading, preparation,
@@ -159,25 +161,28 @@ from each round's sum, not by adding the two separate medians.
 
 | Median cohort CPU (s) | Base | Head, default off | Head, enabled |
 | --- | ---: | ---: | ---: |
-| Decompilation API | 26.443 | 26.878 | 29.173 |
-| C emission | 0.220 | 0.221 | 0.219 |
-| Combined | 26.663 | 27.100 (+1.64%) | 29.392 (+10.24%) |
+| Decompilation API | 26.538015 | 26.826605 | 29.274191 |
+| C emission | 0.225205 | 0.229947 | 0.222337 |
+| Combined | 26.762399 | 27.056552 (+1.10%) | 29.496118 (+10.21%) |
 
 All seven measured combined-CPU samples are retained, including the slower early
 samples. Values below are seconds in measured-round order:
 
 | Arm | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Base | 27.687517 | 27.721034 | 26.532726 | 26.622630 | 26.584127 | 26.662564 | 26.720511 |
-| Head, default off | 27.815327 | 28.085533 | 28.188802 | 26.998898 | 26.967025 | 27.047340 | 27.099568 |
-| Head, enabled | 30.430231 | 30.347793 | 30.318720 | 29.278100 | 29.301810 | 29.310428 | 29.391912 |
+| Base | 28.592780 | 28.837876 | 26.981649 | 26.673176 | 26.706974 | 26.759859 | 26.762399 |
+| Head, default off | 28.405090 | 28.520205 | 28.768016 | 26.840170 | 27.056552 | 26.898520 | 26.913476 |
+| Head, enabled | 31.004560 | 31.209130 | 31.366898 | 29.386985 | 29.333590 | 29.496118 | 29.327788 |
 
 All measured C and status outputs are stable within each arm. The enabled
 analysis cost is real, not a startup effect or a corpus-wide upper bound.
-`readtoken1` has combined medians of 1.599 s at base, 1.612 s default-off,
-and 1.784 s enabled. The SPARC32 parser's corresponding medians are 0.202,
-0.210, and 0.301 s; its full-corpus CLI run also completes within the unchanged
-60-second per-function budget.
+`readtoken1` has combined medians of 1.602828 s at base, 1.599982 s default-off,
+and 1.827314 s enabled. The SPARC32 parser's corresponding medians are 0.208121,
+0.210514, and 0.296124 s; its full-corpus CLI run also completes within the
+unchanged 60-second per-function budget. Separate action-count diagnostics for
+six costly case sets preserve the unprofiled C/status outputs and show no
+increase in heritage or other existing action counts. Those invocation counts
+diagnose repeated work; profiler wall times are not these CPU measurements.
 
 Alignment masks must retain at least one address bit: an AND with zero erases
 the pointer and cannot establish alignment. Only an AND whose other operand is
