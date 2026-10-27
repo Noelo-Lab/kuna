@@ -483,10 +483,11 @@ fn displaced_aliases(
 fn identify_aliases(
     fd: &Funcdata,
     mut found: Vec<Allocation>,
+    stack_definitions: &[OpId],
 ) -> (Vec<Allocation>, Vec<(VarnodeId, VarnodeId)>) {
-    // Recovery can retarget the original subtraction to an argument register,
-    // leaving only a later CALL's return-address push in the physical SP chain.
-    // Recover the earlier, same-block address calculation before choosing roots.
+    // Recovery can retarget an earlier physical-SP definition to an argument
+    // register. Only those witnessed definitions can become an earlier root;
+    // affine equality alone must not hoist a future reservation.
     for root in &mut found {
         let Some(block) = fd.obank().get(root.op).and_then(|op| op.get_parent()) else {
             continue;
@@ -496,10 +497,24 @@ fn identify_aliases(
             let Some(op) = fd.obank().get(id) else {
                 break;
             };
-            if op.get_parent() != Some(block) {
+            if op.get_parent() != Some(block)
+                || matches!(
+                    op.code(),
+                    OpCode::CPUI_CALL
+                        | OpCode::CPUI_CALLIND
+                        | OpCode::CPUI_CALLOTHER
+                        | OpCode::CPUI_RETURN
+                        | OpCode::CPUI_BRANCH
+                        | OpCode::CPUI_CBRANCH
+                        | OpCode::CPUI_BRANCHIND
+                )
+            {
                 break;
             }
             previous = op.basic_neighbours().0;
+            if !stack_definitions.contains(&id) {
+                continue;
+            }
             if let Some(candidate) = allocation(fd, id) {
                 if fd.vbank().get(candidate.output).unwrap().get_size()
                     == fd.vbank().get(root.output).unwrap().get_size()
@@ -518,7 +533,7 @@ fn identify_aliases(
         .filter(|a| {
             !found
                 .iter()
-                .any(|b| same_origin(fd, a, b) && dominates_op(fd, b.op, a.op))
+                .any(|b| origin_delta(fd, a, b).is_some() && dominates_op(fd, b.op, a.op))
         })
         .collect();
     let aliases = fd
@@ -1063,11 +1078,14 @@ fn materialize_allocations(
 
 pub struct ActionStackAlloc {
     base: ActionBase,
+    // Retain provenance, not a stale expression, while call trials converge.
+    stack_definitions: Vec<OpId>,
 }
 impl ActionStackAlloc {
     pub fn boxed() -> Box<dyn Action> {
         Box::new(Self {
             base: ActionBase::new(0, "stackalloc", "stackvars"),
+            stack_definitions: Vec::new(),
         })
     }
 }
@@ -1081,8 +1099,22 @@ impl Action for ActionStackAlloc {
     fn clone_filtered(&self, groups: &ActionGroupList) -> Option<Box<dyn Action>> {
         groups.contains(self.get_group()).then(Self::boxed)
     }
+    fn reset(&mut self, _fd: &mut Funcdata) {
+        self.base.reset_base();
+        self.stack_definitions.clear();
+    }
     fn apply(&mut self, fd: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         if !fd.get_arch().stack_alloc || fd.get_heritage_pass() == 0 {
+            return 0;
+        }
+        let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+            return 0;
+        };
+        let Ok(register) = stack.get_spacebase(0) else {
+            return 0;
+        };
+        let width = register.size as int4;
+        if !matches!(width, 4 | 8) {
             return 0;
         }
         // Active parameter recovery takes multiple heritage passes. Merely
@@ -1095,16 +1127,17 @@ impl Action for ActionStackAlloc {
                         && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
                 })
         }) {
-            return 0;
-        }
-        let Some(stack) = fd.get_arch().manage().get_stack_space() else {
-            return 0;
-        };
-        let Ok(register) = stack.get_spacebase(0) else {
-            return 0;
-        };
-        let width = register.size as int4;
-        if !matches!(width, 4 | 8) {
+            for id in fd.obank().iter_alive() {
+                if fd
+                    .obank()
+                    .get(id)
+                    .and_then(|op| op.get_out())
+                    .is_some_and(|out| stack_register(fd, out))
+                    && !self.stack_definitions.contains(&id)
+                {
+                    self.stack_definitions.push(id);
+                }
+            }
             return 0;
         }
         let mut found = BTreeMap::new();
@@ -1119,7 +1152,8 @@ impl Action for ActionStackAlloc {
                 candidates(fd, out, &mut seen, &mut found);
             }
         }
-        let (allocations, aliases) = identify_aliases(fd, found.into_values().collect());
+        let (allocations, aliases) =
+            identify_aliases(fd, found.into_values().collect(), &self.stack_definitions);
         if allocations.is_empty() || allocations.iter().any(|a| loop_restores_stack(fd, a)) {
             return 0;
         }

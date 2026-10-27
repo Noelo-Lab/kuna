@@ -191,14 +191,22 @@ arguments disconnected from the call. Dead calls do not block the transformation
 
 Recovery may also retarget the original subtraction's result to an argument
 register, leaving a later call's return-address push as the surviving physical-SP
-definition. Root discovery therefore walks backward only within that same basic
-block to recover an earlier, equal-width subtraction with the same SSA amount
-and a proved constant displacement from the same base. It crosses no branches.
+definition. While input recovery is pending, the action records the generational
+IDs of actual physical-SP definitions without changing the IR. Root discovery
+can promote only one of those witnessed reservations, with an equal-width
+subtraction of the same SSA amount and a proved constant displacement from the
+same base. Its backward walk stays in one basic block and stops at calls,
+userops, and control-flow boundaries; an arbitrary future pointer calculation
+is not evidence that storage was already reserved. Per-function reset clears
+the provenance, and filtered action clones begin empty.
 Later displaced copies use the same backing reservation. The loop-lifetime proof
 recognizes those same affine copies, but not restoration of the allocation's
 older base; scoped VLA rejection remains independent of address recovery.
 
-An unasserted caller/callee regression checks both inferred arities. A separate
+An unasserted x86 caller is compiled with the real helper declaration, then
+compared against native helper counts and values while that helper clobbers its
+own stack. This rejects a discarded alloca or a pointer still derived from a
+fixed local without relying on its printed name. A separate
 Thumb fixture saves an unused incoming register before a three-argument call and
 allocates its buffer afterward. Its regenerated caller must compile with the
 real callee declaration, then preserve native helper counts and ordered effects

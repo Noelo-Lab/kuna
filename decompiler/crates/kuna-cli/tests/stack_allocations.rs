@@ -459,12 +459,35 @@ fn elf64_unasserted_allocation_keeps_call_arity() {
     let root = common::scratch_file("unasserted-stack-allocation", "dir");
     std::fs::create_dir_all(&root).unwrap();
     let source = root.join("sample.c");
+    let object = root.join("sample.o");
     let binary = root.join("sample.so");
-    std::fs::write(&source,"__attribute__((noinline)) int observe(char*p,int n){p[n-1]=9;return (unsigned char)p[0]+(unsigned char)p[n-1];}\nint allocate(int n){char*p=__builtin_alloca((unsigned)n);p[0]=7;return observe(p,n); }\n").unwrap();
+    std::fs::write(
+        &source,
+        r#"volatile unsigned observed_calls,observed_value;
+__attribute__((noinline)) int observe(char *p,int n) {
+    volatile unsigned char clobber[8192];
+    for(unsigned i=0;i<sizeof clobber;i++)clobber[i]=(unsigned char)(i+(unsigned)n);
+    p[n-1]=9;
+    int value=(unsigned char)p[0]+(unsigned char)p[n-1];
+    observed_calls++;
+    observed_value=(unsigned)value;
+    return value;
+}
+int allocate(int n){char*p=__builtin_alloca((unsigned)n);p[0]=7;return observe(p,n);}
+"#,
+    )
+    .unwrap();
     process::required_output(
         Command::new("clang")
-            .args(["-O2", "-shared", "-fPIC", "-nostdlib", "-Wl,-Bsymbolic"])
+            .args(["-O2", "-fPIC", "-c"])
             .arg(&source)
+            .arg("-o")
+            .arg(&object),
+    );
+    process::required_output(
+        Command::new("clang")
+            .args(["-shared", "-nostdlib", "-Wl,-Bsymbolic"])
+            .arg(&object)
             .arg("-o")
             .arg(&binary),
     );
@@ -473,17 +496,42 @@ fn elf64_unasserted_allocation_keeps_call_arity() {
             .arg("decompile")
             .arg(&binary)
             .arg("allocate")
-            .args(["--option", "stackalloc", "on", "--sleighpath"])
+            .args(["--json", "--option", "stackalloc", "on", "--sleighpath"])
             .arg(common::repo_root().join("specs")),
     );
-    let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.contains("__builtin_alloca("), "{text}");
-    let signature = text
-        .lines()
-        .find(|line| line.contains("allocate("))
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let function = document["functions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|function| function["name"] == "allocate")
         .unwrap();
-    assert_eq!(signature.matches(',').count(), 0, "{text}");
-    let call = text.lines().find(|line| line.contains("observe(")).unwrap();
-    assert_eq!(call.matches(',').count(), 1, "{text}");
-    assert!(!text.contains("Stackffff"), "{text}");
+    assert!(function["error"].is_null(), "{function}");
+    let code = function["code"].as_str().unwrap();
+    assert!(code.contains("__builtin_alloca("), "{code}");
+    let consumer = root.join("consumer.c");
+    std::fs::write(
+        &consumer,
+        format!(
+            "#include <stddef.h>\n#include <stdint.h>\nint observe(char *,int);\nint allocate(int);\nextern volatile unsigned observed_calls,observed_value;\n{}\nint main(void){{for(unsigned n=1;n<=513;n++){{observed_calls=0;observed_value=0;int reference=allocate((int)n);unsigned calls=observed_calls,value=observed_value;observed_calls=0;observed_value=0;regen_allocate(n);if(reference!=(n==1?18:16)||calls!=1||calls!=observed_calls||value!=observed_value)return 1;}}return 0;}}\n",
+            code.replacen("allocate(", "regen_allocate(", 1)
+        ),
+    )
+    .unwrap();
+    for optimization in ["-O0", "-O2"] {
+        let executable = root.join(optimization.trim_start_matches('-'));
+        process::required_output(
+            Command::new("clang")
+                .arg(optimization)
+                .arg(&consumer)
+                .arg(&object)
+                .arg("-o")
+                .arg(&executable),
+        );
+        process::required_output(&mut Command::new(&executable));
+    }
+    eprintln!(
+        "1026 native/regenerated stack-clobbering helper comparisons passed ({})",
+        root.display()
+    );
 }
