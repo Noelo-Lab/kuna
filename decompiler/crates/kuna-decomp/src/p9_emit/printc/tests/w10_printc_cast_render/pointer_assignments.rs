@@ -339,6 +339,7 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
 #include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/resource.h>
 typedef unsigned char uint1;typedef unsigned short uint2;typedef unsigned int uint4;typedef unsigned long long uint8;
 typedef uint1 undefined1;typedef uint2 undefined2;typedef uint4 undefined4;typedef uint8 undefined8;typedef unsigned __int128 undefined16;
 static void emitted(unsigned char *base,int active) {{
@@ -353,6 +354,8 @@ static int check(unsigned char *p,int active,int fault) {{
     return fault ? !(WIFSIGNALED(status)&&WTERMSIG(status)==SIGSEGV) : !(WIFEXITED(status)&&WEXITSTATUS(status)==0);
 }}
 int main(void) {{
+    struct rlimit limit = {{0, 0}};
+    if(setrlimit(RLIMIT_CORE,&limit))return 90;
     long page=sysconf(_SC_PAGESIZE);unsigned char *p=mmap(0,page*3,PROT_NONE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
     if(p==MAP_FAILED||mprotect(p+page,page,PROT_READ|PROT_WRITE))return 10;
     int failed=check(p,0,0)||check(p+page*2-2*{width},1,0)
