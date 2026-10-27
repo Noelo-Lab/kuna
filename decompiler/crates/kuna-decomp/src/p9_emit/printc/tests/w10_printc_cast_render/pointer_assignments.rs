@@ -273,13 +273,17 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
         let piece = mk_op(&mut fd, 2, 0x30, OpCode::CPUI_PIECE);
         fd.op_set_input(piece, values[1], 0).unwrap();
         fd.op_set_input(piece, values[0], 1).unwrap();
-        fd.new_unique_out(width * 2, piece).unwrap();
+        let combined = fd.new_unique_out(width * 2, piece).unwrap();
+        let consumer = mk_op(&mut fd, 1, 0x34, OpCode::CPUI_COPY);
+        fd.op_set_input(consumer, combined, 0).unwrap();
+        fd.new_unique_out(width * 2, consumer).unwrap();
         let root = fd.bblocks_ref().root.unwrap();
         let block = fd.bblocks_mut().new_block_basic(root);
-        for op in [add, loads[0], loads[1], piece] { fd.op_insert_end(op, block); }
+        for op in [add, loads[0], loads[1], piece, consumer] { fd.op_insert_end(op, block); }
         // The concatenation is live when fusion considers its two scalar reads.
         // A later rewrite erases that consumer, then ordinary early removal runs.
         crate::double::RuleDoubleLoad::new("doubleload").apply_op(piece, &mut fd);
+        fd.op_destroy(consumer);
         fd.op_destroy(piece);
         let candidates: Vec<_> = fd.obank().iter_alive().collect();
         for op in candidates {
@@ -293,13 +297,25 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
                 fd.high_bank_mut().get_mut(high).unwrap().set_kuna_name(name);
             }
         }
+        let remaining: Vec<_> = fd.obank().iter_alive().collect();
+        for &op in &remaining {
+            if fd.obank().get(op).unwrap().code() == OpCode::CPUI_LOAD {
+                let output = fd.obank().get(op).unwrap().get_out().unwrap();
+                if !values.contains(&output) {
+                    let high = fd.vbank().get(output).unwrap().get_high().unwrap();
+                    fd.high_bank_mut().get_mut(high).unwrap().set_kuna_name("combined_read");
+                }
+            }
+        }
         let mut printer = PrintC::new();
         printer.rt_ctx.enabled = true;
         printer.rt_ctx.long_is_8 = true;
         printer.rt_ctx.ctypes = true;
         printer.set_output_stream();
-        for op in fd.obank().iter_alive() {
-            if crate::kuna_volatileload::dynamic_read(&fd, op).is_some() {
+        for op in remaining {
+            if fd.obank().get(op).unwrap().code() == OpCode::CPUI_LOAD
+                || crate::kuna_volatileload::dynamic_read(&fd, op).is_some()
+            {
                 printer.emit_statement(&fd, &arch, op);
             }
         }
@@ -311,8 +327,9 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
 #include <unistd.h>
 #include <signal.h>
 typedef unsigned char uint1;typedef unsigned short uint2;typedef unsigned int uint4;typedef unsigned long long uint8;
+typedef uint1 undefined1;typedef uint2 undefined2;typedef uint4 undefined4;typedef uint8 undefined8;typedef unsigned __int128 undefined16;
 static void emitted(unsigned char *base,int active) {{
-    if(active) {{ unsigned char *next=base+{width}; unsigned long long left,right;
+    if(active) {{ unsigned char *next=base+{width}; unsigned long long left,right;unsigned __int128 combined_read;
         {statements}
     }}
 }}
