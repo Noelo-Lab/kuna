@@ -5026,8 +5026,11 @@ impl Rule for RuleDoubleLoad {
         if data.is_stack_byte_copy_op(load0) || data.is_stack_byte_copy_op(load1) {
             return 0;
         }
+        let mut memo = crate::p3_dataflow::kuna_volatileload::Memo::new();
         for load in [load0, load1] {
-            if crate::p3_dataflow::kuna_volatileload::is_volatile(data, load) {
+            if crate::p3_dataflow::kuna_volatileload::is_volatile_with(data, load, &mut memo)
+                || crate::p3_dataflow::kuna_volatileload::unresolved_native_read(data, load, &mut memo)
+            {
                 return 0;
             }
         }
@@ -5068,10 +5071,9 @@ impl Rule for RuleDoubleLoad {
         set_opcode_typed(data, op, OpCode::CPUI_COPY);
         op_set_input(data, op, vnout, 0);
 
-        // The replacement represents these reads, but not every original
-        // output is dead yet: return recovery, heritage and other consumers
-        // may still need it. Retire only native-effect provenance and leave
-        // ordinary dead-code removal to own the LOADs and padding projections.
+        // Only proven ordinary storage can retire native provenance here.
+        // Keep independent output liveness for heritage and return recovery;
+        // ordinary dead-code removal owns the LOADs and padding projections.
         for load in [load0, load1] {
             data.obank_mut().get_mut(load).expect("dload: original load")
                 .clear_additional_flag(crate::op::pcodeop_addlflags::kuna_native_load);

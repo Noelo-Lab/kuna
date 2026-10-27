@@ -333,13 +333,10 @@ pub(crate) fn restore_resolved(data: &mut Funcdata, id: OpId) -> bool {
     true
 }
 
-/// Preserve an unread native scalar access through an unresolved external
-/// pointer. Its address may denote MMIO even without recovered C qualifiers.
-/// Fixed storage and proven frame reads keep their existing removal rules.
-pub(crate) fn preserve_discarded(data: &mut Funcdata, id: OpId, memo: &mut Memo) -> bool {
-    if data.is_jumptable_recovery_on() {
-        return false;
-    }
+/// Whether this native scalar access still addresses unresolved external memory.
+/// This does not depend on its current consumers: fusion must not retire its
+/// effect merely because a value that is live now may be discarded later.
+pub(crate) fn unresolved_native_read(data: &Funcdata, id: OpId, memo: &mut Memo) -> bool {
     let Some(op) = data.obank().get(id) else { return false };
     if op.code() != OpCode::CPUI_LOAD
         || op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load == 0
@@ -370,16 +367,25 @@ pub(crate) fn preserve_discarded(data: &mut Funcdata, id: OpId, memo: &mut Memo)
     }) {
         return false;
     }
-    if resolved_storage(data, pointer, memo)
-        || rereads(data, id, memo, |data, other| {
-            data.obank().get(other).and_then(|op| op.get_out())
-                .and_then(|v| data.vbank().get(v))
-                .is_some_and(|v| !v.has_no_descend() || v.is_auto_live()
-                    || (v.is_consume_vacuous() && v.get_consume() != 0))
-        })
-    {
+    !resolved_storage(data, pointer, memo)
+}
+
+/// Preserve an unread native scalar access through an unresolved external
+/// pointer. Fixed storage and proven frame reads keep their existing rules.
+pub(crate) fn preserve_discarded(data: &mut Funcdata, id: OpId, memo: &mut Memo) -> bool {
+    if data.is_jumptable_recovery_on() || !unresolved_native_read(data, id, memo) {
         return false;
     }
+    if rereads(data, id, memo, |data, other| {
+        data.obank().get(other).and_then(|op| op.get_out())
+            .and_then(|v| data.vbank().get(v))
+            .is_some_and(|v| !v.has_no_descend() || v.is_auto_live()
+                || (v.is_consume_vacuous() && v.get_consume() != 0))
+    }) {
+        return false;
+    }
+    let space = data.obank().get(id).and_then(|op| op.get_in(0))
+        .expect("native read space");
     // Keep the address space as metadata, separate from the dynamic address.
     let builtin = data.new_constant(4, crate::userop::BUILTIN_VOLATILE_READ as u64);
     data.op_insert_input(id, space, 2).expect("retained read space");

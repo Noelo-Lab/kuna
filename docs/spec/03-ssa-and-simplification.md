@@ -2839,10 +2839,16 @@ accesses, even on processors whose register file is modeled with dynamic
 LOADs; SPARC window rotation is one such case. Processor-space type alone
 does not distinguish that storage from RAM.
 
-Wide-load fusion retires the original reads' native-effect provenance, not
-their independent output liveness. Ordinary dead-code removal still owns the
-old LOADs and any padding projections, including outputs needed by heritage,
-other consumers or return-register recovery. Known volatile loads do not fuse.
+Wide-load fusion cannot retire an unresolved native scalar access, even while
+its output is used: a later rewrite may discard the combined value. It shares
+the removal path's pure address classification and still permits fusion of
+proven ordinary storage, including frame accesses. For those replacements it
+retires native provenance, not independent output liveness. Ordinary dead-code
+removal owns the old LOADs and padding projections, including outputs needed
+by heritage, other consumers or return-register recovery. Known volatile loads
+do not fuse. A rule-transition consumer erases a previously used concatenation
+after fusion has considered it, then executes the emitted reads at protected
+page boundaries to check that neither original scalar access disappears.
 
 The retained effect carries its dynamic address and address-space metadata,
 and type inference still treats that operand as a pointer. C output uses an
