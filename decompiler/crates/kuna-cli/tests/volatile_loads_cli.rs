@@ -541,7 +541,14 @@ fn discarded_pointer_reads_preserve_their_guard_and_access_width() {
                     .arg("decompile").arg(&input).arg(name)
                     .args(["--mode", "reliable", "--assert", &prototype, "--assert-strict"]),
             );
-            generated.push_str(std::str::from_utf8(&result.stdout).unwrap());
+            let code = std::str::from_utf8(&result.stdout).unwrap();
+            if target == "native" && name != "Probe8" {
+                // Keep the inline type complete before its attributes. Besides
+                // compiling and executing below, this form is consumed by C
+                // frontends that reject attributes before an anonymous body.
+                assert!(code.contains("} __attribute__((packed, may_alias))"), "{code}");
+            }
+            generated.push_str(code);
         }
         if target == "sparc" {
             let source = dir.path().join("sparc-width.c");

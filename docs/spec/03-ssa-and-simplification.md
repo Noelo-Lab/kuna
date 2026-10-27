@@ -2850,7 +2850,9 @@ access-local `volatile` scalar dereference; Rust uses `core::ptr::read_volatile`
 For multi-byte effects on x86 and AArch64, a single packed scalar supplies
 alignment one without splitting the read into byte accesses: their ordinary
 scalar instructions do not prove natural alignment. C uses a packed, may-alias
-scalar field, and Rust reads a packed single-field value. Other processor
+scalar field with builtin integer spellings; the attributes follow the complete
+anonymous record, so C consumers can resolve its type before the pointer cast
+without helper-only typedefs. Rust reads a packed single-field value. Other processor
 families retain the natural scalar-access alignment contract; applying a packed
 type indiscriminately can split one SPARC access into several device reads.
 The width describes the scalar object, not a universal physical-transaction

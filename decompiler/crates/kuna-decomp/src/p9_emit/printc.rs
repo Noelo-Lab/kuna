@@ -6632,11 +6632,18 @@ impl PrintC {
                     static C_READ: OpToken =
                         op_token("", "))->value", 2, 66, false, TokenType::Postsurround, 0, 0);
                     self.push_op(&C_READ, Some(op_key(op)));
-                    let value = arch.types().get_base(size, crate::dtype::type_metatype::TYPE_UINT)
-                        .expect("retained scalar read type");
-                    let word = type_name_for_decl(&value, self.rt_ctx).0;
+                    // Keep the complete anonymous record before its attributes:
+                    // C consumers can then resolve the type before the cast.
+                    // These ABIs have 16/32/64-bit short/int/long long scalars;
+                    // builtin spellings need no helper-only typedefs or formatting.
+                    let prefix = match size {
+                        2 => "((volatile struct { unsigned short value; } __attribute__((packed, may_alias)) *) (",
+                        4 => "((volatile struct { unsigned int value; } __attribute__((packed, may_alias)) *) (",
+                        8 => "((volatile struct { unsigned long long value; } __attribute__((packed, may_alias)) *) (",
+                        _ => unreachable!("retained scalar read width"),
+                    };
                     self.push_atom(&Atom::syntax(
-                        format!("((volatile struct __attribute__((packed, may_alias)) {{ {word} value; }} *) ("),
+                        prefix,
                         TagType::TypeToken, SyntaxHighlight::type_color,
                     ));
                     self.push_vn_ir(fd, arch, address, op);
