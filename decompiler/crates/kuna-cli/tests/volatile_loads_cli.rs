@@ -976,3 +976,67 @@ fn opaque_record_reads_use_byte_addresses_without_invented_members() {
         }
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn rust_opaque_reads_preserve_guard_assignments_and_pointer_types() {
+    use common::process;
+    let compiler = ["gcc", "clang"].into_iter()
+        .find(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .expect("opaque Rust verification requires a C compiler");
+    let directory = tempfile::tempdir().unwrap();
+    let fixture = include_str!("fixtures/native_read_opaque.c");
+    let original = directory.path().join("original.c");
+    let image = directory.path().join("opaque.so");
+    std::fs::write(&original, fixture).unwrap();
+    process::required_output(Command::new(compiler)
+        .args(["-shared", "-fPIC", "-O2", "-g0", "-DORIGINAL_ONLY"])
+        .arg(&original).arg("-o").arg(&image));
+    let mut rust = String::from(r#"
+#![allow(non_camel_case_types, non_snake_case, unused_mut, unused_variables, unused_assignments, unused_parens)]
+type obstack = core::ffi::c_void;
+extern "C" {
+    fn _obstack_newchunk(object: *mut obstack, length: i32);
+    fn obstack_free(object: *mut (), position: *mut ());
+    fn free(object: *mut ());
+    fn run_native_opaque() -> i32;
+}
+"#);
+    for name in ["Probe", "ProbeRead", "ReadAlignment", "WriteAlignment"] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.arg("decompile").arg(&image).arg(name).args(["--language", "rust"]);
+        if name == "Probe" {
+            command.args(["--assert", "prototype Probe void Probe(void **slot)", "--assert-strict"]);
+        }
+        let output = process::required_output(&mut command);
+        rust.push_str(std::str::from_utf8(&output.stdout).unwrap());
+    }
+    rust.push_str(r#"
+#[export_name = "Probe"]
+unsafe extern "C" fn native_probe(slot: *mut *mut ()) { Probe(slot); }
+#[export_name = "ProbeRead"]
+unsafe extern "C" fn native_read(object: *mut obstack, active: u32) { ProbeRead(object, active as _); }
+#[export_name = "ReadAlignment"]
+unsafe extern "C" fn native_get(object: *mut obstack) -> i32 { ReadAlignment(object) as _ }
+#[export_name = "WriteAlignment"]
+unsafe extern "C" fn native_set(object: *mut obstack, value: i32) { WriteAlignment(object, value as _); }
+fn main() { assert_eq!(unsafe { run_native_opaque() }, 0); }
+"#);
+    let oracle_source = directory.path().join("oracle.c");
+    let oracle = directory.path().join("oracle.o");
+    let declarations = "void Probe(void **); void ProbeRead(obstack *, unsigned); int ReadAlignment(obstack *); void WriteAlignment(obstack *, int);";
+    std::fs::write(&oracle_source, fixture.replace("GENERATED_FUNCTIONS", declarations)).unwrap();
+    process::required_output(Command::new(compiler)
+        .args(["-std=gnu17", "-O2", "-Dmain=run_native_opaque", "-c"])
+        .arg(&oracle_source).arg("-o").arg(&oracle));
+    let source = directory.path().join("opaque.rs");
+    std::fs::write(&source, rust).unwrap();
+    for level in ["0", "2"] {
+        let executable = directory.path().join(format!("rust-{level}"));
+        process::required_output(Command::new("rustc")
+            .args(["--edition=2021", "-C"]).arg(format!("opt-level={level}"))
+            .arg("-C").arg(format!("link-arg={}", oracle.display()))
+            .arg(&source).arg("-o").arg(&executable));
+        process::required_output(&mut Command::new(executable));
+    }
+}

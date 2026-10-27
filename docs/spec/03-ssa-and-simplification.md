@@ -2869,6 +2869,11 @@ Rust evaluates a retained read's pointer before entering the packed type's
 nested scope, so the generated type cannot capture a recovered callee name in
 that expression. A round trip calls functions named `NativeRead` and `address`
 and checks that each is still called exactly once.
+Rust also keeps a short-circuit clause's leading assignments inside a block
+expression with a boolean tail, rather than printing C commas as Rust tuples.
+Loaded pointers receive the explicit representation conversion required by
+their declared destination type, including an opaque pointer loaded from a
+`void **` slot.
 Offsets into an opaque record remain pointer-width byte-address arithmetic,
 not invented `field_0x...` members: a known record size does not supply a member
 declaration. The libc obstack round trip checks reads and stores and calls the

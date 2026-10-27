@@ -5655,6 +5655,14 @@ impl PrintC {
             }
             return;
         }
+        // C's comma expression is a tuple in Rust. Keep the statements inside
+        // the same short-circuit arm and return its final boolean expression.
+        let rust_sequence = self.out_lang == crate::kuna_lang::OutLang::Rust
+            && self.context.is_set(modifiers::COMMA_SEPARATE);
+        let sequence_id = rust_sequence.then(|| self.emit.open_paren("{", 0));
+        if rust_sequence {
+            self.emit.spaces(1, 0);
+        }
         let mut separator = false;
         let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
         while let Some(inst) = cur {
@@ -5694,7 +5702,7 @@ impl PrintC {
             }
             if separator {
                 if self.context.is_set(modifiers::COMMA_SEPARATE) {
-                    self.emit.print(self.lang().kw_comma, SyntaxHighlight::NoColor);
+                    self.emit.print(if rust_sequence { self.lang().kw_semicolon } else { self.lang().kw_comma }, SyntaxHighlight::NoColor);
                     self.emit.spaces(1, 0);
                 } else {
                     self.emit_comment_group(fd, Some(inst));
@@ -5714,6 +5722,10 @@ impl PrintC {
                 self.flush_eol_warnings();
             }
             separator = true;
+        }
+        if let Some(id) = sequence_id {
+            self.emit.spaces(1, 0);
+            self.emit.close_paren("}", id);
         }
         // emitCommentGroup(None): any remaining comments in the block.
         if !self.context.is_set(modifiers::COMMA_SEPARATE) {
@@ -8362,6 +8374,26 @@ impl PrintC {
             Some(v) => v,
             None => return,
         };
+        let rust_cast = (self.out_lang == crate::kuna_lang::OutLang::Rust).then(|| {
+            let output = fd.obank().get(op)?.get_out()?;
+            let target = declared_variable_type(fd, arch.decl_high_type, output)
+                .unwrap_or_else(|| fd.vn_type_def_facing(output));
+            if target.get_metatype() != type_metatype::TYPE_PTR {
+                return None;
+            }
+            // C accepts void * implicitly; Rust's opaque and void pointers are
+            // distinct raw-pointer types even when the load has the same bits.
+            let address = declared_variable_type(fd, arch.decl_high_type, ptr)
+                .unwrap_or_else(|| fd.vn_type_read_facing(ptr, op));
+            let source = address.get_ptr_to()?;
+            (matches!(source.get_metatype(), type_metatype::TYPE_PTR | type_metatype::TYPE_INT
+                    | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+                && source.get_size() == target.get_size()
+                && source.compare(&target, 10).ok() != Some(0)).then_some(target)
+        }).flatten();
+        if let Some(target) = &rust_cast {
+            self.push_cast_open(target, op);
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -8370,6 +8402,9 @@ impl PrintC {
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
         }
         self.push_vn_ir_m(fd, arch, ptr, op, m);
+        if let Some(target) = &rust_cast {
+            self.push_cast_close(target);
+        }
     }
 
     fn storage_load_member_type(

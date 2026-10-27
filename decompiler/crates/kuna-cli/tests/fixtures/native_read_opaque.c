@@ -2,6 +2,8 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <sys/mman.h>
+#include <unistd.h>
 #include <obstack.h>
 typedef struct obstack obstack;
 
@@ -45,6 +47,11 @@ int main(void) {
     Probe(NULL);
     void *slot = NULL;
     Probe((void *)&slot);
+    size_t page = (size_t)sysconf(_SC_PAGESIZE);
+    void *guard = mmap(NULL, page, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    assert(guard != MAP_FAILED);
+    ProbeRead(guard, 0);
+    assert(munmap(guard, page) == 0);
     obstack *object = malloc(sizeof(*object));
     assert(object);
     assert(_obstack_begin(object, 0, 0, allocate_chunk, free));
