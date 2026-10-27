@@ -282,14 +282,16 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
         let block = fd.bblocks_mut().new_block_basic(root);
         for op in [add, loads[0], loads[1], piece, consumer] { fd.op_insert_end(op, block); }
         // The concatenation is live when fusion considers its two scalar reads.
-        // A later rewrite erases that consumer, then ordinary early removal runs.
+        // A later rewrite erases that consumer, then native-load rescue runs.
         crate::double::RuleDoubleLoad::new("doubleload").apply_op(piece, &mut fd);
         fd.op_destroy(consumer);
         fd.op_destroy(piece);
         let candidates: Vec<_> = fd.obank().iter_alive().collect();
         for op in candidates {
             if fd.obank().get(op).unwrap().code() == OpCode::CPUI_LOAD {
-                crate::ruleaction_1::RuleEarlyRemoval::new("earlyremoval").apply_op(op, &mut fd);
+                crate::kuna_volatileload::preserve_discarded(
+                    &mut fd, op, &mut crate::kuna_volatileload::Memo::new(),
+                );
             }
         }
         fd.set_high_level();
