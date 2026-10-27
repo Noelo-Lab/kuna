@@ -938,11 +938,11 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
         let Some(op) = fd.obank().get(id) else {
             return false;
         };
-        // The carried SP may be a separately computed, displaced copy of the
-        // same allocation after recovery. Restoring its pre-allocation base
-        // does not satisfy this affine-origin proof.
-        if fd.vbank().get(value).unwrap().get_size()
-            == fd.vbank().get(root.output).unwrap().get_size()
+        // The carried SP may be a later, separately computed copy of this
+        // reservation. Equal older reservations still have a shorter lifetime.
+        if dominates_op(fd, root.op, id)
+            && fd.vbank().get(value).unwrap().get_size()
+                == fd.vbank().get(root.output).unwrap().get_size()
             && self::allocation(fd, id)
                 .is_some_and(|candidate| origin_delta(fd, root, &candidate).is_some())
         {
@@ -1394,6 +1394,117 @@ mod tests {
         )
         .unwrap();
         assert_eq!((reservations[0].count, reservations[0].shift), (16, 16));
+    }
+
+    #[test]
+    fn loop_restoring_older_affine_reservations_is_declined() {
+        use kuna_base::space::{SpacebaseSpace, VarnodeStorage};
+        for width in [4, 8] {
+            let mut manager = build_manager();
+            let ram = Rc::clone(manager.get_space_by_name("ram").unwrap());
+            let register = Rc::new(AddrSpace::new(
+                spacetype::IPTR_PROCESSOR,
+                "register",
+                false,
+                8,
+                1,
+                5,
+                0,
+                0,
+                0,
+            ));
+            manager.insert_space(Rc::clone(&register)).unwrap();
+            let stack = Rc::new(SpacebaseSpace::new(
+                "stack", 6, width as u32, &ram, 1, true, false,
+            ));
+            manager
+                .add_spacebase_pointer(
+                    &stack,
+                    &VarnodeStorage {
+                        space: Some(Rc::clone(&register)),
+                        offset: 0,
+                        size: width as u32,
+                    },
+                    width as u32,
+                    true,
+                )
+                .unwrap();
+            manager.insert_space(stack).unwrap();
+            let arch = Rc::new(ArchContext::new(manager));
+            let mut fd = Funcdata::new(
+                "restored",
+                "restored",
+                arch,
+                Address::new(Rc::clone(&ram), 0x1000),
+                0x10000000,
+                0x40,
+            )
+            .unwrap();
+            let root = fd.bblocks_root_pub();
+            let blocks: Vec<_> = (0..8)
+                .map(|_| fd.bblocks_mut().new_block_basic(root))
+                .collect();
+            for (index, &block) in blocks.iter().enumerate() {
+                fd.bblocks_mut().block_mut(block).set_index(index as int4);
+            }
+            for (from, to) in [
+                (0, 1),
+                (0, 2),
+                (1, 3),
+                (2, 3),
+                (3, 4),
+                (4, 5),
+                (4, 7),
+                (5, 6),
+                (6, 4),
+            ] {
+                fd.bblocks_mut().add_edge(blocks[from], blocks[to]);
+            }
+            fd.bblocks_mut().calc_forward_dominator(root, &[blocks[0]]);
+            let sp_address = Address::new(register, 0);
+            let base = fd.new_varnode(width, &sp_address, None);
+            let base = fd.set_input_varnode(base).unwrap();
+            let amount = fd.new_varnode(width, &Address::new(ram, 0x2000), None);
+            let amount = fd.set_input_varnode(amount).unwrap();
+            let mut older = Vec::new();
+            let mut current = None;
+            for block in [blocks[1], blocks[2], blocks[5]] {
+                let op = fd.new_op(2, fd.get_address().clone());
+                fd.op_set_opcode_code(op, OpCode::CPUI_INT_SUB);
+                fd.op_set_input(op, base, 0).unwrap();
+                fd.op_set_input(op, amount, 1).unwrap();
+                let out = fd.new_varnode_out(width, &sp_address, op).unwrap();
+                fd.op_insert_end(op, block);
+                if block == blocks[5] {
+                    current = Some(op);
+                } else {
+                    older.push(out);
+                }
+            }
+            let saved = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(saved, OpCode::CPUI_MULTIEQUAL);
+            for (slot, &value) in older.iter().enumerate() {
+                fd.op_set_input(saved, value, slot as int4).unwrap();
+            }
+            let saved_sp = fd.new_varnode_out(width, &sp_address, saved).unwrap();
+            fd.op_insert_end(saved, blocks[3]);
+            let restore = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(restore, OpCode::CPUI_COPY);
+            fd.op_set_input(restore, saved_sp, 0).unwrap();
+            let restored_sp = fd.new_varnode_out(width, &sp_address, restore).unwrap();
+            fd.op_insert_end(restore, blocks[6]);
+            let carried = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(carried, OpCode::CPUI_MULTIEQUAL);
+            fd.op_set_input(carried, saved_sp, 0).unwrap();
+            fd.op_set_input(carried, restored_sp, 1).unwrap();
+            fd.new_varnode_out(width, &sp_address, carried).unwrap();
+            fd.op_insert_end(carried, blocks[4]);
+            let current = allocation(&fd, current.unwrap()).unwrap();
+            // Neither predecessor reservation dominates this loop. Restoring
+            // their PHI is not carrying the current reservation's lifetime,
+            // even though all three calculate the same stack address.
+            assert!(loop_restores_stack(&fd, &current));
+        }
     }
 
     #[test]

@@ -202,8 +202,10 @@ block and stops at calls, userops and control-flow boundaries. An arbitrary futu
 pointer calculation is not evidence that storage was already reserved. Per-function
 reset clears the provenance, and filtered action clones begin empty.
 Later displaced copies use the same backing reservation. The loop-lifetime proof
-recognizes those same affine copies, but not restoration of the allocation's
-older base; scoped VLA rejection remains independent of address recovery.
+recognizes an affine copy only when the current reservation dominates that copy.
+An older reservation, including equal reservations joined from alternative
+predecessors, cannot prove that the current lifetime is carried around the loop.
+Restoration of the allocation's older base is rejected as well.
 
 An unasserted x86 caller is compiled with the real helper declaration, then
 compared against native helper counts and values while that helper clobbers its
