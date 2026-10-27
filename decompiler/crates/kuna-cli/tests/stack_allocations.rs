@@ -282,7 +282,7 @@ API int observe(char *data,int n) {{data[n-1]=9;return (unsigned char)data[0]+(u
 API {naked}int allocate({parameters}) {{{body}}}
 "#)).unwrap();
     let mut build = Command::new("clang");
-    build.args([optimization, "-shared", "-nostdlib"]);
+    build.args([optimization, "-include", "stddef.h", "-shared", "-nostdlib"]);
     if let Some(target) = target {
         build
             .arg(format!("--target={target}"))
@@ -347,24 +347,10 @@ API {naked}int allocate({parameters}) {{{body}}}
             | Case::ResetBefore
             | Case::SequentialRestored
     );
-    let allocations = if declined {
-        0
-    } else if matches!(
-        case,
-        Case::Two | Case::Conditional | Case::ConditionalThen | Case::ProbeTwo | Case::Restored
-    ) {
-        2
+    if declined {
+        assert!(!text.contains("__builtin_alloca("), "{text}");
     } else {
-        1
-    };
-    let actual = text.matches("__builtin_alloca(").count();
-    if matches!(case, Case::Restored) {
-        // These lifetimes do not overlap: sharing proved identical storage is valid.
-        assert!((1..=2).contains(&actual), "{text}");
-    } else if matches!(case, Case::Nested) {
-        assert!(actual > 0, "{text}");
-    } else {
-        assert_eq!(actual, allocations, "{text}");
+        assert!(text.contains("__builtin_alloca("), "{text}");
     }
     if declined {
         return;
@@ -374,16 +360,21 @@ API {naked}int allocate({parameters}) {{{body}}}
             process::required_output(
                 Command::new("clang")
                     .arg(format!("--target={target}"))
-                    .args(["-std=gnu11", "-Werror", opt, "-c"])
+                    .args(["-std=gnu11", "-include", "stddef.h", "-Werror", opt, "-c"])
                     .arg(&generated)
                     .arg("-o")
                     .arg(root.join("generated.o")),
             );
         }
+        if matches!(case, Case::Restored) {
+            check_restored_i386(&source, &generated, &root);
+        }
     } else {
         let driver = root.join("driver.c");
         let expected = match case {
             Case::Two | Case::ProbeTwo => "n==1?36:28",
+            Case::ConditionalThen => "n==1?36:(n&1)?28:16",
+            Case::Nested => "n==1?98:96",
             Case::Restored => "n==1?67:63",
             Case::Repeated | Case::Scoped => "n==1?50:48",
             _ => "n==1?18:16",
@@ -402,6 +393,7 @@ int main(void) {{for(int n=1;n<={limit};n++) {{int reference=allocate(n);if(refe
         process::required_output(
             Command::new("clang")
                 .arg(optimization)
+                .args(["-include", "stddef.h"])
                 .arg("-c")
                 .arg(&source)
                 .arg("-o")
@@ -413,6 +405,8 @@ int main(void) {{for(int n=1;n<={limit};n++) {{int reference=allocate(n);if(refe
                 Command::new("clang")
                     .args([
                         "-std=gnu11",
+                        "-include",
+                        "stddef.h",
                         "-Werror",
                         opt,
                         "-Dallocate=regenerated_allocate",
@@ -435,6 +429,109 @@ int main(void) {{for(int n=1;n<={limit};n++) {{int reference=allocate(n);if(refe
             );
             process::required_output(&mut Command::new(&executable));
         }
+    }
+}
+
+fn check_restored_i386(
+    source: &std::path::Path,
+    generated: &std::path::Path,
+    root: &std::path::Path,
+) {
+    for tool in ["qemu-i386", "ld.lld"] {
+        if process::optional_output(Command::new(tool).arg("--version")).is_none() {
+            assert!(
+                std::env::var_os("KUNA_REQUIRE_STACKALLOC_ISA").is_none(),
+                "required stack-allocation test tool is missing: {tool}"
+            );
+            return;
+        }
+    }
+    let compiler = || {
+        let mut command = Command::new("clang");
+        command.args([
+            "--target=i686-linux-gnu",
+            // The authored Windows i386 caller only promises four-byte alignment.
+            "-mstack-alignment=4",
+            "-std=gnu11",
+            "-include",
+            "stddef.h",
+            "-ffreestanding",
+            "-fno-builtin",
+            "-fno-stack-protector",
+            "-fno-pic",
+            "-fno-pie",
+        ]);
+        command
+    };
+    let reference = root.join("reference-i386.o");
+    process::required_output(
+        compiler()
+            .args(["-O0", "-Dobserve=reference_observe", "-c"])
+            .arg(source)
+            .arg("-o")
+            .arg(&reference),
+    );
+    let driver = root.join("restored-i386-driver.c");
+    std::fs::write(
+        &driver,
+        r#"
+_Static_assert(sizeof(void*)==4 && sizeof(int)==4,"i386 data model");
+int allocate(int),regenerated_allocate(int),reference_observe(char*,int);
+static unsigned calls,first_address,last_address;
+int _observe(char *p,int n) {
+    if(!calls)first_address=(unsigned)p;
+    last_address=(unsigned)p;
+    calls++;
+    return reference_observe(p,n);
+}
+int check(void) {
+    for(int n=1;n<=513;n++) {
+        calls=0;
+        int reference=allocate(n);
+        unsigned reference_calls=calls,reference_delta=last_address-first_address;
+        if(reference!=(n==1?67:63)||reference_calls!=2||reference_delta!=0)return 1;
+        calls=0;
+        int regenerated=regenerated_allocate(n);
+        if(regenerated!=reference||calls!=reference_calls)return 2;
+        if(last_address-first_address!=reference_delta)return 3;
+    }
+    return 0;
+}
+__asm__(".text\n.globl _start\n_start:\ncall check\nmovl %eax,%ebx\nmovl $1,%eax\nint $0x80\n");
+"#,
+    )
+    .unwrap();
+    for optimization in ["-O0", "-O2"] {
+        let object = root.join("generated-i386.o");
+        process::required_output(
+            compiler()
+                .args([
+                    optimization,
+                    "-Werror",
+                    "-D_allocate=regenerated_allocate",
+                    "-c",
+                ])
+                .arg(generated)
+                .arg("-o")
+                .arg(&object),
+        );
+        let executable = root.join("restored-i386-check");
+        process::required_output(
+            compiler()
+                .args([
+                    optimization,
+                    "-nostdlib",
+                    "-static",
+                    "-fuse-ld=lld",
+                    "-Wl,-e,_start",
+                ])
+                .arg(&driver)
+                .arg(&object)
+                .arg(&reference)
+                .arg("-o")
+                .arg(&executable),
+        );
+        process::required_output(Command::new("qemu-i386").arg(&executable));
     }
 }
 

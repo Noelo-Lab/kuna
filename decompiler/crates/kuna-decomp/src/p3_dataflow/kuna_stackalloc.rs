@@ -96,6 +96,12 @@ fn negate(fd: &Funcdata, value: VarnodeId) -> Option<VarnodeId> {
         OpCode::CPUI_INT_MULT if number(fd, op.get_in(1)?) == Some(1) => negate(fd, op.get_in(0)?),
         OpCode::CPUI_INT_MULT if number(fd, op.get_in(0)?) == Some(1) => negate(fd, op.get_in(1)?),
         OpCode::CPUI_INT_SUB if number(fd, op.get_in(0)?) == Some(0) => op.get_in(1),
+        _ if constant_step(fd, value).is_some() => {
+            let (base, offset) = canonical_base(fd, value, &mut BTreeSet::new());
+            (base != value && offset == 0)
+                .then(|| negate(fd, base))
+                .flatten()
+        }
         _ => None,
     }
 }
@@ -492,12 +498,368 @@ fn same_origin(fd: &Funcdata, a: &Allocation, b: &Allocation) -> bool {
 }
 /// Constant displacement of `b` from `a` when both subtract the same amount from one base.
 fn origin_delta(fd: &Funcdata, a: &Allocation, b: &Allocation) -> Option<i128> {
-    let (base_a, offset_a) = canonical_base(fd, a.base, &mut BTreeSet::new());
-    let (base_b, offset_b) = canonical_base(fd, b.base, &mut BTreeSet::new());
-    if base_a != base_b || !equivalent(fd, a.amount, b.amount, &mut BTreeSet::new()) {
+    allocation_delta(fd, a, b, true)
+}
+
+fn allocation_delta(
+    fd: &Funcdata,
+    a: &Allocation,
+    b: &Allocation,
+    recover_saved: bool,
+) -> Option<i128> {
+    let base = |value| {
+        let (base, offset) = canonical_base(fd, value, &mut BTreeSet::new());
+        if recover_saved {
+            recovered_base(fd, base, offset)
+        } else {
+            (base, offset)
+        }
+    };
+    let (base_a, offset_a) = base(a.base);
+    let (base_b, offset_b) = base(b.base);
+    if base_a != base_b {
         return None;
     }
-    offset_b.checked_sub(offset_a)
+    let amount_delta = if equivalent(fd, a.amount, b.amount, &mut BTreeSet::new()) {
+        0
+    } else {
+        let (amount_a, offset_a) = canonical_base(fd, a.amount, &mut BTreeSet::new());
+        let (amount_b, offset_b) = canonical_base(fd, b.amount, &mut BTreeSet::new());
+        if !equivalent(fd, amount_a, amount_b, &mut BTreeSet::new()) {
+            return None;
+        }
+        offset_b.checked_sub(offset_a)?
+    };
+    offset_b.checked_sub(offset_a)?.checked_sub(amount_delta)
+}
+
+/// A constant address displacement, without assuming anything about memory.
+fn relative_offset(fd: &Funcdata, value: VarnodeId, anchor: VarnodeId) -> Option<i128> {
+    let (value, delta) = canonical_base(fd, value, &mut BTreeSet::new());
+    let (anchor, baseline) = canonical_base(fd, anchor, &mut BTreeSet::new());
+    let extra = delta.checked_sub(baseline)?;
+    if value == anchor {
+        return Some(extra);
+    }
+    let value = allocation(fd, fd.vbank().get(value)?.get_def()?)?;
+    let anchor = allocation(fd, fd.vbank().get(anchor)?.get_def()?)?;
+    allocation_delta(fd, &anchor, &value, false)?.checked_add(extra)
+}
+
+fn frame_dependent(fd: &Funcdata, value: VarnodeId, budget: &mut usize) -> bool {
+    let Some(v) = fd.vbank().get(value) else {
+        return true;
+    };
+    if v.is_input() {
+        return v.is_spacebase() || stack_register(fd, value);
+    }
+    let mut seen = BTreeSet::new();
+    let mut todo = vec![value];
+    while let Some(value) = todo.pop() {
+        if !seen.insert(value) {
+            continue;
+        }
+        let Some(left) = budget.checked_sub(1) else {
+            return true;
+        };
+        *budget = left;
+        let Some(v) = fd.vbank().get(value) else {
+            return true;
+        };
+        if v.is_input() && (v.is_spacebase() || stack_register(fd, value)) {
+            return true;
+        }
+        let Some(op) = v.get_def().and_then(|id| fd.obank().get(id)) else {
+            continue;
+        };
+        if op.code() != OpCode::CPUI_LOAD {
+            todo.extend((0..op.num_input()).filter_map(|slot| op.get_in(slot)));
+        }
+    }
+    false
+}
+
+fn may_point_to_slot(
+    fd: &Funcdata,
+    value: VarnodeId,
+    pointer: VarnodeId,
+    size: int4,
+    extent: int4,
+    budget: &mut usize,
+) -> bool {
+    let Some(v) = fd.vbank().get(value) else {
+        return true;
+    };
+    if v.is_constant() {
+        return false;
+    }
+    let ty = v.get_type();
+    let width = extent.max(1);
+    if let Some(delta) = relative_offset(fd, value, pointer) {
+        return delta < size as i128
+            && delta.checked_add(width as i128).is_none_or(|end| end > 0);
+    }
+    if !matches!(
+        ty.get_metatype(),
+        crate::dtype::type_metatype::TYPE_PTR | crate::dtype::type_metatype::TYPE_UNKNOWN
+    ) && !frame_dependent(fd, value, budget)
+    {
+        return false;
+    }
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return true;
+    };
+    let Some(input) = fd.find_spacebase_input(&stack) else {
+        return true;
+    };
+    let (base, offset) = canonical_base(fd, value, &mut BTreeSet::new());
+    if base == input {
+        if let Some(limit) = offset.checked_sub(size as i128) {
+            if at_or_below(fd, pointer, input, limit, None, None, budget) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// A saved frame-link address must not have escaped before the guarded call.
+fn private_saved_slot(
+    fd: &Funcdata,
+    call: OpId,
+    pointer: VarnodeId,
+    size: int4,
+    budget: &mut usize,
+    active: &mut BTreeSet<OpId>,
+) -> Option<()> {
+    let stack = fd.get_arch().manage().get_stack_space()?;
+    if !stack.stack_grows_negative() {
+        return None;
+    }
+    let input = fd.find_spacebase_input(&stack)?;
+    if !at_or_below(fd, pointer, input, -(size as i128), None, None, budget) {
+        return None;
+    }
+    let parent = fd.obank().get(call)?.get_parent()?;
+    let graph = fd.bblocks_ref();
+    let mut ancestors = BTreeSet::from([parent]);
+    let mut todo: Vec<_> = (0..graph.block(parent).size_in())
+        .map(|slot| graph.block(parent).get_in(slot))
+        .collect();
+    while let Some(block) = todo.pop() {
+        *budget = budget.checked_sub(1)?;
+        if block == parent {
+            return None;
+        }
+        if ancestors.insert(block) {
+            let block = graph.block(block);
+            todo.extend((0..block.size_in()).map(|slot| block.get_in(slot)));
+        }
+    }
+    for id in fd.obank().iter_alive() {
+        let op = fd.obank().get(id)?;
+        if !op.get_parent().is_some_and(|block| ancestors.contains(&block))
+            || (op.get_parent() == Some(parent) && id != call && !dominates_op(fd, id, call))
+        {
+            continue;
+        }
+        *budget = budget.checked_sub(1)?;
+        let declaration = if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            let spec = fd.get_call_specs(fd.get_call_specs_index(id)?);
+            if spec.proto().has_effect_override()
+                || crate::kuna_calleeprotostack::declared_caller_frame_floor(true, spec.proto()).is_none()
+                || op.num_input() != spec.proto().num_params() + 1
+            {
+                return None;
+            }
+            Some(spec.proto())
+        } else {
+            None
+        };
+        let slots = match op.code() {
+            OpCode::CPUI_STORE => 2..3,
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => 1..op.num_input(),
+            OpCode::CPUI_CALLOTHER => return None,
+            OpCode::CPUI_RETURN => 1..op.num_input(),
+            _ => continue,
+        };
+        for slot in slots {
+            let value = saved_stack_value(fd, op.get_in(slot)?, budget, active)?;
+            let extent = if let Some(proto) = declaration {
+                proto.get_param(slot - 1)?.get_type()?.get_ptr_to().map_or(1, |ty| ty.get_size().max(1))
+            } else {
+                fd.vbank().get(value)?.get_type().get_ptr_to().map_or(1, |ty| ty.get_size().max(1))
+            };
+            if may_point_to_slot(fd, value, pointer, size, extent, budget) {
+                return None;
+            }
+        }
+    }
+    Some(())
+}
+
+/// Reuse a declared caller-frame contract only for a proved private slot.
+fn call_preserves_slot(
+    fd: &Funcdata,
+    call: OpId,
+    pointer: VarnodeId,
+    size: int4,
+    budget: &mut usize,
+    active: &mut BTreeSet<OpId>,
+) -> Option<()> {
+    let fc = fd.get_call_specs(fd.get_call_specs_index(call)?);
+    let proto = fc.proto();
+    if proto.has_effect_override() {
+        return None;
+    }
+    let mut floor = crate::kuna_calleeprotostack::declared_caller_frame_floor(true, proto)?;
+    let stack = fd.get_arch().manage().get_stack_space()?;
+    let call_op = fd.obank().get(call)?;
+    if call_op.num_input() != proto.num_params() + 1 {
+        return None;
+    }
+    let mut offset = None;
+    for slot in 0..proto.num_params() {
+        let param = proto.get_param(slot)?;
+        let address = param.get_address();
+        if address.get_space()?.get_index() != stack.get_index() {
+            continue;
+        }
+        let at = sign_extend(address.get_offset() as i64, stack.get_addr_size() * 8 - 1);
+        if at < 0 || param.get_size() <= 0 {
+            return None;
+        }
+        floor = floor.max(int4::try_from(at.checked_add(param.get_size() as i64)?).ok()?);
+        let value = strip(fd, call_op.get_in(slot + 1)?);
+        let Some(load) = fd.vbank().get(value)?.get_def().and_then(|id| fd.obank().get(id)) else {
+            continue;
+        };
+        if load.code() != OpCode::CPUI_LOAD {
+            continue;
+        }
+        let here = relative_offset(fd, pointer, load.get_in(1)?)?.checked_add(at as i128)?;
+        if offset.is_some_and(|previous| previous != here) {
+            return None;
+        }
+        offset = Some(here);
+    }
+    if offset.is_none() {
+        let ret = fd.get_arch().default_return_addr.as_ref()?;
+        if ret.offset != 0
+            || ret.space.as_ref()?.get_index() != stack.get_index()
+            || ret.size != stack.get_addr_size() as u32
+        {
+            return None;
+        }
+        let parent = call_op.get_parent()?;
+        let mut previous = call_op.basic_neighbours().0;
+        while let Some(id) = previous {
+            *budget = budget.checked_sub(1)?;
+            let op = fd.obank().get(id)?;
+            if op.get_parent() != Some(parent)
+                || matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER)
+            {
+                return None;
+            }
+            if let Some(sp) = op.get_out().filter(|&value| stack_register(fd, value)) {
+                // A still-present CALL's own return-address adjustment is not
+                // evidence of the pre-instruction stack pointer.
+                if op.get_addr() == call_op.get_addr() {
+                    return None;
+                }
+                offset = Some(relative_offset(fd, pointer, sp)?.checked_add(ret.size as i128)?);
+                break;
+            }
+            previous = op.basic_neighbours().0;
+        }
+    }
+    let offset = u64::try_from(offset?).ok()?;
+    if !crate::kuna_calleeprotostack::above_callee_frame(offset, size, stack.get_addr_size(), floor) {
+        return None;
+    }
+    private_saved_slot(fd, call, pointer, size, budget, active)
+}
+
+fn saved_stack_value(
+    fd: &Funcdata,
+    value: VarnodeId,
+    budget: &mut usize,
+    active: &mut BTreeSet<OpId>,
+) -> Option<VarnodeId> {
+    let value = strip(fd, value);
+    let v = fd.vbank().get(value)?;
+    let Some(id) = v.get_def().filter(|&id| fd.obank().get(id).is_some_and(|op| op.code() == OpCode::CPUI_LOAD)) else {
+        return Some(value);
+    };
+    if !active.insert(id) {
+        return None;
+    }
+    let result = (|| {
+        let load = fd.obank().get(id)?;
+        let pointer = load.get_in(1)?;
+        let space = number(fd, load.get_in(0)?)?;
+        let parent = load.get_parent()?;
+        let size = v.get_size();
+        let mut previous = load.basic_neighbours().0;
+        while let Some(id) = previous {
+            *budget = budget.checked_sub(1)?;
+            let op = fd.obank().get(id)?;
+            if op.get_parent() != Some(parent) {
+                return None;
+            }
+            match op.code() {
+                OpCode::CPUI_STORE => {
+                    if number(fd, op.get_in(0)?)? == space {
+                        let stored = op.get_in(2)?;
+                        let width = fd.vbank().get(stored)?.get_size();
+                        let delta = relative_offset(fd, op.get_in(1)?, pointer)?;
+                        if delta == 0 && width == size {
+                            return saved_stack_value(fd, stored, budget, active);
+                        }
+                        if delta < size as i128 && delta.checked_add(width as i128)? > 0 {
+                            return None;
+                        }
+                    }
+                }
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    call_preserves_slot(fd, id, pointer, size, budget, active)?;
+                }
+                OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH
+                | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN => return None,
+                _ => (),
+            }
+            previous = op.basic_neighbours().0;
+        }
+        None
+    })();
+    active.remove(&id);
+    result
+}
+
+fn recovered_base(fd: &Funcdata, mut base: VarnodeId, mut offset: i128) -> (VarnodeId, i128) {
+    if fd.vbank().get(base).and_then(|v| v.get_def()).and_then(|id| fd.obank().get(id))
+        .is_none_or(|op| op.code() != OpCode::CPUI_LOAD)
+    {
+        return (base, offset);
+    }
+    let mut budget = 1024;
+    let mut active = BTreeSet::new();
+    let mut seen = BTreeSet::new();
+    while seen.insert(base) {
+        let Some(value) = saved_stack_value(fd, base, &mut budget, &mut active) else {
+            break;
+        };
+        if value == base {
+            break;
+        }
+        let (next, delta) = canonical_base(fd, value, &mut BTreeSet::new());
+        let Some(total) = offset.checked_add(delta) else {
+            break;
+        };
+        base = next;
+        offset = total;
+    }
+    (base, offset)
 }
 /// Displaced copies of a root allocation, as `(op, root output, displacement)`.
 fn displaced_aliases(
@@ -631,6 +993,18 @@ fn alignment(fd: &Funcdata, op: OpId) -> Option<(int4, u128)> {
         size.is_power_of_two().then_some((1 - slot, size))
     })
 }
+fn indirect_stack_pop(fd: &Funcdata, id: OpId) -> Option<i128> {
+    let op = fd.obank().get(id)?;
+    if !op.get_out().is_some_and(|out| stack_register(fd, out)) {
+        return None;
+    }
+    let effect = fd.vbank().get(op.get_in(1)?)?;
+    let call = crate::funcdata_varnode::op_iop_decode(effect.get_offset());
+    let fc = fd.get_call_specs_index(call)?;
+    let pop = fd.get_call_specs(fc).get_extra_pop();
+    (pop != crate::fspec::EXTRAPOP_UNKNOWN).then_some(pop as i128)
+}
+
 fn evaluate(fd: &Funcdata, id: OpId, values: &Values, upper: bool) -> Bounds {
     let o = fd.obank().get(id).unwrap();
     let input = |slot| {
@@ -693,17 +1067,7 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values, upper: bool) -> Bounds {
             }
         }
         OpCode::CPUI_INDIRECT => {
-            let pop = o.get_in(1).and_then(|v| fd.vbank().get(v)).and_then(|v| {
-                let call = crate::funcdata_varnode::op_iop_decode(v.get_offset());
-                let fc = fd.get_call_specs_index(call)?;
-                let pop = fd.get_call_specs(fc).get_extra_pop();
-                (pop != crate::fspec::EXTRAPOP_UNKNOWN).then_some(pop as i128)
-            });
-            if o.get_out().is_some_and(|v| stack_register(fd, v)) {
-                shift(input(0), pop)
-            } else {
-                shift(input(0), None)
-            }
+            shift(input(0), indirect_stack_pop(fd, id))
         }
         _ => Bounds::new(),
     }
@@ -917,6 +1281,7 @@ fn at_or_below(
     fd: &Funcdata,
     value: VarnodeId,
     anchor: VarnodeId,
+    ceiling: i128,
     reservation: Option<&Allocation>,
     after: Option<&BTreeSet<BlockId>>,
     budget: &mut usize,
@@ -973,11 +1338,20 @@ fn at_or_below(
                 Step::Offset(input, delta)
             } else {
                 match op.code() {
-                    OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+                    OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
                         let Some(input) = op.get_in(0) else {
                             return false;
                         };
                         Step::Offset(input, 0)
+                    }
+                    OpCode::CPUI_INDIRECT => {
+                        let Some(input) = op.get_in(0) else {
+                            return false;
+                        };
+                        let Some(pop) = indirect_stack_pop(fd, id) else {
+                            return false;
+                        };
+                        Step::Offset(input, pop)
                     }
                     OpCode::CPUI_MULTIEQUAL => {
                         if after.is_some()
@@ -1063,7 +1437,7 @@ fn at_or_below(
         }
         if !changed {
             return nodes.iter().all(|node| node.upper.is_some())
-                && nodes[indices[&value]].upper.is_some_and(|upper| upper <= 0);
+                && nodes[indices[&value]].upper.is_some_and(|upper| upper <= ceiling);
         }
     }
     false
@@ -1119,6 +1493,7 @@ fn sequential_reservations_survive(fd: &Funcdata, allocations: &[Allocation]) ->
                     fd,
                     later.base,
                     earlier.output,
+                    0,
                     Some(earlier),
                     Some(&reachable),
                     &mut proof_budget,
@@ -1191,13 +1566,14 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
                 let Some(carried_sp) = op.get_in(incoming) else {
                     return false;
                 };
-                at_or_below(fd, allocation.base, header_sp, None, None, &mut proof_budget)
+                at_or_below(fd, allocation.base, header_sp, 0, None, None, &mut proof_budget)
                     && at_or_below(
                         fd,
                         carried_sp,
                         allocation.output,
+                        0,
                         Some(allocation),
-                        None,
+                        Some(&reachable),
                         &mut proof_budget,
                     )
             });
@@ -1277,12 +1653,16 @@ pub struct ActionStackAlloc {
     base: ActionBase,
     // Retain provenance, not a stale expression, while call trials converge.
     stack_definitions: Vec<OpId>,
+    // Failed proofs must not disappear merely because arithmetic is between
+    // normal forms on the next heritage pass.
+    deferred_outputs: Vec<VarnodeId>,
 }
 impl ActionStackAlloc {
     pub fn boxed() -> Box<dyn Action> {
         Box::new(Self {
             base: ActionBase::new(0, "stackalloc", "stackvars"),
             stack_definitions: Vec::new(),
+            deferred_outputs: Vec::new(),
         })
     }
 }
@@ -1299,6 +1679,7 @@ impl Action for ActionStackAlloc {
     fn reset(&mut self, _fd: &mut Funcdata) {
         self.base.reset_base();
         self.stack_definitions.clear();
+        self.deferred_outputs.clear();
     }
     fn apply(&mut self, fd: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
         if !fd.get_arch().stack_alloc || fd.get_heritage_pass() == 0 {
@@ -1359,9 +1740,19 @@ impl Action for ActionStackAlloc {
                 });
             }
         }
+        let complete = self.deferred_outputs.iter().all(|&output| {
+            fd.vbank().get(output).is_none_or(|value| {
+                value.descend_iter().next().is_none()
+                    || found.values().any(|candidate| candidate.output == output)
+            })
+        });
+        self.deferred_outputs.extend(found.values().map(|candidate| candidate.output));
+        self.deferred_outputs.sort_unstable();
+        self.deferred_outputs.dedup();
         let (allocations, aliases) =
             identify_aliases(fd, found.into_values().collect(), &self.stack_definitions);
-        if allocations.is_empty()
+        if !complete
+            || allocations.is_empty()
             || allocations.iter().any(|a| loop_restores_stack(fd, a))
             || !sequential_reservations_survive(fd, &allocations)
         {
@@ -1369,6 +1760,7 @@ impl Action for ActionStackAlloc {
         }
         if materialize_allocations(fd, &allocations, &aliases, width) {
             self.base.count += allocations.len() as int4;
+            self.deferred_outputs.clear();
         }
         0
     }
@@ -1412,6 +1804,94 @@ mod tests {
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap()
+    }
+
+    #[test]
+    fn cancelling_offsets_do_not_hide_a_stack_reservation() {
+        for width in [4, 8] {
+            let mut fd = build_fd();
+            let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+            let input = fd.new_varnode(width, &Address::new(ram, 0x2000), None);
+            let amount = fd.set_input_varnode(input).unwrap();
+            let negative = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(negative, OpCode::CPUI_INT_2COMP);
+            fd.op_set_input(negative, amount, 0).unwrap();
+            let negated = fd.new_unique_out(width, negative).unwrap();
+            let add = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(add, OpCode::CPUI_INT_ADD);
+            fd.op_set_input(add, negated, 0).unwrap();
+            let minus = fd.new_constant(width, (-20_i64) as u64 & calc_mask(width));
+            fd.op_set_input(add, minus, 1).unwrap();
+            let displaced = fd.new_unique_out(width, add).unwrap();
+            let restore = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(restore, OpCode::CPUI_INT_ADD);
+            let plus = fd.new_constant(width, 20);
+            fd.op_set_input(restore, plus, 0).unwrap();
+            fd.op_set_input(restore, displaced, 1).unwrap();
+            let restored = fd.new_unique_out(width, restore).unwrap();
+            assert_eq!(negate(&fd, restored), Some(amount));
+        }
+    }
+
+    #[test]
+    fn saved_frame_alias_requires_an_unmodified_slot() {
+        for width in [4, 8] {
+            let mut fd = build_fd();
+            let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+            let root = fd.bblocks_root_pub();
+            let block = fd.bblocks_mut().new_block_basic(root);
+            let input = fd.new_varnode(width, &Address::new(Rc::clone(&ram), 0x2000), None);
+            let base = fd.set_input_varnode(input).unwrap();
+            let input = fd.new_varnode(width, &Address::new(Rc::clone(&ram), 0x2010), None);
+            let amount = fd.set_input_varnode(input).unwrap();
+            let append = |fd: &mut Funcdata, code, inputs: &[VarnodeId], output: bool| {
+                let op = fd.new_op(inputs.len() as int4, fd.get_address().clone());
+                fd.op_set_opcode_code(op, code);
+                for (slot, &value) in inputs.iter().enumerate() {
+                    fd.op_set_input(op, value, slot as int4).unwrap();
+                }
+                let value = output.then(|| fd.new_unique_out(width, op).unwrap());
+                fd.op_insert_end(op, block);
+                (op, value)
+            };
+            let (first, output) = append(&mut fd, OpCode::CPUI_INT_SUB, &[base, amount], true);
+            let output = output.unwrap();
+            let negative = fd.new_constant(width, (-2 * width as i64) as u64 & calc_mask(width));
+            let pointer = append(&mut fd, OpCode::CPUI_INT_ADD, &[output, negative], true).1.unwrap();
+            let negative = fd.new_constant(width, (-(width as i64)) as u64 & calc_mask(width));
+            let other = append(&mut fd, OpCode::CPUI_INT_ADD, &[output, negative], true).1.unwrap();
+            let distance = fd.new_constant(width, (4 * width) as u64);
+            let saved = append(&mut fd, OpCode::CPUI_INT_ADD, &[base, distance], true).1.unwrap();
+            let space = fd.new_constant(4, ram.get_index() as u64);
+            append(&mut fd, OpCode::CPUI_STORE, &[space, pointer, saved], false);
+            let (load, loaded) = append(&mut fd, OpCode::CPUI_LOAD, &[space, pointer], true);
+            let loaded = loaded.unwrap();
+            let restored = append(&mut fd, OpCode::CPUI_INT_SUB, &[loaded, distance], true).1.unwrap();
+            let (second, _) = append(&mut fd, OpCode::CPUI_INT_SUB, &[restored, amount], true);
+            let first = allocation(&fd, first).unwrap();
+            let second = allocation(&fd, second).unwrap();
+            assert_eq!(origin_delta(&fd, &first, &second), Some(0));
+
+            let interference = fd.new_op(3, fd.get_address().clone());
+            fd.op_set_opcode_code(interference, OpCode::CPUI_STORE);
+            fd.op_set_input(interference, space, 0).unwrap();
+            fd.op_set_input(interference, pointer, 1).unwrap();
+            let byte = fd.new_constant(1, 7);
+            fd.op_set_input(interference, byte, 2).unwrap();
+            fd.op_insert_before(interference, load);
+            assert_eq!(origin_delta(&fd, &first, &second), None);
+            fd.op_set_input(interference, other, 1).unwrap();
+            assert_eq!(origin_delta(&fd, &first, &second), Some(0));
+
+            let call = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+            let target = fd.new_constant(width, 0x3000);
+            fd.op_set_input(call, target, 0).unwrap();
+            fd.op_insert_before(call, load);
+            let spec = crate::fspec::FuncCallSpecs::new(call, Address::new_invalid());
+            fd.push_call_specs(spec);
+            assert_eq!(origin_delta(&fd, &first, &second), None);
+        }
     }
 
     fn copied_mask(fd: &mut Funcdata, width: int4, mask: u64, reversed: bool) -> OpId {
@@ -1736,6 +2216,94 @@ mod tests {
             assert!(
                 loop_restores_stack(&fd, &current),
                 "an unanchored cyclic PHI arm is not harmless bottom"
+            );
+
+            fd.bblocks_mut().add_edge(blocks[4], blocks[6]);
+            fd.bblocks_mut().calc_forward_dominator(root, &[blocks[0]]);
+            let bypass = fd.new_op(3, fd.get_address().clone());
+            fd.op_set_opcode_code(bypass, OpCode::CPUI_MULTIEQUAL);
+            let bypassed = fd.new_unique_out(width, bypass).unwrap();
+            fd.op_set_input(bypass, current.output, 0).unwrap();
+            fd.op_set_input(bypass, bypassed, 1).unwrap();
+            fd.op_set_input(bypass, header_sp, 2).unwrap();
+            fd.op_insert_before(bypass, restore);
+            fd.op_set_input(restore, bypassed, 0).unwrap();
+            assert!(
+                !loop_restores_stack(&fd, &current),
+                "iterations bypassing a reservation retain storage from earlier iterations"
+            );
+            fd.op_set_input(bypass, saved_sp, 2).unwrap();
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "a bypass restoring the preallocation value still ends storage"
+            );
+
+            fd.op_set_input(bypass, header_sp, 2).unwrap();
+            let call = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+            let target = fd.new_constant(width, 0x3000);
+            fd.op_set_input(call, target, 0).unwrap();
+            fd.op_insert_before(call, restore);
+            let mut spec = crate::fspec::FuncCallSpecs::new(call, Address::new_invalid());
+            spec.proto_mut().set_extra_pop(0);
+            let index = fd.push_call_specs(spec);
+            let effect = fd.new_varnode_iop(call);
+            let indirect = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(indirect, OpCode::CPUI_INDIRECT);
+            fd.op_set_input(indirect, bypassed, 0).unwrap();
+            fd.op_set_input(indirect, effect, 1).unwrap();
+            let after_call = fd.new_varnode_out(width, &sp_address, indirect).unwrap();
+            fd.op_insert_before(indirect, restore);
+            fd.op_set_input(restore, after_call, 0).unwrap();
+            assert!(
+                !loop_restores_stack(&fd, &current),
+                "a known zero stack-pop preserves the allocation"
+            );
+            fd.get_call_specs_mut(index).proto_mut().set_extra_pop(width);
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "callee stack cleanup can restore storage above the allocation"
+            );
+            fd.get_call_specs_mut(index)
+                .proto_mut()
+                .set_extra_pop(crate::fspec::EXTRAPOP_UNKNOWN);
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "unknown call stack cleanup cannot prove storage retention"
+            );
+
+            fd.get_call_specs_mut(index).proto_mut().set_extra_pop(width);
+            fd.get_call_specs_mut(index).proto_mut().set_input_lock(true);
+            let slot = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(slot, OpCode::CPUI_INT_ADD);
+            fd.op_set_input(slot, saved_sp, 0).unwrap();
+            let distance = fd.new_constant(width, (-2 * width as i64) as u64 & calc_mask(width));
+            fd.op_set_input(slot, distance, 1).unwrap();
+            let private = fd.new_unique_out(width, slot).unwrap();
+            fd.op_insert_end(slot, blocks[3]);
+            let call = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+            let target = fd.new_constant(width, 0x4000);
+            fd.op_set_input(call, target, 0).unwrap();
+            fd.op_insert_end(call, blocks[7]);
+            let mut spec = crate::fspec::FuncCallSpecs::new(call, Address::new_invalid());
+            spec.proto_mut().set_extra_pop(width);
+            spec.proto_mut().set_input_lock(true);
+            fd.push_call_specs(spec);
+            assert!(private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_some());
+
+            let escape = fd.new_op(3, fd.get_address().clone());
+            fd.op_set_opcode_code(escape, OpCode::CPUI_STORE);
+            let memory = fd.get_arch().manage().get_space_by_name("ram").unwrap().get_index();
+            let space = fd.new_constant(4, memory as u64);
+            let global = fd.new_constant(width, 0x5000);
+            fd.op_set_input(escape, space, 0).unwrap();
+            fd.op_set_input(escape, global, 1).unwrap();
+            fd.op_set_input(escape, private, 2).unwrap();
+            fd.op_insert_before(escape, call);
+            assert!(
+                private_saved_slot(&fd, call, private, width, &mut 4096, &mut BTreeSet::new()).is_none(),
+                "a prior global address escape invalidates a no-argument call's private-slot proof"
             );
         }
     }

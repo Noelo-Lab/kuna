@@ -193,7 +193,10 @@ Merely finding the result in a latch PHI is insufficient: restoring a fixed base
 before each subtraction also reuses storage. A bounded upper-displacement proof
 requires both relationships to be at or below their respective SP anchors.
 Constant steps, recognized downward allocations, alignment and dominated affine
-copies supply transfers; PHIs take the maximum over every incoming path.
+copies supply transfers; PHIs take the maximum over incoming paths reachable
+after that reservation. A nested loop's initial entry before any allocation is
+not a restore of storage that did not yet exist. Known call stack cleanup is
+included; an INDIRECT with unknown cleanup is not an unchanged SP.
 Anchored zero-step or decreasing cycles are solved to a fixed point. An unrelated
 path or an unanchored cyclic component is unknown, not a harmless missing bound.
 Adding back the size, or subtracting its negation, cannot establish retention.
@@ -215,11 +218,26 @@ proved constant-displacement copies retain their existing treatment. Bounded
 native callback observations distinguish reused storage from fresh allocas;
 separate round trips cover genuinely live consecutive and conditional buffers.
 
+Saved frame links can establish a shared origin only through a bounded,
+same-basic-block store/load proof. Every intervening write must be disjoint.
+Across a call, the saved slot must be inside the current activation, above the
+declared callee parameter area, and private: every possible preceding path is
+checked for address escapes through stores, earlier calls, and pointer-derived
+integer values. Pointer inputs are checked with their declared pointee extent.
+Unknown calls, aliases, variadic declarations, effect overrides and cyclic
+prefixes do not establish this proof. This does not enable another option or
+treat an arbitrary saved pointer as immutable.
+
 Allocation lowering follows active call-argument recovery and waits for every
 live call's input recovery to finish. Recovery spans multiple heritage passes:
 visiting its action once is not a completion barrier. Lowering SP earlier can
 turn an alignment spill into phantom arguments or leave real outgoing stack
 arguments disconnected from the call. Dead calls do not block the transformation.
+Previously discovered, still-used roots also remain proof obligations while
+arithmetic changes normal form. A temporarily hidden subtraction cannot turn a
+failed whole-set proof into permission to lower just the other reservation.
+Zero-sum constant steps around a negated size retain the original subtraction;
+constant differences between equivalent sizes contribute to the alias offset.
 
 Recovery can remove the COPY assigning an allocation expression to SP while the
 same expression remains an argument-register value. A later call's return-address
