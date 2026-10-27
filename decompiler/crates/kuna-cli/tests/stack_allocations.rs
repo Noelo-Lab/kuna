@@ -46,6 +46,7 @@ enum Case {
     One,
     Two,
     Conditional,
+    ConditionalThen,
     Repeated,
     Scoped,
     ResetBefore,
@@ -54,6 +55,7 @@ enum Case {
     ProbeTwo,
     Drifting,
     Restored,
+    SequentialRestored,
     Displaced,
     SteppedProbe,
     MergedSteppedProbe,
@@ -94,6 +96,14 @@ fn elf64_nested_function_lifetime_allocations_roundtrip() {
 #[test]
 fn elf64_optimized_nested_allocations_roundtrip() {
     check_case(None, "-O2", Case::Nested);
+}
+#[test]
+fn elf64_independent_restored_allocations_are_declined() {
+    check_case(None, "-O0", Case::SequentialRestored);
+}
+#[test]
+fn elf64_conditional_then_live_allocation_roundtrip() {
+    check_case(None, "-O0", Case::ConditionalThen);
 }
 #[test]
 fn elf64_probe_loop_roundtrip() {
@@ -166,6 +176,7 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
         Case::Two => "char *first=__builtin_alloca((unsigned)n);char *second=__builtin_alloca((unsigned)n);first[0]=3;second[0]=7;return observe(first,n)+observe(second,n);",
         Case::One => "char *data=__builtin_alloca((unsigned)n);data[0]=7;return observe(data,n);",
         Case::Conditional => "char *data;volatile int choice=n&1;if(choice)data=__builtin_alloca((unsigned)n);else data=__builtin_alloca((unsigned)n+16);data[0]=7;return observe(data,n);",
+        Case::ConditionalThen => "char *first=0;volatile int choice=n&1;if(choice){first=__builtin_alloca((unsigned)n);first[0]=3;}char *second=__builtin_alloca((unsigned)n+16);second[0]=7;int total=observe(second,n);if(first)total+=observe(first,n);return total;",
         Case::Repeated => "int total=0;for(int i=0;i<3;i++){char *data=__builtin_alloca((unsigned)n+i);data[0]=7;total+=observe(data,n+i);}return total;",
         Case::Scoped => "int total=0;for(int i=0;i<20000;i++){char data[n+4000];data[0]=7;total+=observe(data,n+4000);}return total;",
         Case::Nested => "int total=0;for(int i=0;i<3;i++){for(int j=0;j<2;j++){char *data=__builtin_alloca((unsigned)n+i+j);data[0]=7;total+=observe(data,n+i+j);}}return total;",
@@ -174,6 +185,11 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
 "movq %rsp,%r12\nmovl %edi,%r13d\nmovl %edi,%r14d\naddq $15,%r14\nandq $-16,%r14\nmovl $5,%ebx\n"
 "1: movb $7,(%rsp)\nmovq %rsp,%rdi\nmovl %r13d,%esi\ncall observe\nmovq %r12,%rsp\nsubq %r14,%rsp\ndecl %ebx\njnz 1b\n"
 "movq %r12,%rsp\naddq $64,%rsp\npopq %r14\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nretq\n");"#,
+        Case::SequentialRestored => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\npushq %r12\npushq %r13\npushq %r14\nsubq $72,%rsp\nmovq %rsp,%r12\nmovl %edi,%r13d\nmovl %esi,%r14d\n"
+"movl %r13d,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovl %r13d,%esi\nmovb $7,(%rdi)\ncall observe\n"
+"movq %r12,%rsp\nmovl %r14d,%eax\naddq $15,%rax\nandq $-16,%rax\nsubq %rax,%rsp\nmovq %rsp,%rdi\nmovl %r14d,%esi\nmovb $7,(%rdi)\ncall observe\n"
+"movq %r12,%rsp\naddq $72,%rsp\npopq %r14\npopq %r13\npopq %r12\npopq %rbp\nretq\n");"#,
         Case::Restored if target.is_some() => r#"__asm__(
 "pushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %edi\nsubl $8,%esp\nmovl 8(%ebp),%ebx\nmovl $31,-12(%ebp)\n"
 "movl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\nsubl %eax,%esp\nmovl %esp,%edi\nmovb $7,(%edi)\n"
@@ -245,10 +261,16 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
             | Case::SteppedProbe
             | Case::MergedSteppedProbe
             | Case::ResetBefore
+            | Case::SequentialRestored
     ) {
         "__attribute__((naked)) "
     } else {
         ""
+    };
+    let parameters = if matches!(case, Case::SequentialRestored) {
+        "int n,int m"
+    } else {
+        "int n"
     };
     std::fs::write(&source, format!(r#"
 #ifdef _WIN32
@@ -257,7 +279,7 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
 #define API __attribute__((visibility("default"),noinline))
 #endif
 API int observe(char *data,int n) {{data[n-1]=9;return (unsigned char)data[0]+(unsigned char)data[n-1];}}
-API {naked}int allocate(int n) {{{body}}}
+API {naked}int allocate({parameters}) {{{body}}}
 "#)).unwrap();
     let mut build = Command::new("clang");
     build.args([optimization, "-shared", "-nostdlib"]);
@@ -293,7 +315,7 @@ API {naked}int allocate(int n) {{{body}}}
         .arg(common::repo_root().join("specs"))
         .args([
             "--assert",
-            &format!("prototype 0x{allocate:x} int {convention}allocate(int n)"),
+            &format!("prototype 0x{allocate:x} int {convention}allocate({parameters})"),
             "--assert",
             &format!("prototype 0x{observe:x} int {convention}observe(char *data,int n)"),
         ])
@@ -323,12 +345,13 @@ API {naked}int allocate(int n) {{{body}}}
             | Case::MergedSteppedProbe
             | Case::Scoped
             | Case::ResetBefore
+            | Case::SequentialRestored
     );
     let allocations = if declined {
         0
     } else if matches!(
         case,
-        Case::Two | Case::Conditional | Case::ProbeTwo | Case::Restored
+        Case::Two | Case::Conditional | Case::ConditionalThen | Case::ProbeTwo | Case::Restored
     ) {
         2
     } else {

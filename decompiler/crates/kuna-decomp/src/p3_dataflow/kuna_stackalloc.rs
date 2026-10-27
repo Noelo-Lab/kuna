@@ -1,7 +1,7 @@
 //! Recover runtime stack allocation and bound its outgoing stack area over SSA.
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
-use crate::context::{OpId, VarnodeId};
+use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use kuna_base::address::{calc_mask, sign_extend};
@@ -912,173 +912,238 @@ fn reserves(
         .collect()
 }
 
-/// A compiler alloca survives until return. A loop that restores an older SP
-/// requires a shorter lifetime, which this lowering does not emit.
-fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
-    fn at_or_below(
-        fd: &Funcdata,
-        value: VarnodeId,
-        anchor: VarnodeId,
-        reservation: Option<&Allocation>,
-        budget: &mut usize,
-    ) -> bool {
-        #[derive(Clone, Copy)]
-        enum Step {
-            Seed(i128),
-            Offset(VarnodeId, i128),
-            Phi(OpId),
+/// Prove a stack address never exceeds an anchor on the relevant execution paths.
+fn at_or_below(
+    fd: &Funcdata,
+    value: VarnodeId,
+    anchor: VarnodeId,
+    reservation: Option<&Allocation>,
+    after: Option<&BTreeSet<BlockId>>,
+    budget: &mut usize,
+) -> bool {
+    #[derive(Clone, Copy)]
+    enum Step {
+        Seed(i128),
+        Offset(VarnodeId, i128),
+        Phi(OpId),
+    }
+    struct Node {
+        step: Step,
+        upper: Option<i128>,
+    }
+    let live_input = |id: OpId, slot: int4| {
+        after.is_none_or(|reachable| {
+            let parent = fd.obank().get(id).unwrap().get_parent().unwrap();
+            reachable.contains(&fd.bblocks_ref().block(parent).get_in(slot))
+        })
+    };
+    let width = fd.vbank().get(anchor).unwrap().get_size();
+    let mut indices = BTreeMap::new();
+    let mut nodes = Vec::<Node>::new();
+    let mut todo = vec![value];
+    while let Some(value) = todo.pop() {
+        if indices.contains_key(&value) {
+            continue;
         }
-        struct Node {
-            step: Step,
-            upper: Option<i128>,
+        let Some(left) = budget.checked_sub(1) else {
+            return false;
+        };
+        *budget = left;
+        if nodes.len() == 256 || fd.vbank().get(value).is_none_or(|v| v.get_size() != width) {
+            return false;
         }
-        let width = fd.vbank().get(anchor).unwrap().get_size();
-        let mut indices = BTreeMap::new();
-        let mut nodes = Vec::<Node>::new();
-        let mut todo = vec![value];
-        while let Some(value) = todo.pop() {
-            if indices.contains_key(&value) {
-                continue;
+        let step = if value == anchor {
+            Step::Seed(0)
+        } else {
+            let Some(id) = fd.vbank().get(value).and_then(|v| v.get_def()) else {
+                return false;
+            };
+            let op = fd.obank().get(id).unwrap();
+            let candidate = allocation(fd, id);
+            let displacement = reservation.and_then(|root| {
+                candidate.and_then(|candidate| {
+                    dominates_op(fd, root.op, id)
+                        .then(|| origin_delta(fd, root, &candidate))
+                        .flatten()
+                })
+            });
+            if let Some(delta) = displacement {
+                Step::Seed(delta)
+            } else if let Some((input, delta)) = constant_step(fd, value) {
+                Step::Offset(input, delta)
+            } else {
+                match op.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+                        let Some(input) = op.get_in(0) else {
+                            return false;
+                        };
+                        Step::Offset(input, 0)
+                    }
+                    OpCode::CPUI_MULTIEQUAL => {
+                        if after.is_some()
+                            && op.get_parent().is_none_or(|parent| {
+                                fd.bblocks_ref().block(parent).size_in() != op.num_input()
+                            })
+                        {
+                            return false;
+                        }
+                        Step::Phi(id)
+                    }
+                    OpCode::CPUI_INT_AND => {
+                        let Some(input) =
+                            alignment(fd, id).and_then(|(slot, _)| op.get_in(slot))
+                        else {
+                            return false;
+                        };
+                        Step::Offset(input, 0)
+                    }
+                    _ => {
+                        let Some(candidate) = candidate else {
+                            return false;
+                        };
+                        // SUB by a negated size restores SP upwards.
+                        if negate(fd, candidate.amount).is_some() {
+                            return false;
+                        }
+                        Step::Offset(candidate.base, 0)
+                    }
+                }
             }
+        };
+        indices.insert(value, nodes.len());
+        nodes.push(Node { step, upper: None });
+        match step {
+            Step::Seed(_) => {}
+            Step::Offset(input, _) => todo.push(input),
+            Step::Phi(id) => {
+                let op = fd.obank().get(id).unwrap();
+                for slot in 0..op.num_input() {
+                    if !live_input(id, slot) {
+                        continue;
+                    }
+                    let Some(input) = op.get_in(slot) else {
+                        return false;
+                    };
+                    todo.push(input);
+                }
+            }
+        }
+    }
+    // Bottom is temporary: every relevant ancestor must become anchored.
+    for _ in 0..SWEEPS {
+        let mut changed = false;
+        for index in 0..nodes.len() {
             let Some(left) = budget.checked_sub(1) else {
                 return false;
             };
             *budget = left;
-            if nodes.len() == 256
-                || fd.vbank().get(value).is_none_or(|v| v.get_size() != width)
+            let upper = match nodes[index].step {
+                Step::Seed(delta) => Some(delta),
+                Step::Offset(input, delta) => match nodes[indices[&input]].upper {
+                    Some(value) => {
+                        let Some(value) = value.checked_add(delta) else {
+                            return false;
+                        };
+                        Some(value)
+                    }
+                    None => None,
+                },
+                Step::Phi(id) => {
+                    let op = fd.obank().get(id).unwrap();
+                    (0..op.num_input())
+                        .filter(|&slot| live_input(id, slot))
+                        .filter_map(|slot| nodes[indices[&op.get_in(slot).unwrap()]].upper)
+                        .max()
+                }
+            };
+            if nodes[index].upper != upper {
+                nodes[index].upper = upper;
+                changed = true;
+            }
+        }
+        if !changed {
+            return nodes.iter().all(|node| node.upper.is_some())
+                && nodes[indices[&value]].upper.is_some_and(|upper| upper <= 0);
+        }
+    }
+    false
+}
+
+fn reachable_blocks(
+    fd: &Funcdata,
+    start: BlockId,
+    budget: &mut usize,
+) -> Option<BTreeSet<BlockId>> {
+    let mut reached = BTreeSet::new();
+    let mut todo = vec![start];
+    while let Some(block) = todo.pop() {
+        if !reached.insert(block) {
+            continue;
+        }
+        let block = fd.bblocks_ref().block(block);
+        for slot in 0..block.size_out() {
+            *budget = budget.checked_sub(1)?;
+            todo.push(block.get_out(slot));
+        }
+    }
+    Some(reached)
+}
+
+/// Independent restored frames cannot become simultaneously live C allocas.
+fn sequential_reservations_survive(fd: &Funcdata, allocations: &[Allocation]) -> bool {
+    if allocations.len() < 2 {
+        return true;
+    }
+    let mut graph_budget = 65536;
+    let mut proof_budget = 4096;
+    for earlier in allocations {
+        let Some(block) = fd.obank().get(earlier.op).and_then(|op| op.get_parent()) else {
+            return false;
+        };
+        let Some(reachable) = reachable_blocks(fd, block, &mut graph_budget) else {
+            return false;
+        };
+        for later in allocations {
+            if earlier.op == later.op {
+                continue;
+            }
+            let Some(next) = fd.obank().get(later.op).and_then(|op| op.get_parent()) else {
+                return false;
+            };
+            // Other iterations are already covered by the loop proof.
+            if next == block && !dominates_op(fd, earlier.op, later.op) {
+                continue;
+            }
+            if reachable.contains(&next)
+                && !at_or_below(
+                    fd,
+                    later.base,
+                    earlier.output,
+                    Some(earlier),
+                    Some(&reachable),
+                    &mut proof_budget,
+                )
             {
                 return false;
             }
-            let step = if value == anchor {
-                Step::Seed(0)
-            } else {
-                let Some(id) = fd.vbank().get(value).and_then(|v| v.get_def()) else {
-                    return false;
-                };
-                let op = fd.obank().get(id).unwrap();
-                let candidate = self::allocation(fd, id);
-                let displacement = reservation.and_then(|root| {
-                    candidate.and_then(|candidate| {
-                        dominates_op(fd, root.op, id)
-                            .then(|| origin_delta(fd, root, &candidate))
-                            .flatten()
-                    })
-                });
-                if let Some(delta) = displacement {
-                    Step::Seed(delta)
-                } else if let Some((input, delta)) = constant_step(fd, value) {
-                    Step::Offset(input, delta)
-                } else {
-                    match op.code() {
-                        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
-                            let Some(input) = op.get_in(0) else {
-                                return false;
-                            };
-                            Step::Offset(input, 0)
-                        }
-                        OpCode::CPUI_MULTIEQUAL => Step::Phi(id),
-                        OpCode::CPUI_INT_AND => {
-                            let Some(input) = alignment(fd, id)
-                                .and_then(|(slot, _)| op.get_in(slot))
-                            else {
-                                return false;
-                            };
-                            Step::Offset(input, 0)
-                        }
-                        _ => {
-                            let Some(candidate) = candidate else {
-                                return false;
-                            };
-                            // A syntactically negated size can restore SP
-                            // upwards; SUB is not sufficient evidence of growth.
-                            if negate(fd, candidate.amount).is_some() {
-                                return false;
-                            }
-                            Step::Offset(candidate.base, 0)
-                        }
-                    }
-                }
-            };
-            indices.insert(value, nodes.len());
-            nodes.push(Node { step, upper: None });
-            match step {
-                Step::Seed(_) => {}
-                Step::Offset(input, _) => todo.push(input),
-                Step::Phi(id) => {
-                    let op = fd.obank().get(id).unwrap();
-                    for slot in 0..op.num_input() {
-                        let Some(input) = op.get_in(slot) else {
-                            return false;
-                        };
-                        todo.push(input);
-                    }
-                }
-            }
         }
-        // None is bottom while solving, not proof that a PHI arm is harmless.
-        // Every discovered ancestor must eventually be anchored.
-        for _ in 0..SWEEPS {
-            let mut changed = false;
-            for index in 0..nodes.len() {
-                let Some(left) = budget.checked_sub(1) else {
-                    return false;
-                };
-                *budget = left;
-                let upper = match nodes[index].step {
-                    Step::Seed(delta) => Some(delta),
-                    Step::Offset(input, delta) => {
-                        match nodes[indices[&input]].upper {
-                            Some(value) => {
-                                let Some(value) = value.checked_add(delta) else {
-                                    return false;
-                                };
-                                Some(value)
-                            }
-                            None => None,
-                        }
-                    }
-                    Step::Phi(id) => {
-                        let op = fd.obank().get(id).unwrap();
-                        (0..op.num_input())
-                            .filter_map(|slot| nodes[indices[&op.get_in(slot).unwrap()]].upper)
-                            .max()
-                    }
-                };
-                if nodes[index].upper != upper {
-                    nodes[index].upper = upper;
-                    changed = true;
-                }
-            }
-            if !changed {
-                return nodes.iter().all(|node| node.upper.is_some())
-                    && nodes[indices[&value]].upper.is_some_and(|upper| upper <= 0);
-            }
-        }
-        false
     }
+    true
+}
+
+/// A compiler alloca survives until return, unlike restored loop storage.
+fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
     if negate(fd, allocation.amount).is_some() {
         return true;
     }
     let Some(block) = fd.obank().get(allocation.op).and_then(|o| o.get_parent()) else {
         return true;
     };
+    let mut budget = 65536;
+    let Some(reachable) = reachable_blocks(fd, block, &mut budget) else {
+        return true;
+    };
     let graph = fd.bblocks_ref();
-    let mut reachable = BTreeSet::new();
-    let mut todo = vec![block];
-    let mut budget = 65536usize;
-    while let Some(b) = todo.pop() {
-        if !reachable.insert(b) {
-            continue;
-        }
-        let b = graph.block(b);
-        for slot in 0..b.size_out() {
-            if budget == 0 {
-                return true;
-            }
-            budget -= 1;
-            todo.push(b.get_out(slot));
-        }
-    }
     let cyclic = reachable.iter().any(|&b| {
         let b = graph.block(b);
         (0..b.size_out()).any(|i| b.get_out(i) == block)
@@ -1126,12 +1191,13 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
                 let Some(carried_sp) = op.get_in(incoming) else {
                     return false;
                 };
-                at_or_below(fd, allocation.base, header_sp, None, &mut proof_budget)
+                at_or_below(fd, allocation.base, header_sp, None, None, &mut proof_budget)
                     && at_or_below(
                         fd,
                         carried_sp,
                         allocation.output,
                         Some(allocation),
+                        None,
                         &mut proof_budget,
                     )
             });
@@ -1295,7 +1361,10 @@ impl Action for ActionStackAlloc {
         }
         let (allocations, aliases) =
             identify_aliases(fd, found.into_values().collect(), &self.stack_definitions);
-        if allocations.is_empty() || allocations.iter().any(|a| loop_restores_stack(fd, a)) {
+        if allocations.is_empty()
+            || allocations.iter().any(|a| loop_restores_stack(fd, a))
+            || !sequential_reservations_survive(fd, &allocations)
+        {
             return 0;
         }
         if materialize_allocations(fd, &allocations, &aliases, width) {
@@ -1667,6 +1736,43 @@ mod tests {
             assert!(
                 loop_restores_stack(&fd, &current),
                 "an unanchored cyclic PHI arm is not harmless bottom"
+            );
+        }
+    }
+
+    #[test]
+    fn sequential_reservations_require_retained_storage() {
+        for width in [4, 8] {
+            let mut fd = build_fd();
+            let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+            let base = fd.new_varnode(width, &Address::new(Rc::clone(&ram), 0x2000), None);
+            let base = fd.set_input_varnode(base).unwrap();
+            let first = fd.new_varnode(width, &Address::new(Rc::clone(&ram), 0x2010), None);
+            let first = fd.set_input_varnode(first).unwrap();
+            let second = fd.new_varnode(width, &Address::new(ram, 0x2020), None);
+            let second = fd.set_input_varnode(second).unwrap();
+            let root = fd.bblocks_root_pub();
+            let block = fd.bblocks_mut().new_block_basic(root);
+            let mut reservations = Vec::new();
+            for amount in [first, second] {
+                let op = fd.new_op(2, fd.get_address().clone());
+                fd.op_set_opcode_code(op, OpCode::CPUI_INT_SUB);
+                fd.op_set_input(op, base, 0).unwrap();
+                fd.op_set_input(op, amount, 1).unwrap();
+                fd.new_unique_out(width, op).unwrap();
+                fd.op_insert_end(op, block);
+                reservations.push(allocation(&fd, op).unwrap());
+            }
+            assert!(
+                !sequential_reservations_survive(&fd, &reservations),
+                "independent sizes from a restored base do not have C alloca lifetimes"
+            );
+            fd.op_set_input(reservations[1].op, reservations[0].output, 0)
+                .unwrap();
+            reservations[1] = allocation(&fd, reservations[1].op).unwrap();
+            assert!(
+                sequential_reservations_survive(&fd, &reservations),
+                "genuine consecutive allocations retain the earlier backing"
             );
         }
     }

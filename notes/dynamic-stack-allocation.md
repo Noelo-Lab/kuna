@@ -205,6 +205,16 @@ the earlier SP through a real call, then reuses a fixed saved frame on each
 iteration. True function-lifetime allocations, including nested loops, retain
 native/regenerated-C round-trip controls.
 
+The same lifetime requirement applies without a loop. For reservations that can
+execute in sequence, the later base must retain the earlier backing. Independent
+runtime sizes taken from a restored saved SP cannot become two function-lifetime
+allocas. The displacement proof follows only PHI inputs reachable after the
+earlier reservation, so an optional earlier allocation does not invalidate
+genuine consecutive storage on that path. Mutually exclusive reservations and
+proved constant-displacement copies retain their existing treatment. Bounded
+native callback observations distinguish reused storage from fresh allocas;
+separate round trips cover genuinely live consecutive and conditional buffers.
+
 Allocation lowering follows active call-argument recovery and waits for every
 live call's input recovery to finish. Recovery spans multiple heritage passes:
 visiting its action once is not a completion barrier. Lowering SP earlier can
