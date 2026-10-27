@@ -239,7 +239,17 @@ fn native_reads_survive_fusion_when_the_combined_value_is_later_discarded() {
     let directory = std::env::temp_dir().join(format!("kuna-native-fusion-{}-{nonce}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     for width in [1, 2, 4, 8] {
-        let arch = bare_arch();
+        let mut arch = bare_arch();
+        let mut ids = kuna_base::marshal::IdRegistry::with_base_ids();
+        crate::userop::register_ids(&mut ids);
+        crate::pcodeinject::register_ids(&mut ids);
+        let manager = build_manager();
+        use kuna_base::marshal::Decoder;
+        let mut decoder = kuna_base::marshal::XmlDecode::new(&manager, &ids);
+        decoder.ingest_stream(br#"<volatile outputop="write_volatile" inputop="read_volatile"/>"#).unwrap();
+        let element = decoder.open_element().unwrap();
+        arch.userops.decode_volatile(&mut decoder).unwrap();
+        decoder.close_element(element).unwrap();
         arch.types_impl().set_default_alignment_map();
         for (name, size) in [("unsigned char", 1), ("unsigned short", 2), ("unsigned int", 4), ("unsigned long long", 8)] {
             arch.types_impl().set_core_type(name, size, type_metatype::TYPE_UINT, false).unwrap();
