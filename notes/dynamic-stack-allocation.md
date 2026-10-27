@@ -149,6 +149,8 @@ SPARC32 `dash` parser, and DecBench's unoptimized `dash` `readtoken1`. Three
 independent persistent workers run the base, default-off head, and enabled head
 on the same pinned CPU in one allocation. Each arm has two warmups and seven
 measured rounds; arm order rotates and reverses between rounds.
+These measurements compare base `5a1033c9` with runtime `d10c935b`, using
+identically locked dependencies on one Xeon E5-2630 v4 core.
 
 `CLOCK_THREAD_CPUTIME_ID` clocks only the actual `decompile_one` API and,
 separately, the existing `print_c` call. Startup, loading, preparation,
@@ -157,15 +159,24 @@ from each round's sum, not by adding the two separate medians.
 
 | Median cohort CPU (s) | Base | Head, default off | Head, enabled |
 | --- | ---: | ---: | ---: |
-| Decompilation API | 33.797 | 34.094 | 38.637 |
-| C emission | 0.285 | 0.289 | 0.287 |
-| Combined | 34.082 | 34.382 (+0.88%) | 38.922 (+14.20%) |
+| Decompilation API | 26.443 | 26.878 | 29.173 |
+| C emission | 0.220 | 0.221 | 0.219 |
+| Combined | 26.663 | 27.100 (+1.64%) | 29.392 (+10.24%) |
+
+All seven measured combined-CPU samples are retained, including the slower early
+samples. Values below are seconds in measured-round order:
+
+| Arm | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Base | 27.687517 | 27.721034 | 26.532726 | 26.622630 | 26.584127 | 26.662564 | 26.720511 |
+| Head, default off | 27.815327 | 28.085533 | 28.188802 | 26.998898 | 26.967025 | 27.047340 | 27.099568 |
+| Head, enabled | 30.430231 | 30.347793 | 30.318720 | 29.278100 | 29.301810 | 29.310428 | 29.391912 |
 
 All measured C and status outputs are stable within each arm. The enabled
 analysis cost is real, not a startup effect or a corpus-wide upper bound.
-`readtoken1` has combined medians of 2.093 s at base, 2.049 s default-off,
-and 2.119 s enabled. The SPARC32 parser's corresponding medians are 0.258,
-0.269, and 0.401 s; its full-corpus CLI run also completes within the unchanged
+`readtoken1` has combined medians of 1.599 s at base, 1.612 s default-off,
+and 1.784 s enabled. The SPARC32 parser's corresponding medians are 0.202,
+0.210, and 0.301 s; its full-corpus CLI run also completes within the unchanged
 60-second per-function budget.
 
 Alignment masks must retain at least one address bit: an AND with zero erases
