@@ -223,7 +223,12 @@ same-basic-block store/load proof. Every intervening write must be disjoint.
 Across a call, the saved slot must be inside the current activation, above the
 declared callee parameter area, and private: every possible preceding path is
 checked for address escapes through stores, earlier calls, and pointer-derived
-integer values. Pointer inputs are checked with their declared pointee extent.
+integer values. The word must be newly reserved by an exact physical-SP decrement
+and continuously reserved until the call. Escaped pointers are disjoint only
+when their exact start belongs to a proved older runtime allocation wholly above
+the fresh word; its real reservation and lower bound, not a formal pointee size,
+establish that object boundary. Frame bases and offset/interior pointers remain
+unknown. A local save into the private word is not itself an address escape.
 Unknown calls, aliases, variadic declarations, effect overrides and cyclic
 prefixes do not establish this proof. This does not enable another option or
 treat an arbitrary saved pointer as immutable.
