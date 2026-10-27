@@ -2850,6 +2850,14 @@ do not fuse. A rule-transition consumer erases a previously used concatenation
 after fusion has considered it, then executes the emitted reads at protected
 page boundaries to check that neither original scalar access disappears.
 
+Keeping the original scalar reads can expose a three-, five-, six-, or
+seven-byte intermediate concatenation. C assigns such unnamed storage pieces
+with an exact-width byte copy from a fully evaluated unsigned scalar carrier,
+adjusting the carrier address for target endianness. It does not invent a
+member on a scalar, evaluate the expression twice, or read the destination's
+preserved padding to synthesize a wider assignment. These are local storage
+copies, not a change to the original external read widths.
+
 The retained effect carries its dynamic address and address-space metadata,
 and type inference still treats that operand as a pointer. C output uses an
 access-local `volatile` scalar dereference; Rust uses `core::ptr::read_volatile`.

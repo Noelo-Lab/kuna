@@ -9638,12 +9638,10 @@ impl PrintC {
         }
     }
 
-    /// (kuna `partialaccess`) A plain store or copy of a width C has no scalar
-    /// for, into bytes no member names, as `memset`/`memcpy` of exactly those
-    /// bytes. The source is a constant whose bytes are all equal, the same kind
-    /// of piece, or a variable; a whole array variable takes a copy out of such a
-    /// piece the same way. Anything else (an intrinsic, an expression) declines
-    /// and the statement keeps its assignment.
+    /// (kuna `partialaccess`) Copy an unnamed non-scalar-width piece with its
+    /// exact byte count. A PIECE expression first gets a full scalar carrier,
+    /// rather than assigning to a synthetic field or reading preserved padding.
+    /// Plain COPY sources can also be variables, pieces, or repeated-byte fills.
     fn emit_wide_copy(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
         use crate::dtype::type_metatype;
         use crate::kuna_partialaccess::is_scalar_width;
@@ -9653,7 +9651,7 @@ impl PrintC {
         let Some((out, input)) = fd
             .obank()
             .get(op)
-            .filter(|o| o.code() == OpCode::CPUI_COPY)
+            .filter(|o| matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_PIECE))
             .and_then(|o| Some((o.get_out()?, o.get_in(0)?)))
         else {
             return false;
@@ -9670,6 +9668,45 @@ impl PrintC {
             }
         };
         let target = self.piece_walk(fd, arch, out, op, -1, false).and_then(|(n, w)| wide(&w).map(|o| (n, w, o)));
+        if fd.obank().get(op).unwrap().code() == OpCode::CPUI_PIECE {
+            let Some((name, walk, off)) = target else { return false };
+            let carrier_size = match size { 3 => 4, 5..=7 => 8, _ => return false };
+            let factory = arch.types();
+            let carrier = factory.get_base(carrier_size, type_metatype::TYPE_UINT)
+                .expect("partial PIECE has a canonical scalar carrier");
+            let (front, back) = declarator_parts(&carrier, self.rt_ctx);
+            let key = Some(op_key(op));
+            static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
+            self.push_op(&tokens::FUNCTION_CALL, key);
+            self.push_atom(&Atom::syntax("__builtin_memcpy", TagType::FuncToken, crate::printlanguage::SyntaxHighlight::funcname_color));
+            self.push_op(&tokens::COMMA, key);
+            self.push_op(&tokens::COMMA, key);
+            self.push_piece_address(arch, &name, &walk, off, out, op);
+            // The scalar's significant bytes occupy its tail on big-endian
+            // targets. The destination walk already uses memory byte offsets.
+            let skip = if ov.get_space().is_big_endian() { carrier_size - size } else { 0 };
+            let byte_pointer = (skip > 0).then(|| {
+                let byte = factory.get_type_char(1).expect("canonical character type");
+                factory.get_type_pointer(factory.get_size_of_pointer(), byte, 1)
+                    .expect("canonical character pointer")
+            });
+            if let Some(pointer) = &byte_pointer {
+                self.push_op(&tokens::BINARY_PLUS, key);
+                self.push_cast_open(pointer, op);
+            }
+            self.push_op(&tokens::ADDRESSOF, key);
+            self.push_op(&COMPOUND, key);
+            self.push_atom(&Atom::syntax(format!("({front}{back}){{ "), TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+            let previous_statement = self.stmt_op.replace(op);
+            self.op_push_ir(fd, arch, op, None);
+            self.stmt_op = previous_statement;
+            if let Some(pointer) = &byte_pointer {
+                self.push_cast_close(pointer);
+                self.push_constant_ir_fmt_sign(skip as uintb, 0, op, display_format::NONE, false);
+            }
+            self.push_constant_ir_fmt_sign(size as uintb, 0, op, display_format::NONE, false);
+            return true;
+        }
         let piece_source =
             self.piece_walk(fd, arch, input, op, 0, true).and_then(|(n, w)| wide(&w).map(|o| (n, w, o)));
         let fill = iv.is_constant().then(|| {

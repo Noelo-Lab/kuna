@@ -374,3 +374,91 @@ int main(void) {{
     }
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn odd_width_piece_assignments_preserve_surrounding_bytes_and_evaluate_once() {
+    use std::process::Command;
+    let compiler = ["clang", "gcc"].into_iter()
+        .find(|cc| Command::new(cc).arg("--version").output().is_ok())
+        .expect("partial PIECE verification requires a C compiler");
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let directory = std::env::temp_dir().join(format!("kuna-partial-piece-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    for (size, low_size) in [(3, 2), (5, 4), (6, 4), (7, 3)] {
+        for offset in [0, 8 - size] {
+            let arch = bare_arch();
+            arch.types_impl().set_default_alignment_map();
+            arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+            for (name, bytes) in [("unsigned char", 1), ("unsigned short", 2), ("unsigned int", 4), ("unsigned long long", 8)] {
+                arch.types_impl().set_core_type(name, bytes, type_metatype::TYPE_UINT, false).unwrap();
+            }
+            arch.types_impl().cache_core_types().unwrap();
+            let mut fd = build_fd();
+            let high_size = size - low_size;
+            let high_type = arch.types().get_base(high_size, type_metatype::TYPE_UINT).unwrap();
+            let low_type = arch.types().get_base(low_size, type_metatype::TYPE_UINT).unwrap();
+            let piece_type = arch.types().get_base(size, type_metatype::TYPE_UINT).unwrap();
+            let carrier_type = arch.types().get_base(8, type_metatype::TYPE_UINT).unwrap();
+            let high = fd.new_varnode(high_size, &Address::new(ram(&fd), 0x400), Some(high_type));
+            let low = fd.new_varnode(low_size, &Address::new(ram(&fd), 0x408), Some(low_type));
+            let output = fd.new_varnode(size, &Address::new(ram(&fd), 0x500), Some(piece_type));
+            let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_PIECE);
+            fd.op_set_input(op, high, 0).unwrap();
+            fd.op_set_input(op, low, 1).unwrap();
+            fd.op_set_output(op, output).unwrap();
+            fd.set_high_level();
+            for (value, name) in [(high, "high"), (low, "low"), (output, "carrier")] {
+                let id = fd.vbank().get(value).unwrap().get_high().unwrap();
+                let named = fd.high_bank_mut().get_mut(id).unwrap();
+                named.set_kuna_name(name);
+                if value == output {
+                    named.set_symbol_type(Rc::clone(&carrier_type));
+                    named.set_symbol_offset(offset);
+                }
+            }
+            let mut printer = PrintC::new();
+            printer.rt_ctx.enabled = true;
+            printer.rt_ctx.long_is_8 = true;
+            printer.rt_ctx.ctypes = true;
+            printer.set_output_stream();
+            printer.emit_statement(&fd, &arch, op);
+            let statement = printer.emit_mut().output_str();
+            let high_mask = (1u64 << (high_size * 8)) - 1;
+            let low_mask = (1u64 << (low_size * 8)) - 1;
+            let program = format!(r#"
+#include <stdint.h>
+#include <string.h>
+static int calls;
+static uint64_t joined(uint64_t high,uint64_t low,int bits){{++calls;return(high<<bits)|low;}}
+#define CONCAT12(h,l) joined(h,l,16)
+#define CONCAT14(h,l) joined(h,l,32)
+#define CONCAT24(h,l) joined(h,l,32)
+#define CONCAT43(h,l) joined(h,l,24)
+static uint64_t emitted(uint64_t carrier,uint64_t high,uint64_t low){{{statement}return carrier;}}
+int main(void){{
+    for(uint64_t seed=0;seed<257;++seed){{
+        uint64_t initial=UINT64_C(0xfedcba9876543210)^(seed*UINT64_C(0x0101010101010101));
+        uint64_t high=(seed*UINT64_C(0x10203041))&UINT64_C({high_mask});
+        uint64_t low=(seed*UINT64_C(0x01234567)+UINT64_C(0x76543210))&UINT64_C({low_mask});
+        uint64_t joined_value=(high<<{low_size}*8)|low;
+        unsigned char expected[8];memcpy(expected,&initial,8);
+        for(int byte=0;byte<{size};++byte)expected[{offset}+byte]=(unsigned char)(joined_value>>(byte*8));
+        calls=0;uint64_t actual=emitted(initial,high,low);
+        if(calls!=1||memcmp(&actual,expected,8))return 1;
+    }}
+    return 0;
+}}
+"#);
+            let source = directory.join(format!("piece-{size}-{offset}.c"));
+            std::fs::write(&source, program).unwrap();
+            for level in ["0", "2"] {
+                let executable = directory.join(format!("piece-{size}-{offset}-{level}"));
+                let built = Command::new(compiler).arg(format!("-O{level}")).arg(&source).arg("-o").arg(&executable).output().unwrap();
+                assert!(built.status.success(), "size={size}, offset={offset}: {statement}\n{}", String::from_utf8_lossy(&built.stderr));
+                assert!(Command::new(&executable).status().unwrap().success(), "size={size}, offset={offset}, O{level}: {statement}");
+            }
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}
