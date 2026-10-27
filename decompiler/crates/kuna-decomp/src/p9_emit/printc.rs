@@ -6630,11 +6630,10 @@ impl PrintC {
             let rust = self.out_lang == crate::kuna_lang::OutLang::Rust;
             let unaligned_scalar = arch.archid.starts_with("x86:")
                 || arch.archid.starts_with("AARCH64:");
-            if size != 1 && unaligned_scalar {
-                // These ISAs permit unaligned ordinary scalar reads. A single
-                // packed scalar keeps their width without adding alignment.
-                // Keep natural scalar alignment on strict/unknown ISAs: an
-                // alignment-one type there can turn one access into byte reads.
+            if size != 1 && (unaligned_scalar || !rust) {
+                // A single scalar record gives C an alias-safe access to raw
+                // native bits. Pack it only where the ISA permits unaligned
+                // reads; strict/unknown ISAs keep natural scalar alignment.
                 if rust {
                     // Evaluate in the caller's namespace before introducing
                     // the packed type: its constructor must not capture a
@@ -6659,8 +6658,9 @@ impl PrintC {
                     let value = arch.types().get_base(size, crate::dtype::type_metatype::TYPE_UINT)
                         .expect("retained scalar read type");
                     let word = type_name_for_decl(&value, self.rt_ctx).0;
+                    let attributes = if unaligned_scalar { "packed, may_alias" } else { "may_alias" };
                     self.push_atom(&Atom::syntax(
-                        format!("((volatile struct {{ {word} value; }} __attribute__((packed, may_alias)) *) ("),
+                        format!("((volatile struct {{ {word} value; }} __attribute__(({attributes})) *) ("),
                         TagType::TypeToken, SyntaxHighlight::type_color,
                     ));
                     self.push_vn_ir(fd, arch, address, op);

@@ -2853,8 +2853,10 @@ scalar instructions do not prove natural alignment. C uses a packed, may-alias
 scalar field with the model's resolved integer type; the attributes follow the
 complete anonymous record, so C consumers can resolve its type before the
 pointer cast. Rust reads a packed single-field value. Other processor
-families retain the natural scalar-access alignment contract; applying a packed
-type indiscriminately can split one SPARC access into several device reads.
+families retain the natural scalar-access alignment contract; C uses the same
+may-alias scalar record without `packed`, since native bits do not establish
+the effective C type of an external object. Applying a packed type
+indiscriminately can split one SPARC access into several device reads.
 The width describes the scalar object, not a universal physical-transaction
 guarantee: Clang's i386 backend can lower a volatile 64-bit scalar to two 32-bit
 reads even with SSE2 enabled, both with and without the packed type.

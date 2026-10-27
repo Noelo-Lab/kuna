@@ -23,6 +23,7 @@ void ProbeSpill32(unsigned state, unsigned mode, unsigned left, unsigned right, 
 #else
 #define _GNU_SOURCE
 #include <stdint.h>
+#include <stddef.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
@@ -129,6 +130,17 @@ int main(void) {
             if (!check(cases[f].original,7,0,9,1,crossing,pages+size) ||
                 !check(cases[f].printed,7,0,9,1,crossing,pages+size)) return 3;
         }
+    // The native discarded bits may belong to another effective C type.
+    struct FloatObject { unsigned char prefix[24]; float value; } number = {{0}, 1.25f};
+    struct DoubleObject { unsigned char prefix[24]; double value; } wide = {{0}, 2.5};
+    struct PointerObject { unsigned char prefix[24]; void *value; } pointer = {{0}, &number};
+    _Static_assert(offsetof(struct FloatObject, value) == 24, "native read offset");
+    _Static_assert(offsetof(struct DoubleObject, value) == 24, "native read offset");
+    _Static_assert(offsetof(struct PointerObject, value) == 24, "native read offset");
+    Printed32(7,0,9,1,&number);
+    Printed64(7,0,9,1,&wide);
+    Printed64(7,0,9,1,&pointer);
+    if (number.value != 1.25f || wide.value != 2.5 || pointer.value != &number) return 4;
     if (munmap(pages,3*size)) return 92;
     return 0;
 }
