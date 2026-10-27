@@ -189,16 +189,18 @@ visiting its action once is not a completion barrier. Lowering SP earlier can
 turn an alignment spill into phantom arguments or leave real outgoing stack
 arguments disconnected from the call. Dead calls do not block the transformation.
 
-Recovery may also retarget the original subtraction's result to an argument
-register, leaving a later call's return-address push as the surviving physical-SP
-definition. While input recovery is pending, the action records the generational
-IDs of actual physical-SP definitions without changing the IR. Root discovery
-can promote only one of those witnessed reservations, with an equal-width
-subtraction of the same SSA amount and a proved constant displacement from the
-same base. Its backward walk stays in one basic block and stops at calls,
-userops, and control-flow boundaries; an arbitrary future pointer calculation
-is not evidence that storage was already reserved. Per-function reset clears
-the provenance, and filtered action clones begin empty.
+Recovery can remove the COPY assigning an allocation expression to SP while the
+same expression remains an argument-register value. A later call's return-address
+push may then be the surviving physical-SP definition. While input recovery is
+pending, existing root discovery follows actual physical-SP writes and records
+the generational IDs of allocation expressions feeding them. An earlier expression
+is eligible only when the assignment follows in the same basic block without an
+intervening effect or trapping division; recording this provenance does not change
+the IR. Late discovery revalidates equal width, the same SSA amount and a proved
+constant displacement from the same base. Its backward walk stays in one basic
+block and stops at calls, userops and control-flow boundaries. An arbitrary future
+pointer calculation is not evidence that storage was already reserved. Per-function
+reset clears the provenance, and filtered action clones begin empty.
 Later displaced copies use the same backing reservation. The loop-lifetime proof
 recognizes those same affine copies, but not restoration of the allocation's
 older base; scoped VLA rejection remains independent of address recovery.

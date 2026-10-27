@@ -3,6 +3,7 @@
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
+use crate::op::pcodeop_flags;
 use kuna_base::address::{calc_mask, sign_extend};
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -283,7 +284,7 @@ fn candidates(
     fd: &Funcdata,
     value: VarnodeId,
     seen: &mut BTreeSet<VarnodeId>,
-    result: &mut BTreeMap<OpId, Allocation>,
+    result: &mut impl FnMut(Allocation),
 ) {
     if !seen.insert(value) {
         return;
@@ -292,7 +293,7 @@ fn candidates(
         return;
     };
     if let Some(found) = allocation(fd, id) {
-        result.insert(id, found);
+        result(found);
         return;
     }
     let Some(op) = fd.obank().get(id) else { return };
@@ -316,6 +317,44 @@ fn candidates(
         }
         _ => {}
     }
+}
+/// An expression feeding SP may precede its COPY, but not an observable effect.
+fn reservation_point(fd: &Funcdata, point: OpId, stack_write: OpId) -> bool {
+    if point == stack_write {
+        return true;
+    }
+    let Some(op) = fd.obank().get(point) else {
+        return false;
+    };
+    if op.get_parent().is_none()
+        || op.get_parent() != fd.obank().get(stack_write).and_then(|op| op.get_parent())
+    {
+        return false;
+    }
+    let mut next = op.basic_neighbours().1;
+    while let Some(id) = next {
+        if id == stack_write {
+            return true;
+        }
+        let Some(op) = fd.obank().get(id) else {
+            return false;
+        };
+        let evaluation = op.get_eval_type();
+        if evaluation == 0
+            || evaluation & pcodeop_flags::special != 0
+            || matches!(
+                op.code(),
+                OpCode::CPUI_INT_DIV
+                    | OpCode::CPUI_INT_SDIV
+                    | OpCode::CPUI_INT_REM
+                    | OpCode::CPUI_INT_SREM
+            )
+        {
+            return false;
+        }
+        next = op.basic_neighbours().1;
+    }
+    false
 }
 fn dominates_op(fd: &Funcdata, definition: OpId, user: OpId) -> bool {
     if definition == user {
@@ -485,9 +524,9 @@ fn identify_aliases(
     mut found: Vec<Allocation>,
     stack_definitions: &[OpId],
 ) -> (Vec<Allocation>, Vec<(VarnodeId, VarnodeId)>) {
-    // Recovery can retarget an earlier physical-SP definition to an argument
-    // register. Only those witnessed definitions can become an earlier root;
-    // affine equality alone must not hoist a future reservation.
+    // Recovery can remove the COPY of an allocation expression into SP.
+    // Only expressions witnessed to reserve SP before any intervening effect
+    // can become an earlier root; affine equality alone is insufficient.
     for root in &mut found {
         let Some(block) = fd.obank().get(root.op).and_then(|op| op.get_parent()) else {
             continue;
@@ -512,7 +551,7 @@ fn identify_aliases(
                 break;
             }
             previous = op.basic_neighbours().0;
-            if !stack_definitions.contains(&id) {
+            if stack_definitions.binary_search(&id).is_err() {
                 continue;
             }
             if let Some(candidate) = allocation(fd, id) {
@@ -1127,17 +1166,25 @@ impl Action for ActionStackAlloc {
                         && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
                 })
         }) {
+            let mut seen = BTreeSet::new();
             for id in fd.obank().iter_alive() {
-                if fd
+                let Some(out) = fd
                     .obank()
                     .get(id)
                     .and_then(|op| op.get_out())
-                    .is_some_and(|out| stack_register(fd, out))
-                    && !self.stack_definitions.contains(&id)
-                {
-                    self.stack_definitions.push(id);
-                }
+                    .filter(|&out| stack_register(fd, out))
+                else {
+                    continue;
+                };
+                seen.clear();
+                candidates(fd, out, &mut seen, &mut |candidate| {
+                    if reservation_point(fd, candidate.op, id) {
+                        self.stack_definitions.push(candidate.op);
+                    }
+                });
             }
+            self.stack_definitions.sort_unstable();
+            self.stack_definitions.dedup();
             return 0;
         }
         let mut found = BTreeMap::new();
@@ -1149,7 +1196,9 @@ impl Action for ActionStackAlloc {
                 .and_then(|o| o.get_out())
                 .filter(|&v| stack_register(fd, v))
             {
-                candidates(fd, out, &mut seen, &mut found);
+                candidates(fd, out, &mut seen, &mut |candidate| {
+                    found.insert(candidate.op, candidate);
+                });
             }
         }
         let (allocations, aliases) =
