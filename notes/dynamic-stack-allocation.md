@@ -187,12 +187,23 @@ tests cover copied zero masks, both operand orders at 32/64 bits, and an unrelat
 64-byte mask beside a one-byte access below the allocation.
 
 Loop lifetime proof is separate from outgoing-area bounds. For every enclosing
-natural loop, each latch must carry the allocation through its SP PHI; a restored
-base, a missing proof, or an irreducible loop is declined. The graph walk has a
+natural loop, the allocation's base must follow the header's carried SP without
+restoring older storage, and every latch must preserve the current reservation.
+Merely finding the result in a latch PHI is insufficient: restoring a fixed base
+before each subtraction also reuses storage. A bounded upper-displacement proof
+requires both relationships to be at or below their respective SP anchors.
+Constant steps, recognized downward allocations, alignment and dominated affine
+copies supply transfers; PHIs take the maximum over every incoming path.
+Anchored zero-step or decreasing cycles are solved to a fixed point. An unrelated
+path or an unanchored cyclic component is unknown, not a harmless missing bound.
+Adding back the size, or subtracting its negation, cannot establish retention.
+A missing proof or an irreducible loop is declined. The graph walk has a
 65,536-edge budget and the shared SSA proof a 4,096-node budget. Scoped VLAs are
 negative cases, including a 20,000-iteration allocation that would exhaust the
-stack if emitted as alloca. True function-lifetime allocations in loops retain
-their existing round-trip coverage.
+stack if emitted as alloca. A separate restore-before-allocation control retains
+the earlier SP through a real call, then reuses a fixed saved frame on each
+iteration. True function-lifetime allocations, including nested loops, retain
+native/regenerated-C round-trip controls.
 
 Allocation lowering follows active call-argument recovery and waits for every
 live call's input recovery to finish. Recovery spans multiple heritage passes:

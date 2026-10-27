@@ -915,63 +915,149 @@ fn reserves(
 /// A compiler alloca survives until return. A loop that restores an older SP
 /// requires a shorter lifetime, which this lowering does not emit.
 fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
-    fn derives(
+    fn at_or_below(
         fd: &Funcdata,
         value: VarnodeId,
-        root: &Allocation,
-        seen: &mut BTreeSet<VarnodeId>,
+        anchor: VarnodeId,
+        reservation: Option<&Allocation>,
         budget: &mut usize,
     ) -> bool {
-        if *budget == 0 {
-            return false;
+        #[derive(Clone, Copy)]
+        enum Step {
+            Seed(i128),
+            Offset(VarnodeId, i128),
+            Phi(OpId),
         }
-        *budget -= 1;
-        if value == root.output {
-            return true;
+        struct Node {
+            step: Step,
+            upper: Option<i128>,
         }
-        if !seen.insert(value) || seen.len() > 256 {
-            return false;
-        }
-        let Some(id) = fd.vbank().get(value).and_then(|v| v.get_def()) else {
-            return false;
-        };
-        let Some(op) = fd.obank().get(id) else {
-            return false;
-        };
-        // The carried SP may be a later, separately computed copy of this
-        // reservation. Equal older reservations still have a shorter lifetime.
-        if dominates_op(fd, root.op, id)
-            && fd.vbank().get(value).unwrap().get_size()
-                == fd.vbank().get(root.output).unwrap().get_size()
-            && self::allocation(fd, id)
-                .is_some_and(|candidate| origin_delta(fd, root, &candidate).is_some())
-        {
-            return true;
-        }
-        match op.code() {
-            OpCode::CPUI_COPY
-            | OpCode::CPUI_CAST
-            | OpCode::CPUI_INDIRECT
-            | OpCode::CPUI_INT_SUB
-            | OpCode::CPUI_PTRADD
-            | OpCode::CPUI_PTRSUB => op
-                .get_in(0)
-                .is_some_and(|v| derives(fd, v, root, seen, budget)),
-            OpCode::CPUI_INT_ADD => (0..2).any(|slot| {
-                op.get_in(slot)
-                    .is_some_and(|v| derives(fd, v, root, &mut seen.clone(), budget))
-            }),
-            OpCode::CPUI_INT_AND => {
-                alignment(fd, fd.vbank().get(value).unwrap().get_def().unwrap())
-                    .and_then(|(slot, _)| op.get_in(slot))
-                    .is_some_and(|v| derives(fd, v, root, seen, budget))
+        let width = fd.vbank().get(anchor).unwrap().get_size();
+        let mut indices = BTreeMap::new();
+        let mut nodes = Vec::<Node>::new();
+        let mut todo = vec![value];
+        while let Some(value) = todo.pop() {
+            if indices.contains_key(&value) {
+                continue;
             }
-            OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|slot| {
-                op.get_in(slot)
-                    .is_some_and(|v| derives(fd, v, root, &mut seen.clone(), budget))
-            }),
-            _ => false,
+            let Some(left) = budget.checked_sub(1) else {
+                return false;
+            };
+            *budget = left;
+            if nodes.len() == 256
+                || fd.vbank().get(value).is_none_or(|v| v.get_size() != width)
+            {
+                return false;
+            }
+            let step = if value == anchor {
+                Step::Seed(0)
+            } else {
+                let Some(id) = fd.vbank().get(value).and_then(|v| v.get_def()) else {
+                    return false;
+                };
+                let op = fd.obank().get(id).unwrap();
+                let candidate = self::allocation(fd, id);
+                let displacement = reservation.and_then(|root| {
+                    candidate.and_then(|candidate| {
+                        dominates_op(fd, root.op, id)
+                            .then(|| origin_delta(fd, root, &candidate))
+                            .flatten()
+                    })
+                });
+                if let Some(delta) = displacement {
+                    Step::Seed(delta)
+                } else if let Some((input, delta)) = constant_step(fd, value) {
+                    Step::Offset(input, delta)
+                } else {
+                    match op.code() {
+                        OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+                            let Some(input) = op.get_in(0) else {
+                                return false;
+                            };
+                            Step::Offset(input, 0)
+                        }
+                        OpCode::CPUI_MULTIEQUAL => Step::Phi(id),
+                        OpCode::CPUI_INT_AND => {
+                            let Some(input) = alignment(fd, id)
+                                .and_then(|(slot, _)| op.get_in(slot))
+                            else {
+                                return false;
+                            };
+                            Step::Offset(input, 0)
+                        }
+                        _ => {
+                            let Some(candidate) = candidate else {
+                                return false;
+                            };
+                            // A syntactically negated size can restore SP
+                            // upwards; SUB is not sufficient evidence of growth.
+                            if negate(fd, candidate.amount).is_some() {
+                                return false;
+                            }
+                            Step::Offset(candidate.base, 0)
+                        }
+                    }
+                }
+            };
+            indices.insert(value, nodes.len());
+            nodes.push(Node { step, upper: None });
+            match step {
+                Step::Seed(_) => {}
+                Step::Offset(input, _) => todo.push(input),
+                Step::Phi(id) => {
+                    let op = fd.obank().get(id).unwrap();
+                    for slot in 0..op.num_input() {
+                        let Some(input) = op.get_in(slot) else {
+                            return false;
+                        };
+                        todo.push(input);
+                    }
+                }
+            }
         }
+        // None is bottom while solving, not proof that a PHI arm is harmless.
+        // Every discovered ancestor must eventually be anchored.
+        for _ in 0..SWEEPS {
+            let mut changed = false;
+            for index in 0..nodes.len() {
+                let Some(left) = budget.checked_sub(1) else {
+                    return false;
+                };
+                *budget = left;
+                let upper = match nodes[index].step {
+                    Step::Seed(delta) => Some(delta),
+                    Step::Offset(input, delta) => {
+                        match nodes[indices[&input]].upper {
+                            Some(value) => {
+                                let Some(value) = value.checked_add(delta) else {
+                                    return false;
+                                };
+                                Some(value)
+                            }
+                            None => None,
+                        }
+                    }
+                    Step::Phi(id) => {
+                        let op = fd.obank().get(id).unwrap();
+                        (0..op.num_input())
+                            .filter_map(|slot| nodes[indices[&op.get_in(slot).unwrap()]].upper)
+                            .max()
+                    }
+                };
+                if nodes[index].upper != upper {
+                    nodes[index].upper = upper;
+                    changed = true;
+                }
+            }
+            if !changed {
+                return nodes.iter().all(|node| node.upper.is_some())
+                    && nodes[indices[&value]].upper.is_some_and(|upper| upper <= 0);
+            }
+        }
+        false
+    }
+    if negate(fd, allocation.amount).is_some() {
+        return true;
     }
     let Some(block) = fd.obank().get(allocation.op).and_then(|o| o.get_parent()) else {
         return true;
@@ -1030,18 +1116,24 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
             proved = true;
             let incoming = graph.block(header).get_in_index(latch);
             let carried = fd.bb_ops(header).into_iter().any(|id| {
-                let o = fd.obank().get(id).unwrap();
-                o.code() == OpCode::CPUI_MULTIEQUAL
-                    && o.get_out().is_some_and(|v| stack_register(fd, v))
-                    && o.get_in(incoming).is_some_and(|v| {
-                        derives(
-                            fd,
-                            v,
-                            allocation,
-                            &mut BTreeSet::new(),
-                            &mut proof_budget,
-                        )
-                    })
+                let op = fd.obank().get(id).unwrap();
+                if op.code() != OpCode::CPUI_MULTIEQUAL {
+                    return false;
+                }
+                let Some(header_sp) = op.get_out().filter(|&v| stack_register(fd, v)) else {
+                    return false;
+                };
+                let Some(carried_sp) = op.get_in(incoming) else {
+                    return false;
+                };
+                at_or_below(fd, allocation.base, header_sp, None, &mut proof_budget)
+                    && at_or_below(
+                        fd,
+                        carried_sp,
+                        allocation.output,
+                        Some(allocation),
+                        &mut proof_budget,
+                    )
             });
             if !carried {
                 return true;
@@ -1397,7 +1489,7 @@ mod tests {
     }
 
     #[test]
-    fn loop_restoring_older_affine_reservations_is_declined() {
+    fn loop_lifetime_distinguishes_restoration_from_carried_storage() {
         use kuna_base::space::{SpacebaseSpace, VarnodeStorage};
         for width in [4, 8] {
             let mut manager = build_manager();
@@ -1497,13 +1589,85 @@ mod tests {
             fd.op_set_opcode_code(carried, OpCode::CPUI_MULTIEQUAL);
             fd.op_set_input(carried, saved_sp, 0).unwrap();
             fd.op_set_input(carried, restored_sp, 1).unwrap();
-            fd.new_varnode_out(width, &sp_address, carried).unwrap();
+            let header_sp = fd.new_varnode_out(width, &sp_address, carried).unwrap();
             fd.op_insert_end(carried, blocks[4]);
             let current = allocation(&fd, current.unwrap()).unwrap();
             // Neither predecessor reservation dominates this loop. Restoring
             // their PHI is not carrying the current reservation's lifetime,
             // even though all three calculate the same stack address.
             assert!(loop_restores_stack(&fd, &current));
+            fd.op_set_input(restore, current.output, 0).unwrap();
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "recomputing from a fixed older base restores storage before the next allocation"
+            );
+            fd.op_set_input(current.op, header_sp, 0).unwrap();
+            let current = allocation(&fd, current.op).unwrap();
+            assert!(!loop_restores_stack(&fd, &current));
+
+            let add = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(add, OpCode::CPUI_INT_ADD);
+            fd.op_set_input(add, current.output, 0).unwrap();
+            fd.op_set_input(add, amount, 1).unwrap();
+            let restored = fd.new_unique_out(width, add).unwrap();
+            fd.op_insert_before(add, restore);
+            fd.op_set_input(restore, restored, 0).unwrap();
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "adding the allocation amount ends its lifetime"
+            );
+            let negative = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(negative, OpCode::CPUI_INT_2COMP);
+            fd.op_set_input(negative, amount, 0).unwrap();
+            let negative_amount = fd.new_unique_out(width, negative).unwrap();
+            fd.op_insert_before(negative, restore);
+            let subtract = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(subtract, OpCode::CPUI_INT_SUB);
+            fd.op_set_input(subtract, current.output, 0).unwrap();
+            fd.op_set_input(subtract, negative_amount, 1).unwrap();
+            let restored = fd.new_unique_out(width, subtract).unwrap();
+            fd.op_insert_before(subtract, restore);
+            fd.op_set_input(restore, restored, 0).unwrap();
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "subtracting a negated amount also restores storage"
+            );
+
+            let copy = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(copy, OpCode::CPUI_INT_SUB);
+            fd.op_set_input(copy, header_sp, 0).unwrap();
+            fd.op_set_input(copy, amount, 1).unwrap();
+            let copied = fd.new_unique_out(width, copy).unwrap();
+            fd.op_insert_before(copy, restore);
+            fd.op_set_input(restore, copied, 0).unwrap();
+            assert!(
+                !loop_restores_stack(&fd, &current),
+                "a dominated recomputation still carries the current reservation"
+            );
+
+            fd.bblocks_mut().add_edge(blocks[6], blocks[6]);
+            let cycle = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(cycle, OpCode::CPUI_MULTIEQUAL);
+            fd.op_set_input(cycle, current.output, 0).unwrap();
+            fd.op_set_input(cycle, restored_sp, 1).unwrap();
+            let cyclic = fd.new_unique_out(width, cycle).unwrap();
+            fd.op_insert_before(cycle, restore);
+            fd.op_set_input(restore, cyclic, 0).unwrap();
+            assert!(
+                !loop_restores_stack(&fd, &current),
+                "an anchored nested zero-step cycle retains storage"
+            );
+            let unknown = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(unknown, OpCode::CPUI_MULTIEQUAL);
+            let unanchored = fd.new_unique_out(width, unknown).unwrap();
+            fd.op_set_input(unknown, unanchored, 0).unwrap();
+            fd.op_set_input(unknown, unanchored, 1).unwrap();
+            fd.op_insert_before(unknown, cycle);
+            fd.op_set_input(cycle, unanchored, 1).unwrap();
+            assert!(
+                loop_restores_stack(&fd, &current),
+                "an unanchored cyclic PHI arm is not harmless bottom"
+            );
         }
     }
 

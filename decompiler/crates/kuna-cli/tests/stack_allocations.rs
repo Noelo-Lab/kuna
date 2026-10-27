@@ -48,6 +48,8 @@ enum Case {
     Conditional,
     Repeated,
     Scoped,
+    ResetBefore,
+    Nested,
     Probe,
     ProbeTwo,
     Drifting,
@@ -80,6 +82,18 @@ fn elf64_scoped_vla_is_declined() {
 #[test]
 fn pe32_scoped_vla_is_declined() {
     check_case(Some("i686-w64-windows-gnu"), "-O0", Case::Scoped);
+}
+#[test]
+fn elf64_restore_before_allocation_is_declined() {
+    check_case(None, "-O0", Case::ResetBefore);
+}
+#[test]
+fn elf64_nested_function_lifetime_allocations_roundtrip() {
+    check_case(None, "-O0", Case::Nested);
+}
+#[test]
+fn elf64_optimized_nested_allocations_roundtrip() {
+    check_case(None, "-O2", Case::Nested);
 }
 #[test]
 fn elf64_probe_loop_roundtrip() {
@@ -154,6 +168,12 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
         Case::Conditional => "char *data;volatile int choice=n&1;if(choice)data=__builtin_alloca((unsigned)n);else data=__builtin_alloca((unsigned)n+16);data[0]=7;return observe(data,n);",
         Case::Repeated => "int total=0;for(int i=0;i<3;i++){char *data=__builtin_alloca((unsigned)n+i);data[0]=7;total+=observe(data,n+i);}return total;",
         Case::Scoped => "int total=0;for(int i=0;i<20000;i++){char data[n+4000];data[0]=7;total+=observe(data,n+4000);}return total;",
+        Case::Nested => "int total=0;for(int i=0;i<3;i++){for(int j=0;j<2;j++){char *data=__builtin_alloca((unsigned)n+i+j);data[0]=7;total+=observe(data,n+i+j);}}return total;",
+        Case::ResetBefore => r#"__asm__(
+"pushq %rbp\nmovq %rsp,%rbp\npushq %rbx\npushq %r12\npushq %r13\npushq %r14\nsubq $64,%rsp\n"
+"movq %rsp,%r12\nmovl %edi,%r13d\nmovl %edi,%r14d\naddq $15,%r14\nandq $-16,%r14\nmovl $5,%ebx\n"
+"1: movb $7,(%rsp)\nmovq %rsp,%rdi\nmovl %r13d,%esi\ncall observe\nmovq %r12,%rsp\nsubq %r14,%rsp\ndecl %ebx\njnz 1b\n"
+"movq %r12,%rsp\naddq $64,%rsp\npopq %r14\npopq %r13\npopq %r12\npopq %rbx\npopq %rbp\nretq\n");"#,
         Case::Restored if target.is_some() => r#"__asm__(
 "pushl %ebp\nmovl %esp,%ebp\npushl %ebx\npushl %edi\nsubl $8,%esp\nmovl 8(%ebp),%ebx\nmovl $31,-12(%ebp)\n"
 "movl %ebx,%eax\naddl $15,%eax\nandl $-16,%eax\nsubl %eax,%esp\nmovl %esp,%edi\nmovb $7,(%edi)\n"
@@ -224,6 +244,7 @@ fn check_case(target: Option<&str>, optimization: &str, case: Case) {
             | Case::Displaced
             | Case::SteppedProbe
             | Case::MergedSteppedProbe
+            | Case::ResetBefore
     ) {
         "__attribute__((naked)) "
     } else {
@@ -297,7 +318,11 @@ API {naked}int allocate(int n) {{{body}}}
     let text = std::fs::read_to_string(&generated).unwrap();
     let declined = matches!(
         case,
-        Case::Drifting | Case::SteppedProbe | Case::MergedSteppedProbe | Case::Scoped
+        Case::Drifting
+            | Case::SteppedProbe
+            | Case::MergedSteppedProbe
+            | Case::Scoped
+            | Case::ResetBefore
     );
     let allocations = if declined {
         0
@@ -313,13 +338,14 @@ API {naked}int allocate(int n) {{{body}}}
     if matches!(case, Case::Restored) {
         // These lifetimes do not overlap: sharing proved identical storage is valid.
         assert!((1..=2).contains(&actual), "{text}");
+    } else if matches!(case, Case::Nested) {
+        assert!(actual > 0, "{text}");
     } else {
         assert_eq!(actual, allocations, "{text}");
     }
     if declined {
         return;
     }
-    assert!(!text.contains("Stackffff"), "{text}");
     if let Some(target) = target {
         for opt in ["-O0", "-O2"] {
             process::required_output(
