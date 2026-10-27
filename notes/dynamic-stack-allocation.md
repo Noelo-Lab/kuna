@@ -189,6 +189,15 @@ visiting its action once is not a completion barrier. Lowering SP earlier can
 turn an alignment spill into phantom arguments or leave real outgoing stack
 arguments disconnected from the call. Dead calls do not block the transformation.
 
+Recovery may also retarget the original subtraction's result to an argument
+register, leaving a later call's return-address push as the surviving physical-SP
+definition. Root discovery therefore walks backward only within that same basic
+block to recover an earlier, equal-width subtraction with the same SSA amount
+and a proved constant displacement from the same base. It crosses no branches.
+Later displaced copies use the same backing reservation. The loop-lifetime proof
+recognizes those same affine copies, but not restoration of the allocation's
+older base; scoped VLA rejection remains independent of address recovery.
+
 An unasserted caller/callee regression checks both inferred arities. A separate
 Thumb fixture saves an unused incoming register before a three-argument call and
 allocates its buffer afterward. Its regenerated caller must compile with the

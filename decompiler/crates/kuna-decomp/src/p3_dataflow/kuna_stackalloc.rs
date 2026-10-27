@@ -482,8 +482,36 @@ fn displaced_aliases(
 }
 fn identify_aliases(
     fd: &Funcdata,
-    found: Vec<Allocation>,
+    mut found: Vec<Allocation>,
 ) -> (Vec<Allocation>, Vec<(VarnodeId, VarnodeId)>) {
+    // Recovery can retarget the original subtraction to an argument register,
+    // leaving only a later CALL's return-address push in the physical SP chain.
+    // Recover the earlier, same-block address calculation before choosing roots.
+    for root in &mut found {
+        let Some(block) = fd.obank().get(root.op).and_then(|op| op.get_parent()) else {
+            continue;
+        };
+        let mut previous = fd.obank().get(root.op).unwrap().basic_neighbours().0;
+        while let Some(id) = previous {
+            let Some(op) = fd.obank().get(id) else {
+                break;
+            };
+            if op.get_parent() != Some(block) {
+                break;
+            }
+            previous = op.basic_neighbours().0;
+            if let Some(candidate) = allocation(fd, id) {
+                if fd.vbank().get(candidate.output).unwrap().get_size()
+                    == fd.vbank().get(root.output).unwrap().get_size()
+                    && origin_delta(fd, root, &candidate).is_some()
+                {
+                    *root = candidate;
+                }
+            }
+        }
+    }
+    found.sort_unstable_by_key(|root| root.op);
+    found.dedup_by_key(|root| root.op);
     let roots: Vec<_> = found
         .iter()
         .copied()
@@ -836,7 +864,7 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
     fn derives(
         fd: &Funcdata,
         value: VarnodeId,
-        root: VarnodeId,
+        root: &Allocation,
         seen: &mut BTreeSet<VarnodeId>,
         budget: &mut usize,
     ) -> bool {
@@ -844,20 +872,28 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
             return false;
         }
         *budget -= 1;
-        if value == root {
+        if value == root.output {
             return true;
         }
         if !seen.insert(value) || seen.len() > 256 {
             return false;
         }
-        let Some(op) = fd
-            .vbank()
-            .get(value)
-            .and_then(|v| v.get_def())
-            .and_then(|d| fd.obank().get(d))
-        else {
+        let Some(id) = fd.vbank().get(value).and_then(|v| v.get_def()) else {
             return false;
         };
+        let Some(op) = fd.obank().get(id) else {
+            return false;
+        };
+        // The carried SP may be a separately computed, displaced copy of the
+        // same allocation after recovery. Restoring its pre-allocation base
+        // does not satisfy this affine-origin proof.
+        if fd.vbank().get(value).unwrap().get_size()
+            == fd.vbank().get(root.output).unwrap().get_size()
+            && self::allocation(fd, id)
+                .is_some_and(|candidate| origin_delta(fd, root, &candidate).is_some())
+        {
+            return true;
+        }
         match op.code() {
             OpCode::CPUI_COPY
             | OpCode::CPUI_CAST
@@ -947,7 +983,7 @@ fn loop_restores_stack(fd: &Funcdata, allocation: &Allocation) -> bool {
                         derives(
                             fd,
                             v,
-                            allocation.output,
+                            allocation,
                             &mut BTreeSet::new(),
                             &mut proof_budget,
                         )
