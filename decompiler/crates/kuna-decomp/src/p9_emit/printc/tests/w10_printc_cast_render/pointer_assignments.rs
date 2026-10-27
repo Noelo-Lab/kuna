@@ -195,6 +195,10 @@ int main(void) {{ return run_boundary(); }}
         for language in ["c", "rust"] {
             let mut printer = PrintC::new();
             printer.set_name(language);
+            printer.rt_ctx.lang = printer.out_lang;
+            printer.rt_ctx.enabled = true;
+            printer.rt_ctx.long_is_8 = true;
+            printer.rt_ctx.ctypes = true;
             printer.set_output_stream();
             printer.op_ptrsub_ir(&fd, &arch, op);
             let expression = printer.emit_mut().output_str();
@@ -202,7 +206,7 @@ int main(void) {{ return run_boundary(); }}
             let program = if language == "c" {
                 driver.replace("ADDRESS_DEFINITION", &format!("static char *emitted_address(Opaque *base) {{ return {expression}; }}"))
             } else {
-                format!("#![allow(non_camel_case_types,unused_parens)]\ntype Opaque=core::ffi::c_void;\n#[no_mangle] unsafe extern \"C\" fn emitted_address(base:*mut Opaque)->*mut i8 {{ {expression} }}\nextern \"C\" {{ fn run_boundary()->i32; }}\nfn main(){{ assert_eq!(unsafe{{run_boundary()}},0); }}\n")
+                format!("#![allow(non_camel_case_types,unused_parens)]\ntype Opaque=core::ffi::c_void;\n#[no_mangle] unsafe extern \"C\" fn emitted_address(base:*mut Opaque)->*mut u8 {{ {expression} }}\nextern \"C\" {{ fn run_boundary()->i32; }}\nfn main(){{ assert_eq!(unsafe{{run_boundary()}},0); }}\n")
             };
             std::fs::write(&source, program).unwrap();
             for level in ["0", "2"] {
