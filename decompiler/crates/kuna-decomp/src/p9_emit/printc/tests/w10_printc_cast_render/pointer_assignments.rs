@@ -419,6 +419,7 @@ fn odd_width_piece_assignments_preserve_surrounding_bytes_and_evaluate_once() {
                 }
             }
             let mut printer = PrintC::new();
+            printer.options.partial_access = true;
             printer.rt_ctx.enabled = true;
             printer.rt_ctx.long_is_8 = true;
             printer.rt_ctx.ctypes = true;
@@ -459,6 +460,66 @@ int main(void){{
                 assert!(built.status.success(), "size={size}, offset={offset}: {statement}\n{}", String::from_utf8_lossy(&built.stderr));
                 assert!(Command::new(&executable).status().unwrap().success(), "size={size}, offset={offset}, O{level}: {statement}");
             }
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn rust_word_pairs_preserve_signed_parts_without_external_intrinsics() {
+    use std::process::Command;
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let directory = std::env::temp_dir().join(format!("kuna-rust-piece-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    for size in [1, 2, 4, 8] {
+        let arch = bare_arch();
+        let mut fd = build_fd();
+        let signed_type = named("signed_word", size, type_metatype::TYPE_INT);
+        let word_type = named("unsigned_word", size * 2, type_metatype::TYPE_UINT);
+        let high = fd.new_varnode(size, &Address::new(ram(&fd), 0x400), Some(Rc::clone(&signed_type)));
+        let low = fd.new_varnode(size, &Address::new(ram(&fd), 0x408), Some(signed_type));
+        let output = fd.new_varnode(size * 2, &Address::new(ram(&fd), 0x500), Some(word_type));
+        let op = mk_op(&mut fd, 2, 0x20, OpCode::CPUI_PIECE);
+        fd.op_set_input(op, high, 0).unwrap();
+        fd.op_set_input(op, low, 1).unwrap();
+        fd.op_set_output(op, output).unwrap();
+        fd.set_high_level();
+        for (value, name) in [(high, "high"), (low, "low")] {
+            let id = fd.vbank().get(value).unwrap().get_high().unwrap();
+            fd.high_bank_mut().get_mut(id).unwrap().set_kuna_name(name);
+        }
+        let mut printer = PrintC::new();
+        printer.set_name("rust");
+        printer.rt_ctx.lang = printer.out_lang;
+        printer.rt_ctx.enabled = true;
+        printer.rt_ctx.ctypes = true;
+        printer.set_output_stream();
+        printer.op_push_ir(&fd, &arch, op, None);
+        let expression = printer.emit_mut().output_str();
+        let signed = crate::kuna_rusttypes::int_name(size, true).unwrap();
+        let unsigned = crate::kuna_rusttypes::int_name(size * 2, false).unwrap();
+        let program = format!(r#"
+#![allow(unused_parens)]
+fn emitted(high:{signed},low:{signed})->{unsigned}{{{expression}}}
+fn main(){{
+    let mask=(1u128<<({size}*8))-1;
+    for high in [0,-1,-2,{signed}::MIN,{signed}::MAX]{{
+        for low in [0,-1,-2,{signed}::MIN,{signed}::MAX]{{
+            let expected=(((high as i128 as u128)&mask)<<({size}*8))|((low as i128 as u128)&mask);
+            assert_eq!(emitted(high,low) as u128,expected);
+        }}
+    }}
+}}
+"#);
+        let source = directory.join(format!("piece-{size}.rs"));
+        std::fs::write(&source, program).unwrap();
+        for level in ["0", "2"] {
+            let executable = directory.join(format!("piece-{size}-{level}"));
+            let built = Command::new("rustc").args(["--edition=2021", "-C"]).arg(format!("opt-level={level}"))
+                .arg(&source).arg("-o").arg(&executable).output().unwrap();
+            assert!(built.status.success(), "size={size}: {expression}\n{}", String::from_utf8_lossy(&built.stderr));
+            assert!(Command::new(&executable).status().unwrap().success(), "size={size}, O{level}: {expression}");
         }
     }
     std::fs::remove_dir_all(directory).unwrap();

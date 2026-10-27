@@ -246,6 +246,46 @@ pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Opti
         .then_some(declared)
 }
 
+/// A completed integer word returned through a floating-point ABI slot keeps
+/// its bits even when the PIECE expression is implied and has no declaration.
+pub(crate) fn assembled_float_return(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    op: OpId,
+    input: VarnodeId,
+) -> Option<Transfer> {
+    if !fd.get_func_proto().has_store() {
+        return None;
+    }
+    let target = fd.get_func_proto().get_output_type()?;
+    if target.get_metatype() != type_metatype::TYPE_FLOAT || !matches!(target.get_size(), 4 | 8) {
+        return None;
+    }
+    let value = fd.vbank().get(input)?;
+    if target.get_size() != value.get_size() {
+        return None;
+    }
+    let producer = value.get_def().and_then(|id| fd.obank().get(id))?;
+    if producer.code() != OpCode::CPUI_PIECE || producer.num_input() != 2 {
+        return None;
+    }
+    let printed = crate::printc::declared_variable_type(fd, decl_high_type, input)
+        .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
+    if printed.get_size() != value.get_size()
+        || !matches!(printed.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+    {
+        return None;
+    }
+    Some(Transfer {
+        input,
+        target: Rc::clone(target),
+        size: value.get_size(),
+        to_float: true,
+        source_pointer: false,
+    })
+}
+
 /// Explicit word storage keeps its bits when a native float op consumes it.
 pub(crate) fn stack_float_input(
     fd: &Funcdata,

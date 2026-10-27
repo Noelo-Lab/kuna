@@ -341,10 +341,16 @@ adjust_value(first) }).to;`. The call is judged by its prototype's logical
 result width, not the ABI register (an x87 `ST0` result is wider than the
 `float` it holds). Integer operations such as the sign-bit XOR keep the word
 as integer, and values already declared as floats keep their ordinary
-expression. Unnamed expressions and declarations that are not integer words
-keep ordinary emission. `FLOAT_INT2FLOAT` remains a numeric conversion of its
-input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform their numeric
-conversions after any required input reinterpretation.
+expression. Other unnamed expressions and declarations that are not integer
+words keep ordinary emission. A pair of memory-read halfwords returned in a
+floating-point ABI register retains that register's floating return class even
+when the native scalar reads cannot fuse. Its completed integer word uses the
+same single-evaluation union or `from_bits` transfer, including when the word is
+an implied `PIECE`; no stack-view option is required. Rust spells primitive-word
+concatenations as unsigned-width casts, shifts and ORs rather than requiring a
+`CONCAT` intrinsic. `FLOAT_INT2FLOAT` remains a numeric conversion of its input;
+`FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform their numeric conversions
+after any required input reinterpretation.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`

@@ -1040,3 +1040,60 @@ fn main() { assert_eq!(unsafe { run_native_opaque() }, 0); }
         process::required_output(&mut Command::new(executable));
     }
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn split_native_reads_keep_float_return_class_and_bit_patterns() {
+    use common::process;
+    let compilers: Vec<_> = ["gcc", "clang"].into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "floating return verification requires a C compiler");
+    let directory = tempfile::tempdir().unwrap();
+    let input = directory.path().join("floating");
+    std::fs::write(&input, include_bytes!("fixtures/native_read_float.elf")).unwrap();
+    let project = directory.path().join("project");
+    process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile-project").arg(&input)
+            .args(["--functions", "ProbeFloat,ForwardFloat,ProbeBits"])
+            .arg("--output").arg(&project),
+    );
+    // Keep the product's complete recovered record declarations and bodies.
+    // The consumer supplies only the arithmetic meaning of the p-code join.
+    let generated = std::fs::read_to_string(project.join("floating.c")).unwrap();
+    let source = project.join("consumer.c");
+    std::fs::write(&source, format!(r#"
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#define CONCAT44(h,l) (((uint64_t)(uint32_t)(h)<<32)|(uint32_t)(l))
+{generated}
+int main(void) {{
+    static const uint64_t cases[] = {{
+        UINT64_C(0), UINT64_C(0x8000000000000000), UINT64_C(0x401d000000000000),
+        UINT64_C(0xc012000000000000), UINT64_C(0x0010000000000001),
+        UINT64_C(0x7ff8000000001234), UINT64_C(0xfff8000000005678),
+        UINT64_C(0x7ff0000000001234)
+    }};
+    unsigned char *object=malloc(8);
+    if(!object)return 10;
+    for(unsigned i=0;i<sizeof(cases)/sizeof(cases[0]);++i) {{
+        for(unsigned byte=0;byte<8;++byte)object[byte]=(unsigned char)(cases[i]>>(byte*8));
+        double direct=ProbeFloat((void *)object),forwarded=ForwardFloat((void *)object);
+        uint64_t direct_bits,forwarded_bits;
+        memcpy(&direct_bits,&direct,8);memcpy(&forwarded_bits,&forwarded,8);
+        if(direct_bits!=cases[i]||forwarded_bits!=cases[i]||ProbeBits((void *)object)!=cases[i])return 1;
+        if(i==2&&(direct*2.0+1.0!=15.5||forwarded*2.0+1.0!=15.5))return 2;
+    }}
+    free(object);return 0;
+}}
+"#)).unwrap();
+    for compiler in compilers {
+        for level in ["-O0", "-O2"] {
+            let executable = directory.path().join(format!("{compiler}{level}-floating"));
+            process::required_output(Command::new(compiler)
+                .args(["-std=gnu17", level]).arg(&source).arg("-o").arg(&executable));
+            process::required_output(&mut Command::new(executable));
+        }
+    }
+}

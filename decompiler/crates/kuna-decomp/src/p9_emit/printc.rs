@@ -6151,7 +6151,11 @@ impl PrintC {
                 if nin > 1 {
                     self.emit.spaces(1, 0);
                     if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(1)) {
-                        self.push_vn_ir(fd, arch, vn, op);
+                        if let Some(transfer) = crate::kuna_bitcast::assembled_float_return(fd, arch.decl_high_type, op, vn) {
+                            self.op_bit_transfer_ir(fd, arch, op, transfer);
+                        } else {
+                            self.push_vn_ir(fd, arch, vn, op);
+                        }
                     }
                 }
             }
@@ -6176,7 +6180,8 @@ impl PrintC {
             // SUBPIECE (printc.cc:863 opSubpiece): a field-extraction special-print
             // (`symbol.field`) or the cast/functional dispatch.
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op, read_op),
-            OpCode::CPUI_PIECE if self.op_partial_concat_ir(fd, arch, op) => {},
+            OpCode::CPUI_PIECE
+                if self.op_partial_concat_ir(fd, arch, op) || self.op_rust_piece_ir(fd, arch, op) => {},
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
             OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),
@@ -6559,6 +6564,48 @@ impl PrintC {
             self.push_atom(&Atom::syntax(
                 format!("0x{mask:x}"), TagType::Syntax, crate::printlanguage::SyntaxHighlight::const_color,
             ));
+        }
+        true
+    }
+
+    fn op_rust_piece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        use crate::dtype::type_metatype;
+        use crate::printlanguage::SyntaxHighlight;
+        if self.out_lang != crate::kuna_lang::OutLang::Rust {
+            return false;
+        }
+        let operation = fd.obank().get(op).unwrap();
+        if operation.num_input() != 2 { return false; }
+        let (Some(high), Some(low), Some(output)) = (operation.get_in(0), operation.get_in(1), operation.get_out()) else {
+            return false;
+        };
+        let size = fd.vbank().get(output).unwrap().get_size();
+        let Some(word) = crate::kuna_rusttypes::int_name(size, false) else { return false };
+        let inputs = [high, low];
+        let mut parts = [""; 2];
+        for (index, input) in inputs.into_iter().enumerate() {
+            let Some(part) = crate::kuna_rusttypes::int_name(fd.vbank().get(input).unwrap().get_size(), false) else {
+                return false;
+            };
+            if !matches!(fd.vn_type_read_facing(input, op).get_metatype(),
+                type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_BOOL)
+            {
+                return false;
+            }
+            parts[index] = part;
+        }
+        let key = Some(op_key(op));
+        self.push_op(&tokens::BITWISE_OR, key);
+        for (index, input) in inputs.into_iter().enumerate() {
+            if index == 0 { self.push_op(&tokens::SHIFT_LEFT, key); }
+            self.push_op(self.lang().tok_typecast, key);
+            self.push_op(self.lang().tok_typecast, key);
+            self.push_vn_ir(fd, arch, input, op);
+            self.push_atom(&Atom::syntax(parts[index], TagType::TypeToken, SyntaxHighlight::type_color));
+            self.push_atom(&Atom::syntax(word, TagType::TypeToken, SyntaxHighlight::type_color));
+            if index == 0 {
+                self.push_constant_ir((fd.vbank().get(low).unwrap().get_size() * 8) as uintb, 4, op);
+            }
         }
         true
     }
