@@ -14,7 +14,6 @@ The counters, how each is measured, and where each is hard-coded:
 
     settables (127)         `[[settable]]` blocks in kuna-decomp/phases.toml
                             -> kuna_phases/tests.rs   2 asserts + the test fn NAME
-                            -> catalog_bytecompat.rs  3 FIXTURE.matches asserts + the fn NAME
     tiers (28/52/47)        row["tier"] tally from `kuna catalog --json`
                             -> kuna_phases/tests.rs   the tuple assert + the test fn NAME
     catalog buckets         field/value tallies over the same catalog rows
@@ -29,17 +28,10 @@ The test function NAMES are checked as sites in their own right. They encode the
 compiler or test run disagrees with a stale one, and `settable_count_is_117` guarding an
 `assert_eq!(..., 127)` is exactly the artifact a silent auto-merge leaves behind.
 
-`decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json` is NOT rewritten here. It
-is *captured bytes* -- guessing at them is how the byte-compat gate stops meaning anything.
-When it disagrees with the derived settable count this module reports an unfixable drift and
-prints the recapture recipe, read out of catalog_bytecompat.rs's own module header so the
-recipe cannot drift away from the gate that consumes it.
-
 CLI:
     python -m scripts.repipe.counters                     # check; exit 1 on drift
     python -m scripts.repipe.counters --rederive --json   # measure now, report; read-only
     python -m scripts.repipe.counters --fix               # rewrite every fixable site
-    python -m scripts.repipe.counters --recipe            # the phase_catalog.json recapture
 """
 from __future__ import annotations
 
@@ -64,8 +56,6 @@ CORPUS_DIRS = ("tests/datatests", "tests/stages")
 
 REL_PHASES_TOML = "decompiler/crates/kuna-decomp/phases.toml"
 REL_TESTS_RS = "decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases/tests.rs"
-REL_BYTECOMPAT_RS = "decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs"
-REL_CATALOG_FIXTURE = "decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json"
 REL_CATALOG_XML = "tests/stages/kuna-catalog.xml"
 REL_BASE_XML_RS = "decompiler/crates/kuna-base/src/xml.rs"
 
@@ -80,8 +70,8 @@ class DeriveError(RuntimeError):
 class Drift:
     """One hard-coded site that disagrees with the derived truth.
 
-    ``fixable`` is False for a site whose correct value is a capture (phase_catalog.json) or
-    an intentionally loose range -- those need an operator, not a rewrite.
+    ``fixable`` is False for a deliberately loose range: widening its contract
+    requires review rather than an automatic rewrite.
     """
     site: str
     path: str
@@ -202,10 +192,6 @@ SITES = (
      r"fn tier_counts_are_(\d+)_core_(\d+)_transform_(\d+)_analysis\(\)", "tier_tuple"),
     ("phases-tests.tier-tuple", REL_TESTS_RS,
      r"assert_eq!\(\(core, transform, analysis\), \((\d+), (\d+), (\d+)\)\)", "tier_tuple"),
-    ("bytecompat.fn-name-settables", REL_BYTECOMPAT_RS,
-     r"fn fixture_has_all_(\d+)_settables\(\)", "settables"),
-    ("bytecompat.fixture-matches", REL_BYTECOMPAT_RS,
-     r'FIXTURE\.matches\("\\"(?:option|tier|symptoms)\\": "\)\.count\(\), (\d+)\)', "settables"),
     ("phases-tests.catalog-json-records", REL_TESTS_RS,
      r'assert_eq!\(json\.matches\("\},\\n"\)\.count\(\), (\d+)\)', "settables_minus_one"),
     ("base-xml.corpus-count", REL_BASE_XML_RS,
@@ -374,9 +360,6 @@ def derive(repo=None, kuna=None) -> dict:
     corpus = corpus_counts(repo=repo)
     toml_n = settables_from_phases_toml(repo=repo)
     eids = element_ids(repo=repo)
-    fixture = path_of(REL_CATALOG_FIXTURE, repo)
-    fixture_n = (fixture.read_text(encoding="utf-8").count('"option": ')
-                 if fixture.exists() else None)
     return {
         "repo": str(_root(repo)),
         "settables": len(rows),
@@ -386,7 +369,6 @@ def derive(repo=None, kuna=None) -> dict:
         "settables_minus_one": len(rows) - 1,
         "settables_phases_toml": toml_n,
         "settables_catalog": len(rows),
-        "settables_fixture": fixture_n,
         "tiers": tiers,
         "tier_tuple": [tiers[t] for t in TIERS],
         "tier_order": list(TIERS),
@@ -436,49 +418,16 @@ def check(derived=None, repo=None, kuna=None) -> list:
                              "a range containing {}".format(exp), False,
                              "deliberately loose bucket; widen it by hand"))
 
-    if d["settables_fixture"] is not None and d["settables_fixture"] != d["settables"]:
-        out.append(Drift("bytecompat.fixture-capture", REL_CATALOG_FIXTURE, 0, "settables",
-                         str(d["settables_fixture"]), str(d["settables"]), False,
-                         "captured bytes: recapture, never edit (see --recipe)"))
     return out
 
 
 # --- fixing -----------------------------------------------------------------
 
-def recapture_recipe(repo=None) -> str:
-    """The phase_catalog.json recapture, read out of catalog_bytecompat.rs's own header.
-
-    Reading it rather than restating it means the recipe cannot drift away from the gate
-    that consumes the capture -- and the "no program loaded" condition, which is the part a
-    guess always gets wrong, travels with it.
-    """
-    p = path_of(REL_BYTECOMPAT_RS, repo)
-    if not p.exists():
-        return "(catalog_bytecompat.rs missing; cannot read the recipe)"
-    header = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        if line.startswith("//!"):
-            header.append(line[3:].lstrip(" "))
-        elif header:
-            break
-    doc = "\n".join(header)
-    idx = doc.find("## Regenerating the fixture")
-    body = doc[idx:] if idx >= 0 else doc
-    fences = re.findall(r"```sh\n(.*?)```", body, re.S)
-    lead = ("Recapture decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json.\n"
-            "It is CAPTURED BYTES, with NO PROGRAM LOADED so kunaLiveValue returns \"\" and no\n"
-            "`current` field is emitted. Never hand-edit it, and never re-capture with a program\n"
-            "loaded -- `current` is architecture-dependent and is not a byte contract.\n")
-    if not fences:
-        return lead + "\n(no ```sh block found in catalog_bytecompat.rs's header)\n"
-    return lead + "\n" + fences[0].rstrip() + "\n"
-
-
 def fix(derived=None, repo=None, kuna=None):
-    """Rewrite every fixable site to the derived value; report the rest with the recipe.
+    """Rewrite every fixable site to the derived value.
 
-    Returns ``(applied, remaining)``: the drifts this rewrote, and the drifts that need an
-    operator (a capture, or a loose range whose correct widening is a judgement call).
+    Returns ``(applied, remaining)``: the drifts this rewrote and deliberately
+    loose ranges whose correct widening requires review.
     """
     d = derived if derived is not None else derive(repo=repo, kuna=kuna)
     drifts = check(derived=d, repo=repo)
@@ -510,9 +459,8 @@ def fix(derived=None, repo=None, kuna=None):
 
 def _print_derived(d) -> None:
     e = d["element_ids"]
-    print("settables            {}   (phases.toml {} / catalog {} / fixture {})".format(
-        d["settables"], d["settables_phases_toml"], d["settables_catalog"],
-        d["settables_fixture"]))
+    print("settables            {}   (phases.toml {} / catalog {})".format(
+        d["settables"], d["settables_phases_toml"], d["settables_catalog"]))
     print("tiers                ({}, {}, {})  core/transform/analysis".format(*d["tier_tuple"]))
     print("stage-corpus files   {}   ({})".format(
         d["corpus_files"],
@@ -538,19 +486,10 @@ def main(argv=None) -> int:
                     help="the default: report drift, exit 1 if any")
     ap.add_argument("--fix", action="store_true",
                     help="rewrite every fixable site to the derived value")
-    ap.add_argument("--recipe", action="store_true",
-                    help="print the phase_catalog.json recapture recipe and exit")
     ap.add_argument("--repo", default=None, help="repo root (default: config.repo_root())")
     ap.add_argument("--kuna", default=None, help="kuna binary (default: config.kuna_bin())")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     args = ap.parse_args(argv)
-
-    if args.recipe:
-        if args.json:
-            print(json.dumps({"recipe": recapture_recipe(args.repo)}, indent=2))
-        else:
-            print(recapture_recipe(args.repo))
-        return 0
 
     try:
         d = derive(repo=args.repo, kuna=args.kuna)
@@ -565,8 +504,7 @@ def main(argv=None) -> int:
         applied, remaining = fix(derived=d, repo=args.repo)
         payload = {"ok": not remaining, "derived": d,
                    "applied": [x.as_dict() for x in applied],
-                   "remaining": [x.as_dict() for x in remaining],
-                   "recipe": recapture_recipe(args.repo)}
+                   "remaining": [x.as_dict() for x in remaining]}
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
@@ -578,8 +516,6 @@ def main(argv=None) -> int:
                 print("MANUAL  {}".format(x.oneline()))
             if not applied and not remaining:
                 print("no drift; nothing to fix")
-            print("")
-            print(recapture_recipe(args.repo))
         return 0 if not remaining else 1
 
     drifts = check(derived=d, repo=args.repo)

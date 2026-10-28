@@ -233,7 +233,7 @@ Getting the track wrong is the most likely way to waste a builder session.
 | Lives in | `kuna-cli`, `kuna-console`, `kuna-analysis` | `kuna-decomp/src/pN_*/kuna_<slug>.rs` | either |
 | Changes emitted C | **no** | **yes** | must not |
 | `phases.toml` option | **not required** — the rule is "anything that *can change emitted C* ships behind a named option", and a new subcommand cannot | **required**, plus all 8 ritual steps | only if output moves |
-| Counters | none | `kuna_phases/tests.rs` (2 asserts + the tier tuple + the count-encoding *test names*), `catalog_bytecompat.rs` (3 asserts + the `phase_catalog.json` fixture), `tests/stages/kuna-catalog.xml`, `kuna-base/src/xml.rs` | none |
+| Counters | none | Applicable registry counts in `kuna_phases/tests.rs`, catalog buckets in `tests/stages/kuna-catalog.xml`, and `kuna-base/src/xml.rs`; no catalog byte snapshot | none |
 | Tests | cargo tests + the promoted acceptance probe. **A `tests/stages/` case would be wrong** — that README scopes the corpus to stage-model issues | two-pass `tests/stages/gh{angr,dec}-<slug>.xml` | timing probe with a stated noise floor |
 | Speed bar | before/after on the touched path | `scripts.pipeline.timeit`, ≤5% | **3σ and ≥20%** — `returncopysplit` measured a −20%/−12% noise floor on byte-identical output |
 

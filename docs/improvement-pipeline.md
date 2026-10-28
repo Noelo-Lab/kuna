@@ -197,16 +197,15 @@ The artifact checklist (every item, or the gates fail opaquely):
    including the provenance contract (§below): `summary`, `use_when`, `values`+`example`,
    `tier`, `symptoms`, `source_decompiler`, `inspiration`, `change_kind`.
 3. Option name registered in `src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`).
-4. **Bump the hard-coded catalog counts** (three places; grep the current total):
-   `src/p0_knowledge/kuna_phases/tests.rs` (count asserts),
-   `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (count asserts **and** the
-   `tests/fixtures/phase_catalog.json` fixture — regenerate it with the console
-   `openfile write`/`phase catalog` recapture documented in that file's header), and the
-   `tests/stages/kuna-catalog.xml` stringmatch counts (bump whichever bucket the new
-   option's `source_decompiler`/`change_kind` lands in).
-   **After any rebase, re-derive these from a fresh capture and a green run — never from
-   arithmetic.** Two of them auto-merge *without a conflict* and are still wrong: an
-   identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
+4. **Check the applicable registry and catalog bucket counters**:
+   `src/p0_knowledge/kuna_phases/tests.rs` and
+   `tests/stages/kuna-catalog.xml` (the new option's
+   `source_decompiler`/`change_kind` buckets).
+   The captured catalog byte fixture is retired; changing registry prose must not
+   require copying that prose into a test.
+   **After any rebase, re-derive counters from the built catalog and a green run —
+   never from arithmetic.** Identical count edits can auto-merge *without a conflict*:
+   an identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
    keep-both merge of `docs/baseline-stages.json` leaves a stale `data_footer`. Both were
    hit for real; see `docs/decbench-loop.md` → *Shared counters in a busy queue*.
 5. **Two-pass stage test** `tests/stages/ghangr-<slug>.xml` (`ghdec-<slug>.xml` for

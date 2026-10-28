@@ -4,9 +4,9 @@ Three layers of collision avoidance, cheapest first (docs/re-pipeline.md):
 
 1. **Track separation is the structural win.** Track `tooling` touches kuna-cli /
    kuna-console / kuna-analysis / tests/cli / docs/cli.md. Track `quality` touches
-   kuna-decomp / phases.toml / options.rs / the four hard-coded counters / docs/options.md /
-   docs/history.md / tests/stages. Those sets are DISJOINT, so three tooling builders run in
-   parallel with no shared mutable state at all.
+   kuna-decomp / phases.toml / options.rs / shared counters / docs/options.md /
+   docs/history.md / tests/stages. Shared catalog and stage resource leases cover
+   these mutable inputs without requiring a captured catalog snapshot.
 2. **Named resource leases.** A need's track and `touches:` map to a resource set; a need
    whose set intersects a held lease is not dispatched. Because every quality need needs
    counter:catalog + counter:stages-corpus + file:phases.toml, this yields

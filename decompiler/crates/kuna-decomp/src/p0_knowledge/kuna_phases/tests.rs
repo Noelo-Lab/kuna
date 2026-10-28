@@ -932,8 +932,7 @@ fn live_from_arch_matches_cpp_ternaries() {
     );
 }
 
-// --- Catalog JSON emitter byte-shape (full byte-compat is in the integration
-//     test catalog_bytecompat.rs against the C++ binary's captured output) ----
+// --- Catalog JSON rendering -------------------------------------------------
 
 #[test]
 fn emit_settable_json_first_row_shape() {
