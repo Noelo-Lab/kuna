@@ -399,12 +399,14 @@ the caller holds a pointer of the same width. The argument's slot and concrete
 storage must both match the recovered contract. If the caller reads a `double`
 through an address that the callee reads as two integer record fields, its local
 pointer type wins the inference vote, while an explicit pointer cast at the
-call preserves both declarations. Only P9's private cast-insertion action reads
-this requirement. It must not enter the shared declared-input query: P5's
+call preserves both declarations. Only immutable C/Rust call-argument rendering
+reads this requirement; the type-definition root walk includes its actual record
+dependencies. It must not become an IR `CAST` or enter the shared declared-input
+query: even late IR casts can affect global prototype finalization, and P5's
 character-, element- and function-pointer analyses consume that query as actual
-declared evidence, not as another callee's inferred preference. Explicitly
-locked parameters still take precedence. This neither locks the prototype nor
-changes arity, integer/float classes, or any access through the caller's pointer.
+declared evidence, not as another callee's inferred preference. Explicitly locked
+parameters still take precedence. This neither locks the prototype nor changes
+arity, integer/float classes, or any access through the caller's pointer.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`

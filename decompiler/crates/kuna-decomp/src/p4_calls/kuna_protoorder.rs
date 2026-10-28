@@ -232,8 +232,10 @@ pub fn call_argument_vote(
 /// pointer or locking the callee's prototype. A caller may read a scalar
 /// through the same address that its callee reads as a synthesized record.
 /// The type vote must yield to that local evidence, but C and Rust still need
-/// a pointer cast at the call. Storage and slot identity are the same proof
-/// used by the vote; no arity or integer/float class is inferred here.
+/// a pointer cast at the call. Only immutable argument rendering and its type
+/// dependency walk may read this requirement: it must not enter IR or inference.
+/// Storage and slot identity are the same proof used by the vote; no arity or
+/// integer/float class is inferred here.
 pub(crate) fn pointer_argument_requirement(
     data: &Funcdata,
     op: OpId,

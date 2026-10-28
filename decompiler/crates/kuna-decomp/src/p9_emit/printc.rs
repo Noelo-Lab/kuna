@@ -8198,7 +8198,28 @@ impl PrintC {
                 proto, slot, fd.vbank().get(vn).map(|value| value.get_size()).unwrap_or(0),
             )
         {
+            // A recovered physical-slot pointer contract only bridges the
+            // printed argument. Even a P9 IR CAST can feed later prototype
+            // finalization, so this must not change IR or inference evidence.
+            let cast = (!self.options.nocasts).then(|| {
+                let call = fd.get_call_specs(fd.get_call_specs_index(op)?);
+                let size = fd.vbank().get(vn)?.get_size();
+                let target = crate::kuna_protoorder::pointer_argument_requirement(
+                    fd, op, call, slot, size,
+                )?;
+                let source = declared_variable_type(fd, arch.decl_high_type, vn)
+                    .unwrap_or_else(|| fd.vn_type_read_facing(vn, op));
+                if self.out_lang == crate::kuna_lang::OutLang::Rust
+                    && !matches!(target.compare(&source, 10), Ok(0))
+                {
+                    Some(target)
+                } else {
+                    cast_strategy_for(arch)?.cast_standard(&target, &source, false, true)
+                }
+            }).flatten();
+            if let Some(target) = &cast { self.push_cast_open(target, op); }
             self.push_vn_ir(fd, arch, vn, op);
+            if let Some(target) = &cast { self.push_cast_close(target); }
             return;
         }
         let mut mods = self.context.mods();

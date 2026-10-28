@@ -1494,22 +1494,7 @@ impl Funcdata {
 
     /// `ActionSetCasts::castInput` (coreaction.cc:2743-2810).
     fn cast_input(&mut self, op: OpId, slot: int4, strat: &CastStrategyC) -> int4 {
-        // This recovered use-site requirement belongs only to cast insertion.
-        // The shared declared-input query is also P5 inference evidence.
-        let pointer_requirement = self.obank().get(op)
-            .filter(|o| slot > 0 && matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
-            .and_then(|_| self.get_call_specs_index(op))
-            .and_then(|index| {
-                let call = self.get_call_specs(index);
-                let size = self.obank().get(op)?.get_in(slot).and_then(|vn| self.vbank().get(vn))?.get_size();
-                crate::kuna_protoorder::pointer_argument_requirement(self, op, call, slot, size)
-            });
-        let pointer_cast = pointer_requirement.and_then(|target| {
-            let input = self.obank().get(op)?.get_in(slot)?;
-            let source = self.vn_high_type_read_facing(input, op);
-            strat.cast_standard(&target, &source, false, true)
-        });
-        let ct = match pointer_cast.or_else(|| get_input_cast(self, strat, op, slot)) {
+        let ct = match get_input_cast(self, strat, op, slot) {
             Some(c) => c,
             None => {
                 // markExplicitUnsigned / markExplicitLongSize.
@@ -2451,12 +2436,28 @@ mod verify_w10_merge_casts_r2 {
     ) -> (OpId, VarnodeId, int4) {
         let storage = Address::new(Rc::clone(ram), 0x400);
         let entry = Address::new(Rc::clone(ram), 0x3000);
-        let source = fd.new_varnode(8, &storage, Some(source_type));
-        let source = fd.set_input_varnode(source).unwrap();
+        let provider = fd.new_op(1, Address::new(Rc::clone(ram), 0x1ff0));
+        fd.op_set_opcode_code(provider, OpCode::CPUI_CALL);
+        let source = fd.new_unique_out(8, provider).unwrap();
+        fd.vn_update_type(source, Rc::clone(&source_type));
+        fd.vbank_mut().get_mut(source).unwrap().set_implied();
+        let provider_entry = Address::new(Rc::clone(ram), 0x3100);
+        let mut provider_specs = crate::fspec::FuncCallSpecs::new(provider, provider_entry.clone());
+        provider_specs.set_funcdata(provider_entry, "next_source").unwrap();
+        provider_specs.proto_mut().attach_internal_store(fd.get_arch().types_rc().unwrap().get_type_void().unwrap());
+        provider_specs.proto_mut().set_output(&crate::fspec::ParameterPieces {
+            addr: storage.clone(),
+            type_: Some(source_type),
+            flags: crate::fspec::parameter_pieces_flags::TYPELOCK,
+        });
+        let provider_index = fd.push_call_specs(provider_specs);
+        let provider_handle = fd.new_varnode_call_specs(provider_index as u64);
+        fd.op_set_input(provider, provider_handle, 0).unwrap();
         let call = fd.new_op(2, Address::new(Rc::clone(ram), 0x2000));
         fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
         fd.op_set_input(call, source, 1).unwrap();
         let mut specs = crate::fspec::FuncCallSpecs::new(call, entry.clone());
+        specs.set_funcdata(entry.clone(), "accept_pointer").unwrap();
         specs.proto_mut().attach_internal_store(fd.get_arch().types_rc().unwrap().get_type_void().unwrap());
         specs.set_final_input_storage(vec![(storage.clone(), 8)]);
         let index = fd.push_call_specs(specs);
@@ -2473,60 +2474,193 @@ mod verify_w10_merge_casts_r2 {
         }));
         let root = fd.bblocks_ref().root.unwrap();
         let block = fd.bblocks_mut().new_block_basic(root);
+        fd.op_insert_end(provider, block);
         fd.op_insert_end(call, block);
         fd.set_high_level();
+        let void_type = fd.get_arch().types_rc().unwrap().get_type_void().unwrap();
+        fd.get_func_proto_mut().attach_internal_store(void_type);
+        fd.seed_sblocks_copy();
         (call, source, index)
     }
 
+    fn render_recovered_pointer_call(fd: &Funcdata, language: &str) -> String {
+        let arch = crate::architecture::Architecture::new(
+            "test",
+            kuna_sleigh::sleigh::Sleigh::new(
+                Box::new(kuna_sleigh::loadimage::RawLoadImage::new("unused")),
+                Box::new(kuna_sleigh::globalcontext::ContextInternal::new()),
+            ),
+        );
+        arch.types_impl().setup_sizes(Some(4), 8, 8);
+        arch.types_impl().set_default_alignment_map();
+        arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+        arch.types_impl().cache_core_types().unwrap();
+        let root = fd.sblocks_ref().root.unwrap();
+        let copy = fd.sblocks_ref().block(root).get_list()[0];
+        let mut printer = crate::printc::PrintC::new();
+        printer.set_name(language);
+        printer.set_output_stream();
+        printer.emit_block(fd, &arch, copy);
+        printer.emit_mut().output_str().to_owned()
+    }
+
+    fn run_recovered_pointer_consumer(rendered: &str, language: &str, case: usize) {
+        use std::process::Command;
+        let c_compiler = ["clang", "gcc"].into_iter()
+            .find(|compiler| Command::new(compiler).arg("--version").output().is_ok())
+            .expect("recovered pointer consumer requires a C compiler");
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "kuna-recovered-pointer-{}-{nonce}", std::process::id(),
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        let c = language == "c-language";
+        let (source_type, target_type, initialize, observation) = if c {
+            match case {
+                0 => ("char *", "struct recovered_record *",
+                    "struct recovered_record value = {0x123456789abcdef0UL}; expected = &value;",
+                    "p->word == 0x123456789abcdef0UL"),
+                1 => ("char **", "unsigned long *",
+                    "unsigned long value = 0x123456789abcdef0UL; expected = &value;",
+                    "*p == 0x123456789abcdef0UL"),
+                2 => ("void *", "char *", "char value = 43; expected = &value;", "*p == 43"),
+                3 => ("char *", "void *", "char value = 43; expected = &value;", "*(char *)p == 43"),
+                4 => ("char *", "char **",
+                    "char value = 43; char *slot = &value; expected = &slot;", "**p == 43"),
+                _ => unreachable!(),
+            }
+        } else {
+            match case {
+                0 => ("*mut i8", "*mut recovered_record",
+                    "let mut value = recovered_record { word: 0x123456789abcdef0 }; EXPECTED = (&raw mut value).cast();",
+                    "(*p).word == 0x123456789abcdef0"),
+                1 => ("*mut *mut i8", "*mut u64",
+                    "let mut value: u64 = 0x123456789abcdef0; EXPECTED = (&raw mut value).cast();",
+                    "*p == 0x123456789abcdef0"),
+                2 => ("*mut ()", "*mut i8",
+                    "let mut value: i8 = 43; EXPECTED = (&raw mut value).cast();", "*p == 43"),
+                3 => ("*mut i8", "*mut ()",
+                    "let mut value: i8 = 43; EXPECTED = (&raw mut value).cast();", "*(p as *mut i8) == 43"),
+                4 => ("*mut i8", "*mut *mut i8",
+                    "let mut value: i8 = 43; let mut slot = &raw mut value; EXPECTED = (&raw mut slot).cast();",
+                    "**p == 43"),
+                _ => unreachable!(),
+            }
+        };
+        // The record matches the fixture's real TypeField exactly. Both
+        // functions perform observable work: no placeholder external stubs.
+        let template = if c {
+            r#"#include <assert.h>
+typedef struct recovered_record { unsigned long word; } recovered_record;
+static void *expected;
+static unsigned reads, calls;
+static SOURCE_TYPE next_source(void) { ++reads; return (SOURCE_TYPE)expected; }
+static void accept_pointer(TARGET_TYPE p) {
+    ++calls;
+    assert((void *)p == expected);
+    assert(OBSERVATION);
+}
+static void generated(void) { CALL_BLOCK }
+int main(void) {
+    INITIALIZE
+    generated();
+    assert(reads == 1 && calls == 1);
+    return 0;
+}
+"#
+        } else {
+            r#"#![allow(non_camel_case_types, unused_parens)]
+#[repr(C)]
+struct recovered_record { word: u64 }
+static mut EXPECTED: *mut () = core::ptr::null_mut();
+static mut READS: u32 = 0;
+static mut CALLS: u32 = 0;
+unsafe fn next_source() -> SOURCE_TYPE { READS += 1; EXPECTED as SOURCE_TYPE }
+unsafe fn accept_pointer(p: TARGET_TYPE) {
+    CALLS += 1;
+    assert!(p as *mut () == EXPECTED);
+    assert!(OBSERVATION);
+}
+unsafe fn generated() { CALL_BLOCK }
+fn main() { unsafe {
+    INITIALIZE
+    generated();
+    assert!(READS == 1 && CALLS == 1);
+} }
+"#
+        };
+        let program = template.replace("SOURCE_TYPE", source_type)
+            .replace("TARGET_TYPE", target_type).replace("OBSERVATION", observation)
+            .replace("INITIALIZE", initialize).replace("CALL_BLOCK", rendered);
+        let source = directory.join(if c { "consumer.c" } else { "consumer.rs" });
+        std::fs::write(&source, &program).unwrap();
+        for level in ["0", "2"] {
+            let executable = directory.join(format!("consumer-{level}"));
+            let mut command = Command::new(if c { c_compiler } else { "rustc" });
+            if c {
+                command.args(["-std=c11", "-Wall", "-Wextra", "-Werror"]).arg(format!("-O{level}"));
+            } else {
+                command.args(["--edition=2021", "-C"]).arg(format!("opt-level={level}"));
+            }
+            let compiled = command.arg(&source).arg("-o").arg(&executable).output().unwrap();
+            assert!(compiled.status.success(), "{language} case={case} O{level}\n{program}\n{}",
+                String::from_utf8_lossy(&compiled.stderr));
+            assert!(Command::new(&executable).status().unwrap().success(),
+                "{language} case={case} O{level}\n{program}");
+        }
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
     #[test]
+    #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
     fn recovered_pointer_contract_is_cast_only_not_declared_inference_evidence() {
-        for indirect in [false, true] {
-            let (mut fd, strat, ram) = build();
+        for case in 0..4 {
+            let (mut fd, _strat, ram) = build();
             let types = fd.get_arch().types_rc().unwrap();
+            types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+            types.set_core_type("unsigned long", 8, type_metatype::TYPE_UINT, false).unwrap();
+            types.cache_core_types().unwrap();
             let character = types.get_type_char(1).unwrap();
             let char_pointer = types.get_type_pointer(8, character, 1).unwrap();
+            let void_pointer = types.get_type_pointer(8, types.get_type_void().unwrap(), 1).unwrap();
             let word = types.get_base(8, type_metatype::TYPE_UINT).unwrap();
-            let (source_type, target_type) = if indirect {
-                (
-                    types.get_type_pointer(8, char_pointer, 1).unwrap(),
-                    types.get_type_pointer(8, word, 1).unwrap(),
-                )
-            } else {
-                let mut record = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
-                record.name = "recovered_record".to_owned();
-                record.display_name = record.name.clone();
-                record.id = Datatype::hash_name(&record.name);
-                record.kind = crate::dtype::DatatypeKind::Struct {
-                    field: vec![crate::dtype::TypeField::new(0, 0, "word", word)],
-                    bitfield: Vec::new(),
-                };
-                (char_pointer, types.get_type_pointer(8, Rc::new(record), 1).unwrap())
+            let (source_type, target_type) = match case {
+                0 => {
+                    let mut record = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+                    record.name = "recovered_record".to_owned();
+                    record.display_name = record.name.clone();
+                    record.id = Datatype::hash_name(&record.name);
+                    record.kind = crate::dtype::DatatypeKind::Struct {
+                        field: vec![crate::dtype::TypeField::new(0, 0, "word", word)],
+                        bitfield: Vec::new(),
+                    };
+                    (char_pointer, types.get_type_pointer(8, Rc::new(record), 1).unwrap())
+                }
+                1 => (types.get_type_pointer(8, char_pointer, 1).unwrap(), types.get_type_pointer(8, word, 1).unwrap()),
+                2 => (void_pointer, char_pointer),
+                3 => (char_pointer, void_pointer),
+                _ => unreachable!(),
             };
             let (call, source, index) =
                 recovered_pointer_call(&mut fd, &ram, Rc::clone(&source_type), Rc::clone(&target_type));
             let source_high = fd.vbank().get(source).unwrap().get_high().unwrap();
             let original_high_type = fd.high_get_type(source).unwrap();
             assert!(Rc::ptr_eq(&original_high_type, &source_type));
-            let own_store = fd.get_func_proto().has_store();
-
-            // P5 charptr/elemptr use this shared query as declared evidence.
-            // A recovered callee's pointer must remain absent from that query.
             let declared = crate::coreaction_infertypes::declared_input_type_local(&fd, call, 1);
             assert_eq!(declared.get_metatype(), type_metatype::TYPE_UNKNOWN);
             assert_eq!(declared.get_size(), 8);
             assert!(crate::kuna_protoorder::pointer_argument_requirement(
                 &fd, call, fd.get_call_specs(index), 1, 8,
             ).is_some_and(|required| Rc::ptr_eq(&required, &target_type)));
-            assert_eq!(fd.cast_input(call, 1, &strat), 1);
-            let converted = fd.obank().get(call).unwrap().get_in(1).unwrap();
-            assert_ne!(converted, source);
-            let cast = fd.vbank().get(converted).unwrap().get_def().unwrap();
-            assert_eq!(fd.obank().get(cast).unwrap().code(), OpCode::CPUI_CAST);
-            assert_eq!(fd.obank().get(cast).unwrap().get_in(0), Some(source));
-            assert!(Rc::ptr_eq(&fd.vn_type_read_facing(converted, call), &target_type));
-            assert_eq!(fd.vbank().get(source).unwrap().get_high(), Some(source_high));
-            assert!(Rc::ptr_eq(&fd.high_get_type(source).unwrap(), &original_high_type));
-            assert_eq!(fd.get_func_proto().has_store(), own_store);
+            for language in ["c-language", "rust-language"] {
+                let rendered = render_recovered_pointer_call(&fd, language);
+                run_recovered_pointer_consumer(&rendered, language, case);
+                assert_eq!(fd.obank().get(call).unwrap().get_in(1), Some(source));
+                assert_eq!(fd.vbank().get(source).unwrap().get_high(), Some(source_high));
+                assert!(Rc::ptr_eq(&fd.high_get_type(source).unwrap(), &original_high_type));
+            }
+            assert_eq!(fd.get_func_proto().num_params(), 0);
             assert_eq!(fd.get_call_specs(index).proto().num_params(), 0);
             assert!(!fd.get_call_specs(index).proto().is_input_locked());
             assert!(!fd.get_call_specs(index).proto().is_output_locked());
@@ -2538,11 +2672,13 @@ mod verify_w10_merge_casts_r2 {
     }
 
     #[test]
+    #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
     fn recovered_pointer_contract_cannot_override_a_locked_parameter() {
         let (mut fd, strat, ram) = build();
         let types = fd.get_arch().types_rc().unwrap();
-        let character = types.get_type_char(1).unwrap();
-        let source_type = types.get_type_pointer(8, character, 1).unwrap();
+        types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+        types.cache_core_types().unwrap();
+        let source_type = types.get_type_pointer(8, types.get_type_char(1).unwrap(), 1).unwrap();
         let declared_type = types.get_type_pointer(8, Rc::clone(&source_type), 1).unwrap();
         let recovered_type = types.get_type_pointer(
             8, types.get_base(8, type_metatype::TYPE_UINT).unwrap(), 1,
@@ -2561,12 +2697,11 @@ mod verify_w10_merge_casts_r2 {
         ).is_none());
         let declared = crate::coreaction_infertypes::declared_input_type_local(&fd, call, 1);
         assert!(Rc::ptr_eq(&declared, &declared_type));
-        assert_eq!(fd.cast_input(call, 1, &strat), 1);
-        let converted = fd.obank().get(call).unwrap().get_in(1).unwrap();
-        let cast = fd.vbank().get(converted).unwrap().get_def().unwrap();
-        assert_eq!(fd.obank().get(cast).unwrap().code(), OpCode::CPUI_CAST);
-        assert_eq!(fd.obank().get(cast).unwrap().get_in(0), Some(source));
-        assert!(Rc::ptr_eq(&fd.vn_type_read_facing(converted, call), &declared_type));
+        fd.cast_input(call, 1, &strat);
+        for language in ["c-language", "rust-language"] {
+            let rendered = render_recovered_pointer_call(&fd, language);
+            run_recovered_pointer_consumer(&rendered, language, 4);
+        }
         assert!(Rc::ptr_eq(&fd.high_get_type(source).unwrap(), &source_type));
         assert!(fd.get_call_specs(index).proto().get_param(0).unwrap().is_type_locked());
         assert!(Rc::ptr_eq(fd.get_call_specs(index).proto().get_param(0).unwrap().get_type().unwrap(), &declared_type));

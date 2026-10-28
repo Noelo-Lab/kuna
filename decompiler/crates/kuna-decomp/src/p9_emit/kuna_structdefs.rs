@@ -19,12 +19,12 @@
 //! ## Which types
 //!
 //! The roots are the function's semantic type surface — its prototype's return
-//! and parameter types, every Varnode's data-type, and every mapped Symbol type
-//! behind a HighVariable.  That is a SUPERSET of the type names the printer can
-//! spell: every type name in the emitted C is read off one of those three
-//! (declarations from the highs and their symbols, the signature from the
-//! prototype, a cast from the Varnode type it casts to), so the preamble cannot
-//! miss a definition the body refers to.  Collecting from the token stream
+//! and parameter types, every Varnode's data-type, every mapped Symbol type
+//! behind a HighVariable, and recovered pointer contracts used only to render
+//! call-argument casts. That is a SUPERSET of the type names the printer can
+//! spell: declarations come from highs and symbols, signatures from prototypes,
+//! and casts from Varnode types or those immutable call contracts, so the
+//! preamble cannot miss a definition the body refers to. Collecting from tokens
 //! instead would be exact, but it would also miss the struct behind
 //! `p->field_0x8`, whose tag name is never printed at all.
 //!
@@ -130,6 +130,22 @@ pub fn referenced_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
             .and_then(|h| h.kuna_symbol_type())
         {
             visit(sym, &mut seen, &mut order);
+        }
+    }
+    // Pure call-argument casts can name recovered records that have no local
+    // varnode type. Include their real dependencies without adding IR casts.
+    for index in 0..fd.num_calls() {
+        let call = fd.get_call_specs(index);
+        let op = call.get_op();
+        let Some(operation) = fd.obank().get(op) else { continue };
+        for slot in 1..operation.num_input() {
+            let Some(size) = operation.get_in(slot).and_then(|v| fd.vbank().get(v))
+                .map(|v| v.get_size()) else { continue };
+            if let Some(ty) = crate::kuna_protoorder::pointer_argument_requirement(
+                fd, op, call, slot, size,
+            ) {
+                visit(&ty, &mut seen, &mut order);
+            }
         }
     }
     order

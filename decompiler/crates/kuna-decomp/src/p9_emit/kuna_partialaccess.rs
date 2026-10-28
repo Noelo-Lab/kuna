@@ -226,7 +226,8 @@ impl Piece {
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_PTR
         );
         if v.get_def() == Some(op) || !(1..=8).contains(&size) || !scalar
-            || c.get_size() > 8 || off < 0 || off + size as int8 > c.get_size() as int8
+            || c.get_size() > 8 || off < 0 || off > c.get_size() as int8
+            || off + size as int8 > c.get_size() as int8
         {
             return None;
         }
