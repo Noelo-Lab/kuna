@@ -280,3 +280,73 @@ assertions about scheduler layout.
 CI installs Clang, LLD, QEMU user emulators and the
 SPARC GNU linker; its dedicated round-trip step requires every tool and emulator
 and prints the per-target native/recompiled comparison counts.
+
+## Completed review audit and retained limitations
+
+The source-bound comparison uses base `5a1033c9` and runtime `441c0463`.
+Subsequent catalog-tooling and documentation changes do not alter the engine,
+specifications, locked dependencies or native-consumer fixtures.
+
+All 113 Debian ELF inputs across ten architectures complete in both modes:
+19,989 function records, with the same 19 function errors and six automatic
+PPC64 discovery failures. Default C is unchanged. A separate 48-entry explicit
+PPC64 ELFv1 supplement succeeds in both modes; it is not complete ABI coverage.
+The authored allocation controls retain 11 IR tests, 30 focused CLI tests and
+98,496 native/regenerated comparisons across eight ISAs. Strong x86, Thumb and
+PE32 alias-identity consumers supplement these controls.
+
+The complete official DecBench collection covers 770 binaries, 40 projects and
+95,197 recovered of 96,103 requested targets. The same 906 targets remain missing,
+with no run exceptions or coverage changes. Default C is unchanged; enabled C
+changes in 2,141 bodies: 2,045 byte-view casts, 77 allocation recoveries containing
+84 sites, and 19 propagated-type changes. Changed-C parsing finds no call-arity
+deltas or syntax errors. All 12 changed formal-parameter counts agree with the
+native function's exact-address DWARF.
+
+| Official metric mean | Base | Default off | Enabled |
+| --- | ---: | ---: | ---: |
+| Byte match, 95,197 scored; higher is better | 0.332601033359250 | 0.332493948119966 | 0.332513626620652 |
+| GED, 89,960 scored; lower is better | 12.680313472655 | 12.680313472655 | 12.680435749222 |
+| Type match, 87,470 scored; higher is better | 0.319428015686 | 0.319428015686 | 0.319421534580 |
+
+These are the original official scores, including losses. Enabled byte match has
+33 improvements and 85 regressions; default-off has 83 regressions despite
+identical C. Diagnostic capture proves identical actual native/recompiled bytes
+and normalized assembly for all 141 same-C score changes. Another 22 changed-C
+pairs also compile to identical bytes and assembly. A separate no-deadline diff
+is equal for those inputs; it diagnoses timed-diff variation without replacing
+the official results.
+
+The remaining five changed-C byte losses are individually accounted for:
+
+- `himport_r` at `-O2` and `-O2-noinline`, and `is_gpt_valid` at
+  `-O2-noinline`, fail the official body-only compilation context after record
+  recovery. The identical bodies compile with their actual exported 16-, 16-
+  and 56-byte records and ARM `sizeof`/`offsetof` checks. The evaluator's ordinary
+  injected callee/global declarations remain scaffolding: this is supplementary
+  compilation proof, not callee-ABI or whole-function equivalence proof. All
+  three official failures remain in the scores.
+- `do_help` at `-O2` and `-O2-noinline` changes only a concrete global address
+  into the corresponding recovered symbol's address. Exact native bytes and ELF
+  symbols identify the same command-table object. The regenerated objects'
+  first 80 instruction bytes are identical; their sole difference is the final
+  four-byte ARM literal-pool word, marked as data by `$d`: a concrete address
+  versus zero with an `R_ARM_ABS32` relocation. The metric disassembles that
+  literal data as an instruction. Its two score losses remain unchanged.
+
+GED has two improvements and four losses, in U-Boot's `hexport_r` and `himport_r`
+loop/CFG restructuring. Type match has five improvements and four losses:
+duplicated Crazyflie `bmp3_get_regs` and
+`lighthouseStorageVerifySetStorageVersion` bodies lose fixed-spill metadata
+precision when allocation recovery removes those spills. These are retained
+quality tradeoffs, not repaired by fabricated variables, type annotations or
+metric exceptions. Current C pairs, scores and variable metadata match the
+individually reviewed records.
+
+Three duplicate-static-name lookups in the legacy native-byte extractor select
+a different `deviceConfigure` body. Supplementary exact-address audits retain
+the requested native code; the official metric inputs and scores are not
+rewritten. Original corpus programs are analyzed, never executed. Executable
+comparisons use authored fixtures, and neither these bounded consumers nor the
+static audits establish universal semantic equivalence. Final-head CI is a
+separate integration gate.
