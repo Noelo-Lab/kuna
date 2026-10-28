@@ -72,7 +72,7 @@ pub(crate) fn storage_transfer(
             .flatten()
     };
     let size = src.get_size();
-    if !matches!(size, 4 | 8) || dst.get_size() != size {
+    if !matches!(size, 4 | 8 | 10) || dst.get_size() != size {
         return None;
     }
     let slot = operation.get_slot(input);
@@ -127,6 +127,22 @@ pub(crate) fn storage_transfer(
     let to_float = to == type_metatype::TYPE_FLOAT && (integer(from) || source_pointer);
     if !to_float && !(from == type_metatype::TYPE_FLOAT && (integer(to) || pointer(&to_ty))) {
         return None;
+    }
+    // x87 extended values assembled from integer memory words carry ten
+    // significant bytes, not an integer to convert numerically. A named
+    // unknown10 can still print as a byte array, so only a scalar PIECE
+    // expression establishes the wide-integer source representation here.
+    if size == 10 {
+        let producer = src.get_def().and_then(|op| fd.obank().get(op));
+        let types = fd.get_arch().types()?;
+        let space = fd.get_arch().manage().get_default_data_space()?;
+        if !to_float || !src.is_implied()
+            || !producer.is_some_and(|op| op.code() == OpCode::CPUI_PIECE)
+            || types.get_size_of_long_double() != 10
+            || space.is_big_endian() || space.get_addr_size() != 8
+        {
+            return None;
+        }
     }
     Some(Transfer {
         input,

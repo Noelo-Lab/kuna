@@ -386,7 +386,7 @@ fn odd_width_piece_assignments_preserve_surrounding_bytes_and_evaluate_once() {
     let directory = std::env::temp_dir().join(format!("kuna-partial-piece-{}-{nonce}", std::process::id()));
     std::fs::create_dir(&directory).unwrap();
     for (size, low_size) in [(3, 2), (5, 4), (6, 4), (7, 3)] {
-        for offset in [0, 8 - size] {
+        for (offset, big) in [(0, false), (8 - size, false), (0, true), (8 - size, true)] {
             let arch = bare_arch();
             arch.types_impl().set_max_basetype_size(8);
             arch.types_impl().set_default_alignment_map();
@@ -396,6 +396,9 @@ fn odd_width_piece_assignments_preserve_surrounding_bytes_and_evaluate_once() {
             }
             arch.types_impl().cache_core_types().unwrap();
             let mut fd = build_fd();
+            if big {
+                ram(&fd).set_flags(addrspace_flags::big_endian);
+            }
             let high_size = size - low_size;
             let high_type = arch.types().get_base(high_size, type_metatype::TYPE_UINT).unwrap();
             let low_type = arch.types().get_base(low_size, type_metatype::TYPE_UINT).unwrap();
@@ -428,6 +431,7 @@ fn odd_width_piece_assignments_preserve_surrounding_bytes_and_evaluate_once() {
             let statement = printer.emit_mut().output_str();
             let high_mask = (1u64 << (high_size * 8)) - 1;
             let low_mask = (1u64 << (low_size * 8)) - 1;
+            let byte_index = if big { format!("{size}-1-byte") } else { "byte".to_owned() };
             let program = format!(r#"
 #include <stdint.h>
 #include <string.h>
@@ -445,13 +449,17 @@ int main(void){{
         uint64_t low=(seed*UINT64_C(0x01234567)+UINT64_C(0x76543210))&UINT64_C({low_mask});
         uint64_t joined_value=(high<<{low_size}*8)|low;
         unsigned char expected[8];memcpy(expected,&initial,8);
-        for(int byte=0;byte<{size};++byte)expected[{offset}+byte]=(unsigned char)(joined_value>>(byte*8));
+        for(int byte=0;byte<{size};++byte)expected[{offset}+byte]=(unsigned char)(joined_value>>(({byte_index})*8));
         calls=0;uint64_t actual=emitted(initial,high,low);
         if(calls!=1||memcmp(&actual,expected,8))return 1;
     }}
     return 0;
 }}
 "#);
+            if big {
+                run_big_endian_partial_consumer(&program, &format!("piece-{size}-{offset}"), &directory);
+                continue;
+            }
             let source = directory.join(format!("piece-{size}-{offset}.c"));
             std::fs::write(&source, program).unwrap();
             for level in ["0", "2"] {
@@ -589,4 +597,185 @@ int main(void){{
         }
     }
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn odd_width_scalar_reads_copy_only_initialized_source_bytes() {
+    use std::process::Command;
+    let compiler = ["clang", "gcc"].into_iter()
+        .find(|cc| Command::new(cc).arg("--version").output().is_ok())
+        .expect("partial scalar read verification requires a C compiler");
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let directory = std::env::temp_dir().join(format!("kuna-partial-read-{}-{nonce}", std::process::id()));
+    std::fs::create_dir(&directory).unwrap();
+    for size in 1..=7 {
+        for offset in [0, 8 - size] {
+            for big in [false, true] {
+                let arch = bare_arch();
+                arch.types_impl().set_max_basetype_size(8);
+                arch.types_impl().set_size_of_pointer(8);
+                arch.types_impl().set_default_alignment_map();
+                arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+                for (name, bytes) in [("unsigned char", 1), ("unsigned short", 2), ("unsigned int", 4), ("unsigned long long", 8)] {
+                    arch.types_impl().set_core_type(name, bytes, type_metatype::TYPE_UINT, false).unwrap();
+                }
+                arch.types_impl().cache_core_types().unwrap();
+                let mut fd = build_fd();
+                if big {
+                    ram(&fd).set_flags(addrspace_flags::big_endian);
+                }
+                let value_type = if crate::kuna_partialaccess::is_scalar_width(size) {
+                    arch.types().get_base(size, type_metatype::TYPE_UINT).unwrap()
+                } else {
+                    named("odd", size, type_metatype::TYPE_UINT)
+                };
+                let carrier_size = match size { 3 => 4, 5..=7 => 8, _ => size };
+                let input = fd.new_varnode(
+                    size, &Address::new(ram(&fd), 0x400),
+                    Some(Rc::clone(&value_type)),
+                );
+                let output = fd.new_varnode(
+                    size, &Address::new(ram(&fd), 0x500),
+                    Some(value_type),
+                );
+                let op = mk_op(&mut fd, 1, 0x20, OpCode::CPUI_COPY);
+                fd.op_set_input(op, input, 0).unwrap();
+                fd.op_set_output(op, output).unwrap();
+                fd.set_high_level();
+                let carrier = named("unsigned long long", 8, type_metatype::TYPE_UINT);
+                let plan = crate::kuna_partialaccess::Piece::plan(
+                    &fd, &arch, input, op, offset as int8, size, false, Some(&carrier),
+                ).unwrap();
+                match plan {
+                    crate::kuna_partialaccess::Piece::Read { offset: actual, size: width, shift, .. } => {
+                        assert_eq!(actual, offset as int8);
+                        assert_eq!(width, size);
+                        assert_eq!(shift, if big { (carrier_size - size) * 8 } else { 0 });
+                    }
+                    _ => panic!("partial scalar read must use exact-byte copying"),
+                }
+                let mut printer = PrintC::new();
+                printer.options.partial_access = true;
+                printer.rt_ctx.enabled = true;
+                printer.rt_ctx.long_is_8 = true;
+                printer.rt_ctx.ctypes = true;
+                printer.set_output_stream();
+                assert!(printer.push_partial_symbol_ir(
+                    &fd, &arch, "carrier", carrier, offset as int8, size, input, op, 0, true,
+                ));
+                let expression = printer.emit_mut().output_str();
+                assert!(expression.contains("__builtin_memcpy"), "{expression}");
+                assert!(!expression.contains("SUB"), "{expression}");
+                assert!(!expression.contains("(odd)"), "{expression}");
+                if big {
+                    // Natural widths need no shift; odd widths copy to the
+                    // carrier's high bytes and then normalize their value.
+                    assert_eq!(expression.contains(">>"), carrier_size != size, "{expression}");
+                }
+                let byte_index = if big { format!("{size}-1-byte") } else { "byte".to_owned() };
+                let program = format!(r#"
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+static unsigned long long *backing;
+static int addresses, copies, errors;
+static unsigned long long *source(void) {{ ++addresses; return backing; }}
+static void *checked_copy(void *dst, const void *src, size_t count) {{
+    ++copies;
+    if (count != {size} || src != (unsigned char *)backing + {offset}) ++errors;
+    for (int byte=0;byte<{carrier_size};++byte)
+        if (((unsigned char *)dst)[byte] != 0) ++errors;
+    return memcpy(dst,src,count);
+}}
+#define __builtin_memcpy checked_copy
+#define carrier (*source())
+static unsigned long long emitted(unsigned long long *storage) {{
+    backing=storage; return {expression};
+}}
+#undef carrier
+int main(void) {{
+    for (unsigned int seed=0;seed<257;++seed) {{
+        unsigned long long initialized=UINT64_C(0xfedcba9876543210)^seed;
+        unsigned long long before=initialized;
+        unsigned long long expected=0;
+        for (int byte=0;byte<{size};++byte)
+            expected|=(unsigned long long)((unsigned char *)&initialized)[{offset}+byte]<<(8*({byte_index}));
+        addresses=copies=errors=0;
+        if (emitted(&initialized)!=expected || initialized!=before
+            || addresses!=1 || copies!=1 || errors) return 1;
+        unsigned long long partial;
+        for (int byte=0;byte<{size};++byte)
+            ((unsigned char *)&partial)[{offset}+byte]=(unsigned char)(seed+byte*31);
+        expected=0;
+        for (int byte=0;byte<{size};++byte)
+            expected|=(unsigned long long)(unsigned char)(seed+byte*31)<<(8*({byte_index}));
+        addresses=copies=errors=0;
+        if (emitted(&partial)!=expected || addresses!=1 || copies!=1 || errors) return 2;
+    }}
+    return 0;
+}}
+"#);
+                if big {
+                    run_big_endian_partial_consumer(&program, &format!("read-{size}-{offset}"), &directory);
+                    continue;
+                }
+                let source = directory.join(format!("read-{size}-{offset}.c"));
+                std::fs::write(&source, program).unwrap();
+                for level in ["0", "2"] {
+                    let executable = directory.join(format!("read-{size}-{offset}-{level}"));
+                    let built = Command::new(compiler).arg("-std=gnu17")
+                        .arg(format!("-O{level}")).arg(&source).arg("-o").arg(&executable).output().unwrap();
+                    assert!(built.status.success(), "{expression}\n{}", String::from_utf8_lossy(&built.stderr));
+                    assert!(Command::new(&executable).status().unwrap().success(), "{expression}, O{level}");
+                }
+            }
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+/// A freestanding ELFv2 harness needs neither a target sysroot nor libc.
+/// Cross execution supplements the native consumers when the tools are installed.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn run_big_endian_partial_consumer(program: &str, label: &str, directory: &std::path::Path) {
+    use std::process::Command;
+    if !["clang", "ld.lld", "qemu-ppc64"].into_iter()
+        .all(|tool| Command::new(tool).arg("--version").output().is_ok_and(|p| p.status.success()))
+    {
+        return;
+    }
+    let runtime = r#"
+typedef __UINT64_TYPE__ uint64_t;
+typedef __SIZE_TYPE__ size_t;
+#define UINT64_C(value) value##ULL
+void *memcpy(void *dst,const void *src,size_t count) {
+    for(size_t i=0;i<count;++i)((unsigned char *)dst)[i]=((const unsigned char *)src)[i];
+    return dst;
+}
+int memcmp(const void *left,const void *right,size_t count) {
+    for(size_t i=0;i<count;++i) {
+        unsigned char a=((const unsigned char *)left)[i],b=((const unsigned char *)right)[i];
+        if(a!=b)return a<b?-1:1;
+    }
+    return 0;
+}
+"#;
+    let body = program.lines().filter(|line| !line.starts_with("#include ")).collect::<Vec<_>>().join("\n");
+    let source = directory.join(format!("{label}-ppc64.c"));
+    std::fs::write(&source, format!("{runtime}\n{body}")).unwrap();
+    let start = directory.join("ppc64-start.S");
+    std::fs::write(&start, ".abiversion 2\n.text\n.globl _start\n.type _start,@function\n_start:\nlis 2,.TOC.@ha\naddi 2,2,.TOC.@l\nbl main\nli 0,1\nsc\n").unwrap();
+    for level in ["0", "2"] {
+        let executable = directory.join(format!("{label}-ppc64-{level}"));
+        let built = Command::new("clang").args([
+            "--target=powerpc64-linux-gnu", "-mabi=elfv2", "-ffreestanding",
+            "-fno-stack-protector", "-fno-pic", "-fno-pie", "-nostdlib",
+            "-static", "-fuse-ld=lld", "-Wl,-e,_start", "-std=gnu17",
+        ]).arg(format!("-O{level}")).arg(&source).arg(&start).arg("-o").arg(&executable).output().unwrap();
+        assert!(built.status.success(), "{label}, BE O{level}: {}", String::from_utf8_lossy(&built.stderr));
+        let executed = Command::new("timeout").args(["20", "qemu-ppc64"]).arg(&executable).output().unwrap();
+        assert!(executed.status.success(), "{label}, BE O{level}: {}", String::from_utf8_lossy(&executed.stderr));
+        eprintln!("big-endian {label} O{level}: passed");
+    }
 }

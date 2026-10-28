@@ -2713,24 +2713,32 @@ impl PrintC {
         if self.out_lang != crate::kuna_lang::OutLang::C {
             return;
         }
-        let pairs: std::collections::BTreeSet<_> = fd.obank().iter_alive().filter_map(|op| {
-            let operation = fd.obank().get(op)?;
-            if operation.code() != OpCode::CPUI_PIECE || operation.num_input() != 2 {
-                return None;
+        let mut pairs = 0u64;
+        for op in fd.obank().iter_code(OpCode::CPUI_PIECE) {
+            let Some(operation) = fd.obank().get(op) else { continue };
+            if operation.is_dead() || operation.num_input() != 2 {
+                continue;
             }
-            let out = fd.vbank().get(operation.get_out()?)?;
+            let Some(out) = operation.get_out().and_then(|vn| fd.vbank().get(vn)) else { continue };
             if !out.is_implied() && self.is_suppressed_statement(fd, op) {
-                return None;
+                continue;
             }
             if self.partial_concat_plan(fd, arch, op).is_some() {
-                return None;
+                continue;
             }
-            let high = fd.vbank().get(operation.get_in(0)?)?.get_size();
-            let low = fd.vbank().get(operation.get_in(1)?)?.get_size();
-            (out.get_size() == high + low).then_some((high, low))
-        }).collect();
+            let (Some(high), Some(low)) = (
+                operation.get_in(0).and_then(|vn| fd.vbank().get(vn)).map(|vn| vn.get_size()),
+                operation.get_in(1).and_then(|vn| fd.vbank().get(vn)).map(|vn| vn.get_size()),
+            ) else { continue };
+            if (1..=8).contains(&high) && (1..=8).contains(&low) && out.get_size() == high + low {
+                pairs |= 1u64 << ((high - 1) * 8 + low - 1);
+            }
+        }
         let int128 = arch.manage().get_default_data_space().is_some_and(|space| space.get_addr_size() == 8);
-        for (high, low) in pairs {
+        while pairs != 0 {
+            let pair = pairs.trailing_zeros() as int4;
+            pairs &= pairs - 1;
+            let (high, low) = (pair / 8 + 1, pair % 8 + 1);
             let Some(text) = crate::p9_emit::kuna_partialconcat::preamble(high, low, self.rt_ctx.model, int128) else {
                 continue;
             };
@@ -6068,7 +6076,9 @@ impl PrintC {
             }
         }
         let printed = |vn, slot| self.partial_piece_type(fd, arch, vn, op, slot);
-        if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op, printed) {
+        if let Some(transfer) = crate::kuna_bitcast::storage_transfer(fd, arch.decl_high_type, op, printed)
+            .filter(|transfer| transfer.size != 10 || self.out_lang == crate::kuna_lang::OutLang::C)
+        {
             self.op_bit_transfer_ir(fd, arch, op, transfer);
             return;
         }
@@ -7055,10 +7065,11 @@ impl PrintC {
             let word = match (transfer.size, signed) {
                 (4, false) => "unsigned int",
                 (4, true) => "int",
+                (10, _) => "unsigned __int128",
                 (_, false) => "unsigned long long",
                 (_, true) => "long long",
             };
-            let float = if transfer.size == 4 { "float" } else { "double" };
+            let float = match transfer.size { 4 => "float", 10 => "long double", _ => "double" };
             let (from, to) = if transfer.to_float { (word, float) } else { (float, word) };
             self.push_op(&C_BITS, Some(op_key(op)));
             self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
@@ -9448,7 +9459,14 @@ impl PrintC {
                     .unwrap_or(false);
                 if let (Some(outtype), Some(strat)) = (outtype, cast_strategy_for(arch)) {
                     let off_u = if off >= 0 { off as uint4 } else { 0 };
-                    if strat.is_subpiece_cast_endian(&outtype, &cur, off_u, is_big) {
+                    // A narrowed C read must not evaluate untouched, potentially
+                    // uninitialized bytes of the primitive scalar container.
+                    let exact_read = self.options.partial_access
+                        && self.out_lang == crate::kuna_lang::OutLang::C
+                        && sz > 0 && sz < cur.get_size()
+                        && matches!(cur.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+                            | type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_PTR);
+                    if !exact_read && strat.is_subpiece_cast_endian(&outtype, &cur, off_u, is_big) {
                         finalcast = Some(outtype);
                         ct = None;
                         succeeded = true;
@@ -9906,15 +9924,24 @@ impl PrintC {
     fn push_piece_open(&mut self, p: &crate::kuna_partialaccess::Piece, op: OpId) {
         use crate::kuna_partialaccess::{Form, Piece};
         match p {
-            Piece::Sub { name, .. } => {
-                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-                self.push_atom(&Atom::with_op(
-                    name.clone(),
-                    TagType::OpToken,
-                    crate::printlanguage::SyntaxHighlight::no_color,
-                    op_key(op),
-                ));
-                self.push_op(&tokens::COMMA, Some(op_key(op)));
+            Piece::Read { pointer, bytes, offset, shift, .. } => {
+                let key = Some(op_key(op));
+                if *shift != 0 {
+                    self.push_op(&tokens::SHIFT_RIGHT, key);
+                }
+                self.push_op(&tokens::DEREFERENCE, key);
+                self.push_cast_open(pointer, op);
+                self.push_op(&tokens::FUNCTION_CALL, key);
+                self.push_atom(&Atom::syntax("__builtin_memcpy", TagType::FuncToken, crate::printlanguage::SyntaxHighlight::funcname_color));
+                self.push_op(&tokens::COMMA, key);
+                self.push_op(&tokens::COMMA, key);
+                let (front, back) = declarator_parts(&pointer.get_ptr_to().expect("read carrier pointer"), self.rt_ctx);
+                self.push_atom(&Atom::syntax(format!("&({front}{back}){{0}}"), TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+                if *offset != 0 {
+                    self.push_op(&tokens::BINARY_PLUS, key);
+                    self.push_cast_open(bytes, op);
+                }
+                self.push_op(&tokens::ADDRESSOF, key);
             }
             Piece::Pointer { form, pointee, bytes } => {
                 match form {
@@ -9942,8 +9969,16 @@ impl PrintC {
     fn push_piece_close(&mut self, p: &crate::kuna_partialaccess::Piece, op: OpId) {
         use crate::kuna_partialaccess::{Form, Piece};
         match p {
-            Piece::Sub { value_offset, .. } => {
-                self.push_constant_ir_fmt_sign(*value_offset as uintb, 0, op, display_format::NONE, false);
+            Piece::Read { pointer, bytes, offset, size, shift } => {
+                if *offset != 0 {
+                    self.push_cast_close(bytes);
+                    self.push_constant_ir_fmt_sign(*offset as uintb, 0, op, display_format::NONE, false);
+                }
+                self.push_constant_ir_fmt_sign(*size as uintb, 0, op, display_format::NONE, false);
+                self.push_cast_close(pointer);
+                if *shift != 0 {
+                    self.push_constant_ir_fmt_sign(*shift as uintb, 0, op, display_format::NONE, false);
+                }
             }
             Piece::Pointer { form, pointee, bytes } => match form {
                 Form::Index(k) => {

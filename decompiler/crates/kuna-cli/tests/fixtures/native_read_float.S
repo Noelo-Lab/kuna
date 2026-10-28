@@ -39,10 +39,13 @@ ProbeBits:
 .thumb_func
 ComputeFloat:
  push {r4, lr}
+ vpush {d8}
  mov r4, r0
+ vldr d8, [r4]
+ mov r0, r4
  bl ForwardFloat
- vldr d1, [r4]
- vadd.f64 d0, d0, d1
+ vadd.f64 d0, d0, d8
+ vpop {d8}
  pop {r4, pc}
 .size ComputeFloat, .-ComputeFloat
 #endif

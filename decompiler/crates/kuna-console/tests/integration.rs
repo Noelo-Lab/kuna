@@ -148,6 +148,9 @@ mod verify_et_rel_sparc_calls;
 #[path = "verify_et_rel_status_return.rs"]
 mod verify_et_rel_status_return;
 
+#[path = "verify_extended_float_storage.rs"]
+mod verify_extended_float_storage;
+
 #[path = "verify_external_entries.rs"]
 mod verify_external_entries;
 
