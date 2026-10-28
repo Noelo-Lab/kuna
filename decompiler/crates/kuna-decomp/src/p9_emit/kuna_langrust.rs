@@ -444,8 +444,7 @@ impl PrintC {
             let ty = match param.get_type() {
                 Some(ty) => {
                     let (front, back) = declarator_parts(ty, self.rt_ctx);
-                    self.pointer_decls.record(name, &front, &back, false);
-                    self.record_pointer_parameter(fd, i, param, ty, &front, &back);
+                    self.record_pointer_parameter(fd, i, param, name, ty, &front, &back);
                     front
                 }
                 None => "()".to_string(),

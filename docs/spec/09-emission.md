@@ -844,35 +844,38 @@ where the binary's 32-bit write zero-extended it. It is left alone because
 nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
 
-**Byte-pointer arguments
+**Object-pointer arguments
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** Buffered
-`decompile-all`, `decompile-project` and `decompile-graph` reconcile C calls after selecting their
-final successful function results. When a caller passes the address of a whole
-scalar local or parameter to a character-pointer parameter (`char *`,
-`unsigned char *`, or an undefined byte printed as `char`), the call is cast to
-that emitted parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
-v1`. Parameter position and finalized ABI storage must agree. The local keeps
-its declared type and width; C allows a character pointer to access its bytes.
+`decompile-all`, `decompile-project` and `decompile-graph` reconcile C and Rust
+calls after selecting their final successful function results. Actual emitted
+parameter types, matched by position and finalized ABI storage/width, decide
+call-site casts. Scalar addresses and other object-pointer expressions keep
+their original local type, address arithmetic and evaluation count.
 
-The printer records declarations and exact argument positions with each result,
-only for a driver that asks; the batch that returns the final results applies them.
-The buffered driver uses only the accepted results, after any type convergence
-or worker structure renaming. Failed, omitted, and conflicting definitions
-cannot supply a cast. Workers transport the records; this reconciliation never
-re-decompiles a function. Address order, recursive call ordering, filtered
-selections and `protoorder off` do not disable the conversion. `protoorder`
-continues to control inference independently.
+The printer records actual declarations and whole argument spans only when a
+driver asks. The returning batch uses accepted results after feedback and worker
+structure renaming, not earlier recovered-type votes. Failed, omitted and
+conflicting definitions cannot supply a cast. Workers transport this metadata;
+reconciliation never re-decompiles a function or changes inference, arity or IR.
+Address order, recursive ordering, filtered selections and `protoorder off` do
+not turn an available accepted contract into a guess.
 
-Arrays, structures, unions, members, other pointer expressions, varargs and
-per-call prototype overrides abstain. A byte local of another signedness also
-retains the existing spelling. No text search identifies a call: each recorded
-position must still contain its recorded expression before its cast is added. A
-position that does not (an emitter defect) leaves only that argument uncast.
-The inserted text contains no newlines. No buffered driver captures token maps;
-a result that did would have its map withdrawn rather than left misaligned.
-Structure renaming first adjusts the recorded byte columns. Streamed exports, non-C output and standalone `decompile` do not
-reconcile incomplete batches. The worker path still matches
-serial output with `--option protoorder off` on both.
+Every argument span must still match the captured bytes. Properly nested calls
+receive precedence-safe C prefix or Rust suffix casts, each expression once;
+nested spans share one outer text allocation. Invalid or crossing spans decline.
+Renaming updates type spellings, spans and pooled text; an ambiguous rename
+withdraws the affected authority. C's implicit object-pointer/`void *`
+conversions remain implicit; Rust casts differing raw-pointer types explicitly.
+Function pointers, variadics, call-site prototype overrides and explicitly
+locked call parameters do not use this inferred declaration bridge.
+
+With C `structdefs on`, the accepted callee supplies genuine required definition
+records and forwards. Missing or conflicting definitions cannot authorize a
+cast. New bodies follow existing type definitions, and the JSON records and
+provenance lines are updated together. Only genuine compatible incomplete
+struct/union forwards can be completed. Changed token maps are withdrawn rather
+than left misaligned. Streamed exports and standalone `decompile` do not invent
+an authoritative completed batch.
 
 **Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
 hides an extension only when integer arithmetic, or a comparison against an

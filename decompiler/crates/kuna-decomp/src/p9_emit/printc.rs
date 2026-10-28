@@ -2177,7 +2177,7 @@ impl PrintC {
         let op_markup = self.markup_for_op_key(entry.op);
         if std::ptr::eq(entry.tok, &tokens::POINTER_ARGUMENT) {
             if let (Some(&(id, index)), PrintEmit::NoMarkup(emit), Some(record)) =
-                (self.pointer_spans.last(), &self.emit, self.pointer_record.as_mut())
+                (self.pointer_spans.last(), &mut self.emit, self.pointer_record.as_mut())
             {
                 if id == entry.id {
                     if entry.visited == 0 {
@@ -2402,11 +2402,12 @@ impl PrintC {
         Some(record)
     }
 
-    fn record_pointer_parameter(
+    pub(crate) fn record_pointer_parameter(
         &mut self, fd: &Funcdata, index: int4, parameter: &dyn crate::fspec::ProtoParameter,
-        ty: &std::rc::Rc<crate::dtype::Datatype>, front: &str, back: &str,
+        name: &str, ty: &std::rc::Rc<crate::dtype::Datatype>, front: &str, back: &str,
     ) {
         use crate::dtype::{type_metatype, DatatypeKind};
+        self.pointer_decls.record(name, front, back, false);
         let Some(record) = self.pointer_record.as_ref() else { return };
         if self.emit.emits_markup() || fd.get_func_proto().is_dotdotdot()
             || Some(&record.entry) != crate::kuna_pointerargs::entry(fd.get_address()).as_ref()
@@ -2687,7 +2688,7 @@ impl PrintC {
 
         self.emit_type_definition_preamble(fd);
         if let (PrintEmit::NoMarkup(emit), Some(record)) =
-            (&self.emit, self.pointer_record.as_mut())
+            (&mut self.emit, self.pointer_record.as_mut())
         {
             record.preamble_end = emit.position();
         }
@@ -3235,8 +3236,7 @@ impl PrintC {
                     Some(ty) => {
                         let (front, back) = declarator_parts(&ty, self.rt_ctx);
                         self.cast_implied.record_param(name, format!("{front}{back}"));
-                        self.pointer_decls.record(name, &front, &back, false);
-                        self.record_pointer_parameter(fd, i, param, &ty, &front, &back);
+                        self.record_pointer_parameter(fd, i, param, name, &ty, &front, &back);
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
