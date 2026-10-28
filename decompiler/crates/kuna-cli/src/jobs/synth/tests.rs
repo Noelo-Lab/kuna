@@ -116,21 +116,50 @@ fn the_report_names_the_serial_run_it_can_actually_replay() {
 
 #[test]
 fn a_structure_rename_rebases_recorded_pointer_arguments() {
-    use kuna_decomp::kuna_pointerargs::{Call, Position, Record};
+    use kuna_decomp::kuna_pointerargs::{Call, Parameter, Position, Record};
     let mut r = sample_result();
-    r.code = Some("struct_3 *p; sink(&v1);".into());
+    r.code = Some("struct_3 *p; sink(source((struct_3 *)&v1));".into());
     r.pointerargs = Some(Record {
-        entry: ("ram".into(), 0x2000), parameters: vec![],
+        entry: ("ram".into(), 0x2000),
+        language: kuna_decomp::kuna_lang::OutLang::C, struct_defs: true,
+        preamble_end: Position { line: 1, column: 13 },
+        texts: vec![std::rc::Rc::new("source((struct_3 *)&v1)".into())],
+        parameters: vec![Some(Parameter {
+            storage: (("register".into(), 0x38), 8), spelling: "struct_3 *".into(),
+            void_pointer: false, dependencies: vec!["struct_3".into()],
+            forwards: vec!["typedef struct struct_3 struct_3;".into()],
+        })],
         calls: vec![Call {
             callee: ("ram".into(), 0x1000), index: 0,
-            storage: (("register".into(), 0x38), 8), actual: "long *".into(),
-            position: Position { line: 1, column: 17 }, expression: "&v1".into(),
+            storage: (("register".into(), 0x38), 8), actual: "struct_3 *".into(),
+            position: Position { line: 1, column: 17 },
+            end: Position { line: 1, column: 40 },
+            void_pointer: false, text: 0, text_start: 0, text_end: 23,
         }],
     });
+    let record = r.pointerargs.as_mut().unwrap();
+    let mut nested = record.calls[0].clone();
+    nested.position.column = 24;
+    nested.end.column = 39;
+    nested.text_start = 7;
+    nested.text_end = 22;
+    record.calls.push(nested);
     let own = [Some(("struct_3".into(), Some(request(4))))];
     let serial = [Some(("struct_100".into(), Some(request(4))))];
     let renamed = super::rename_result(&r, Some(&own), &serial, &[]).unwrap();
-    assert_eq!(renamed.code.as_deref(), Some("struct_100 *p; sink(&v1);"));
+    assert_eq!(renamed.code.as_deref(), Some("struct_100 *p; sink(source((struct_100 *)&v1));"));
     assert!(renamed.field_calls.iter().all(|f| f.record == "struct_100"));
-    assert_eq!(renamed.pointerargs.unwrap().calls[0].position.column, 19);
+    let record = renamed.pointerargs.unwrap();
+    assert_eq!(record.preamble_end, Position { line: 1, column: 15 });
+    assert_eq!(record.texts.len(), 1);
+    assert_eq!(record.texts[0].as_str(), "source((struct_100 *)&v1)");
+    assert_eq!((record.calls[0].position.column, record.calls[0].end.column), (19, 44));
+    assert_eq!((record.calls[1].position.column, record.calls[1].end.column), (26, 43));
+    assert_eq!((record.calls[0].text_start, record.calls[0].text_end), (0, 25));
+    assert_eq!((record.calls[1].text_start, record.calls[1].text_end), (7, 24));
+    assert!(record.calls.iter().all(|call| call.actual == "struct_100 *"));
+    let parameter = record.parameters[0].as_ref().unwrap();
+    assert_eq!(parameter.spelling, "struct_100 *");
+    assert_eq!(parameter.dependencies, ["struct_100"]);
+    assert_eq!(parameter.forwards, ["typedef struct struct_100 struct_100;"]);
 }

@@ -394,19 +394,26 @@ translation unit; the support stays with the function in ordinary, project and
 streamed C output, so consumers need not invent missing helper definitions.
 
 
-A recovered pointer parameter also supplies a use-site pointer requirement when
-the caller holds a pointer of the same width. The argument's slot and concrete
-storage must both match the recovered contract. If the caller reads a `double`
-through an address that the callee reads as two integer record fields, its local
-pointer type wins the inference vote, while an explicit pointer cast at the
-call preserves both declarations. Only immutable C/Rust call-argument rendering
-reads this requirement; the type-definition root walk includes its actual record
-dependencies. It must not become an IR `CAST` or enter the shared declared-input
-query: even late IR casts can affect global prototype finalization, and P5's
-character-, element- and function-pointer analyses consume that query as actual
-declared evidence, not as another callee's inferred preference. Explicitly locked
-parameters still take precedence. This neither locks the prototype nor changes
-arity, integer/float classes, or any access through the caller's pointer.
+Completed-batch C/Rust rendering reconciles object-pointer arguments against the
+callee declarations actually accepted in that batch. Parameter index, physical
+storage and width must agree. If a caller reads a `double` through an address
+that its callee reads as integer record fields, its local pointer type remains
+unchanged and the call receives the necessary cast. An earlier recovered-type
+vote is not a declaration: feedback can later replace a callee's result or
+reject a redo. Missing or ambiguous accepted declarations supply no cast.
+
+The printer records complete argument spans; nested casts group and evaluate
+each expression once, with shared text storage for nested spans. C preserves
+implicit `void *` compatibility, while Rust casts distinct raw-pointer types.
+Structure renaming updates the recorded types and spans. With `structdefs on`,
+casts bring in only the actual callee's required definitions, after the caller's
+existing type preamble; the JSON type records receive the same definitions.
+
+These contracts never become IR `CAST`s or enter P5's shared declared-input
+query, so presentation cannot feed back into character-, element- or
+function-pointer inference. Explicitly locked call parameters retain precedence.
+No prototype is locked, arity is unchanged, and no integer/float class or access
+through the caller's pointer is changed.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`

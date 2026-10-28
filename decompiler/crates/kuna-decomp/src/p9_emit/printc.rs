@@ -171,6 +171,8 @@ pub mod tokens {
 
     /// Hidden functional (that may force parentheses) (printc.cc:24).
     pub static HIDDEN: OpToken = op_token("", "", 1, 70, false, TokenType::HiddenFunction, 0, 0);
+    /// A transparent expression boundary for accepted-batch pointer contracts.
+    pub static POINTER_ARGUMENT: OpToken = op_token("", "", 1, 70, false, TokenType::HiddenFunction, 0, 0);
     /// The sub-scope/namespace operator `::` (printc.cc:25).
     pub static SCOPE: OpToken = op_token("::", "", 2, 70, true, TokenType::Binary, 0, 0);
     /// The member operator `.` (printc.cc:26).
@@ -1615,7 +1617,7 @@ pub struct PrintC {
     /// ([`set_record_pointer_arguments`](Self::set_record_pointer_arguments)).
     record_pointer_arguments: bool,
     pointer_record: Option<crate::kuna_pointerargs::Record>,
-    pointer_candidate: Option<crate::kuna_pointerargs::Candidate>,
+    pointer_spans: Vec<(int4, usize)>,
     /// (kuna `signedness`) The declared-signedness decision for the function
     /// being emitted: which integer locals the operation set says to declare
     /// signed or unsigned, and which of those declarations actually got written
@@ -1670,7 +1672,7 @@ impl PrintC {
             pointer_decls: crate::kuna_pointerargs::Declarations::default(),
             record_pointer_arguments: false,
             pointer_record: None,
-            pointer_candidate: None,
+            pointer_spans: Vec::new(),
             sign_plan: crate::kuna_typeround::SignPlan::default(),
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
@@ -2173,6 +2175,20 @@ impl PrintC {
         // key; `none()` (no lookup) on the plain-text path so the datatest bytes
         // are unchanged.
         let op_markup = self.markup_for_op_key(entry.op);
+        if std::ptr::eq(entry.tok, &tokens::POINTER_ARGUMENT) {
+            if let (Some(&(id, index)), PrintEmit::NoMarkup(emit), Some(record)) =
+                (self.pointer_spans.last(), &self.emit, self.pointer_record.as_mut())
+            {
+                if id == entry.id {
+                    if entry.visited == 0 {
+                        record.calls[index].position = emit.position();
+                    } else if entry.visited == entry.tok.stage {
+                        record.calls[index].end = emit.position();
+                        self.pointer_spans.pop();
+                    }
+                }
+            }
+        }
         match entry.tok.token_type {
             TokenType::Binary => {
                 let text = match entry.visited {
@@ -2187,16 +2203,6 @@ impl PrintC {
             TokenType::UnaryPrefix => {
                 if entry.visited != 0 {
                     return;
-                }
-                if std::ptr::eq(entry.tok, &tokens::ADDRESSOF)
-                    && self.pointer_candidate.as_ref().is_some_and(|c| Some(op_key(c.address_op)) == entry.op)
-                {
-                    if let (Some(mut candidate), PrintEmit::NoMarkup(emit), Some(record)) = (
-                        self.pointer_candidate.take(), &mut self.emit, self.pointer_record.as_mut(),
-                    ) {
-                        candidate.call.position = emit.position();
-                        record.calls.push(candidate.call);
-                    }
                 }
                 self.emit.tag_op(entry.tok.print1, SyntaxHighlight::NoColor, &op_markup);
                 self.emit.spaces(entry.tok.spacing, entry.tok.bump);
@@ -2360,11 +2366,13 @@ impl PrintC {
     /// keeps the plain render's record of the same function (provenance and
     /// token renders follow it), never another function's.
     fn begin_pointer_record(&mut self, fd: &Funcdata) {
-        self.pointer_candidate = None;
+        self.pointer_spans.clear();
         if !self.emit.emits_markup() {
-            self.pointer_record = (self.record_pointer_arguments
-                && self.out_lang == crate::kuna_lang::OutLang::C)
-                .then(|| crate::kuna_pointerargs::Record::new(fd))
+            self.pointer_record = (self.record_pointer_arguments && !self.options.nocasts)
+                .then(|| crate::kuna_pointerargs::Record::new(
+                    fd, self.out_lang,
+                    self.options.struct_defs && self.out_lang == crate::kuna_lang::OutLang::C,
+                ))
                 .flatten();
         } else if self.pointer_record.as_ref().is_some_and(|r| {
             Some(&r.entry) != crate::kuna_pointerargs::entry(fd.get_address()).as_ref()
@@ -2373,7 +2381,7 @@ impl PrintC {
         }
     }
 
-    /// Record pointer-argument facts during the next plain C render, discarding
+    /// Record pointer-argument facts during the next plain render, discarding
     /// any record a previous render left behind.
     pub fn set_record_pointer_arguments(&mut self, on: bool) {
         self.record_pointer_arguments = on;
@@ -2389,8 +2397,55 @@ impl PrintC {
     ) -> Option<crate::kuna_pointerargs::Record> {
         self.record_pointer_arguments = false;
         let mut record = self.pointer_record.take()?;
+        record.capture_texts(untrimmed);
         record.trim_lines(untrimmed);
         Some(record)
+    }
+
+    fn record_pointer_parameter(
+        &mut self, fd: &Funcdata, index: int4, parameter: &dyn crate::fspec::ProtoParameter,
+        ty: &std::rc::Rc<crate::dtype::Datatype>, front: &str, back: &str,
+    ) {
+        use crate::dtype::{type_metatype, DatatypeKind};
+        let Some(record) = self.pointer_record.as_ref() else { return };
+        if self.emit.emits_markup() || fd.get_func_proto().is_dotdotdot()
+            || Some(&record.entry) != crate::kuna_pointerargs::entry(fd.get_address()).as_ref()
+            || parameter.is_hidden_return() || parameter.is_this_pointer()
+            || ty.get_metatype() != type_metatype::TYPE_PTR
+            || ty.get_size() != parameter.get_size()
+            || ty.get_ptr_to().is_none_or(|p| p.get_metatype() == type_metatype::TYPE_CODE)
+        {
+            return;
+        }
+        let Some(address) = crate::kuna_pointerargs::entry(&parameter.get_address()) else { return };
+        let mut dependencies = Vec::new();
+        let mut forwards = Vec::new();
+        if record.struct_defs {
+            for dependency in crate::kuna_structdefs::dependency_types(ty) {
+                dependencies.push(dependency.get_name().to_string());
+                if dependency.get_typedef().is_none() {
+                    let keyword = match &dependency.kind {
+                        DatatypeKind::Struct { .. } => Some("struct"),
+                        DatatypeKind::Union { .. } => Some("union"),
+                        _ => None,
+                    };
+                    if let Some(keyword) = keyword {
+                        let name = sanitize_type_name(dependency.get_name());
+                        forwards.push(format!("typedef {keyword} {name} {name};\n"));
+                    }
+                }
+            }
+        }
+        let parameter = crate::kuna_pointerargs::Parameter {
+            storage: (address, parameter.get_size()),
+            spelling: format!("{front}{back}"),
+            void_pointer: ty.get_ptr_to().is_some_and(|p| p.get_metatype() == type_metatype::TYPE_VOID),
+            dependencies,
+            forwards,
+        };
+        if let Some(slot) = self.pointer_record.as_mut().and_then(|r| r.parameters.get_mut(index as usize)) {
+            *slot = Some(parameter);
+        }
     }
 
     /// C++ `PrintC::docFunction` (printc.cc:2790), transcribed faithfully and
@@ -2631,6 +2686,11 @@ impl PrintC {
         let markup = MarkupRef::none();
 
         self.emit_type_definition_preamble(fd);
+        if let (PrintEmit::NoMarkup(emit), Some(record)) =
+            (&self.emit, self.pointer_record.as_mut())
+        {
+            record.preamble_end = emit.position();
+        }
         self.emit_bytearray_preamble(fd);
         self.emit_concat_preamble(fd, arch);
 
@@ -3176,23 +3236,7 @@ impl PrintC {
                         let (front, back) = declarator_parts(&ty, self.rt_ctx);
                         self.cast_implied.record_param(name, format!("{front}{back}"));
                         self.pointer_decls.record(name, &front, &back, false);
-                        if !self.emit.emits_markup() && self.emit_fd.is_some() && !proto.is_dotdotdot()
-                            && crate::kuna_pointerargs::byte_pointer(&ty)
-                        {
-                            let slot = self
-                                .pointer_record
-                                .as_mut()
-                                .filter(|r| Some(&r.entry) == crate::kuna_pointerargs::entry(fd.get_address()).as_ref())
-                                .and_then(|r| r.parameters.get_mut(i as usize));
-                            if let (Some(slot), Some(address)) =
-                                (slot, crate::kuna_pointerargs::entry(&param.get_address()))
-                            {
-                                *slot = Some(crate::kuna_pointerargs::Parameter {
-                                    storage: (address, param.get_size()),
-                                    spelling: format!("{front}{back}"),
-                                });
-                            }
-                        }
+                        self.record_pointer_parameter(fd, i, param, &ty, &front, &back);
                         // C++ `pushTypeStart(type, noident)`: the separating token is
                         // `type_expr_nospace` only when there is no identifier AND no
                         // declarator modifier (`noident && typestack.size()==1`); else
@@ -8125,14 +8169,21 @@ impl PrintC {
             }
             for i in 1..nin {
                 if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(i)) {
-                    self.pointer_candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
-                        let view = PointerView { pc: self, fd };
+                    let candidate = if self.pointer_record.is_some() && !self.emit.emits_markup() {
+                        let view = PointerView { pc: self, fd, arch };
                         crate::kuna_pointerargs::argument(&view, fd, arch, op, i)
                     } else {
                         None
                     };
+                    if let Some(candidate) = candidate {
+                        self.push_op(&tokens::POINTER_ARGUMENT, Some(op_key(op)));
+                        let id = self.revpol.last().unwrap().id;
+                        let record = self.pointer_record.as_mut().unwrap();
+                        let index = record.calls.len();
+                        record.calls.push(candidate);
+                        self.pointer_spans.push((id, index));
+                    }
                     self.push_call_argument_ir(fd, arch, vn, op, i, proto);
-                    self.pointer_candidate = None;
                 }
             }
         } else {
@@ -8198,28 +8249,7 @@ impl PrintC {
                 proto, slot, fd.vbank().get(vn).map(|value| value.get_size()).unwrap_or(0),
             )
         {
-            // A recovered physical-slot pointer contract only bridges the
-            // printed argument. Even a P9 IR CAST can feed later prototype
-            // finalization, so this must not change IR or inference evidence.
-            let cast = (!self.options.nocasts).then(|| {
-                let call = fd.get_call_specs(fd.get_call_specs_index(op)?);
-                let size = fd.vbank().get(vn)?.get_size();
-                let target = crate::kuna_protoorder::pointer_argument_requirement(
-                    fd, op, call, slot, size,
-                )?;
-                let source = declared_variable_type(fd, arch.decl_high_type, vn)
-                    .unwrap_or_else(|| fd.vn_type_read_facing(vn, op));
-                if self.out_lang == crate::kuna_lang::OutLang::Rust
-                    && !matches!(target.compare(&source, 10), Ok(0))
-                {
-                    Some(target)
-                } else {
-                    cast_strategy_for(arch)?.cast_standard(&target, &source, false, true)
-                }
-            }).flatten();
-            if let Some(target) = &cast { self.push_cast_open(target, op); }
             self.push_vn_ir(fd, arch, vn, op);
-            if let Some(target) = &cast { self.push_cast_close(target); }
             return;
         }
         let mut mods = self.context.mods();
@@ -12855,6 +12885,7 @@ fn cast_strategy_for(arch: &Architecture) -> Option<CastStrategyC> {
 struct PointerView<'a> {
     pc: &'a PrintC,
     fd: &'a Funcdata,
+    arch: &'a Architecture,
 }
 
 impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
@@ -12862,13 +12893,17 @@ impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
         let (front, back) = declarator_parts(ty, self.pc.rt_ctx);
         front + &back
     }
+    fn value_type(&self, vn: VarnodeId, op: OpId) -> Option<std::rc::Rc<crate::dtype::Datatype>> {
+        declared_variable_type(self.fd, self.arch.decl_high_type, vn)
+            .or_else(|| Some(self.fd.vn_type_read_facing(vn, op)))
+    }
 
     fn address(&self, high: crate::context::HighVariableId) -> Option<(String, String)> {
-        use crate::dtype::type_metatype::{TYPE_ARRAY, TYPE_STRUCT, TYPE_UNION};
+        use crate::dtype::type_metatype::TYPE_ARRAY;
         let h = self.fd.high_bank().get(high)?;
         if h
             .kuna_symbol_type()
-            .is_some_and(|t| matches!(t.get_metatype(), TYPE_ARRAY | TYPE_STRUCT | TYPE_UNION))
+            .is_some_and(|t| t.get_metatype() == TYPE_ARRAY)
         {
             return None;
         }
@@ -12876,7 +12911,7 @@ impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
         if offset > 0 {
             return None;
         }
-        self.pc.pointer_decls.address(&name).map(|ty| (name, ty))
+        self.pc.pointer_decls.address(&name, self.pc.out_lang).map(|ty| (name, ty))
     }
 }
 

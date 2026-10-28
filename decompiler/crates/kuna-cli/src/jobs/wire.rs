@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES11";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES12";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -608,6 +608,15 @@ fn put_pointerargs(out: &mut Vec<u8>, record: Option<&kuna_decomp::kuna_pointera
     let Some(record) = record else { out.push(0); return };
     out.push(1);
     put_entry(out, &record.entry);
+    out.push(match record.language {
+        kuna_decomp::kuna_lang::OutLang::C => 0,
+        kuna_decomp::kuna_lang::OutLang::Rust => 1,
+    });
+    out.push(u8::from(record.struct_defs));
+    put_u32(out, record.texts.len() as u32);
+    for text in &record.texts { put_str(out, text); }
+    put_u64(out, record.preamble_end.line as u64);
+    put_u64(out, record.preamble_end.column as u64);
     put_u32(out, record.parameters.len() as u32);
     for parameter in &record.parameters {
         match parameter {
@@ -616,6 +625,11 @@ fn put_pointerargs(out: &mut Vec<u8>, record: Option<&kuna_decomp::kuna_pointera
                 out.push(1);
                 put_storage(out, &parameter.storage);
                 put_str(out, &parameter.spelling);
+                out.push(u8::from(parameter.void_pointer));
+                put_u32(out, parameter.dependencies.len() as u32);
+                for name in &parameter.dependencies { put_str(out, name); }
+                put_u32(out, parameter.forwards.len() as u32);
+                for forward in &parameter.forwards { put_str(out, forward); }
             }
         }
     }
@@ -627,7 +641,12 @@ fn put_pointerargs(out: &mut Vec<u8>, record: Option<&kuna_decomp::kuna_pointera
         put_str(out, &call.actual);
         put_u64(out, call.position.line as u64);
         put_u64(out, call.position.column as u64);
-        put_str(out, &call.expression);
+        put_u64(out, call.end.line as u64);
+        put_u64(out, call.end.column as u64);
+        out.push(u8::from(call.void_pointer));
+        put_u64(out, call.text as u64);
+        put_u64(out, call.text_start as u64);
+        put_u64(out, call.text_end as u64);
     }
 }
 
@@ -643,24 +662,57 @@ fn read_pointerargs(r: &mut Reader<'_>) -> Option<Option<kuna_decomp::kuna_point
     use kuna_decomp::kuna_pointerargs::{Call, Parameter, Position, Record};
     match r.u8()? { 0 => return Some(None), 1 => {}, _ => return None }
     let entry = read_entry(r)?;
+    let language = match r.u8()? {
+        0 => kuna_decomp::kuna_lang::OutLang::C,
+        1 => kuna_decomp::kuna_lang::OutLang::Rust,
+        _ => return None,
+    };
+    let struct_defs = match r.u8()? { 0 => false, 1 => true, _ => return None };
+    let n = r.u32()? as usize;
+    let mut texts = r.sized(n);
+    for _ in 0..n { texts.push(std::rc::Rc::new(r.string()?)); }
+    let preamble_end = Position { line: r.u64()?.try_into().ok()?, column: r.u64()?.try_into().ok()? };
+    if preamble_end.line == 0 { return None; }
     let n = r.u32()? as usize;
     let mut parameters = r.sized(n);
     for _ in 0..n {
         parameters.push(match r.u8()? {
             0 => None,
-            1 => Some(Parameter { storage: read_storage(r)?, spelling: r.string()? }),
+            1 => {
+                let storage = read_storage(r)?;
+                let spelling = r.string()?;
+                let void_pointer = match r.u8()? { 0 => false, 1 => true, _ => return None };
+                let n = r.u32()? as usize;
+                let mut dependencies = r.sized(n);
+                for _ in 0..n { dependencies.push(r.string()?); }
+                let n = r.u32()? as usize;
+                let mut forwards = r.sized(n);
+                for _ in 0..n { forwards.push(r.string()?); }
+                Some(Parameter { storage, spelling, void_pointer, dependencies, forwards })
+            },
             _ => return None,
         });
     }
     let n = r.u32()? as usize;
     let mut calls = r.sized(n);
     for _ in 0..n {
-        calls.push(Call {
+        let call = Call {
             callee: read_entry(r)?, index: r.u64()?.try_into().ok()?,
             storage: read_storage(r)?, actual: r.string()?,
             position: Position { line: r.u64()?.try_into().ok()?, column: r.u64()?.try_into().ok()? },
-            expression: r.string()?,
-        });
+            end: Position { line: r.u64()?.try_into().ok()?, column: r.u64()?.try_into().ok()? },
+            void_pointer: match r.u8()? { 0 => false, 1 => true, _ => return None },
+            text: r.u64()?.try_into().ok()?,
+            text_start: r.u64()?.try_into().ok()?,
+            text_end: r.u64()?.try_into().ok()?,
+        };
+        texts.get(call.text)?.get(call.text_start..call.text_end)?;
+        if call.position.line == 0 || call.end.line == 0
+            || (call.position.line, call.position.column) >= (call.end.line, call.end.column)
+            || call.text_start == call.text_end {
+            return None;
+        }
+        calls.push(call);
     }
-    Some(Some(Record { entry, parameters, calls }))
+    Some(Some(Record { entry, language, struct_defs, preamble_end, texts, parameters, calls }))
 }

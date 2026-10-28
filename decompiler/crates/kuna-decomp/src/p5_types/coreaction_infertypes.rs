@@ -126,8 +126,8 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
 
 /// [`input_type_local`] without recovered-callee inference votes. P5 readers
 /// use this as declared evidence, so recovered pointer requirements must not
-/// enter here either. P9's private cast insertion can honor those use-site
-/// contracts without feeding them back into inference.
+/// enter here either. Completed-batch rendering uses accepted declarations
+/// separately, without feeding call-site presentation back into inference.
 pub(crate) fn declared_input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
     input_type_local_with(data, op, slot, false)
 }

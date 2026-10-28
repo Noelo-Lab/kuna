@@ -150,41 +150,219 @@ impl FuncResult {
     }
 }
 
-/// Reconcile calls only after the buffered driver's accepted results are final.
-/// Workers carry facts without applying them to an incomplete shard. Calls are
-/// consumed, so a second reconciliation changes nothing. A recorded site that
-/// no longer matches the text leaves only that argument uncast; every
-/// successful result still supplies the declarations it printed.
+/// Reconcile C and Rust calls only after the buffered driver's accepted results
+/// are final. Workers carry facts without applying them to an incomplete shard.
+/// Calls are consumed, so a second reconciliation changes nothing. C casts that
+/// need definitions use only genuine, unambiguous accepted-callee `types`;
+/// definitions and their metadata are added only for sites actually applied.
+/// New C bodies follow the caller's existing type preamble at its recorded
+/// boundary; an opaque caller entry can be upgraded by an actual complete type.
 pub fn reconcile_pointer_arguments(results: &mut [FuncResult]) {
-    use kuna_decomp::kuna_pointerargs;
+    use kuna_decomp::{kuna_lang::OutLang, kuna_pointerargs};
     if !results.iter().any(|r| r.pointerargs.as_ref().is_some_and(|r| !r.calls.is_empty())) {
         return;
     }
-    let definitions = kuna_pointerargs::definitions(
-        results
-            .iter()
-            .filter(|r| r.error.is_none() && r.code.is_some())
-            .filter_map(|r| r.pointerargs.as_ref()),
-    );
-    for result in results.iter_mut() {
-        let Some(record) = &mut result.pointerargs else { continue };
-        let edits = kuna_pointerargs::insertions(record, &definitions);
-        record.calls.clear();
-        let Some(original) = result.code.as_deref().filter(|_| result.error.is_none()) else {
-            continue;
-        };
-        if edits.is_empty() {
-            continue;
+    let accepted = || results.iter().filter(|r| r.error.is_none() && r.code.is_some());
+    let definitions = kuna_pointerargs::definitions(accepted().filter_map(|r| r.pointerargs.as_ref()));
+    let mut callee_types: BTreeMap<_, Vec<&[TypeInfo]>> = BTreeMap::new();
+    for result in accepted() {
+        if let Some(record) = &result.pointerargs {
+            callee_types.entry(&record.entry).or_default().push(&result.types);
         }
-        let applied = kuna_pointerargs::apply(original, &edits);
-        if applied.code != original {
+    }
+    // Plan against the same final snapshot, before any caller acquires types
+    // from another function. A propagated definition is never a new authority.
+    let plans: Vec<_> = results.iter().map(|result| {
+        let record = result.pointerargs.as_ref()?;
+        let original = result.code.as_deref().filter(|_| result.error.is_none())?;
+        let edits = kuna_pointerargs::insertions(record, &definitions);
+        if edits.is_empty() { return None; }
+        let inject = record.language == OutLang::C && record.struct_defs;
+        let boundary = if inject { pointer_preamble_offset(original, record.preamble_end) } else { None };
+        let site = |position: kuna_pointerargs::Position, end: kuna_pointerargs::Position|
+            (position.line, position.column, end.line, end.column);
+        let mut callees_by_site: BTreeMap<_, Option<&kuna_pointerargs::Entry>> = BTreeMap::new();
+        if inject {
+            for call in &record.calls {
+                callees_by_site.entry(site(call.position, call.end)).and_modify(|callee| {
+                    if *callee != Some(&call.callee) { *callee = None; }
+                }).or_insert(Some(&call.callee));
+            }
+        }
+        let mut dependencies_by_site = BTreeMap::new();
+        let mut candidates = Vec::new();
+        let mut available: BTreeMap<&str, Option<&TypeInfo>> = BTreeMap::new();
+        for edit in edits {
+            if inject && (edit.position.line, edit.position.column)
+                < (record.preamble_end.line, record.preamble_end.column) {
+                continue;
+            }
+            let mut needed = Vec::new();
+            if inject && !edit.dependencies.is_empty() {
+                let Some(callee) = callees_by_site.get(&site(edit.position, edit.end)).copied().flatten() else {
+                    eprintln!("[kuna] {}: pointer cast omitted: missing or ambiguous callee at argument", result.name);
+                    continue;
+                };
+                let Some(sources) = callee_types.get(callee) else { continue };
+                let mut missing = None;
+                for name in &edit.dependencies {
+                    match pointer_dependency(name, &result.types, sources) {
+                        Some(info) => needed.push(info),
+                        None => { missing = Some(name); break; },
+                    }
+                }
+                if let Some(name) = missing {
+                    eprintln!("[kuna] {}: pointer cast omitted: missing or conflicting definition for {name}", result.name);
+                    continue;
+                }
+                if boundary.is_none() && needed.iter().any(|info|
+                    !result.types.iter().any(|own| own.name == info.name && same_pointer_type(own, info))) {
+                    eprintln!("[kuna] {}: pointer cast omitted: invalid type-preamble boundary", result.name);
+                    continue;
+                }
+                for &info in &needed {
+                    available.entry(&info.name).and_modify(|prior| {
+                        if let Some(previous) = *prior {
+                            *prior = merge_pointer_type(previous, info);
+                        }
+                    }).or_insert(Some(info));
+                }
+                dependencies_by_site.insert(site(edit.position, edit.end), needed);
+            }
+            candidates.push(edit);
+        }
+        // Two individually valid callees can disagree about a name. Neither
+        // wins by iteration order, and unrelated sites remain eligible.
+        candidates.retain(|edit| {
+            let conflict = inject && edit.dependencies.iter()
+                .any(|name| available.get(name.as_str()).is_some_and(Option::is_none));
+            if conflict {
+                eprintln!("[kuna] {}: pointer cast omitted: conflicting dependency definitions", result.name);
+            }
+            !conflict
+        });
+        if candidates.is_empty() { return None; }
+        let applied = kuna_pointerargs::apply(original, &candidates);
+        // A skipped capture must not supply a completion for an opaque type
+        // needed by some other site. Select bodies from applied sites only.
+        available.clear();
+        for edit in &applied.inserted {
+            if let Some(needed) = dependencies_by_site.get(&site(edit.position, edit.end)) {
+                for &info in needed {
+                    available.entry(&info.name).and_modify(|prior| {
+                        if let Some(previous) = *prior {
+                            *prior = merge_pointer_type(previous, info);
+                        }
+                    }).or_insert(Some(info));
+                }
+            }
+        }
+        let mut added = Vec::new();
+        let mut names: BTreeSet<&str> = result.types.iter().filter(|info|
+            available.get(info.name.as_str()).and_then(|info| *info)
+                .is_none_or(|actual| same_pointer_type(info, actual)))
+            .map(|info| info.name.as_str()).collect();
+        let mut forwards = BTreeSet::new();
+        let mut preamble = String::new();
+        if inject {
+            for edit in &applied.inserted {
+                let needs_body = edit.dependencies.iter().any(|name| !names.contains(name.as_str()));
+                if needs_body {
+                    for forward in &edit.forwards {
+                        if !original.contains(forward.as_str()) && forwards.insert(forward.as_str()) {
+                            preamble.push_str(forward);
+                            if !forward.ends_with('\n') { preamble.push('\n'); }
+                        }
+                    }
+                }
+            }
+            // Every forward precedes every body, including mutually recursive
+            // cones. Dependency order is the order captured by the printer.
+            for edit in &applied.inserted {
+                for name in &edit.dependencies {
+                    if names.insert(name) {
+                        let info = available.get(name.as_str()).and_then(|info| *info)?;
+                        preamble.push_str(&info.definition);
+                        if !info.definition.ends_with('\n') { preamble.push('\n'); }
+                        added.push(info.clone());
+                    }
+                }
+            }
+        }
+        let mut code = applied.code;
+        let added_lines = preamble.bytes().filter(|byte| *byte == b'\n').count();
+        if !preamble.is_empty() {
+            code.insert_str(boundary?, &preamble);
+        }
+        Some((code, added, record.preamble_end.line, added_lines))
+    }).collect();
+    for (result, plan) in results.iter_mut().zip(plans) {
+        if let Some(record) = &mut result.pointerargs {
+            record.calls.clear();
+            record.texts.clear();
+        }
+        let Some((code, added, boundary_line, added_lines)) = plan else { continue };
+        if result.code.as_deref() != Some(code.as_str()) {
             if let Some(detail) = result.detail.as_mut().filter(|d| d.tokens_error.is_none()) {
                 detail.tokens.clear();
                 detail.tokens_error = Some("pointer-argument casts are not in the token map".into());
             }
         }
-        result.code = Some(applied.code);
+        for info in added {
+            result.types.retain(|existing| existing.name != info.name);
+            result.types.push(info);
+        }
+        if added_lines != 0 {
+            for mapping in &mut result.line_mappings {
+                if mapping.line_number >= boundary_line { mapping.line_number += added_lines; }
+            }
+            for variable in &mut result.variables {
+                for line in &mut variable.line_numbers {
+                    if *line >= boundary_line { *line += added_lines; }
+                }
+            }
+        }
+        result.code = Some(code);
     }
+}
+
+fn same_pointer_type(left: &TypeInfo, right: &TypeInfo) -> bool {
+    left.definition == right.definition && left.size == right.size
+}
+
+/// Existing caller definitions may satisfy a dependency. Opaque declarations
+/// may be completed, but all complete accepted layouts must agree.
+fn pointer_dependency<'a>(
+    name: &str,
+    caller: &'a [TypeInfo],
+    callees: &[&'a [TypeInfo]],
+) -> Option<&'a TypeInfo> {
+    let mut matches = caller.iter().chain(callees.iter().flat_map(|types| types.iter()))
+        .filter(|info| info.name == name);
+    let first = matches.next()?;
+    matches.try_fold(first, merge_pointer_type)
+}
+
+fn merge_pointer_type<'a>(left: &'a TypeInfo, right: &'a TypeInfo) -> Option<&'a TypeInfo> {
+    match (left.definition.contains("/* opaque */"), right.definition.contains("/* opaque */")) {
+        (true, false) => Some(right),
+        (false, true) => Some(left),
+        _ => same_pointer_type(left, right).then_some(left),
+    }
+}
+
+/// Printer positions are byte columns, not display columns. Do not guess the
+/// beginning of the function from its signature or scan for a type's name.
+fn pointer_preamble_offset(code: &str, position: kuna_decomp::kuna_pointerargs::Position) -> Option<usize> {
+    let line = position.line.checked_sub(1)?;
+    let start = if line == 0 { 0 } else {
+        code.bytes().enumerate().filter(|(_, byte)| *byte == b'\n').nth(line - 1)?.0 + 1
+    };
+    let rest = code.get(start..)?;
+    let length = rest.find('\n').unwrap_or(rest.len());
+    if position.column > length { return None; }
+    let offset = start.checked_add(position.column)?;
+    code.is_char_boundary(offset).then_some(offset)
 }
 
 /// The run-level verdict of a non-empty decompile batch.
@@ -252,9 +430,9 @@ pub struct DecompileOptions {
     /// Capture the token source map ([`FuncResult::detail`]); implies the
     /// provenance render.
     pub want_tokens: bool,
-    /// Record [`FuncResult::pointerargs`] for a buffered driver. A batch that
-    /// returns its results ([`decompile_targets_with`]) reconciles them itself;
-    /// a pulled caller owns that step.
+    /// Record C or Rust [`FuncResult::pointerargs`] for a buffered driver. A
+    /// batch that returns its results ([`decompile_targets_with`]) reconciles
+    /// only the final accepted definitions; a pulled caller owns that step.
     pub want_pointer_arguments: bool,
 }
 
@@ -2190,63 +2368,224 @@ mod tests {
         );
     }
 
-    #[test]
-    fn pointer_arguments_use_only_the_final_successful_results() {
+    fn pointer_results(language: kuna_decomp::kuna_lang::OutLang) -> (FuncResult, FuncResult) {
+        use kuna_decomp::kuna_lang::OutLang;
         use kuna_decomp::kuna_pointerargs::{Call, Parameter, Position, Record};
         let storage = (("register".into(), 0x38), 8);
-        let mut callee = streamed("void sink(unsigned char *);", "unsigned char *");
+        let spelling = if language == OutLang::C { "unsigned char *" } else { "*mut u8" };
+        let mut callee = streamed("void sink(unsigned char *);", spelling);
         callee.code = Some("void sink(unsigned char *p) {}".into());
         callee.pointerargs = Some(Record {
-            entry: ("ram".into(), 0x1000),
-            parameters: vec![Some(Parameter { storage: storage.clone(), spelling: "unsigned char *".into() })],
+            entry: ("ram".into(), 0x1000), language, struct_defs: false, texts: vec![],
+            preamble_end: Position { line: 1, column: 0 },
+            parameters: vec![Some(Parameter {
+                storage: storage.clone(), spelling: spelling.into(), void_pointer: false,
+                dependencies: vec![], forwards: vec![],
+            })],
             calls: vec![],
         });
         let mut caller = streamed("long caller(void);", "long");
         caller.code = Some("sink(&v1);".into());
         caller.pointerargs = Some(Record {
-            entry: ("ram".into(), 0x2000), parameters: vec![],
+            entry: ("ram".into(), 0x2000), language, struct_defs: false,
+            preamble_end: Position { line: 1, column: 0 },
+            texts: vec![std::rc::Rc::new("&v1".into())], parameters: vec![],
             calls: vec![Call {
-                callee: ("ram".into(), 0x1000), index: 0, storage, actual: "long *".into(),
-                position: Position { line: 1, column: 5 }, expression: "&v1".into(),
+                callee: ("ram".into(), 0x1000), index: 0, storage,
+                actual: if language == OutLang::C { "long *" } else { "*mut i64" }.into(),
+                position: Position { line: 1, column: 5 },
+                end: Position { line: 1, column: 8 },
+                void_pointer: false, text: 0, text_start: 0, text_end: 3,
             }],
         });
-        for failed in [false, true] {
-            let mut results = vec![caller.clone(), callee.clone()];
-            if failed { results[1].error = Some("timeout".into()); }
-            super::reconcile_pointer_arguments(&mut results);
-            let expected = if failed { "sink(&v1);" } else { "sink((unsigned char *)&v1);" };
-            assert_eq!(results[0].code.as_deref(), Some(expected));
-            super::reconcile_pointer_arguments(&mut results);
-            assert_eq!(results[0].code.as_deref(), Some(expected));
-        }
-        callee.pointerargs.as_mut().unwrap().parameters[0].as_mut().unwrap().spelling = "char *".into();
-        let mut results = vec![caller.clone(), callee.clone()];
-        super::reconcile_pointer_arguments(&mut results);
-        assert_eq!(results[0].code.as_deref(), Some("sink((char *)&v1);"));
+        (caller, callee)
+    }
 
-        // A site that drifted from its text costs only that cast: the body,
-        // its line mappings and the callee's declarations all stand.
-        let record = caller.pointerargs.as_mut().unwrap();
-        let mut drifted = record.calls[0].clone();
-        drifted.position = Position { line: 2, column: 1 };
-        record.calls.push(drifted);
-        let mut later = record.calls[0].clone();
-        later.position.line = 3;
-        record.calls.push(later);
-        caller.code = Some("sink(&v1);\nsink(&v1);\nsink(&v1);".into());
-        caller.line_mappings = vec![kuna_decomp::decompile_drive::LineMapping { line_number: 1, addresses: vec![0x2040] }];
-        caller.detail = Some(Box::default());
+    #[test]
+    fn pointer_arguments_use_only_the_final_successful_results() {
+        use kuna_decomp::kuna_lang::OutLang;
+        use kuna_decomp::kuna_pointerargs::Position;
+        for language in [OutLang::C, OutLang::Rust] {
+            let (mut caller, mut callee) = pointer_results(language);
+            let cast = if language == OutLang::C {
+                "sink(((unsigned char *)(&v1)));"
+            } else {
+                "sink(((&v1) as *mut u8));"
+            };
+            for rejected in 0..3 {
+                let mut results = vec![caller.clone(), callee.clone()];
+                match rejected {
+                    1 => results[1].error = Some("timeout".into()),
+                    2 => results[1].code = None,
+                    _ => {},
+                }
+                super::reconcile_pointer_arguments(&mut results);
+                let expected = if rejected == 0 { cast } else { "sink(&v1);" };
+                assert_eq!(results[0].code.as_deref(), Some(expected));
+                super::reconcile_pointer_arguments(&mut results);
+                assert_eq!(results[0].code.as_deref(), Some(expected));
+            }
+            let mut duplicate = callee.clone();
+            duplicate.pointerargs.as_mut().unwrap().language =
+                if language == OutLang::C { OutLang::Rust } else { OutLang::C };
+            let mut results = vec![caller.clone(), callee.clone(), duplicate];
+            super::reconcile_pointer_arguments(&mut results);
+            assert_eq!(results[0].code.as_deref(), Some("sink(&v1);"));
+            let mut void_caller = caller.clone();
+            let call = &mut void_caller.pointerargs.as_mut().unwrap().calls[0];
+            call.actual = if language == OutLang::C { "void *" } else { "*mut core::ffi::c_void" }.into();
+            call.void_pointer = true;
+            let mut results = vec![void_caller, callee.clone()];
+            super::reconcile_pointer_arguments(&mut results);
+            assert_eq!(results[0].code.as_deref(), Some(if language == OutLang::C { "sink(&v1);" } else { cast }));
+
+            let spelling = if language == OutLang::C { "char *" } else { "*mut i8" };
+            callee.pointerargs.as_mut().unwrap().parameters[0].as_mut().unwrap().spelling = spelling.into();
+            // A drifted site costs only that cast; other sites and declarations stand.
+            let record = caller.pointerargs.as_mut().unwrap();
+            let mut drifted = record.calls[0].clone();
+            drifted.position = Position { line: 2, column: 1 };
+            drifted.end.line = 2;
+            record.calls.push(drifted);
+            let mut later = record.calls[0].clone();
+            later.position.line = 3;
+            later.end.line = 3;
+            record.calls.push(later);
+            caller.code = Some("sink(&v1);\nsink(&v1);\nsink(&v1);".into());
+            caller.line_mappings = vec![kuna_decomp::decompile_drive::LineMapping { line_number: 1, addresses: vec![0x2040] }];
+            caller.detail = Some(Box::default());
+            let mut results = vec![caller, callee];
+            super::reconcile_pointer_arguments(&mut results);
+            let cast = if language == OutLang::C { "sink(((char *)(&v1)));" } else { "sink(((&v1) as *mut i8));" };
+            assert_eq!(results[0].code.as_deref(), Some(format!("{cast}\nsink(&v1);\n{cast}").as_str()));
+            assert!(results[0].error.is_none());
+            assert_eq!(results[0].line_mappings.len(), 1);
+            let detail = results[0].detail.as_ref().unwrap();
+            assert!(detail.tokens.is_empty() && detail.tokens_error.is_some());
+            assert!(results.iter().all(|r| r.pointerargs.as_ref().is_some_and(|p| p.calls.is_empty())));
+        }
+    }
+
+    #[test]
+    fn pointer_argument_dependencies_use_real_accepted_definitions_only() {
+        use kuna_decomp::kuna_lang::OutLang;
+        let (mut caller, mut callee) = pointer_results(OutLang::C);
+        caller.pointerargs.as_mut().unwrap().struct_defs = true;
+        callee.pointerargs.as_mut().unwrap().struct_defs = true;
+        let parameter = callee.pointerargs.as_mut().unwrap().parameters[0].as_mut().unwrap();
+        parameter.spelling = "Node *".into();
+        parameter.dependencies = vec!["Payload".into(), "Node".into()];
+        parameter.forwards = vec!["typedef struct Payload Payload;".into(), "typedef struct Node Node;".into()];
+        callee.types = vec![
+            super::TypeInfo { name: "Payload".into(), definition: "struct Payload { Node *owner; };".into(), size: 8 },
+            super::TypeInfo { name: "Node".into(), definition: "struct Node { Payload value; };".into(), size: 8 },
+        ];
+        let expected = concat!(
+            "typedef struct Payload Payload;\ntypedef struct Node Node;\n",
+            "struct Payload { Node *owner; };\nstruct Node { Payload value; };\n",
+            "sink(((Node *)(&v1)));",
+        );
+        let mut results = vec![caller.clone(), callee.clone()];
+        results[0].line_mappings = vec![super::LineMapping { line_number: 1, addresses: vec![0x2040] }];
+        results[0].variables[0].line_numbers = vec![1];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(), Some(expected));
+        assert_eq!(results[0].types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>(),
+            callee.types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>());
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(), Some(expected));
+        assert_eq!(results[0].types.len(), 2);
+        assert_eq!(results[0].line_mappings[0].line_number, 5);
+        assert_eq!(results[0].variables[0].line_numbers, [5]);
+
+        for invalid in 0..6 {
+            let mut caller = caller.clone();
+            let mut callee = callee.clone();
+            let mut extra = None;
+            match invalid {
+                0 => { callee.types.pop(); },
+                1 => { let mut conflict = callee.types[1].clone(); conflict.size = 16; callee.types.push(conflict); },
+                2 => {
+                    let mut conflict = callee.clone();
+                    conflict.types[1].definition = "struct Node { long wrong; };".into();
+                    extra = Some(conflict);
+                },
+                3 => { callee.error = Some("timeout".into()); },
+                4 => { caller.pointerargs.as_mut().unwrap().calls[0].position.column = 4; },
+                _ => { caller.pointerargs.as_mut().unwrap().preamble_end.line = 0; },
+            }
+            let mut results = vec![caller, callee];
+            results.extend(extra);
+            super::reconcile_pointer_arguments(&mut results);
+            assert_eq!(results[0].code.as_deref(), Some("sink(&v1);"));
+            assert!(results[0].types.is_empty());
+        }
+        // Definitions already printed in the caller are not repeated.
+        let mut existing = caller.clone();
+        existing.types = callee.types.clone();
+        existing.code = Some(expected.replace("sink(((Node *)(&v1)));", "sink(&v1);"));
+        let record = existing.pointerargs.as_mut().unwrap();
+        record.preamble_end.line = 5;
+        record.calls[0].position.line = 5;
+        record.calls[0].end.line = 5;
+        let mut results = vec![existing, callee.clone()];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(), Some(expected));
+        assert_eq!(results[0].types.len(), 2);
+        // The new Node contains an already-defined Payload by value, so its
+        // body belongs AFTER the existing preamble, not before it.
+        let prefix = concat!(
+            "typedef struct Node Node;\ntypedef struct Payload Payload;\n",
+            "struct Payload { Node *owner; };\n",
+        );
+        let mut existing = caller.clone();
+        existing.types = vec![callee.types[0].clone()];
+        existing.code = Some(format!("{prefix}sink(&v1);"));
+        let record = existing.pointerargs.as_mut().unwrap();
+        record.preamble_end.line = 4;
+        record.calls[0].position.line = 4;
+        record.calls[0].end.line = 4;
+        let mut results = vec![existing, callee.clone()];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(),
+            Some(format!("{prefix}struct Node {{ Payload value; }};\nsink(((Node *)(&v1)));").as_str()));
+        assert_eq!(results[0].types.iter().map(|info| info.name.as_str()).collect::<Vec<_>>(), ["Payload", "Node"]);
+
+        // Preserve an actual old opaque forward in the text, but replace its
+        // metadata with the complete accepted layout, in dependency order.
+        let mut opaque = caller.clone();
+        opaque.types = vec![super::TypeInfo {
+            name: "Node".into(), definition: "typedef struct Node Node; /* opaque */".into(), size: 0,
+        }];
+        opaque.code = Some("typedef struct Node Node; /* opaque */\nsink(&v1);".into());
+        let record = opaque.pointerargs.as_mut().unwrap();
+        record.preamble_end.line = 2;
+        record.calls[0].position.line = 2;
+        record.calls[0].end.line = 2;
+        let mut results = vec![opaque, callee.clone()];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(), Some(concat!(
+            "typedef struct Node Node; /* opaque */\ntypedef struct Payload Payload;\n",
+            "struct Payload { Node *owner; };\nstruct Node { Payload value; };\n",
+            "sink(((Node *)(&v1)));",
+        )));
+        assert_eq!(results[0].types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>(),
+            callee.types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>());
+        let mut conflict = caller.clone();
+        conflict.types = vec![super::TypeInfo {
+            name: "Node".into(), definition: "struct Node { long unrelated; };".into(), size: 8,
+        }];
+        let mut results = vec![conflict, callee.clone()];
+        super::reconcile_pointer_arguments(&mut results);
+        assert_eq!(results[0].code.as_deref(), Some("sink(&v1);"));
+        assert_eq!(results[0].types.len(), 1);
+        // With structdefs off, the project header owns definitions and no
+        // per-function metadata or preamble is fabricated.
+        caller.pointerargs.as_mut().unwrap().struct_defs = false;
         let mut results = vec![caller, callee];
         super::reconcile_pointer_arguments(&mut results);
-        assert_eq!(
-            results[0].code.as_deref(),
-            Some("sink((char *)&v1);\nsink(&v1);\nsink((char *)&v1);")
-        );
-        assert!(results[0].error.is_none());
-        assert_eq!(results[0].line_mappings.len(), 1);
-        let detail = results[0].detail.as_ref().unwrap();
-        assert!(detail.tokens.is_empty() && detail.tokens_error.is_some(), "a stale token map is withdrawn");
-        assert!(results.iter().all(|r| r.pointerargs.as_ref().is_some_and(|p| p.calls.is_empty())));
+        assert_eq!(results[0].code.as_deref(), Some("sink(((Node *)(&v1)));"));
+        assert!(results[0].types.is_empty());
     }
 
     /// (kuna `structsynth`) The header prune must decide "referenced" without a
