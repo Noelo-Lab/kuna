@@ -287,8 +287,10 @@ The source-bound comparison uses base `5a1033c9` and runtime `441c0463`.
 Subsequent catalog-tooling and documentation changes do not alter the engine,
 specifications, locked dependencies or native-consumer fixtures.
 
-All 113 Debian ELF inputs across ten architectures complete in both modes:
-19,989 function records, with the same 19 function errors and six automatic
+All 113 corpus ELFs across ten architectures complete in both modes: 107 are
+from official Debian packages; six RV32 inputs are from a downstream Debian-derived
+image, not an official signed Debian archive. Retrieved bytes are hash-pinned.
+The runs retain 19,989 function records, with the same 19 function errors and six automatic
 PPC64 discovery failures. Default C is unchanged. A separate 48-entry explicit
 PPC64 ELFv1 supplement succeeds in both modes; it is not complete ABI coverage.
 The authored allocation controls retain 11 IR tests, 30 focused CLI tests and
