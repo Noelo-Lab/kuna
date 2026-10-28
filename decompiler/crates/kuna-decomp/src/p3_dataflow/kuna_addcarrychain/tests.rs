@@ -374,8 +374,18 @@ mod native_address_consumer {
     }
 
     fn document(enabled: bool, folded_base: Option<u16>) -> String {
+        let mut arch = crate::architecture::Architecture::new(
+            "native carry consumer",
+            kuna_sleigh::sleigh::Sleigh::new(
+                Box::new(kuna_sleigh::loadimage::RawLoadImage::new("unused")),
+                Box::new(kuna_sleigh::globalcontext::ContextInternal::new()),
+            ),
+        );
+        arch.ctypes = true;
         let mut context = ArchContext::new(build_manager());
         context.add_carry_chain = enabled;
+        // IR construction and emission must use the same interned types.
+        context.types = Some(arch.types_rc());
         let context = Rc::new(context);
         let entry = Address::new(Rc::clone(context.manage().get_space_by_name("ram").unwrap()), 0x1000);
         let mut fd = Funcdata::new("carry_fixture", "carry_fixture", context, entry.clone(), 0x10000000, 0x40).unwrap();
@@ -447,18 +457,6 @@ mod native_address_consumer {
             }
         }
         fd.seed_sblocks_copy();
-        let mut arch = crate::architecture::Architecture::new(
-            "native carry consumer",
-            kuna_sleigh::sleigh::Sleigh::new(
-                Box::new(kuna_sleigh::loadimage::RawLoadImage::new("unused")),
-                Box::new(kuna_sleigh::globalcontext::ContextInternal::new()),
-            ),
-        );
-        arch.ctypes = true;
-        arch.types_impl().setup_sizes(Some(4), 8, 8);
-        arch.types_impl().set_default_alignment_map();
-        arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
-        arch.types_impl().cache_core_types().unwrap();
         crate::printc::PrintC::new().doc_function_full(&fd, &arch)
     }
 
