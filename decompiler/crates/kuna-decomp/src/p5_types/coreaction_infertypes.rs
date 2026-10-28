@@ -124,12 +124,10 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
     input_type_local_with(data, op, slot, true)
 }
 
-/// [`input_type_local`] without recovered-callee inference votes: the type a
-/// call argument is required to have, which is what a cast is measured against.
-/// Recovered numeric and floating votes do not require value conversions. A
-/// pointer contract tied to the same physical argument slot can require a
-/// same-width pointer cast without retyping the caller's value or claiming
-/// anything about the pointer's alignment or the pointee's aliasing.
+/// [`input_type_local`] without recovered-callee inference votes. P5 readers
+/// use this as declared evidence, so recovered pointer requirements must not
+/// enter here either. P9's private cast insertion can honor those use-site
+/// contracts without feeding them back into inference.
 pub(crate) fn declared_input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
     input_type_local_with(data, op, slot, false)
 }
@@ -313,8 +311,7 @@ fn call_input_type_local(
         return vararg;
     }
     if !recovered {
-        return crate::kuna_protoorder::pointer_argument_requirement(data, op, fc, slot, arg_size)
-            .or_else(|| crate::kuna_floatreg::argument_requirement(data, fc, op, slot));
+        return crate::kuna_floatreg::argument_requirement(data, fc, op, slot);
     }
     if proto.is_input_locked() {
         return None;

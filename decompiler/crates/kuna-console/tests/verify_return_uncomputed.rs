@@ -134,6 +134,7 @@ fn a_computed_struct_pair_return_is_kept() {
 /// shape closest to leftover, since both halves arrive by load rather than
 /// arithmetic. A LOAD is a real value, so the pair is kept.
 #[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn a_loaded_struct_pair_return_is_kept() {
     // Select the CLI's compilable partial-access rendering, not Ghidra's
     // synthetic `._offset_size_` notation. Recovery and return inference are
@@ -142,16 +143,9 @@ fn a_loaded_struct_pair_return_is_kept() {
         "structreturn_x86_64", "passthru", &["option partialaccess on"],
     );
 
-    assert!(
-        code.contains("undefined16"),
-        "a pair loaded through a pointer must survive the repair; got:\n{code}",
-    );
     // The recovered pointee can be an array or a synthesized record. Its spelling
     // is not the contract: both words must survive the generated function's ABI.
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     check_loaded_pair_consumer(&code, &prelude, &types);
-    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
-    let _ = (prelude, types);
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

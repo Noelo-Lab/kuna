@@ -1494,7 +1494,22 @@ impl Funcdata {
 
     /// `ActionSetCasts::castInput` (coreaction.cc:2743-2810).
     fn cast_input(&mut self, op: OpId, slot: int4, strat: &CastStrategyC) -> int4 {
-        let ct = match get_input_cast(self, strat, op, slot) {
+        // This recovered use-site requirement belongs only to cast insertion.
+        // The shared declared-input query is also P5 inference evidence.
+        let pointer_requirement = self.obank().get(op)
+            .filter(|o| slot > 0 && matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND))
+            .and_then(|_| self.get_call_specs_index(op))
+            .and_then(|index| {
+                let call = self.get_call_specs(index);
+                let size = self.obank().get(op)?.get_in(slot).and_then(|vn| self.vbank().get(vn))?.get_size();
+                crate::kuna_protoorder::pointer_argument_requirement(self, op, call, slot, size)
+            });
+        let pointer_cast = pointer_requirement.and_then(|target| {
+            let input = self.obank().get(op)?.get_in(slot)?;
+            let source = self.vn_high_type_read_facing(input, op);
+            strat.cast_standard(&target, &source, false, true)
+        });
+        let ct = match pointer_cast.or_else(|| get_input_cast(self, strat, op, slot)) {
             Some(c) => c,
             None => {
                 // markExplicitUnsigned / markExplicitLongSize.
@@ -2426,5 +2441,134 @@ mod verify_w10_merge_casts_r2 {
         printer.emit_block(&fd, &arch, copy);
         let code = printer.emit_mut().output_str();
         assert!(code.contains("storage.integer"), "{code}");
+    }
+
+    fn recovered_pointer_call(
+        fd: &mut Funcdata,
+        ram: &Rc<AddrSpace>,
+        source_type: Rc<Datatype>,
+        target_type: Rc<Datatype>,
+    ) -> (OpId, VarnodeId, int4) {
+        let storage = Address::new(Rc::clone(ram), 0x400);
+        let entry = Address::new(Rc::clone(ram), 0x3000);
+        let source = fd.new_varnode(8, &storage, Some(source_type));
+        let source = fd.set_input_varnode(source).unwrap();
+        let call = fd.new_op(2, Address::new(Rc::clone(ram), 0x2000));
+        fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+        fd.op_set_input(call, source, 1).unwrap();
+        let mut specs = crate::fspec::FuncCallSpecs::new(call, entry.clone());
+        specs.proto_mut().attach_internal_store(fd.get_arch().types_rc().unwrap().get_type_void().unwrap());
+        specs.set_final_input_storage(vec![(storage.clone(), 8)]);
+        let index = fd.push_call_specs(specs);
+        let handle = fd.new_varnode_call_specs(index as u64);
+        fd.op_set_input(call, handle, 0).unwrap();
+        fd.kuna_set_protoorder_types(&entry, Rc::new(crate::kuna_protoorder::RecoveredTypes {
+            inputs: vec![(storage, 8, target_type)],
+            arity_sound: false,
+            output: None,
+            result: None,
+            vararg_tail: Vec::new(),
+            reads: Vec::new(),
+            passes: Vec::new(),
+        }));
+        let root = fd.bblocks_ref().root.unwrap();
+        let block = fd.bblocks_mut().new_block_basic(root);
+        fd.op_insert_end(call, block);
+        fd.set_high_level();
+        (call, source, index)
+    }
+
+    #[test]
+    fn recovered_pointer_contract_is_cast_only_not_declared_inference_evidence() {
+        for indirect in [false, true] {
+            let (mut fd, strat, ram) = build();
+            let types = fd.get_arch().types_rc().unwrap();
+            let character = types.get_type_char(1).unwrap();
+            let char_pointer = types.get_type_pointer(8, character, 1).unwrap();
+            let word = types.get_base(8, type_metatype::TYPE_UINT).unwrap();
+            let (source_type, target_type) = if indirect {
+                (
+                    types.get_type_pointer(8, char_pointer, 1).unwrap(),
+                    types.get_type_pointer(8, word, 1).unwrap(),
+                )
+            } else {
+                let mut record = Datatype::new_with_align(8, 8, type_metatype::TYPE_STRUCT);
+                record.name = "recovered_record".to_owned();
+                record.display_name = record.name.clone();
+                record.id = Datatype::hash_name(&record.name);
+                record.kind = crate::dtype::DatatypeKind::Struct {
+                    field: vec![crate::dtype::TypeField::new(0, 0, "word", word)],
+                    bitfield: Vec::new(),
+                };
+                (char_pointer, types.get_type_pointer(8, Rc::new(record), 1).unwrap())
+            };
+            let (call, source, index) =
+                recovered_pointer_call(&mut fd, &ram, Rc::clone(&source_type), Rc::clone(&target_type));
+            let source_high = fd.vbank().get(source).unwrap().get_high().unwrap();
+            let original_high_type = fd.high_get_type(source).unwrap();
+            assert!(Rc::ptr_eq(&original_high_type, &source_type));
+            let own_store = fd.get_func_proto().has_store();
+
+            // P5 charptr/elemptr use this shared query as declared evidence.
+            // A recovered callee's pointer must remain absent from that query.
+            let declared = crate::coreaction_infertypes::declared_input_type_local(&fd, call, 1);
+            assert_eq!(declared.get_metatype(), type_metatype::TYPE_UNKNOWN);
+            assert_eq!(declared.get_size(), 8);
+            assert!(crate::kuna_protoorder::pointer_argument_requirement(
+                &fd, call, fd.get_call_specs(index), 1, 8,
+            ).is_some_and(|required| Rc::ptr_eq(&required, &target_type)));
+            assert_eq!(fd.cast_input(call, 1, &strat), 1);
+            let converted = fd.obank().get(call).unwrap().get_in(1).unwrap();
+            assert_ne!(converted, source);
+            let cast = fd.vbank().get(converted).unwrap().get_def().unwrap();
+            assert_eq!(fd.obank().get(cast).unwrap().code(), OpCode::CPUI_CAST);
+            assert_eq!(fd.obank().get(cast).unwrap().get_in(0), Some(source));
+            assert!(Rc::ptr_eq(&fd.vn_type_read_facing(converted, call), &target_type));
+            assert_eq!(fd.vbank().get(source).unwrap().get_high(), Some(source_high));
+            assert!(Rc::ptr_eq(&fd.high_get_type(source).unwrap(), &original_high_type));
+            assert_eq!(fd.get_func_proto().has_store(), own_store);
+            assert_eq!(fd.get_call_specs(index).proto().num_params(), 0);
+            assert!(!fd.get_call_specs(index).proto().is_input_locked());
+            assert!(!fd.get_call_specs(index).proto().is_output_locked());
+            assert_eq!(
+                crate::coreaction_infertypes::declared_input_type_local(&fd, call, 1).get_metatype(),
+                type_metatype::TYPE_UNKNOWN,
+            );
+        }
+    }
+
+    #[test]
+    fn recovered_pointer_contract_cannot_override_a_locked_parameter() {
+        let (mut fd, strat, ram) = build();
+        let types = fd.get_arch().types_rc().unwrap();
+        let character = types.get_type_char(1).unwrap();
+        let source_type = types.get_type_pointer(8, character, 1).unwrap();
+        let declared_type = types.get_type_pointer(8, Rc::clone(&source_type), 1).unwrap();
+        let recovered_type = types.get_type_pointer(
+            8, types.get_base(8, type_metatype::TYPE_UINT).unwrap(), 1,
+        ).unwrap();
+        let (call, source, index) =
+            recovered_pointer_call(&mut fd, &ram, Rc::clone(&source_type), recovered_type);
+        fd.get_call_specs_mut(index).proto_mut().set_param(0, "declared", &crate::fspec::ParameterPieces {
+            addr: Address::new(Rc::clone(&ram), 0x400),
+            type_: Some(Rc::clone(&declared_type)),
+            flags: crate::fspec::parameter_pieces_flags::TYPELOCK,
+        });
+        assert!(!fd.get_call_specs(index).proto().is_input_locked());
+        assert!(fd.get_call_specs(index).proto().get_param(0).unwrap().is_type_locked());
+        assert!(crate::kuna_protoorder::pointer_argument_requirement(
+            &fd, call, fd.get_call_specs(index), 1, 8,
+        ).is_none());
+        let declared = crate::coreaction_infertypes::declared_input_type_local(&fd, call, 1);
+        assert!(Rc::ptr_eq(&declared, &declared_type));
+        assert_eq!(fd.cast_input(call, 1, &strat), 1);
+        let converted = fd.obank().get(call).unwrap().get_in(1).unwrap();
+        let cast = fd.vbank().get(converted).unwrap().get_def().unwrap();
+        assert_eq!(fd.obank().get(cast).unwrap().code(), OpCode::CPUI_CAST);
+        assert_eq!(fd.obank().get(cast).unwrap().get_in(0), Some(source));
+        assert!(Rc::ptr_eq(&fd.vn_type_read_facing(converted, call), &declared_type));
+        assert!(Rc::ptr_eq(&fd.high_get_type(source).unwrap(), &source_type));
+        assert!(fd.get_call_specs(index).proto().get_param(0).unwrap().is_type_locked());
+        assert!(Rc::ptr_eq(fd.get_call_specs(index).proto().get_param(0).unwrap().get_type().unwrap(), &declared_type));
     }
 }
