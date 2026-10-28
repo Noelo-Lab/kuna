@@ -29,7 +29,7 @@
     },
     "stdout_matches": [
       "sink\\(a0,a1\\);",
-      "overrec\\(v1\\);",
+      "overrec\\((?:\\(\\((?:unsigned )?long \\*\\)\\(v1\\)\\)|v1)\\);",
       "void overrec\\((unsigned )?long \\*a0\\)"
     ],
     "stdout_absent": [

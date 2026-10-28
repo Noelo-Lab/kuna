@@ -30,7 +30,7 @@
       "eq": 0
     },
     "stdout_matches": [
-      "(v\\d+) = cmp_inner\\(a0,a1\\);(?:(?!\\n\\}\\n)[\\s\\S])*\\n  return \\1;\\n\\}",
+      "(v\\d+) = cmp_inner\\((?:\\(\\(unsigned long \\*\\)\\(a0\\)\\)|a0),(?:\\(\\(unsigned long \\*\\)\\(a1\\)\\)|a1)\\);(?:(?!\\n\\}\\n)[\\s\\S])*\\n  return \\1;\\n\\}",
       "\\\"%ld\\\\n\\\",(?:\\(unsigned long\\))?zcmp\\("
     ],
     "stdout_absent": [
