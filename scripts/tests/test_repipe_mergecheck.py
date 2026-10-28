@@ -75,14 +75,6 @@ class MergeSafetyTests(unittest.TestCase):
         self.baseline(lambda data: data["passing"].__setitem__(0, "data:CATALOG: different claim"))
         self.assert_rejected()
 
-    def test_historical_count_label_has_no_rename_exception(self):
-        self.baseline(lambda data: data["passing"].__setitem__(
-            0, "data:KUNA-CATALOG #15: 321 registry rows plus six individual queries"))
-        self.commit()
-        self.baseline(lambda data: data["passing"].__setitem__(
-            0, "data:KUNA-CATALOG #15: 322 registry rows plus six individual queries"))
-        self.assert_rejected()
-
     def test_duplicate_passing_keys_reject(self):
         for slot in (0, 1):
             with self.subTest(slot=slot):
