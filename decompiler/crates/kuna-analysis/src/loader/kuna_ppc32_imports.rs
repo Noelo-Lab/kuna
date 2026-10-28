@@ -1,4 +1,6 @@
-//! PPC32 BSS-PLT entries and secure-PLT call stubs, backed by JMP_SLOT records.
+//! PPC32 BSS-PLT entries and absolute secure-PLT stubs, backed by JMP_SLOTs.
+//! r30-relative stubs require caller register evidence: DT_PPC_GOT describes
+//! a table, not r30, even when the linker has discarded an empty .got2.
 use super::elf_plt::PltSym;
 use object::{
     Architecture, Object, ObjectKind, ObjectSection, ObjectSymbol, RelocationFlags,
@@ -81,11 +83,6 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
     if slots.is_empty() {
         return Vec::new();
     }
-    let base = pic_base(file);
-    let got2_base = file
-        .section_by_name(".got2")
-        .filter(|s| s.size() == 0)
-        .map(|s| (s.address() as u32).wrapping_add(0x8000));
     let mut out = Vec::new();
     for section in file.sections() {
         if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6)
@@ -101,42 +98,15 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
                 break;
             };
             let first = word(file, code);
-            let slot = match first & 0xffff0000 {
-                0x3d600000 | 0x3d7e0000
-                    if word(file, &code[4..]) & 0xffff0000 == 0x816b0000
-                        && word(file, &code[8..]) == 0x7d6903a6
-                        && word(file, &code[12..]) == 0x4e800420 =>
-                {
-                    let anchor = if first & 0x001f0000 == 0 {
-                        Some(0)
-                    } else {
-                        base
-                    };
-                    anchor.map(|b| {
-                        b.wrapping_add(first << 16)
-                            .wrapping_add(word(file, &code[4..]) as u16 as i16 as u32)
-                    })
-                }
-                0x817e0000
-                    if word(file, &code[4..]) == 0x7d6903a6
-                        && word(file, &code[8..]) == 0x4e800420
-                        && word(file, &code[12..]) == 0x60000000 =>
-                {
-                    base.map(|b| b.wrapping_add(first as u16 as i16 as u32))
-                }
-                _ => None,
-            };
-            if first & 0xffff0000 != 0x3d600000 {
-                if let (Some(slot), Some(base), Some(other)) = (slot, base, got2_base) {
-                    if other != base
-                        && slots
-                            .contains_key(&u64::from(slot.wrapping_sub(base).wrapping_add(other)))
-                    {
-                        continue;
-                    }
-                }
+            if first & 0xffff0000 != 0x3d600000
+                || word(file, &code[4..]) & 0xffff0000 != 0x816b0000
+                || word(file, &code[8..]) != 0x7d6903a6
+                || word(file, &code[12..]) != 0x4e800420
+            {
+                continue;
             }
-            if let Some(name) = slot.and_then(|slot| slots.get(&u64::from(slot))) {
+            let slot = (first << 16).wrapping_add(word(file, &code[4..]) as u16 as i16 as u32);
+            if let Some(name) = slots.get(&u64::from(slot)) {
                 out.push(PltSym {
                     addr: section.address() + off as u64,
                     name: name.clone(),
@@ -154,48 +124,4 @@ fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     } else {
         u32::from_be_bytes(bytes)
     }
-}
-
-/// DT_PPC_GOT identifies the small-PIC anchor, unlike DT_PLTGOT (the slots).
-/// A nonempty .got2 permits per-input-object r30 bases, which this decoder cannot
-/// distinguish after linking. Decline those PIC stubs rather than guess a base.
-fn pic_base(file: &object::File<'_>) -> Option<u32> {
-    if file
-        .sections()
-        .any(|s| s.name() == Ok(".got2") && s.size() != 0)
-    {
-        return None;
-    }
-    let dynamic = file.section_by_name(".dynamic")?;
-    let mut base = None;
-    for entry in dynamic.data().ok()?.chunks_exact(8) {
-        let tag = word(file, entry);
-        if tag == 0 {
-            break;
-        }
-        if tag == object::elf::DT_PPC_GOT as u32 {
-            if base.is_some() {
-                return None;
-            }
-            base = Some(word(file, &entry[4..]));
-        }
-    }
-    let base = base?;
-    let got = file.section_by_name(".got")?;
-    if !matches!(got.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 3 == 3) {
-        return None;
-    }
-    let off = usize::try_from(u64::from(base).checked_sub(got.address())?).ok()?;
-    let header = got.data().ok()?.get(off..off.checked_add(12)?)?;
-    if u64::from(word(file, header)) != dynamic.address() {
-        return None;
-    }
-    for sym in file.symbols().chain(file.dynamic_symbols()) {
-        if sym.name() == Ok("_GLOBAL_OFFSET_TABLE_")
-            && (sym.is_undefined() || sym.address() != u64::from(base))
-        {
-            return None;
-        }
-    }
-    Some(base)
 }

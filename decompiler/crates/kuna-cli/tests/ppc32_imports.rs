@@ -21,6 +21,8 @@ struct Fixture {
     got2: bool,
     got_tag: bool,
     bad_stub: bool,
+    pic_collision: bool,
+    missing_got2: bool,
 }
 impl Fixture {
     fn new(plt: Plt) -> Self {
@@ -35,6 +37,8 @@ impl Fixture {
             got2: false,
             got_tag: true,
             bad_stub: false,
+            pic_collision: false,
+            missing_got2: false,
         }
     }
     fn target(&self) -> u32 {
@@ -106,6 +110,31 @@ impl Fixture {
         if returning {
             code.extend(self.words(&[0x38600009, 0x4e800020]));
         }
+        if self.pic_collision {
+            let base = if matches!(self.plt, Plt::Long) {
+                0x20004u32
+            } else {
+                0x2804
+            };
+            let delta = base.wrapping_sub(0x1014);
+            code = self.words(&[
+                0x7c0802a6,
+                0x9421fff0,
+                0x90010014,
+                0x93c10008,
+                0x429f0005,
+                0x7fc802a6,
+                0x3fde0000 | (delta.wrapping_add(0x8000) >> 16),
+                0x3bde0000 | delta as u16 as u32,
+                0x48000001 | ((self.target() - 0x1020) & 0x03fffffc),
+                0x38600007,
+                0x80010014,
+                0x83c10008,
+                0x38210010,
+                0x7c0803a6,
+                0x4e800020,
+            ]);
+        }
         let code_size = code.len() as u32;
         if self.padded {
             code.resize(0x100, 0);
@@ -146,10 +175,16 @@ impl Fixture {
             if matches!(self.plt, Plt::Bss) {
                 vec![]
             } else {
-                self.words(&[0x1900])
+                self.words(if self.pic_collision {
+                    &[0x1900, 0x1904]
+                } else {
+                    &[0x1900]
+                })
             },
             if matches!(self.plt, Plt::Bss) {
                 0x54
+            } else if self.pic_collision {
+                8
             } else {
                 4
             },
@@ -159,7 +194,11 @@ impl Fixture {
         );
         section(".got", 1, 3, got, self.words(&[0x2900, 0, 0]), 0, 0, 0, 0);
         section(
-            ".got2",
+            if self.missing_got2 {
+                ".unused"
+            } else {
+                ".got2"
+            },
             1,
             3,
             0x4000,
@@ -190,8 +229,11 @@ impl Fixture {
         let mut syms = vec![0; 16];
         syms.extend(self.symbol(1, 0, 0, 0x10, 0));
         syms.extend(self.symbol(self.import.len() as u32 + 2, 0x1000, code_size, 0x12, 1));
+        if self.pic_collision {
+            syms.extend(self.symbol(self.import.len() as u32 + 8, 0, 0, 0x10, 0));
+        }
         section(".dynsym", 11, 2, 0x5000, syms, 0, 8, 1, 16);
-        let names = format!("\0{}\0check\0", self.import).into_bytes();
+        let names = format!("\0{}\0check\0extra\0", self.import).into_bytes();
         section(".dynstr", 3, 2, 0x5100, names, 0, 0, 0, 0);
         let slot = if matches!(self.plt, Plt::Bss) {
             0x3048
@@ -203,7 +245,18 @@ impl Fixture {
             4,
             2,
             0x5200,
-            self.words(&[slot, 0x100 | self.relocation, self.addend]),
+            if self.pic_collision {
+                self.words(&[
+                    slot,
+                    0x100 | self.relocation,
+                    self.addend,
+                    slot + 4,
+                    0x315,
+                    0,
+                ])
+            } else {
+                self.words(&[slot, 0x100 | self.relocation, self.addend])
+            },
             0,
             7,
             3,
@@ -224,7 +277,15 @@ impl Fixture {
                 3,
                 0,
                 0,
-                format!("\000000000.plt_pic32.{}\0", self.import).into_bytes(),
+                format!(
+                    "\000000000.plt_pic32.{}\0",
+                    if self.pic_collision {
+                        "extra"
+                    } else {
+                        self.import
+                    }
+                )
+                .into_bytes(),
                 0,
                 0,
                 0,
@@ -325,7 +386,7 @@ impl Fixture {
 
 #[test]
 fn ppc32_import_names_follow_jump_slots_and_complete_stubs() {
-    for plt in [Plt::Bss, Plt::Short, Plt::Long, Plt::Absolute] {
+    for plt in [Plt::Bss, Plt::Absolute] {
         for little in [false, true] {
             for symbolized in [false, true] {
                 let mut fixture = Fixture::new(plt);
@@ -354,7 +415,7 @@ fn ppc32_import_names_follow_jump_slots_and_complete_stubs() {
 
 #[test]
 fn ppc32_no_return_contract_stops_flow_at_the_import() {
-    for plt in [Plt::Bss, Plt::Short, Plt::Long, Plt::Absolute] {
+    for plt in [Plt::Bss, Plt::Absolute] {
         for symbolized in [false, true] {
             for padded in [false, true] {
                 for import in ["__stack_chk_fail", "returning_import"] {
@@ -418,7 +479,9 @@ fn ppc32_no_return_contract_stops_flow_at_the_import() {
 fn ppc32_declines_unproven_import_contracts() {
     for plt in [Plt::Bss, Plt::Short, Plt::Long, Plt::Absolute] {
         for change in 0..5 {
-            if change >= 2 && matches!(plt, Plt::Bss | Plt::Absolute) {
+            if (change >= 2 && matches!(plt, Plt::Bss))
+                || (matches!(change, 2 | 3) && matches!(plt, Plt::Absolute))
+            {
                 continue;
             }
             let mut fixture = Fixture::new(plt);
@@ -442,7 +505,9 @@ fn ppc32_rejects_malformed_metadata_and_out_of_range_slots() {
     use object::ObjectSection as _;
     for plt in [Plt::Bss, Plt::Short, Plt::Long, Plt::Absolute] {
         for change in 0..10 {
-            if change >= 7 && matches!(plt, Plt::Bss | Plt::Absolute) {
+            if (change >= 7 && matches!(plt, Plt::Bss))
+                || (matches!(change, 7 | 8) && matches!(plt, Plt::Absolute))
+            {
                 continue;
             }
             let fixture = Fixture::new(plt);
@@ -524,4 +589,168 @@ fn ppc32_empty_got2_must_not_supply_a_conflicting_slot() {
     }
     let file = object::File::parse(&*bytes).unwrap();
     assert!(kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty());
+}
+
+/// The caller's PC-relative setup establishes r30 = DT_PPC_GOT + 4.
+/// Both candidate slot addresses have JMP_SLOTs, but only the wrong one is
+/// __stack_chk_fail. Removing .got2 does not change the executed instructions.
+#[test]
+fn ppc32_caller_r30_cannot_be_replaced_by_dt_ppc_got() {
+    for plt in [Plt::Short, Plt::Long] {
+        for little in [false, true] {
+            for missing_got2 in [false, true] {
+                let mut fixture = Fixture::new(plt);
+                fixture.pic_collision = true;
+                fixture.little = little;
+                fixture.missing_got2 = missing_got2;
+                let bytes = fixture.bytes();
+                let file = object::File::parse(&*bytes).unwrap();
+                assert_eq!(file.section_by_name(".got2").is_none(), missing_got2);
+                assert_eq!(file.dynamic_relocations().unwrap().count(), 2);
+                let imports = kuna_analysis::loader::format::resolve_imports(&file, &bytes);
+                assert!(
+                    !imports.iter().any(|s| s.addr == u64::from(fixture.target())
+                        && s.name == b"__stack_chk_fail"),
+                    "{plt:?} little={little} missing_got2={missing_got2}: caller uses the other slot"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn ppc32_missing_got2_does_not_truncate_returning_calls() {
+    for plt in [Plt::Short, Plt::Long] {
+        for symbolized in [false, true] {
+            let mut fixture = Fixture::new(plt);
+            fixture.pic_collision = true;
+            fixture.missing_got2 = true;
+            fixture.symbolized = symbolized;
+            let path = common::scratch_file("ppc32-pic-collision", "so");
+            std::fs::write(&path, fixture.bytes()).unwrap();
+            let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .args([
+                    "decompile",
+                    path.to_str().unwrap(),
+                    "check",
+                    "--mode",
+                    "fast",
+                ])
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success(),
+                "{text}\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert!(
+                text.contains("return 7;")
+                    && !text.contains("__stack_chk_fail(")
+                    && !text.contains("no-return"),
+                "{plt:?} symbolized={symbolized}: {text}"
+            );
+            std::fs::remove_file(path).unwrap();
+        }
+    }
+}
+
+#[test]
+fn ppc32_gnu_discarded_got2_preserves_the_reachable_return() {
+    use crate::common::process;
+    for tool in ["powerpc-linux-gnu-gcc", "powerpc-linux-gnu-ld"] {
+        if process::optional_output(Command::new(tool).arg("--version")).is_none() {
+            return;
+        }
+    }
+    let root = common::scratch_file("ppc32-gnu-pic", "dir");
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("check.c");
+    let obj = root.join("check.o");
+    std::fs::write(
+        &source,
+        r#"
+extern void __stack_chk_fail(void);
+extern void other(void), another(void), extra(void);
+void refs(void) { other(); another(); extra(); __stack_chk_fail(); }
+int check(void) { extra(); return 7; }
+"#,
+    )
+    .unwrap();
+    process::required_output(
+        Command::new("powerpc-linux-gnu-gcc")
+            .args([
+                "-O1",
+                "-fPIC",
+                "-msecure-plt",
+                "-fno-unwind-tables",
+                "-fno-asynchronous-unwind-tables",
+                "-c",
+            ])
+            .arg(&source)
+            .arg("-o")
+            .arg(&obj),
+    );
+    for stripped in [false, true] {
+        let path = root.join(if stripped {
+            "stripped.so"
+        } else {
+            "symbolized.so"
+        });
+        let mut link = Command::new("powerpc-linux-gnu-ld");
+        link.args(["-shared", "--secure-plt", "--spare-dynamic-tags=4081"]);
+        if stripped {
+            link.arg("--strip-all");
+        }
+        process::required_output(link.arg(&obj).arg("-o").arg(&path));
+        let bytes = std::fs::read(&path).unwrap();
+        let file = object::File::parse(&*bytes).unwrap();
+        assert!(file.section_by_name(".got2").is_none());
+        assert_eq!(file.dynamic_relocations().unwrap().count(), 4);
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args([
+                "decompile",
+                path.to_str().unwrap(),
+                "check",
+                "--mode",
+                "fast",
+            ])
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success(),
+            "{text}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            text.contains("return 7;")
+                && !text.contains("__stack_chk_fail(")
+                && !text.contains("no-return"),
+            "stripped={stripped}: {text}"
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn ppc32_got_metadata_does_not_establish_r30() {
+    for plt in [Plt::Short, Plt::Long] {
+        for little in [false, true] {
+            for symbolized in [false, true] {
+                for missing_got2 in [false, true] {
+                    let mut fixture = Fixture::new(plt);
+                    fixture.little = little;
+                    fixture.symbolized = symbolized;
+                    fixture.missing_got2 = missing_got2;
+                    let bytes = fixture.bytes();
+                    let file = object::File::parse(&*bytes).unwrap();
+                    assert!(
+                        kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty(),
+                        "{plt:?} little={little} symbolized={symbolized} missing_got2={missing_got2}"
+                    );
+                }
+            }
+        }
+    }
 }

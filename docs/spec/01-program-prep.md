@@ -1117,13 +1117,14 @@ funcsym stream:
   header. Secure-PLT entries are pointer slots instead: complete `r11` load,
   `mtctr r11`, `bctr` stubs in executable sections are named only when their
   decoded address matches such a relocation in the non-executable `.plt`.
-  Absolute stubs carry the address themselves. Small-PIC stubs require
-  `DT_PPC_GOT`, its `.got` header pointing at `.dynamic`, and agreement with
-  any `_GLOBAL_OFFSET_TABLE_` symbol. A nonempty `.got2` permits per-object
-  `r30` bases, so those PIC stubs remain unresolved; neither a plausible offset
-  nor a linker-generated function name establishes a base. An empty `.got2`
-  whose conventional base supplies a conflicting import slot also prevents
-  small-PIC naming. Duplicate relocation
+  Only absolute stubs carry enough evidence to establish that address here.
+  Both short and long `r30`-relative stubs remain unresolved until the caller's
+  register value is proven. `DT_PPC_GOT`, a valid GOT header and a retained
+  `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
+  In particular, GNU ld can discard an empty `.got2` while callers still use
+  its per-object base; assuming the GOT then names a different relocation and
+  can incorrectly remove reachable flow via a no-return contract. The presence,
+  size or absence of `.got2` provides no register-value proof. Duplicate relocation
   slots, nonzero addends, data symbols and incomplete stubs provide no import
   identity. Both ELF byte orders are supported. Resolved PPC32 import names
   take precedence over local stub labels, which remain aliases. Existing
