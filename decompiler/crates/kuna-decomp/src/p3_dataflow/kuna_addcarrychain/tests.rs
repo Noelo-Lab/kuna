@@ -248,7 +248,7 @@ fn specs_one_rule_in_analysis() {
 #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
 mod native_address_consumer {
     use super::*;
-    use crate::dtype::{type_metatype, Datatype};
+    use crate::dtype::{type_metatype, Datatype, TypeFactory};
     use crate::fspec::{parameter_pieces_flags, FuncCallSpecs, ParameterPieces, ProtoModel};
     use std::process::Command;
 
