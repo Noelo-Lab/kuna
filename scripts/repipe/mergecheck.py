@@ -274,7 +274,7 @@ def assert_keepboth(path, base_ref="origin/main", repo=None):
 def assert_baseline_untouched(base_ref="origin/main", repo=None):
     """`docs/baseline.json` is the UPSTREAM baseline. Re-pinning it is a hard reject.
 
-    The 675 upstream assertions are the port's oracle. `tests/stages/` exists in its own
+    The upstream assertions are the port's oracle. `tests/stages/` exists in its own
     directory with its own baseline precisely so that this file is never touched; a branch
     that re-records it has hidden a regression rather than fixed one.
     """

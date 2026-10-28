@@ -132,7 +132,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 
 ### 5. ablation → default decision (gated by speed)
 - Run the full ablation: `kuna test --all --baseline docs/baseline.json`.
-- **If 0/675 upstream assertions change with the feature default-ON _and_ the speed gate passes**
+- **If no upstream behavioral assertion changes with the feature default-ON _and_ the speed gate passes**
   (`speed_within_budget` true, i.e. `speed_delta_pct` ≤ the budget), flip the option default to ON (set the
   flag default in the architecture reset path, `shipped` in the `settableTable` row), say "On by default"
   plus what that default now does in the row's `use_when` prose, and re-verify PARITY OK.
