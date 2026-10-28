@@ -197,18 +197,16 @@ The artifact checklist (every item, or the gates fail opaquely):
    including the provenance contract (§below): `summary`, `use_when`, `values`+`example`,
    `tier`, `symptoms`, `source_decompiler`, `inspiration`, `change_kind`.
 3. Option name registered in `src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`).
-4. **Bump the hard-coded catalog counts** (three places; grep the current total):
-   `src/p0_knowledge/kuna_phases/tests.rs` (count asserts),
-   `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (count asserts **and** the
-   `tests/fixtures/phase_catalog.json` fixture — regenerate it with the console
-   `openfile write`/`phase catalog` recapture documented in that file's header), and the
-   `tests/stages/kuna-catalog.xml` stringmatch counts (bump whichever bucket the new
-   option's `source_decompiler`/`change_kind` lands in).
-   **After any rebase, re-derive these from a fresh capture and a green run — never from
-   arithmetic.** Two of them auto-merge *without a conflict* and are still wrong: an
-   identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
-   keep-both merge of `docs/baseline-stages.json` leaves a stale `data_footer`. Both were
-   hit for real; see `docs/decbench-loop.md` → *Shared counters in a busy queue*.
+4. **Check catalog API/schema consistency and the affected field/value buckets.**
+   Registry membership, tier totals and JSON records are checked against the live tables,
+   not fixed global counts or a catalog snapshot. Derive the remaining
+   `tests/stages/kuna-catalog.xml` bucket expectations with
+   `python -m scripts.repipe.counters --check`; do not revive retired global count pins.
+   **After any rebase, re-derive from the current tree and binary — never arithmetic.**
+   Re-record the stages baseline so its footer matches its actual assertion keys.
+   Keep those identities semantic and stable: registry growth does not justify renaming
+   an assertion, and merge guards reject removals and duplicated rows. See
+   `docs/decbench-loop.md` → *Shared counters in a busy queue*.
 5. **Two-pass stage test** `tests/stages/ghangr-<slug>.xml` (`ghdec-<slug>.xml` for
    decbench-derived fixes with no angr analog): pass 1 `option <slug> off` asserts the
    BUG, pass 2 `option <slug> on` asserts the FIX (as `ghangr-loweredswitch.xml` does —

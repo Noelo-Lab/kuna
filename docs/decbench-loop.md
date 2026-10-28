@@ -220,6 +220,10 @@ The current rules retain the useful checks without restoring incidental layout p
   footer must agree with its actual per-case keys; never merge it by arithmetic.
 - **Review every keep-both resolution for removals and duplicate rows.** A duplicated
   table row survives a textual merge. Run the checks affected by the resolved changes.
+- **Keep assertion identities semantic and stable.** `mergecheck` has no catalog-count
+  rename exception or retired snapshot dependency. A renamed baseline assertion is a
+  removal that requires review; adding registry rows alone must not rename assertions.
+  The merge-safety tests retain removal, duplication, footer and upstream-baseline guards.
 
 Provenance: `source_decompiler = "angr"` stays when angr's behavior is the reference;
 set `inspiration = "decbench:<case-id>; <angr pass/class>; <function>"` — the

@@ -66,8 +66,9 @@ The need is that kuna's *decompiled C* is wrong or bad for a specific function. 
 existing improvement pipeline's territory and its rules apply **verbatim**. Read
 `tools/pipeline/worker_prompt.md` §§3–8 and `docs/improvement-pipeline.md` §3–4 and follow
 them exactly: one `kuna_<slug>.rs` in the owning phase folder, a fully-populated
-`[[settable]]` row, registration in `options.rs`, an Architecture flag defaulted off, **all
-four hard-coded catalog counters**, a two-pass `tests/stages/gh dec-<slug>.xml`, the stages
+`[[settable]]` row, registration in `options.rs`, an Architecture flag defaulted off,
+catalog API/schema checks and affected field/value buckets (not global count pins),
+a two-pass `tests/stages/gh dec-<slug>.xml`, the stages
 baseline re-record, `docs/options.md` regeneration, the owning `docs/spec/` chapter, the
 ablation, and `scripts.pipeline.timeit`.
 
