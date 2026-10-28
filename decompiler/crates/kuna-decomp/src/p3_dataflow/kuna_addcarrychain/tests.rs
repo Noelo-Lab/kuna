@@ -457,7 +457,11 @@ mod native_address_consumer {
             }
         }
         fd.seed_sblocks_copy();
-        crate::printc::PrintC::new().doc_function_full(&fd, &arch)
+        format!(
+            "{}\n{}",
+            crate::decompile_drive::print_c_recompile_prelude(&arch),
+            crate::printc::PrintC::new().doc_function_full(&fd, &arch),
+        )
     }
 
     #[test]
@@ -472,9 +476,7 @@ mod native_address_consumer {
         for folded_base in [None, Some(0xd11a_u16), Some(0xd2c6_u16)] {
             for enabled in [false, true] {
                 let generated = document(enabled, folded_base);
-                // The complete generated function/preamble is inserted verbatim.
-                // CARRY1 is an executable implementation of the p-code
-                // primitive, not an oracle or a replacement for generated code.
+                // Insert the full generated body and genuine runtime support.
                 let program = r#"
 #include <assert.h>
 #include <limits.h>
@@ -489,9 +491,6 @@ static unsigned char *fixture_memory(void) { ++reads[0]; return memory; }
 static unsigned char fixture_screen(void) { ++reads[1]; return screen; }
 static unsigned char fixture_hovered(void) { ++reads[2]; return hovered; }
 static unsigned short fixture_base(void) { ++reads[3]; return base; }
-static unsigned char CARRY1(unsigned char a, unsigned char b) {
-    return (unsigned int)a + (unsigned int)b > UINT8_MAX;
-}
 GENERATED
 int main(void) {
     static const uint16_t bases[] = { BASES };
