@@ -28,10 +28,12 @@
 //! `structreturn_x86_64`, the negative control.
 
 use std::path::PathBuf;
+use std::process::Command;
 
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
+use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -43,7 +45,7 @@ fn fixture(name: &str) -> PathBuf {
 
 /// Bootstrap `bin`, apply `options` (before the analysis commit, as the CLI does),
 /// decompile `func`, and return the captured C.
-fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
+fn decompile_with_types(bin: &str, func: &str, options: &[&str]) -> (String, String, String) {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
@@ -71,7 +73,16 @@ fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
     for _ in 0..count {
         execute(&mut status);
     }
-    status.optr.clone()
+    let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+    let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+    let prog = dcp.conf.as_mut().unwrap();
+    let prelude = print_c_recompile_prelude(prog.arch());
+    let types = print_c_types(prog.arch_mut());
+    (status.optr.clone(), prelude, types)
+}
+
+fn decompile(bin: &str, func: &str, options: &[&str]) -> String {
+    decompile_with_types(bin, func, options).0
 }
 
 /// With no prototype to lock the return, `fmt/main` used to join `RAX:RDX`. The
@@ -123,18 +134,74 @@ fn a_computed_struct_pair_return_is_kept() {
 /// arithmetic. A LOAD is a real value, so the pair is kept.
 #[test]
 fn a_loaded_struct_pair_return_is_kept() {
-    let code = decompile("structreturn_x86_64", "passthru", &[]);
+    let (code, prelude, types) = decompile_with_types("structreturn_x86_64", "passthru", &[]);
 
     assert!(
         code.contains("undefined16"),
         "a pair loaded through a pointer must survive the repair; got:\n{code}",
     );
-    assert!(
-        code.contains("undefined16 passthru(char (*a0)[16])"),
-        "the pointer-to-16-byte-array parameter must retain C declarator precedence; got:\n{code}",
+    // The recovered pointee can be an array or a synthesized record. Its spelling
+    // is not the contract: both words must survive the generated function's ABI.
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+    check_loaded_pair_consumer(&code, &prelude, &types);
+    #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+    let _ = (prelude, types);
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn check_loaded_pair_consumer(code: &str, prelude: &str, types: &str) {
+    let directory = crate::common::scratch_file("loaded-pair-return", "dir");
+    std::fs::create_dir(&directory).unwrap();
+    // The generic project header's byte-array-struct undefined16 is a separate,
+    // preexisting incompatibility with scalar wide returns. State the native
+    // RAX:RDX scalar contract explicitly, keeping every recovered record verbatim.
+    let prelude = prelude.replace(
+        "typedef struct { unsigned char b[16]; } undefined16;",
+        "typedef unsigned __int128 undefined16;",
     );
-    assert!(
-        !code.contains("char *a0[16]"),
-        "the parameter must not regress into an array of pointers; got:\n{code}",
-    );
+    let source = directory.join("consumer.c");
+    std::fs::write(&source, format!(r#"
+#include <stdint.h>
+{prelude}
+{types}
+{code}
+extern unsigned __int128 native_passthru(const void *);
+_Static_assert(sizeof(unsigned long) == 8, "native fixture uses 64-bit words");
+int main(void) {{
+    const uint64_t words[] = {{0,1,UINT64_MAX,UINT64_C(0x8000000000000000),
+        UINT64_C(0x0123456789abcdef),UINT64_C(0xfedcba9876543210)}};
+    for(unsigned i=0;i<sizeof(words)/sizeof(*words);++i) {{
+        for(unsigned j=0;j<sizeof(words)/sizeof(*words);++j) {{
+            _Alignas(16) uint64_t input[2]={{words[i],words[j]}};
+            unsigned __int128 expected=((unsigned __int128)input[1]<<64)|input[0];
+            unsigned __int128 native=native_passthru(input);
+            unsigned __int128 generated=passthru((void *)input);
+            if(native!=expected || generated!=native)return 1;
+        }}
+    }}
+    return 0;
+}}
+"#)).unwrap();
+    for compiler in ["gcc", "clang"] {
+        match Command::new(compiler).arg("--version").output() {
+            Ok(output) => assert!(output.status.success(), "{compiler} --version failed"),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => panic!("cannot run {compiler}: {error}"),
+        }
+        for optimization in ["-O0", "-O2"] {
+            let native = directory.join(format!("{compiler}{optimization}.o"));
+            let output = Command::new(compiler)
+                .args(["-std=gnu11", optimization, "-Dpassthru=native_passthru",
+                    "-Dmake=native_make", "-Dmain=native_main", "-c"])
+                .arg(fixture("structreturn_x86_64.c")).arg("-o").arg(&native).output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            let executable = directory.join(format!("{compiler}{optimization}"));
+            let output = Command::new(compiler)
+                .args(["-std=gnu11", optimization, "-Werror"])
+                .arg(&source).arg(&native).arg("-o").arg(&executable).output().unwrap();
+            assert!(output.status.success(), "{}\n{code}\n{types}", String::from_utf8_lossy(&output.stderr));
+            assert!(Command::new(&executable).status().unwrap().success(), "{compiler} {optimization}\n{code}");
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
 }

@@ -2632,6 +2632,7 @@ impl PrintC {
 
         self.emit_type_definition_preamble(fd);
         self.emit_bytearray_preamble(fd);
+        self.emit_concat_preamble(fd, arch);
 
         let id1 = self.emit.begin_function();
         // emitCommentFuncHeader(fd): the header warning comments (C++
@@ -2704,6 +2705,40 @@ impl PrintC {
             return None;
         }
         crate::kuna_bytearrayc::access(fd, vn)
+    }
+
+    /// Include implied PIECE operations as well as statement roots: split
+    /// loads can require CONCAT only inside a bitcast or another expression.
+    fn emit_concat_preamble(&mut self, fd: &Funcdata, arch: &Architecture) {
+        if self.out_lang != crate::kuna_lang::OutLang::C {
+            return;
+        }
+        let pairs: std::collections::BTreeSet<_> = fd.obank().iter_alive().filter_map(|op| {
+            let operation = fd.obank().get(op)?;
+            if operation.code() != OpCode::CPUI_PIECE || operation.num_input() != 2 {
+                return None;
+            }
+            let out = fd.vbank().get(operation.get_out()?)?;
+            if !out.is_implied() && self.is_suppressed_statement(fd, op) {
+                return None;
+            }
+            if self.partial_concat_plan(fd, arch, op).is_some() {
+                return None;
+            }
+            let high = fd.vbank().get(operation.get_in(0)?)?.get_size();
+            let low = fd.vbank().get(operation.get_in(1)?)?.get_size();
+            (out.get_size() == high + low).then_some((high, low))
+        }).collect();
+        let int128 = arch.manage().get_default_data_space().is_some_and(|space| space.get_addr_size() == 8);
+        for (high, low) in pairs {
+            let Some(text) = crate::p9_emit::kuna_partialconcat::preamble(high, low, self.rt_ctx.model, int128) else {
+                continue;
+            };
+            for line in text.lines() {
+                self.emit.tag_line();
+                self.emit.print(line, SyntaxHighlight::NoColor);
+            }
+        }
     }
 
     fn emit_bytearray_preamble(&mut self, fd: &Funcdata) {
@@ -6544,18 +6579,20 @@ impl PrintC {
         }
     }
 
-    fn op_partial_concat_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+    fn partial_concat_plan(
+        &self, fd: &Funcdata, arch: &Architecture, op: OpId,
+    ) -> Option<(crate::p9_emit::kuna_partialconcat::PartialConcat, std::rc::Rc<crate::dtype::Datatype>)> {
         use crate::dtype::TypeFactory;
         if !arch.partial_concat || self.out_lang != crate::kuna_lang::OutLang::C {
-            return false;
+            return None;
         }
-        let Some(plan) = crate::p9_emit::kuna_partialconcat::preserved_prefix(fd, op) else {
-            return false;
-        };
-        let types = arch.types_rc();
-        let Ok(ty) = types.get_base(plan.size, crate::dtype::type_metatype::TYPE_UINT) else {
-            return false;
-        };
+        let plan = crate::p9_emit::kuna_partialconcat::preserved_prefix(fd, op)?;
+        let ty = arch.types_rc().get_base(plan.size, crate::dtype::type_metatype::TYPE_UINT).ok()?;
+        Some((plan, ty))
+    }
+
+    fn op_partial_concat_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) -> bool {
+        let Some((plan, ty)) = self.partial_concat_plan(fd, arch, op) else { return false };
         self.push_op(&tokens::BITWISE_OR, Some(op_key(op)));
         for (vn, mask) in [(plan.source, plan.high_mask), (plan.low, plan.low_mask)] {
             self.push_op(&tokens::BITWISE_AND, Some(op_key(op)));

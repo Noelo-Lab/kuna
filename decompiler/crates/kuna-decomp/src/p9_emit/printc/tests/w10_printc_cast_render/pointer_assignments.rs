@@ -522,3 +522,71 @@ fn main(){{
     }
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn c_concat_support_truncates_signed_and_odd_parts_once() {
+    use std::fmt::Write;
+    use std::process::Command;
+    let mut support = String::new();
+    let mut checks = String::new();
+    for high in 1..=8 {
+        for low in 1..=8 {
+            support.push_str(&crate::p9_emit::kuna_partialconcat::preamble(
+                high, low, crate::kuna_ctypes::CDataModel::LP64, true,
+            ).unwrap());
+            let mask = |size| u64::MAX >> ((8 - size) * 8);
+            writeln!(checks, r#"
+    calls=0;
+    actual=CONCAT{high}{low}(next_high(),next_low());
+    expected=(((unsigned __int128)((uint64_t)high_value & UINT64_C({}))) << {})
+        | ((uint64_t)low_value & UINT64_C({}));
+    if(calls!=2 || actual!=expected)return 1;
+"#, mask(high), low * 8, mask(low)).unwrap();
+        }
+    }
+    let directory = std::env::temp_dir().join(format!(
+        "kuna-c-concat-{}-{}", std::process::id(),
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(),
+    ));
+    std::fs::create_dir(&directory).unwrap();
+    let source = directory.join("consumer.c");
+    std::fs::write(&source, format!(r#"
+#include <stdint.h>
+{support}
+{support}
+static unsigned calls;
+static int64_t high_value,low_value;
+static int64_t next_high(void){{++calls;return high_value;}}
+static int64_t next_low(void){{++calls;return low_value;}}
+int main(void){{
+    const int64_t values[]={{0,1,-1,-2,INT64_MIN,INT64_MAX,INT64_C(0x123456789abcdef)}};
+    unsigned __int128 actual,expected;
+    for(unsigned i=0;i<sizeof(values)/sizeof(*values);++i){{
+        for(unsigned j=0;j<sizeof(values)/sizeof(*values);++j){{
+            high_value=values[i];low_value=values[j];
+            {checks}
+        }}
+    }}
+    calls=0;high_value=-1;low_value=0x12345678;
+    actual=CONCAT44(CONCAT22(next_high(),next_low()),CONCAT13(next_high(),next_low()));
+    expected=((unsigned __int128)UINT32_C(0xffff5678)<<32)|UINT32_C(0xff345678);
+    return calls!=4 || actual!=expected;
+}}
+"#)).unwrap();
+    for compiler in ["gcc", "clang"] {
+        match Command::new(compiler).arg("--version").output() {
+            Ok(output) => assert!(output.status.success()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => panic!("cannot run {compiler}: {error}"),
+        }
+        for optimization in ["-O0", "-O2"] {
+            let executable = directory.join(format!("{compiler}{optimization}"));
+            let built = Command::new(compiler).args(["-std=gnu11", "-Wall", "-Wextra", "-Werror", optimization])
+                .arg(&source).arg("-o").arg(&executable).output().unwrap();
+            assert!(built.status.success(), "{}", String::from_utf8_lossy(&built.stderr));
+            assert!(Command::new(&executable).status().unwrap().success(), "{compiler} {optimization}");
+        }
+    }
+    std::fs::remove_dir_all(directory).unwrap();
+}

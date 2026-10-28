@@ -346,11 +346,17 @@ words keep ordinary emission. A pair of memory-read halfwords returned in a
 floating-point ABI register retains that register's floating return class even
 when the native scalar reads cannot fuse. Its completed integer word uses the
 same single-evaluation union or `from_bits` transfer, including when the word is
-an implied `PIECE`; no stack-view option is required. Rust spells primitive-word
-concatenations as unsigned-width casts, shifts and ORs rather than requiring a
-`CONCAT` intrinsic. `FLOAT_INT2FLOAT` remains a numeric conversion of its input;
-`FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform their numeric conversions
-after any required input reinterpretation.
+an implied `PIECE`; no stack-view option is required. The whole-program return
+audit also recognizes a same-width storage cast from the convention's VFP
+return register as that bit transfer, not an integer-to-float value conversion:
+it must not withdraw an otherwise valid floating return merely because the
+two unresolved native reads remain separate. A typed native caller that uses
+the result in floating arithmetic establishes a forwarding wrapper's return;
+a bare `call; return` wrapper alone does not establish one. Rust spells
+primitive-word concatenations as unsigned-width casts, shifts and ORs rather
+than requiring a `CONCAT` intrinsic. `FLOAT_INT2FLOAT` remains a numeric
+conversion of its input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform
+their numeric conversions after any required input reinterpretation.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`

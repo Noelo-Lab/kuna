@@ -484,10 +484,11 @@ fn returns_a_call_clobber(data: &Funcdata) -> bool {
 
 /// Does a live RETURN of `data` hand back a value converted from another type:
 /// `return (float)a0[3];` of an `int *`, the float the return register made the
-/// function return arguing with the type its body reads the value as?  A cast
-/// of the result of a callee recovered returning a float converts nothing, and
-/// neither does a cast of a float's own bits ([`float_bits`]) or of an untyped
-/// call result left in a floating register ([`float_register_call_result`]).
+/// function return arguing with the type its body reads the value as? A
+/// same-width storage cast from the convention's floating return register is
+/// instead a bit transfer, including an integer PIECE that assembles native
+/// reads there. Neither that transfer nor a callee's float result, a float's own
+/// bits, or an untyped floating-register call result converts an integer value.
 fn converts_its_return(data: &Funcdata) -> bool {
     use kuna_num::opcodes::OpCode;
     let mut work: Vec<crate::context::VarnodeId> = data
@@ -508,6 +509,12 @@ fn converts_its_return(data: &Funcdata) -> bool {
                     i.get_type().get_metatype() != crate::dtype::type_metatype::TYPE_FLOAT
                         && !float_call_result(data, i)
                         && !float_register_call_result(data, i, v)
+                }) && !from.is_some_and(|i| {
+                    data.vbank().get(v).is_some_and(|out| {
+                        out.get_size() == i.get_size()
+                            && out.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT
+                    })
+                        && crate::kuna_armfloatreturn::convention_float_storage(data, i.get_addr(), i.get_size())
                 }) && !def.get_in(0).is_some_and(|i| float_bits(data, i))
                 {
                     return true;

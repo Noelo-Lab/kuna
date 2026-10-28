@@ -122,3 +122,40 @@ pub(crate) fn preserved_prefix(data: &Funcdata, op: OpId) -> Option<PartialConca
     }
     None
 }
+
+/// Support for functional PIECE fallbacks. Odd-width inputs are masked in the
+/// macro itself, before a function boundary can observe their unused padding.
+/// Each operand occurs once, including when another CONCAT supplies it.
+pub(crate) fn preamble(
+    high: i32,
+    low: i32,
+    model: crate::kuna_ctypes::CDataModel,
+    int128: bool,
+) -> Option<String> {
+    if !(1..=8).contains(&high) || !(1..=8).contains(&low) {
+        return None;
+    }
+    let scalar = |size: i32| {
+        if size > 8 {
+            int128.then_some("unsigned __int128")
+        } else {
+            model.integer_spelling((size as u32).next_power_of_two() as i32, false)
+        }
+    };
+    let word = scalar(high + low)?;
+    let part = |name: &str, size: i32| -> Option<String> {
+        let narrow = scalar(size)?;
+        let cast = format!("({narrow})({name})");
+        let truncated = if (size as u32).is_power_of_two() {
+            cast
+        } else {
+            format!("({cast} & 0x{:x}ULL)", (1u64 << (size * 8)) - 1)
+        };
+        Some(format!("({word})({truncated})"))
+    };
+    let name = format!("CONCAT{high}{low}");
+    Some(format!(
+        "#ifndef {name}\n#define {name}(high,low) (({word})(({} << {}) | {}))\n#endif\n",
+        part("high", high)?, low * 8, part("low", low)?,
+    ))
+}

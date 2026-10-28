@@ -1055,18 +1055,17 @@ fn split_native_reads_keep_float_return_class_and_bit_patterns() {
     let project = directory.path().join("project");
     process::required_output(
         Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile-project").arg(&input)
-            .args(["--functions", "ProbeFloat,ForwardFloat,ProbeBits"])
             .arg("--output").arg(&project),
     );
-    // Keep the product's complete recovered record declarations and bodies.
-    // The consumer supplies only the arithmetic meaning of the p-code join.
+    // The native caller both computes with d0 and reads its pointer argument.
+    // Recover the unfiltered whole program, without imposing any prototype.
     let generated = std::fs::read_to_string(project.join("floating.c")).unwrap();
     let source = project.join("consumer.c");
     std::fs::write(&source, format!(r#"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#define CONCAT44(h,l) (((uint64_t)(uint32_t)(h)<<32)|(uint32_t)(l))
+#include <math.h>
 {generated}
 int main(void) {{
     static const uint64_t cases[] = {{
@@ -1083,7 +1082,7 @@ int main(void) {{
         uint64_t direct_bits,forwarded_bits;
         memcpy(&direct_bits,&direct,8);memcpy(&forwarded_bits,&forwarded,8);
         if(direct_bits!=cases[i]||forwarded_bits!=cases[i]||ProbeBits((void *)object)!=cases[i])return 1;
-        if(i==2&&(direct*2.0+1.0!=15.5||forwarded*2.0+1.0!=15.5))return 2;
+        if(i==2&&(direct*2.0+1.0!=15.5||forwarded*2.0+1.0!=15.5||ComputeFloat((void *)object)!=14.5))return 2;
     }}
     free(object);return 0;
 }}
@@ -1095,5 +1094,73 @@ int main(void) {{
                 .args(["-std=gnu17", level]).arg(&source).arg("-o").arg(&executable));
             process::required_output(&mut Command::new(executable));
         }
+    }
+    let output = process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .arg("decompile-all").arg(&input).args(["--json", "--language", "rust"]));
+    let batch: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let mut rust = String::from("#![allow(non_camel_case_types, non_snake_case, unused_mut, unused_variables, unused_assignments, unused_parens)]\n");
+    // Rust's batch surface supplies bodies, not a module header. Translate the
+    // actual C export's recovered scalar records, rather than guessing a layout.
+    let header = std::fs::read_to_string(project.join("floating.h")).unwrap();
+    let mut record = false;
+    for line in header.lines().map(str::trim) {
+        if line.starts_with("struct ") && line.ends_with(" {") {
+            rust.push_str("#[repr(C)]\n");
+            rust.push_str(line);
+            rust.push('\n');
+            record = true;
+        } else if record && line.starts_with('}') {
+            assert_eq!(line, "};", "unexpected recovered record attributes: {line}");
+            rust.push_str("}\n");
+            record = false;
+        } else if record {
+            let (ty, field) = line.trim_end_matches(';').rsplit_once(' ').unwrap();
+            let ty = match ty {
+                "unsigned int" => "u32",
+                "int" => "i32",
+                "unsigned long long" => "u64",
+                "double" => "f64",
+                other => panic!("unexpected recovered field type: {other}"),
+            };
+            rust.push_str(&format!("{field}: {ty},\n"));
+        }
+    }
+    for function in batch["functions"].as_array().unwrap() {
+        assert!(function["error"].is_null(), "{function}");
+        rust.push_str(function["code"].as_str().unwrap());
+        rust.push('\n');
+    }
+    rust.push_str(r#"
+fn main() {
+    let cases: [u64; 8] = [
+        0, 0x8000000000000000, 0x401d000000000000, 0xc012000000000000,
+        0x0010000000000001, 0x7ff8000000001234, 0xfff8000000005678, 0x7ff0000000001234,
+    ];
+    for bits in cases {
+        let mut object = [bits.to_le()];
+        unsafe {
+            let direct: f64 = ProbeFloat(object.as_mut_ptr().cast());
+            let forwarded: f64 = ForwardFloat(object.as_mut_ptr().cast());
+            let integer: u64 = ProbeBits(object.as_mut_ptr().cast());
+            assert_eq!(direct.to_bits(), bits);
+            assert_eq!(forwarded.to_bits(), bits);
+            assert_eq!(integer, bits);
+            if bits == 0x401d000000000000 {
+                assert_eq!(direct * 2.0 + 1.0, 15.5);
+                assert_eq!(forwarded * 2.0 + 1.0, 15.5);
+                assert_eq!(ComputeFloat(object.as_mut_ptr().cast()), 14.5);
+            }
+        }
+    }
+}
+"#);
+    let rust_source = directory.path().join("floating.rs");
+    std::fs::write(&rust_source, rust).unwrap();
+    for level in ["0", "2"] {
+        let executable = directory.path().join(format!("rust-{level}-floating"));
+        process::required_output(Command::new("rustc")
+            .args(["--edition=2021", "-C"]).arg(format!("opt-level={level}"))
+            .arg(&rust_source).arg("-o").arg(&executable));
+        process::required_output(&mut Command::new(executable));
     }
 }
