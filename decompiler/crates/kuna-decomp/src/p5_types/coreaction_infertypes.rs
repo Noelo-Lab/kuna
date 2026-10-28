@@ -124,10 +124,12 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
     input_type_local_with(data, op, slot, true)
 }
 
-/// [`input_type_local`] without the (kuna `protoorder`) recovered-callee vote: the
-/// type a call argument is REQUIRED to have, which is what a cast is measured
-/// against.  A recovered type is a vote about the value, not a declaration the
-/// value must be converted to, so it never emits a cast.
+/// [`input_type_local`] without recovered-callee inference votes: the type a
+/// call argument is required to have, which is what a cast is measured against.
+/// Recovered numeric and floating votes do not require value conversions. A
+/// pointer contract tied to the same physical argument slot can require a
+/// same-width pointer cast without retyping the caller's value or claiming
+/// anything about the pointer's alignment or the pointee's aliasing.
 pub(crate) fn declared_input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
     input_type_local_with(data, op, slot, false)
 }
