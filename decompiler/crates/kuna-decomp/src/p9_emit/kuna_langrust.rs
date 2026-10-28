@@ -442,7 +442,11 @@ impl PrintC {
                 name = default_name.as_str();
             }
             let ty = match param.get_type() {
-                Some(ty) => declarator_parts(ty, self.rt_ctx).0,
+                Some(ty) => {
+                    let (front, back) = declarator_parts(ty, self.rt_ctx);
+                    self.record_pointer_parameter(fd, i, param, name, ty, &front, &back);
+                    front
+                }
                 None => "()".to_string(),
             };
             self.emit.print("mut", SyntaxHighlight::KeywordColor);

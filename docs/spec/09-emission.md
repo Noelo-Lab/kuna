@@ -341,10 +341,79 @@ adjust_value(first) }).to;`. The call is judged by its prototype's logical
 result width, not the ABI register (an x87 `ST0` result is wider than the
 `float` it holds). Integer operations such as the sign-bit XOR keep the word
 as integer, and values already declared as floats keep their ordinary
-expression. Unnamed expressions and declarations that are not integer words
-keep ordinary emission. `FLOAT_INT2FLOAT` remains a numeric conversion of its
-input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform their numeric
-conversions after any required input reinterpretation.
+expression. Other unnamed expressions and declarations that are not integer
+words keep ordinary emission. A pair of memory-read halfwords returned in a
+floating-point ABI register retains that register's floating return class even
+when the native scalar reads cannot fuse. Its completed integer word uses the
+same single-evaluation union or `from_bits` transfer, including when the word is
+an implied `PIECE`; no stack-view option is required. The whole-program return
+audit also recognizes a same-width storage cast from the convention's VFP
+return register as that bit transfer, not an integer-to-float value conversion:
+it must not withdraw an otherwise valid floating return merely because the
+two unresolved native reads remain separate. A typed native caller that uses
+the result in floating arithmetic establishes a forwarding wrapper's return;
+a bare `call; return` wrapper alone does not establish one. Rust spells
+primitive-word concatenations as unsigned-width casts, shifts and ORs rather
+than requiring a `CONCAT` intrinsic. `FLOAT_INT2FLOAT` remains a numeric
+conversion of its input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform
+their numeric conversions after any required input reinterpretation.
+
+For little-endian 64-bit C targets whose native extended format has ten
+significant bytes, an implied integer `PIECE` consumed as `float10` likewise
+uses an unsigned-128/`long double` union transfer, not a numeric cast. This is a
+body-level storage transfer, not new Rust extended-float support or a claim that
+all exported `float10` record declarations have native C layout. The existing
+record exporter can add explicit padding after a ten-byte logical field even
+when C's `long double` already occupies sixteen bytes; authored-layout consumers
+must establish the native offsets independently.
+The console's extended-storage consumer replays the actual `longdouble.xml`
+setup, retains the genuine exported definition as a receipt, and uses the exact
+source-declared records with independent native offset/extent assertions.
+GCC and Clang at optimization levels 0 and 2 preserve both fields over 49
+payload pairs, including signed zeros, a subnormal, infinity and a quiet NaN.
+The former numeric-cast body compiles but fails that same payload oracle.
+The two former direct-field-forwarding string matches in `longdouble.xml` are
+retired, not repinned to another expression or field-reference pattern. Their
+replacement is `split_extended_float_fields_preserve_native_payloads`, the
+native/generated payload consumer above; only those two obsolete entries and
+their count are removed from the parity baseline, without a merge-guard exception.
+
+Functional C `PIECE` fallbacks also carry their own `CONCAT<high><low>` support
+(`printc.rs (emit_concat_preamble)`, `kuna_partialconcat.rs (preamble)`).
+The printer scans live `PIECE` operations, including implied expressions nested
+inside a bit transfer, rather than only statement roots; the opcode-specific
+operation lists do not include `PIECE`. A fixed pair bitset deduplicates the
+supported one- through eight-byte input widths without a heap-backed set.
+Each generated macro truncates its inputs to their unsigned p-code widths
+before widening, shifting the high word and combining it with the low word.
+Odd-width inputs are masked in the expression, not passed through a helper
+function that could observe an uninitialized carrier's unused upper bytes.
+Each argument occurs once. Results wider than eight bytes use unsigned 128-bit
+storage only on a 64-bit target. Per-name guards let emitted functions share a
+translation unit; the support stays with the function in ordinary, project and
+streamed C output, so consumers need not invent missing helper definitions.
+
+
+Completed-batch C/Rust rendering reconciles object-pointer arguments against the
+callee declarations actually accepted in that batch. Parameter index, physical
+storage and width must agree. If a caller reads a `double` through an address
+that its callee reads as integer record fields, its local pointer type remains
+unchanged and the call receives the necessary cast. An earlier recovered-type
+vote is not a declaration: feedback can later replace a callee's result or
+reject a redo. Missing or ambiguous accepted declarations supply no cast.
+
+The printer records complete argument spans; nested casts group and evaluate
+each expression once, with shared text storage for nested spans. C preserves
+implicit `void *` compatibility, while Rust casts distinct raw-pointer types.
+Structure renaming updates the recorded types and spans. With `structdefs on`,
+casts bring in only the actual callee's required definitions, after the caller's
+existing type preamble; the JSON type records receive the same definitions.
+
+These contracts never become IR `CAST`s or enter P5's shared declared-input
+query, so presentation cannot feed back into character-, element- or
+function-pointer inference. Explicitly locked call parameters retain precedence.
+No prototype is locked, arity is unchanged, and no integer/float class or access
+through the caller's pointer is changed.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
@@ -775,35 +844,38 @@ where the binary's 32-bit write zero-extended it. It is left alone because
 nearly every `int` argument on x86-64 is such a trim, and the cast would land
 on all of them to fix the few whose callee reads the full register.
 
-**Byte-pointer arguments
+**Object-pointer arguments
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_pointerargs.rs`).** Buffered
-`decompile-all`, `decompile-project` and `decompile-graph` reconcile C calls after selecting their
-final successful function results. When a caller passes the address of a whole
-scalar local or parameter to a character-pointer parameter (`char *`,
-`unsigned char *`, or an undefined byte printed as `char`), the call is cast to
-that emitted parameter's type: `sink((unsigned char *)&v1)` for `unsigned long
-v1`. Parameter position and finalized ABI storage must agree. The local keeps
-its declared type and width; C allows a character pointer to access its bytes.
+`decompile-all`, `decompile-project` and `decompile-graph` reconcile C and Rust
+calls after selecting their final successful function results. Actual emitted
+parameter types, matched by position and finalized ABI storage/width, decide
+call-site casts. Scalar addresses and other object-pointer expressions keep
+their original local type, address arithmetic and evaluation count.
 
-The printer records declarations and exact argument positions with each result,
-only for a driver that asks; the batch that returns the final results applies them.
-The buffered driver uses only the accepted results, after any type convergence
-or worker structure renaming. Failed, omitted, and conflicting definitions
-cannot supply a cast. Workers transport the records; this reconciliation never
-re-decompiles a function. Address order, recursive call ordering, filtered
-selections and `protoorder off` do not disable the conversion. `protoorder`
-continues to control inference independently.
+The printer records actual declarations and whole argument spans only when a
+driver asks. The returning batch uses accepted results after feedback and worker
+structure renaming, not earlier recovered-type votes. Failed, omitted and
+conflicting definitions cannot supply a cast. Workers transport this metadata;
+reconciliation never re-decompiles a function or changes inference, arity or IR.
+Address order, recursive ordering, filtered selections and `protoorder off` do
+not turn an available accepted contract into a guess.
 
-Arrays, structures, unions, members, other pointer expressions, varargs and
-per-call prototype overrides abstain. A byte local of another signedness also
-retains the existing spelling. No text search identifies a call: each recorded
-position must still contain its recorded expression before its cast is added. A
-position that does not (an emitter defect) leaves only that argument uncast.
-The inserted text contains no newlines. No buffered driver captures token maps;
-a result that did would have its map withdrawn rather than left misaligned.
-Structure renaming first adjusts the recorded byte columns. Streamed exports, non-C output and standalone `decompile` do not
-reconcile incomplete batches. The worker path still matches
-serial output with `--option protoorder off` on both.
+Every argument span must still match the captured bytes. Properly nested calls
+receive precedence-safe C prefix or Rust suffix casts, each expression once;
+nested spans share one outer text allocation. Invalid or crossing spans decline.
+Renaming updates type spellings, spans and pooled text; an ambiguous rename
+withdraws the affected authority. C's implicit object-pointer/`void *`
+conversions remain implicit; Rust casts differing raw-pointer types explicitly.
+Function pointers, variadics, call-site prototype overrides and explicitly
+locked call parameters do not use this inferred declaration bridge.
+
+With C `structdefs on`, the accepted callee supplies genuine required definition
+records and forwards. Missing or conflicting definitions cannot authorize a
+cast. New bodies follow existing type definitions, and the JSON records and
+provenance lines are updated together. Only genuine compatible incomplete
+struct/union forwards can be completed. Changed token maps are withdrawn rather
+than left misaligned. Streamed exports and standalone `decompile` do not invent
+an authoritative completed batch.
 
 **Casts C already performs (kuna `castimplied`).** `is_extension_cast_implied`
 hides an extension only when integer arithmetic, or a comparison against an

@@ -2817,7 +2817,91 @@ both `readonly` and `volatile` over memory the image does not map prints each
 kept read as a self-assignment at the function's exit. The volatile ranges
 include those a processor specification declares (MSP430, AVR, 8051, PIC and
 others), so default output changes on those processors; loads from any other
-address keep the existing removal rules.
+resolved nonvolatile address keep their existing removal rules.
+
+A discarded native scalar LOAD through an unresolved external pointer is not
+proof of a pure read: it may access a device even when the binary carries no
+volatile-pointee metadata. Native decoding marks these LOADs before analysis;
+injected or analysis-created LOADs do not acquire that provenance. Cloning
+preserves it. Before removal, an unread 1/2/4/8-byte access in byte-addressed
+processor memory becomes a held `read_volatile` effect. Fixed addresses and
+proven implicit frame/thread-storage accesses retain their existing cleanup
+behavior. Repeated operand reads at one instruction use the same deduplication
+policy as known volatile LOADs. The effect keeps its original CFG placement and
+access width, so its guarding branches cannot disappear with an unused result.
+
+If later propagation resolves the address, the effect returns to ordinary LOAD
+analysis: a known volatile address keeps its normal lowering, while proven
+nonvolatile storage can be removed.
+
+SLEIGH LOADs from the architectural register space are not external-memory
+accesses, even on processors whose register file is modeled with dynamic
+LOADs; SPARC window rotation is one such case. Processor-space type alone
+does not distinguish that storage from RAM.
+
+Wide-load fusion cannot retire an unresolved native scalar access, even while
+its output is used: a later rewrite may discard the combined value. It shares
+the removal path's pure address classification and still permits fusion of
+proven ordinary storage, including frame accesses. For those replacements it
+retires native provenance, not independent output liveness. Ordinary dead-code
+removal owns the old LOADs and padding projections, including outputs needed
+by heritage, other consumers or return-register recovery. Known volatile loads
+do not fuse. A rule-transition consumer erases a previously used concatenation
+after fusion has considered it, then executes the emitted reads at protected
+page boundaries to check that neither original scalar access disappears.
+
+Keeping the original scalar reads can expose a three-, five-, six-, or
+seven-byte intermediate concatenation. C assigns such unnamed storage pieces
+with an exact-width byte copy from a fully evaluated unsigned scalar carrier,
+adjusting the carrier address for target endianness. It does not invent a
+member on a scalar, evaluate the expression twice, or read the destination's
+preserved padding to synthesize a wider assignment. These are local storage
+copies, not a change to the original external read widths.
+
+The retained effect carries its dynamic address and address-space metadata,
+and type inference still treats that operand as a pointer. C output uses an
+access-local `volatile` scalar dereference; Rust uses `core::ptr::read_volatile`.
+For multi-byte effects on x86 and AArch64, a single packed scalar supplies
+alignment one without splitting the read into byte accesses: their ordinary
+scalar instructions do not prove natural alignment. C uses a packed, may-alias
+scalar field with the model's resolved integer type; the attributes follow the
+complete anonymous record, so C consumers can resolve its type before the
+pointer cast. Rust reads a packed single-field value. Other processor
+families retain the natural scalar-access alignment contract; C uses the same
+may-alias scalar record without `packed`, since native bits do not establish
+the effective C type of an external object. Applying a packed type
+indiscriminately can split one SPARC access into several device reads.
+The width describes the scalar object, not a universal physical-transaction
+guarantee: Clang's i386 backend can lower a volatile 64-bit scalar to two 32-bit
+reads even with SSE2 enabled, both with and without the packed type.
+Neither changes the formal parameter's qualifiers or requires a fabricated
+helper implementation. The independently authored protected-page round trips
+in `kuna-cli/tests/volatile_loads_cli.rs` check conditional execution, width
+boundaries, pointers reloaded from a frame slot, and valid unaligned addresses;
+the latter also compiles and executes the Rust output and alignment-sanitized C.
+Retaining a pointer-null guard also retains its Rust null-call expression;
+literal expressions do not pass through identifier-name sanitization.
+Rust evaluates a retained read's pointer before entering the packed type's
+nested scope, so the generated type cannot capture a recovered callee name in
+that expression. A round trip calls functions named `NativeRead` and `address`
+and checks that each is still called exactly once.
+Rust also keeps a short-circuit clause's leading assignments inside a block
+expression with a boolean tail, rather than printing C commas as Rust tuples.
+Loaded pointers receive the explicit representation conversion required by
+their declared destination type, including an opaque pointer loaded from a
+`void **` slot.
+Offsets into an opaque record remain pointer-width byte-address arithmetic,
+not invented `field_0x...` members: a known record size does not supply a member
+declaration. The libc obstack round trip checks reads and stores and calls the
+real allocation/free APIs against their installed header without guessing a
+layout. A direct emitter round trip checks offsets above 2/4 GiB and a negative
+offset in both C and Rust.
+
+Discarded Rust native effects read `MaybeUninit` scalars and discard their opaque
+result directly, rather than assigning an initialized integer or fabricating a
+replacement value. The p-code output remains available for width and typing.
+This avoids imposing an initialization requirement on otherwise readable
+storage; packed wrappers still provide alignment one only on permissive ISAs.
 
 **Block-graph cleanup** (mainloop tail): `ActionUnreachable` deletes blocks
 flow cannot reach (`Funcdata::remove_unreachable_blocks`); `ActionDoNothing`

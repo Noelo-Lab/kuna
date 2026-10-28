@@ -90,6 +90,10 @@
 
     Pass 1 (default), pass 2 (option dedupvardecls off) and pass 3 (option
     namestyle ghidra) all print every function correctly.
+    k1's two by-value arguments are also executed by the native consumer in
+    kuna-harness/src/testfunction/tests.rs. It mutates px during the first call
+    and requires the second call to retain the earlier snapshot, independently
+    of which local names or field/copy expressions the printer chooses.
 -->
 <bytechunk space="ram" offset="0x1100">
 f30f1efa415741564155415455534883ec18488954240885f6746b89f689c84189cd4889fd
@@ -278,12 +282,6 @@ if \(!object_00\) goto</stringmatch>
 object-&gt;skip = 0;</stringmatch>
 <stringmatch name="calleenamedlocals #6: a member never overwrites the representative" min="0" max="0">object = \*(v2|Var2);</stringmatch>
 <stringmatch name="calleenamedlocals #7: the cleared flag never lands on a member" min="0" max="0">object_00-&gt;skip = 0;</stringmatch>
-<stringmatch name="calleenamedlocals #8: k1 builds y in its own variable and passes x second" min="3" max="3">pt = \*px;
-pt_00.b = d \* 0xb;
-pt_00.a = c \* 7;
-take\(pt_00\);
-take\(pt\);</stringmatch>
-<stringmatch name="calleenamedlocals #9: k1 never stores y's fields into x" min="0" max="0">^ +pt\.(a|b) = </stringmatch>
 <stringmatch name="calleenamedlocals #10: m1 and m2 build and pass the local, not the global" min="9" max="9">^ +obj_1\.b = d \* (0xb|5);
 obj_1\.a = c \* (7|3);
 put\(obj_1,(1|2)\);</stringmatch>

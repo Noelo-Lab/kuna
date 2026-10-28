@@ -2300,10 +2300,12 @@ fn dc_is_eventual_constant(data: &Funcdata, vn: VarnodeId, max_binary: i32, max_
 /// proven to read a volatile range is held on every pass, including one whose
 /// readers consume none of its bits (which the sweep would otherwise delete as
 /// never consumed), unless its instruction already reads that address.
-fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bool {
+/// Unresolved native scalar reads become explicit effects before their unused
+/// results and guarding branches can disappear.
+fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> (bool, int4) {
     use crate::p3_dataflow::kuna_volatileload;
     if data.is_jumptable_recovery_on() {
-        return false;
+        return (false, 0);
     }
     let consumed_load = |data: &Funcdata, load: OpId| {
         data.obank()
@@ -2315,6 +2317,7 @@ fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bo
     let loads: Vec<OpId> = data.obank().iter_code(OpCode::CPUI_LOAD).collect();
     let mut memo = kuna_volatileload::Memo::new();
     let mut res = false;
+    let mut changes = 0;
     for op in loads {
         let o = data.obank().get(op).expect("lastChanceLoad: stale op");
         if o.is_dead() {
@@ -2336,6 +2339,13 @@ fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bo
         if volatile && kuna_volatileload::rereads(data, op, &mut memo, consumed_load) {
             continue;
         }
+        if !volatile && kuna_volatileload::preserve_discarded(data, op, &mut memo) {
+            dc_push_consumed(data, !0u64, ptr, worklist);
+            dc_push_consumed(data, !0u64, vn, worklist);
+            changes += 1;
+            res = true;
+            continue;
+        }
         let eventual = volatile
             || (!vacuous
                 && data.get_heritage_pass() <= 1
@@ -2346,7 +2356,7 @@ fn dc_last_chance_load(data: &mut Funcdata, worklist: &mut Vec<VarnodeId>) -> bo
             res = true;
         }
     }
-    res
+    (res, changes)
 }
 
 /// C++ `ActionDeadCode::apply` (coreaction.cc:4146).
@@ -2491,14 +2501,15 @@ fn deadcode_apply(data: &mut Funcdata) -> ApplyResult {
     while !worklist.is_empty() {
         dc_propagate_consumed(data, &mut worklist);
     }
-    if dc_last_chance_load(data, &mut worklist) {
+    let (rescued, load_changes) = dc_last_chance_load(data, &mut worklist);
+    if rescued {
         while !worklist.is_empty() {
             dc_propagate_consumed(data, &mut worklist);
         }
     }
 
     // 6. Sweep: remove dead ops, replace never-consumed values, reconcile.
-    let mut total_change = policy_changes;
+    let mut total_change = policy_changes + load_changes;
     for spc in &spaces {
         let spc = Rc::clone(spc);
         if !spc.does_deadcode() {

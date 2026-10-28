@@ -39,7 +39,7 @@
       "dat_402006 = sub_40112f\\(a0,3\\);",
       "sub_401139\\(a0\\);",
       "return sub_40112f\\(a0,3\\); // tail-call",
-      "return sub_40117d\\(a0,a3\\); // tail-call",
+      "return sub_40117d\\(a0,(?:\\(\\(unsigned long \\*\\)\\(a3\\)\\)|a3)\\); // tail-call",
       "return sub_401185\\(a0,a3\\); // tail-call"
     ],
     "stdout_absent": [
@@ -51,5 +51,5 @@
     ]
   },
   "notes": "0x401019 (jmp) and 0x40101b (call; test) forward rdi to a callee that reads it: each gains the parameter. 0x401036 (rdi is a helper's leftover) and 0x40106f (variadic callee) gain nothing. Controls keep every option-off argument: 0x401143 noop();twoarg(p,3), 0x401159/0x401165 vout(p);twoarg(p,3), 0x401190 sysinttostr. The control's parameter type is left open (elemptr may name a pointer there).",
-  "probe_id": "p-660b10e2bc38"
+  "probe_id": "p-db0af970db69"
 }

@@ -197,16 +197,15 @@ The artifact checklist (every item, or the gates fail opaquely):
    including the provenance contract (§below): `summary`, `use_when`, `values`+`example`,
    `tier`, `symptoms`, `source_decompiler`, `inspiration`, `change_kind`.
 3. Option name registered in `src/p0_knowledge/options.rs` (`KUNA_OPTION_NAMES`).
-4. **Bump the hard-coded catalog counts** (three places; grep the current total):
-   `src/p0_knowledge/kuna_phases/tests.rs` (count asserts),
-   `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (count asserts **and** the
-   `tests/fixtures/phase_catalog.json` fixture — regenerate it with the console
-   `openfile write`/`phase catalog` recapture documented in that file's header), and the
-   `tests/stages/kuna-catalog.xml` stringmatch counts (bump whichever bucket the new
-   option's `source_decompiler`/`change_kind` lands in).
-   **After any rebase, re-derive these from a fresh capture and a green run — never from
-   arithmetic.** Two of them auto-merge *without a conflict* and are still wrong: an
-   identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
+4. **Check the applicable registry and catalog bucket counters**:
+   `src/p0_knowledge/kuna_phases/tests.rs` and
+   `tests/stages/kuna-catalog.xml` (the new option's
+   `source_decompiler`/`change_kind` buckets).
+   The captured catalog byte fixture is retired; changing registry prose must not
+   require copying that prose into a test.
+   **After any rebase, re-derive counters from the built catalog and a green run —
+   never from arithmetic.** Identical count edits can auto-merge *without a conflict*:
+   an identical `N → N+1` edit on both sides merges to `N+1` when the answer is `N+2`, and a
    keep-both merge of `docs/baseline-stages.json` leaves a stale `data_footer`. Both were
    hit for real; see `docs/decbench-loop.md` → *Shared counters in a busy queue*.
 5. **Two-pass stage test** `tests/stages/ghangr-<slug>.xml` (`ghdec-<slug>.xml` for
@@ -233,12 +232,17 @@ opt-in:
 
 | Ablation (option ON) | Speed (`timeit`) | Ship as |
 |---|---|---|
-| 0/675 assertions change | within budget (≤5%) | **default-ON**: keep the flipped `default =`, and say "On by default" plus what that default now does in the row's `use_when` prose |
-| 0/675 assertions change | over budget / unmeasured | default-OFF opt-in, `speed_forced_off: true` |
-| >0 assertions change | — | default-OFF opt-in |
+| No upstream behavioral assertion changes | within budget (≤5%) | **default-ON**: keep the flipped `default =`, and say "On by default" plus what that default now does in the row's `use_when` prose |
+| No upstream behavioral assertion changes | over budget / unmeasured | default-OFF opt-in, `speed_forced_off: true` |
+| An upstream behavioral assertion changes | — | default-OFF opt-in |
 
 **Never re-pin `docs/baseline.json`.** The speed gate can only demote default-ON to
-opt-in. Measure with:
+opt-in. An intentional retirement of a representation-only test requires explicit
+review, a behavioral replacement, and deletion of only its baseline keys/footer
+contribution. It is not permission to re-record expected output; all remaining
+baseline claims stay unchanged.
+
+Measure with:
 
 ```bash
 python3 -m scripts.pipeline.timeit --record docs/features/<slug>/record.json \
@@ -246,7 +250,7 @@ python3 -m scripts.pipeline.timeit --record docs/features/<slug>/record.json \
 ```
 
 **The four gates, all green, before commit**:
-`make test` (**PARITY OK** 675/675) · `make test-stages` (**PARITY OK**) ·
+`make test` (**PARITY OK**) · `make test-stages` (**PARITY OK**) ·
 `make rust-test` · `make check-spec`. Plus `kuna catalog --check` → `catalog OK`.
 
 **The PR** carries the per-feature bundle `docs/features/<slug>/`:

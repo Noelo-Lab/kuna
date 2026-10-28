@@ -116,21 +116,63 @@ fn the_report_names_the_serial_run_it_can_actually_replay() {
 
 #[test]
 fn a_structure_rename_rebases_recorded_pointer_arguments() {
-    use kuna_decomp::kuna_pointerargs::{Call, Position, Record};
+    use kuna_decomp::kuna_pointerargs::{Call, Parameter, Position, Record};
     let mut r = sample_result();
-    r.code = Some("struct_3 *p; sink(&v1);".into());
+    let code = "struct_3 *p; sink(source((struct_3 *)&v1));";
+    let expression = "source((struct_3 *)&v1)";
+    let argument = "(struct_3 *)&v1";
+    let expression_start = code.find(expression).unwrap();
+    let argument_start = expression.find(argument).unwrap();
+    r.code = Some(code.into());
     r.pointerargs = Some(Record {
-        entry: ("ram".into(), 0x2000), parameters: vec![],
+        entry: ("ram".into(), 0x2000),
+        language: kuna_decomp::kuna_lang::OutLang::C, struct_defs: true,
+        preamble_end: Position { line: 1, column: 13 },
+        texts: vec![std::sync::Arc::new(expression.into())],
+        parameters: vec![Some(Parameter {
+            storage: (("register".into(), 0x38), 8), spelling: "struct_3 *".into(),
+            void_pointer: false, dependencies: vec!["struct_3".into()],
+            forwards: vec!["typedef struct struct_3 struct_3;".into()],
+        })],
         calls: vec![Call {
             callee: ("ram".into(), 0x1000), index: 0,
-            storage: (("register".into(), 0x38), 8), actual: "long *".into(),
-            position: Position { line: 1, column: 17 }, expression: "&v1".into(),
+            storage: (("register".into(), 0x38), 8), actual: "struct_3 *".into(),
+            position: Position { line: 1, column: expression_start },
+            end: Position { line: 1, column: expression_start + expression.len() },
+            void_pointer: false, text: 0, text_start: 0, text_end: expression.len(),
         }],
     });
+    let record = r.pointerargs.as_mut().unwrap();
+    let mut nested = record.calls[0].clone();
+    nested.position.column = expression_start + argument_start;
+    nested.end.column = expression_start + argument_start + argument.len();
+    nested.text_start = argument_start;
+    nested.text_end = argument_start + argument.len();
+    record.calls.push(nested);
     let own = [Some(("struct_3".into(), Some(request(4))))];
     let serial = [Some(("struct_100".into(), Some(request(4))))];
     let renamed = super::rename_result(&r, Some(&own), &serial, &[]).unwrap();
-    assert_eq!(renamed.code.as_deref(), Some("struct_100 *p; sink(&v1);"));
+    let expected_code = "struct_100 *p; sink(source((struct_100 *)&v1));";
+    let expected_expression = "source((struct_100 *)&v1)";
+    let expected_argument = "(struct_100 *)&v1";
+    let expected_start = expected_code.find(expected_expression).unwrap();
+    let expected_argument_start = expected_expression.find(expected_argument).unwrap();
+    assert_eq!(renamed.code.as_deref(), Some(expected_code));
     assert!(renamed.field_calls.iter().all(|f| f.record == "struct_100"));
-    assert_eq!(renamed.pointerargs.unwrap().calls[0].position.column, 19);
+    let record = renamed.pointerargs.unwrap();
+    assert_eq!(record.preamble_end, Position { line: 1, column: 15 });
+    assert_eq!(record.texts.len(), 1);
+    assert_eq!(record.texts[0].as_str(), expected_expression);
+    assert_eq!((record.calls[0].position.column, record.calls[0].end.column),
+        (expected_start, expected_start + expected_expression.len()));
+    assert_eq!((record.calls[1].position.column, record.calls[1].end.column),
+        (expected_start + expected_argument_start, expected_start + expected_argument_start + expected_argument.len()));
+    assert_eq!((record.calls[0].text_start, record.calls[0].text_end), (0, expected_expression.len()));
+    assert_eq!((record.calls[1].text_start, record.calls[1].text_end),
+        (expected_argument_start, expected_argument_start + expected_argument.len()));
+    assert!(record.calls.iter().all(|call| call.actual == "struct_100 *"));
+    let parameter = record.parameters[0].as_ref().unwrap();
+    assert_eq!(parameter.spelling, "struct_100 *");
+    assert_eq!(parameter.dependencies, ["struct_100"]);
+    assert_eq!(parameter.forwards, ["typedef struct struct_100 struct_100;"]);
 }

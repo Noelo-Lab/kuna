@@ -2217,17 +2217,43 @@ mod tests {
         let mut a = sample_result();
         a.synth = Some(Default::default());
         a.pointerargs = Some(kuna_decomp::kuna_pointerargs::Record {
-            entry: ("ram".into(), a.byte_address),
+            entry: ("pointer-contract-space".into(), a.byte_address),
+            language: kuna_decomp::kuna_lang::OutLang::C, struct_defs: true,
+            preamble_end: kuna_decomp::kuna_pointerargs::Position { line: 3, column: 0 },
+            texts: vec![std::sync::Arc::new("source(\n&v1)".into())],
             parameters: vec![None, Some(kuna_decomp::kuna_pointerargs::Parameter {
-                storage: (("register".into(), 0x38), 8), spelling: "unsigned char *".into(),
+                storage: (("register".into(), 0x38), 8), spelling: "Node *".into(),
+                void_pointer: false, dependencies: vec!["Payload".into(), "Node".into()],
+                forwards: vec!["typedef struct Payload Payload;".into(), "typedef struct Node Node;".into()],
             })],
             calls: vec![kuna_decomp::kuna_pointerargs::Call {
                 callee: ("ram".into(), 0x1000), index: 1,
                 storage: (("register".into(), 0x38), 8), actual: "unsigned long *".into(),
                 position: kuna_decomp::kuna_pointerargs::Position { line: 3, column: 7 },
-                expression: "&v1".into(),
+                end: kuna_decomp::kuna_pointerargs::Position { line: 4, column: 4 },
+                void_pointer: false, text: 0, text_start: 0, text_end: 12,
             }],
         });
+        let record = a.pointerargs.as_mut().unwrap();
+        let mut nested = record.calls[0].clone();
+        nested.position = kuna_decomp::kuna_pointerargs::Position { line: 4, column: 0 };
+        nested.end = kuna_decomp::kuna_pointerargs::Position { line: 4, column: 3 };
+        nested.actual = "void *".into();
+        nested.void_pointer = true;
+        nested.text_start = 8;
+        nested.text_end = 11;
+        record.calls.push(nested);
+        let mut rust = a.clone();
+        let record = rust.pointerargs.as_mut().unwrap();
+        record.language = kuna_decomp::kuna_lang::OutLang::Rust;
+        record.struct_defs = false;
+        let parameter = record.parameters[1].as_mut().unwrap();
+        parameter.spelling = "*mut core::ffi::c_void".into();
+        parameter.void_pointer = true;
+        parameter.dependencies.clear();
+        parameter.forwards.clear();
+        record.calls[0].actual = "*mut u64".into();
+        record.calls[1].actual = "*mut core::ffi::c_void".into();
         let b = FuncResult {
             name: "sub_1234".into(),
             address: 0x1234,
@@ -2255,6 +2281,7 @@ mod tests {
         {
             let mut w = ResultWriter::create(&path).unwrap();
             w.push(&a).unwrap();
+            w.push(&rust).unwrap();
             w.push(&b).unwrap();
         }
         let full = std::fs::read(&path).unwrap();
@@ -2268,19 +2295,52 @@ mod tests {
         malformed[marker] = 0xff;
         assert!(decode_results(&malformed).unwrap().is_empty());
         let decoded = decode_results(&full).unwrap();
-        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded.len(), 3);
         assert!(same(&decoded[0], &a));
-        assert!(same(&decoded[1], &b));
+        assert!(same(&decoded[1], &rust));
+        assert!(same(&decoded[2], &b));
+        let record = decoded[0].pointerargs.as_ref().unwrap();
+        assert_eq!(record.texts.len(), 1, "nested arguments share one decoded pool entry");
+        assert_eq!(&record.texts[record.calls[1].text][record.calls[1].text_start..record.calls[1].text_end], "&v1");
+        assert_eq!(full[..first_end].windows(12).filter(|bytes| *bytes == b"source(\n&v1)").count(), 1);
+        // Every wire offset is untrusted, including a valid UTF-8 string's
+        // substring boundaries and the end of a multiline argument span.
+        for invalid in 0..7 {
+            let mut bad = a.clone();
+            let record = bad.pointerargs.as_mut().unwrap();
+            match invalid {
+                0 => record.calls[0].text = usize::MAX,
+                1 => record.calls[0].text_end = usize::MAX,
+                2 => record.calls[0].text_start = 12,
+                3 => record.calls[0].end = record.calls[0].position,
+                4 => record.calls[0].position.line = 0,
+                5 => record.preamble_end.line = 0,
+                _ => {
+                    record.texts[0] = std::sync::Arc::new("é".into());
+                    record.calls[0].text_end = 1;
+                },
+            }
+            ResultWriter::create(&path).unwrap().push(&bad).unwrap();
+            assert!(decode_results(&std::fs::read(&path).unwrap()).unwrap().is_empty());
+        }
+        let entry = full.windows(22).position(|bytes| bytes == b"pointer-contract-space").unwrap();
+        let language_at = entry + 22 + 8;
+        let parameter = full.windows(6).position(|bytes| bytes == b"Node *").unwrap();
+        for at in [language_at, language_at + 1, parameter + 6] {
+            let mut bad = full.clone();
+            bad[at] = 2;
+            assert!(decode_results(&bad).unwrap().is_empty());
+        }
         assert_eq!(
             decoded[0].callee_hints,
             vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
             "the --stream scheduler's frontier has to survive the wire"
         );
-        assert!(decoded[1].callee_hints.is_empty());
+        assert!(decoded[2].callee_hints.is_empty());
     }
 
     #[test]
-    fn result_encoding_matches_the_version_eleven_wire_layout() {
+    fn result_encoding_matches_the_version_twelve_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2308,7 +2368,7 @@ mod tests {
             detail: None,
         };
         let expected = [
-            b"KUNAJOBRES11\x01\x51\0\0\0".as_slice(),
+            b"KUNAJOBRES12\x01\x51\0\0\0".as_slice(),
             b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
             b"\xff\xff\xff\xff\xff\xff\xff\xff",
             b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",

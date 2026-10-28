@@ -1768,6 +1768,14 @@ fold on a table whose labels rely on its current default; a fold clears
 the structuring so the new edge is re-structured, and the constant-predicate
 residue is severed on the re-run by `ActionDeterminedBranch`.
 
+Normalization also releases native-read retention for LOADs in the dispatch
+prefix through the selected switch variable. Their table accesses are already
+represented by the recovered switch, unlike a LOAD that produces the selector
+itself. Reviving the dead dispatch calculation after guard folding would add
+an unguarded table read on default inputs. The executable switch round trip in
+`kuna-cli/tests/volatile_loads_cli.rs` compares the printed C with the native
+fixture for cases and out-of-range selectors.
+
 The default-path model (JumpBasic2) handles surviving guards differently
 (`jumptable.rs (JumpBasicModel::fold_in_guards)`). Its final table row is the
 constant destination selected on the alternate path, and its `NO_LABEL` means

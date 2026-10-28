@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "a-9808e9ae27fb",
+  "probe_id": "a-ff256a53ab43",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -29,7 +29,7 @@
     },
     "stdout_matches": [
       "sink\\(a0,a1\\);",
-      "overrec\\(v1\\);",
+      "overrec\\((?:\\(\\((?:unsigned )?long \\*\\)\\(v1\\)\\)|v1)\\);",
       "void overrec\\((unsigned )?long \\*a0\\)"
     ],
     "stdout_absent": [

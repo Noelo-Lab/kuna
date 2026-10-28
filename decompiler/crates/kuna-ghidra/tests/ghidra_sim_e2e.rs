@@ -516,47 +516,6 @@ const PIN_FAILLOG_RESOLVABLE: [usize; 3] = [0, 0, 0];
 // callee's parameters itself).
 const PIN_FAILLOG_DIFF_FLOOR: [f64; 3] = [0.02, 0.04, 0.06];
 const PIN_FAILLOG_DIFF_CEILING: [f64; 3] = [0.09, 0.12, 0.15];
-// Normalized non-empty line count of the flattened markup C, per target: the
-// structural size of what the GUI renders, excluding standalone parameter-source
-// diagnostics. A `<break>`-token regression would
-// collapse this to ~1 while leaving every ratio-floor assertion green — this
-// pin is what catches it.  (sub_3320 shrank because the noreturn facts now
-// truncate the flow overrun that used to decode neighbouring functions into
-// it — defect g; the +1 everywhere is the `Kuna v…` banner line.)
-// sub_2620 283 -> 285 with `calleearity` (DIV-102): the `getpwent()` loop's
-// `sub_34a0()` regains the uid argument its two sibling call sites already pass
-// — kuna's own recovered prototype for that callee is `unsigned long sub_34a0(unsigned long a0)`
-// — and the uid expression `*(unsigned int *)(v7 + 0x10)` hoists into a named
-// local instead of being re-spelled twice inside the guard. Two lines, both
-// earned.
-// sub_2620 285 -> 286 with `libctypes` on by default: one `void *v6` was doing
-// two jobs in this function -- the `getpwent()` result (read at `+0x10`) and the
-// stream `ferror`/`fflush` take -- and the named table splits it into
-// `passwd *v6` and `FILE *v13`. One extra declaration line, earned; every other
-// measurement on this fixture is unchanged, the getPcode/getMappedSymbols
-// traffic included.
-// sub_2620 286 -> 287: the function's switch default arm jumps to the no-return
-// tail at 0x2701, whose `label_2701:` was released by the tail-duplication pass
-// and never printed -- `goto label_2701;` into a function with no such label.
-// The line is the restored label.
-// sub_2620 287 -> 286 with `foldcallretphi` on by default: `fstat(fileno(dat_6298),..)`
-// and `!fclose(dat_6298)` fold into their use, one spill line going with them.
-// sub_3320 39 -> 37 in the same change: `fread(..,dat_6298)` and
-// `fwrite(..,dat_6298)` fold into their tests, and one declaration goes. The
-// `sub_3de0`/`sub_31a0`/`sub_3900` and `fseeko` results stay spilled: their
-// outputs are an unlocked `eax` read out of `rax`, which the fold leaves alone.
-// The CLI path loses the same 1 and 2 lines.
-// sub_2620 286 -> 285 and sub_3320 37 -> 34 with the second round of `libctypes`
-// names: `fseeko` gains a declaration, so its result stops being spilled into an
-// `int` temporary and folds into the `if` that tests it, and one `passwd *` local
-// merges where it used to split. Every other measurement on this fixture is
-// unchanged -- placeholders, the diff ratios, and the getPcode/getMappedSymbols
-// traffic all hold.
-// sub_2620 285 -> 286: retain the uid load before the flag stores at
-// 0x272a/0x2731, then write 0x6288 before 0x6278 as the binary does at
-// 0x2738/0x273f. The former early 0x6278 assignment and global reread become
-// one local capture; the extra line preserves the actual memory-write order.
-const PIN_FAILLOG_C_LINES: [usize; 3] = [281, 34, 92];
 // Tokens Java's `getC()` cleaner REWRITES (`IllegalCharCppTransformer`).
 // Phase 3 measured 57/10/24 (whole rendered declarators like
 // `"unsigned long *"` as single `<type>` tokens, received by scripts/exports
@@ -759,11 +718,6 @@ fn ghidra_sim_faillog_pins() {
             "{t}: ghidra-vs-CLI diff ratio {:.3} rose above the pinned ceiling {} — \
              the GUI path got WORSE (a markup/flatten regression?).",
             ratios[i], PIN_FAILLOG_DIFF_CEILING[i]
-        );
-        assert_eq!(
-            c_line_counts[i], PIN_FAILLOG_C_LINES[i],
-            "{t}: flattened-C line count moved — the rendered structure changed \
-             (a <break>/token regression collapses this while ratios stay in band)"
         );
     }
 

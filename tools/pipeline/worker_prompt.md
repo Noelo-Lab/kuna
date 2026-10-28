@@ -112,12 +112,10 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
   the `universalAction` registration (`coreaction*.rs` / `universalaction.rs`) and the option in
   `options.rs`, and add the `settableTable` row (rule 4). Gate the action to early-return when the
   flag is off so default output is byte-identical.
-- **Bump the hard-coded catalog counts** (adding an option changes them in THREE places; missing one
-  fails `make rust-test`/`make test-stages` opaquely): the count asserts in
-  `src/p0_knowledge/kuna_phases/tests.rs`; the count asserts AND the `tests/fixtures/phase_catalog.json`
-  fixture in `decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs` (regenerate the fixture with the
-  console recapture documented in that file's header); and the `tests/stages/kuna-catalog.xml` stringmatch
-  counts (bump whichever bucket your `source_decompiler`/`change_kind` lands in).
+- Check applicable registry counts in `src/p0_knowledge/kuna_phases/tests.rs` and
+  catalog buckets in `tests/stages/kuna-catalog.xml`, deriving them from the built
+  registry rather than arithmetic. The captured catalog byte fixture is retired:
+  registry prose changes must not require a second copy in a test.
 
 ### 4. build + test
 - `make binaries`. Then write `tests/stages/ghangr-{{SLUG}}.xml`: a two-pass `decompilertest` — pass 1 with
@@ -134,7 +132,7 @@ where `<PHASE>` ∈ analyze, design, code, build, test, docs, commit, pr. If you
 
 ### 5. ablation → default decision (gated by speed)
 - Run the full ablation: `kuna test --all --baseline docs/baseline.json`.
-- **If 0/675 upstream assertions change with the feature default-ON _and_ the speed gate passes**
+- **If no upstream behavioral assertion changes with the feature default-ON _and_ the speed gate passes**
   (`speed_within_budget` true, i.e. `speed_delta_pct` ≤ the budget), flip the option default to ON (set the
   flag default in the architecture reset path, `shipped` in the `settableTable` row), say "On by default"
   plus what that default now does in the row's `use_when` prose, and re-verify PARITY OK.

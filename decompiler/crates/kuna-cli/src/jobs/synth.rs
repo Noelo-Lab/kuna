@@ -209,6 +209,8 @@ fn only_types_are_renamed(r: &FuncResult, map: &[(String, String)]) -> bool {
 /// `r` with its structures renamed from `own` to `serial`, or `None` when the
 /// two answer lists do not name structures with the same members, or the
 /// function's text names one the renaming does not cover.
+/// Pointer contracts follow the same identifier edits through `Record::renamed`,
+/// including pooled expressions, nested ranges and accepted type dependencies.
 fn rename_result(
     r: &FuncResult,
     own: Option<&[shard::Answer]>,

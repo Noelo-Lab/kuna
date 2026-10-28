@@ -4887,6 +4887,19 @@ impl JumpModel for JumpBasicModel {
         let switchvn = self
             .switchvn
             .ok_or_else(|| KunaError::lowlevel("foldInNormalization: switchvn not recovered"))?;
+        // These dispatch reads are represented by the switch itself. Reviving
+        // them after its bounds guards fold would introduce unguarded accesses.
+        let index = self.path_meld.common_vn.iter().position(|&vn| vn == switchvn)
+            .ok_or_else(|| KunaError::lowlevel("foldInNormalization: switchvn outside model"))?;
+        for rooted in &self.path_meld.op_meld {
+            if rooted.root_vn <= index as int4 {
+                if let Some(op) = rooted.op.and_then(|id| fd.obank_mut().get_mut(id)) {
+                    if op.code() == OpCode::CPUI_LOAD {
+                        op.clear_additional_flag(crate::op::pcodeop_addlflags::kuna_native_load);
+                    }
+                }
+            }
+        }
         fd.op_set_input(indop, switchvn, 0)?;
         Ok(Some(switchvn))
     }

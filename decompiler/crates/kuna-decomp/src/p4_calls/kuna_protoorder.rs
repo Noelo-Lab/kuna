@@ -228,6 +228,7 @@ pub fn call_argument_vote(
     vote_holds(data, op, fc, slot, arg_size, &bare)?.then_some(bare)
 }
 
+
 /// [`call_argument_vote`]'s refusals for one candidate type `ct`.
 fn vote_holds(
     data: &Funcdata,
@@ -579,6 +580,49 @@ fn splits_a_wide_constant(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, 
     })
 }
 
+/// Joining memory-read halfwords does not change the type of a value the ABI
+/// returns in a floating-point register. The parts remain integer storage;
+/// emission must reinterpret the completed word, not convert its value.
+fn assembles_float_return(data: &Funcdata, vn: VarnodeId, definition: OpId) -> bool {
+    let Some(value) = data.vbank().get(vn) else { return false };
+    let size = value.get_size();
+    if !matches!(size, 4 | 8)
+        || !crate::kuna_floatreg::returned_in_a_float_register(data, vn, value)
+    {
+        return false;
+    }
+    let Some(piece) = data.obank().get(definition).filter(|o| o.num_input() == 2) else {
+        return false;
+    };
+    let word_load = |mut input| {
+        for _ in 0..8 {
+            let Some(part) = data.vbank().get(input).filter(|part| part.get_size() * 2 == size) else {
+                return false;
+            };
+            let Some(producer) = part.get_def().and_then(|id| data.obank().get(id)) else {
+                return false;
+            };
+            match producer.code() {
+                OpCode::CPUI_LOAD => return !through_the_frame(data, producer),
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+                    let Some(source) = producer.get_in(0) else { return false };
+                    input = source;
+                }
+                _ => return false,
+            }
+        }
+        false
+    };
+    (0..2).all(|slot| {
+        let Some(input) = piece.get_in(slot) else { return false };
+        word_load(input)
+            && matches!(
+                data.vn_type_read_facing(input, definition).get_metatype(),
+                type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+            )
+    })
+}
+
 /// Does anything else about the value `vn` outrank the vote `ct`?
 ///
 /// A float vote also needs every other reader and writer of the value to be a
@@ -635,6 +679,7 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
                 Some(OpCode::CPUI_LOAD) if matches!(reading, Reading::Member(_)) && !own(def) => {
                     loaded_elsewhere = true;
                 }
+                Some(OpCode::CPUI_PIECE) if float_vote && assembles_float_return(data, vn, def) => {}
                 Some(code) => match produced_class(code) {
                     Some(Class::Float) => float_seen = true,
                     Some(Class::Integer) => integer_seen = true,

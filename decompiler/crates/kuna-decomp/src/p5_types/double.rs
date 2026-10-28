@@ -5026,6 +5026,14 @@ impl Rule for RuleDoubleLoad {
         if data.is_stack_byte_copy_op(load0) || data.is_stack_byte_copy_op(load1) {
             return 0;
         }
+        let mut memo = crate::p3_dataflow::kuna_volatileload::Memo::new();
+        for load in [load0, load1] {
+            if crate::p3_dataflow::kuna_volatileload::is_volatile_with(data, load, &mut memo)
+                || crate::p3_dataflow::kuna_volatileload::unresolved_native_read(data, load, &mut memo)
+            {
+                return 0;
+            }
+        }
         let latest = match RuleDoubleLoad::no_write_conflict(data, loadlo, loadhi, spc, None) {
             Some(l) => l,
             None => return 0, // There was a conflict
@@ -5062,6 +5070,14 @@ impl Rule for RuleDoubleLoad {
         data.op_remove_input(op, 1);
         set_opcode_typed(data, op, OpCode::CPUI_COPY);
         op_set_input(data, op, vnout, 0);
+
+        // Only proven ordinary storage can retire native provenance here.
+        // Keep independent output liveness for heritage and return recovery;
+        // ordinary dead-code removal owns the LOADs and padding projections.
+        for load in [load0, load1] {
+            data.obank_mut().get_mut(load).expect("dload: original load")
+                .clear_additional_flag(crate::op::pcodeop_addlflags::kuna_native_load);
+        }
 
         1
     }

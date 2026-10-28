@@ -20,11 +20,11 @@
 //!
 //! The roots are the function's semantic type surface — its prototype's return
 //! and parameter types, every Varnode's data-type, and every mapped Symbol type
-//! behind a HighVariable.  That is a SUPERSET of the type names the printer can
-//! spell: every type name in the emitted C is read off one of those three
-//! (declarations from the highs and their symbols, the signature from the
-//! prototype, a cast from the Varnode type it casts to), so the preamble cannot
-//! miss a definition the body refers to.  Collecting from the token stream
+//! behind a HighVariable. Declarations come from highs and symbols, signatures
+//! from prototypes, and IR casts from their Varnode types. Completed-batch
+//! argument casts use the accepted callee's actual dependency records instead:
+//! an earlier recovered-callee snapshot is not an emitted declaration.
+//! Collecting the local roots from tokens
 //! instead would be exact, but it would also miss the struct behind
 //! `p->field_0x8`, whose tag name is never printed at all.
 //!
@@ -152,6 +152,13 @@ pub fn referenced_call_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
         }
     }
     order
+}
+
+/// The actual definition cone of one printed parameter, in dependency order.
+pub fn dependency_types(ty: &Rc<Datatype>) -> Vec<Rc<Datatype>> {
+    let mut order = Vec::new();
+    visit(ty, &mut HashSet::new(), &mut order);
+    dedup_by_name(&order)
 }
 
 /// Postorder DFS over one type's dependency cone (C++

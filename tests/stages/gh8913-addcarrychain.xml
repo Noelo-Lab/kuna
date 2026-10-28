@@ -17,15 +17,13 @@
       ((0xNN less-than x) byte compare);
     * the SECOND add per path keeps the raw CARRY1 intrinsic.
 
-  Pass 1 (default pipeline) reproduces the bug: the page-cross carry leaks as
-  CONCAT11((0xNN less-than ...)...) on both paths and as CONCAT11(...CARRY1(...))
-  on both paths.
+  Pass 1 uses the default carry-chain recovery. Pass 2 explicitly disables it
+  and retains the two old carry idioms checked below. The default's exact
+  pointer-expression spelling is not a contract: scalar reads may use
+  byte-preserving copies instead of typed pointer dereferences.
 
-  Pass 2 (option addcarrychain on) fuses each ADC pair into a single 16-bit add
-  (base-pointer + zext(index)), so the CONCAT11/CARRY1 idiom is gone and the
-  first add per path renders as the readable literal-base add (0xd11a + index /
-  0xd2c6 + index).  The fix is gated behind a default-off Architecture flag
-  (option addcarrychain), so the default pipeline is byte-identical to upstream.
+  The native before/after consumer in kuna_addcarrychain/tests.rs checks
+  page-cross carry and 16-bit wraparound independently of that spelling.
 -->
 <bytechunk space="RAM" offset="0x0">
 ad1a04c903f005c905f04360a91a8500a9d18501ad01040a1865008500a50169008501a000b1008502c8b1008503ad0b040a1865028502a50369008503a000b1028d2504c8b1028d2604209b8260a9c68500a9d28501ad01040a1865008500a50169008501a000b1008502c8b1008503ad0b040a1865028502a50369008503a000b1028d2504c8b1028d2604209b8260
@@ -45,6 +43,4 @@ ad1a04c903f005c905f04360a91a8500a9d18501ad01040a1865008500a50169008501a000b10085
 </script>
 <stringmatch name="GH8913 #1: addcarrychain off leaks CONCAT11((0xNN &lt; ...) (old behavior, both paths)" min="2" max="2">CONCAT11\(\(0x[0-9a-f]+ &lt;</stringmatch>
 <stringmatch name="GH8913 #1b: addcarrychain off leaks raw CARRY1 inside CONCAT11 (old behavior, both paths)" min="2" max="2">CONCAT11\(.*CARRY1\(</stringmatch>
-<stringmatch name="GH8913 #2: default pipeline fuses path-3 first add into a wide add (fix is DIV-2 default)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd11a\)</stringmatch>
-<stringmatch name="GH8913 #2b: default pipeline fuses path-5 first add into a wide add (fix is DIV-2 default)" min="1" max="1">\(int2 \*\)\(\(uint1\)\(\(char\)current_screen \* '\\x02'\) \+ 0xd2c6\)</stringmatch>
 </decompilertest>

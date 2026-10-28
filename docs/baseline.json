@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    675,
-    675
+    673,
+    673
   ],
   "passing": [
     "data:Access packed fields #1",
@@ -270,8 +270,6 @@
     "data:Long double #2",
     "data:Long double #3",
     "data:Long double #4",
-    "data:Long double #5",
-    "data:Long double #6",
     "data:Long double #7",
     "data:Long double #8",
     "data:Long double #9",

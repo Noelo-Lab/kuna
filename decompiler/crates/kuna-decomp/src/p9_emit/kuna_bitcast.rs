@@ -72,7 +72,7 @@ pub(crate) fn storage_transfer(
             .flatten()
     };
     let size = src.get_size();
-    if !matches!(size, 4 | 8) || dst.get_size() != size {
+    if !matches!(size, 4 | 8 | 10) || dst.get_size() != size {
         return None;
     }
     let slot = operation.get_slot(input);
@@ -127,6 +127,22 @@ pub(crate) fn storage_transfer(
     let to_float = to == type_metatype::TYPE_FLOAT && (integer(from) || source_pointer);
     if !to_float && !(from == type_metatype::TYPE_FLOAT && (integer(to) || pointer(&to_ty))) {
         return None;
+    }
+    // x87 extended values assembled from integer memory words carry ten
+    // significant bytes, not an integer to convert numerically. A named
+    // unknown10 can still print as a byte array, so only a scalar PIECE
+    // expression establishes the wide-integer source representation here.
+    if size == 10 {
+        let producer = src.get_def().and_then(|op| fd.obank().get(op));
+        let types = fd.get_arch().types()?;
+        let space = fd.get_arch().manage().get_default_data_space()?;
+        if !to_float || !src.is_implied()
+            || !producer.is_some_and(|op| op.code() == OpCode::CPUI_PIECE)
+            || types.get_size_of_long_double() != 10
+            || space.is_big_endian() || space.get_addr_size() != 8
+        {
+            return None;
+        }
     }
     Some(Transfer {
         input,
@@ -244,6 +260,46 @@ pub(crate) fn word_result(fd: &Funcdata, decl_high_type: bool, op: OpId) -> Opti
         && declared.get_size() == size
         && matches!(declared.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT))
         .then_some(declared)
+}
+
+/// A completed integer word returned through a floating-point ABI slot keeps
+/// its bits even when the PIECE expression is implied and has no declaration.
+pub(crate) fn assembled_float_return(
+    fd: &Funcdata,
+    decl_high_type: bool,
+    op: OpId,
+    input: VarnodeId,
+) -> Option<Transfer> {
+    if !fd.get_func_proto().has_store() {
+        return None;
+    }
+    let target = fd.get_func_proto().get_output_type()?;
+    if target.get_metatype() != type_metatype::TYPE_FLOAT || !matches!(target.get_size(), 4 | 8) {
+        return None;
+    }
+    let value = fd.vbank().get(input)?;
+    if target.get_size() != value.get_size() {
+        return None;
+    }
+    let producer = value.get_def().and_then(|id| fd.obank().get(id))?;
+    if producer.code() != OpCode::CPUI_PIECE || producer.num_input() != 2 {
+        return None;
+    }
+    let printed = crate::printc::declared_variable_type(fd, decl_high_type, input)
+        .unwrap_or_else(|| fd.vn_type_read_facing(input, op));
+    if printed.get_size() != value.get_size()
+        || !matches!(printed.get_metatype(),
+            type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN)
+    {
+        return None;
+    }
+    Some(Transfer {
+        input,
+        target: Rc::clone(target),
+        size: value.get_size(),
+        to_float: true,
+        source_pointer: false,
+    })
 }
 
 /// Explicit word storage keeps its bits when a native float op consumes it.

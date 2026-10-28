@@ -50,7 +50,14 @@ fn helpers(base: u64) -> Vec<(String, u64)> {
 }
 
 fn decompile(image: &std::path::Path, base: u64, memset: Option<u64>, mode: &str) -> String {
-    let mut asserts = vec![format!("function 0x{base:x}=parse_header")];
+    decompile_function(image, base, memset, mode, "parse_header", &[])
+}
+
+fn decompile_function(
+    image: &std::path::Path, base: u64, memset: Option<u64>, mode: &str,
+    name: &str, options: &[(&str, &str)],
+) -> String {
+    let mut asserts = vec![format!("function 0x{base:x}={name}")];
     asserts.extend(helpers(base).into_iter().map(|(n, a)| format!("function 0x{a:x}={n}")));
     asserts.extend(memset.map(|a| format!("function 0x{a:x}=memset")));
     let entry = format!("0x{base:x}");
@@ -72,6 +79,9 @@ fn decompile(image: &std::path::Path, base: u64, memset: Option<u64>, mode: &str
     ];
     for a in &asserts {
         args.extend(["--assert", a.as_str()]);
+    }
+    for &(option, value) in options {
+        args.extend(["--option", option, value]);
     }
     let (stdout, stderr, status) = common::run_kuna(&args);
     assert_eq!(status, 0, "{stderr}");
@@ -129,58 +139,139 @@ fn reliable_keeps_ghidra_notation() {
     assert!(!code.contains("struct_"), "{code}");
 }
 
-/// The clang -O0 build's record is the whole 24-byte header (memset's byte
-/// count), so its emitted C can be run against the source's own helpers: a
-/// member at the wrong offset or of the wrong sign returns another value.
-#[test]
-fn emitted_record_reads_the_fields_the_source_wrote() {
-    let code = decompile(&image(), 0x601000, Some(0x60117f), "aggressive");
-    assert!(code.contains("memset(&v1,0,0x18);"), "{code}");
+/// Keep both the full-record and scalar-piece consumers executable. The latter
+/// uses a no-op setup callback, so it never depends on unrelated stack locals
+/// being contiguous in the generated C.
+fn check_header_reads(code: &str, whole_header: bool, tag: &str) {
+    let full = u8::from(whole_header);
     let program = format!(
         r#"
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
+#define FULL_HEADER {full}
 struct header {{ unsigned int magic; unsigned short version; unsigned char w, h; unsigned int count; unsigned char *pixels; }};
-static const unsigned char bytes[8] = {{0x45, 0x48, 0x44, 0x52, 3, 0, 0xc8, 1}};
-static unsigned char pixels[256];
-void fetch(void *dst, unsigned long n) {{ for (unsigned long i = 0; i < n; i++) ((unsigned char *)dst)[i] = bytes[i]; }}
-void setup(void *p) {{
-    struct header *h = p;
-    h->count = h->w * h->h;
-    for (unsigned i = 0; i < h->count; i++) pixels[i] = (unsigned char)(i * 37);
-    h->pixels = pixels;
+static unsigned char bytes[8],pixels[65536];
+static unsigned fetches,setups,reports,bad;
+static void *address;
+void fetch(void *dst,unsigned long n) {{
+    ++fetches; address=dst;
+    if(n!=sizeof(bytes)){{bad=1;return;}}
+    memcpy(dst,bytes,sizeof(bytes));
 }}
-int report(unsigned int w, unsigned int h, unsigned long sum) {{ return (int)(w * 1000 + h * 100 + sum); }}
+void setup(void *p) {{
+    ++setups;
+    if(p!=address)bad=1;
+    if(FULL_HEADER) {{
+        struct header *h=p;
+        if(h->count!=0 || h->pixels!=NULL)bad=1;
+        h->count=h->w*h->h;
+        for(unsigned i=0;i<h->count;++i)pixels[i]=(unsigned char)(i*37);
+        h->pixels=pixels;
+    }}
+}}
+int report(unsigned int w,unsigned int h,unsigned long sum) {{
+    ++reports;
+    if(w!=bytes[6] || h!=bytes[7])bad=1;
+    return (int)(w*1000+h*100+sum);
+}}
 {code}
 int main(void) {{
-    unsigned long sum = 0;
-    for (unsigned i = 0; i < 200; i++) sum += (unsigned char)(i * 37);
-    return (int)parse_header() == (int)(200 * 1000 + 100 + sum) ? 0 : 1;
+    const uint32_t magics[]={{UINT32_C(0x52444845),0,UINT32_C(0xffffffff)}};
+    const uint16_t versions[]={{0,3,0x103,0x8003,0xffff}};
+    const unsigned char widths[]={{0,1,127,128,200,255}},heights[]={{0,1,2,255}};
+    for(unsigned m=0;m<sizeof(magics)/sizeof(*magics);++m)
+    for(unsigned v=0;v<sizeof(versions)/sizeof(*versions);++v)
+    for(unsigned w=0;w<sizeof(widths);++w)
+    for(unsigned h=0;h<sizeof(heights);++h) {{
+        memcpy(bytes,&magics[m],4);
+        bytes[4]=(unsigned char)versions[v]; bytes[5]=(unsigned char)(versions[v]>>8);
+        bytes[6]=widths[w]; bytes[7]=heights[h];
+        fetches=setups=reports=bad=0; address=NULL;
+        int got=(int)parse_header(),expected;
+        unsigned valid=magics[m]==UINT32_C(0x52444845) && versions[v]==3;
+        if(magics[m]!=UINT32_C(0x52444845))expected=-1;
+        else if(versions[v]!=3)expected=-2;
+        else {{
+            unsigned long sum=0;
+            unsigned count=FULL_HEADER ? (unsigned)widths[w]*heights[h] : 0;
+            for(unsigned i=0;i<count;++i)sum+=(unsigned char)(i*37);
+            expected=(int)((unsigned)widths[w]*1000+(unsigned)heights[h]*100+sum);
+        }}
+        if(got!=expected || bad || fetches!=1 || setups!=valid || reports!=valid)return 1;
+    }}
+    return 0;
 }}
 "#
     );
-    let source = common::scratch_file("stack-struct-run", "c");
+    run_native_program(tag, code, &program);
+}
+
+fn run_native_program(tag: &str, code: &str, program: &str) {
+    let source = common::scratch_file(tag, "c");
     std::fs::write(&source, program).unwrap();
     for cc in compilers() {
         for optimization in ["-O0", "-O2"] {
-            let executable = common::scratch_file("stack-struct-run", "exe");
+            let executable = common::scratch_file(tag, "exe");
             let compiled = Command::new(cc)
                 .args(["-std=gnu11", optimization, "-fno-strict-aliasing"])
                 .args(common::CC_GCC15_DEMOTE)
-                .arg(&source)
-                .arg("-o")
-                .arg(&executable)
-                .output()
-                .unwrap();
-            assert!(
-                compiled.status.success(),
-                "{cc} {optimization}: {}\n{code}",
-                String::from_utf8_lossy(&compiled.stderr)
-            );
+                .arg(&source).arg("-o").arg(&executable).output().unwrap();
+            assert!(compiled.status.success(), "{cc} {optimization}: {}\n{code}",
+                String::from_utf8_lossy(&compiled.stderr));
             let run = Command::new(&executable).output().unwrap();
-            assert!(run.status.success(), "{cc} {optimization}: {code}");
+            assert!(run.status.success(), "{cc} {optimization}: {:?}\n{code}", run.status);
+            std::fs::remove_file(executable).unwrap();
         }
     }
+    std::fs::remove_file(source).unwrap();
+}
+
+#[test]
+fn emitted_record_reads_the_fields_the_source_wrote() {
+    let code = decompile(&image(), 0x601000, Some(0x60117f), "aggressive");
+    check_header_reads(&code, true, "stack-record-run");
+}
+
+#[test]
+fn partial_scalar_reads_keep_the_short_and_unsigned_byte_values() {
+    let code = decompile_function(&image(), 0x401000, None, "reliable", "parse_header",
+        &[("ctypes", "on"), ("partialaccess", "on")]);
+    check_header_reads(&code, false, "stack-partial-run");
+}
+
+#[test]
+fn in_place_text_reads_both_bytes_after_the_callback() {
+    let code = decompile_function(&image(), 0x5010f0, None, "aggressive", "text_len", &[]);
+    let program = format!(r#"
+#include <stdint.h>
+#include <string.h>
+static unsigned char replacement[2];
+static unsigned fetches,reports,bad;
+void fetch(void *dst,unsigned long n) {{
+    ++fetches;
+    if(n!=0 || memcmp(dst,"hello wo",8)!=0)bad=1;
+    memcpy(dst,replacement,sizeof(replacement));
+}}
+int report(unsigned int w,unsigned int h,unsigned long sum) {{
+    ++reports;
+    if(w!=(unsigned int)(int)(int8_t)replacement[0] ||
+       h!=(unsigned int)(int)(int8_t)replacement[1] || sum!=0)bad=1;
+    return 17;
+}}
+{code}
+int main(void) {{
+    const unsigned char values[]={{0,1,127,128,255}};
+    for(unsigned i=0;i<sizeof(values);++i)for(unsigned j=0;j<sizeof(values);++j) {{
+        replacement[0]=values[i]; replacement[1]=values[j];
+        fetches=reports=bad=0;
+        text_len();
+        if(bad || fetches!=1 || reports!=1)return 1;
+    }}
+    return 0;
+}}
+"#);
+    run_native_program("stack-text-run", &code, &program);
 }
 
 /// One 8-byte store zeroes two adjacent locals and one 8-byte load reloads

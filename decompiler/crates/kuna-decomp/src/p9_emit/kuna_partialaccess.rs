@@ -24,18 +24,24 @@
 //! the value where the binary moves its bits. A 16-byte access on a 64-bit
 //! target reads through `unsigned __int128`, the GCC and Clang 16-byte integer.
 //! The member path in front of the token is kept
-//! (`((unsigned int *)&v1.flagfield)[1]`), every form is an lvalue so a partial
-//! store prints the same way, and the offset is the byte offset into the
-//! variable's storage, as it is for the token it replaces, so the reading is the
-//! target's memory order on every architecture.
+//! (`((unsigned int *)&v1.flagfield)[1]`). These pointer forms are lvalues, so
+//! partial stores keep that spelling. Offsets count memory bytes on every target.
+//!
+//! A nonvolatile 1- to 8-byte read out of a primitive scalar container of at
+//! most eight bytes instead copies exactly its source bytes into a fully
+//! initialized scalar compound literal, then reads that scalar. Natural widths
+//! preserve the accessed type; widths 3/5/6/7 use the next larger unsigned scalar.
+//! The source address is evaluated once, no untouched source bytes are evaluated,
+//! and the source storage is unchanged. A big-endian odd-width copy occupies the
+//! carrier's high bytes, so a right shift normalizes its value afterward.
 //!
 //! C has no scalar of 3, 5, 6, 7 or 9 to 15 bytes. A plain store or copy of such
 //! a width prints as `memset`/`memcpy` of exactly its bytes (the statement form
-//! lives in the printer); a read of 3, 5, 6 or 7 bytes out of a scalar prints as
-//! the `SUB<in><out>(v, k)` intrinsic the surrounding output already uses for a
-//! truncation, with `k` the byte offset counted from the value's low end. Any
-//! other access of such a width keeps Ghidra's token, which no compiler accepts,
-//! rather than a spelling that would compile to another value.
+//! lives in the printer). An odd-width PIECE assignment evaluates its RHS once
+//! in a scalar carrier and copies only the destination bytes, selecting the
+//! carrier's significant tail on big-endian targets without reading old padding.
+//! Other unsupported-width accesses keep Ghidra's token rather than pretending
+//! that a wider read or write has the same behavior.
 
 use std::rc::Rc;
 
@@ -73,8 +79,9 @@ pub enum Pointee {
 pub enum Piece {
     /// A pointer access; `bytes` is `char *`, for [`Form::Bytes`].
     Pointer { form: Form, pointee: Pointee, bytes: Option<Rc<Datatype>> },
-    /// `SUB<in><out>(v, value_offset)`.
-    Sub { name: String, value_offset: int8 },
+    /// Copy exactly `size` source bytes into a zero-initialized scalar carrier.
+    /// `shift` normalizes a big-endian copy placed at the carrier's memory start.
+    Read { pointer: Rc<Datatype>, bytes: Rc<Datatype>, offset: int8, size: int4, shift: int4 },
 }
 
 /// Is `size` the width of a C scalar the factory spells?
@@ -165,6 +172,11 @@ impl Piece {
             .filter(|t| readable(t, size))
             .filter(|t| t.get_metatype() != type_metatype::TYPE_UNKNOWN || !carries_float(fd, vn, op));
         let volatile = fd.vbank().get(vn).is_some_and(|v| v.is_annotation() && v.is_volatile());
+        if !volatile {
+            if let Some(read) = Self::read(fd, arch, vn, op, off, size, container) {
+                return Some(read);
+            }
+        }
         let pointee = match own {
             Some(t) => Pointee::Typed(types.get_type_pointer(ptr_size, t, 1).ok()?),
             None if matches!(size, 4 | 8) && carries_float(fd, vn, op) => {
@@ -177,7 +189,7 @@ impl Piece {
             }
             None if size == 16 && ptr_size == 8 => Pointee::Int128 { volatile },
             None if volatile => return None,
-            None => return Self::sub(fd, vn, op, off, size, container),
+            None => return None,
         };
         let pointee = match pointee {
             Pointee::Typed(ptr) if volatile => {
@@ -204,21 +216,35 @@ impl Piece {
         Some(Piece::Pointer { form, pointee, bytes })
     }
 
-    /// A 3-, 5-, 6- or 7-byte read out of a scalar as the `SUB` intrinsic, its
-    /// offset counted from the value's low end: the memory offset on a
-    /// little-endian space, the bytes after the access on a big-endian one.
-    fn sub(fd: &Funcdata, vn: VarnodeId, op: OpId, off: int8, size: int4, container: Option<&Datatype>) -> Option<Piece> {
+    /// Read a primitive scalar slice without evaluating the untouched bytes of
+    /// its container. The copy's destination is a fully initialized C scalar.
+    fn read(fd: &Funcdata, arch: &Architecture, vn: VarnodeId, op: OpId, off: int8, size: int4, container: Option<&Datatype>) -> Option<Piece> {
         let v = fd.vbank().get(vn)?;
         let c = container?;
         let scalar = matches!(
             c.get_metatype(),
             type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN | type_metatype::TYPE_PTR
         );
-        if v.get_def() == Some(op) || !matches!(size, 3 | 5 | 6 | 7) || !scalar || c.get_size() > 8 {
+        if v.get_def() == Some(op) || !(1..=8).contains(&size) || !scalar
+            || c.get_size() > 8 || off < 0 || off > c.get_size() as int8
+            || off + size as int8 > c.get_size() as int8
+        {
             return None;
         }
+        let types = arch.types();
+        let carrier_size = match size { 3 => 4, 5..=7 => 8, _ => size };
+        let carrier = if is_scalar_width(size) && readable(v.get_type(), size)
+            && v.get_type().get_metatype() != type_metatype::TYPE_UNKNOWN
+        {
+            Rc::clone(v.get_type())
+        } else if matches!(size, 4 | 8) && carries_float(fd, vn, op) {
+            types.get_base(size, type_metatype::TYPE_FLOAT).ok()?
+        } else {
+            types.get_base(carrier_size, type_metatype::TYPE_UINT).ok()?
+        };
+        let pointer = types.get_type_pointer(types.get_size_of_pointer(), carrier, 1).ok()?;
+        let bytes = types.get_type_pointer(types.get_size_of_pointer(), types.get_type_char(1).ok()?, 1).ok()?;
         let big = v.get_addr().get_space().is_some_and(|s| s.is_big_endian());
-        let value_offset = if big { c.get_size() as int8 - off - size as int8 } else { off };
-        (value_offset >= 0).then(|| Piece::Sub { name: format!("SUB{}{}", c.get_size(), size), value_offset })
+        Some(Piece::Read { pointer, bytes, offset: off, size, shift: if big { (carrier_size - size) * 8 } else { 0 } })
     }
 }

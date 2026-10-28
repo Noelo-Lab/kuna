@@ -70,6 +70,11 @@ pub(crate) fn output_type_local(data: &Funcdata, op: OpId) -> Rc<Datatype> {
     // `BUILTIN_STRINGDATA` CALLOTHER reports its char-pointer output token and
     // `ActionSetCasts` inserts no spurious cast around the rendered string literal.
     if o.code() == OpCode::CPUI_CALLOTHER {
+        if let Some((_, size)) = crate::p3_dataflow::kuna_volatileload::dynamic_read(data, op) {
+            if let Some(Ok(ty)) = arch.types().map(|t| t.get_base(size, type_metatype::TYPE_UINT)) {
+                return ty;
+            }
+        }
         let in0_off = o
             .get_in(0)
             .and_then(|v| data.vbank().get(v))
@@ -119,10 +124,10 @@ pub(crate) fn input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Data
     input_type_local_with(data, op, slot, true)
 }
 
-/// [`input_type_local`] without the (kuna `protoorder`) recovered-callee vote: the
-/// type a call argument is REQUIRED to have, which is what a cast is measured
-/// against.  A recovered type is a vote about the value, not a declaration the
-/// value must be converted to, so it never emits a cast.
+/// [`input_type_local`] without recovered-callee inference votes. P5 readers
+/// use this as declared evidence, so recovered pointer requirements must not
+/// enter here either. Completed-batch rendering uses accepted declarations
+/// separately, without feeding call-site presentation back into inference.
 pub(crate) fn declared_input_type_local(data: &Funcdata, op: OpId, slot: int4) -> Rc<Datatype> {
     input_type_local_with(data, op, slot, false)
 }
@@ -145,6 +150,19 @@ fn input_type_local_with(data: &Funcdata, op: OpId, slot: int4, recovered: bool)
     if (opcode == OpCode::CPUI_CALL || opcode == OpCode::CPUI_CALLIND) && slot > 0 {
         if let Some(ct) = call_input_type_local(data, op, slot, opcode, recovered) {
             return ct;
+        }
+    }
+
+    // Retained native reads still consume an address, not an integer payload.
+    if opcode == OpCode::CPUI_CALLOTHER && slot == 1 {
+        if let Some((_, size)) = crate::p3_dataflow::kuna_volatileload::dynamic_read(data, op) {
+            if let Some(types) = arch.types() {
+                if let Ok(pointer) = types.get_base(size, type_metatype::TYPE_UINT)
+                    .and_then(|value| types.get_type_pointer(in_size, value, 1))
+                {
+                    return pointer;
+                }
+            }
         }
     }
 

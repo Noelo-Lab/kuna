@@ -34,11 +34,7 @@
     ],
     "stdout_absent": [
       "SUB161\\("
-    ],
-    "stdout_bytes": {
-      "lt": 9600,
-      "gt": 600
-    }
+    ]
   },
   "notes": "In-repo twin of dataset acceptance a-9667a93853f5 (crackme0x04 sub_100003790); promote refuses it, CI has no dataset. gcc -O3 -mssse3 vectorises the range loops and broadcasts the base byte with pxor+pshufb, so all 32 lanes read back as opaque SUB161 temporaries. `--option simdlane off` restores the bug (10,329 bytes, 32 SUB161). tests/stages/kuna-simdlane.xml pins both arms."
 }

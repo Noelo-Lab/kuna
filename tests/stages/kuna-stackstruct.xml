@@ -12,7 +12,7 @@
      header_* passes &h to fetch(&h,8) and setup(&h), then tests the u32 magic, the
      u16 version and the two byte fields. Off: the fields print as Ghidra's
      `v1._4_2_`, which is not C, or (clang -O0) as unrelated scalars. partialaccess
-     alone prints the typed pointer access; with stackstruct the record is one
+     alone prints width-preserving C accesses; with stackstruct the record is one
      struct_N whose definition structdefs prints. gcc -O2 and clang -O2 join the
      16-byte vector zero store's two lanes; clang -O0 takes memset's 0x18; gcc -O0
      keeps the later slots separate, since nothing ties them to the record.
@@ -138,8 +138,6 @@
 <stringmatch name="stackstruct #1: off, the short field of the header is a partial member of one scalar" min="3" max="3">if \(v[0-9]+\._4_2_ [!=]= 3\)</stringmatch>
 <stringmatch name="stackstruct #2: off, the two byte fields are partial members too" min="2" max="2">report_[a-z0-9_]+\(\(uint1\)v[0-9]+\._6_1_,\(uint1\)v[0-9]+\._7_1_,</stringmatch>
 <stringmatch name="stackstruct #3: off, clang -O0 splits the memset record into unrelated scalars" min="1" max="1">int2 v4; // ax \| stack - 0x24</stringmatch>
-<stringmatch name="stackstruct #4: partialaccess prints the short field as a typed pointer access" min="1" max="1">if \(\(\(int2 \*\)&amp;v1\)\[2\] != 3\)</stringmatch>
-<stringmatch name="stackstruct #5: partialaccess prints the byte fields as byte accesses" min="1" max="1">report_gcc_o0\(\(uint1\)\(\(char \*\)&amp;v1\)\[6\],\(uint1\)\(\(char \*\)&amp;v1\)\[7\],v5\);</stringmatch>
 <stringmatch name="stackstruct #6: bytes out of a byte array take its byte subscript, and the unknown of their width" min="1" max="1">if \(\*\(unsigned short \*\)&amp;v5\[4\] == 3\)</stringmatch>
 <stringmatch name="stackstruct #7: stackstruct declares exactly the four header records, and neither control" min="4" max="4">struct_[0-9]+ v[0-9]+; //</stringmatch>
 <stringmatch name="stackstruct #8: the version test names its member" min="4" max="4">if \(v[0-9]+\.field_0x4 [!=]= 3\)</stringmatch>
@@ -155,7 +153,6 @@
 <stringmatch name="stackstruct #12: the vector zero store's lanes put the count in the gcc -O2 record" min="1" max="1">if \(v5\.field_0x8\)</stringmatch>
 <stringmatch name="stackstruct #13: memset's byte count puts the data pointer in the clang -O0 record" min="1" max="1">v1\.field_0x10 \+ \(uint8\)v2</stringmatch>
 <stringmatch name="stackstruct #14: one 8-byte word stays a scalar with the options off and on" min="4" max="4">return \(v1 &gt;&gt; 0x20\) \+ \(v1 &amp; 0xffffffff\);</stringmatch>
-<stringmatch name="stackstruct #15: a string built in place stays text, its byte read typed" min="1" max="1">report_gcc_o2\(\(int4\)\(char\)v1,\(int4\)\(\(char \*\)&amp;v1\)\[1\],0\);</stringmatch>
 <stringmatch name="stackstruct #16: partialaccess is a discoverable P9 opt-in" min="1" max="1">"option": "partialaccess", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P9"</stringmatch>
 <stringmatch name="stackstruct #17: stackstruct is a discoverable P6 opt-in" min="1" max="1">"option": "stackstruct", "values": \["on", "off"\], "default": "off", "current": "on", "destructive_as_default": false, "phase": "P6"</stringmatch>
 <stringmatch name="stackstruct #18: a 16-byte zero store into a byte array is a memset of its 16 bytes" min="1" max="1">memset\(&amp;v5,0,0x10\);</stringmatch>

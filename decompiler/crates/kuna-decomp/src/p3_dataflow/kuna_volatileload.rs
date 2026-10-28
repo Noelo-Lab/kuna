@@ -1,4 +1,4 @@
-//! Keep a proven volatile load live while its constant address is still an SSA expression.
+//! Preserve proven volatile loads and discarded native reads through unresolved pointers.
 use crate::{
     context::{OpId, VarnodeId},
     funcdata::Funcdata,
@@ -157,8 +157,8 @@ pub(crate) fn is_volatile_with(data: &Funcdata, id: OpId, memo: &mut Memo) -> bo
     target(data, id, memo).is_some()
 }
 
-/// Whether a volatile LOAD repeats a read its instruction already makes:
-/// another live LOAD at the same instruction address reads the same storage
+/// Whether a LOAD repeats an operand read already represented at this instruction:
+/// another live read at the same instruction address accesses the same storage
 /// and either `kept` holds for it or it was lifted first, so one read per
 /// address per instruction survives however often the SLEIGH flag macros
 /// re-load an operand.
@@ -168,37 +168,231 @@ pub(crate) fn rereads(
     memo: &mut Memo,
     kept: impl Fn(&Funcdata, OpId) -> bool,
 ) -> bool {
-    let want = target(data, id, memo);
-    if want.is_none() && !is_volatile_with(data, id, memo) {
-        return false;
-    }
     let Some(op) = data.obank().get(id) else {
         return false;
     };
+    let want = target(data, id, memo);
+    if want.is_none()
+        && op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load == 0
+        && !is_volatile_with(data, id, memo)
+    {
+        return false;
+    }
     let time = op.get_time();
-    let siblings: Vec<OpId> = data
-        .obank()
+    data.obank()
         .iter_at(op.get_addr())
         .map(|(_, sibling)| sibling)
         .filter(|&sibling| sibling != id)
-        .collect();
-    siblings.into_iter().any(|sibling| {
-        data.obank().get(sibling).is_some_and(|o| {
-            let same = if let Some(want) = want {
-                target(data, sibling, memo) == Some(want)
-            } else {
-                o.code() == OpCode::CPUI_LOAD
-                    && o.get_in(1) == op.get_in(1)
-                    && o.get_in(0).and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_offset())
-                        == op.get_in(0).and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_offset())
-                    && o.get_out().and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_size())
-                        == op.get_out().and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_size())
-            };
-            !o.is_dead()
-                && same
-                && (kept(data, sibling) || o.get_time() < time)
+        .any(|sibling| {
+            data.obank().get(sibling).is_some_and(|o| {
+                let same = if let Some(want) = want {
+                    target(data, sibling, memo) == Some(want)
+                } else {
+                    let space_slot = if o.code() == OpCode::CPUI_LOAD {
+                        Some(0)
+                    } else if o.code() == OpCode::CPUI_CALLOTHER
+                        && o.get_in(0).and_then(|v| data.vbank().get(v))
+                            .is_some_and(|v| v.get_offset() == crate::userop::BUILTIN_VOLATILE_READ as u64)
+                        && o.num_input() == 3
+                    {
+                        Some(2)
+                    } else {
+                        None
+                    };
+                    space_slot.is_some()
+                        && o.get_in(1) == op.get_in(1)
+                        && space_slot.and_then(|slot| o.get_in(slot))
+                            .and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_offset())
+                            == op.get_in(0).and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_offset())
+                        && o.get_out().and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_size())
+                            == op.get_out().and_then(|vn| data.vbank().get(vn)).map(|vn| vn.get_size())
+                };
+                !o.is_dead()
+                    && same
+                    && (kept(data, sibling) || o.get_time() < time)
+            })
         })
-    })
+}
+
+/// The dynamic address and access width of a retained native read effect.
+pub(crate) fn dynamic_read(data: &Funcdata, id: OpId) -> Option<(VarnodeId, i32)> {
+    let op = data.obank().get(id)?;
+    if op.code() != OpCode::CPUI_CALLOTHER || op.num_input() != 3
+        || op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load == 0
+        || data.vbank().get(op.get_in(0)?)?.get_offset() != crate::userop::BUILTIN_VOLATILE_READ as u64
+    {
+        return None;
+    }
+    let address = op.get_in(1)?;
+    if data.vbank().get(address)?.is_annotation() {
+        return None;
+    }
+    Some((address, data.vbank().get(op.get_out()?)?.get_size()))
+}
+
+// Fixed offsets from implicit frame or thread-storage bases are not external
+// pointers. Do not follow LOADs: a pointer read from such a slot is external.
+fn register_relative_address(
+    data: &Funcdata,
+    id: VarnodeId,
+    register: (i32, u64, i32),
+    budget: &mut u32,
+) -> bool {
+    if *budget == 0 { return false; }
+    *budget -= 1;
+    let Some(value) = data.vbank().get(id) else { return false };
+    if value.get_space().get_index() == register.0
+        && value.get_offset() == register.1 && value.get_size() == register.2
+    {
+        return true;
+    }
+    let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else { return false };
+    let Some(first) = op.get_in(0) else { return false };
+    let constant_input = |slot| op.get_in(slot).and_then(|v| data.vbank().get(v))
+        .is_some_and(|v| v.is_constant());
+    match op.code() {
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => {
+            data.vbank().get(first).is_some_and(|v| v.get_size() == value.get_size())
+                && register_relative_address(data, first, register, budget)
+        }
+        OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB
+            if constant_input(1) => register_relative_address(data, first, register, budget),
+        OpCode::CPUI_INT_ADD if constant_input(0) => op.get_in(1)
+            .is_some_and(|v| register_relative_address(data, v, register, budget)),
+        OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|slot| op.get_in(slot)
+            .is_some_and(|vn| register_relative_address(data, vn, register, budget))),
+        OpCode::CPUI_PTRADD if constant_input(1) && constant_input(2) =>
+            register_relative_address(data, first, register, budget),
+        _ => false,
+    }
+}
+
+fn frame_reference(data: &Funcdata, mut pointer: VarnodeId) -> bool {
+    let Some(stack) = data.get_arch().manage().get_stack_space() else { return false };
+    for _ in 0..BUDGET {
+        let Some(value) = data.vbank().get(pointer) else { return false };
+        let Some(op) = value.get_def().and_then(|id| data.obank().get(id)) else { return false };
+        let Some(first) = op.get_in(0).and_then(|vn| data.vbank().get(vn)) else { return false };
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST if first.get_size() == value.get_size() => {
+                pointer = op.get_in(0).expect("frame address copy");
+            }
+            OpCode::CPUI_PTRSUB => {
+                return op.get_in(1).and_then(|vn| data.vbank().get(vn)).is_some_and(|vn| vn.is_constant())
+                    && first.get_type().get_ptr_to().and_then(|ty| ty.spacebase_parts())
+                        .and_then(|(space, _)| space).is_some_and(|space| space.get_index() == stack.get_index());
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn resolved_storage(data: &Funcdata, pointer: VarnodeId, memo: &mut Memo) -> bool {
+    let manage = data.get_arch().manage();
+    let mut budget = BUDGET;
+    if manage.get_stack_space().and_then(|s| s.get_spacebase(0).ok())
+        .and_then(|base| base.space.map(|s| (s.get_index(), base.offset, base.size as i32)))
+        .is_some_and(|register| register_relative_address(data, pointer, register, &mut budget))
+    {
+        return true;
+    }
+    if let Some(lookup) = manage.register_lookup() {
+        for name in ["FS_OFFSET", "GS_OFFSET"] {
+            if let Some(register) = lookup.probe_register(name) {
+                if let Some(space) = register.space {
+                    budget = BUDGET;
+                    if register_relative_address(
+                        data, pointer, (space.get_index(), register.offset, register.size as i32), &mut budget,
+                    ) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    budget = BUDGET;
+    constant(data, pointer, memo, &mut BTreeSet::new(), &mut budget).is_some()
+        || crate::kuna_stackranges::frame_address(data, pointer).is_some()
+        || frame_reference(data, pointer)
+}
+
+/// Re-enter ordinary LOAD analysis once a rescued pointer resolves. This also
+/// lets known volatile addresses use their normal fixed-storage lowering.
+pub(crate) fn restore_resolved(data: &mut Funcdata, id: OpId) -> bool {
+    let Some((pointer, _)) = dynamic_read(data, id) else { return false };
+    if !resolved_storage(data, pointer, &mut Memo::new()) {
+        return false;
+    }
+    let space = data.obank().get(id).and_then(|op| op.get_in(2)).expect("retained read space");
+    data.op_remove_input(id, 2);
+    data.op_set_input(id, space, 0).expect("restored read space");
+    data.op_set_opcode_code(id, OpCode::CPUI_LOAD);
+    data.obank_mut().get_mut(id).expect("restored read")
+        .clear_additional_flag(crate::op::pcodeop_addlflags::hold_output);
+    true
+}
+
+/// Whether this native scalar access still addresses unresolved external memory.
+/// This does not depend on its current consumers: fusion must not retire its
+/// effect merely because a value that is live now may be discarded later.
+pub(crate) fn unresolved_native_read(data: &Funcdata, id: OpId, memo: &mut Memo) -> bool {
+    let Some(op) = data.obank().get(id) else { return false };
+    if op.code() != OpCode::CPUI_LOAD
+        || op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_native_load == 0
+        || op.uses_spacebase_ptr()
+    {
+        return false;
+    }
+    let (Some(pointer), Some(space), Some(output)) = (op.get_in(1), op.get_in(0), op.get_out()) else {
+        return false;
+    };
+    let Some(size) = data.vbank().get(output).map(|v| v.get_size()) else { return false };
+    if !matches!(size, 1 | 2 | 4 | 8) {
+        return false;
+    }
+    let Some(space_index) = data.vbank().get(space).map(|v| v.get_offset()) else { return false };
+    let manage = data.get_arch().manage();
+    if space_index >= manage.num_spaces() as u64
+        || manage.get_space(space_index as i32).is_none_or(|s| {
+            s.get_word_size() != 1 || s.get_type() != kuna_base::space::spacetype::IPTR_PROCESSOR
+        })
+        || manage.get_space_by_name("register").is_some_and(|space| space.get_index() == space_index as i32)
+    {
+        return false;
+    }
+    if manage.get_stack_space().is_some_and(|stack| {
+        crate::ruleaction_4::RuleLoadVarnode::check_spacebase(data, id)
+            .is_some_and(|(space, _)| space.get_index() == stack.get_index())
+    }) {
+        return false;
+    }
+    !resolved_storage(data, pointer, memo)
+}
+
+/// Preserve an unread native scalar access through an unresolved external
+/// pointer. Fixed storage and proven frame reads keep their existing rules.
+pub(crate) fn preserve_discarded(data: &mut Funcdata, id: OpId, memo: &mut Memo) -> bool {
+    if data.is_jumptable_recovery_on() || !unresolved_native_read(data, id, memo) {
+        return false;
+    }
+    if rereads(data, id, memo, |data, other| {
+        data.obank().get(other).and_then(|op| op.get_out())
+            .and_then(|v| data.vbank().get(v))
+            .is_some_and(|v| !v.has_no_descend() || v.is_auto_live()
+                || (v.is_consume_vacuous() && v.get_consume() != 0))
+    }) {
+        return false;
+    }
+    let space = data.obank().get(id).and_then(|op| op.get_in(0))
+        .expect("native read space");
+    // Keep the address space as metadata, separate from the dynamic address.
+    let builtin = data.new_constant(4, crate::userop::BUILTIN_VOLATILE_READ as u64);
+    data.op_insert_input(id, space, 2).expect("retained read space");
+    data.op_set_input(id, builtin, 0).expect("retained read builtin");
+    data.op_set_opcode_code(id, OpCode::CPUI_CALLOTHER);
+    data.obank_mut().get_mut(id).expect("retained read").set_hold_output();
+    true
 }
 
 #[cfg(test)]
