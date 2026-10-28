@@ -366,6 +366,33 @@ all exported `float10` record declarations have native C layout. The existing
 record exporter can add explicit padding after a ten-byte logical field even
 when C's `long double` already occupies sixteen bytes; authored-layout consumers
 must establish the native offsets independently.
+The console's extended-storage consumer replays the actual `longdouble.xml`
+setup, retains the genuine exported definition as a receipt, and uses the exact
+source-declared records with independent native offset/extent assertions.
+GCC and Clang at optimization levels 0 and 2 preserve both fields over 49
+payload pairs, including signed zeros, a subnormal, infinity and a quiet NaN.
+The former numeric-cast body compiles but fails that same payload oracle.
+The two former direct-field-forwarding string matches in `longdouble.xml` are
+retired, not repinned to another expression or field-reference pattern. Their
+replacement is `split_extended_float_fields_preserve_native_payloads`, the
+native/generated payload consumer above; only those two obsolete entries and
+their count are removed from the parity baseline, without a merge-guard exception.
+
+Functional C `PIECE` fallbacks also carry their own `CONCAT<high><low>` support
+(`printc.rs (emit_concat_preamble)`, `kuna_partialconcat.rs (preamble)`).
+The printer scans live `PIECE` operations, including implied expressions nested
+inside a bit transfer, rather than only statement roots; the opcode-specific
+operation lists do not include `PIECE`. A fixed pair bitset deduplicates the
+supported one- through eight-byte input widths without a heap-backed set.
+Each generated macro truncates its inputs to their unsigned p-code widths
+before widening, shifting the high word and combining it with the low word.
+Odd-width inputs are masked in the expression, not passed through a helper
+function that could observe an uninitialized carrier's unused upper bytes.
+Each argument occurs once. Results wider than eight bytes use unsigned 128-bit
+storage only on a 64-bit target. Per-name guards let emitted functions share a
+translation unit; the support stays with the function in ordinary, project and
+streamed C output, so consumers need not invent missing helper definitions.
+
 
 A recovered pointer parameter also supplies a use-site pointer requirement when
 the caller holds a pointer of the same width. The argument's slot and concrete
