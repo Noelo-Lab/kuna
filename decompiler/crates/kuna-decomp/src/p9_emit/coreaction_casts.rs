@@ -2574,42 +2574,42 @@ mod verify_w10_merge_casts_r2 {
         let c = language == "c-language";
         let (source_type, target_type, initialize, observation) = if c {
             match case {
-                0 => ("char *", "struct recovered_record *",
+                0 => ("unsigned char *", "struct recovered_record *",
                     "struct recovered_record value = {0x123456789abcdef0UL}; expected = &value;",
                     "p->word == 0x123456789abcdef0UL"),
-                1 => ("char **", "unsigned long *",
+                1 => ("unsigned char **", "unsigned long *",
                     "unsigned long value = 0x123456789abcdef0UL; expected = &value;",
                     "*p == 0x123456789abcdef0UL"),
-                2 => ("void *", "char *", "char value = 43; expected = &value;", "*p == 43"),
-                3 => ("char *", "void *", "char value = 43; expected = &value;", "*(char *)p == 43"),
-                4 => ("char *", "char **",
-                    "char value = 43; char *slot = &value; expected = &slot;", "**p == 43"),
-                5 => ("char **", "struct recovered_record *",
+                2 => ("void *", "unsigned char *", "unsigned char value = 227; expected = &value;", "*p == 227"),
+                3 => ("unsigned char *", "void *", "unsigned char value = 227; expected = &value;", "*(unsigned char *)p == 227"),
+                4 => ("unsigned char *", "unsigned char **",
+                    "unsigned char value = 227; unsigned char *slot = &value; expected = &slot;", "**p == 227"),
+                5 => ("unsigned char **", "struct recovered_record *",
                     "struct recovered_record value = {0x123456789abcdef0UL}; expected = &value;",
                     "p->word == 0x123456789abcdef0UL"),
-                6 => ("char *", "char *", "char value = 43; expected = &value;", "*p == 43"),
+                6 => ("unsigned char *", "unsigned char *", "unsigned char value = 227; expected = &value;", "*p == 227"),
                 _ => unreachable!(),
             }
         } else {
             match case {
-                0 => ("*mut i8", "*mut recovered_record",
+                0 => ("*mut u8", "*mut recovered_record",
                     "let mut value = recovered_record { word: 0x123456789abcdef0 }; EXPECTED = (&raw mut value).cast();",
                     "(*p).word == 0x123456789abcdef0"),
-                1 => ("*mut *mut i8", "*mut u64",
+                1 => ("*mut *mut u8", "*mut u64",
                     "let mut value: u64 = 0x123456789abcdef0; EXPECTED = (&raw mut value).cast();",
                     "*p == 0x123456789abcdef0"),
-                2 => ("*mut ()", "*mut i8",
-                    "let mut value: i8 = 43; EXPECTED = (&raw mut value).cast();", "*p == 43"),
-                3 => ("*mut i8", "*mut ()",
-                    "let mut value: i8 = 43; EXPECTED = (&raw mut value).cast();", "*(p as *mut i8) == 43"),
-                4 => ("*mut i8", "*mut *mut i8",
-                    "let mut value: i8 = 43; let mut slot = &raw mut value; EXPECTED = (&raw mut slot).cast();",
-                    "**p == 43"),
-                5 => ("*mut *mut i8", "*mut recovered_record",
+                2 => ("*mut ()", "*mut u8",
+                    "let mut value: u8 = 227; EXPECTED = (&raw mut value).cast();", "*p == 227"),
+                3 => ("*mut u8", "*mut ()",
+                    "let mut value: u8 = 227; EXPECTED = (&raw mut value).cast();", "*(p as *mut u8) == 227"),
+                4 => ("*mut u8", "*mut *mut u8",
+                    "let mut value: u8 = 227; let mut slot = &raw mut value; EXPECTED = (&raw mut slot).cast();",
+                    "**p == 227"),
+                5 => ("*mut *mut u8", "*mut recovered_record",
                     "let mut value = recovered_record { word: 0x123456789abcdef0 }; EXPECTED = (&raw mut value).cast();",
                     "(*p).word == 0x123456789abcdef0"),
-                6 => ("*mut i8", "*mut i8",
-                    "let mut value: i8 = 43; EXPECTED = (&raw mut value).cast();", "*p == 43"),
+                6 => ("*mut u8", "*mut u8",
+                    "let mut value: u8 = 227; EXPECTED = (&raw mut value).cast();", "*p == 227"),
                 _ => unreachable!(),
             }
         };
@@ -2661,9 +2661,9 @@ fn main() { unsafe {
         let relay = if case != 5 {
             ""
         } else if c {
-            "static char *relay_pointer(unsigned long *p) { ++relays; assert((void *)p == expected); assert(*p == 0x123456789abcdef0UL); return (char *)p; }"
+            "static unsigned char *relay_pointer(unsigned long *p) { ++relays; assert((void *)p == expected); assert(*p == 0x123456789abcdef0UL); return (unsigned char *)p; }"
         } else {
-            "unsafe fn relay_pointer(p: *mut u64) -> *mut i8 { RELAYS += 1; assert!(p as *mut () == EXPECTED); assert!(*p == 0x123456789abcdef0); p as *mut i8 }"
+            "unsafe fn relay_pointer(p: *mut u64) -> *mut u8 { RELAYS += 1; assert!(p as *mut () == EXPECTED); assert!(*p == 0x123456789abcdef0); p as *mut u8 }"
         };
         let program = template.replace("SOURCE_TYPE", source_type)
             .replace("TARGET_TYPE", target_type).replace("OBSERVATION", observation)
@@ -2695,9 +2695,13 @@ fn main() { unsafe {
             let (mut fd, _strat, ram) = build();
             let types = fd.get_arch().types_rc().unwrap();
             types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+            // Plain text char intentionally spells u8 in Rust, including on
+            // the base revision. Model unsigned bytes explicitly in both
+            // languages and exercise a high-bit value rather than assume i8.
+            types.set_core_type("unsigned char", 1, type_metatype::TYPE_UINT, false).unwrap();
             types.set_core_type("unsigned long", 8, type_metatype::TYPE_UINT, false).unwrap();
             types.cache_core_types().unwrap();
-            let char_pointer = types.get_type_pointer(8, types.get_type_char(1).unwrap(), 1).unwrap();
+            let char_pointer = types.get_type_pointer(8, types.get_base(1, type_metatype::TYPE_UINT).unwrap(), 1).unwrap();
             let void_pointer = types.get_type_pointer(8, types.get_type_void().unwrap(), 1).unwrap();
             let word = types.get_base(8, type_metatype::TYPE_UINT).unwrap();
             let (source_type, target_type) = match case {
@@ -2772,8 +2776,9 @@ fn main() { unsafe {
         let (mut fd, strat, ram) = build();
         let types = fd.get_arch().types_rc().unwrap();
         types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+        types.set_core_type("unsigned char", 1, type_metatype::TYPE_UINT, false).unwrap();
         types.cache_core_types().unwrap();
-        let source_type = types.get_type_pointer(8, types.get_type_char(1).unwrap(), 1).unwrap();
+        let source_type = types.get_type_pointer(8, types.get_base(1, type_metatype::TYPE_UINT).unwrap(), 1).unwrap();
         let declared_type = types.get_type_pointer(8, Rc::clone(&source_type), 1).unwrap();
         let conflicting_type = types.get_type_pointer(
             8, types.get_base(8, type_metatype::TYPE_UINT).unwrap(), 1,

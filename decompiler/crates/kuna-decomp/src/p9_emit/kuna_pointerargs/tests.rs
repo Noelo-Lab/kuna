@@ -300,10 +300,12 @@ fn structure_renames_rebase_both_positions_without_moving_other_lines() {
 #[test]
 fn renaming_updates_actual_contract_metadata_and_shared_nested_ranges() {
     let code = "sink(convert(struct_1_ptr, (struct_1 *)value));";
-    let outer_start = code.find("convert").unwrap();
-    let outer_end = code.find(");").unwrap();
-    let inner_start = code.find("(struct_1").unwrap();
-    let inner_end = inner_start + "(struct_1 *)value".len();
+    let outer_expression = "convert(struct_1_ptr, (struct_1 *)value)";
+    let inner_expression = "(struct_1 *)value";
+    let outer_start = code.find(outer_expression).unwrap();
+    let outer_end = outer_start + outer_expression.len();
+    let inner_start = code.find(inner_expression).unwrap();
+    let inner_end = inner_start + inner_expression.len();
     let (mut caller, mut callee) = records();
     caller.texts = vec![Arc::new(code[outer_start..outer_end].into())];
     caller.calls[0].position = position(code, outer_start);
@@ -316,6 +318,11 @@ fn renaming_updates_actual_contract_metadata_and_shared_nested_ranges() {
     nested.text_start = inner_start - outer_start;
     nested.text_end = inner_end - outer_start;
     caller.calls.push(nested);
+    assert_eq!(code.get(inner_start..inner_end), Some(inner_expression));
+    assert_eq!(
+        caller.texts[0].get(caller.calls[1].text_start..caller.calls[1].text_end),
+        Some(inner_expression),
+    );
     let target = callee.parameters[1].as_mut().unwrap();
     target.spelling = "struct_1 *".into();
     target.dependencies = vec!["struct_1".into()];
