@@ -311,7 +311,8 @@ fn call_input_type_local(
         return vararg;
     }
     if !recovered {
-        return crate::kuna_floatreg::argument_requirement(data, fc, op, slot);
+        return crate::kuna_protoorder::pointer_argument_requirement(data, op, fc, slot, arg_size)
+            .or_else(|| crate::kuna_floatreg::argument_requirement(data, fc, op, slot));
     }
     if proto.is_input_locked() {
         return None;

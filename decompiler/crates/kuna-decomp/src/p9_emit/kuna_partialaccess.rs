@@ -24,18 +24,24 @@
 //! the value where the binary moves its bits. A 16-byte access on a 64-bit
 //! target reads through `unsigned __int128`, the GCC and Clang 16-byte integer.
 //! The member path in front of the token is kept
-//! (`((unsigned int *)&v1.flagfield)[1]`), every form is an lvalue so a partial
-//! store prints the same way, and the offset is the byte offset into the
-//! variable's storage, as it is for the token it replaces, so the reading is the
-//! target's memory order on every architecture.
+//! (`((unsigned int *)&v1.flagfield)[1]`). These pointer forms are lvalues, so
+//! partial stores keep that spelling. Offsets count memory bytes on every target.
+//!
+//! A nonvolatile 1- to 8-byte read out of a primitive scalar container of at
+//! most eight bytes instead copies exactly its source bytes into a fully
+//! initialized scalar compound literal, then reads that scalar. Natural widths
+//! preserve the accessed type; widths 3/5/6/7 use the next larger unsigned scalar.
+//! The source address is evaluated once, no untouched source bytes are evaluated,
+//! and the source storage is unchanged. A big-endian odd-width copy occupies the
+//! carrier's high bytes, so a right shift normalizes its value afterward.
 //!
 //! C has no scalar of 3, 5, 6, 7 or 9 to 15 bytes. A plain store or copy of such
 //! a width prints as `memset`/`memcpy` of exactly its bytes (the statement form
-//! lives in the printer); a read of 3, 5, 6 or 7 bytes out of a scalar prints as
-//! the `SUB<in><out>(v, k)` intrinsic the surrounding output already uses for a
-//! truncation, with `k` the byte offset counted from the value's low end. Any
-//! other access of such a width keeps Ghidra's token, which no compiler accepts,
-//! rather than a spelling that would compile to another value.
+//! lives in the printer). An odd-width PIECE assignment evaluates its RHS once
+//! in a scalar carrier and copies only the destination bytes, selecting the
+//! carrier's significant tail on big-endian targets without reading old padding.
+//! Other unsupported-width accesses keep Ghidra's token rather than pretending
+//! that a wider read or write has the same behavior.
 
 use std::rc::Rc;
 

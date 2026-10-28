@@ -228,6 +228,29 @@ pub fn call_argument_vote(
     vote_holds(data, op, fc, slot, arg_size, &bare)?.then_some(bare)
 }
 
+/// A pointer argument's use-site contract, without retyping the caller's
+/// pointer or locking the callee's prototype. A caller may read a scalar
+/// through the same address that its callee reads as a synthesized record.
+/// The type vote must yield to that local evidence, but C and Rust still need
+/// a pointer cast at the call. Storage and slot identity are the same proof
+/// used by the vote; no arity or integer/float class is inferred here.
+pub(crate) fn pointer_argument_requirement(
+    data: &Funcdata,
+    op: OpId,
+    fc: &FuncCallSpecs,
+    slot: int4,
+    arg_size: int4,
+) -> Option<Rc<Datatype>> {
+    let target = stated_argument_type(data, fc, slot)?;
+    let input = data.obank().get(op)?.get_in(slot)?;
+    let source = data.vn_high_type_read_facing(input, op);
+    (target.get_metatype() == type_metatype::TYPE_PTR
+        && source.get_metatype() == type_metatype::TYPE_PTR
+        && target.get_size() == arg_size
+        && source.get_size() == arg_size)
+        .then(|| Rc::clone(target))
+}
+
 /// [`call_argument_vote`]'s refusals for one candidate type `ct`.
 fn vote_holds(
     data: &Funcdata,

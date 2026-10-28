@@ -358,6 +358,23 @@ than requiring a `CONCAT` intrinsic. `FLOAT_INT2FLOAT` remains a numeric
 conversion of its input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform
 their numeric conversions after any required input reinterpretation.
 
+For little-endian 64-bit C targets whose native extended format has ten
+significant bytes, an implied integer `PIECE` consumed as `float10` likewise
+uses an unsigned-128/`long double` union transfer, not a numeric cast. This is a
+body-level storage transfer, not new Rust extended-float support or a claim that
+all exported `float10` record declarations have native C layout. The existing
+record exporter can add explicit padding after a ten-byte logical field even
+when C's `long double` already occupies sixteen bytes; authored-layout consumers
+must establish the native offsets independently.
+
+A recovered pointer parameter also supplies a use-site pointer requirement when
+the caller holds a pointer of the same width. The argument's slot and concrete
+storage must both match the recovered contract. If the caller reads a `double`
+through an address that the callee reads as two integer record fields, its local
+pointer type wins the inference vote, while an explicit pointer cast at the
+call preserves both declarations. This neither locks the prototype nor changes
+arity, integer/float classes, or any access through the caller's pointer.
+
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
 — a comparison against zero carries no information beyond the value's own

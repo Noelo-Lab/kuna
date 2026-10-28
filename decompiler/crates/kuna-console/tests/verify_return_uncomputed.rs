@@ -33,7 +33,7 @@ use std::process::Command;
 use kuna_console::engine::bootstrap_from_object;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
+use kuna_decomp::decompile_drive::{print_c, print_c_recompile_prelude, print_c_types};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -57,7 +57,6 @@ fn decompile_with_types(bin: &str, func: &str, options: &[&str]) -> (String, Str
     let mut cmds: Vec<String> = options.iter().map(|o| o.to_string()).collect();
     cmds.push(format!("load function {func}"));
     cmds.push("decompile".into());
-    cmds.push("print C".into());
     let count = cmds.len();
     let mut status = ConsoleCommands::into_status(cmds);
     register_decomp_commands(&mut status);
@@ -75,10 +74,12 @@ fn decompile_with_types(bin: &str, func: &str, options: &[&str]) -> (String, Str
     }
     let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
     let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+    let fd = dcp.fd.as_ref().expect("decompiled fixture function");
     let prog = dcp.conf.as_mut().unwrap();
+    let code = print_c(prog.arch_mut(), fd);
     let prelude = print_c_recompile_prelude(prog.arch());
     let types = print_c_types(prog.arch_mut());
-    (status.optr.clone(), prelude, types)
+    (code, prelude, types)
 }
 
 fn decompile(bin: &str, func: &str, options: &[&str]) -> String {

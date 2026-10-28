@@ -389,6 +389,7 @@ fn odd_width_piece_assignments_preserve_surrounding_bytes_and_evaluate_once() {
         for (offset, big) in [(0, false), (8 - size, false), (0, true), (8 - size, true)] {
             let arch = bare_arch();
             arch.types_impl().set_max_basetype_size(8);
+            arch.types_impl().set_size_of_pointer(8);
             arch.types_impl().set_default_alignment_map();
             arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
             for (name, bytes) in [("unsigned char", 1), ("unsigned short", 2), ("unsigned int", 4), ("unsigned long long", 8)] {

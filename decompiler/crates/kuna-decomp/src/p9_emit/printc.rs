@@ -2714,9 +2714,9 @@ impl PrintC {
             return;
         }
         let mut pairs = 0u64;
-        for op in fd.obank().iter_code(OpCode::CPUI_PIECE) {
+        for op in fd.obank().iter_alive() {
             let Some(operation) = fd.obank().get(op) else { continue };
-            if operation.is_dead() || operation.num_input() != 2 {
+            if operation.code() != OpCode::CPUI_PIECE || operation.num_input() != 2 {
                 continue;
             }
             let Some(out) = operation.get_out().and_then(|vn| fd.vbank().get(vn)) else { continue };

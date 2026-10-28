@@ -8,7 +8,7 @@ use kuna_base::xml::DocumentStorage;
 use kuna_console::engine::bootstrap_from_file;
 use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE};
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
+use kuna_decomp::decompile_drive::{print_c, print_c_recompile_prelude, print_c_types};
 
 #[test]
 fn split_extended_float_fields_preserve_native_payloads() {
@@ -24,7 +24,14 @@ fn split_extended_float_fields_preserve_native_payloads() {
         .map(|command| String::from_utf8(command.get_content().to_vec()).unwrap().replace('\r', "").replace('\n', " "))
         .take_while(|command| !command.trim_start().starts_with("lo fu "))
         .collect();
-    commands.extend(["load function printstruct".into(), "decompile".into(), "print C".into()]);
+    let mut declarations = String::new();
+    for declaration in commands.iter().filter_map(|command| command.trim().strip_prefix("parse line ")) {
+        if let Some(record) = declaration.strip_prefix("struct ") {
+            let tag = record.split('{').next().unwrap().trim();
+            declarations.push_str(&format!("typedef struct {tag} {tag};\n{declaration}\n"));
+        }
+    }
+    commands.extend(["load function printstruct".into(), "decompile".into()]);
     let count = commands.len();
     let specs = vec![root.join("specs").to_str().unwrap().to_owned()];
     let mut program = bootstrap_from_file(fixture.to_str().unwrap(), "", &specs).unwrap();
@@ -39,15 +46,23 @@ fn split_extended_float_fields_preserve_native_payloads() {
     for _ in 0..count {
         execute(&mut status);
     }
-    let code = status.optr.clone();
     let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
     let data = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+    let fd = data.fd.as_ref().expect("decompiled printstruct");
     let program = data.conf.as_mut().unwrap();
+    let code = print_c(program.arch_mut(), fd);
     let prelude = print_c_recompile_prelude(program.arch());
     let types = print_c_types(program.arch_mut());
     let directory = crate::common::scratch_file("extended-float-storage", "dir");
     std::fs::create_dir(&directory).unwrap();
-    std::fs::write(directory.join("types.h"), format!("{prelude}\n{types}")).unwrap();
+    // The generic type exporter predates this repair and counts float10's ten
+    // significant bytes when inserting padding, although native long double
+    // occupies sixteen. Keep its actual output as a receipt, but use the exact
+    // source declarations above for this payload-transfer oracle. The native
+    // offset assertions below independently prevent an inflated shared layout
+    // from making both implementations agree. This is not a full-header proof.
+    std::fs::write(directory.join("actual-export-types.h"), &types).unwrap();
+    std::fs::write(directory.join("types.h"), format!("{prelude}\n{declarations}")).unwrap();
     let native = directory.join("native.c");
     std::fs::write(&native, r#"
 #include "types.h"
@@ -65,7 +80,10 @@ int4 native_printstruct(ldstruct *value) {
 #include <stdint.h>
 #include <string.h>
 #include <float.h>
+#include <stddef.h>
 _Static_assert(LDBL_MANT_DIG==64 && LDBL_MAX_EXP==16384,"native x87 extended format");
+_Static_assert(offsetof(ldstruct,a)==16 && offsetof(ldstruct,b)==32,"native extended-field offsets");
+_Static_assert(offsetof(ldstruct,e)==48 && offsetof(ldstruct,f)==50 && sizeof(ldstruct)==64,"native record extent");
 float10 ldarr[16];
 static unsigned calls,bad;
 static unsigned char seen[2][10];
