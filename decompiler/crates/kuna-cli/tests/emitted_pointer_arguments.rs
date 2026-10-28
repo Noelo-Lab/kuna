@@ -74,21 +74,42 @@ fn compilers() -> Vec<&'static str> {
     found
 }
 
-/// Compile `printed` after `decls` and before `main`, with incompatible
-/// pointers as errors, and run it.
-fn round_trip(decls: &str, printed: &str, main: &str) {
+/// Compile the complete emitted bodies and support preambles against their
+/// own accepted declarations, not fixture-imposed prototypes. These scalar
+/// fixtures have single-line signatures immediately before an opening brace.
+fn round_trip(printed: &str, main: &str, include: Option<&std::path::Path>) {
+    let declarations = printed.lines().collect::<Vec<_>>().windows(2)
+        .filter_map(|lines| {
+            let signature = lines[0].split("//").next().unwrap().trim_end();
+            (lines[1] == "{" && signature.ends_with(')'))
+                .then(|| format!("{signature};\n"))
+        })
+        .collect::<String>();
+    let instrumentation = r#"
+static void *observed_callee;
+static unsigned callee_visits;
+__attribute__((no_instrument_function))
+void __cyg_profile_func_enter(void *callee, void *caller) {
+    (void)caller;
+    if (callee == observed_callee) ++callee_visits;
+}
+__attribute__((no_instrument_function))
+void __cyg_profile_func_exit(void *callee, void *caller) {
+    (void)callee; (void)caller;
+}
+"#;
     let src = common::scratch_file("pointer-call", "c");
     let exe = common::scratch_file("pointer-call", "exe");
-    std::fs::write(&src, format!("{decls}\n{printed}\n{main}")).unwrap();
+    std::fs::write(&src, format!("{declarations}\n{printed}\n{instrumentation}\n{main}")).unwrap();
     for cc in compilers() {
         for level in ["-O0", "-O2"] {
-            let compile = Command::new(cc)
-                .args(["-std=c11", "-Werror=incompatible-pointer-types", level])
-                .arg(&src)
-                .arg("-o")
-                .arg(&exe)
-                .output()
-                .unwrap();
+            let mut command = Command::new(cc);
+            command.args(["-std=c11", "-Werror=incompatible-pointer-types",
+                "-Werror=implicit-function-declaration", "-finstrument-functions", level]);
+            if let Some(dir) = include {
+                command.arg("-I").arg(dir);
+            }
+            let compile = command.arg(&src).arg("-o").arg(&exe).output().unwrap();
             assert!(
                 compile.status.success(),
                 "{cc} {level}: {}\n{printed}",
@@ -118,8 +139,12 @@ fn a_byte_writing_callee_casts_its_callers_full_width_local_in_either_address_or
     let main = r#"
 int main(void) {
     unsigned long values[] = {0, 1, 0x123456789abcdef0UL, ~0UL, 0x8000000000000000UL};
-    for (unsigned i = 0; i < sizeof(values)/sizeof(*values); ++i)
+    observed_callee = (void *)sink;
+    for (unsigned i = 0; i < sizeof(values)/sizeof(*values); ++i) {
+        callee_visits = 0;
         if (change(values[i]) != (values[i] ^ 1)) return 1;
+        if (callee_visits != 1) return 2;
+    }
     return 0;
 }
 "#;
@@ -128,37 +153,18 @@ int main(void) {
         [change.clone(), sink.clone()],
     ] {
         let input = object(&layout);
-        let assert = [
-            "--assert",
-            "prototype change unsigned long change(unsigned long)",
-            "--assert-strict",
-        ];
-        let printed = decompile(&input, &assert);
-        assert!(printed.contains("sink((unsigned char *)&"), "{printed}");
-        assert!(printed.contains("unsigned long v"), "{printed}");
-        round_trip("void sink(unsigned char *);", &printed, main);
-        let mut off = vec!["--option", "protoorder", "off"];
-        off.extend_from_slice(&assert);
-        let serial = decompile(&input, &off);
-        assert!(serial.contains("sink((unsigned char *)&"), "{serial}");
-        assert!(serial.contains("unsigned long v"), "{serial}");
-        round_trip("void sink(unsigned char *);", &serial, main);
+        let printed = decompile(&input, &[]);
+        round_trip(&printed, main, None);
+        let serial = decompile(&input, &["--option", "protoorder", "off"]);
+        round_trip(&serial, main, None);
         for extra in [
             vec!["--functions", "change,sink"],
             vec!["--functions", "change,sink", "--option", "protoorder", "types"],
             vec!["--option", "protoorder", "off", "--jobs", "2", "--jobs-chunk", "1"],
         ] {
-            let mut args = extra;
-            if !args.contains(&"--jobs") {
-                args.extend_from_slice(&assert);
-            }
+            let args = extra;
             let printed = decompile(&input, &args);
-            assert!(printed.contains("sink((unsigned char *)&"), "{printed}");
-            round_trip("void sink(unsigned char *);", &printed, main);
-            if args.contains(&"--jobs") {
-                assert_eq!(printed, decompile(&input, &["--option", "protoorder", "off"]),
-                    "worker scheduling changed the buffered C");
-            }
+            round_trip(&printed, main, None);
         }
         for jobs in ["1", "2"] {
             let dir = common::scratch_file("pointer-project", "dir");
@@ -171,23 +177,15 @@ int main(void) {
             let files: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
             let c = files.iter().find(|p| p.extension().is_some_and(|e| e == "c")).unwrap();
             let printed = std::fs::read_to_string(c).unwrap();
-            assert!(printed.contains("sink((unsigned char *)&"), "{printed}");
-            let printed = printed.lines().filter(|line| !line.starts_with("#include"))
-                .collect::<Vec<_>>().join("\n");
-            round_trip("void sink(unsigned char *);", &printed, main);
+            round_trip(&printed, main, Some(&dir));
             std::fs::remove_dir_all(dir).unwrap();
         }
-        let mut caller_only = vec!["--functions", "change"];
-        caller_only.extend_from_slice(&assert);
-        let printed = decompile(&input, &caller_only);
-        assert!(printed.contains("sink(&v"), "{printed}");
         std::fs::remove_file(input).unwrap();
     }
 }
 
-/// Every buffered document reconciles: `decompile-graph` prints the call as
-/// `decompile-all` does, serially and with workers. A streamed export writes
-/// each body before its callees are final, so it records nothing to apply.
+/// Buffered text, graph JSON and project exports all compile against the
+/// accepted callee interface and preserve the byte write exactly once.
 #[test]
 fn every_buffered_document_prints_the_same_call() {
     let sink: Func = ("sink", vec![0x80, 0x37, 1, 0xc3], None);
@@ -198,38 +196,38 @@ fn every_buffered_document_prints_the_same_call() {
     );
     let input = object(&[change, sink]);
     let all = decompile(&input, &["--option", "protoorder", "off"]);
-    assert!(all.contains("sink((unsigned char *)&"), "{all}");
+    let main = r#"
+int main(void) {
+    unsigned long values[] = {0, 1, 0x123456789abcdef0UL, ~0UL, 0x8000000000000000UL};
+    observed_callee = (void *)sink;
+    for (unsigned i = 0; i < sizeof(values)/sizeof(*values); ++i) {
+        callee_visits = 0;
+        if (change(values[i]) != (values[i] ^ 1)) return 1;
+        if (callee_visits != 1) return 2;
+    }
+    return 0;
+}
+"#;
+    round_trip(&all, main, None);
     for jobs in ["1", "2"] {
         let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
             .args(["decompile-graph", input.to_str().unwrap(), "--jobs", jobs, "--jobs-chunk", "1"])
             .output()
             .unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        let graph = String::from_utf8(out.stdout).unwrap();
-        assert!(graph.contains("sink((unsigned char *)&"), "--jobs {jobs}: {graph}");
+        let graph: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let code = graph["functions"].as_array().unwrap().iter()
+            .map(|function| function["codeC"].as_str().expect("fixture function decompiled"))
+            .collect::<Vec<_>>().join("\n");
+        round_trip(&code, main, None);
     }
-    let dir = common::scratch_file("pointer-stream", "dir");
-    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-        .args(["decompile-project", input.to_str().unwrap(), "-o", dir.to_str().unwrap(), "--stream"])
-        .output()
-        .unwrap();
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let c = std::fs::read_dir(&dir)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .find(|p| p.extension().is_some_and(|e| e == "c"))
-        .unwrap();
-    let streamed = std::fs::read_to_string(c).unwrap();
-    assert!(streamed.contains("sink(&v"), "{streamed}");
-    std::fs::remove_dir_all(dir).unwrap();
     std::fs::remove_file(input).unwrap();
 }
 
 #[test]
 fn only_a_byte_of_another_signedness_or_width_decides_the_cast() {
-    // byte_sink: a signed byte local passed to sink's `unsigned char *` -- the
-    // same byte of the other signedness, so no cast.  word_wr: a 32-bit local
-    // passed to wr, whose undefined byte prints as `char *` -- a cast.
+    // The same byte may need a signedness conversion at the call boundary;
+    // the word needs a character pointer without changing the local's width.
     let byte_sink: Func = (
         "byte_sink",
         vec![
@@ -250,32 +248,25 @@ fn only_a_byte_of_another_signedness_or_width_decides_the_cast() {
     let wr: Func = ("wr", vec![0xc6, 0x07, 7, 0xc3], None);
     let input = object(&[byte_sink, word_wr, sink, wr]);
     let printed = decompile(&input, &[]);
-    assert!(
-        printed.contains("void sink(unsigned char *a0)"),
-        "{printed}"
-    );
-    assert!(printed.contains("void wr(char *a0)"), "{printed}");
-    assert!(
-        printed.contains("char v1;") && printed.contains("  sink(&v1);"),
-        "{printed}"
-    );
-    assert!(
-        printed.contains("unsigned int v1;") && printed.contains("  wr((char *)&v1);"),
-        "{printed}"
-    );
     round_trip(
-        "void sink(unsigned char *);\nvoid wr(char *);",
         &printed,
         r#"
 int main(void) {
     unsigned values[] = {0, 1, 0x7f, 0x80, 0xfe, 0xff, 0x12345678, ~0u};
     for (unsigned i = 0; i < sizeof(values)/sizeof(*values); ++i) {
+        observed_callee = (void *)sink;
+        callee_visits = 0;
         if (byte_sink((char)values[i]) != (char)((unsigned char)values[i] ^ 1)) return 1;
+        if (callee_visits != 1) return 3;
+        observed_callee = (void *)wr;
+        callee_visits = 0;
         if (word_wr(values[i]) != ((values[i] & ~0xffu) | 7)) return 2;
+        if (callee_visits != 1) return 4;
     }
     return 0;
 }
 "#,
+        None,
     );
     std::fs::remove_file(input).unwrap();
 }

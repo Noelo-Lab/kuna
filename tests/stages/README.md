@@ -235,6 +235,33 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-rodatastring.xml` | a string block-copied out of read-only memory into the frame renders as invalid C: `v1[0] = (char[8])msg._0_8_;` (there is no array cast) and the literal never appears (DIV-113) | `option rodatastring on\|off` (new kuna settable, P5 `constsequence`) |
 | `kuna-calleenamedlocals.xml` | kuna [#762](https://github.com/Noelo-Lab/kuna/issues/762): two distinct pointer locals passed to one `consume(Node *object)` both took the name `object`, `dedupvardecls` kept one declaration, and the store after the inner loop cleared the last member's flag instead of the representative's; the same defect through a struct-by-value argument (its fields stored into another struct, or into a same-named global), a user rename (`&v2` printed as the other slot's address), and a slot named like a global (its narrow views read the global), plus a global array a suffixed local must not capture | P6 local naming (a callee-parameter name is made unique against names already bound to other highs; struct roots share only among themselves) + P9 declaration emission (the identical-line collapse only merges lines of one Symbol, and every high printed through another declaration follows its final name); correctness fix, no option. Passes 2 and 3 pin `option dedupvardecls off` and `option namestyle ghidra` |
 
+The following cases no longer count support-macro names or require one spelling
+of a scalar-piece read. The retired text assertions are `GH8913 #2/#2b`,
+`calleenamedlocals #8/#9`, `GOBOOL #1`, `MSVCBYVAL #21`,
+`SPARC-REGISTER-PAIR #5`, and `stackstruct #4/#5/#15`; their ten entries alone
+were removed from `docs/baseline-stages.json`.
+
+Their behavior is covered by native consumers instead:
+
+- `kuna-harness/src/testfunction/tests.rs` executes the original XML setup and
+  scripts without changing prototypes. Its `native_stage_consumers` compare
+  Go's physical boolean byte against the original x86-64 instruction bytes,
+  require whole-result normalization in the `always` pass, preserve both `k1`
+  by-value snapshots when the first callback mutates the source, and observe
+  both words plus the trailing scalar of the MSVC `podok` call.
+- `kuna-cli/tests/stack_struct.rs` checks short and unsigned-byte values,
+  invalid magic/version paths, zero-initialized header state, callback addresses
+  and call counts. The in-place-text consumer mutates both leading bytes in the
+  callback and checks their signed values afterward. These checks compile and
+  execute the generated C with GCC/Clang at `-O0` and `-O2`.
+- The native carry-chain before/after consumer in
+  `kuna-decomp/src/p3_dataflow/kuna_addcarrychain/tests.rs` covers page crossing
+  and 16-bit wraparound. It does not pretend that the full 6502 fixture's low
+  guest addresses can be dereferenced in a native host process.
+- `a_big_endian_register_pair_round_trips_through_the_printed_c` in
+  `kuna-cli/tests/decompile_all_cli.rs` retains the SPARC lane-value and
+  arithmetic checks, including generated CONCAT support.
+
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
 repeated stores, a load between calls, and a truly dead-store control. The
 compiled round trips in `kuna-cli/tests/store_copy_effects.rs` also exercise

@@ -565,3 +565,224 @@ fn expected_command_error_rejects_a_successful_command() {
     assert!(out.contains("Expected command to fail"), "{out}");
     assert!(out.contains("Total tests applied = 0"), "{out}");
 }
+
+/// Execute the same XML scripts as the stage gate, but judge selected functions
+/// by their native behavior rather than their local names or expression spelling.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod native_stage_consumers {
+    use super::*;
+    use std::process::Command;
+
+    struct Printed {
+        name: String,
+        code: String,
+        prelude: String,
+        types: String,
+    }
+
+    fn stage_functions(stage: &str, entry: u64) -> Vec<Printed> {
+        use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
+
+        let root = repo_root();
+        let specs = std::env::var_os("SLEIGHHOME")
+            .map(PathBuf::from).unwrap_or_else(|| root.join("specs"));
+        let roots = vec![specs.to_str().unwrap().to_owned()];
+        let mut collection = FunctionTestCollection::with_spec_roots(roots.clone());
+        collection.load_test(root.join("tests/stages").join(stage).to_str().unwrap())
+            .expect("load the original stage and its setup commands");
+        let commands = collection.commands.iter().map(|command| {
+            if let Some(path) = command.strip_prefix("load file ") {
+                format!("load file \"{}\"", root.join(path).display())
+            } else {
+                command.clone()
+            }
+        }).collect();
+        let mut console = build_console_with(commands);
+        let dcp = console_dcp_mut(&mut console).unwrap();
+        dcp.spec_roots = roots;
+        dcp.conf = collection.take_conf();
+        console.fileoptr = Some(FileOut::default());
+        let mut printed = Vec::new();
+        for command in &collection.commands {
+            execute(&mut console);
+            assert!(!console.is_in_error(), "{stage}: {command}\n{}", console.optr);
+            let text = std::mem::take(&mut console.fileoptr.as_mut().unwrap().contents);
+            if command != "print C" {
+                continue;
+            }
+            let dcp = console_dcp_mut(&mut console).unwrap();
+            let fd = dcp.fd.as_ref().expect("the script selected a function");
+            if fd.get_address().get_offset() != entry {
+                continue;
+            }
+            let name = fd.get_display_name().to_owned();
+            let prog = dcp.conf.as_mut().unwrap();
+            printed.push(Printed {
+                name,
+                code: text,
+                prelude: print_c_recompile_prelude(prog.arch()),
+                types: print_c_types(prog.arch_mut()),
+            });
+        }
+        assert!(!printed.is_empty(), "{stage} never printed entry 0x{entry:x}");
+        printed
+    }
+
+    fn run_native(tag: &str, program: &str) {
+        let directory = std::env::temp_dir()
+            .join(format!("kuna-stage-native-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("consumer.c");
+        std::fs::write(&source, program).unwrap();
+        let mut available = 0;
+        for compiler in ["gcc", "clang"] {
+            match Command::new(compiler).arg("--version").output() {
+                Ok(output) => assert!(output.status.success(), "{compiler} --version failed"),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(error) => panic!("cannot run {compiler}: {error}"),
+            }
+            available += 1;
+            for optimization in ["-O0", "-O2"] {
+                let executable = directory.join(format!("{compiler}{optimization}"));
+                let compile = Command::new(compiler)
+                    .args(["-std=gnu11", optimization, "-Werror=implicit-function-declaration",
+                        "-Werror=incompatible-pointer-types"])
+                    .arg(&source).arg("-o").arg(&executable).output().unwrap();
+                assert!(compile.status.success(),
+                    "{compiler} {optimization}: {}\n{program}",
+                    String::from_utf8_lossy(&compile.stderr));
+                let run = Command::new(&executable).output().unwrap();
+                assert!(run.status.success(), "{compiler} {optimization}: {:?}\n{}\n{program}",
+                    run.status, String::from_utf8_lossy(&run.stderr));
+            }
+        }
+        assert!(available != 0, "native stage consumers require a C compiler");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn gobool_native_preserves_the_physical_byte_and_normalizes_the_go_result() {
+        let xml = std::fs::read_to_string(repo_root().join("tests/stages/kuna-gobool.xml")).unwrap();
+        let chunk = Regex::new(r"(?s)<bytechunk[^>]*>([0-9a-f\s]+)</bytechunk>").unwrap();
+        let captures = chunk.captures(&xml).unwrap();
+        let hex: String = captures[1].chars().filter(|c| !c.is_whitespace()).collect();
+        let bytes = hex.as_bytes().chunks_exact(2)
+            .map(|pair| format!("0x{}", std::str::from_utf8(pair).unwrap()))
+            .collect::<Vec<_>>().join(",");
+        let printed = stage_functions("kuna-gobool.xml", 0x100000);
+        assert_eq!(printed.len(), 2, "both original option passes must execute");
+        for (pass, printed) in printed.iter().enumerate() {
+            let Printed { name, code, prelude, types } = printed;
+            let normalized = if pass == 0 { "" } else {
+                "if (generated != (input == 1)) return 3;"
+            };
+            run_native(&format!("gobool-{pass}"), &format!(r#"
+#include <stdint.h>
+#include <string.h>
+{prelude}
+{types}
+{code}
+extern uint64_t native_is_one(uint64_t);
+__asm__(".pushsection .text\n.globl native_is_one\n.type native_is_one,@function\n"
+        "native_is_one:\n.byte {bytes}\n.size native_is_one,.-native_is_one\n.popsection\n");
+int main(void) {{
+    const uint64_t values[] = {{0,1,2,255,256,257,UINT64_MAX,
+        UINT64_C(0x8000000000000000),UINT64_C(0x0123456789abcdef)}};
+    for (unsigned i=0;i<sizeof(values)/sizeof(*values);++i) {{
+        uint64_t input=values[i], native=native_is_one(input);
+        uint64_t generated={name}(input);
+        if ((uint8_t)native != (input == 1)) return 1;
+        if ((uint8_t)generated != (uint8_t)native) return 2;
+        {normalized}
+    }}
+    return 0;
+}}
+"#));
+        }
+    }
+
+    #[test]
+    fn callee_named_by_value_native_keeps_both_snapshots_across_the_first_call() {
+        let printed = stage_functions("kuna-calleenamedlocals.xml", 0x401060);
+        assert_eq!(printed.len(), 3, "default, declaration-dedup off, and Ghidra names");
+        for (pass, printed) in printed.iter().enumerate() {
+            let Printed { name, code, prelude, types } = printed;
+            run_native(&format!("callee-named-by-value-{pass}"), &format!(r#"
+#include <stdint.h>
+#include <string.h>
+{prelude}
+{types}
+static P *active;
+static P observed[2];
+static unsigned calls;
+void take(P pt) {{
+    if (calls < 2) observed[calls]=pt;
+    ++calls;
+    active->a=INT64_C(0x1122334455667788);
+    active->b=-INT64_C(0x123456789abcdef);
+}}
+{code}
+static void reference(P *px,int8 c,int8 d) {{
+    P x=*px;
+    P y={{c*7,d*11}};
+    take(y);
+    take(x);
+}}
+int main(void) {{
+    const int8 values[]={{-257,-1,0,1,257,INT64_C(0x100000001)}};
+    for(unsigned i=0;i<sizeof(values)/sizeof(*values);++i) {{
+        for(unsigned j=0;j<sizeof(values)/sizeof(*values);++j) {{
+            P original={{-INT64_C(0x123456789abcdef),INT64_C(0x102030405060708)}};
+            P native=original,generated=original,expected[2];
+            active=&native; calls=0;
+            reference(&native,values[i],values[j]);
+            if(calls!=2)return 1;
+            expected[0]=observed[0]; expected[1]=observed[1];
+            active=&generated; calls=0;
+            {name}(&generated,values[i],values[j]);
+            if(calls!=2)return 2;
+            for(unsigned k=0;k<2;++k)
+                if(observed[k].a!=expected[k].a || observed[k].b!=expected[k].b)return 3;
+            if(generated.a!=native.a || generated.b!=native.b)return 4;
+        }}
+    }}
+    return 0;
+}}
+"#));
+        }
+    }
+
+    #[test]
+    fn msvc_by_value_native_passes_both_words_and_the_trailing_scalar() {
+        let printed = stage_functions("kuna-msvcbyval.xml", 0x401260);
+        assert_eq!(printed.len(), 1, "the original podok control must execute");
+        let Printed { name, code, prelude, types } = &printed[0];
+        run_native("msvc-by-value", &format!(r#"
+#include <stdint.h>
+#include <string.h>
+{prelude}
+{types}
+static unsigned calls;
+static uint64_t observed;
+static int tail;
+void Take(undefined8 value,int last) {{ ++calls; observed=value; tail=last; }}
+{code}
+int main(void) {{
+    const uint32_t words[]={{0,1,UINT32_MAX,UINT32_C(0x80000000),
+        UINT32_C(0x01234567),UINT32_C(0x89abcdef)}};
+    _Static_assert(sizeof(undefined8)==8,"the by-value slot has eight bytes");
+    for(unsigned i=0;i<sizeof(words)/sizeof(*words);++i) {{
+        for(unsigned j=0;j<sizeof(words)/sizeof(*words);++j) {{
+            _Alignas(8) uint32_t input[2]={{words[i],words[j]}};
+            calls=0; observed=0; tail=0;
+            {name}((void *)input);
+            uint64_t expected=((uint64_t)words[j]<<32)|words[i];
+            if(calls!=1 || observed!=expected || tail!=5)return 1;
+            if(input[0]!=words[i] || input[1]!=words[j])return 2;
+        }}
+    }}
+    return 0;
+}}
+"#));
+    }
+}

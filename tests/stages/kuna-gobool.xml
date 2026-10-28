@@ -32,13 +32,11 @@
     never runs on this bytechunk bootstrap, so the test forces `always`,
     exactly as the `rustabi` and `gomorestack` stage tests force their
     language-blind modes.
-    Pass 1 (option gobool off): the artifact - the return is the CONCAT71
-      concatenation (assertion #1).
-    Pass 2 (option gobool always): the fix - the concatenation is gone and the
-      comparison survives as the returned value; #1 stays at exactly one
-      occurrence because the second pass contributes none, while the
-      comparison (assertion #2) and the `return` (assertion #3) appear once
-      per pass.
+    Pass 1 (option gobool off) keeps the physical low-byte result.
+    Pass 2 (option gobool always) normalizes it to a whole boolean.
+    The native stage consumer executes both against the original instruction
+    bytes. CONCAT support definitions are genuine emitted C, not additional
+    occurrences of a stale-high dataflow operation.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 4889f84883ff010f94c0c3
@@ -55,7 +53,6 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="GOBOOL #1: the stale-high concatenation renders under off and narrows under always" min="1" max="1">CONCAT71</stringmatch>
 <stringmatch name="GOBOOL #2: the comparison survives both passes" min="2" max="2">a0 == 1</stringmatch>
 <stringmatch name="GOBOOL #3: one return per pass" min="2" max="2">return</stringmatch>
 </decompilertest>

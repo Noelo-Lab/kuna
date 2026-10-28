@@ -6,7 +6,9 @@
     values on the other; after the join %l4 is a loop index and %l5 a counter.
     Upstream heritages the pair as one 8-byte range because the ldd covers it,
     so the two registers merge into one unsigned long long updated by CONCAT44.
-    #1-#3 prove the fix at the default; #4-#5 reproduce the bug with the option off.
+    #1-#3 check the default and #4 retains the option-off control. Native
+    big-endian register-pair consumers in kuna-cli/tests/decompile_all_cli.rs
+    check lane values; CONCAT support definitions are not dataflow operations.
 -->
 <binaryimage arch="sparc:BE:32:default:default">
 <!-- Independently assembled.
@@ -59,5 +61,4 @@ pair_loop:
 <stringmatch name="SPARC-REGISTER-PAIR #2: the counter in %l5 is a 32-bit local incremented in place at the default" min="1" max="1">v[0-9]+ \+= 1;</stringmatch>
 <stringmatch name="SPARC-REGISTER-PAIR #3: the ldd still loads both halves, the high word into the index" min="1" max="1">n = \(uint8\)\*p &gt;&gt; 0x20;</stringmatch>
 <stringmatch name="SPARC-REGISTER-PAIR #4: pairrefine off restores the fused 64-bit pair local" min="1" max="1">uint8 v[0-9]+; // l4_5</stringmatch>
-<stringmatch name="SPARC-REGISTER-PAIR #5: and its CONCAT44 piece updates, only with the option off" min="1" max="1">CONCAT44</stringmatch>
 </decompilertest>
