@@ -808,6 +808,8 @@ pub struct Architecture {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// Materialize dynamic stack allocations across control flow.
+    pub stack_alloc: bool,
     /// Bounded native local storage and declared pointer views.
     pub local_stack_views: bool,
     /// (kuna `libcnames`) Name locals from the library calls they meet.
@@ -2989,6 +2991,7 @@ impl Architecture {
             stack_alias_deadstore: false,
             local_stack_views: true,
             stack_views: false,
+            stack_alloc: false,
             libc_names: false, // (kuna) option libcnames; reset_defaults sets the shipped default
             recover_array_stride: false,
             recover_lowered_switch: false,
@@ -3401,6 +3404,7 @@ impl Architecture {
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
+        self.stack_alloc = false;
         self.local_stack_views = true;
         self.libc_names = false; // (kuna) option libcnames default-off: six stage assertions of other features spell a `vN` it names; ON in the `aggressive` preset, which `auto` selects under 500 KiB
         self.stack_alias_deadstore = false; // (kuna) default: upstream byte-identical (GH-8500)
@@ -4347,6 +4351,7 @@ impl Architecture {
         ctx.array_size = self.array_size; // arraysize
         ctx.stack_alias_deadstore = self.stack_alias_deadstore; // stackalias
         ctx.stack_views = self.stack_views;
+        ctx.stack_alloc = self.stack_alloc;
         ctx.local_stack_views = self.local_stack_views;
         ctx.libc_names = self.libc_names; // libcnames
         ctx.guarded_read_trim = self.guarded_read_trim;

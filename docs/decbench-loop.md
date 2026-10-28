@@ -194,11 +194,11 @@ unclassifiable ones for a human).
 
 ### Shared counters in a busy queue — the merge is not the hard part
 
-This queue ran up to four output-changing PRs concurrently, and every one of them touches
-the same handful of hard-coded counters (`catalog_bytecompat.rs`, `phase_catalog.json`,
-`kuna-base/src/xml.rs`' corpus count, `docs/baseline-stages.json`, the `kuna_phases`
-count asserts, `tests/stages/README.md`). Round 2 produced **three distinct failure
-shapes, and only one of them announced itself**:
+This queue ran up to four output-changing PRs concurrently. Historically they all touched
+the same global catalog/corpus count pins and `phase_catalog.json` snapshot, as well as
+`docs/baseline-stages.json` and `tests/stages/README.md`. The global pins and snapshot
+have been retired in favor of catalog API/schema and behavioral checks. Round 2 exposed
+**three distinct failure shapes, and only one of them announced itself**:
 
 | shape | what happened | why it is dangerous |
 |---|---|---|
@@ -206,18 +206,24 @@ shapes, and only one of them announced itself**:
 | **A silent identical-edit auto-merge** | `catalog_bytecompat.rs` kept `86` because **both sides had made the identical `85 → 86` edit**, so git merged cleanly and the count was one short (#254) | no conflict, no diff to review, wrong answer — caught only by running the suite |
 | **A silent keep-both auto-merge** | a `docs/baseline-stages.json` auto-merge left a stale `data_footer` of `375` while the real key count was `381` (#253); and five rounds of keep-both resolution **duplicated a row in `tests/stages/README.md`** | keep-both is git's safe default and is exactly wrong for a counter or a table |
 
-The rules that fall out, and that #255 then executed cleanly:
+The current rules retain the useful checks without restoring incidental layout pins:
 
-- **Derive every shared counter from a fresh capture and a green run on the rebased tree,
-  never by arithmetic.** "Base + mine + theirs" is how you get `86` when the answer is
-  `87`. Re-capture `phase_catalog.json`, re-record `docs/baseline-stages.json`
-  (`kuna test --datatests --datatests-dir tests/stages --save-baseline …`), re-count the
-  corpus files, regenerate `docs/options.md`. #255 verified even the byte-identical
-  outcomes rather than assuming them.
-- **Diff every keep-both resolution against `main` and assert you removed nothing *and*
-  added nothing twice.** A duplicated table row survives every gate in this repo.
-- Nothing here is caught by review of the *conflict*. It is caught by the build and the
-  suite, so the gates must be re-run **after** the rebase, not before it.
+- **Check catalog membership and JSON semantics, not a fixed global size or captured
+  listing.** Registry count APIs must agree with their tables, and every option must
+  have valid metadata and live/default behavior.
+- **Derive remaining catalog field/value buckets from the current tree and binary.**
+  `python -m scripts.repipe.counters --check` checks phases.toml/catalog consistency,
+  tier coverage, and those XML bucket expectations. Corpus sizes are reported, not pinned;
+  there is no catalog snapshot to recapture or obsolete count-test anchor to update.
+- **Re-record `docs/baseline-stages.json` on the merged tree**, using
+  `kuna test --datatests --datatests-dir tests/stages --save-baseline …`. Its generated
+  footer must agree with its actual per-case keys; never merge it by arithmetic.
+- **Review every keep-both resolution for removals and duplicate rows.** A duplicated
+  table row survives a textual merge. Run the checks affected by the resolved changes.
+- **Keep assertion identities semantic and stable.** `mergecheck` has no catalog-count
+  rename exception or retired snapshot dependency. A renamed baseline assertion is a
+  removal that requires review; adding registry rows alone must not rename assertions.
+  The merge-safety tests retain removal, duplication, footer and upstream-baseline guards.
 
 Provenance: `source_decompiler = "angr"` stays when angr's behavior is the reference;
 set `inspiration = "decbench:<case-id>; <angr pass/class>; <function>"` — the

@@ -1330,6 +1330,9 @@ Three tiers:
 | large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
 | tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
 | a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
+| runtime-sized buffer accesses below a fixed local array | [`stackalloc`](#stackalloc) |
+| dynamic stack memory is overwritten by a generated call | [`stackalloc`](#stackalloc) |
+| undeclared Stack location after variable stack subtraction | [`stackalloc`](#stackalloc) |
 
 ## Toggleable transforms
 
@@ -4054,6 +4057,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option globalcallranges off`
+
+### `stackalloc` -- on | off, default `off`
+
+- **Symptoms:** runtime-sized buffer accesses below a fixed local array; dynamic stack memory is overwritten by a generated call; undeclared Stack location after variable stack subtraction.
+- **What it does:** Materialize runtime-sized 32- and 64-bit stack allocation as compiler-backed C storage across control flow. Follow stack adoption through copies and PHIs, recover the original size from paired pointer/counter probe loops, and bound outgoing stack accesses by SSA fixed-point analysis.
+- **When to flip:** Enable for known ordinary runtime stack-buffer lifetimes that decompile to accesses below a fixed local array or an undeclared Stack location. Handles conditional and repeated allocations, paired pointer/counter stack probes, and bases restored through memory. Loops that restore an earlier stack pointer, including scoped variable-length arrays, are declined because compiler alloca storage lasts until function return. Uses the selected ABI stack pointer; validated on x86, AMD64, ARM, AArch64, RISC-V32/64 and SPARC32/64. Bounds both sides of the allocation and preserves the selected SPARC V9 biased register-window ABI. Discovery follows subtractions feeding physical SP; unknown stack effects and unbounded outgoing-area cycles are declined. Saved-context switching is outside this allocation model.
+- **Where / provenance:** P3/stack-pointer-flow · kuna · correctness-fix · kuna-stackalloc
+- **Example:** `option stackalloc on`
 
 ## Programmatic use
 

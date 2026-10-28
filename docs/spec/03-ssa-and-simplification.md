@@ -5,6 +5,41 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p3_dataflow
 ```
 
+With `stackalloc on`, runtime-sized 32- and 64-bit stack allocation is materialized just
+after heritage, before stack arithmetic is copied into individual accesses.
+Candidate discovery follows definitions that feed the physical stack pointer,
+including copies, casts, alignment, indirect call effects, and PHIs. Under the
+explicit ordinary-allocation model, the base may itself have been restored
+through memory; a complete provenance chain to entry SP is not required.
+Paired pointer/counter PHIs with equal constant
+steps preserve their difference, including through zero-iteration exit PHIs;
+this recovers a stack probe's original requested size without assuming a bound
+on the loop or deleting its control flow. Each allocation receives independent
+storage, including allocations inside branches and loops. An SSA fixed point
+bounds both address directions required by stack adjustments, memory accesses,
+and outgoing arguments; fresh allocation roots cut successive lifetimes.
+Pointer induction bounds still changing after 64 sweeps are widened to unknown and
+the fixed point is resumed, at most eight times; a function that still has not
+converged is declined, so the analysis stays linear in the function size. Unknown
+stack effects and decreasing stack-pointer cycles without a finite bound are declined,
+including a base carried around a loop by a nonzero constant step, as in a
+stack-clash probe that lowers SP one page at a time before subtracting the
+residual: that residual is not the whole buffer. Another address formed as the
+same base and amount displaced by a constant (`base + 8 - n` beside `SP = base - n`)
+and dominated by the allocation is rewritten from the allocated buffer.
+A bounded evaluator follows copies and pure integer constant expressions before
+normal simplification, including alignment masks in either operand position. A zero
+mask erases the address and is not an alignment proof; only masks applied to a
+recovered allocation contribute reservation slack. Lower
+and upper SSA bounds reserve storage below and above the adopted SP. Memory access
+widths contribute to the upper reservation. The selected SPARC V9 register-window
+prototype's biased local range supplies its 2047-byte SP bias, which is retained in
+the allocated address so subsequent ABI-relative accesses remain aligned. The
+reserved space and alignment rounding are included in the compiler allocation,
+whose result is explicitly converted to an address-sized integer before subsequent
+stack arithmetic. The default is off; this is not an arbitrary stack-switch model.
+
+
 A LOAD through a pointer with an explicitly volatile pointee is treated as a
 volatile read by early removal and consume-based dead-code elimination, even
 when its value is unused. This type fact supplements the existing volatile
@@ -3002,3 +3037,11 @@ For `mulblob`, an isolated dynamic name without a type lock still describes a
 numeric value. Mapping that name does not disable the widened-operand guard when
 the datatype is the fallback array and every reader satisfies the existing
 arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.
+
+The stack-allocation pass preserves function-lifetime storage only. Within each
+enclosing natural loop, every latch must derive its incoming SP from the recovered
+allocation. Loops that restore an earlier SP, scoped VLAs and irreducible loops
+without this proof are declined; a C alloca would retain storage across iterations.
+The lifetime proof bounds graph and SSA traversal work. Lowering follows active
+call-argument recovery so it cannot turn the original SP relationships into
+spurious caller or callee parameters.

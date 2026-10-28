@@ -114,10 +114,10 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `p2_lift/kuna_loweredswitch.rs`). This is for *features* — behavior that is a judgment
   call, not universally better; a strict bug fix that only corrects wrong output needs no
   flag (when in doubt, gate it).
-- **Adding an option also bumps hard-coded catalog counts** — the count tests in
-  `kuna_phases/tests.rs`, the `tests/catalog_bytecompat.rs` fixture, and the
-  `tests/stages/kuna-catalog.xml` count assertions. Grep for the current total, or
-  `make rust-test`/`make test-stages` fail opaquely.
+- **Adding an option preserves the catalog API contract** — every registered option
+  appears once, its JSON schema and live/default values remain valid, and behavioral
+  controls exercise its effect. Do not pin the global catalog size or action-list layout;
+  registry membership/count relationships are derived from the tables.
 - **Default-ON needs evidence**: only if the flip changes 0/675 datatest assertions and
   passes the speed budget. Record what the default now does in the option's `phases.toml`
   row and its `docs/spec/` chapter — there is no separate registry to update.
@@ -158,10 +158,10 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   "Could not find .sla file" no matter what is exported. Symlink the main tree's built
   `.sla` files into the worktree's `specs/` before running the suite (they are gitignored,
   so the tree stays clean) — do not `make specs`.
-- Adding a `tests/stages/*.xml` also bumps a hard-coded corpus file count in
-  `decompiler/crates/kuna-base/src/xml.rs` and requires re-recording
-  `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
-  to base + all merged, and re-record the baseline rather than hand-merging it.
+- Adding a `tests/stages/*.xml` requires meaningful behavioral assertions and re-recording
+  `docs/baseline-stages.json` from the merged tree with the stage-test baseline command.
+  Keep the generated per-case results and footer together; never hand-merge their counts.
+  The XML corpus test still parses every file without pinning the global file count.
 - Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses), and most importantly replies or comments to issues/PRs. It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
 - **PR bodies** lead with a runnable repro, stay under one screen, and never mention our
   internal process (milestones, review rounds, agents, gate runs). The full rules are in

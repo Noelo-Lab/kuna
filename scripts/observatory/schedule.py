@@ -1,5 +1,5 @@
-"""The real pass order for the atlas: parse the committed, test-enforced
-listing snapshot (tests/fixtures/list_action_decompile_snapshot.txt), then
+"""Pass-order bootstrap metadata for the atlas: parse the committed listing
+capture (tests/fixtures/list_action_decompile_snapshot.txt), then
 attribute every pass to a defining module/folder and an action-group phase by
 reading the declarative registry in infra/universalaction.rs (rrow! rows,
 act! group literals, SchedNode container names) plus the ActionBase::new

@@ -1256,6 +1256,8 @@ pub struct ArchContext {
     pub stack_alias_deadstore: bool,
     /// Operation-specific typed views over shared physical frame storage.
     pub stack_views: bool,
+    /// Opt-in dynamic stack allocation.
+    pub stack_alloc: bool,
     /// Bounded native local storage and declared pointer views.
     pub local_stack_views: bool,
     /// (kuna `libcnames`) Name locals from the library calls they meet.
@@ -1985,6 +1987,7 @@ impl ArchContext {
             stack_alias_deadstore: false,
             local_stack_views: true,
             stack_views: false, // stackviews (opt-in)
+            stack_alloc: false, // stackalloc (opt-in)
             libc_names: false, // libcnames (opt-in)
             guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)

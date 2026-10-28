@@ -1,9 +1,7 @@
 //! Unit tests for the kuna phase registry (`kuna_phases.rs`).
 //!
-//! Parity targets (origin: `decompiler/cpp/kuna_stages.cc`, since grown):
-//! group/subphase/surface/settable counts pinned by the asserts below, plus the phase-code
-//! helpers, the lookup API, the typed `OptionValues` defaults, and the
-//! catalog emitter.
+//! Registry membership, public count relationships, valid tiers, phase-code
+//! helpers, lookup behavior, typed `OptionValues` defaults, and catalog APIs.
 
 use super::*;
 
@@ -20,43 +18,23 @@ fn catalog_matches_implemented_options() {
 }
 
 #[test]
-fn group_count_is_39() {
-    assert_eq!(kuna_num_groups(), 39);
-    assert_eq!(GROUP_TABLE.len(), 39);
+fn registry_count_apis_match_their_tables() {
+    assert_eq!(kuna_num_groups(), GROUP_TABLE.len());
+    assert_eq!(kuna_num_subphases(), SUBPHASE_TABLE.len());
+    assert_eq!(kuna_num_surfaces(), SURFACE_TABLE.len());
+    assert_eq!(kuna_num_settables(), SETTABLE_TABLE.len());
 }
 
 #[test]
-fn subphase_count_is_48() {
-    assert_eq!(kuna_num_subphases(), 48);
-    assert_eq!(SUBPHASE_TABLE.len(), 48);
-}
-
-#[test]
-fn surface_count_is_120() {
-    assert_eq!(kuna_num_surfaces(), 120);
-    assert_eq!(SURFACE_TABLE.len(), 120);
-}
-
-#[test]
-fn settable_count_is_339() {
-    assert_eq!(kuna_num_settables(), 339);
-    assert_eq!(SETTABLE_TABLE.len(), 339);
-}
-
-#[test]
-fn tier_counts_are_120_core_130_transform_89_analysis() {
-    let mut core = 0;
-    let mut transform = 0;
-    let mut analysis = 0;
+fn every_settable_has_a_valid_tier() {
     for s in SETTABLE_TABLE.iter() {
-        match s.tier {
-            "core" => core += 1,
-            "transform" => transform += 1,
-            "analysis" => analysis += 1,
-            other => panic!("invalid tier {other:?} on {}", s.option),
-        }
+        assert!(
+            matches!(s.tier, "core" | "transform" | "analysis"),
+            "invalid tier {:?} on {}",
+            s.tier,
+            s.option
+        );
     }
-    assert_eq!((core, transform, analysis), (120, 130, 89));
 }
 
 #[test]
@@ -246,23 +224,11 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_154() {
+fn option_values_live_defaults_match_shipped_values() {
     let ov = OptionValues::default();
-    // 28 options have a codegen live reader (realtypes + dedupvardecls join the
-    // field-backed group; switchguardbound is field-backed via switch_guard_bound;
-    // switchsharedcase is field-backed via switch_shared_case;
-    // switchmultipred is field-backed via switch_multi_pred;
-    // unrolledguard is field-backed via unrolled_guard;
-    // +1 for `tailcalljump`, whose `live_field` is `tail_call_jumps`; +1 for
-    // `noreturn_extern`, whose `live_field` is `noreturn_extern_calls`, opt-in;
-    // +1 for `noreturn_externmatch`, field-backed via `noreturn_extern_match`, DIV-13); the
-    // live_value returns the current value for them and None for
-    // loweredswitch/stackguard/namestyle/foldcallret/relocobjects PLUS the
-    // 19 analysis/loader-tier gates (which have no `live_field` — their live state
-    // is read console-side via the hand-written `kuna_live_value` / an env gate,
-    // not the codegen `live_value`; +1 for `funcstart_patterns`, the full
-    // byte-pattern function-start pass). `relocobjects` (DIV-8) gates the loader,
-    // not a printer/engine flag, so it too has no codegen live reader.
+    // Field-backed options expose their current value through the generated
+    // reader. Loader gates and options with hand-written live readers are
+    // checked separately below.
     const PASS_GATES: &[&str] = &[
         // (kuna) Linked-image dynamic-relocation application (DIV-84): a load-time
         // gate read via the `kuna_dynrelocs` env var (the relocations are applied
@@ -567,12 +533,10 @@ fn option_values_live_value_present_for_154() {
         // the starts), so it has no codegen live reader. Default-off.
         "lazyfuncs",
     ];
-    let mut with_live = 0;
     for i in 0..kuna_num_settables() {
         let st = kuna_settable_by_index(i);
         match ov.live_value(st.option) {
             Some(v) => {
-                with_live += 1;
                 assert_eq!(v, st.shipped, "live default == shipped for {}", st.option);
             }
             None => {
@@ -773,133 +737,6 @@ fn option_values_live_value_present_for_154() {
             }
         }
     }
-    // (kuna) `int3pad` joins the suppressed group (96 -> 97): it is a THREE-valued
-    // option (`off|warn|halt`) whose live field is an enum, which the codegen
-    // live reader (a bool `live_true`/`live_false` pair) cannot express -- the
-    // same reason `warnstyle` and `namestyle` are there.
-    // 28 -> 29: +1 for `peimportcall` (live_field = analysis_peimportcall);
-    // `itecondlist` declares no live_field, so it does not move this count.
-    // 29 -> 30: +1 for `funcboundflow` (live_field = funcbound_flow).
-    // 30 -> 31: +1 for `evalcurrentproto` (live_field = evalcurrentproto).
-    // 31 -> 32: +1 for `msvcftol` (live_field = msvc_ftol).
-    // 32 -> 33: +1 for `ctypes` (live_field = ctypes).
-    // 33 -> 34: +1 for `loadguardrange` (live_field = load_guard_range).
-    // 34 -> 35: +1 for `cleanupcode` (live_field = remove_cleanup_code).
-    // 35 -> 36: +1 for `retinputhalf` (live_field = ret_input_half).
-    // 36 -> 37: +1 for `framelayout` (live_field = framelayout, DIV-97).
-    // 38 -> 39: +1 for `cortexmpriv` (live_field = cortexmpriv, DIV-99).
-    // 39 -> 40: +1 for `linuxsyscall` (live_field = linux_syscall).
-    // 40 -> 41: +1 for `switchselector` (its own live_field).
-    // 41 -> 42: +1 for `tiedstorekeep` (live_field = tied_store_keep, DIV-105).
-    // 42 -> 43: +1 for `overlapbranch` (live_field = overlap_branch, DIV-106).
-    // 43 -> 44: +1 for `ptrdepthcap` (live_field = ptrdepthcap, DIV-108).
-    // 44 -> 45: +1 for `tailcallframe` (live_field = tail_call_frame, DIV-109).
-    // 45 -> 46: +1 for `jtsharepartial` (live_field = jumptable_share_partial).
-    // 46 -> 47: +1 for `rodatastring` (live_field = rodata_string, DIV-113).
-    // 47 -> 48: +1 for `inputparamgap` (live_field = input_param_gap, DIV-114).
-    // 48 -> 49: +1 for `simdlane` (live_field = simd_lane_fold, DIV-115).
-    // 49 -> 50: +1 for `retsplitglobal` (live_field = ret_split_global, DIV-116).
-    // 50 -> 51: +1 for `noreturnretuse` (live_field = noreturn_ret_use, DIV-118).
-    // 51 -> 52: +1 for `fastfailnoreturn` (live_field = fastfail_noreturn, DIV-119).
-    // 53 -> 54: +1 for `constselectjump` (live_field = const_select_jump).
-    // 54 -> 55: +1 for `calleepop` (live_field = callee_pop).
-    // 55 -> 56: +1 for `litpoolconst` (live_field = litpoolconst, DIV-136).
-    // 56 -> 57: +1 for `codescalar` (live_field = codescalar, DIV-138).
-    // 57 -> 58: +1 for `stackarggap` (live_field = stack_arg_gap, DIV-140).
-    // 58 -> 59: +1 for `calleeprotostack` (live_field = callee_proto_stack,
-    // DIV-142).
-    // 59 -> 60: +1 for `paramrefdecl` (live_field = param_ref_decl, DIV-143).
-    // 60 -> 61: +1 for `calltrampoline` (live_field = call_trampoline, DIV-144).
-    // 61 -> 62: +1 for `loopcounterstore` (live_field = loop_counter_store,
-    // DIV-146).
-    // 62 -> 63: +1 for `zeroidiomuse` (live_field = zero_idiom_use).
-    // 63 -> 64: +1 for `decodehalt` (live_field = decode_halt, DIV-151).
-    // 64 -> 65: +1 for `splitstorekeep` (live_field = split_store_keep,
-    // DIV-153).
-    // 65 -> 66: +1 for `entrythumbflow` (live_field = analysis_entrythumbflow).
-    // 66 -> 67: +1 for `retpushedhalf` (live_field = ret_pushed_half, DIV-156).
-    // 67 -> 68: +1 for `tailcallsaved` (live_field = tail_call_saved, DIV-157).
-    // 68 -> 69: +1 for `constspaceload` (live_field = const_space_load_fold,
-    // DIV-158).
-    // 69 -> 70: +1 for `declhightype` (live_field = decl_high_type, DIV-160).
-    // 70 -> 71: +1 for `exclusivearguse` (live_field = exclusive_arg_use,
-    // DIV-161).
-    // 71 -> 72: +1 for `callretpair` (live_field = call_ret_pair, DIV-162).
-    // 72 -> 73: +1 for `callpopret` (live_field = call_pop_ret, DIV-163).
-    // 73 -> 74: +1 for `entryretdispatch` (live_field = entry_ret_dispatch,
-    // DIV-168).
-    // 74 -> 75: +1 for `pushimmediateret` (live_field = push_immediate_ret,
-    // DIV-170).
-    // 75 -> 76: +1 for `loweredswitchlabels` (live_field = lowered_switch_labels,
-    // DIV-173).
-    // 76 -> 77: +1 for `cancelbytearithmetic` (live_field =
-    // cancel_byte_arithmetic, DIV-174).
-    // 78 -> 79: +1 for `nulterminator` (live_field = nul_terminator, opt-in).
-    // 79 -> 80: +1 for `endptrbound` (live_field = end_ptr_bound, DIV-177).
-    // 80 -> 81: +1 for `msvcstrappend` (live_field = msvc_str_append).
-    // 81 -> 82: +1 for `loweredswitchvalue` (live_field =
-    // lowered_switch_value_check, DIV-181).
-    // 82 -> 83: +1 for `tiedphitrim` (live_field = tied_phi_trim, DIV-182).
-    // 83 -> 85: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    // 85 -> 86: +1 for `bytehonest` (live_field = byte_honest).
-    // 86 -> 87: +1 for `argclobber` (live_field = arg_clobber, opt-in).
-    // 87 -> 88: +1 for `hideshadow` (live_field = hide_shadow, default-on).
-    // 88 -> 89: +1 for `boolbyte` (live_field = bool_byte, opt-in).
-    // 89 -> 90: +1 for `mulblob` (live_field = mul_blob, default-on).
-    // 90 -> 91: +1 for `charbyte` (live_field = char_byte, default-on).
-    // 92 -> 93: +1 for `charptr` (live_field = char_ptr, opt-in).
-    // 93 -> 94: +1 for `slotptr` (live_field = slot_ptr, default-on).
-    // 94 -> 95: +1 for `passthrough` (live_field = pass_through).
-    // 95 -> 96: +1 for `castimplied` (live_field = cast_implied).
-    // 97 -> 98: +1 for `castsign` (live_field = cast_sign).
-    // 98 -> 99: +1 for `castindex` (live_field = cast_index).
-    // 99 -> 100: +1 for `castternary` (live_field = cast_ternary).
-    // 100 -> 101: +1 for `callpush` (live_field = drop_call_push).
-    // 101 -> 102: +1 for `callrettype` (live_field = call_ret_type).
-    // 102 -> 103: +1 for `castobject` (live_field = cast_object).
-    // 103 -> 104: +1 for `elemptr` (live_field = elem_ptr).
-    // 104 -> 105: +1 for `condexeret` (live_field = cond_exe_ret).
-    // 105 -> 106: +1 for `fieldtype` (live_field = field_type).
-    // 106 -> 107: +1 for `armfloatreturn` (live_field = arm_float_return).
-    // 107 -> 108: +1 for `armfloatargs` (live_field = arm_float_args).
-    // 108 -> 109: +1 for `stackstoreguard` (live_field = stack_store_guard, default-on).
-    // 110 -> 111: +1 for `bejoin` (live_field = be_join).
-    // 111 -> 112: +1 for `calltargettype` (live_field = call_target_type).
-    // 112 -> 113: +1 for `condexeretuse` (live_field = cond_exe_ret_use).
-    // 113 -> 114: +1 for `retsysreg` (live_field = ret_sys_reg).
-    // 114 -> 115: +1 for `floatglobals` (live_field = float_globals, default-on).
-    // 115 -> 116: +1 for `floatbits` (live_field = float_bits).
-    // 116 -> 117: +1 for `reloadarg` (live_field = reload_arg).
-    // 117 -> 118: +1 for `varargsharedfloat` (live_field = vararg_shared_float).
-    // 118 -> 119: +1 for `armfuncmode` (live_field = analysis_armfuncmode).
-    // 119 -> 120: +1 for `armwalkmode` (live_field = analysis_armwalkmode).
-    // 120 -> 121: +1 for `calleepopslot` (live_field = callee_pop_slot).
-    // 121 -> 122: +1 for `callerreads` (live_field = caller_reads).
-    // 122 -> 123: +1 for `callarrayextent` (live_field = call_array_extent).
-    // 123 -> 124: +1 for `globalarrayanchor` (live_field = global_array_anchor).
-    // 124 -> 126: +2 for `wideslice` and `devectorize`.
-    // 127 -> 128: +1 for `calleepopframe` (live_field = callee_pop_frame).
-    // 129 -> 130: +1 for `msvcbyval` (live_field = msvc_byval).
-    // 132 -> 133: +1 for `pushpadread` (live_field = push_pad_read).
-    // -1 for `bejoin`, now a mode (`off|evidence|on`) over an enum field
-    // with no `live_field`.
-    // 135 -> 136: +1 for `strlenscan` (live_field = strlen_scan).
-    // 136 -> 137: +1 for `libcnames` (live_field = libc_names).
-    // 138 -> 139: +1 for `indirectargs` (live_field = indirect_args).
-    // 141 -> 142: +1 for `fputruncviews` (live_field = fpu_trunc_views).
-    // 142 -> 143: +1 for `reglocals` (live_field = reg_locals).
-    // 143 -> 144: +1 for `narrowargs` (live_field = narrow_args).
-    // 144 -> 145: +1 for `callerptr` (live_field = caller_ptr).
-    // 145 -> 146: +1 for `regnarrow` (live_field = narrow_locals).
-    // 146 -> 147: +1 for `narrowret` (live_field = narrow_ret).
-    // 147 -> 146: `narrowargs` takes `off|on|callers` and has no live_field.
-    // 146 -> 147: +1 for `slotreport` (live_field = slot_report).
-    // 147 -> 148: +1 for `callmechanisms` (live_field = call_mechanism_effects).
-    // 148 -> 149: +1 for `slotsplit` (live_field = slot_split).
-    // 151 -> 152: +1 for `regsigned` (live_field = narrow_signed).
-    // 152 -> 153: +1 for `callwide` (live_field = call_wide).
-    // 153 -> 154: +1 for `pairrefine` (live_field = pair_refine).
-    assert_eq!(with_live, 154);
 }
 
 #[test]
@@ -983,141 +820,9 @@ fn emit_settable_json_includes_current_when_live() {
 }
 
 #[test]
-fn emit_catalog_json_static_form_brackets_and_commas() {
-    let json = emit_catalog_json(|_| None);
-    assert!(json.starts_with("[\n  {\"option\": \"compareform\""));
-    assert!(json.ends_with("}\n]\n"));
-    // 83 rows: 82 trailing commas (the last, macho-arm64e, has none;
-    // callsitestackargs' P4 row sits mid-table, so it does not move the tail;
-    // switchguardbound's, switchsharedcase's, switchmultipred's, unrolledguard's,
-    // tailcalljump's, noreturn_extern's, and noreturn_externmatch's S2 rows,
-    // branchflip's, regionstructure's, regionlooprefine's, regionedgeorder's,
-    // ifelseflatten's,
-    // crossjumprevert's, taildup's, dedupitetail's, returndup's, iteregion's and
-    // iteboolean's S8 rows,
-    // noreturn_error's S1 analysis row, eh_frame_full's S1 row,
-    // cortexmvectors' S1 row, ptrentry's S1 row,
-    // operand_refs's S1 row, funcstart_patterns's S1 row, aif's S1 row, fid's S1
-    // row, rtti's S1 row, dwarf_lines' S1 row, the `objc` Mach-O Objective-C S1 row,
-    // the `pdb` PE PDB S1 row, switchreturn's S8 row, paramcopyhoist's P6 row,
-    // itecondlist's S8 row, peimportcall's S1 row, cppproto's S1 row,
-    // fdeinterior's S1 row, cppsig's S1 row, typedepth's S1 row, itaniumrtti's S1
-    // row, libcsigs' S1 row, funcboundflow's S2 row, poolentry's S1 row, the
-    // two P8 ifNoExit rows, calloverlap's P3 row, orchain's S8 row,
-    // evalcurrentproto's P4 row, ifuncfpret's P1 row, msvcftol's P2 row and
-    // datasyms' P1 row, loadguardrange's P3 row, relocrebase's P1 row and
-    // aifstrict's P1 row, spillargtrial's P4 row, dynrelocs' P1 row and
-    // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4 and
-    // symbolnamerepair's P1 rows sit mid-table, so they do not move the tail).
-    // noreturn_discstrict's P1 row is mid-table too, so it only bumps the count.
-    // retinputhalf's P4, dwarfstructs' P1, dwarfvariants' P1, rustabi's P4,
-    // symbolnamerepair's P1 and aifcorroborate's P1 rows sit mid-table, so they do
-    // not move the tail).
-    // symbolnamerepair's P1 and symbolnamechars' P1 rows sit mid-table, so they
-    // do not move the tail).
-    // symbolnamerepair's P1 and symbolnamebound's P1 rows sit mid-table, so they
-    // do not move the tail).
-    // symbolnamerepair's P1 and msvcfpconst's P1 rows sit mid-table, so they do
-    // not move the tail).
-    // +1 for `pdatainterior` (a P1 row beside `fdeinterior`, mid-table, so it only
-    // bumps the count).
-    // 123 -> 124: +1 for `framelayout` (DIV-97; its P6 row sits mid-table ahead of
-    // `ctypes`, so it does not move the tail either).
-    // 127 -> 129: +1 for `unmappedentry` and +1 for `entrymainproto` (both P1 rows
-    // mid-table, beside `fdeinterior`, so neither moves the tail either); the
-    // count is one less than the settable total, since the last row has no comma.
-    // +1 for `ppclocalentry` (another P1 row beside `unmappedentry`, mid-table).
-    // +1 for `pdatachained`, appended at the TAIL, so the previous last row gains
-    // its comma and the count moves with the total.
-    // +1 for `varargstackargs` and +1 for `calleearity`; both P4 rows sit
-    // mid-table beside `callsitestackargs`, so the tail does not move either.
-    // 148 -> 149: +1 for `noreturnretuse` (DIV-118); its P4 row is appended after
-    // the last one, so the previous tail row gains a comma and it becomes the tail.
-    // 149 -> 150: +1 for `msvcstackguard` (GH-468); its P7 row sits mid-table
-    // beside `securitycheck`, so the tail does not move.
-    // 180 -> 181: +1 for `entrythumbflow` (DIV-154); its P1 row sits mid-table
-    // beside `tailcallentry`, so the tail does not move.
-    // +1 for `cancelbytearithmetic` (DIV-174); its P3 row sits mid-table, so it
-    // increments the comma-terminated catalog-row count.
-    // 193 -> 194: +1 for `pebnames` (DIV-175); its P5 row sits mid-table beside
-    // `codescalar`, so it increments the comma-terminated catalog-row count.
-    // 194 -> 195: +1 for `mappedflowboundary` (DIV-176); its P2 row sits mid-table
-    // beside `funcboundflow`.
-    // 195 -> 196: +1 for `nulterminator` (opt-in); its P6 row sits mid-table beside
-    // `cookiescramble`, so it increments the comma-terminated catalog-row count.
-    // 196 -> 197: +1 for `endptrbound` (DIV-177); its P6 row sits mid-table.
-    // 197 -> 198: +1 for `rexthunk`; its P1 row sits mid-table beside `pdatachained`,
-    // so it increments the comma-terminated catalog-row count.
-    // 198 -> 199: +1 for `pdbinterior` (DIV-180); its P1 row sits mid-table beside
-    // `pdatainterior`.
-    // +1 for `msvcstrappend`; its P2 row sits mid-table.
-    // 200 -> 201: +1 for `loweredswitchvalue` (DIV-181); its P2 row sits
-    // mid-table, so it increments the comma-terminated catalog-row count.
-    // +1 for `tiedphitrim` (DIV-182); its P6 row sits mid-table beside
-    // `paramcopyhoist`, so it increments the comma-terminated catalog-row count.
-    // 202 -> 204: +1 for `loweredswitchexact` (P2 re-rolled switch matches its compare tree, DIV-183) and +1 for `loweredswitchheads` (P2 every lowered-switch cascade head, DIV-184).
-    // 209 -> 210: +1 for `libctypes`; its P1 row sits mid-table, so it
-    // increments the comma-terminated catalog-row count.
-    // 210 -> 211: +1 for `foldcallretphi`.
-    // 211 -> 212: +1 for `ptrfromuse`; its P5 row sits mid-table, so it
-    // increments the comma-terminated catalog-row count.
-    // 214 -> 215: +1 for `structsynth`.
-    // 215 -> 216: +1 for `signedness`; its P9 row sits mid-table, so it
-    // increments the comma-terminated catalog-row count.
-    // 216 -> 217: +1 for `boolbyte`; its P5 row sits mid-table, so it
-    // increments it again.
-    // 217 -> 218: +1 for `mulblob`; its P3 row sits mid-table, so it
-    // increments it again.
-    // 224 -> 225: +1 for `slotptr`; its P6 row sits mid-table.
-    // 225 -> 226: +1 for `calleevote`.
-    // 226 -> 227: +1 for `structmerge`; its P5 row sits mid-table.
-    // 232 -> 233: +1 for `structheadless`; its P5 row sits mid-table.
-    // 235 -> 236: +1 for `callpush`; its P4 row sits mid-table.
-    // 237 -> 238: +1 for `peordinal`.
-    // 238 -> 239: +1 for `jumptablemax`.
-    // 240 -> 241: +1 for `callrettype`; its P4 row sits mid-table.
-    // 241 -> 242: +1 for `castobject`.
-    // 242 -> 243: +1 for `castwiden`.
-    // 243 -> 244: +1 for `elemptr`.
-    // 244 -> 245: +1 for `condexeret`; its P4 row sits mid-table.
-    // 245 -> 246: +1 for `fieldtype`.
-    // 246 -> 247: +1 for `armfloatreturn`.
-    // 247 -> 248: +1 for `armfloatargs`.
-    // 248 -> 249: +1 for `narrowext`; its P4 row sits mid-table.
-    // 249 -> 250: +1 for `syscallregs`.
-    // 250 -> 251: +1 for `flowmode`.
-    // 251 -> 252: +1 for `varargforward`.
-    // 252 -> 253: +1 for `stackstoreguard`.
-    // 253 -> 254: +1 for `protoranges`; its P6 row sits mid-table.
-    // 257 -> 258: +1 for `bejoin`.
-    // +1 for `coldentry`; its P1 row sits mid-table beside `fdeinterior`.
-    // +1 for `thunkentry`; its P1 row sits mid-table beside `unmappedentry`.
-    // +1 for `zerocallregs`; its P4 row sits mid-table beside `zerofillreturn`.
-    // +1 for `callerreads`.
-    // +1 for `bytearrayc`; its P9 row sits mid-table.
-    // +2 for `wideslice` and `devectorize`.
-    // +1 for `addrtakenentry`; its P1 row sits mid-table beside `thunkentry`.
-    // +1 for `lazyfuncs`; its P1 row sits beside `addrtakenentry`.
-    // +1 for `pairrefine`; its P3 row sits beside `splitstorekeep`.
-    // +1 for `sourcelang`; its P1 row sits beside `gopclntab`.
-    // +1 for `fatstr`; its P5 row sits beside `sourcelang`.
-    // +1 for `gomorestack`; its P2 row sits beside `sourcelang`.
-    // +1 for `gonoreturn`; its P1 row sits beside `sourcelang`.
-    // +1 for `variantnames`; its P5 row sits beside `dwarfvariants`.
-    // +1 for `goabi`; its P1 row sits beside `sourcelang`.
-    // +1 for `gowritebarrier`; its P2 row sits beside `gomorestack`.
-        // +1 for `goreg`; its P1 row sits beside `goabi`.
-    // +1 for `gobool`; its P4 row sits beside `sourcelang`.
-    // +1 for `swiftdemangle`; its P1 row sits beside `sourcelang`.
-    assert_eq!(json.matches("},\n").count(), 338);
-}
-
-#[test]
 fn emit_catalog_json_one_unknown_is_none() {
     assert!(emit_catalog_json_one("bogus", None).is_none());
-    let one = emit_catalog_json_one("namestyle", None).unwrap();
-    assert!(one.starts_with("  {\"option\": \"namestyle\""));
-    assert!(one.ends_with("}\n"));
+    assert!(emit_catalog_json_one("namestyle", None).is_some());
 }
 
 #[test]

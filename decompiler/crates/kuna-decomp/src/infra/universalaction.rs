@@ -571,12 +571,8 @@ pub fn universal_sched(
             // with no region supplied).  Excise a SUPPLIED single-entry region and
             // emit a call to a synthesized pseudofunction in its place.
             //
-            // Placed BEFORE varnodeprops rather than directly before heritage: it
-            // only has to be inside the pre-SSA window (it self-gates on
-            // `get_heritage_pass() == 0`), and the
-            // varnodeprops -> lowerswitchinstall -> heritage run below is a ported
-            // C++ adjacency (coreaction.cc:5751-5756) pinned by
-            // verify_w8x_allowlist.rs.  A kuna-only pass does not get to split it.
+            // Placed before varnodeprops so it stays in the pre-SSA window;
+            // the pass also self-gates on `get_heritage_pass() == 0`.
             act!(crate::p8_structure::kuna_outline::ActionOutline::boxed("blockrecovery")),
             act!(ActionVarnodeProps::boxed("base")),
             // (kuna) Install a previously-detected lowered switch BEFORE heritage
@@ -598,6 +594,7 @@ pub fn universal_sched(
             act!(ActionDirectWrite::boxed("protorecovery_a", true)),
             act!(ActionDirectWrite::boxed("protorecovery_b", false)),
             act!(ActionActiveParam::boxed("protorecovery")),
+            act!(crate::p3_dataflow::kuna_stackalloc::ActionStackAlloc::boxed()),
             act!(ActionReturnRecovery::boxed("protorecovery")),
             act!(ActionRestrictLocal::boxed("localrecovery")),
             act!(ActionDeadCode::boxed("deadcode")),
