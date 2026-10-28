@@ -243,7 +243,7 @@ pub(crate) fn pointer_argument_requirement(
 ) -> Option<Rc<Datatype>> {
     let target = stated_argument_type(data, fc, slot)?;
     let input = data.obank().get(op)?.get_in(slot)?;
-    let source = data.vn_high_type_read_facing(input, op);
+    let source = data.vn_type_read_facing(input, op);
     (target.get_metatype() == type_metatype::TYPE_PTR
         && source.get_metatype() == type_metatype::TYPE_PTR
         && target.get_size() == arg_size

@@ -135,7 +135,12 @@ fn a_computed_struct_pair_return_is_kept() {
 /// arithmetic. A LOAD is a real value, so the pair is kept.
 #[test]
 fn a_loaded_struct_pair_return_is_kept() {
-    let (code, prelude, types) = decompile_with_types("structreturn_x86_64", "passthru", &[]);
+    // Select the CLI's compilable partial-access rendering, not Ghidra's
+    // synthetic `._offset_size_` notation. Recovery and return inference are
+    // unchanged; only the storage expression printer differs.
+    let (code, prelude, types) = decompile_with_types(
+        "structreturn_x86_64", "passthru", &["option partialaccess on"],
+    );
 
     assert!(
         code.contains("undefined16"),
