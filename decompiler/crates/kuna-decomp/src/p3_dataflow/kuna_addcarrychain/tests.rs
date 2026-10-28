@@ -393,7 +393,7 @@ mod native_address_consumer {
         types.setup_sizes(Some(4), 8, 8);
         types.set_default_alignment_map();
         types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
-        for (name, size) in [("unsigned char", 1), ("unsigned short", 2), ("unsigned int", 4), ("unsigned long long", 8)] {
+        for (name, size) in [("uint1", 1), ("uint2", 2), ("uint4", 4), ("uint8", 8)] {
             types.set_core_type(name, size, type_metatype::TYPE_UINT, false).unwrap();
         }
         types.cache_core_types().unwrap();
@@ -476,7 +476,8 @@ mod native_address_consumer {
         for folded_base in [None, Some(0xd11a_u16), Some(0xd2c6_u16)] {
             for enabled in [false, true] {
                 let generated = document(enabled, folded_base);
-                // Insert the full generated body and genuine runtime support.
+                // Keep the generated body/typedefs/CONCAT support unchanged.
+                // SUBPIECE and CARRY use their numeric p-code runtime semantics.
                 let program = r#"
 #include <assert.h>
 #include <limits.h>
@@ -491,6 +492,13 @@ static unsigned char *fixture_memory(void) { ++reads[0]; return memory; }
 static unsigned char fixture_screen(void) { ++reads[1]; return screen; }
 static unsigned char fixture_hovered(void) { ++reads[2]; return hovered; }
 static unsigned short fixture_base(void) { ++reads[3]; return base; }
+static uint8_t SUB21(uint16_t value, unsigned int bytes) {
+    assert(bytes < 2);
+    return (uint8_t)(value >> (bytes * CHAR_BIT));
+}
+static uint8_t CARRY1(uint8_t left, uint8_t right) {
+    return (unsigned int)left + right > UINT8_MAX;
+}
 GENERATED
 int main(void) {
     static const uint16_t bases[] = { BASES };
