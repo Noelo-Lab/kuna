@@ -40,5 +40,5 @@
     ]
   },
   "notes": "`score1` takes one pointer and is cast into qsort's two-pointer comparator slot, and `main` also calls it directly. The declaration's closed two-parameter list would materialize a second argument at both direct call sites out of whatever the register last held -- qsort's element size -- and neither argument is in the program.",
-  "probe_id": "p-53c2821d2ac6"
+  "probe_id": "p-1d8b89868962"
 }
