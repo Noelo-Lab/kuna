@@ -1110,6 +1110,26 @@ funcsym stream:
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
   named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+  PPC32 linked images use
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (resolve)`:
+  a zero-addend `R_PPC_JMP_SLOT` names its call target directly inside an
+  allocated, writable, executable NOBITS `.plt`, after the reserved 72-byte
+  header. Secure-PLT entries are pointer slots instead: complete `r11` load,
+  `mtctr r11`, `bctr` stubs in executable sections are named only when their
+  decoded address matches such a relocation in the non-executable `.plt`.
+  Absolute stubs carry the address themselves. Small-PIC stubs require
+  `DT_PPC_GOT`, its `.got` header pointing at `.dynamic`, and agreement with
+  any `_GLOBAL_OFFSET_TABLE_` symbol. A nonempty `.got2` permits per-object
+  `r30` bases, so those PIC stubs remain unresolved; neither a plausible offset
+  nor a linker-generated function name establishes a base. An empty `.got2`
+  whose conventional base supplies a conflicting import slot also prevents
+  small-PIC naming. Duplicate relocation
+  slots, nonzero addends, data symbols and incomplete stubs provide no import
+  identity. Both ELF byte orders are supported. Resolved PPC32 import names
+  take precedence over local stub labels, which remain aliases. Existing
+  library prototypes, no-return facts and name-based xrefs therefore see the
+  same imported identity, including when a terminal call has no mapped
+  fall-through bytes. This does not add a sectionless PPC32 resolver.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
