@@ -2414,7 +2414,7 @@ mod tests {
         caller.pointerargs = Some(Record {
             entry: ("ram".into(), 0x2000), language, struct_defs: false,
             preamble_end: Position { line: 1, column: 0 },
-            texts: vec![std::rc::Rc::new("&v1".into())], parameters: vec![],
+            texts: vec![std::sync::Arc::new("&v1".into())], parameters: vec![],
             calls: vec![Call {
                 callee: ("ram".into(), 0x1000), index: 0, storage,
                 actual: if language == OutLang::C { "long *" } else { "*mut i64" }.into(),

@@ -43,13 +43,13 @@ fn records() -> (Record, Record) {
         }],
         language: OutLang::C,
         struct_defs: false,
-        texts: vec![Rc::new("&v1".into())],
+        texts: vec![Arc::new("&v1".into())],
         preamble_end: Position { line: 1, column: 0 },
     };
     (caller, callee)
 }
 
-fn insertion(code: &str, pool: Rc<String>, start: usize, end: usize, language: OutLang) -> Insertion {
+fn insertion(code: &str, pool: Arc<String>, start: usize, end: usize, language: OutLang) -> Insertion {
     Insertion {
         position: position(code, start),
         end: position(code, end),
@@ -69,10 +69,23 @@ fn final_declarations_decide_independently_of_order() {
     let a = insertions(&caller, &definitions([&caller, &callee]));
     let b = insertions(&caller, &definitions([&callee, &caller]));
     assert_eq!(a, b);
-    assert!(Rc::ptr_eq(&a[0].expression, &caller.texts[0]));
+    assert!(Arc::ptr_eq(&a[0].expression, &caller.texts[0]));
     let applied = apply("sink(0,&v1);", &a);
     assert_eq!(applied.code, "sink(0,((unsigned char *)(&v1)));");
     assert_eq!(applied.inserted, a);
+}
+
+#[test]
+fn accepted_pointer_records_and_applied_metadata_cross_worker_threads() {
+    let (caller, callee) = records();
+    let pool = Arc::clone(&caller.texts[0]);
+    let applied = std::thread::spawn(move || {
+        apply("sink(0,&v1);", &insertions(&caller, &definitions([&callee])))
+    }).join().unwrap();
+    assert_eq!(applied.code, "sink(0,((unsigned char *)(&v1)));");
+    assert!(applied.skipped.is_empty());
+    assert_eq!(applied.inserted.len(), 1);
+    assert!(Arc::ptr_eq(&applied.inserted[0].expression, &pool));
 }
 
 #[test]
@@ -171,7 +184,7 @@ fn stale_and_ambiguous_sites_stay_uncast_and_leave_the_document_intact() {
 #[test]
 fn whole_span_positions_ranges_and_utf8_boundaries_are_validated() {
     let code = "sink(é);";
-    let edit = insertion(code, Rc::new("é".into()), 5, 7, OutLang::C);
+    let edit = insertion(code, Arc::new("é".into()), 5, 7, OutLang::C);
     assert_eq!(apply(code, &[edit.clone()]).inserted.len(), 1);
     for bad in 0..7 {
         let mut broken = edit.clone();
@@ -218,11 +231,11 @@ fn nested_multiline_arguments_share_the_pool_and_stream_in_both_languages() {
     let code = "sink(wrap(\n  provider(value)\n)); // provider(value)\n";
     let outer_start = code.find("wrap(").unwrap();
     let outer_end = code.find(");").unwrap();
-    let pool = Rc::new(code[outer_start..outer_end].to_string());
+    let pool = Arc::new(code[outer_start..outer_end].to_string());
     let inner_start = code.find("value").unwrap();
     for language in [OutLang::C, OutLang::Rust] {
-        let outer = insertion(code, Rc::clone(&pool), outer_start, outer_end, language);
-        let mut inner = insertion(code, Rc::clone(&pool), inner_start, inner_start + 5, language);
+        let outer = insertion(code, Arc::clone(&pool), outer_start, outer_end, language);
+        let mut inner = insertion(code, Arc::clone(&pool), inner_start, inner_start + 5, language);
         inner.text_start = inner_start - outer_start;
         inner.text_end = inner.text_start + 5;
         let applied = apply(code, &[inner, outer]);
@@ -234,16 +247,16 @@ fn nested_multiline_arguments_share_the_pool_and_stream_in_both_languages() {
         assert_eq!(applied.code, expected);
         assert!(applied.skipped.is_empty());
         assert_eq!(applied.inserted.len(), 2);
-        assert!(applied.inserted.iter().all(|e| Rc::ptr_eq(&e.expression, &pool)));
+        assert!(applied.inserted.iter().all(|e| Arc::ptr_eq(&e.expression, &pool)));
     }
 }
 
 #[test]
 fn crossing_spans_decline_both_but_preserve_a_disjoint_neighbour() {
     let code = "a+b+c; d";
-    let a = insertion(code, Rc::new("a+b".into()), 0, 3, OutLang::C);
-    let b = insertion(code, Rc::new("b+c".into()), 2, 5, OutLang::C);
-    let c = insertion(code, Rc::new("d".into()), 7, 8, OutLang::C);
+    let a = insertion(code, Arc::new("a+b".into()), 0, 3, OutLang::C);
+    let b = insertion(code, Arc::new("b+c".into()), 2, 5, OutLang::C);
+    let c = insertion(code, Arc::new("d".into()), 7, 8, OutLang::C);
     let applied = apply(code, &[a, b, c]);
     assert_eq!(applied.code, "a+b+c; ((unsigned char *)(d))");
     assert_eq!(applied.skipped.len(), 2);
@@ -254,7 +267,7 @@ fn crossing_spans_decline_both_but_preserve_a_disjoint_neighbour() {
 fn later_sites_crossing_an_already_rejected_span_also_decline() {
     let code = "a+b+c+d+e";
     let edits: Vec<_> = [(0, 5), (2, 9), (4, 7)].into_iter().map(|(start, end)| {
-        insertion(code, Rc::new(code[start..end].into()), start, end, OutLang::C)
+        insertion(code, Arc::new(code[start..end].into()), start, end, OutLang::C)
     }).collect();
     let applied = apply(code, &edits);
     assert_eq!(applied.code, code);
@@ -274,14 +287,14 @@ fn structure_renames_rebase_both_positions_without_moving_other_lines() {
     again.position = Position { line: 2, column: 7 };
     again.end = Position { line: 2, column: 10 };
     caller.calls.push(again);
-    let pool = Rc::clone(&caller.texts[0]);
+    let pool = Arc::clone(&caller.texts[0]);
     caller.renamed(code, &[(0, 8, "struct_100".into())]);
     assert_eq!(caller.calls[0].position, Position { line: 1, column: start + 2 });
     assert_eq!(caller.calls[0].end, Position { line: 1, column: start + 5 });
     assert_eq!(caller.preamble_end, Position { line: 1, column: start + 2 });
     assert_eq!(caller.calls[1].position, Position { line: 2, column: 7 });
     assert_eq!(caller.calls[1].end, Position { line: 2, column: 10 });
-    assert!(Rc::ptr_eq(&pool, &caller.texts[0]));
+    assert!(Arc::ptr_eq(&pool, &caller.texts[0]));
 }
 
 #[test]
@@ -292,7 +305,7 @@ fn renaming_updates_actual_contract_metadata_and_shared_nested_ranges() {
     let inner_start = code.find("(struct_1").unwrap();
     let inner_end = inner_start + "(struct_1 *)value".len();
     let (mut caller, mut callee) = records();
-    caller.texts = vec![Rc::new(code[outer_start..outer_end].into())];
+    caller.texts = vec![Arc::new(code[outer_start..outer_end].into())];
     caller.calls[0].position = position(code, outer_start);
     caller.calls[0].end = position(code, outer_end);
     caller.calls[0].text_end = outer_end - outer_start;
@@ -430,7 +443,7 @@ fn capture_pools_outermost_multiline_spans_once_before_trimming() {
     assert_eq!(caller.calls[2].text_end, caller.texts[0].len());
     caller.trim_lines(code);
     let edits = insertions(&caller, &definitions([&callee]));
-    assert!(Rc::ptr_eq(&edits[0].expression, &edits[1].expression));
+    assert!(Arc::ptr_eq(&edits[0].expression, &edits[1].expression));
     let applied = apply(code.trim_matches('\n'), &edits);
     assert!(applied.skipped.is_empty());
     assert_eq!(applied.inserted.len(), 3);

@@ -2200,7 +2200,7 @@ mod tests {
             entry: ("pointer-contract-space".into(), a.byte_address),
             language: kuna_decomp::kuna_lang::OutLang::C, struct_defs: true,
             preamble_end: kuna_decomp::kuna_pointerargs::Position { line: 3, column: 0 },
-            texts: vec![std::rc::Rc::new("source(\n&v1)".into())],
+            texts: vec![std::sync::Arc::new("source(\n&v1)".into())],
             parameters: vec![None, Some(kuna_decomp::kuna_pointerargs::Parameter {
                 storage: (("register".into(), 0x38), 8), spelling: "Node *".into(),
                 void_pointer: false, dependencies: vec!["Payload".into(), "Node".into()],
@@ -2296,7 +2296,7 @@ mod tests {
                 4 => record.calls[0].position.line = 0,
                 5 => record.preamble_end.line = 0,
                 _ => {
-                    record.texts[0] = std::rc::Rc::new("é".into());
+                    record.texts[0] = std::sync::Arc::new("é".into());
                     record.calls[0].text_end = 1;
                 },
             }

@@ -123,7 +123,7 @@ fn a_structure_rename_rebases_recorded_pointer_arguments() {
         entry: ("ram".into(), 0x2000),
         language: kuna_decomp::kuna_lang::OutLang::C, struct_defs: true,
         preamble_end: Position { line: 1, column: 13 },
-        texts: vec![std::rc::Rc::new("source((struct_3 *)&v1)".into())],
+        texts: vec![std::sync::Arc::new("source((struct_3 *)&v1)".into())],
         parameters: vec![Some(Parameter {
             storage: (("register".into(), 0x38), 8), spelling: "struct_3 *".into(),
             void_pointer: false, dependencies: vec!["struct_3".into()],

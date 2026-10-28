@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::dtype::{type_metatype, Datatype};
@@ -56,7 +57,7 @@ pub struct Record {
     pub calls: Vec<Call>,
     pub language: OutLang,
     pub struct_defs: bool,
-    pub texts: Vec<Rc<String>>,
+    pub texts: Vec<Arc<String>>,
     pub preamble_end: Position,
 }
 
@@ -109,7 +110,7 @@ impl Record {
                 Some((base, limit, text)) if start >= base && end <= limit => (base, limit, text),
                 _ => {
                     let text = self.texts.len();
-                    self.texts.push(Rc::new(untrimmed[start..end].to_string()));
+                    self.texts.push(Arc::new(untrimmed[start..end].to_string()));
                     outer = Some((start, end, text));
                     (start, end, text)
                 }
@@ -212,7 +213,7 @@ impl Record {
             }
             changed.push_str(&text[at..]);
             pool_edits[index] = Some((base, first, last));
-            *text = Rc::new(changed);
+            *text = Arc::new(changed);
         }
         for call in &mut self.calls {
             if let Some(&(base, first, last)) = pool_edits.get(call.text).and_then(Option::as_ref) {
@@ -298,7 +299,7 @@ pub fn definitions<'a>(records: impl IntoIterator<Item = &'a Record>) -> Definit
 pub struct Insertion {
     pub position: Position,
     pub end: Position,
-    pub expression: Rc<String>,
+    pub expression: Arc<String>,
     pub text_start: usize,
     pub text_end: usize,
     pub spelling: String,
@@ -320,7 +321,7 @@ pub fn insertions(record: &Record, definitions: &Definitions) -> Vec<Insertion> 
         Some(Insertion {
             position: call.position,
             end: call.end,
-            expression: Rc::clone(record.texts.get(call.text)?),
+            expression: Arc::clone(record.texts.get(call.text)?),
             text_start: call.text_start,
             text_end: call.text_end,
             spelling: target.spelling.clone(),
@@ -441,7 +442,7 @@ pub fn apply(code: &str, edits: &[Insertion]) -> Applied {
     // bytes once, including when many nested sites share a very large pool.
     let mut checked: BTreeMap<(usize, usize), (usize, usize)> = BTreeMap::new();
     sites.retain(|&(start, end, edit)| {
-        let key = (Rc::as_ptr(&edit.expression) as usize, start.wrapping_sub(edit.text_start));
+        let key = (Arc::as_ptr(&edit.expression) as usize, start.wrapping_sub(edit.text_start));
         let covered = checked.get(&key).copied();
         let from = covered.filter(|&(lo, hi)| edit.text_start >= lo && edit.text_start <= hi)
             .map_or(edit.text_start, |(_, hi)| hi.max(edit.text_start).min(edit.text_end));

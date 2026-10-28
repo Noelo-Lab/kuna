@@ -670,7 +670,7 @@ fn read_pointerargs(r: &mut Reader<'_>) -> Option<Option<kuna_decomp::kuna_point
     let struct_defs = match r.u8()? { 0 => false, 1 => true, _ => return None };
     let n = r.u32()? as usize;
     let mut texts = r.sized(n);
-    for _ in 0..n { texts.push(std::rc::Rc::new(r.string()?)); }
+    for _ in 0..n { texts.push(std::sync::Arc::new(r.string()?)); }
     let preamble_end = Position { line: r.u64()?.try_into().ok()?, column: r.u64()?.try_into().ok()? };
     if preamble_end.line == 0 { return None; }
     let n = r.u32()? as usize;
