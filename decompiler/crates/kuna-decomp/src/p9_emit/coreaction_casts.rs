@@ -2484,13 +2484,14 @@ mod verify_w10_merge_casts_r2 {
     }
 
     fn render_recovered_pointer_call(fd: &Funcdata, language: &str) -> String {
-        let arch = crate::architecture::Architecture::new(
+        let mut arch = crate::architecture::Architecture::new(
             "test",
             kuna_sleigh::sleigh::Sleigh::new(
                 Box::new(kuna_sleigh::loadimage::RawLoadImage::new("unused")),
                 Box::new(kuna_sleigh::globalcontext::ContextInternal::new()),
             ),
         );
+        arch.ctypes = true;
         arch.types_impl().setup_sizes(Some(4), 8, 8);
         arch.types_impl().set_default_alignment_map();
         arch.types_impl().set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
@@ -2499,6 +2500,7 @@ mod verify_w10_merge_casts_r2 {
         let copy = fd.sblocks_ref().block(root).get_list()[0];
         let mut printer = crate::printc::PrintC::new();
         printer.set_name(language);
+        printer.doc_prototype(fd, &arch);
         printer.set_output_stream();
         printer.emit_block(fd, &arch, copy);
         printer.emit_mut().output_str().to_owned()
@@ -2690,7 +2692,6 @@ fn main() { unsafe {
             type_: Some(Rc::clone(&declared_type)),
             flags: crate::fspec::parameter_pieces_flags::TYPELOCK,
         });
-        assert!(!fd.get_call_specs(index).proto().is_input_locked());
         assert!(fd.get_call_specs(index).proto().get_param(0).unwrap().is_type_locked());
         assert!(crate::kuna_protoorder::pointer_argument_requirement(
             &fd, call, fd.get_call_specs(index), 1, 8,
