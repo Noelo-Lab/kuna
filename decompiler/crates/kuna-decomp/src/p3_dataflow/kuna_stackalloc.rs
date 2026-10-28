@@ -1117,46 +1117,39 @@ fn indirect_stack_pop(fd: &Funcdata, id: OpId) -> Option<i128> {
     (pop != crate::fspec::EXTRAPOP_UNKNOWN).then_some(pop as i128)
 }
 
-fn evaluate(fd: &Funcdata, id: OpId, values: &Values, upper: bool) -> Bounds {
+#[derive(Clone, Copy)]
+enum BoundTransfer {
+    Empty,
+    Root(usize),
+    Copy(Option<VarnodeId>),
+    Shift(Option<VarnodeId>, Option<i128>),
+    Merge(OpId),
+    UnknownPair([Option<VarnodeId>; 2]),
+}
+
+fn bound_transfer(fd: &Funcdata, id: OpId, upper: bool) -> BoundTransfer {
     let o = fd.obank().get(id).unwrap();
-    let input = |slot| {
-        o.get_in(slot)
-            .and_then(|v| values.get(&v))
-            .cloned()
-            .unwrap_or_default()
-    };
     match o.code() {
-        OpCode::CPUI_COPY | OpCode::CPUI_CAST => input(0),
-        OpCode::CPUI_MULTIEQUAL => {
-            let mut result = Bounds::new();
-            for slot in 0..o.num_input() {
-                merge(&mut result, input(slot), upper);
-            }
-            result
-        }
+        OpCode::CPUI_COPY | OpCode::CPUI_CAST => BoundTransfer::Copy(o.get_in(0)),
+        OpCode::CPUI_MULTIEQUAL => BoundTransfer::Merge(id),
         OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRSUB => {
             if let Some(by) = o.get_in(1).and_then(|v| number(fd, v)) {
-                shift(
-                    input(0),
-                    Some(if o.code() == OpCode::CPUI_INT_SUB {
-                        -by
-                    } else {
-                        by
-                    }),
+                BoundTransfer::Shift(
+                    o.get_in(0),
+                    Some(if o.code() == OpCode::CPUI_INT_SUB { -by } else { by }),
                 )
             } else if o.code() == OpCode::CPUI_INT_ADD {
                 if let Some(by) = o.get_in(0).and_then(|v| number(fd, v)) {
-                    return shift(input(1), Some(by));
+                    BoundTransfer::Shift(o.get_in(1), Some(by))
+                } else {
+                    BoundTransfer::UnknownPair([o.get_in(0), o.get_in(1)])
                 }
-                let mut result = shift(input(0), None);
-                merge(&mut result, shift(input(1), None), upper);
-                result
             } else {
-                shift(input(0), None)
+                BoundTransfer::Shift(o.get_in(0), None)
             }
         }
-        OpCode::CPUI_PTRADD => shift(
-            input(0),
+        OpCode::CPUI_PTRADD => BoundTransfer::Shift(
+            o.get_in(0),
             o.get_in(1)
                 .and_then(|v| number(fd, v))
                 .zip(o.get_in(2).and_then(|v| number(fd, v)))
@@ -1164,8 +1157,8 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values, upper: bool) -> Bounds {
         ),
         OpCode::CPUI_INT_AND => {
             if let Some((slot, amount)) = alignment(fd, id) {
-                shift(
-                    input(slot),
+                BoundTransfer::Shift(
+                    o.get_in(slot),
                     if upper {
                         Some(0)
                     } else {
@@ -1173,15 +1166,38 @@ fn evaluate(fd: &Funcdata, id: OpId, values: &Values, upper: bool) -> Bounds {
                     },
                 )
             } else {
-                let mut result = shift(input(0), None);
-                merge(&mut result, shift(input(1), None), upper);
-                result
+                BoundTransfer::UnknownPair([o.get_in(0), o.get_in(1)])
             }
         }
         OpCode::CPUI_INDIRECT => {
-            shift(input(0), indirect_stack_pop(fd, id))
+            BoundTransfer::Shift(o.get_in(0), indirect_stack_pop(fd, id))
         }
-        _ => Bounds::new(),
+        _ => BoundTransfer::Empty,
+    }
+}
+
+fn evaluate(fd: &Funcdata, transfer: BoundTransfer, values: &Values, upper: bool) -> Bounds {
+    let input = |value: Option<VarnodeId>| {
+        value.and_then(|v| values.get(&v)).cloned().unwrap_or_default()
+    };
+    match transfer {
+        BoundTransfer::Empty => Bounds::new(),
+        BoundTransfer::Root(root) => Bounds::from([(root, 0)]),
+        BoundTransfer::Copy(value) => input(value),
+        BoundTransfer::Shift(value, by) => shift(input(value), by),
+        BoundTransfer::Merge(id) => {
+            let o = fd.obank().get(id).unwrap();
+            let mut result = Bounds::new();
+            for slot in 0..o.num_input() {
+                merge(&mut result, input(o.get_in(slot)), upper);
+            }
+            result
+        }
+        BoundTransfer::UnknownPair([a, b]) => {
+            let mut result = shift(input(a), None);
+            merge(&mut result, shift(input(b), None), upper);
+            result
+        }
     }
 }
 fn propagate_bounds(
@@ -1191,19 +1207,26 @@ fn propagate_bounds(
     displaced: &BTreeMap<OpId, (VarnodeId, i128)>,
     upper: bool,
 ) -> Option<Values> {
+    // Scalar folds and call-pop facts depend on IR, not on the evolving bounds.
+    // Rebuild this plan for each immutable invocation: no facts survive an IR
+    // mutation, and every fold retains its original independent node budget.
+    let mut transfers = Vec::with_capacity(ops.len());
+    for &id in ops {
+        let Some(output) = fd.obank().get(id).unwrap().get_out() else { continue };
+        let transfer = if let Some(&root) = roots.get(&output) {
+            BoundTransfer::Root(root)
+        } else if let Some(&(base, offset)) = displaced.get(&id) {
+            BoundTransfer::Shift(Some(base), Some(offset))
+        } else {
+            bound_transfer(fd, id, upper)
+        };
+        transfers.push((output, transfer));
+    }
     let mut values = Values::new();
     let update = |values: &mut Values| {
         let mut changed = BTreeSet::new();
-        for &id in ops {
-            let o = fd.obank().get(id).unwrap();
-            let Some(output) = o.get_out() else { continue };
-            let next = if let Some(&root) = roots.get(&output) {
-                Bounds::from([(root, 0)])
-            } else if let Some(&(base, offset)) = displaced.get(&id) {
-                shift(values.get(&base).cloned().unwrap_or_default(), Some(offset))
-            } else {
-                evaluate(fd, id, values, upper)
-            };
+        for &(output, transfer) in &transfers {
+            let next = evaluate(fd, transfer, values, upper);
             if values.get(&output) != Some(&next) {
                 values.insert(output, next);
                 changed.insert(output);
@@ -2541,6 +2564,111 @@ mod tests {
                 "genuine consecutive allocations retain the earlier backing"
             );
         }
+    }
+
+    #[test]
+    fn bounds_transfers_preserve_operand_order_and_refresh_after_mutation() {
+        for width in [4, 8] {
+            let mut fd = build_fd();
+            let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+            let input = fd.new_varnode(width, &Address::new(ram, 0x2000), None);
+            let input = fd.set_input_varnode(input).unwrap();
+            let root_block = fd.bblocks_root_pub();
+            let block = fd.bblocks_mut().new_block_basic(root_block);
+            let append = |fd: &mut Funcdata, code, inputs: &[VarnodeId]| {
+                let op = fd.new_op(inputs.len() as int4, fd.get_address().clone());
+                fd.op_set_opcode_code(op, code);
+                for (slot, &value) in inputs.iter().enumerate() {
+                    fd.op_set_input(op, value, slot as int4).unwrap();
+                }
+                let value = fd.new_unique_out(width, op).unwrap();
+                fd.op_insert_end(op, block);
+                (op, value)
+            };
+            let (seed, root) = append(&mut fd, OpCode::CPUI_COPY, &[input]);
+            let four = fd.new_constant(width, 4);
+            let (fold, folded) = append(&mut fd, OpCode::CPUI_COPY, &[four]);
+            let (add, added) = append(&mut fd, OpCode::CPUI_INT_ADD, &[folded, root]);
+            let (sub, subtracted) = append(&mut fd, OpCode::CPUI_INT_SUB, &[root, folded]);
+            let (ptrsub, shifted) = append(&mut fd, OpCode::CPUI_PTRSUB, &[root, folded]);
+            let two = fd.new_constant(width, 2);
+            let (ptradd, indexed) =
+                append(&mut fd, OpCode::CPUI_PTRADD, &[root, folded, two]);
+            let mask = fd.new_constant(width, (-16_i64) as u64 & calc_mask(width));
+            let (align, aligned) = append(&mut fd, OpCode::CPUI_INT_AND, &[mask, root]);
+            let zero = fd.new_constant(width, 0);
+            let (clear, cleared) = append(&mut fd, OpCode::CPUI_INT_AND, &[root, zero]);
+            let (phi, joined) =
+                append(&mut fd, OpCode::CPUI_MULTIEQUAL, &[added, subtracted]);
+            let (dynamic, unknown) =
+                append(&mut fd, OpCode::CPUI_INT_ADD, &[root, input]);
+            let ops = [seed, fold, add, sub, ptrsub, ptradd, align, clear, phi, dynamic];
+            let roots = BTreeMap::from([(root, 0)]);
+            for amount in [4, 8] {
+                let constant = fd.new_constant(width, amount);
+                fd.op_set_input(fold, constant, 0).unwrap();
+                let lower = propagate_bounds(&fd, &ops, &roots, &BTreeMap::new(), false)
+                    .unwrap();
+                let upper = propagate_bounds(&fd, &ops, &roots, &BTreeMap::new(), true)
+                    .unwrap();
+                for values in [&lower, &upper] {
+                    assert_eq!(values[&root][&0], 0);
+                    assert!(values[&folded].is_empty());
+                    assert_eq!(values[&added][&0], amount as i128);
+                    assert_eq!(values[&subtracted][&0], -(amount as i128));
+                    assert_eq!(values[&shifted][&0], amount as i128);
+                    assert_eq!(values[&indexed][&0], 2 * amount as i128);
+                    assert_eq!(values[&cleared][&0], UNKNOWN);
+                    assert_eq!(values[&unknown][&0], UNKNOWN);
+                }
+                assert_eq!(lower[&aligned][&0], -15);
+                assert_eq!(upper[&aligned][&0], 0);
+                assert_eq!(lower[&joined][&0], -(amount as i128));
+                assert_eq!(upper[&joined][&0], amount as i128);
+            }
+        }
+    }
+
+    #[test]
+    fn precomputed_bounds_keep_each_scalar_folds_node_budget() {
+        let mut fd = build_fd();
+        let ram = Rc::clone(fd.get_arch().manage().get_space_by_name("ram").unwrap());
+        let input = fd.new_varnode(4, &Address::new(ram, 0x2000), None);
+        let input = fd.set_input_varnode(input).unwrap();
+        let root_block = fd.bblocks_root_pub();
+        let block = fd.bblocks_mut().new_block_basic(root_block);
+        let mut ops = Vec::new();
+        let mut copy = |fd: &mut Funcdata, input| {
+            let op = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(op, OpCode::CPUI_COPY);
+            fd.op_set_input(op, input, 0).unwrap();
+            let value = fd.new_unique_out(4, op).unwrap();
+            fd.op_insert_end(op, block);
+            ops.push(op);
+            value
+        };
+        let root = copy(&mut fd, input);
+        let mut constant = fd.new_constant(4, 4);
+        for _ in 0..31 {
+            constant = copy(&mut fd, constant);
+        }
+        let within_budget = constant;
+        let beyond_budget = copy(&mut fd, within_budget);
+        let mut outputs = Vec::new();
+        for amount in [within_budget, beyond_budget] {
+            let op = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(op, OpCode::CPUI_INT_ADD);
+            fd.op_set_input(op, root, 0).unwrap();
+            fd.op_set_input(op, amount, 1).unwrap();
+            outputs.push(fd.new_unique_out(4, op).unwrap());
+            fd.op_insert_end(op, block);
+            ops.push(op);
+        }
+        let values = propagate_bounds(
+            &fd, &ops, &BTreeMap::from([(root, 0)]), &BTreeMap::new(), false,
+        ).unwrap();
+        assert_eq!(values[&outputs[0]][&0], 4);
+        assert_eq!(values[&outputs[1]][&0], UNKNOWN);
     }
 
     #[test]

@@ -145,7 +145,7 @@ and `O2-on` project exports, so the full per-function diff is reproducible. Valu
 helper call counts and ordered input digests are compared for all 513 sizes; this
 also checks that control-flow simplification has not removed or reordered calls.
 
-Engine CPU measurements use a 138-function, 19-binary cohort covering all ten
+The original runtime CPU measurements use a 138-function, 19-binary cohort covering all ten
 corpus ISAs, including large looping functions, allocation consumers, the
 SPARC32 `dash` parser, and DecBench's unoptimized `dash` `readtoken1`. Three
 independent persistent workers run the base, default-off head, and enabled head
@@ -281,11 +281,11 @@ CI installs Clang, LLD, QEMU user emulators and the
 SPARC GNU linker; its dedicated round-trip step requires every tool and emulator
 and prints the per-target native/recompiled comparison counts.
 
-## Completed review audit and retained limitations
+## Completed baseline review audit and retained limitations
 
 The source-bound comparison uses base `5a1033c9` and runtime `441c0463`.
-Subsequent catalog-tooling and documentation changes do not alter the engine,
-specifications, locked dependencies or native-consumer fixtures.
+The catalog-tooling/documentation checkpoint preceding the optimization below
+does not alter that engine, specifications, dependencies or consumer fixtures.
 
 All 113 corpus ELFs across ten architectures complete in both modes: 107 are
 from official Debian packages; six RV32 inputs are from a downstream Debian-derived
@@ -352,3 +352,95 @@ rewritten. Original corpus programs are analyzed, never executed. Executable
 comparisons use authored fixtures, and neither these bounded consumers nor the
 static audits establish universal semantic equivalence. Final-head CI is a
 separate integration gate.
+
+## Equivalent-work bounds propagation optimization
+
+The optimization baseline is reviewed head `1e656c42`, whose engine is the
+validated `441c0463` runtime. Profiling the same 138-function/19-binary cohort
+identified bounds propagation as the main allocation-analysis cost. Those
+instrumented action profiles are diagnostics, not the CPU measurements below.
+
+Each bounds invocation now prepares its immutable transfer descriptions once.
+Scalar folds, alignment choices and known call-pop facts are not recomputed
+on every fixed-point sweep. The plan exists only while `Funcdata` is immutably
+borrowed; no facts survive an IR mutation. PHIs retain an operation ID rather
+than copying their input vectors. Root/displaced precedence, absent versus
+empty values, operation order, unknown bounds and overflow behavior are
+unchanged. Every scalar fold retains its independent 32-node budget, and the
+64-sweep/eight-widening schedule and its exact change sets remain intact.
+Allocation candidates, completed call-input recovery, alias/reservation proofs,
+private saved-slot obligations and loop/sequential lifetime checks are unchanged.
+
+The retained implementation passes all 11 original IR controls plus two new
+regressions for operand order, alignment/zero masks, post-mutation refresh and
+the scalar-fold budget boundary: 13 IR tests total. All 30 CLI controls, the
+eight-ISA 98,496 comparisons and the additional x86, Thumb and PE32 consumers
+pass again.
+
+Fresh actual producers also match the validated baseline in both modes:
+
+- All 113 corpus inputs have identical complete JSON payloads and exit status,
+  including C, variables, types, line mappings, errors and coverage.
+- All 48 explicit PPC64 entries per arm retain identical complete payloads,
+  statuses and descriptor/TOC inventories.
+- All 770 DecBench inputs have identical complete producer models, including
+  C, variable/type data, CFG/provenance metadata, failures and coverage. Only
+  the observational `decompiler.total_time_seconds` field is excluded.
+  Native binaries, source CFGs, inventory and protocol inputs are fingerprinted.
+
+Thus the completed official metric and compiler audit above remains applicable
+through full input identity, not a content-cache shortcut or a fresh metric run.
+Its scores, three body-only compiler failures and other limitations are retained.
+The same 19 corpus function errors, six discovery failures and 906 missing
+DecBench targets remain.
+
+### Uninstrumented CPU comparison and rejected experiment
+
+The primary final experiment uses seven independent persistent workers: main
+`5a1033c9`, the current baseline and the retained optimization, each in the
+appropriate default/enabled modes, plus a second candidate in both modes.
+Every arm has two warmups and seven measured rounds, with cyclic rotation and
+alternate reversal on the same pinned CPU in one allocation. The unchanged
+`CLOCK_THREAD_CPUTIME_ID` regions cover `decompile_one` and actual `print_c`;
+startup, loading/preparation, option setup, serialization and destruction remain
+outside them. Each combined median is the median of per-round sums.
+
+| Primary median cohort CPU (s) | API | C emission | Combined |
+| --- | ---: | ---: | ---: |
+| Main, default | 25.552184 | 0.215778 | 25.767096 |
+| Current baseline, default | 26.723320 | 0.224061 | 26.947381 |
+| Current baseline, enabled | 29.062100 | 0.219197 | 29.281298 |
+| Retained optimization, default | 26.333525 | 0.222323 | 26.555848 |
+| Retained optimization, enabled | 28.719943 | 0.217597 | 28.937541 |
+
+The retained enabled cohort median is **1.174% lower than the current enabled
+baseline**. All seven matched enabled rounds are lower; the median paired
+change is -1.128% (-0.331309 s). Default also moves by -1.453%, so this is a
+whole-build/cohort observation, not clean attribution of the entire difference
+to scalar folding. Enabled analysis still costs +8.969% against the retained
+default, versus +8.661% for the current baseline against its own default:
+these results do not establish a reliable reduction in incremental enabled
+overhead. The retained enabled median is +12.304% against main in this
+experiment. The median paired comparison against main is +9.716%; arm medians
+and paired statistics are different summaries, and neither replaces the other.
+
+Seventeen of nineteen enabled case medians are lower. SPARC32 `cat` changes from
+1.784639 s to 1.656832 s (-7.162%). Two small case medians are higher and are not
+discarded: PPC32 `dash` +0.240% (+0.014208 ms) and SPARC64 `dash` +0.657%
+(+0.085702 ms). These bounded measurements do not establish a uniform speedup.
+
+The secondary candidate tried allocation-free exact-equality shortcuts for
+already-equal Copy bounds and singleton root bounds, while preserving initial
+empty insertions. Its enabled median is 29.136005 s: **0.686% slower than the
+retained candidate**, with all seven matched comparisons slower and median
+paired change +0.581%. It is rejected; neither its fast path nor its dedicated
+test is in the retained implementation. Its unchanged output observations,
+all samples and native-consumer results remain part of the experiment record.
+
+An earlier five-arm trial corroborates the retained direction:
+29.177554 s current enabled versus 28.814515 s retained enabled (-1.244%),
+with default also moving -0.926%. One of its seven enabled pairs is slower.
+That trial is retained, but the final seven-arm comparison is primary; no
+rounds or experiments are dropped to select a larger percentage. Complete
+per-function/per-case samples and output comparisons are preserved, and all
+default/enabled outputs remain identical to their corresponding baseline arm.
