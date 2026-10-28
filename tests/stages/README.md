@@ -262,6 +262,21 @@ Their behavior is covered by native consumers instead:
   `kuna-cli/tests/decompile_all_cli.rs` retains the SPARC lane-value and
   arithmetic checks, including generated CONCAT support.
 
+CLI round trips locate actual function signatures after support preambles and
+compile the generated CONCAT definitions rather than masking them with test
+replacements. Call-result consumers retain the emitted record definitions;
+native `<stdio.h>` supplies `FILE`. The carry-chain consumer shares the IR and
+printer type factory, uses the generated typedef/CONCAT support, and provides
+numeric SUBPIECE/CARRY runtime primitives.
+
+Array/literal runtime coverage includes the symbolful GCC and Clang images and
+the stripped GCC image. The stripped Clang vector bodies have independent
+wide-projection and return-recovery limitations also present in main; no
+whole-function runtime guarantee is inferred for them. Their old spelling-only
+contract is not re-pinned, and no prototype is invented to make them compile.
+The in-place-text consumer checks callback-visible bytes and effects through
+its actual `void` interface, not an assumed return value.
+
 `kuna-storecopyeffects.xml` pins the AArch64 address-spill store across calls,
 repeated stores, a load between calls, and a truly dead-store control. The
 compiled round trips in `kuna-cli/tests/store_copy_effects.rs` also exercise
