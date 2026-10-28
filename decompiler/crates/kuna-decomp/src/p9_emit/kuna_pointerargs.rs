@@ -123,7 +123,13 @@ impl Record {
 
     pub(crate) fn trim_lines(&mut self, untrimmed: &str) {
         let skip = untrimmed.len() - untrimmed.trim_start_matches('\n').len();
-        self.preamble_end.line = self.preamble_end.line.saturating_sub(skip);
+        if self.preamble_end.line > 0 && self.preamble_end.line <= skip
+            && self.preamble_end.column == 0
+        {
+            self.preamble_end = Position { line: 1, column: 0 };
+        } else {
+            self.preamble_end.line = self.preamble_end.line.saturating_sub(skip);
+        }
         for call in &mut self.calls {
             call.position.line = call.position.line.saturating_sub(skip);
             call.end.line = call.end.line.saturating_sub(skip);
@@ -140,16 +146,32 @@ impl Record {
         let mut edits: Vec<_> = edits.iter().collect();
         edits.sort_unstable_by_key(|e| e.0);
         let mut previous = 0;
-        let mut names: BTreeMap<&str, Option<&str>> = BTreeMap::new();
+        let mut names: BTreeMap<&str, &str> = BTreeMap::new();
+        let mut invalid = false;
         for &&(start, end, ref to) in &edits {
-            let Some(from) = original.get(start..end) else { return };
-            if start < previous || !identifier(from) || !identifier(to) {
-                return;
+            let Some(from) = original.get(start..end) else {
+                invalid = true;
+                break;
+            };
+            if start < previous || !identifier(from) || !identifier(to)
+                || original[..start].chars().next_back().is_some_and(identifier_char)
+                || original[end..].chars().next().is_some_and(identifier_char)
+                || names.get(from).is_some_and(|&old| old != to.as_str())
+            {
+                invalid = true;
+                break;
             }
             previous = end;
-            names.entry(from).and_modify(|old| {
-                if *old != Some(to.as_str()) { *old = None; }
-            }).or_insert(Some(to.as_str()));
+            names.insert(from, to);
+        }
+        if invalid {
+            // The code renamer owns the text; stale contracts must not remain
+            // authoritative when its edits cannot be rebased unambiguously.
+            self.parameters.fill(None);
+            self.calls.clear();
+            self.texts.clear();
+            self.preamble_end = Position::default();
+            return;
         }
         let starts = line_starts(original);
         let mut prefix = vec![0isize];
@@ -230,7 +252,7 @@ fn identifier_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_' || c == '$'
 }
 
-fn rename_identifiers(text: &mut String, names: &BTreeMap<&str, Option<&str>>) {
+fn rename_identifiers(text: &mut String, names: &BTreeMap<&str, &str>) {
     let mut out = None;
     let mut copied = 0;
     let mut at = 0;
@@ -241,7 +263,7 @@ fn rename_identifiers(text: &mut String, names: &BTreeMap<&str, Option<&str>>) {
                 .map_or(text.len(), |(i, _)| at + i)
         } else { at + c.len_utf8() };
         let token = &text[at..end];
-        if let Some(to) = names.get(token).copied().flatten().filter(|&to| to != token) {
+        if let Some(to) = names.get(token).copied().filter(|&to| to != token) {
             let out = out.get_or_insert_with(|| String::with_capacity(text.len()));
             out.push_str(&text[copied..at]);
             out.push_str(to);

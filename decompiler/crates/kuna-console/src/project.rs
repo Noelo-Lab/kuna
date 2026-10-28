@@ -344,11 +344,36 @@ fn pointer_dependency<'a>(
 }
 
 fn merge_pointer_type<'a>(left: &'a TypeInfo, right: &'a TypeInfo) -> Option<&'a TypeInfo> {
-    match (left.definition.contains("/* opaque */"), right.definition.contains("/* opaque */")) {
-        (true, false) => Some(right),
-        (false, true) => Some(left),
+    // An actual opaque record can still carry a known width. Completing it
+    // cannot change that fact; only zero denotes an unknown width here.
+    if left.size != 0 && right.size != 0 && left.size != right.size {
+        return None;
+    }
+    let completes = |complete: &TypeInfo, (keyword, name): (&str, &str)| {
+        complete.definition.strip_prefix(keyword).and_then(|rest| rest.strip_prefix(name))
+            .is_some_and(|rest| rest.starts_with(" {"))
+    };
+    match (opaque_pointer_forward(left), opaque_pointer_forward(right)) {
+        (Some(forward), None) if completes(right, forward) => Some(right),
+        (None, Some(forward)) if completes(left, forward) => Some(left),
         _ => same_pointer_type(left, right).then_some(left),
     }
+}
+
+/// Recognize only `kuna_structdefs::definition_text`'s incomplete composite
+/// production. An opaque comment on a function-pointer typedef is not a record
+/// forward declaration, and cannot authorize replacement by a record layout.
+fn opaque_pointer_forward(info: &TypeInfo) -> Option<(&'static str, &str)> {
+    let (keyword, rest) = if let Some(rest) = info.definition.strip_prefix("typedef struct ") {
+        ("struct ", rest)
+    } else {
+        ("union ", info.definition.strip_prefix("typedef union ")?)
+    };
+    let names = rest.strip_suffix("; /* opaque */\n")?;
+    let (tag, alias) = names.split_once(' ')?;
+    let identifier = !tag.is_empty() && tag.bytes().enumerate().all(|(index, byte)|
+        byte == b'_' || byte.is_ascii_alphabetic() || (index != 0 && byte.is_ascii_digit()));
+    (identifier && tag == alias).then_some((keyword, tag))
 }
 
 /// Printer positions are byte columns, not display columns. Do not guess the
@@ -2553,24 +2578,50 @@ mod tests {
 
         // Preserve an actual old opaque forward in the text, but replace its
         // metadata with the complete accepted layout, in dependency order.
-        let mut opaque = caller.clone();
-        opaque.types = vec![super::TypeInfo {
-            name: "Node".into(), definition: "typedef struct Node Node; /* opaque */".into(), size: 0,
-        }];
-        opaque.code = Some("typedef struct Node Node; /* opaque */\nsink(&v1);".into());
-        let record = opaque.pointerargs.as_mut().unwrap();
-        record.preamble_end.line = 2;
-        record.calls[0].position.line = 2;
-        record.calls[0].end.line = 2;
-        let mut results = vec![opaque, callee.clone()];
-        super::reconcile_pointer_arguments(&mut results);
-        assert_eq!(results[0].code.as_deref(), Some(concat!(
-            "typedef struct Node Node; /* opaque */\ntypedef struct Payload Payload;\n",
-            "struct Payload { Node *owner; };\nstruct Node { Payload value; };\n",
-            "sink(((Node *)(&v1)));",
-        )));
-        assert_eq!(results[0].types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>(),
-            callee.types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>());
+        for known_size in [0, 8] {
+            let mut opaque = caller.clone();
+            opaque.types = vec![super::TypeInfo {
+                name: "Node".into(), definition: "typedef struct Node Node; /* opaque */\n".into(), size: known_size,
+            }];
+            opaque.code = Some("typedef struct Node Node; /* opaque */\nsink(&v1);".into());
+            let record = opaque.pointerargs.as_mut().unwrap();
+            record.preamble_end.line = 2;
+            record.calls[0].position.line = 2;
+            record.calls[0].end.line = 2;
+            let mut results = vec![opaque, callee.clone()];
+            super::reconcile_pointer_arguments(&mut results);
+            assert_eq!(results[0].code.as_deref(), Some(concat!(
+                "typedef struct Node Node; /* opaque */\ntypedef struct Payload Payload;\n",
+                "struct Payload { Node *owner; };\nstruct Node { Payload value; };\n",
+                "sink(((Node *)(&v1)));",
+            )));
+            assert_eq!(results[0].types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>(),
+                callee.types.iter().map(|info| (&info.name, &info.definition, info.size)).collect::<Vec<_>>());
+        }
+        // A comment is not a type kind, and an actual known width cannot be
+        // discarded merely because the producer marked the record incomplete.
+        for (definition, size) in [
+            ("typedef void (*Node)(int); /* opaque */\n", 8),
+            ("typedef struct Node Node; /* opaque */\n", 16),
+            ("typedef struct Node Other; /* opaque */\n", 8),
+            ("typedef union Node Node; /* opaque */\n", 8),
+            ("struct Node { long unrelated; }; /* opaque */\n", 8),
+        ] {
+            let mut conflict = caller.clone();
+            conflict.types = vec![super::TypeInfo { name: "Node".into(), definition: definition.into(), size }];
+            let original = format!("{definition}sink(&v1);");
+            conflict.code = Some(original.clone());
+            let record = conflict.pointerargs.as_mut().unwrap();
+            record.preamble_end.line = 2;
+            record.calls[0].position.line = 2;
+            record.calls[0].end.line = 2;
+            let mut results = vec![conflict, callee.clone()];
+            super::reconcile_pointer_arguments(&mut results);
+            assert_eq!(results[0].code.as_deref(), Some(original.as_str()));
+            assert_eq!(results[0].types.len(), 1);
+            assert_eq!(results[0].types[0].definition, definition);
+            assert_eq!(results[0].types[0].size, size);
+        }
         let mut conflict = caller.clone();
         conflict.types = vec![super::TypeInfo {
             name: "Node".into(), definition: "struct Node { long unrelated; };".into(), size: 8,

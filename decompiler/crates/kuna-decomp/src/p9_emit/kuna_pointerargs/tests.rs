@@ -331,6 +331,50 @@ fn renaming_updates_actual_contract_metadata_and_shared_nested_ranges() {
 }
 
 #[test]
+fn invalid_or_ambiguous_renames_cannot_authorize_stale_pointer_contracts() {
+    let code = "struct_1 *left; struct_1 *right; sink(0,&v1);";
+    let second = code.rfind("struct_1").unwrap();
+    let start = code.find("&v1").unwrap();
+    let (mut caller, mut callee) = records();
+    caller.calls[0].position = position(code, start);
+    caller.calls[0].end = position(code, start + 3);
+    callee.parameters[1].as_mut().unwrap().spelling = "struct_1 *".into();
+    assert_eq!(insertions(&caller, &definitions([&callee])).len(), 1);
+    let invalid_edits = [
+        vec![(code.len() + 1, code.len() + 2, "Item".into())],
+        vec![(8, 0, "Item".into())],
+        vec![(0, 8, "Item".into()), (0, 8, "Item".into())],
+        vec![(1, 8, "Item".into())],
+        vec![(0, 8, "bad\nname".into())],
+        vec![(0, 8, "First".into()), (second, second + 8, "Second".into())],
+    ];
+    for edits in invalid_edits {
+        let mut changed_caller = caller.clone();
+        changed_caller.renamed(code, &edits);
+        let applied = apply(code, &insertions(&changed_caller, &definitions([&callee])));
+        assert_eq!(applied.code, code);
+        assert!(applied.inserted.is_empty());
+        assert!(changed_caller.calls.is_empty());
+        assert!(changed_caller.texts.is_empty());
+
+        let mut changed_callee = callee.clone();
+        changed_callee.renamed(code, &edits);
+        let applied = apply(code, &insertions(&caller, &definitions([&changed_callee])));
+        assert_eq!(applied.code, code);
+        assert!(applied.inserted.is_empty());
+        assert!(changed_callee.parameters.iter().all(Option::is_none));
+    }
+    // Repeated occurrences of one unambiguous mapping remain authoritative.
+    let mut renamed_callee = callee;
+    renamed_callee.renamed(code, &[
+        (second, second + 8, "Item".into()),
+        (0, 8, "Item".into()),
+    ]);
+    assert_eq!(renamed_callee.parameters[1].as_ref().unwrap().spelling, "Item *");
+    assert_eq!(insertions(&caller, &definitions([&renamed_callee])).len(), 1);
+}
+
+#[test]
 fn unordered_identifier_edits_rebase_only_their_own_lines() {
     let code = "struct_1 *p; sink(0,&v1); struct_2 *q;\nstruct_3 *r; sink(0,&v1);";
     let (mut caller, _) = records();
@@ -427,6 +471,41 @@ fn trimming_changes_both_lines_without_changing_columns() {
     assert_eq!(caller.calls[0].position, Position { line: 1, column: 7 });
     assert_eq!(caller.calls[0].end, Position { line: 2, column: 10 });
     assert_eq!(caller.preamble_end, Position { line: 1, column: 0 });
+}
+
+#[test]
+fn trimming_an_empty_type_preamble_preserves_the_definition_insertion_boundary() {
+    for leading in ["\n", "\n\n\n"] {
+        let code = format!("{leading}void caller(void) {{ sink(0,&value); }}\n");
+        let trimmed = code.trim_matches('\n');
+        let start = code.find("&value").unwrap();
+        let (mut caller, mut callee) = records();
+        caller.struct_defs = true;
+        callee.struct_defs = true;
+        caller.calls[0].position = position(&code, start);
+        caller.calls[0].end = position(&code, start + "&value".len());
+        let target = callee.parameters[1].as_mut().unwrap();
+        target.spelling = "B *".into();
+        target.dependencies = vec!["B".into()];
+        target.forwards = vec!["typedef struct B B;".into()];
+        for line in 1..=leading.len() + 1 {
+            let mut caller = caller.clone();
+            caller.preamble_end = Position { line, column: 0 };
+            caller.capture_texts(&code);
+            caller.trim_lines(&code);
+            assert_eq!(caller.preamble_end, Position { line: 1, column: 0 });
+            assert_eq!(offset(trimmed, &line_starts(trimmed), caller.preamble_end), Some(0));
+            let applied = apply(trimmed, &insertions(&caller, &definitions([&callee])));
+            assert_eq!(applied.code, "void caller(void) { sink(0,((B *)(&value))); }");
+            assert!(applied.skipped.is_empty());
+            assert_eq!(applied.inserted.len(), 1);
+            assert_eq!(applied.inserted[0].dependencies, ["B"]);
+            assert_eq!(applied.inserted[0].forwards, ["typedef struct B B;"]);
+        }
+        caller.preamble_end = Position::default();
+        caller.trim_lines(&code);
+        assert_eq!(caller.preamble_end, Position::default());
+    }
 }
 
 #[test]
