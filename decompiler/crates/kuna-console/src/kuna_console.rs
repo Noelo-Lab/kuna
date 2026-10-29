@@ -270,6 +270,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
         "libproto" => on_off(conf.analysis_libproto),
         "libcsigs" => on_off(conf.analysis_libcsigs),
+        "libgccsigs" => on_off(conf.analysis_libgccsigs),
         // (kuna `libctypes`) Valued `off|opaque|glibc`, so the live token is the
         // value, not an on/off word.
         "libctypes" => match (conf.analysis_libctypes, conf.analysis_libctypes_glibc) {

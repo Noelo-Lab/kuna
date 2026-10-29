@@ -1728,6 +1728,10 @@ impl Action for ActionReturnRecovery {
         let mut cond_failed = Vec::new();
         let return_ops: Vec<crate::context::OpId> =
             data.obank().iter_code(OpCode::CPUI_RETURN).collect();
+        if crate::kuna_retcallhalf::awaiting_stack(data, &active, &return_ops) {
+            data.restore_active_output(active);
+            return 0;
+        }
         for &op in &return_ops {
             let o = match data.obank().get(op) {
                 Some(o) => o,
@@ -1818,11 +1822,21 @@ impl Action for ActionReturnRecovery {
             crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
+            let whole_pair = crate::kuna_retcallhalf::whole_pair(data, &active, &return_ops);
+            if let Some(indices) = whole_pair {
+                for index in indices {
+                    active.get_trial_mut(index).mark_active();
+                }
+            }
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
             crate::p4_calls::kuna_voidret::whole_or_none(data, &mut active);
             crate::kuna_retinputhalf::note_moved_back_returns(data, &active, &return_ops, own_input);
-            let order = crate::kuna_bejoin::join_order(&active, data, &return_ops);
+            let order = if whole_pair.is_some() && crate::kuna_bejoin::live(data) {
+                active.join_pair_order()
+            } else {
+                crate::kuna_bejoin::join_order(&active, data, &return_ops)
+            };
             data.kuna_set_pairs_first_low(crate::kuna_bejoin::joins_first_low(&active, order));
             let return_single = data.get_arch().return_single;
             for &op in &return_ops {

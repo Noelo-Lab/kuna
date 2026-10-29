@@ -155,15 +155,39 @@ impl RuleLoadVarnode {
         data: &Funcdata,
         vn: VarnodeId,
         spc: &Rc<kuna_base::space::AddrSpace>,
+        depth: u32,
     ) -> Option<(Rc<kuna_base::space::AddrSpace>, uintb)> {
         if let Some(retspace) = RuleLoadVarnode::correct_spacebase(data, vn, spc) {
             return Some((retspace, 0));
+        }
+        if depth == 8 {
+            return None;
         }
         let v = data.vbank().get(vn)?;
         if !v.is_written() {
             return None;
         }
         let op = v.get_def()?;
+        if code(data, op) == OpCode::CPUI_INT_OR {
+            let a = in_vn(data, op, 0);
+            let b = in_vn(data, op, 1);
+            let (base, constant) = if is_constant(data, b) {
+                (a, offset_of(data, b))
+            } else if is_constant(data, a) {
+                (b, offset_of(data, a))
+            } else {
+                return None;
+            };
+            // Clang can address a word inside an aligned frame slot as
+            // (spacebase + offset) | word_offset. It is addition only when
+            // known-zero bits prove that no set bit can overlap.
+            if data.vbank().get(base)?.get_nz_mask() & constant != 0 {
+                return None;
+            }
+            let (space, offset) = Self::vn_spacebase(data, base, spc, depth + 1)?;
+            let offset = space.wrap_offset(offset.wrapping_add(constant));
+            return Some((space, offset));
+        }
         if code(data, op) != OpCode::CPUI_INT_ADD {
             return None;
         }
@@ -205,7 +229,7 @@ impl RuleLoadVarnode {
             // Check for a literal constant offset into `loadspace`.
             return Some((loadspace, offset_of(data, offvn)));
         }
-        RuleLoadVarnode::vn_spacebase(data, offvn, &loadspace)
+        RuleLoadVarnode::vn_spacebase(data, offvn, &loadspace, 0)
     }
 }
 

@@ -1694,6 +1694,9 @@ pub struct Architecture {
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
     pub analysis_libcsigs: bool,
+    /// (kuna) Gate the libgcc DI-mode `__divdi3` contract on SPARC32 BE ELF
+    /// (`libgccsigs`); default off.
+    pub analysis_libgccsigs: bool,
     /// (kuna) Gate the named libc/POSIX aggregate types in the prototype tables
     /// (`libctypes`); default on (`opaque`). Catalog-visible twin of the load-time
     /// [`crate::kuna_libctypes`] **env var** (the named shells are interned at
@@ -3161,6 +3164,7 @@ impl Architecture {
             analysis_peimportcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
+            analysis_libgccsigs: false,
             analysis_libctypes: false,
             analysis_libctypes_glibc: false,
             analysis_win32sigs: false,
@@ -3571,6 +3575,9 @@ impl Architecture {
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;
+        // (kuna) libgcc `__divdi3` contract -- default-OFF: a caller returning
+        // arithmetic on the quotient still loses a word.
+        self.analysis_libgccsigs = false;
         // (kuna) Named libc/POSIX aggregate pointers in the prototype tables --
         // default-ON (`opaque`). Real-ELF analysis tier only, so the XML corpora
         // cannot observe it; the evidence is the corpus sweep in

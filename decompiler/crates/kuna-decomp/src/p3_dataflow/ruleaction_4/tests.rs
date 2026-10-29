@@ -1432,6 +1432,47 @@ fn concatcommute_or_lower() {
     assert_eq!(fd.vbank().get(cc).unwrap().get_offset(), 0x00ff);
 }
 
+#[test]
+fn loadvarnode_promotes_only_proven_disjoint_or_offsets() {
+    for (offset, mask, expected) in [
+        (0x120, 0x120, Some(0x124)),
+        (0x124, 0x124, None),
+        (0x120, u64::MAX, None),
+    ] {
+        for commuted in [false, true] {
+            let mut fd = build_fd();
+            let bl = mk_block(&mut fd);
+            // A constant pseudo-spacebase is the existing global-space form.
+            // The CLI regression exercises the same rewrite on real frame SSA.
+            let base = fd.new_constant(8, 0);
+            fd.vbank_mut().get_mut(base).unwrap().set_spacebase();
+            let displacement = fd.new_constant(8, offset);
+            let (_, address) = mk_def(
+                &mut fd, bl, OpCode::CPUI_INT_ADD, 8, 0x20, &[base, displacement],
+            );
+            fd.vbank_mut().get_mut(address).unwrap().set_nz_mask(mask);
+            let word = fd.new_constant(8, 4);
+            let inputs = if commuted { [word, address] } else { [address, word] };
+            let (_, pointer) = mk_def(&mut fd, bl, OpCode::CPUI_INT_OR, 8, 0x30, &inputs);
+            let space = fd.new_constant(8, ram_space(&fd).get_index() as u64);
+            let (load, _) = mk_def(&mut fd, bl, OpCode::CPUI_LOAD, 4, 0x40, &[space, pointer]);
+            let changed = RuleLoadVarnode::new().apply_op(load, &mut fd);
+            if let Some(expected) = expected {
+                assert_eq!(changed, 1);
+                assert_eq!(fd.obank().get(load).unwrap().code(), OpCode::CPUI_COPY);
+                let input = fd.obank().get(load).unwrap().get_in(0).unwrap();
+                let value = fd.vbank().get(input).unwrap();
+                assert_eq!(value.get_offset(), expected);
+                assert_eq!(value.get_size(), 4);
+                assert_eq!(value.get_space().get_name(), "ram");
+            } else {
+                assert_eq!(changed, 0);
+                assert_eq!(fd.obank().get(load).unwrap().code(), OpCode::CPUI_LOAD);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Stub-affected rules: assert the documented early-out
 // ---------------------------------------------------------------------------

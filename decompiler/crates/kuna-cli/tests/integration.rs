@@ -233,6 +233,9 @@ mod local_stack_views;
 #[path = "library_names.rs"]
 mod library_names;
 
+#[path = "libgcc_divdi3.rs"]
+mod libgcc_divdi3;
+
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 

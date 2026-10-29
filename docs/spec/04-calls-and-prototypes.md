@@ -2077,6 +2077,66 @@ output sits at the constructed join address (falling back to the first piece
 if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
+A wider heritaged register range can contain several separate output entries.
+On a model whose four-byte register pair returns the high word first
+(`kuna_bejoin`'s `wide_pair`: 32-bit SPARC, PowerPC, MIPS and ARM big-endian),
+`Heritage::guard_returns_overlapping` keeps the extra entries as inactive
+candidates instead of dropping their bytes or treating the range alone as
+evidence that the caller returns every word. Every other model keeps
+upstream's single biggest contained entry: there `whole_pair` never applies,
+and an inactive leftover word would make `voidret`'s whole-or-none rule drop
+an ARM `d0` or `r0:r1` return the caller still reads. With a declared wide callee,
+return scoring lets frame slots materialized by spacebase simplification
+receive stack SSA before finalizing. A wide load alone is not proof, since it
+can reload unused incoming arguments.
+This also preserves a narrow frame read beneath a phi or extension until
+the standard spacebase-load rule can materialize it for the following
+heritage pass; resolving only the final eight-byte reload is insufficient.
+The spacebase-load consumer also recognizes a constant OR displacement, such
+as `(spacebase - 32) | 4`, only when existing nonzero masks prove its set bits
+disjoint from the base. Overlapping or unknown bits do not establish an
+additive frame offset.
+Before deriving the output map, `kuna_retcallhalf::whole_pair` can retain a
+high-first pair when at least one path returns corresponding slices of one
+locked, same-convention eight-byte integer call result. Corresponding phi
+inputs are checked together; a phi in only one word is checked against the
+other word on every incoming edge. Other paths may replace either word with
+a literal, including constant-only expressions not yet folded by the
+simplification pool and the upper zero word of a zero-extension. A lower word
+inside an extension keeps its source provenance. Unrelated live values do not
+establish a pair, and at least one path must return a whole wide value.
+Every reader of that call result, through moves, slices and phis, must be a
+RETURN or an input that a later call's parameter recovery has not made an
+argument: a caller that stores, passes or tests the result consumed it, so a
+void `*p = f(x);` or `G = f(x);` that leaves the words in the return
+registers is not a return. The ABI supplies the join order. Explicit
+caller outputs and competing output classes are unchanged. Provenance rejects
+single-word truncations that move a different word into the return storage,
+including the SPARC register-window controls in the regression.
+
+This does not prove an unknown caller's C return width from its callee's width.
+On a high-first ABI, returning the whole result and returning only its high
+word can have identical machine instructions: authored PowerPC32 callers
+compiled with sibling-call optimization disabled exhibit exactly that case.
+Recovery then retains the wide result; an explicit scalar caller prototype
+is needed to state the otherwise indistinguishable narrow contract.
+
+The pair proof does not follow arithmetic. A caller that returns a value
+computed from the call's words (`a / b + 1`, `-(a / b)`, an absolute value, a
+shift) or a phi of the call's words and an incoming argument
+(`f ? a / b : c`) leaves the second word inactive, so its return keeps only the
+high word or none. That is why the SPARC32 `__divdi3` contract (`libgccsigs`,
+§1) is off by default: without it the helper is an unknown callee, and such a
+caller returns every word in the first-register-low join. With a declared wide
+callee from DWARF or `--assert prototype`, the same limit applies.
+
+The authored `kuna-cli/tests/libgcc_divdi3.rs` round trips cover direct,
+saved-across-call, guarded, nontrivial-constant and one-word-replaced quotient
+returns at compiler `-O0` and `-O2`,
+both with `libgccsigs` on and with an explicit wide prototype while
+`libproto` is off. They also check single-word truncations, call effects, and
+that the default (`libgccsigs` off) leaves a low-word store as before.
+
 After native return trials are finalized, an otherwise unknown ten-byte scalar
 result in the full x87 ST0 register receives an extended floating type when the
 active convention explicitly classifies that exact output storage as floating.
