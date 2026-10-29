@@ -1094,6 +1094,9 @@ kuna_options! { self, p1;
     "eh_frame_full" => {
         on_off!(analysis_eh_frame_full, ".eh_frame LSDA landing-pad discovery")
     },
+    "unwindstarts" => {
+        on_off!(analysis_unwindstarts, "Mach-O __unwind_info function-start discovery")
+    },
     "coldentry" => {
         on_off!(analysis_coldentry, "Multi-entry .cold fragment entry discovery")
     },

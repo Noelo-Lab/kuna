@@ -275,6 +275,9 @@ mod verify_macho_imports;
 #[path = "verify_machomain.rs"]
 mod verify_machomain;
 
+#[path = "verify_unwindstarts.rs"]
+mod verify_unwindstarts;
+
 #[path = "verify_mappedflowboundary.rs"]
 mod verify_mappedflowboundary;
 

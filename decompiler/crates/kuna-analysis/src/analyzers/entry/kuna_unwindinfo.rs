@@ -1,0 +1,334 @@
+//! Mach-O `__unwind_info` function-start recovery (`unwindstarts`).
+//!
+//! The linker folds each object file's `__compact_unwind` entries into one
+//! `__TEXT,__unwind_info` section: a two-level lookup whose leaf (second-level)
+//! pages list, in ascending order, the start offset of every function the
+//! unwinder can describe. Those offsets are function starts by construction —
+//! one per `.cfi_startproc` the compiler emitted — and the section lives in the
+//! mapped `__TEXT` segment, so it survives the `strip` that removes
+//! `LC_FUNCTION_STARTS` from `__LINKEDIT`.
+//!
+//! On an image that still carries `LC_FUNCTION_STARTS` this oracle adds nothing:
+//! every unwind start is already a function-starts entry (the linker folds runs
+//! of adjacent same-encoding functions, so it is in fact a strict subset). Its
+//! value is the stripped App-Store app whose `LC_FUNCTION_STARTS` is gone: there
+//! the symbol stream, `LC_MAIN`, exports and `__mod_init_func` seed only a
+//! handful of starts and the arm64 gap walk cannot reach the body, while
+//! `__unwind_info` still names every function. Output-changing (it adds entries)
+//! and inert when `LC_FUNCTION_STARTS` is present, so it is default-OFF.
+//!
+//! Only the function **starts** are read. The compact encodings (frame size,
+//! saved-register set, frameless stack size) are deliberately ignored: kuna's
+//! S5/S7 frame analysis recovers the stack frame from the code itself, so the
+//! encoding adds nothing at the decompiler tier — the same reason `eh_frame_full`
+//! inherits CFI rather than rebuilding it.
+
+use object::macho::{MachHeader32, MachHeader64};
+use object::read::macho::{FatArch, MachHeader, MachOFatFile32, MachOFatFile64, Section, Segment};
+use object::{Architecture, Endianness, FileKind};
+
+use crate::loader::format::{detect, FormatKind};
+use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
+
+/// (kuna `unwindstarts`) Mach-O `__unwind_info` function-start discovery: read
+/// the second-level pages of `__TEXT,__unwind_info` and emit each function start
+/// as a discovered entry. Registered always (the facts are cheap to compute and
+/// are stashed at load), but the COMMIT is gated by `--option unwindstarts on`
+/// (default-OFF, output-changing) via `engine.rs::analysis_pass_enabled` →
+/// `arch.analysis_unwindstarts`, so a default run is byte-identical to before.
+pub struct UnwindInfoStartsPass;
+
+impl AnalysisPass for UnwindInfoStartsPass {
+    fn phase(&self) -> Phase {
+        Phase::P1
+    }
+
+    fn id(&self) -> &'static str {
+        "unwindstarts"
+    }
+
+    fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
+        let mut out = AnalysisOutput::default();
+        // Mach-O only. Additive contract: an empty output on any anomaly, never a
+        // failure.
+        if !matches!(detect(ctx.file).map(|f| f.kind()), Ok(FormatKind::MachO)) {
+            return out;
+        }
+        out.entries = unwind_info_starts(ctx.file, ctx.bytes);
+        out
+    }
+}
+
+/// The filtered `__unwind_info` function starts — inside an executable section,
+/// not already a funcsym, sorted and deduped (the same gates every other oracle
+/// applies). The testable seam (drive it over fixture bytes).
+pub fn unwind_info_starts(file: &object::File, bytes: &[u8]) -> Vec<u64> {
+    let mut raw: Vec<u64> = Vec::new();
+    collect_thin(bytes, &mut raw);
+
+    let execs = super::executable_sections(file);
+    let funcsyms = super::existing_function_addrs_for_file(file);
+    let mut out: Vec<u64> = Vec::new();
+    for vma in raw {
+        if vma == 0 || !super::in_executable_section(&execs, vma) {
+            continue;
+        }
+        if funcsyms.binary_search(&vma).is_ok() {
+            continue;
+        }
+        out.push(vma);
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Dispatch on the Mach-O file kind, peeling one fat slice (x86-64 → arm64 →
+/// first, as the rest of the loader does) before walking the thin image.
+fn collect_thin(bytes: &[u8], out: &mut Vec<u64>) {
+    match FileKind::parse(bytes) {
+        Ok(FileKind::MachO64) => walk::<MachHeader64<Endianness>>(bytes, out),
+        Ok(FileKind::MachO32) => walk::<MachHeader32<Endianness>>(bytes, out),
+        Ok(FileKind::MachOFat32) => {
+            if let Some(slice) = select_fat_slice_32(bytes) {
+                collect_thin(slice, out);
+            }
+        }
+        Ok(FileKind::MachOFat64) => {
+            if let Some(slice) = select_fat_slice_64(bytes) {
+                collect_thin(slice, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Walk a thin Mach-O's load commands, find the `__TEXT` base and the
+/// `__TEXT,__unwind_info` section bytes, and parse the second-level pages.
+/// Generic over the header width so 64- and 32-bit share one body.
+fn walk<Mach>(bytes: &[u8], out: &mut Vec<u64>)
+where
+    Mach: MachHeader<Endian = Endianness>,
+{
+    let Ok(header) = Mach::parse(bytes, 0) else {
+        return;
+    };
+    let Ok(endian) = header.endian() else {
+        return;
+    };
+    let Ok(mut commands) = header.load_commands(endian, bytes, 0) else {
+        return;
+    };
+
+    // The function offsets in `__unwind_info` are relative to the image base, the
+    // `__TEXT` segment vmaddr (the segment that maps the mach header).
+    let mut text_base: Option<u64> = None;
+    let mut unwind: Option<(u64, u64)> = None; // (file offset, size) of __unwind_info
+
+    while let Ok(Some(command)) = commands.next() {
+        let Ok(Some((segment, section_data))) = Mach::Segment::from_command(command) else {
+            continue;
+        };
+        if trim(segment.name()) == b"__TEXT" {
+            text_base = Some(segment.vmaddr(endian).into());
+        }
+        let Ok(secs) = segment.sections(endian, section_data) else {
+            continue;
+        };
+        for sec in secs {
+            if trim(sec.name()) == b"__unwind_info" {
+                if let Some((off, size)) = sec.file_range(endian) {
+                    unwind = Some((off, size));
+                }
+            }
+        }
+    }
+
+    let (Some(base), Some((off, size))) = (text_base, unwind) else {
+        return;
+    };
+    let start = off as usize;
+    let Some(end) = start.checked_add(size as usize).filter(|&e| e <= bytes.len()) else {
+        return;
+    };
+    parse_unwind_info(&bytes[start..end], base, out);
+}
+
+// `__unwind_info` second-level page kinds (Apple `mach-o/compact_unwind_encoding.h`).
+const SECOND_LEVEL_REGULAR: u32 = 2;
+const SECOND_LEVEL_COMPRESSED: u32 = 3;
+// Low 24 bits of a compressed entry are the function offset from the page's first
+// function; the top 8 are an encoding index this oracle does not read.
+const COMPRESSED_ENTRY_FUNC_OFFSET: u32 = 0x00FF_FFFF;
+
+/// Parse a `__unwind_info` blob, pushing `base + functionOffset` for every entry
+/// in every second-level page. Total: a short or malformed blob yields fewer
+/// starts, never a panic (every read is bounds-checked).
+fn parse_unwind_info(buf: &[u8], base: u64, out: &mut Vec<u64>) {
+    // unwind_info_section_header: version, then three (offset, count) pairs; the
+    // index array is the last pair.
+    let _version = read_u32(buf, 0);
+    let index_off = match read_u32(buf, 20) {
+        Some(v) => v as usize,
+        None => return,
+    };
+    let index_count = match read_u32(buf, 24) {
+        Some(v) => v as usize,
+        None => return,
+    };
+    // Each index entry is 12 bytes: functionOffset, secondLevelPagesSectionOffset,
+    // lsdaIndexArraySectionOffset. The last entry is a sentinel (end address,
+    // no page), so iterate to count-1.
+    for i in 0..index_count.saturating_sub(1) {
+        let eo = match index_off.checked_add(i * 12) {
+            Some(v) => v,
+            None => break,
+        };
+        let (first_func, page_off) = match (read_u32(buf, eo), read_u32(buf, eo + 4)) {
+            (Some(f), Some(p)) => (f as u64, p as usize),
+            _ => continue,
+        };
+        if page_off == 0 {
+            continue;
+        }
+        match read_u32(buf, page_off) {
+            Some(SECOND_LEVEL_REGULAR) => parse_regular_page(buf, page_off, base, out),
+            Some(SECOND_LEVEL_COMPRESSED) => {
+                parse_compressed_page(buf, page_off, base, first_func, out)
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Regular second-level page: a `(functionOffset, encoding)` pair per entry,
+/// functionOffset already image-relative.
+fn parse_regular_page(buf: &[u8], page_off: usize, base: u64, out: &mut Vec<u64>) {
+    let entry_page_off = match read_u16(buf, page_off + 4) {
+        Some(v) => v as usize,
+        None => return,
+    };
+    let entry_count = match read_u16(buf, page_off + 6) {
+        Some(v) => v as usize,
+        None => return,
+    };
+    for e in 0..entry_count {
+        let eo = match page_off.checked_add(entry_page_off).and_then(|b| b.checked_add(e * 8)) {
+            Some(v) => v,
+            None => break,
+        };
+        if let Some(func_off) = read_u32(buf, eo) {
+            out.push(base.wrapping_add(func_off as u64));
+        }
+    }
+}
+
+/// Compressed second-level page: a `u32` per entry whose low 24 bits are the
+/// function offset from the page's first function (`first_func`, image-relative).
+fn parse_compressed_page(buf: &[u8], page_off: usize, base: u64, first_func: u64, out: &mut Vec<u64>) {
+    let entry_page_off = match read_u16(buf, page_off + 4) {
+        Some(v) => v as usize,
+        None => return,
+    };
+    let entry_count = match read_u16(buf, page_off + 6) {
+        Some(v) => v as usize,
+        None => return,
+    };
+    for e in 0..entry_count {
+        let eo = match page_off.checked_add(entry_page_off).and_then(|b| b.checked_add(e * 4)) {
+            Some(v) => v,
+            None => break,
+        };
+        if let Some(val) = read_u32(buf, eo) {
+            let delta = (val & COMPRESSED_ENTRY_FUNC_OFFSET) as u64;
+            out.push(base.wrapping_add(first_func + delta));
+        }
+    }
+}
+
+/// Little-endian `u32` at `buf[off..off+4]`, or `None` if out of range.
+fn read_u32(buf: &[u8], off: usize) -> Option<u32> {
+    buf.get(off..off + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+}
+
+/// Little-endian `u16` at `buf[off..off+2]`, or `None` if out of range.
+fn read_u16(buf: &[u8], off: usize) -> Option<u16> {
+    buf.get(off..off + 2).map(|b| u16::from_le_bytes([b[0], b[1]]))
+}
+
+/// Trim a NUL-padded fixed-size Mach-O name field to its content bytes.
+fn trim(name: &[u8]) -> &[u8] {
+    match name.iter().position(|&b| b == 0) {
+        Some(i) => &name[..i],
+        None => name,
+    }
+}
+
+/// Select one slice of a 32-bit fat header (x86-64, then arm64, then first).
+fn select_fat_slice_32(bytes: &[u8]) -> Option<&[u8]> {
+    let fat = MachOFatFile32::parse(bytes).ok()?;
+    select_fat_arch(fat.arches()).and_then(|a| a.data(bytes).ok())
+}
+
+/// Select one slice of a 64-bit fat header.
+fn select_fat_slice_64(bytes: &[u8]) -> Option<&[u8]> {
+    let fat = MachOFatFile64::parse(bytes).ok()?;
+    select_fat_arch(fat.arches()).and_then(|a| a.data(bytes).ok())
+}
+
+/// Deterministic fat-slice preference (x86-64, then arm64, then first).
+fn select_fat_arch<Fat: FatArch>(arches: &[Fat]) -> Option<&Fat> {
+    arches
+        .iter()
+        .find(|a| a.architecture() == Architecture::X86_64)
+        .or_else(|| arches.iter().find(|a| a.architecture() == Architecture::Aarch64))
+        .or_else(|| arches.first())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(name: &str) -> Vec<u8> {
+        let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), name);
+        std::fs::read(&path).unwrap_or_else(|_| panic!("read fixture {path}"))
+    }
+
+    /// The headline: on a stripped arm64 Mach-O (no `LC_FUNCTION_STARTS`, local
+    /// symbols removed) the four `uw_*` function starts live only in
+    /// `__TEXT,__unwind_info`, and this oracle recovers exactly them.
+    #[test]
+    fn recovers_the_unwind_only_function_starts() {
+        let bytes = fixture("macho_unwind_only_arm64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse fixture");
+        let starts = unwind_info_starts(&file, &bytes);
+        for a in [0x1000002e0u64, 0x100000328, 0x100000370, 0x1000003bc] {
+            assert!(starts.contains(&a), "unwind start {a:#x} missing; got {starts:#x?}");
+        }
+        // `_main` (0x10000040c) is a function symbol, so the funcsym filter drops it
+        // (another oracle already names it) — the pass only ADDS new starts.
+        assert!(!starts.contains(&0x10000040c), "a funcsym start must be filtered out");
+        // The Mach header (0x100000000) is not in an executable section.
+        assert!(!starts.contains(&0x100000000), "the mach header is not a function");
+    }
+
+    /// Mach-O only: an ELF image yields nothing (the parser finds no section and
+    /// `collect_thin` never runs).
+    #[test]
+    fn non_macho_yields_nothing() {
+        let bytes = fixture("cet_pie_x86_64");
+        let file = object::File::parse(bytes.as_slice()).expect("parse elf");
+        assert!(unwind_info_starts(&file, &bytes).is_empty());
+    }
+
+    /// Every read is bounds-checked: a short or empty blob is parsed to no starts,
+    /// never a panic.
+    #[test]
+    fn short_blob_does_not_panic() {
+        let mut out = Vec::new();
+        parse_unwind_info(&[], 0x1000, &mut out);
+        parse_unwind_info(&[1, 0, 0, 0], 0x1000, &mut out);
+        parse_unwind_info(&[0u8; 27], 0x1000, &mut out);
+        assert!(out.is_empty());
+    }
+}
