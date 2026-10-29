@@ -117,7 +117,7 @@ build failure. The options it enables:
   Listing-consuming passes — `fid`, `aif`, the discovered-no-return family),
   `fast_funcdisc`, `eh_frame_full`, `funcstart_patterns`, `addrtable`,
   `operand_refs`, `widestrings32` (4-byte `wchar_t`/`char32_t` literals),
-  `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`, `pdb`,
+  `fid`, `rtti`, `itaniumrtti`, `aif`, `aifstrict`, `objc`, `cfstrings`, `pdb`,
   `macho-arm64e`
 - **analysis tier, ARM entry discovery** (DIV-93): `cortexmvectors`, `ptrentry`,
   `tailcallentry`, `poolentry` — the four-step sequence that takes stripped ARM
@@ -135,7 +135,7 @@ silently change if a default drifts back.
 ### The deliberate exclusions
 
 Most off-by-default options are safe to blanket-enable: the format-specific ones
-are inert off their target (`rtti` = PE, `objc`/`macho-arm64e` = Mach-O,
+are inert off their target (`rtti` = PE, `objc`/`cfstrings`/`macho-arm64e` = Mach-O,
 `sparcstructret` = the SPARC `unimp`-trap idiom, which cannot occur off SPARC,
 and since DIV-93 the four ARM entry passes, which are inert off ARM). These are
 not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:

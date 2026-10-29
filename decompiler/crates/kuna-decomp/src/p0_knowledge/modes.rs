@@ -279,6 +279,7 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("tailcallentry", "on"),
     ("poolentry", "on"),
     ("objc", "on"),          // Mach-O-only; no-op off-Mach-O
+    ("cfstrings", "on"),     // Mach-O-only; no-op off-Mach-O
     ("pdb", "on"),           // PE-only; no-op off-PE (a shipped default since DIV-129)
     ("macho-arm64e", "on"),  // Mach-O arm64e-only; no-op elsewhere
 ];

@@ -457,6 +457,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     }
 
 
+    // S1 Mach-O Core Foundation constant strings (CFStringPass): when the binary
+    // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
+    // the string so a `CFSTR("...")` reference renders the literal instead of
+    // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
+    // elsewhere). Default-OFF (`--option cfstrings`): the output is committed only
+    // when the gate is on (`engine.rs::analysis_pass_enabled`), so a default run is
+    // byte-identical.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::cfstring::CFStringPass));
+    }
+
     // S1 Mach-O Objective-C metadata recovery (ObjcMetadataPass): when the binary
     // is a Mach-O, walk the `__objc_*` metadata (classlist → class_t → class_ro_t
     // → method_list_t) and rename each IMP function `-[Class sel]` / `+[Class sel]`
@@ -471,17 +482,6 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
     // path (the arm64 + LC_DYLD_CHAINED_FIXUPS resolver is the deferred PR-O0/O2).
     if format == object::BinaryFormat::MachO {
         passes.push(Box::new(crate::objc::ObjcMetadataPass));
-    }
-
-    // S1 Mach-O Core Foundation constant strings (CFStringPass): when the binary
-    // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
-    // the string so a `CFSTR("...")` reference renders the literal instead of
-    // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
-    // elsewhere). Default-OFF (`--option cfstrings`): the output is committed only
-    // when the gate is on (`engine.rs::analysis_pass_enabled`), so a default run is
-    // byte-identical.
-    if format == object::BinaryFormat::MachO {
-        passes.push(Box::new(crate::cfstring::CFStringPass));
     }
 
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
@@ -1853,14 +1853,14 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
-        // Mach-O.
+        // additions: `itaniumrtti` for ELF and `peimportcall`, `cfstrings` and
+        // `objc` for Mach-O.
         let elf_neutral: Vec<&str> =
             elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "cfstrings" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(
