@@ -7,8 +7,10 @@
 //! process environment variables set by the `kuna` CLI before loading (the
 //! `dynrelocs` loadtime pattern). The CLI's `--image NAME` sets
 //! [`DYLDIMAGE_ENV`] for every subcommand; the console's `option dyldimage NAME`
-//! before `load file` sets the same variable. The `Architecture` fields exist
-//! only for catalog visibility and the live `current` value.
+//! before `load file` sets the same variable, and is accepted before any image
+//! is loaded, since choosing the first image is its purpose.
+
+use kuna_base::error::KunaResult;
 
 /// The install name, basename or stem of the cache image to load.
 pub const DYLDIMAGE_ENV: &str = "KUNA_DYLD_IMAGE";
@@ -29,6 +31,38 @@ pub fn set_dyldimage_env(name: &str) {
     std::env::set_var(DYLDIMAGE_ENV, name);
 }
 
+/// The image a `dyldimage` value names; `none` and the empty value name none.
+pub fn image_name(value: &str) -> Option<&str> {
+    Some(value.trim()).filter(|v| !v.is_empty() && *v != "none")
+}
+
+/// The image the run selected through [`DYLDIMAGE_ENV`].
+pub fn selected_image() -> Option<String> {
+    std::env::var(DYLDIMAGE_ENV).ok().and_then(|v| image_name(&v).map(str::to_string))
+}
+
+/// Apply `option dyldimage|dyldcrossrefs VALUE`, or `None` for another option.
+/// Neither needs a loaded image: the next `load file` reads both.
+pub fn set_option(name: &str, value: &str) -> Option<KunaResult<String>> {
+    Some(match name {
+        "dyldimage" => Ok(match image_name(value) {
+            Some(image) => {
+                set_dyldimage_env(image);
+                format!("dyld shared cache image set to {image}")
+            }
+            None => {
+                std::env::remove_var(DYLDIMAGE_ENV);
+                "dyld shared cache image selection cleared".to_string()
+            }
+        }),
+        "dyldcrossrefs" => crate::options::on_or_off(value).map(|on| {
+            set_dyldcrossrefs_env(on);
+            format!("dyld shared cache cross-image reference naming turned {}", if on { "on" } else { "off" })
+        }),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +78,14 @@ mod tests {
         set_dyldcrossrefs_env(true);
         assert!(dyldcrossrefs_enabled());
         std::env::remove_var(DYLDCROSSREFS_ENV);
+    }
+
+    #[test]
+    fn none_and_empty_name_no_image() {
+        assert_eq!(image_name(" CoreFoundation "), Some("CoreFoundation"));
+        assert_eq!(image_name("none"), None);
+        assert_eq!(image_name("  "), None);
+        assert!(set_option("dyldcrossrefs", "maybe").unwrap().is_err());
+        assert!(set_option("dynrelocs", "on").is_none());
     }
 }

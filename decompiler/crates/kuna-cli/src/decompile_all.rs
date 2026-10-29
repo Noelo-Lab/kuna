@@ -2690,7 +2690,11 @@ fn mode_and_options_for_binary(
 ) -> Result<ResolvedMode, String> {
     let requested = mode.unwrap_or("auto");
     let size = if kuna_decomp::modes::mode_is_automatic(requested) {
-        match kuna_analysis::loader::kuna_dyldcache::selected_image_size(std::path::Path::new(binary))
+        let image = match crate::loadtime::last_option_value(&explicit, "dyldimage") {
+            Some(value) => kuna_decomp::kuna_dyldcache::image_name(value).map(str::to_string),
+            None => kuna_decomp::kuna_dyldcache::selected_image(),
+        };
+        match kuna_analysis::loader::kuna_dyldcache::image_size(std::path::Path::new(binary), image.as_deref())
             .and_then(Result::ok)
         {
             Some(size) => size,

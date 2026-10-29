@@ -987,8 +987,10 @@ which call
 when the file opens with the cache magic (`bootstrap_from_file` routes a cache
 to the object path before reading it whole). The image is chosen by
 `dyldimage` (the `KUNA_DYLD_IMAGE` bridge, which the CLI's global `--image`
-sets). It matches a full install name, then a unique basename, then a unique
-basename stem, and a one-image cache needs no choice. The cache is read through
+sets, and which the console accepts before any image is loaded, since choosing
+the first one is its job). It matches a full install name, then a unique
+basename, then a unique basename minus its last extension (`libobjc.A`), and a
+one-image cache needs no choice. The cache is read through
 file handles, never mapped whole, so the cost follows the image, not the 3 GB
 of the cache. Every header field is read only when it lies below the header's
 own `mappingOffset`, which is how `dyld_cache_format.h` adds fields. That one
@@ -2028,8 +2030,8 @@ funcsym stream:
   None of those addresses is in the rebuilt image, so the stub walk above cannot
   name them, and a call renders `sub_<island>(...)`.
   `decompiler/crates/kuna-analysis/src/loader/kuna_dyldcache/xrefs.rs (collect)`
-  runs while the image is rebuilt. It scans the image's code sections for `b`/`bl`
-  targets outside the image, and its untyped `__got`/`__auth_got` sections for
+  runs while the image is rebuilt. It scans an arm64 image's code sections for
+  `b`/`bl` targets outside the image (an x86_64 image gets its GOT slots alone), and its untyped `__got`/`__auth_got` sections for
   slid pointers outside it. For each target it takes, in order, a symbol at that
   address, then the import an `S_SYMBOL_STUBS` entry there stands for (from the
   owning image's indirect-symbol table), then wherever the stub jumps. Up to four

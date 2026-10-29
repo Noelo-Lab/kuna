@@ -29,6 +29,17 @@ fn image_names_match_by_install_name_basename_then_stem() {
 }
 
 #[test]
+fn a_stem_drops_only_the_last_extension() {
+    let images: Vec<CacheImage> = ["/usr/lib/libobjc.A.dylib", "/usr/lib/libz.1.dylib", "/usr/lib/libz.1.2.dylib"]
+        .into_iter()
+        .map(|p| CacheImage { address: 0, path: p.into() })
+        .collect();
+    assert_eq!(select_image(&images, Some("libobjc.A")), Ok(0));
+    assert_eq!(select_image(&images, Some("libz.1")), Ok(1));
+    assert!(select_image(&images, Some("libobjc")).unwrap_err().contains("close: /usr/lib/libobjc.A.dylib"));
+}
+
+#[test]
 fn rebuilt_image_is_a_mach_o_at_its_cache_addresses_with_slid_pointers() {
     let cache = DyldCache::open(&fixture()).unwrap();
     let bytes = cache.extract(0).unwrap();

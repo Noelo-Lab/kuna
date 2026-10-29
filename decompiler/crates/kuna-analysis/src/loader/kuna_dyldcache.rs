@@ -54,37 +54,28 @@ pub fn is_dyld_cache_file(path: &Path) -> bool {
         .is_ok_and(|()| is_dyld_cache(&prefix))
 }
 
-/// The image the run selected: the `dyldimage` option, carried in
-/// [`kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV`].
-fn selected_image_name() -> Option<String> {
-    std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV)
-        .ok()
-        .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty())
-}
-
 /// The selected image of the dyld shared cache at `path`, rebuilt as a thin
-/// Mach-O; `None` when `path` is not a dyld shared cache.
+/// Mach-O; `None` when `path` is not a dyld shared cache. The image is the
+/// `dyldimage` option, carried in [`kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV`].
 pub fn read_selected_image(path: &Path) -> Option<Result<Vec<u8>, String>> {
     if !is_dyld_cache_file(path) {
         return None;
     }
     Some(DyldCache::open(path).and_then(|cache| {
-        let index = cache.select(selected_image_name().as_deref())?;
+        let index = cache.select(kuna_decomp::kuna_dyldcache::selected_image().as_deref())?;
         cache.extract(index)
     }))
 }
 
-/// The byte size the selected image's segments occupy, `__LINKEDIT` aside
-/// (the cache shares one across all images): the cache counterpart of a
-/// file's length for size-based policy. `None` when `path` is not a cache.
-pub fn selected_image_size(path: &Path) -> Option<Result<u64, String>> {
+/// The byte size image `name` occupies, `__LINKEDIT` aside (the cache shares
+/// one across all images): the cache counterpart of a file's length for
+/// size-based policy. `None` when `path` is not a cache.
+pub fn image_size(path: &Path, name: Option<&str>) -> Option<Result<u64, String>> {
     if !is_dyld_cache_file(path) {
         return None;
     }
     Some(DyldCache::open(path).and_then(|cache| {
-        let index = cache.select(selected_image_name().as_deref())?;
-        let image = cache.image_layout(index)?;
+        let image = cache.image_layout(cache.select(name)?)?;
         Ok(image.segments.iter().filter(|s| s.name != "__LINKEDIT").map(|s| s.filesize).sum())
     }))
 }
@@ -310,9 +301,11 @@ impl DyldCache {
             Some(uuid) => {
                 let mut name = path.as_os_str().to_owned();
                 name.push(".symbols");
-                let Ok(sym) = open(Path::new(&name)) else {
+                let name = PathBuf::from(name);
+                if !name.exists() {
                     return Ok(None);
-                };
+                }
+                let sym = open(&name)?;
                 let sh = Header::read(&sym)?;
                 if sh.uuid(HDR_UUID) != Some(uuid) {
                     return Err(format!("{}: UUID does not match the main cache", sym.name));
@@ -389,53 +382,10 @@ impl DyldCache {
     }
 
     /// Resolve an image name to its index: a full install name, else a unique
-    /// basename, else a unique basename without its extension. With no name, a
-    /// cache of one image selects it.
+    /// basename, else a unique basename without its last extension. With no
+    /// name, a cache of one image selects it.
     pub fn select(&self, name: Option<&str>) -> Result<usize, String> {
-        let Some(name) = name else {
-            return match self.images.len() {
-                1 => Ok(0),
-                n => Err(format!(
-                    "dyld shared cache holds {n} images; choose one with --image NAME \
-                     (list them with `kuna unpack <cache> --list`)"
-                )),
-            };
-        };
-        let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
-        let stem = |p: &str| {
-            let b = base(p);
-            b.split_once('.').map(|(s, _)| s.to_string()).unwrap_or(b)
-        };
-        let tiers: [&dyn Fn(&CacheImage) -> bool; 3] = [
-            &|i| i.path == name,
-            &|i| base(&i.path) == name,
-            &|i| stem(&i.path) == name,
-        ];
-        for matches in tiers {
-            let hits: Vec<usize> =
-                self.images.iter().enumerate().filter(|(_, i)| matches(i)).map(|(n, _)| n).collect();
-            match hits.len() {
-                0 => continue,
-                1 => return Ok(hits[0]),
-                _ => {
-                    let names: Vec<&str> = hits.iter().map(|&n| self.images[n].path.as_str()).collect();
-                    return Err(format!("image name {name:?} is ambiguous: {}", names.join(", ")));
-                }
-            }
-        }
-        let lower = name.to_ascii_lowercase();
-        let near: Vec<&str> = self
-            .images
-            .iter()
-            .filter(|i| i.path.to_ascii_lowercase().contains(&lower))
-            .take(8)
-            .map(|i| i.path.as_str())
-            .collect();
-        Err(if near.is_empty() {
-            format!("no image named {name:?} in the dyld shared cache")
-        } else {
-            format!("no image named {name:?} in the dyld shared cache; close: {}", near.join(", "))
-        })
+        select_image(&self.images, name)
     }
 
     fn mapping_of(&self, va: u64, len: u64) -> Option<&Mapping> {
@@ -512,6 +462,53 @@ impl DyldCache {
         )?;
         Ok(extract::Nlist::parse_all(&raw, &pool))
     }
+}
+
+/// [`DyldCache::select`] over an image list.
+fn select_image(images: &[CacheImage], name: Option<&str>) -> Result<usize, String> {
+    let Some(name) = name else {
+        return match images.len() {
+            1 => Ok(0),
+            n => Err(format!(
+                "dyld shared cache holds {n} images; choose one with --image NAME \
+                 (list them with `kuna unpack <cache> --list`)"
+            )),
+        };
+    };
+    let base = |p: &str| p.rsplit('/').next().unwrap_or(p).to_string();
+    let stem = |p: &str| {
+        let b = base(p);
+        b.rsplit_once('.').map(|(s, _)| s.to_string()).unwrap_or(b)
+    };
+    let tiers: [&dyn Fn(&CacheImage) -> bool; 3] = [
+        &|i| i.path == name,
+        &|i| base(&i.path) == name,
+        &|i| stem(&i.path) == name,
+    ];
+    for matches in tiers {
+        let hits: Vec<usize> =
+            images.iter().enumerate().filter(|(_, i)| matches(i)).map(|(n, _)| n).collect();
+        match hits.len() {
+            0 => continue,
+            1 => return Ok(hits[0]),
+            _ => {
+                let names: Vec<&str> = hits.iter().map(|&n| images[n].path.as_str()).collect();
+                return Err(format!("image name {name:?} is ambiguous: {}", names.join(", ")));
+            }
+        }
+    }
+    let lower = name.to_ascii_lowercase();
+    let near: Vec<&str> = images
+        .iter()
+        .filter(|i| i.path.to_ascii_lowercase().contains(&lower))
+        .take(8)
+        .map(|i| i.path.as_str())
+        .collect();
+    Err(if near.is_empty() {
+        format!("no image named {name:?} in the dyld shared cache")
+    } else {
+        format!("no image named {name:?} in the dyld shared cache; close: {}", near.join(", "))
+    })
 }
 
 /// Bytes read past the last string of a group, extended until that string ends.

@@ -4272,7 +4272,7 @@ A dyld shared cache (`dyld_shared_cache_arm64e` and the sub-caches beside it)
 holds thousands of images, and every kuna surface works on one of them. Pass the
 main cache file as the binary and name the image with `--image`: a full install
 name (`/usr/lib/libobjc.A.dylib`), else a unique basename (`libobjc.A.dylib`,
-`CoreFoundation`), else a unique basename without its extension (`libobjc.A`).
+`CoreFoundation`), else a unique basename without its last extension (`libobjc.A`).
 Without `--image`, a cache of one image loads it, and a larger one exits `2` with
 the image count; an unknown or ambiguous name exits `2` with the closest matches.
 `kuna unpack <cache> --list` lists the images.
@@ -4293,7 +4293,8 @@ stub island, or to another image's stub, renders as the callee
 slot the cache builder coalesced. `--option dyldcrossrefs off` shows the raw
 island addresses instead. `--image` is global: it applies to every subcommand
 and is passed to the `decomp_dbg` subprocess through `KUNA_DYLD_IMAGE`. The
-console spells it `option dyldimage NAME`, given before `load file`.
+console spells it `option dyldimage NAME`, given before `load file`; it is
+accepted before any image is loaded.
 
 ## Everything else
 

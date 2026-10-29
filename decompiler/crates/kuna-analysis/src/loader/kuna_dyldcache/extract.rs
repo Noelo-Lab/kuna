@@ -302,7 +302,7 @@ impl DyldCache {
                 let start = (off + (va - layout.segments[*i].vmaddr)) as usize;
                 out.get(start..start + len)
             };
-            super::xrefs::collect(self, &layout, &view)
+            super::xrefs::collect(self, &layout, cputype == CPU_TYPE_ARM64, &view)
         };
 
         let linkedit = self.build_linkedit(index, &layout, &xrefs)?;

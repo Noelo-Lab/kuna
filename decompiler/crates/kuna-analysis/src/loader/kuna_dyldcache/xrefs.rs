@@ -115,10 +115,12 @@ pub fn read_note(bytes: &[u8]) -> Vec<Xref> {
 }
 
 /// Collect image `layout`'s references into other images. `view(va, len)`
-/// reads the image's slid bytes.
+/// reads the image's slid bytes. Branches are decoded only for an arm64 image
+/// (`a64`); an x86_64 image gets its GOT slots alone.
 pub(super) fn collect<'v>(
     cache: &DyldCache,
     layout: &ImageLayout,
+    a64: bool,
     view: &dyn Fn(u64, usize) -> Option<&'v [u8]>,
 ) -> Vec<Xref> {
     let mut targets = BTreeSet::new();
@@ -129,6 +131,9 @@ pub(super) fn collect<'v>(
                 continue;
             };
             if sec.is_code() {
+                if !a64 {
+                    continue;
+                }
                 for (i, w) in bytes.chunks_exact(4).enumerate() {
                     let w = u32_at(w, 0);
                     if w & 0x7C00_0000 == 0x1400_0000 {
