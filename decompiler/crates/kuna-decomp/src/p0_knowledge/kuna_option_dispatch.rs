@@ -160,6 +160,7 @@ kuna_options! { self, p1;
     "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
+    "ptrauthtrap" => on_off!(ptrauth_trap, "arm64e pointer-auth failure-check removal"),
     "int3pad" => {
         let (mode, msg) = crate::kuna_int3pad::OptionInt3Pad.apply(p1)?;
         self.int3_pad = mode;

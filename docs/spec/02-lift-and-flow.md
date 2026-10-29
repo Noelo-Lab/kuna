@@ -3198,3 +3198,45 @@ The summary declines when `stackviews` or `stackalias` is enabled. Those policie
 retain transient physical stack writes, which can create an independent scalar
 in the tail of a later buffer. Their original call representation remains until
 that overlapping ownership can be represented without shrinking the buffer.
+
+## arm64e pointer-auth failure checks (`ptrauthtrap`)
+
+**(kuna) `option ptrauthtrap on|off`, default on,
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ptrauthtrap.rs
+(ActionPtrAuthTrap)`.** The AArch64 SLEIGH spec gives every pointer-auth
+instruction a `ShowPAC` context, off in `AARCH64.pspec`, and with it off the
+instruction lifts to no p-code. `paciasp`, `pacibsp`, `autibsp`, `pacia`,
+`pacda` and `xpaci` vanish. `retab` is a plain return. `braa`, `blraa` and
+`blraaz` branch to their first register exactly like `br` and `blr`, so a
+call target the decompiler resolves through `blr x8` resolves the same way
+through `blraa x8, x9`. `ldraa` is a plain load. The decompiler therefore
+treats every signed pointer as already authenticated.
+
+One construct survives that. A CPU without `FEAT_FPAC` does not trap on a
+failed `aut*`: it returns the pointer with an error code in its top bits, and
+the fault only comes at the next use. So Apple's clang checks the result
+inline and branches to `brk #0xc470 + key` when it is bad. LLVM reserves
+those four immediates for this trap. There are two forms:
+
+- Before a tail call, `eor x16, x30, x30, lsl #1; tbz x16, #62, ok` tests that
+  bits 62 and 61 of the authenticated return address agree.
+- After a data `aut*`, the result is compared with its `xpac`-stripped copy.
+
+The second form folds by itself, because the hidden `xpac` leaves the copy
+equal to the original. The first reads the incoming `x30`, which nothing can
+fold. It printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; }`
+before nearly every tail call of an Apple binary: 205 times in iOS 16's
+`trustd`, 1,017 times in `AuthKit`.
+
+**Matching.** The trap block is the anchor. It is a basic block whose ops
+all come from one instruction, and that instruction's `SoftwareBreakpoint`
+`CALLOTHER` carries an immediate in `0xc470..=0xc473`. Each in-edge that is
+one arm of a CBRANCH is removed. A trap block entered any other way keeps
+that entry.
+
+**The edit and the window.** `remove_branch` plus `remove_unreachable_blocks`,
+pre-SSA, registered after `gowritebarrier` in the same window. The `eor` and
+the `x30` read lose their only reader and die to dead-code elimination.
+`off` keeps the checks, to audit where the compiler authenticates. Pinned by
+`tests/stages/kuna-ptrauthtrap.xml` (two passes over the `macho_arm64e_auth`
+fixture).

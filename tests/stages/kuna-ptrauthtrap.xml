@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    arm64e pointer-auth failure checks (`option ptrauthtrap on|off`).
+
+    Issue: Apple's clang checks an authenticated pointer inline because a CPU
+    without FEAT_FPAC does not trap on a failed aut*. Before a tail call it
+    tests bits 62 and 61 of the authenticated x30 and traps with
+    `brk #0xc471`. SLEIGH hides the autibsp, so the bit test reads the incoming
+    return address and every such function of an iOS binary (205 in trustd)
+    printed `if ((v1 ^ v1 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); }`
+    ahead of its tail call.
+
+    Stage / sub-stage: P2 flow-classification. `p2_lift/kuna_ptrauthtrap.rs`
+    anchors on the trap block (one brk whose SoftwareBreakpoint immediate is
+    0xc470..0xc473) and removes every CBRANCH edge into it pre-SSA.
+
+    P0 assertion: `option ptrauthtrap on|off`.
+
+    The XML wrapper only supplies the harness architecture; every pass loads
+    the `macho_arm64e_auth` fixture (an arm64e PAC00 image, see the fixtures
+    README) through the object bootstrap.
+
+    Pass 1 (`option ptrauthtrap off`) reproduces the BUG: `_tail_auth` carries
+    the bit test, the trap call and a variable for the incoming x30.
+    Pass 2 (`option ptrauthtrap on`, the shipped default) is the FIX:
+    `_tail_auth` is the call to `_helper` and the tail call to `_helper2`.
+    `_strip_check`'s xpacd/cmp form folds without the option, so its body is
+    the same plain load in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
+  <com>option ptrauthtrap off</com>
+  <com>read symbols</com>
+  <com>load function _tail_auth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _strip_check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
+  <com>read symbols</com>
+  <com>load function _tail_auth</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _strip_check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PTRAUTHTRAP #1: off keeps the bit test on the incoming return address" min="1" max="1">if \(\(v1 \^ v1 &lt;&lt; 1\) &gt;&gt; 0x3e &amp; 1\)</stringmatch>
+<stringmatch name="PTRAUTHTRAP #2: off keeps the trap call" min="1" max="1">SoftwareBreakpoint\(0xc471</stringmatch>
+<stringmatch name="PTRAUTHTRAP #3: the tail call survives in both passes" min="2" max="2">_helper2\(\); // tail-call</stringmatch>
+<stringmatch name="PTRAUTHTRAP #4: only off declares a variable for the incoming x30" min="1" max="1"> v1; // stack - 0x8 \| x30</stringmatch>
+<stringmatch name="PTRAUTHTRAP #5: the call to _helper survives in both passes" min="2" max="2">  _helper\(\);</stringmatch>
+<stringmatch name="PTRAUTHTRAP #6: the xpacd compare folds in both passes" min="2" max="2">return \*\(unsigned int \*\)\*a0;</stringmatch>
+</decompilertest>

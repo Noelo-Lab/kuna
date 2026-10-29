@@ -483,6 +483,10 @@ Three tiers:
 | every pointer store in a go function wrapped in if (writeBarrier flag) with a gcWriteBarrier call | [`gowritebarrier`](#gowritebarrier) |
 | stores through an undefined local after a gcWriteBarrier call because the thunk's buffer register is not modeled | [`gowritebarrier`](#gowritebarrier) |
 | go output doubled in size by GC bookkeeping diamonds | [`gowritebarrier`](#gowritebarrier) |
+| if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function | [`ptrauthtrap`](#ptrauthtrap) |
+| (*SoftwareBreakpoint(0xc471,..))() // jump-as-call | [`ptrauthtrap`](#ptrauthtrap) |
+| a stack - 0x8  | [`ptrauthtrap`](#ptrauthtrap) |
+|  x30 variable declared only for a pointer-auth check | [`ptrauthtrap`](#ptrauthtrap) |
 | go function returning bool prints v = CONCAT71((undefined7)(v >> 8), a == b) instead of returning the comparison | [`gobool`](#gobool) |
 | return value masked with 0xffffffff around a boolean | [`gobool`](#gobool) |
 | undefined7 casts feeding a concatenation at every boolean return | [`gobool`](#gobool) |
@@ -2490,6 +2494,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave auto: on a Go binary every guarded pointer store sheds its if (runtime_writeBarrier) { gcWriteBarrierN(); buffer writes } wrapper and renders as the plain store; off only to audit the GC's barrier placement. Use always on a Go function carved into a bytechunk where detection has no buildinfo section to find.
 - **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-multilang-gowritebarrier
 - **Example:** `option gowritebarrier off`
+
+### `ptrauthtrap` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** if ((v ^ v << 1) >> 0x3e & 1) before a tail call in an arm64e function; (*SoftwareBreakpoint(0xc471,..))() // jump-as-call; a stack - 0x8 ;  x30 variable declared only for a pointer-auth check.
+- **What it does:** Drop the pointer-authentication failure checks an arm64e compiler plants after an aut* instruction. Without FEAT_FPAC a failed aut* does not trap; it leaves an error code in the pointer's top bits, so Apple's clang checks the result inline and branches to brk #0xc470+key when it is bad: before a tail call it tests that bits 62 and 61 of the authenticated x30 agree (eor x16, x30, x30, lsl #1; tbz x16, #62), after a data aut* it compares the result with its xpac-stripped copy. SLEIGH hides the aut* itself (ShowPAC is off), so statically every pointer authenticates and the check is noise; the xpac form folds away on its own, but the bit test reads the incoming return address and renders as if ((x30 ^ x30 << 1) >> 0x3e & 1) { (*SoftwareBreakpoint(0xc471,..))(); return; } before nearly every tail call of an Apple binary. The trap block is the anchor: a block lifted entirely from one brk whose SoftwareBreakpoint immediate is 0xc470-0xc473, the codes LLVM reserves for this trap. Every CBRANCH edge into it is removed pre-SSA (the gomorestack window), so the condition dies to dead-code elimination.
+- **When to flip:** Leave on: an arm64e function's tail call reads as the call alone. Flip off to audit where the compiler checks an authenticated pointer. Inert on any image without a brk #0xc470-0xc473 trap.
+- **Where / provenance:** P2/flow-classification · kuna · structure-recovery · kuna-apple-ptrauthtrap
+- **Example:** `option ptrauthtrap off`
 
 ### `gobool` -- off | auto | always, default `auto` (destructive opt-in)
 

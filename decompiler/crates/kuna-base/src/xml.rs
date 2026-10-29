@@ -2157,7 +2157,8 @@ mod tests {
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-objcrefs / ObjC selector, class and super reference slots and `__objc_stubs` named and folded
-        assert_eq!(count, 692, "corpus file count drifted");
+        // and kuna-ptrauthtrap / arm64e pointer-auth failure checks dropped
+        assert_eq!(count, 693, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
