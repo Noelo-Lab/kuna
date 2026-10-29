@@ -6185,8 +6185,7 @@ not read, and a word that is itself a mapped address keeps its pointer edge from
 the load. A position-independent static image with no GOT and no `.dynamic`
 section (code that touches only its own strings and statics) is read as
 firmware. And in an image stripped of its mapping symbols, a datum at an odd
-address inside an executable section, which nothing the walk decoded covers, is
-filed one byte low.
+address inside an executable section is filed one byte low.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.

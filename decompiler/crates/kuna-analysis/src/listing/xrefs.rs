@@ -1691,16 +1691,20 @@ fn thumb_target(v: u64, st: &State, markers: &[(u64, u8)]) -> u64 {
 fn mapping_markers(file: &object::File) -> Vec<(u64, u8)> {
     let mut out: Vec<(u64, u8)> = file
         .symbols()
-        .filter_map(|sym| {
-            let name = sym.name().ok()?;
-            let kind = *name.strip_prefix('$')?.as_bytes().first()?;
-            let rest = &name[2..];
-            (matches!(kind, b'a' | b't' | b'd') && (rest.is_empty() || rest.starts_with('.')))
-                .then(|| (sym.address(), kind))
-        })
+        .filter_map(|sym| Some((sym.address(), mapping_kind(sym.name().ok()?)?)))
         .collect();
     out.sort_unstable();
     out
+}
+
+/// The kind byte of an ARM mapping symbol name (`$a`, `$t`, `$d`, or one of
+/// them followed by `.` and anything), read by byte so no other name can split
+/// a character.
+fn mapping_kind(name: &str) -> Option<u8> {
+    match name.as_bytes() {
+        [b'$', kind @ (b'a' | b't' | b'd')] | [b'$', kind @ (b'a' | b't' | b'd'), b'.', ..] => Some(*kind),
+        _ => None,
+    }
 }
 
 /// Lock one bucket's read ordering and collapse duplicates on `(from, to, kind)`,
@@ -2059,6 +2063,19 @@ mod tests {
     use kuna_num::pcoderaw::VarnodeData;
 
     use super::*;
+
+    /// Only `$a`, `$t`, `$d` and their `.`-suffixed forms are mapping symbols,
+    /// and a `$` name with a multi-byte character after it is read without
+    /// slicing through that character.
+    #[test]
+    fn mapping_symbol_names_are_read_by_byte() {
+        for (name, kind) in [("$a", b'a'), ("$t", b't'), ("$d", b'd'), ("$t.foo", b't'), ("$d.realdata", b'd')] {
+            assert_eq!(mapping_kind(name), Some(kind), "{name}");
+        }
+        for name in ["$", "$x", "$é", "$\u{e9}t", "$ta", "$t_", "t", "", "é"] {
+            assert_eq!(mapping_kind(name), None, "{name:?}");
+        }
+    }
 
     /// A throwaway `(ram, constant)` space pair. `ram` stands in for the default
     /// data space; its index is what [`data_refs`] is told to match.
