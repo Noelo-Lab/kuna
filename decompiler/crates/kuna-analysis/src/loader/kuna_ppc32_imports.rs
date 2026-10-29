@@ -1,4 +1,4 @@
-//! PPC32 BSS-PLT entries and absolute secure-PLT stubs, backed by JMP_SLOTs.
+//! PPC32 import slots and stubs, with optional caller proof for PIC bases.
 //! r30-relative stubs require caller register evidence: DT_PPC_GOT describes
 //! a table, not r30, even when the linker has discarded an empty .got2.
 use super::elf_plt::PltSym;
@@ -8,7 +8,24 @@ use object::{
 };
 use std::collections::{BTreeMap, HashSet};
 
+/// Resolve PPC32 imports with caller proof explicitly enabled, for embedders
+/// supplying loader policy directly instead of the process option bridge.
+pub fn resolve_with_pic(file: &object::File<'_>) -> Vec<super::format::ImportSym> {
+    resolve_impl(file, true)
+        .into_iter()
+        .map(|s| super::format::ImportSym {
+            addr: s.addr,
+            name: s.name,
+            kind: super::format::ImportSymKind::Import,
+        })
+        .collect()
+}
+
 pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
+    resolve_impl(file, kuna_decomp::kuna_ppc32picimports::enabled())
+}
+
+fn resolve_impl(file: &object::File<'_>, prove_pic: bool) -> Vec<PltSym> {
     if file.architecture() != Architecture::PowerPc
         || !matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
     {
@@ -115,10 +132,13 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
             }
         }
     }
+    if prove_pic {
+        out.extend(super::kuna_ppc32picimports::resolve(file, &slots, &out));
+    }
     out
 }
 
-fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
+pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     let bytes = bytes[..4].try_into().unwrap();
     if file.is_little_endian() {
         u32::from_le_bytes(bytes)

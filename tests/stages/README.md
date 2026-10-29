@@ -332,3 +332,9 @@ control. Its console companion executes hermetic and native recovered Go bodies.
 `ghangr-go-string-pointers.xml` exercises internal byte-string arguments in C and
 Go output, including escapes, UTF-8 and the data-pointer conversion. Its emitted
 Go bodies also compile and execute against a byte-checking sink.
+
+`kuna-ppc32picimports.xml` loads an authored PPC32 ELF twice, with the loader
+option off and on. The caller's PC-relative r30 selects `extra`; the unrelated
+GOT base would select `__stack_chk_fail`. Both passes retain `return 7`, and
+only the enabled pass names `extra`. The CLI companion generates both byte
+orders, both stub forms, multiple callers and conflicting control-flow paths.
