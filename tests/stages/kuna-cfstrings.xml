@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Mach-O Core Foundation constant strings (`option cfstrings on|off`).
+
+    Issue: a `CFSTR("x")` compiles to a four-word CFString struct in
+    `__cfstring` (isa, flags, char pointer, length). Code references the
+    struct, not the characters, so the constant-string route, which reads
+    the bytes AT the referenced address, sees the struct and prints the
+    entry address. On the Toyota iOS app (84 MB arm64) kuna printed
+    `NSLog(0x1044376b0)` for `NSLog(CFSTR("Reachability Flag Status: ..."))`.
+
+    Stage / sub-stage: P1 external-refinement, the Mach-O `cfstrings`
+    analysis pass (`kuna-analysis/src/analyzers/cfstring/mod.rs`), whose
+    facts the commit seam turns into a `char[N]` entry plus a StringManager
+    seed at the entry address (`kuna-console/src/engine.rs`).
+
+    P0 assertion: `option cfstrings on|off` (default off). It is a commit-time
+    gate, so it is set after `load file` and before the `read symbols` that
+    commits the analysis.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear
+    it and load the real arm64 Mach-O fixture `macho_cfstring` (built from
+    `macho_cfstring.c`, see the fixtures README): one hand-built CFString
+    constant `{ ___CFConstantStringClassReference, 0x7c8, "cfstring hello",
+    14 }` in `__DATA_CONST,__cfstring` @0x100004008 and `_get_greeting`
+    @0x100000538 returning its address.
+
+    Pass 1 (the default, the BUG): `_get_greeting` returns the bare entry
+    address `0x100004008`. Pass 2 (`option cfstrings on`, the FIX): it returns
+    the literal `"cfstring hello"`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_cfstring</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000538</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_cfstring</com>
+  <com>option cfstrings on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000538</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="cfstrings off: the __cfstring reference is the bare entry address" min="1" max="1">return 0x100004008;</stringmatch>
+<stringmatch name="cfstrings on: the __cfstring reference renders its string literal" min="1" max="1">return "cfstring hello";</stringmatch>
+<stringmatch name="cfstrings on: the returned constant is typed as a char pointer" min="1" max="1">char \* _get_greeting\(void\)</stringmatch>
+</decompilertest>
