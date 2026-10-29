@@ -1,0 +1,77 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C method signatures from SDK headers (`option objcsdk <dir>|off`).
+
+    Issue: a selector stub `objc_msgSend$setAlpha:` has a prototype only when
+    something in the image declares the selector, and a UIKit setter never
+    does, so its calls kept the untyped call-site inference: on ios_kcm 2,897
+    of 25,084 stub calls rendered with no argument at all
+    (`objc_msgSend$setHidden:();`), `setAlpha:` showed the bit pattern of its
+    double in an integer slot, and `setFrame:` passed one garbage word for a
+    CGRect. The declarations exist in the SDK the app was built against; Apple
+    headers may not ship with kuna, so they are read at load from a directory
+    the user names.
+
+    Stage / sub-stage: P1 external-refinement. `analyzers/objc/kuna_objcsdk.rs`
+    reads `@interface`/`@protocol` bodies (methods, `@property` getter/setter
+    pairs honouring `getter=`/`setter=`/`readonly`) and `typedef`s, encodes each
+    declaration the way the runtime metadata would (`v@:d`), and the stub
+    prototype path pins the arguments: an HFA struct (`CGRect`) is spread over
+    `d0..d3` as `arg_x, arg_y, arg_width, arg_height`, a struct return is the
+    flat `CGRect` the model places in `d0..d3`.
+
+    P0 assertion: `option objcsdk <directory>|off` (an env-bridged load-time
+    setting, so it is set BEFORE the `load file` it applies to and cleared at
+    the end so the harness process carries nothing into the next test).
+
+    The fixture is `macho_objc_sdk.m`: `Widget` declared and never implemented,
+    every send a linker stub; `tests/fixtures/objc_sdk/Widget.h` is a
+    hand-written header (no Apple text) declaring the same selectors.
+
+    Pass 1 (`objc on`, no headers) reproduces the BUG: `setAlpha:()` with no
+    argument, `setFrame:(v1,a1._0_16_,a2 + 10.0,a3)`, an `undefined16` first
+    parameter.
+    Pass 2 (`objc on`, `objcsdk` pointed at the header directory) is the FIX:
+    `setAlpha:(a1,a0)` with its double, `setTag:(a1,a3)`, `isHidden(a1)`,
+    `v1 = objc_msgSend$frame(a1)` as a `CGRect`, `setFrame:` with the four
+    members, `insertSubview:atIndex:(a1,a2,a3)`; the stub itself is
+    `CGRect objc_msgSend$frame(objc_object *self)`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_sdk_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load function _style</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_sdk_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load function _style</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1000005a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option objcsdk off</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCSDK #1: without headers the double argument is lost" min="1" max="1">objc_msgSend\$setAlpha:\(\);</stringmatch>
+<stringmatch name="OBJCSDK #2: without headers the CGRect argument is one garbage word" min="1" max="1">objc_msgSend\$setFrame:\(v1,a1\._0_16_,a2 \+ 10\.0,a3\);</stringmatch>
+<stringmatch name="OBJCSDK #3: with headers setAlpha: takes the receiver and its double" min="1" max="1">objc_msgSend\$setAlpha:\(a1,a0\);</stringmatch>
+<stringmatch name="OBJCSDK #4: with headers setTag: takes an NSInteger" min="1" max="1">objc_msgSend\$setTag:\(a1,a3\);</stringmatch>
+<stringmatch name="OBJCSDK #5: with headers a getter takes only the receiver" min="1" max="1">if \(objc_msgSend\$isHidden\(a1\)\)</stringmatch>
+<stringmatch name="OBJCSDK #6: a CGRect return is a struct in d0..d3" min="1" max="1">CGRect v1; // d3:d2:d1:d0</stringmatch>
+<stringmatch name="OBJCSDK #7: a CGRect argument is spread over its members" min="1" max="1">objc_msgSend\$setFrame:\(a1,v1\.x,v1\.y,v1\.width \+ 10\.0,v1\.height\);</stringmatch>
+<stringmatch name="OBJCSDK #8: a two-argument method keeps both" min="1" max="1">objc_msgSend\$insertSubview:atIndex:\(a1,a2,a3\);</stringmatch>
+<stringmatch name="OBJCSDK #9: the stub itself returns the struct" min="1" max="1">CGRect objc_msgSend\$frame\(objc_object \*self\)</stringmatch>
+</decompilertest>

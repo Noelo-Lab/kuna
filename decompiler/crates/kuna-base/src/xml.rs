@@ -2158,7 +2158,8 @@ mod tests {
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-objcrefs / ObjC selector, class and super reference slots and `__objc_stubs` named and folded
         // and kuna-objcmeta / ObjC categories, protocols and ivar structs (option objcivars)
-        assert_eq!(count, 693, "corpus file count drifted");
+        // and kuna-objcsdk / ObjC method signatures read from SDK headers (option objcsdk)
+        assert_eq!(count, 694, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

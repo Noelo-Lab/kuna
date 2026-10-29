@@ -34,7 +34,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory};
+use kuna_decomp::dtype::{type_metatype, Datatype, TypeFactory, TypeField};
 use kuna_decomp::fspec::PrototypePieces;
 
 /// Decode one ObjC method type encoding into a [`PrototypePieces`] named `name`
@@ -88,6 +88,113 @@ pub fn decode_method(
     })
 }
 
+/// Split a method encoding into its raw return and argument encodings, frame
+/// offsets stripped: `v24@0:8{CGRect=dddd}16` → `("v", ["@", ":", "{CGRect=dddd}"])`.
+/// `None` for an empty or unparseable encoding.
+pub fn split_method(encoding: &str) -> Option<(String, Vec<String>)> {
+    let mut p = Parser::new(encoding);
+    let ret = p.next_type_text()?;
+    let mut args = Vec::new();
+    while !p.at_end() {
+        args.push(p.next_type_text()?);
+    }
+    Some((ret, args))
+}
+
+/// The struct a by-value encoding names (`{CGRect={CGPoint=dd}{CGSize=dd}}`),
+/// built once per name with its leaf members as fields — nested geometry
+/// flattened (`x, y, width, height`), since a field of a field is what the
+/// printer renders worst — so a method returning one has a type the model can
+/// place in registers. `None` for an unnamed or malformed layout.
+pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
+    let name = struct_name(encoding)?;
+    if let Some(t) = tctx.structs.borrow().get(name) {
+        return Some(Rc::clone(t));
+    }
+    let types = tctx.types;
+    let shell = match types.find_by_name(name).ok().flatten() {
+        Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT && !t.is_incomplete() => {
+            tctx.structs.borrow_mut().insert(name.to_string(), Rc::clone(&t));
+            return Some(t);
+        }
+        Some(_) => return None,
+        None => types.get_type_struct(name).ok()?,
+    };
+    let members = struct_members(encoding)?;
+    let names = member_names(name);
+    let mut fields = Vec::new();
+    let mut offset = 0i32;
+    for (k, code) in members.iter().enumerate() {
+        let ty = Parser::new(&code.to_string()).next_type(tctx)?;
+        let size = ty.get_size();
+        if size <= 0 {
+            return None;
+        }
+        let align = size.min(tctx.ptr_size);
+        offset = (offset + align - 1) / align * align;
+        let field = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| format!("field_{k}"));
+        fields.push(TypeField::new(offset, offset, field, ty));
+        offset += size;
+    }
+    let size = (offset + tctx.ptr_size - 1) / tctx.ptr_size * tctx.ptr_size;
+    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, tctx.ptr_size, 0).ok()?;
+    tctx.structs.borrow_mut().insert(name.to_string(), Rc::clone(&done));
+    Some(done)
+}
+
+/// The name of a struct encoding (`CGRect` of `{CGRect=…}`), `None` when it
+/// has none (`{?=dd}`).
+pub fn struct_name(encoding: &str) -> Option<&str> {
+    let body = encoding.strip_prefix('{')?.strip_suffix('}')?;
+    let (name, _) = body.split_once('=')?;
+    (!name.is_empty() && name != "?").then_some(name)
+}
+
+/// The leaf member codes of a struct encoding, nested structs flattened:
+/// `{CGRect={CGPoint=dd}{CGSize=dd}}` → `dddd`. `None` for a malformed layout.
+pub fn struct_members(encoding: &str) -> Option<Vec<char>> {
+    let body = encoding.strip_prefix('{')?.strip_suffix('}')?;
+    let (_, members) = body.split_once('=')?;
+    let mut out = Vec::new();
+    let (mut depth, mut start) = (0usize, 0usize);
+    for (i, c) in members.char_indices() {
+        match c {
+            '{' => {
+                if depth == 0 {
+                    start = i;
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    out.extend(struct_members(&members[start..=i])?);
+                }
+            }
+            c if depth == 0 => out.push(c),
+            _ => {}
+        }
+    }
+    (depth == 0 && !out.is_empty()).then_some(out)
+}
+
+/// The leaf member names of the CoreGraphics / Foundation geometry structs,
+/// whose encodings carry none.
+pub fn member_names(name: &str) -> &'static [&'static str] {
+    match name {
+        "CGPoint" => &["x", "y"],
+        "CGSize" => &["width", "height"],
+        "CGVector" => &["dx", "dy"],
+        "CGRect" => &["x", "y", "width", "height"],
+        "_NSRange" | "NSRange" => &["location", "length"],
+        "UIOffset" => &["horizontal", "vertical"],
+        "UIEdgeInsets" => &["top", "left", "bottom", "right"],
+        "NSDirectionalEdgeInsets" => &["top", "leading", "bottom", "trailing"],
+        "CGAffineTransform" => &["a", "b", "c", "d", "tx", "ty"],
+        _ => &[],
+    }
+}
+
 /// Decode a single ivar type encoding (the element's `@encode` string) into its
 /// [`Datatype`]. Used for the `<Class>::ivar` typing (design §5 PR-O2). `None`
 /// for an empty / unparseable encoding.
@@ -107,11 +214,19 @@ pub struct TypeCtx<'a> {
     pub ptr_size: i32,
     pub word_size: u32,
     opaque: RefCell<HashMap<String, Rc<Datatype>>>,
+    /// The by-value structs [`struct_type`] built, by name.
+    structs: RefCell<HashMap<String, Rc<Datatype>>>,
 }
 
 impl<'a> TypeCtx<'a> {
     pub fn new(types: &'a dyn TypeFactory, ptr_size: i32, word_size: u32) -> TypeCtx<'a> {
-        TypeCtx { types, ptr_size, word_size, opaque: RefCell::new(HashMap::new()) }
+        TypeCtx {
+            types,
+            ptr_size,
+            word_size,
+            opaque: RefCell::new(HashMap::new()),
+            structs: RefCell::new(HashMap::new()),
+        }
     }
 
     /// A pointer to the named struct (`objc_object*` for `id`, `objc_class*` for
@@ -305,6 +420,42 @@ impl<'a> Parser<'a> {
         Some(ty)
     }
 
+    /// Advance over one type encoding without building a type, returning its
+    /// text with the frame offset stripped (`{CGRect=dddd}` for a struct by
+    /// value, `@"UIView"` for a class pointer). `None` at the end or on an
+    /// unknown code.
+    fn next_type_text(&mut self) -> Option<String> {
+        let text = self.type_text()?;
+        self.skip_frame_offset();
+        Some(text)
+    }
+
+    /// One type encoding's text, the frame offset left in place.
+    fn type_text(&mut self) -> Option<String> {
+        self.skip_qualifiers();
+        let start = self.pos;
+        let c = self.peek()?;
+        self.pos += 1;
+        match c {
+            b'^' => {
+                self.type_text()?;
+            }
+            b'{' => self.skip_balanced(b'{', b'}'),
+            b'(' => self.skip_balanced(b'(', b')'),
+            b'[' => self.skip_balanced(b'[', b']'),
+            b'b' => self.skip_frame_offset(),
+            b'@' => {
+                if self.quoted_class_name().is_none() && self.peek() == Some(b'?') {
+                    self.pos += 1;
+                }
+            }
+            b'c' | b'C' | b's' | b'S' | b'i' | b'I' | b'l' | b'L' | b'q' | b'Q' | b'f' | b'd' | b'B' | b'v'
+            | b'*' | b'#' | b':' | b'?' => {}
+            _ => return None,
+        }
+        Some(std::str::from_utf8(&self.bytes[start..self.pos]).ok()?.to_string())
+    }
+
     /// Skip a balanced `open`…`close` run (for `{...}` / `(...)` / `[...]`),
     /// honoring nesting. Leaves `pos` just past the closing delimiter.
     fn skip_balanced(&mut self, open: u8, close: u8) {
@@ -427,5 +578,28 @@ mod tests {
         let deep = format!("{}i", "^".repeat(MAX_POINTER_DEPTH + 1));
         assert!(decode_ivar_type(&deep, &tctx).is_none());
         assert!(decode_ivar_type("^^i", &tctx).is_some());
+    }
+
+    #[test]
+    fn split_method_keeps_struct_and_class_text() {
+        let (ret, args) = split_method("v40@0:8{CGRect=dddd}16@\"UIView\"32^v40@?48").unwrap();
+        assert_eq!(ret, "v");
+        assert_eq!(args, ["@", ":", "{CGRect=dddd}", "@\"UIView\"", "^v", "@?"]);
+        assert!(split_method("").is_none());
+        assert!(split_method("v@:!").is_none());
+    }
+
+    #[test]
+    fn struct_type_builds_nested_geometry() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let rect = struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap();
+        assert_eq!((rect.get_name(), rect.get_size()), ("CGRect", 32));
+        assert_eq!(struct_members("{CGRect={CGPoint=dd}{CGSize=dd}}"), Some(vec!['d'; 4]));
+        assert_eq!(struct_members("{CGRect=dd"), None);
+        let range = struct_type("{_NSRange=QQ}", &tctx).unwrap();
+        assert_eq!(range.get_size(), 16);
+        assert!(Rc::ptr_eq(&rect, &struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap()));
+        assert!(struct_type("{?=dd}", &tctx).is_none());
     }
 }

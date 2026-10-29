@@ -1221,6 +1221,37 @@ offset variables). With `objc on` the categories render `-[Base(Extra) greet:]` 
 `-[Sub x]` reads `(int8)self + (int8)Sub::x`; with `objc off` the category methods
 are `sub_10000083c`… and the ivar load is `dat_100008388`.
 
+### `macho_objc_sdk_arm64` + `objc_sdk/Widget.h` — signatures from headers
+
+`macho_objc_sdk_arm64` (arm64, ~50 KB) is the fixture for the `objcsdk` header
+reader (`analyzers/objc/kuna_objcsdk.rs`, stage test `tests/stages/kuna-objcsdk.xml`).
+Source `macho_objc_sdk.m`: a root class `Widget` **declared and never implemented**
+(`setAlpha:`, `setFrame:`, `setTag:`, `isHidden`, `frame`, `insertSubview:atIndex:`)
+and one function `style` that sends all six, every send routed through a linker stub
+(the `.s` is `clang -S` output with each `adrp/ldr x1` selref load dropped and the
+`bl _objc_msgSend` replaced by `bl "_objc_msgSend$<sel>"`), so nothing in the image
+types the selectors. `objc_sdk/Widget.h` is a **hand-written** stand-in for an SDK
+header (no Apple text): `typedef`s (`CGFloat`, `NSInteger`, `NS_ENUM`, an
+`NSString *` typed enum, an opaque struct), a protocol with an `@optional` section,
+and an `@interface` with an ivar block, properties with `getter=` / `readonly` /
+`API_AVAILABLE(...)` trailers, a block parameter and by-value `CGRect`s. The
+`CGRect` in the `.m` is a local four-double struct standing in for CoreGraphics'.
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_sdk.m -o macho_objc_sdk_arm64.s
+# edit: route every send through `_objc_msgSend$<sel>` (drop the selref loads)
+clang -target arm64-apple-macos11 -c macho_objc_sdk_arm64.s -o sdk.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_sdk_arm64 sdk.o
+```
+
+**Pinned VMAs:** `_style`@`0x100000500`, `__objc_stubs`@`0x1000005a0` (six 32-byte
+entries, `objc_msgSend$frame` first), `__objc_selrefs`@`0x100008000`. With `objc on`
+alone `style` reads `objc_msgSend$setAlpha:();`; with `option objcsdk
+decompiler/crates/kuna-analysis/tests/fixtures/objc_sdk` it reads
+`objc_msgSend$setAlpha:(a1,a0);`, `v1 = objc_msgSend$frame(a1);` as a `CGRect` and
+`objc_msgSend$setFrame:(a1,v1.x,v1.y,v1.width + 10.0,v1.height);`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate
