@@ -323,6 +323,9 @@ mod verify_objc;
 #[path = "verify_importdata.rs"]
 mod verify_importdata;
 
+#[path = "verify_elfgotimports.rs"]
+mod verify_elfgotimports;
+
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;
 

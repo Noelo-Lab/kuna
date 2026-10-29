@@ -2232,10 +2232,11 @@ holds `&imported_counter` is `imported_counter` — resolving it exactly as
 `ActionDeindirect` resolves a call through the same slot (`query_function` on the
 externref persist address, after a plain COPY chain). Calls never reach this path,
 since deindirection consumes them first, and a read through anything that is not an
-externref import slot keeps `*dat_<addr>`. It depends on the slot being painted, so
-it is a no-op when `peimportcall` is off and on any format whose import slots are
-not painted (ELF GOT data imports today); a pointer that reaches the LOAD through a
-phi rather than a COPY chain is left as the dereference.
+externref import slot keeps `*dat_<addr>`. It depends on the slot being painted:
+PE and Mach-O slots by `peimportcall`, ELF `GLOB_DAT` GOT slots by `elfgotimports`
+(chapter [01](01-program-prep.md)), which is committed under this same gate, so it
+is a no-op when neither paints. A pointer that reaches the LOAD through a phi rather
+than a COPY chain is left as the dereference.
 
 (kuna) **The ghidra-mode third style (Phase 3, DIV-77).** The ghidra-mode
 process sets a separate `name_style_ghidra` flag alongside (not instead of)

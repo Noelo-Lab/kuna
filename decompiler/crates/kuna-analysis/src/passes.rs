@@ -388,6 +388,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::rtti::kuna_itaniumrtti::ItaniumRttiPass));
     }
 
+    // S1 ELF GOT data imports (ElfGotImportPass): name each undefined-symbol
+    // `GLOB_DAT` slot for its import and paint it `externref`, the ELF analog of a
+    // Mach-O `__got` slot, so `importdata` renders a read through it as the import.
+    // Committed only when `importdata` is on.
+    if format == object::BinaryFormat::Elf {
+        passes.push(Box::new(crate::loader::kuna_elfgotimports::ElfGotImportPass));
+    }
+
     // S1 Go pclntab function-name recovery (GoPclntabPass): when the binary is Go
     // (`detect_compiler == Go`, via `.go.buildinfo`/`.note.go.buildid` — the same
     // gate the Go no-return list uses), parse the embedded `pclntab` and emit a
@@ -1842,10 +1850,13 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
-        // Mach-O.
-        let elf_neutral: Vec<&str> =
-            elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
+        // additions: `itaniumrtti` and `elfgotimports` for ELF and `peimportcall`
+        // plus `objc` for Mach-O.
+        let elf_neutral: Vec<&str> = elf
+            .iter()
+            .copied()
+            .filter(|&p| !matches!(p, "itaniumrtti" | "elfgotimports"))
+            .collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()

@@ -2157,7 +2157,8 @@ mod tests {
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-importdata / a data read through an import slot renders as the import
-        assert_eq!(count, 692, "corpus file count drifted");
+        // and kuna-elfgotimports / an ELF GOT data import renders as the import
+        assert_eq!(count, 693, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
