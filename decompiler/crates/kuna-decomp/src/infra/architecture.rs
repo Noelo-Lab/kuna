@@ -1824,6 +1824,9 @@ pub struct Architecture {
     /// `Architecture::query_function`, whose no-return carry is the flow half of
     /// the same binding.
     pub analysis_peimportcall: bool,
+    /// (kuna) Gate the arm64e `__auth_ptr` call binding (`authptrcall`).
+    /// Default on.
+    pub analysis_authptrcall: bool,
     /// (kuna) Gate the library-prototype pass (`libproto`); default on.
     pub analysis_libproto: bool,
     /// (kuna) Gate the measured libc signature extension (`libcsigs`); default on.
@@ -3376,6 +3379,7 @@ impl Architecture {
             // asserted equal by kuna_phases/tests.rs `live_value` parity).
             analysis_noreturn_known: false,
             analysis_peimportcall: false,
+            analysis_authptrcall: false,
             analysis_libproto: false,
             analysis_libcsigs: false,
             analysis_libgccsigs: false,
@@ -3827,6 +3831,7 @@ impl Architecture {
         // real-ELF analysis tier; inert on the XML datatest path.
         self.analysis_noreturn_known = true;
         self.analysis_peimportcall = true; // (kuna) DIV-57/DIV-171 import-slot binding default-on
+        self.analysis_authptrcall = true; // (kuna) arm64e __auth_ptr call binding; Mach-O only, 0/675 datatests
         self.analysis_libproto = true;
         // (kuna) DIV-65 measured libc signature extension — default-ON.
         self.analysis_libcsigs = true;

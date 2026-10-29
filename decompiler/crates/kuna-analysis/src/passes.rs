@@ -441,6 +441,14 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::loader::kuna_peimportcall::PeImportCallPass));
     }
 
+    // S1 arm64e `__auth_ptr` call binding (AuthPtrCallPass): name each chained
+    // bind slot of `__auth_ptr` after its import and paint it `externref`, the
+    // `peimportcall` facts for the one Mach-O import table the indirect-symbol
+    // walk does not cover. Committed only when `authptrcall` is on.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::loader::kuna_authptrcall::AuthPtrCallPass));
+    }
+
     // S1 MSVC RTTI / vftable recovery (RttiPass): on a Windows PE, parse the
     // CompleteObjectLocator → RTTI3/2/1 → RTTI0 graph in `.rdata`/`.data`, demangle
     // each `.?A…@@` class name, and emit `<Class>::vftable` / `<Class>::RTTI_*`
@@ -1842,14 +1850,14 @@ mod tests {
         assert!(!elf.contains(&"objc"), "ELF must not carry the objc pass");
         assert!(macho.contains(&"objc"), "Mach-O must carry the objc pass");
         // Compare the format-neutral base after dropping each format's gated
-        // additions: `itaniumrtti` for ELF and `peimportcall` plus `objc` for
-        // Mach-O.
+        // additions: `itaniumrtti` for ELF and `peimportcall`, `authptrcall` and
+        // `objc` for Mach-O.
         let elf_neutral: Vec<&str> =
             elf.iter().copied().filter(|&p| p != "itaniumrtti").collect();
         let macho_neutral: Vec<&str> = macho
             .iter()
             .copied()
-            .filter(|&p| !matches!(p, "peimportcall" | "objc"))
+            .filter(|&p| !matches!(p, "peimportcall" | "authptrcall" | "objc"))
             .collect();
         assert!(!elf_neutral.contains(&"itaniumrtti"));
         assert_eq!(

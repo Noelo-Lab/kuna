@@ -3140,6 +3140,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         "peimportcall" => arch.analysis_peimportcall,
         // Metadata alone has no output effect; the live flow option gates its use.
         "ppc32_pic_slots" => true,
+        "authptrcall" => arch.analysis_authptrcall,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The

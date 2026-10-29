@@ -2158,7 +2158,8 @@ mod tests {
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
         // and kuna-objcrefs / ObjC selector, class and super reference slots and `__objc_stubs` named and folded
         // and kuna-ptrauthtrap / arm64e pointer-auth failure checks dropped
-        assert_eq!(count, 693, "corpus file count drifted");
+        // and kuna-authptrcall / arm64e calls through __auth_ptr named
+        assert_eq!(count, 694, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

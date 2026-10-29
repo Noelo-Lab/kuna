@@ -2107,6 +2107,20 @@ The `externref` mark also protects the slot until that resolution: P3 read-only
 folding cannot replace it with an on-disk thunk/name RVA, even if a hostile or
 single-section PE mapped the IAT executable and non-writable.
 
+An arm64e Mach-O has one import table the indirect-symbol walk cannot see.
+`__auth_got` backs the `__auth_stubs` and is an indirect-symbol section like
+`__got`, so `peimportcall` covers it. `__auth_ptr` holds the signed pointers
+code loads itself, for instance clang's `adrp; ldr x16; blraaz x16` call of
+`___chkstk_darwin`. It is a plain `S_REGULAR` section with no indirect-symbol
+entries; only its `LC_DYLD_CHAINED_FIXUPS` bind says which import a slot
+holds. `decompiler/crates/kuna-analysis/src/loader/kuna_authptrcall.rs (AuthPtrCallPass)`
+(`authptrcall`, Mach-O only, default on) gives each `__auth_ptr` bind slot a
+`FunctionSymbol` named after its import, with one leading `_` stripped as the
+indirect-symbol walk does, and reports the slot as an `externref` range. The
+commit and `ActionDeindirect` then treat the slot exactly like a `__got` slot.
+A bind with a nonzero addend points inside the import rather than at it, so it
+is skipped. Off, such a call renders `(*dat_<slot>)(...)` as before.
+
 Two arch-marker passes paint **decode context** rather than names, because a wrong
 decode mode is unrecoverable downstream. `decompiler/crates/kuna-analysis/src/loader/arm_markers.rs
 (ArmMarkerPass)` (`arm_markers`) ports ARM's `ARM_ElfExtension`/`ArmSymbolAnalyzer`:

@@ -991,6 +991,7 @@ kuna_options! { self, p1;
     "paramrefdecl" => on_off!(param_ref_decl, "address-taken parameter re-declaration guard"),
     "noreturn_known" => on_off!(analysis_noreturn_known, "No-return-known analysis pass"),
     "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
+    "authptrcall" => on_off!(analysis_authptrcall, "arm64e __auth_ptr call binding"),
     "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
     "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
     "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
