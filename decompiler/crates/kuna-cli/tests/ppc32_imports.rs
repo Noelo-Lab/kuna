@@ -338,32 +338,34 @@ int check(void) { extra(); return 7; }
                 assert!(file.section_by_name(".got2").is_none());
             }
             assert_eq!(file.dynamic_relocations().unwrap().count(), 4);
-            let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-                .args([
-                    "decompile",
-                    path.to_str().unwrap(),
-                    "check",
-                    "--mode",
-                    "fast",
-                    "--option",
-                    "ppc32picimports",
-                    "on",
-                ])
-                .output()
-                .unwrap();
-            let text = String::from_utf8_lossy(&out.stdout);
-            assert!(
-                out.status.success(),
-                "{text}\n{}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-            assert!(
-                text.contains("return 7;")
-                    && text.contains("extra(")
-                    && !text.contains("__stack_chk_fail(")
-                    && !text.contains("no-return"),
-                "stripped={stripped}: {text}"
-            );
+            for option in ["off", "on"] {
+                let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .args([
+                        "decompile",
+                        path.to_str().unwrap(),
+                        "check",
+                        "--mode",
+                        "fast",
+                        "--option",
+                        "ppc32picimports",
+                        option,
+                    ])
+                    .output()
+                    .unwrap();
+                let text = String::from_utf8_lossy(&out.stdout);
+                assert!(
+                    out.status.success(),
+                    "{text}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(
+                    text.contains("return 7;")
+                        && text.contains("extra(") == (option == "on")
+                        && !text.contains("__stack_chk_fail(")
+                        && !text.contains("no-return"),
+                    "{linker} stripped={stripped} option={option}: {text}"
+                );
+            }
         }
     }
     std::fs::remove_dir_all(root).unwrap();
