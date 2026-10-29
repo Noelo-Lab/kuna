@@ -2766,8 +2766,9 @@ fn known_type(c: u8, second: bool) -> Option<(Kind, &'static str)> {
     })
 }
 
-/// `A`, `B`, …, `Z`, `AA`, … for depth 0; a depth suffix otherwise
-/// (`A1` is depth 1, index 0).
+/// `A`, `B`, …, `Z`, then `AB`, `BB`, … (base-26 digits least significant
+/// first, as the reference demangler spells them) for depth 0; a depth
+/// suffix otherwise (`A1` is depth 1, index 0).
 pub(super) fn generic_parameter_name(depth: u64, mut index: u64) -> String {
     let mut name = String::new();
     loop {

@@ -19,7 +19,8 @@
 
     P0 assertion: `option swiftdemangle on|off` (default on). The gate travels
     as the `KUNA_SWIFTDEMANGLE` environment variable, so it is set before the
-    `load file` it must govern.
+    `load file` it must govern, and the default pass runs first, with the
+    option never set, so it exercises the default itself.
 
     The XML wrapper only supplies the harness architecture. Both passes clear
     it and load the real arm64 Mach-O fixture `macho_swift_names_arm64`
@@ -31,10 +32,10 @@
     Swift.Int`). The ObjC pass is on in both passes so the class name
     reaches the method label.
 
-    Pass 1 (`option swiftdemangle off`) reproduces the BUG: the function is
-    `$s4main10countWords2ofS2i_tF` and the method `-[_TtC4main7Greeter greet:]`.
-    Pass 2 (`option swiftdemangle on`, the default) is the FIX: the same two
-    functions are `main.countWords(of:)` and `-[main.Greeter greet:]`.
+    Pass 1 (the default, the FIX): the function is `main.countWords(of:)` and
+    the method `-[main.Greeter greet:]`. Pass 2 (`option swiftdemangle off`)
+    reproduces the BUG: the same two functions are
+    `$s4main10countWords2ofS2i_tF` and `-[_TtC4main7Greeter greet:]`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -42,7 +43,6 @@ c0035fd6
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
-  <com>option swiftdemangle off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_names_arm64</com>
   <com>option objc on</com>
@@ -53,7 +53,7 @@ c0035fd6
   <com>load addr 0x1000005f0</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>option swiftdemangle on</com>
+  <com>option swiftdemangle off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_swift_names_arm64</com>
   <com>option objc on</com>
@@ -68,8 +68,8 @@ c0035fd6
 </script>
 <stringmatch name="swiftdemangle off: the Swift 5 symbol stays mangled" min="1" max="1">\$s4main10countWords2ofS2i_tF\(int4 a0\)</stringmatch>
 <stringmatch name="swiftdemangle off: the ObjC method label carries the runtime class name" min="1" max="1">-\[_TtC4main7Greeter greet:\]\(objc_object \*self</stringmatch>
-<stringmatch name="swiftdemangle on: the Swift 5 symbol demangles to its reference path" min="1" max="1">main\.countWords\(of:\)\(int4 a0\)</stringmatch>
-<stringmatch name="swiftdemangle on: the ObjC method label carries the demangled class name" min="1" max="1">-\[main\.Greeter greet:\]\(objc_object \*self</stringmatch>
+<stringmatch name="swiftdemangle default: the Swift 5 symbol demangles to its reference path" min="1" max="1">main\.countWords\(of:\)\(int4 a0\)</stringmatch>
+<stringmatch name="swiftdemangle default: the ObjC method label carries the demangled class name" min="1" max="1">-\[main\.Greeter greet:\]\(objc_object \*self</stringmatch>
 <stringmatch name="both passes keep the function bodies" min="2" max="2">return a0 &lt;&lt; 1 \| 1;</stringmatch>
 <stringmatch name="both passes keep the method bodies" min="2" max="2">return arg1 \* 3 \+ 7;</stringmatch>
 </decompilertest>
