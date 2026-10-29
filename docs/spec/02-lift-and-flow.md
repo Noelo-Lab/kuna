@@ -37,6 +37,17 @@ the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
 
+SPARC integer branch conditions snapshot the ICC/XCC carry, negative, and
+overflow flags before expanding the delay slot. A flag-writing slot still
+publishes its new flags to subsequent instructions, but cannot change the
+current branch's decision. Ordinary and predicted branches share these
+condition operands; annulled branches retain their conditional slot execution.
+The non-annulled register branches (`brz`, `brlez`, `brlz`, `brnz`, `brgz`,
+`brgez`) likewise test `rs1` before the delay slot, so a slot that rewrites
+that register keeps its new value without changing the branch. Annulled forms
+already tested the register first. This is a SLEIGH correctness repair,
+without an inference option.
+
 PowerPC `lwarx` sets the reservation (`RESERVE`, its length and its address)
 before loading the word, as the ISA constructor does. `stwcx.` and `stdcx.`
 store only while `RESERVE` is set, so a load-reserve/store-conditional retry

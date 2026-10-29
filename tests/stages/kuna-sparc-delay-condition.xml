@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default">
+<!--
+  Authored SPARC32 leaf functions. P2 SLEIGH correctness fix; no option.
+  clear_if_both(previous, current, limit, out):
+    cmp %o0,%o2
+    bcs second
+     cmp %o1,%o2
+  done:
+    retl
+     nop
+    nop
+  second:
+    bcs,a done
+     stb %g0,[%o3]
+    retl
+     nop
+  The first branch must read the incoming carry. The second uses the
+  comparison produced by the first branch's delay slot, and clears the byte
+  only if both values are below the limit.
+  pick(value):
+    brz,pt %o0,zero
+     mov 5,%o0
+    retl
+     nop
+  zero:
+    retl
+     add %o0,1,%o0
+  The register branch tests value before its delay slot rewrites %o0, so
+  pick returns 6 for zero and 5 otherwise.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+80a2000a0a80000580a2400a81c3e0080100000001000000
+2abffffdc02ac00081c3e00801000000
+02ca00049010200581c3e0080100000081c3e00890022001
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="clear_if_both"/>
+<symbol space="ram" offset="0x1028" name="pick"/>
+</binaryimage>
+<script>
+  <com>read symbols</com>
+  <com>parse line extern void clear_if_both(unsigned int previous, unsigned int current, unsigned int limit, unsigned char *out);</com>
+  <com>parse line extern int pick(int value);</com>
+  <com>load function clear_if_both</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPARC delay condition: previous-value comparison remains live" min="1" max="1">(previous &lt; limit|limit &lt;= previous)</stringmatch>
+<stringmatch name="SPARC delay condition: current-value comparison remains live" min="1" max="1">(current &lt; limit|limit &lt;= current)</stringmatch>
+<stringmatch name="SPARC delay condition: guarded clear remains a byte store" min="1" max="1">\*out = 0;</stringmatch>
+<stringmatch name="SPARC delay condition: register branch keeps its zero path" min="1" max="1">return 6;</stringmatch>
+<stringmatch name="SPARC delay condition: register branch keeps its nonzero path" min="1" max="1">return 5;</stringmatch>
+</decompilertest>

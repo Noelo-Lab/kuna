@@ -19,7 +19,11 @@ The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
 `fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
 compiler on the corrected sources, which reproduces the previous hashes on the
 unmodified sources; the `fqtox` correction was regenerated with `slacomp`,
-which reproduces those C++ digests.
+which reproduces those C++ digests. The current digests also cover the branch
+conditions sampled before a delay slot (`icc`/`xcc` `cs`, `neg` and `vs`, and
+the non-annulled register branches). They were regenerated with the recorded
+C++ compiler, which reproduces the previous SPARC digests on the previous
+sources; `slacomp` produces the same digests.
 
 The x86 entries include the width-specific x87 integer-conversion operations,
 the control-word writes of `FXRSTOR` and `XRSTOR`/`XRSTORS`, and the signed

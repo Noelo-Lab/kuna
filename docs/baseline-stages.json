@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3228,
-    3228
+    3233,
+    3233
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1588,6 +1588,11 @@
     "data:SIGNEDREAD #6: the unsigned compare keeps its unsigned operand",
     "data:SIGNEDREAD-A64 #1: the word index sign-extends sig - 1",
     "data:SIGNEDREAD-A64 #2: no zero extension of sig - 1",
+    "data:SPARC delay condition: current-value comparison remains live",
+    "data:SPARC delay condition: guarded clear remains a byte store",
+    "data:SPARC delay condition: previous-value comparison remains live",
+    "data:SPARC delay condition: register branch keeps its nonzero path",
+    "data:SPARC delay condition: register branch keeps its zero path",
     "data:SPARC-EXTERNAL-TAIL #1: off still follows the jump into missing extern bytes",
     "data:SPARC-EXTERNAL-TAIL #2: default recovers the named tail call and delay-slot argument",
     "data:SPARC-REGISTER-PAIR #1: the loop index in %l4 steps by itself at the default",
