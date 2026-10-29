@@ -1018,7 +1018,10 @@ megabytes and an image's names are scattered through it), the indirect-symbol
 table, and copies of the export trie, function starts and data-in-code. The
 local symbols the cache moved to `.symbols` replace the `<redacted>`
 placeholders left in the image's own table, and every indirect-symbol index
-and `LC_DYSYMTAB` boundary is renumbered by the difference in count. Linkedit
+and `LC_DYSYMTAB` boundary is renumbered by the difference in count. Without
+the `.symbols` file the placeholders stay, nameless, rather than giving
+thousands of functions one shared name. On iOS 16.4.1, the local symbols take
+CoreFoundation from 7,137 unnamed functions of 11,922 to 764. Linkedit
 data the rebuild does not carry (code signature, split-segment info, the rebase
 and bind opcodes the cache builder already applied) is zeroed in its command.
 On the iOS 16.4.1 arm64e cache (44 sub-caches) and the iOS 14.8 arm64 cache

@@ -72,3 +72,23 @@ fn a_file_that_is_not_a_cache_is_left_to_the_other_loaders() {
     assert!(read_selected_image(&elf).is_none());
     assert!(!is_dyld_cache(b"\x7fELF"));
 }
+
+#[test]
+fn without_its_symbols_file_a_redacted_local_stays_nameless() {
+    let dir = std::env::temp_dir().join(format!("kuna-dyld-nosymbols-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for suffix in ["", ".01"] {
+        let name = format!("dyld_shared_cache_arm64e{suffix}");
+        std::fs::copy(fixture().with_file_name(&name), dir.join(&name)).unwrap();
+    }
+    let cache = DyldCache::open(&dir.join("dyld_shared_cache_arm64e")).unwrap();
+    let bytes = cache.extract(0).unwrap();
+    let file = object::File::parse(bytes.as_slice()).unwrap();
+    let at_helper: Vec<String> = file
+        .symbols()
+        .filter(|s| s.address() == 0x1_8000_1828)
+        .map(|s| s.name().unwrap().to_string())
+        .collect();
+    assert_eq!(at_helper, [""]);
+    std::fs::remove_dir_all(dir).unwrap();
+}

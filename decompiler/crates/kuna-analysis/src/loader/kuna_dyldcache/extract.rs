@@ -7,7 +7,7 @@
 //!
 //! The private `__LINKEDIT` holds the image's own nlists, with the local symbols
 //! the cache moved to its local-symbols file in place of the `<redacted>`
-//! placeholders left behind. It also holds a compact string table, the
+//! placeholders left behind (left nameless when that file is missing). It also holds a compact string table, the
 //! indirect-symbol table renumbered to match, copies of the export trie,
 //! function starts and data-in-code, and a `kuna.dyld.xrefs` `LC_NOTE` naming
 //! the image's references into other images ([`super::xrefs`]). Linkedit data
@@ -39,6 +39,8 @@ const N_TYPE: u8 = 0x0e;
 const N_SECT: u8 = 0x0e;
 const N_EXT: u8 = 0x01;
 const PAGE: u64 = 0x4000;
+/// The name the cache builder leaves on a local it moved to the local-symbols file.
+const REDACTED: &[u8] = b"<redacted>";
 
 /// A section header inside a segment command.
 #[derive(Clone, Debug)]
@@ -202,7 +204,7 @@ impl Nlist {
         self.n_type & N_STAB == 0
             && self.n_type & N_TYPE == N_SECT
             && !self.name.is_empty()
-            && self.name != b"<redacted>"
+            && self.name != REDACTED
     }
 
     pub fn is_external(&self) -> bool {
@@ -440,8 +442,11 @@ impl DyldCache {
             }
         }
 
+        for sym in symbols.iter_mut().filter(|s| s.name == REDACTED) {
+            sym.name.clear();
+        }
         let mut le = Linkedit::default();
-        let mut strings = b" \0".to_vec();
+        let mut strings = vec![0u8];
         let mut nlists = Vec::with_capacity(symbols.len() * 16);
         for sym in &symbols {
             let strx = if sym.name.is_empty() {

@@ -359,18 +359,13 @@ impl DyldCache {
         let table = main.read_at(off as u64, count as usize * 32)?;
         let rows: Vec<(u64, u64)> =
             table.chunks_exact(32).map(|r| (u64_at(r, 0), u32_at(r, 24) as u64)).collect();
-        let (Some(lo), Some(hi)) =
-            (rows.iter().map(|r| r.1).min(), rows.iter().map(|r| r.1).max())
-        else {
-            return Ok(Vec::new());
-        };
-        let pool = main.read_at(lo, (hi - lo) as usize + 1024)?;
+        let size = main.file.metadata().map_err(|e| format!("{}: {e}", main.name))?.len();
+        let pool = StringPool::read_at(&|o, len| main.read_at(o, len), size, rows.iter().map(|r| r.1))?;
         Ok(rows
             .into_iter()
-            .map(|(address, name_off)| {
-                let s = &pool[(name_off - lo) as usize..];
-                let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
-                CacheImage { address, path: String::from_utf8_lossy(&s[..end]).into_owned() }
+            .map(|(address, name)| CacheImage {
+                address,
+                path: String::from_utf8_lossy(pool.get_at(name)).into_owned(),
             })
             .collect())
     }
@@ -519,16 +514,16 @@ impl DyldCache {
     }
 }
 
-/// Bytes read past each string a group of nlists names, extended until the
-/// last name in the group ends.
+/// Bytes read past the last string of a group, extended until that string ends.
 const NAME_TAIL: u64 = 4096;
 
 /// Two names closer than this are read in one span.
 const GROUP_GAP: u64 = 16 * 1024;
 
-/// The pieces of a shared string pool that one nlist array names. Cache images
-/// share one pool of tens of megabytes, and an image's names are scattered
-/// through it, so the pool is read in spans around the names actually used.
+/// The pieces of a large string area that a set of offsets name. Cache images
+/// share one symbol-string pool of tens of megabytes with their names
+/// scattered through it, and image paths lie inside the images themselves, so
+/// the area is read in spans around the strings actually used.
 pub(crate) struct StringPool {
     spans: Vec<(u64, Vec<u8>)>,
 }
@@ -541,8 +536,16 @@ impl StringPool {
         size: u64,
         nlists: &[u8],
     ) -> Result<StringPool, String> {
-        let mut strx: Vec<u64> =
-            nlists.chunks_exact(16).map(|n| u32_at(n, 0) as u64).filter(|&s| s > 0 && s < size).collect();
+        Self::read_at(read, size, nlists.chunks_exact(16).map(|n| u32_at(n, 0) as u64))
+    }
+
+    /// Read the spans of a `size`-byte pool around the strings at `offsets`.
+    pub(crate) fn read_at(
+        read: &dyn Fn(u64, usize) -> Result<Vec<u8>, String>,
+        size: u64,
+        offsets: impl Iterator<Item = u64>,
+    ) -> Result<StringPool, String> {
+        let mut strx: Vec<u64> = offsets.filter(|&s| s > 0 && s < size).collect();
         strx.sort_unstable();
         strx.dedup();
         let mut spans = Vec::new();
@@ -566,16 +569,19 @@ impl StringPool {
         Ok(StringPool { spans })
     }
 
-    pub(crate) fn get(&self, strx: u32) -> &[u8] {
-        let strx = strx as u64;
-        let at = self.spans.partition_point(|(lo, _)| *lo <= strx);
+    pub(crate) fn get_at(&self, offset: u64) -> &[u8] {
+        let at = self.spans.partition_point(|(lo, _)| *lo <= offset);
         let Some((lo, bytes)) = at.checked_sub(1).map(|i| &self.spans[i]) else {
             return b"";
         };
-        let Some(s) = bytes.get((strx - lo) as usize..) else {
+        let Some(s) = bytes.get((offset - lo) as usize..) else {
             return b"";
         };
         &s[..s.iter().position(|&b| b == 0).unwrap_or(s.len())]
+    }
+
+    pub(crate) fn get(&self, strx: u32) -> &[u8] {
+        self.get_at(strx as u64)
     }
 }
 
