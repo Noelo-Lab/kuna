@@ -730,15 +730,17 @@ fn descend(
         preserved: if arch.analysis_switchreach { &preserved } else { &[] },
         far: arch.analysis_switchreach,
     };
+    let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
         pool,
         mapped: &mapped,
-        exec: &exec_set,
-        arm: file.architecture() == object::Architecture::Arm,
+        extended: [".got", ".got.plt", ".dynamic"].iter().any(|name| file.section_by_name(name).is_some()),
         data_space: data_space.as_ref(),
         got: got.as_ref(),
         preserved: &preserved,
     });
+    // (kuna) `picpool`: odd composed addresses held for the Thumb-bit decision.
+    let mut thumb_refs: Vec<(u64, u64, XrefKind, String)> = Vec::new();
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
@@ -1242,10 +1244,15 @@ fn descend(
             }
         }
         // Rendered here for the same reason as `picbase`'s rows below: few
-        // instructions compose an address.
+        // instructions compose an address. An odd address whose even half is
+        // code waits for the whole walk to say whether it is a Thumb pointer.
         for &(vma, to, kind) in &verdict.refs {
             let text = assembly(translate, vma, &code_space);
-            st.file(vma, to, kind, &text);
+            if arm && to & 1 == 1 && in_range(&exec_set, to & !1) {
+                thumb_refs.push((vma, to, kind, text));
+            } else {
+                st.file(vma, to, kind, &text);
+            }
         }
 
         // (kuna) `picbase`: the references this body forms THROUGH the base
@@ -1279,6 +1286,15 @@ fn descend(
     for f in focused {
         if !st.decoded.contains(&f) {
             st.funcs.remove(&f);
+        }
+    }
+    // (kuna) `picpool`: a Thumb pointer is its entry with bit 0 set. See
+    // [`thumb_target`].
+    if !thumb_refs.is_empty() {
+        let markers = mapping_markers(file);
+        for (vma, to, kind, text) in thumb_refs {
+            let to = thumb_target(to, &st, &markers);
+            st.file(vma, to, kind, &text);
         }
     }
 
@@ -1650,6 +1666,41 @@ impl State {
             switches: self.switches,
         }
     }
+}
+
+/// (kuna) `picpool`: the address an odd value `v` whose even half is in an
+/// executable section names. It is a Thumb pointer, filed at `v & !1`, when the
+/// walk decoded code or knows a function there, or when the nearest ARM mapping
+/// symbol at or below it is `$t`; a `$d` or `$a` there makes it a datum at an
+/// odd address (a string in a `.rodata` linked into `.text`), filed as it is.
+/// An image with no mapping symbols says nothing, and the Thumb pointer, by far
+/// the commoner of the two, is assumed.
+fn thumb_target(v: u64, st: &State, markers: &[(u64, u8)]) -> u64 {
+    let entry = v & !1;
+    if st.decoded.contains(&entry) || st.funcs.contains(&entry) {
+        return entry;
+    }
+    let at = markers.partition_point(|&(a, _)| a <= entry);
+    match at.checked_sub(1).map(|i| markers[i].1) {
+        Some(b'd' | b'a') => v,
+        _ => entry,
+    }
+}
+
+/// (kuna) `picpool`: the ARM mapping symbols (`$a`, `$t`, `$d`), by address.
+fn mapping_markers(file: &object::File) -> Vec<(u64, u8)> {
+    let mut out: Vec<(u64, u8)> = file
+        .symbols()
+        .filter_map(|sym| {
+            let name = sym.name().ok()?;
+            let kind = *name.strip_prefix('$')?.as_bytes().first()?;
+            let rest = &name[2..];
+            (matches!(kind, b'a' | b't' | b'd') && (rest.is_empty() || rest.starts_with('.')))
+                .then(|| (sym.address(), kind))
+        })
+        .collect();
+    out.sort_unstable();
+    out
 }
 
 /// Lock one bucket's read ordering and collapse duplicates on `(from, to, kind)`,

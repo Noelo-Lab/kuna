@@ -40,7 +40,10 @@
 //!    (Thumb's 16-bit `ldr` and `ldr.w`, whose SLEIGH exports the slot);
 //!  * whatever the word itself looks like: in an image mapped low (a non-PIE
 //!    ARM executable at 0x10000) a displacement often lands in a mapped section
-//!    by chance, and only the PC fold below decides that it is one;
+//!    by chance, and only the PC fold below decides that it is one. This, and
+//!    Thumb's `COPY`, hold only in an image that has a GOT or a dynamic
+//!    section ([`Image::extended`]); a static image without one (bare-metal
+//!    firmware) seeds only an A32 `LOAD` of a word that is not a mapped address;
 //!  * a later instruction in the same straight-line run folds it, through
 //!    `COPY`/`INT_ADD`/`INT_SUB` alone, together with a constant this
 //!    instruction materialized from its **own address** (SLEIGH spells a PC read
@@ -72,7 +75,8 @@
 //! address, as a [`XrefKind::Data`] reference: in a non-PIE executable the
 //! linker writes a local function's address there with no relocation. On ARM a
 //! Thumb function's word, and a Thumb function's PC-composed address, carry
-//! bit 0, which is stripped when what remains is code. Only base plus a pool
+//! bit 0; they are answered as they are, and the walk strips the bit once it
+//! knows what is code ([`super::xrefs`]). Only base plus a pool
 //! word (GOTOFF) is an address; a plain copy of the base is a base and files
 //! nothing; a switch's cases receive the dispatch's bases.
 //!
@@ -155,27 +159,14 @@ impl<'a> GotImage<'a> {
 pub(super) struct Image<'a> {
     pub pool: &'a PoolImage<'a>,
     pub mapped: &'a [(u64, u64)],
-    /// The executable spans, where a Thumb code pointer may land.
-    pub exec: &'a [(u64, u64)],
-    /// An ARM image, whose Thumb code pointers carry bit 0.
-    pub arm: bool,
+    /// The image has a GOT or a dynamic section, so its code may be
+    /// position-independent: a pool word that is a mapped address, and a Thumb
+    /// literal `COPY`, are seeded too.
+    pub extended: bool,
     pub data_space: Option<&'a Rc<AddrSpace>>,
     pub got: Option<&'a GotImage<'a>>,
     /// The callee-saved register spans, which a value survives a call in.
     pub preserved: &'a [(u64, u64)],
-}
-
-impl Image<'_> {
-    /// The address a pointer value names: on ARM a Thumb function's pointer is
-    /// its entry with bit 0 set, which is stripped only when what remains is
-    /// code.
-    fn target(&self, v: u64) -> u64 {
-        if self.arm && v & 1 == 1 && in_range(self.exec, v & !1) {
-            v & !1
-        } else {
-            v
-        }
-    }
 }
 
 /// How many instructions a pool value may travel before the `add` that composes
@@ -322,7 +313,7 @@ impl PicPool {
     /// falls past it.
     pub(super) fn step(&mut self, img: &Image, insn: Insn, queued: impl FnOnce() -> Vec<u64>) -> Option<u64> {
         let Insn { vma, len, fall, ops, branches: branch_targets } = insn;
-        let fresh = seed(vma, ops, img.pool, img.data_space);
+        let fresh = seed(vma, ops, img);
         if !self.live {
             fresh?;
             self.live = true;
@@ -624,7 +615,7 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
                     found.push((slot, XrefKind::Read, addr.deps, addr.origin));
                     if let Some(word) = g.word_at(slot) {
                         if looks_like_address(word) && in_range(mapped, word) {
-                            found.push((img.target(word), XrefKind::Data, addr.deps, addr.origin));
+                            found.push((word, XrefKind::Data, addr.deps, addr.origin));
                         }
                     }
                 }
@@ -643,7 +634,7 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
             let composed = val.seed && val.pc && !val.got;
             let gotoff = val.seed && val.got && !val.pc;
             if (composed || gotoff) && in_range(mapped, val.v) {
-                found.push((img.target(val.v), XrefKind::Data, val.deps, val.origin));
+                found.push((val.v, XrefKind::Data, val.deps, val.origin));
             }
             let copied = val.got && !val.seed && !val.pc && ins.iter().any(|f| f.base && f.p.word == val.v);
             let made = composed && in_range(mapped, val.v) && got.is_some_and(|g| g.contains(val.v));
@@ -666,13 +657,10 @@ fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
 /// A32 lifts `ldr rX,[pc,#..]` as a `LOAD` from a constant address. Thumb's
 /// literal loads, both the 16-bit form and `ldr.w`, export the slot itself
 /// (`*:4 reloc`, the PC already word-aligned), so they lift as a `COPY` out of
-/// a data-space varnode.
-fn seed(
-    vma: u64,
-    ops: &[FullOp],
-    pool: &PoolImage,
-    data: Option<&Rc<AddrSpace>>,
-) -> Option<Pending> {
+/// a data-space varnode. Outside an [`Image::extended`] image only the `LOAD`
+/// is read, and only of a word that is not a mapped address.
+fn seed(vma: u64, ops: &[FullOp], img: &Image) -> Option<Pending> {
+    let (pool, data) = (img.pool, img.data_space);
     let data_index = data.map(|d| d.get_index());
     for op in ops {
         let Some(out) = &op.out else { continue };
@@ -690,7 +678,7 @@ fn seed(
                     None => continue,
                 }
             }
-            OpCode::CPUI_COPY => match op.ins.first() {
+            OpCode::CPUI_COPY if img.extended => match op.ins.first() {
                 Some(vn) if in_data_space(vn, data) && vn.size == out.size => vn.offset,
                 _ => continue,
             },
@@ -700,6 +688,9 @@ fn seed(
             continue;
         }
         let Some(word) = pool.word_at(addr) else { continue };
+        if !img.extended && looks_like_address(word) && in_range(img.mapped, word) {
+            continue;
+        }
         return Some(Pending { off: out.offset, size: out.size, word, hops: 0, origin: vma });
     }
     None
@@ -976,7 +967,7 @@ mod tests {
         pp: PicPool,
         pool: &'a PoolImage<'a>,
         mapped: &'a [(u64, u64)],
-        exec: &'a [(u64, u64)],
+        extended: bool,
         got: Option<&'a GotImage<'a>>,
         /// What the walk has queued, as `step` snapshots it at the first load.
         queue: Vec<u64>,
@@ -986,7 +977,7 @@ mod tests {
 
     impl<'a> Walk<'a> {
         fn new(s: &'a Spaces, pool: &'a PoolImage<'a>, mapped: &'a [(u64, u64)]) -> Self {
-            Walk { pp: PicPool::default(), pool, mapped, exec: &[], got: None, queue: Vec::new(), preserved: &[], s }
+            Walk { pp: PicPool::default(), pool, mapped, extended: true, got: None, queue: Vec::new(), preserved: &[], s }
         }
 
         fn step(&mut self, vma: u64, ops: &[FullOp], branches: &[u64]) -> Option<u64> {
@@ -1000,8 +991,7 @@ mod tests {
             let img = Image {
                 pool: self.pool,
                 mapped: self.mapped,
-                exec: self.exec,
-                arm: true,
+                extended: self.extended,
                 data_space: Some(&self.s.ram),
                 got: self.got,
                 preserved: self.preserved,
@@ -1189,6 +1179,36 @@ mod tests {
         assert!(v.displaced.contains(&0x660));
     }
 
+    /// An image with no GOT and no dynamic section seeds neither a mapped word
+    /// nor a Thumb literal copy, and records nothing for them; an A32 load of
+    /// a word that is not an address still composes.
+    #[test]
+    fn a_static_image_without_a_got_seeds_only_an_a32_displacement() {
+        const P: [u8; 4] = [0x00, 0x15, 0x00, 0x00]; // 0x6a0 -> 0x1500, mapped
+        const MAP: [(u64, u64); 1] = [(0x400, 0x2000)];
+        let mapped_pool = PoolImage::from_ranges(vec![(0x6a0, 0x6a4, &P[..])], 4, true).unwrap();
+        let (s, pool) = (spaces(), image());
+        let mut w = Walk::new(&s, &mapped_pool, &MAP);
+        w.extended = false;
+        assert_eq!(w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]), None);
+        w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
+        assert!(!w.pp.live);
+        assert!(w.finish().refs.is_empty());
+
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.extended = false;
+        w.step_len(0x660, 2, &thumb_ldr(&s, 0x20, 0x6a0), &[]);
+        w.step_len(0x662, 2, &thumb_add_pc(&s, 0x20, 0x662), &[]);
+        assert!(!w.pp.live);
+        assert!(w.finish().refs.is_empty());
+
+        let mut w = Walk::new(&s, &pool, &MAPPED);
+        w.extended = false;
+        w.step(0x660, &ldr(&s, 0x20, 0x6a0), &[]);
+        w.step(0x664, &add_pc(&s, 0x20, 0x664), &[]);
+        assert_eq!(refs(&w.finish()), vec![(0x664, 0x4ab, XrefKind::Data)]);
+    }
+
     /// A mapped word that no PC fold consumes stays `poolref`'s pointer.
     #[test]
     fn a_mapped_word_used_as_a_number_is_not_displaced() {
@@ -1318,10 +1338,10 @@ mod tests {
     }
 
     /// The Thumb GOT idiom: a slot holding a Thumb function's entry with bit 0
-    /// set names the function, and the bit is stripped only where the rest is
-    /// code.
+    /// set is answered as it is; whether the bit names code is the walk's to
+    /// decide, once it knows what it decoded.
     #[test]
-    fn a_thumb_slot_word_names_the_function_without_its_thumb_bit() {
+    fn a_thumb_slot_word_is_answered_with_its_thumb_bit() {
         const ODD: [u8; 0x20] = {
             let mut g = [0u8; 0x20];
             g[0x10] = 0x51;
@@ -1330,16 +1350,13 @@ mod tests {
         };
         let (s, pool) = (spaces(), got_pool());
         let got = GotImage { lo: 0x800, hi: 0x820, data: &ODD[..], ptr: 4, little_endian: true };
-        for (exec, named) in [(&[(0x1000u64, 0x2000u64)][..], 0x1450), (&[][..], 0x1451)] {
-            let mut w = Walk::new(&s, &pool, &GOT_MAP);
-            w.got = Some(&got);
-            w.exec = exec;
-            w.step_len(0x604, 2, &thumb_ldr(&s, R4, 0x6a0), &[]);
-            w.step_len(0x606, 2, &thumb_ldr(&s, R2, 0x6a4), &[]);
-            w.step_len(0x608, 2, &thumb_add_pc(&s, R4, 0x608), &[]);
-            w.step_len(0x60a, 2, &slot_load(&s), &[]);
-            assert_eq!(slot_refs(&w.finish(), 0x60a), vec![(0x810, XrefKind::Read), (named, XrefKind::Data)]);
-        }
+        let mut w = Walk::new(&s, &pool, &GOT_MAP);
+        w.got = Some(&got);
+        w.step_len(0x604, 2, &thumb_ldr(&s, R4, 0x6a0), &[]);
+        w.step_len(0x606, 2, &thumb_ldr(&s, R2, 0x6a4), &[]);
+        w.step_len(0x608, 2, &thumb_add_pc(&s, R4, 0x608), &[]);
+        w.step_len(0x60a, 2, &slot_load(&s), &[]);
+        assert_eq!(slot_refs(&w.finish(), 0x60a), vec![(0x810, XrefKind::Read), (0x1451, XrefKind::Data)]);
     }
 
     /// `mov r5,r4` copies the base: the copy files nothing, and r5 is a base

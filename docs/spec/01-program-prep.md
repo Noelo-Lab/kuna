@@ -6071,7 +6071,16 @@ a fixed low address (0x10000) a displacement often lands in a mapped section by
 chance, and only the PC fold below decides that it is one. A32 reads the slot
 with a `LOAD` from a constant address; Thumb's literal loads, the 16-bit `ldr`
 and `ldr.w`, export the slot itself with the word-aligned PC already folded in,
-so they lift as a `COPY` out of the image, and both forms are read. It is then
+so they lift as a `COPY` out of the image, and both forms are read. Both of
+these, the mapped-looking word and the Thumb `COPY`, are admitted only in an
+image that has a GOT (`.got` or `.got.plt`) or a `.dynamic` section, which is
+what position-independent code links into; a static image with none of them,
+which is what bare-metal firmware is, admits only an A32 `LOAD` of a word that
+is not a mapped address. That keeps the walk on such firmware, whose Thumb code
+is dense with literal loads of pointers, at the cost it had before Thumb was
+read, and its output is unchanged: over the 98 decbench ARM firmware images, their
+stripped copies, and firmware relinked at 0x0, the wider admission formed no
+reference. It is then
 carried forward along fall-through alone, for a bounded run of instructions, and
 dropped at the first write of its register, at any branch or return, and at a
 call unless its register is callee-saved (GCC schedules the load before a call
@@ -6122,8 +6131,14 @@ arithmetic on the base and names nothing, and a plain copy of the base files
 nothing but is itself a base, so `mov r5,r4; ldr r3,[r5,r3]` still finds the
 slot. A switch's case bodies are the dispatcher's own code, so each case target
 receives the bases the dispatch holds. On ARM a Thumb function's slot word, and a
-Thumb function's PC-composed address, carry bit 0; it is stripped when what
-remains is code, so the reference names the function.
+Thumb function's PC-composed address, carry bit 0. Whether an odd address whose
+even half lies in an executable section is such a pointer or a datum at an odd
+address (a string in a `.rodata` linked into `.text`) is decided once the whole
+walk is done: it names the function, bit 0 cleared, when the walk decoded an
+instruction or knows a function at the even address, or when the nearest ARM
+mapping symbol at or below it is `$t`; a `$d` or `$a` there leaves it at its own
+address. An image with no mapping symbols says nothing either way, and the
+Thumb pointer, by far the commoner of the two, is assumed.
 
 Because the walk decodes each instruction once, breadth-first, it can decode a
 join before it has seen every edge into it, so what it carries is only a
@@ -6157,8 +6172,8 @@ holds there, which is exactly what the meet over every edge would answer. An
 instruction that a recovered frame's walk refused to enter is treated the same
 way, because the frame's edge into it is in no other body's record.
 
-Five shapes are not covered. A GOT base inherited from a caller (one the
-function never forms itself) is not tracked: on ARM the register that holds it is
+Six shapes are not covered, or not exactly. A GOT base inherited from a caller
+(one the function never forms itself) is not tracked: on ARM the register that holds it is
 only callee-saved, not reserved, so assuming it would need every caller to
 agree. A pool word does not cross a branch, so a slot load reached by a branch, as when
 GCC merges the tails of switch cases into one shared `ldr r3,[r6,r3]`, files
@@ -6167,9 +6182,11 @@ later reaches by jumping into a body already walked is not part of that body's
 meet. A pool word the PC meets only inside an address (`ldr r3,[pc,r3]`, the A32
 read of a TLS initial-exec slot) composes nothing a register holds, so the slot is
 not read, and a word that is itself a mapped address keeps its pointer edge from
-the load. And the Thumb-bit strip cannot tell a Thumb function from a datum at an
-odd address inside an executable section (a PIC image that links `.rodata` into
-`.text`): such a datum is filed one byte low.
+the load. A position-independent static image with no GOT and no `.dynamic`
+section (code that touches only its own strings and statics) is read as
+firmware. And in an image stripped of its mapping symbols, a datum at an odd
+address inside an executable section, which nothing the walk decoded covers, is
+filed one byte low.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.

@@ -9,6 +9,10 @@
 //! join; `pick_timer` dispatches through a `tbb` table whose cases each read
 //! a callback slot through the dispatch's base; `far_timer` makes its base
 //! with `ldr.w`; the GOT words carry the Thumb bit.
+//!
+//! Fixture: `picodd_thumb_le32` (from `picodd_thumb_le32.c` and `.ld`), Thumb-2
+//! `-fPIC` with `.rodata` linked into `.text`: a string at an odd address in
+//! the executable section is a datum, not a Thumb pointer.
 
 use std::path::PathBuf;
 
@@ -59,7 +63,11 @@ fn repo_root() -> PathBuf {
 }
 
 fn index() -> XrefIndex {
-    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/gotxref_thumb_le32");
+    index_of("gotxref_thumb_le32")
+}
+
+fn index_of(fixture: &str) -> XrefIndex {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(fixture);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
@@ -153,4 +161,32 @@ fn a_thumb_composed_displacement_is_not_filed_as_a_pointer() {
             idx.refs_from_instruction(load)
         );
     }
+}
+
+/// `picodd_thumb_le32`: `"ab"` and `"ij"` sit at odd addresses inside `.text`,
+/// under a `$d` mapping symbol, so each is filed at its own address and never
+/// one byte low; the Thumb pointers to `local_cb` (formed PC-relatively) and
+/// `f3` (read from its GOT slot) still name the even entries.
+const AB: u64 = 0x100a9;
+const IJ: u64 = 0x100af;
+const F1_FORMS_AB: u64 = 0x1002e;
+const LOCAL_CB_FORMS_AB: u64 = 0x10022;
+const F4_FORMS_IJ: u64 = 0x10046;
+const LOCAL_CB: u64 = 0x10020;
+const SET_LOCAL_FORMS_CB: u64 = 0x1005a;
+const F3: u64 = 0x10014;
+const SET_GLOBAL_READS_F3: u64 = 0x10076;
+
+#[test]
+fn an_odd_string_in_text_keeps_its_address_and_a_thumb_pointer_loses_its_bit() {
+    let idx = index_of("picodd_thumb_le32");
+    assert_eq!(
+        to(&idx, AB),
+        vec![(LOCAL_CB_FORMS_AB, XrefKind::Data), (F1_FORMS_AB, XrefKind::Data)]
+    );
+    assert_eq!(to(&idx, IJ), vec![(F4_FORMS_IJ, XrefKind::Data)]);
+    assert!(to(&idx, AB - 1).is_empty(), "{:?}", to(&idx, AB - 1));
+    assert!(to(&idx, IJ - 1).is_empty(), "{:?}", to(&idx, IJ - 1));
+    assert!(to(&idx, LOCAL_CB).contains(&(SET_LOCAL_FORMS_CB, XrefKind::Data)), "{:?}", to(&idx, LOCAL_CB));
+    assert!(to(&idx, F3).contains(&(SET_GLOBAL_READS_F3, XrefKind::Data)), "{:?}", to(&idx, F3));
 }
