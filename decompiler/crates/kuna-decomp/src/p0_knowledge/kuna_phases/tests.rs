@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_339() {
-    assert_eq!(kuna_num_settables(), 339);
-    assert_eq!(SETTABLE_TABLE.len(), 339);
+fn settable_count_is_340() {
+    assert_eq!(kuna_num_settables(), 340);
+    assert_eq!(SETTABLE_TABLE.len(), 340);
 }
 
 #[test]
-fn tier_counts_are_120_core_130_transform_89_analysis() {
+fn tier_counts_are_120_core_131_transform_89_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_120_core_130_transform_89_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (120, 130, 89));
+    assert_eq!((core, transform, analysis), (120, 131, 89));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_154() {
+fn option_values_live_value_present_for_155() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -500,6 +500,7 @@ fn option_values_live_value_present_for_154() {
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
         "i386_pie_plt",
+        "ppc32picimports",
         // (kuna) x86-64 IFUNC PLT-stub naming: a load-time gate read via the
         // `kuna_ifuncfpret` env var (no codegen live reader), like `i386_pie_plt`.
         "ifuncfpret",
@@ -899,7 +900,7 @@ fn option_values_live_value_present_for_154() {
     // 151 -> 152: +1 for `regsigned` (live_field = narrow_signed).
     // 152 -> 153: +1 for `callwide` (live_field = call_wide).
     // 153 -> 154: +1 for `pairrefine` (live_field = pair_refine).
-    assert_eq!(with_live, 154);
+    assert_eq!(with_live, 155);
 }
 
 #[test]
@@ -1109,7 +1110,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
         // +1 for `goreg`; its P1 row sits beside `goabi`.
     // +1 for `gobool`; its P4 row sits beside `sourcelang`.
     // +1 for `swiftdemangle`; its P1 row sits beside `sourcelang`.
-    assert_eq!(json.matches("},\n").count(), 338);
+    assert_eq!(json.matches("},\n").count(), 339);
 }
 
 #[test]

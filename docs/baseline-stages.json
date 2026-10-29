@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3233,
-    3233
+    3237,
+    3237
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -973,7 +973,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 339 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 340 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1452,6 +1452,8 @@
     "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
     "data:PEMAIN #2: default, the same call site names main",
     "data:PEMAIN #3: default, main is defined under its name",
+    "data:PIC off keeps the unnamed stub",
+    "data:PIC on names the actual returning import",
     "data:POINTERLITERAL #1: pointer literal converts its integer carrier",
     "data:POINTERLITERAL #2: no integer initializes a pointer without conversion",
     "data:POINTERWALK-BUDGET #1: the function decompiles",
@@ -2054,6 +2056,7 @@
     "data:boolbyte #9: and so is a byte parameter copied into a slot the callee is handed the address of",
     "data:both interior formals initialize the shared extent",
     "data:both passes retain the indirect write",
+    "data:both passes retain the reachable return",
     "data:both uses of unchanged contents retained",
     "data:branch alternatives are defined",
     "data:by-value callee reads parameter fields",
@@ -3097,6 +3100,7 @@
     "data:the mixed record keeps its double field",
     "data:the mixed record keeps its short field",
     "data:the non-dominated value reaches the split callee",
+    "data:the other valid relocation never supplies a contract",
     "data:the split register delivers a scalar double parameter",
     "data:the whole-register object is gone",
     "data:truncarg #10: a sum that provably fits its byte gets no cast",

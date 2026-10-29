@@ -485,6 +485,9 @@ Three tiers:
 | numerical integer conversion is stored in a float local | [`fputruncviews`](#fputruncviews) |
 | short call argument uses inverse floating storage unions | [`fputruncviews`](#fputruncviews) |
 | one floating register carries both integers and genuine floating values | [`fputruncviews`](#fputruncviews) |
+| PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports) |
+| a PPC32 PIC no-return call flows into padding | [`ppc32picimports`](#ppc32picimports) |
+| PPC32 PIC imports are missing from named cross-reference queries | [`ppc32picimports`](#ppc32picimports) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2374,6 +2377,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** An integer conversion transported through floating registers is printed through inverse float/integer storage unions. Locked types and names remain authoritative; observable floating storage writes, clobbers and later floating uses are retained. Turn off to restore mixed storage-variable recovery.
 - **Where / provenance:** P6/variable-merging · kuna · transform · kuna-fputruncviews
 - **Example:** `option fputruncviews off`
+
+### `ppc32picimports` -- on | off, default `off`
+
+- **Symptoms:** PPC32 PIC calls retain local linker stub names; a PPC32 PIC no-return call flows into padding; PPC32 PIC imports are missing from named cross-reference queries.
+- **What it does:** Name short and long PPC32 secure-PLT PIC stubs only when bounded caller control flow proves the same JMP_SLOT at every incoming direct transfer. Track actual r30 initialization, discard unknown or conflicting paths and clobbers, and retain returning calls. DT_PPC_GOT and .got2 never stand in for r30.
+- **When to flip:** Opt in to recover import names and known-function contracts from proven PPC32 callers. Off restores unresolved PIC stubs; BSS-PLT and absolute stubs are unchanged. This is a loader-time option: set it before load file in the console; the CLI handles that ordering.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · PPC32 secure-PLT caller bases
+- **Example:** `option ppc32picimports on`
 
 ## Analysis & loader passes
 

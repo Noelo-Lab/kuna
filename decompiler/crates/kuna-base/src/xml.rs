@@ -2114,7 +2114,7 @@ mod tests {
         // and kuna-ppc-lwarx-reservation / PowerPC lwarx sets the reservation its stwcx. checks
         // and kuna-ppc64-ldarx-encoding / generic PowerPC ldx and ldarx decode at their own opcodes
         // and kuna-sparc-delay-condition / a flag-writing delay slot cannot change its branch
-        assert_eq!(count, 592, "corpus file count drifted");
+        assert_eq!(count, 593, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

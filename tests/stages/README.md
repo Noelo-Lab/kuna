@@ -318,3 +318,9 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 and checks that its compound initializer converts the integer carrier back to a
 pointer. The CLI companion compiles fresh PE32/ELF64 examples with Clang and runs
 the Linux native/recompiled functions at O0/O2. Source: `src/pointer_storage_literal.c`.
+
+`kuna-ppc32picimports.xml` loads an authored PPC32 ELF twice, with the loader
+option off and on. The caller's PC-relative r30 selects `extra`; the unrelated
+GOT base would select `__stack_chk_fail`. Both passes retain `return 7`, and
+only the enabled pass names `extra`. The CLI companion generates both byte
+orders, both stub forms, multiple callers and conflicting control-flow paths.

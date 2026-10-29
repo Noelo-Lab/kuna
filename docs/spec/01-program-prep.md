@@ -134,6 +134,7 @@ Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are
 bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
+`KUNA_PPC32PICIMPORTS` (`ppc32picimports`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
 `KUNA_REXTHUNK` (`rexthunk`), `KUNA_PEORDINAL` (`peordinal`),
@@ -1117,9 +1118,26 @@ funcsym stream:
   header. Secure-PLT entries are pointer slots instead: complete `r11` load,
   `mtctr r11`, `bctr` stubs in executable sections are named only when their
   decoded address matches such a relocation in the non-executable `.plt`.
-  Only absolute stubs carry enough evidence to establish that address here.
-  Both short and long `r30`-relative stubs remain unresolved until the caller's
-  register value is proven. `DT_PPC_GOT`, a valid GOT header and a retained
+  Absolute stubs encode the address directly. The default-off, loader-time
+  `ppc32picimports` option additionally resolves short and long PIC stubs through
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32picimports.rs (resolve)`.
+  Each incoming direct transfer must belong to a disjoint, sized text-symbol
+  extent and prove the same relocation slot. The bounded caller walk starts
+  with unknown registers, tracks `r30` and LR through PC capture and immediate
+  arithmetic, and intersects equal constants at joins until a fixed point.
+  Loads, update-addressing writes, unsupported instructions and unknown calls
+  discard affected facts. Only a call already proved to select an import slot
+  may preserve `r30`, following the PPC32 ABI's nonvolatile-register contract.
+  Indirect jumps reject a caller; entries into its interior, overlapping extents
+  and dynamic text relocations also prevent proof. Exported or address-taken
+  stubs, interior stub entries, conflicting callers, and missing caller extents
+  stay unresolved. Sized `.dynsym` exports suffice after `.symtab` is stripped;
+  this does not infer missing local function bounds. Both stub forms support
+  both byte orders. The option off path keeps the previous refusal behavior,
+  while BSS-PLT and absolute stubs remain available. In the console, set this
+  option before `load file`; CLI options are bridged before either loader runs.
+  It remains opt-in because proving caller state across a large import inventory
+  adds load-time work; unrelated formats and the default path do not pay that cost. `DT_PPC_GOT`, a valid GOT header and a retained
   `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
   In particular, GNU ld can discard an empty `.got2` while callers still use
   its per-object base; assuming the GOT then names a different relocation and
