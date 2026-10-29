@@ -4879,17 +4879,23 @@ fn commit_analysis_output(
     //     Painted BEFORE the slots' own `selRef_`/`classRef_` symbols are mapped at
     //     1a: `Scope::addMap` copies the range property into the SymbolEntry, and
     //     the per-function snapshot reads the symbol's flags.
-    if prog.arch().analysis_objcrefconst && !out.const_ranges.is_empty() {
+    //     `objcivars` gates the ivar offset variables the same way.
+    let (refs_on, ivars_on) = (prog.arch().analysis_objcrefconst, prog.arch().analysis_objcivars);
+    let const_on = |gate: kuna_analysis::pass::ConstGate| match gate {
+        kuna_analysis::pass::ConstGate::ObjcRefs => refs_on,
+        kuna_analysis::pass::ConstGate::ObjcIvars => ivars_on,
+    };
+    if out.const_ranges.iter().any(|r| const_on(r.gate)) {
         let mut ranges = prog.arch().dynreloc_const.as_ref().clone();
-        for &(first, last_open) in &out.const_ranges {
-            let begin = Address::new(Rc::clone(code_space), first);
-            let end = Address::new(Rc::clone(code_space), last_open);
+        for r in out.const_ranges.iter().filter(|r| const_on(r.gate)) {
+            let begin = Address::new(Rc::clone(code_space), r.first);
+            let end = Address::new(Rc::clone(code_space), r.last_open);
             prog.arch_mut().symboltab.set_property_range(
                 kuna_decomp::varnode::varnode_flags::readonly,
                 &begin,
                 &end,
             );
-            ranges.push((first, last_open - 1));
+            ranges.push((r.first, r.last_open - 1));
         }
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = Rc::new(ranges);
@@ -5480,7 +5486,16 @@ fn commit_analysis_output(
     //    read-only markup applied above and the StringManager — renders the string
     //    literal `puts("Username: ")`). A name with no matching FunctionSymbol is a
     //    silent no-op.
-    for pieces in out.prototypes {
+    //    (kuna `objcivars`) An Objective-C method whose class has an instance
+    //    struct takes `self` as `Class *` instead of the encoding's `id`.
+    let self_types: std::collections::HashMap<String, Rc<kuna_decomp::dtype::Datatype>> =
+        if prog.arch().analysis_objcivars { out.objc_self_types.into_iter().collect() } else { Default::default() };
+    for mut pieces in out.prototypes {
+        if let Some(st) = self_types.get(&pieces.name) {
+            if let Some(first) = pieces.intypes.first_mut() {
+                *first = Rc::clone(st);
+            }
+        }
         let name = pieces.name.clone();
         prog.arch_mut().set_function_prototype_pieces(&name, pieces);
     }

@@ -1,5 +1,5 @@
 //! The ObjC reference slots and selector stubs: `__objc_selrefs`,
-//! `__objc_classrefs`, `__objc_superrefs` and `__objc_stubs`.
+//! `__objc_classrefs`, `__objc_superrefs`, `__objc_protorefs` and `__objc_stubs`.
 //!
 //! Code never touches a selector string or a `class_t` directly. A message send
 //! loads the selector from a `__objc_selrefs` slot (`adrp/ldr x1`), a class
@@ -12,7 +12,8 @@
 //! Per slot this emits a pointer-sized data object: `selRef_<sel>` (colons
 //! sanitized, the `sel_` convention of the selector string itself),
 //! `classRef_<Class>` / `superRef_<Class>` (the class a rebase slot points at,
-//! or the import a bind slot names, `_OBJC_CLASS_$_` stripped). Each stub
+//! or the import a bind slot names, `_OBJC_CLASS_$_` stripped), `protoRef_<P>`
+//! for a protocol reference. Each stub
 //! becomes the function `objc_msgSend$<sel>`, the name the linker gives the
 //! symbol it synthesizes the stub for (IDA renders the same).
 //!
@@ -37,12 +38,14 @@ use object::read::{Object, ObjectSection};
 use super::classt;
 use super::sanitize_selector;
 use super::sections::MachoImage;
-use super::{encoding, TypeCtx};
+use super::encoding::{self, TypeCtx};
+use kuna_decomp::architecture::Architecture;
 use crate::pass::{AnalysisOutput, DataObjectFact, FidMatch, SymFact, SymKind};
 
 const SEC_SELREFS: &str = "__objc_selrefs";
 const SEC_CLASSREFS: &str = "__objc_classrefs";
 const SEC_SUPERREFS: &str = "__objc_superrefs";
+const SEC_PROTOREFS: &str = "__objc_protorefs";
 const SEC_STUBS: &str = "__objc_stubs";
 
 /// The import symbol prefix of an Objective-C class (`_OBJC_CLASS_$_NSObject`).
@@ -92,6 +95,7 @@ impl Selectors {
 pub(super) fn emit(
     img: &MachoImage,
     file: &object::File,
+    arch: &Architecture,
     tctx: &TypeCtx,
     selectors: &mut Selectors,
     out: &mut AnalysisOutput,
@@ -134,6 +138,13 @@ pub(super) fn emit(
         }
     }
 
+    for va in section_slots(file, SEC_PROTOREFS, ps) {
+        let Some(proto_va) = img.rebase_ptr(va) else { continue };
+        let Some(name) = super::kuna_objcprotos::protocol_name(img, proto_va) else { continue };
+        out.data_objects.push(DataObjectFact { addr: va, name: format!("protoRef_{name}"), size: ps as u32 });
+        push_slot(&mut const_slots, va, ps);
+    }
+
     if let Some(sec) = file.section_by_name(SEC_STUBS) {
         if let Ok(data) = sec.data() {
             for (stub_va, selref_va) in stubs(file.architecture(), sec.address(), data) {
@@ -143,7 +154,7 @@ pub(super) fn emit(
                 let name = format!("objc_msgSend${sel}");
                 out.symbols.push(SymFact { addr: stub_va, name: name.clone(), kind: SymKind::Function });
                 if let Some(enc) = selectors.encodings.get(&sel).and_then(|e| e.as_deref()) {
-                    if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), tctx) {
+                    if let Some(pieces) = stub_prototype(&name, enc, file.architecture(), arch, tctx) {
                         out.prototypes_at.push((stub_va, pieces));
                     }
                 }
@@ -178,10 +189,11 @@ fn push_slot(ranges: &mut Vec<(u64, u64)>, va: u64, ps: u64) {
 fn stub_prototype(
     name: &str,
     enc: &str,
-    arch: object::Architecture,
+    machine: object::Architecture,
+    arch: &Architecture,
     tctx: &TypeCtx,
 ) -> Option<PrototypePieces> {
-    let (int_regs, float_regs): (&[&str], &[&str]) = match arch {
+    let (int_regs, float_regs): (&[&str], &[&str]) = match machine {
         object::Architecture::Aarch64 => (
             &["x0", "x2", "x3", "x4", "x5", "x6", "x7"],
             &["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"],
@@ -189,7 +201,7 @@ fn stub_prototype(
         object::Architecture::X86_64 => (&["RDI", "RDX", "RCX", "R8", "R9"], &[]),
         _ => return None,
     };
-    let method = encoding::decode_method(name, enc, tctx.types, tctx.ptr_size, tctx.word_size)?;
+    let method = encoding::decode_method(name, enc, tctx, None)?;
     if method.intypes.len() < 2 {
         return None;
     }
@@ -215,7 +227,7 @@ fn stub_prototype(
             }
             _ => return None,
         };
-        let vn = tctx.arch.get_register_varnode(reg.as_bytes()).ok()?;
+        let vn = arch.get_register_varnode(reg.as_bytes()).ok()?;
         let slot = pieces.intypes.len();
         pieces.intypes.push(Rc::clone(ty));
         pieces.innames.push(pname.clone());

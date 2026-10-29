@@ -23,6 +23,9 @@ mod class_t {
     /// `isa` — points at the metaclass `class_t` (its `baseMethods` are the `+`
     /// class methods).
     pub const ISA: u64 = 0x00;
+    /// `superclass` — the superclass `class_t` (a bind slot for one defined in
+    /// another image).
+    pub const SUPERCLASS: u64 = 0x08;
     /// `data` — `class_ro_t*` once `FAST_DATA_MASK` is applied.
     pub const DATA: u64 = 0x20;
 }
@@ -31,6 +34,10 @@ mod class_t {
 /// `reserved` are four `u32`s, then pointer-sized `ivarLayout`, `name`,
 /// `baseMethodList`, ….
 mod class_ro_t {
+    /// `instanceStart` (`u32`) — the offset of this class's first own ivar.
+    pub const INSTANCE_START: u64 = 0x04;
+    /// `instanceSize` (`u32`) — the instance size including the superclasses.
+    pub const INSTANCE_SIZE: u64 = 0x08;
     /// `name` — the NUL-terminated class name (`Greeter`).
     pub const NAME: u64 = 0x18;
     /// `baseMethodList` — the instance `method_list_t*` (NULL when the class
@@ -64,6 +71,8 @@ mod ivar_t {
     pub const NAME: u64 = 0x08;
     /// `type` — the NUL-terminated ObjC type encoding of the ivar's element.
     pub const TYPE: u64 = 0x10;
+    /// `size` (`u32`) — the ivar's byte size.
+    pub const SIZE: u64 = 0x1c;
 }
 
 /// A resolved `class_t`: the addresses the method walk needs.
@@ -87,6 +96,25 @@ pub fn read_class_t(img: &MachoImage, addr: u64) -> Option<ClassT> {
     let data = img.read_ptr(addr.wrapping_add(class_t::DATA))?;
     let ro = data & FAST_DATA_MASK_64;
     Some(ClassT { addr, isa, ro })
+}
+
+/// The superclass name of the `class_t` at `addr`: read off the superclass
+/// `class_t` when the slot is a rebase, or off the import name
+/// (`_OBJC_CLASS_$_NSObject`) when it is a bind. `None` for a root class.
+pub fn superclass_name(img: &MachoImage, addr: u64) -> Option<String> {
+    let slot = addr.wrapping_add(class_t::SUPERCLASS);
+    match img.rebase_ptr(slot) {
+        Some(sup) => class_name(img, read_class_t(img, sup)?.ro),
+        None => img.bind_name(slot).and_then(|n| n.strip_prefix("_OBJC_CLASS_$_")).map(str::to_string),
+    }
+}
+
+/// `(instanceStart, instanceSize)` of the `class_ro_t` at `ro`.
+pub fn instance_extent(img: &MachoImage, ro: u64) -> Option<(u32, u32)> {
+    Some((
+        img.read_u32(ro.wrapping_add(class_ro_t::INSTANCE_START))?,
+        img.read_u32(ro.wrapping_add(class_ro_t::INSTANCE_SIZE))?,
+    ))
 }
 
 /// The class name at `class_ro_t.name`, NUL-terminated ASCII (`Greeter`). `None`
@@ -142,6 +170,10 @@ pub struct Ivar {
     pub name: String,
     /// The ivar's ObjC type encoding (`q`, `@`, …), or `None` when unreadable.
     pub types: Option<String>,
+    /// The instance offset the offset variable holds (its compile-time value).
+    pub offset: u32,
+    /// The ivar's byte size.
+    pub size: u32,
 }
 
 /// Walk an `ivar_list_t` at `list_va`, returning each resolved [`Ivar`]. The
@@ -175,7 +207,9 @@ pub fn walk_ivar_list(img: &MachoImage, list_va: u64) -> Vec<Ivar> {
         if offset_va == 0 || name.is_empty() {
             continue;
         }
-        out.push(Ivar { offset_va, name, types });
+        let Some(offset) = img.read_u32(offset_va) else { continue };
+        let size = img.read_u32(rec.wrapping_add(ivar_t::SIZE)).unwrap_or(0);
+        out.push(Ivar { offset_va, name, types, offset, size });
     }
     out
 }

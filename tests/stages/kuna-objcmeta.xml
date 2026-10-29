@@ -1,0 +1,111 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Objective-C categories, protocols and instance layouts (`option objc on|off`,
+    `option objcivars on|off`).
+
+    Issue: on an ObjC-heavy iOS app (ios_kcm, 1.9 MB arm64) the `objc` pass left
+    every category method a `sub_<addr>` (77 of them: categories extend classes
+    that live in other images, so the class walk never reaches their IMPs), every
+    ivar access read `*(long *)((long)self + dat_1001aea74)` (505 sites: the
+    `__objc_ivar` offset variable had a 1-byte label the 4-byte load never
+    matched), and a selector this image only declared in a protocol
+    (`UITableViewDelegate`'s 53 methods) typed nothing.
+
+    Stage / sub-stage: P1 external-refinement. `analyzers/objc/kuna_objccats.rs`
+    reads `__objc_catlist`/`__objc_nlcatlist` (class off its class_t, or off the
+    chained import / classic LC_DYLD_INFO bind name) so the method walk renames
+    `-[Class(Category) sel]`; `kuna_objcprotos.rs` reads `__objc_protolist`,
+    names each `protocol_t` `_OBJC_PROTOCOL_$_<P>` and records the declared
+    encodings for the `objc_msgSend$<sel>` stub prototypes; `kuna_objcivars.rs`
+    builds `struct <Class>` from `class_ro_t.ivars` (offset variable values,
+    encodings) and types `self`, with the offset variables reported constant
+    through the `dynrelocs` fold path (P3) under `objcivars`.
+
+    P0 assertions: `option objc on|off`, `option objcivars on|off`.
+
+    The XML wrapper only supplies the harness architecture; every pass clears it
+    and loads the real arm64 fixture through the object bootstrap. The fixture
+    is `macho_objc_meta.m`: root class `Base {isa; int count; double ratio; id
+    name}`, protocol `Greeter` (`greet:` required, `wave` optional), category
+    `Base(Extra) <Greeter>`, category `Remote(Extra)` on an undefined (bind)
+    class, and `Sub : Remote {int x; id tag}` whose `-[Sub x]` goes through the
+    `__objc_ivar` offset variable; `use` sends `wave` through a linker stub.
+    Linked `-fixup_chains -objc_stubs_fast -x` with the `_OBJC_IVAR_$_` symbols
+    made local (stripped) as in a shipped app; see the fixtures README.
+
+    Pass 1 (`option objc off`, the shipped default) reproduces the BUG: the
+    category method is `sub_10000083c`, `-[Sub x]` reads
+    `*(unsigned int *)(a0 + dat_100008388)`, and the stub is `sub_1000008e0()`.
+    Pass 2 (`option objc on`, `option objcivars off`) proves the NAMING on its
+    own: `-[Base(Extra) greet:]`, `-[Sub x]` with `self` still `objc_object *`
+    reading `(int8)self + (int8)Sub::x`, and `objc_msgSend$wave(a0)` typed from
+    the protocol's `v16@0:8` (one argument, the receiver).
+    Pass 3 (`option objc on`, `objcivars` at its default) is the FIX: `Base
+    *self` with `self->ratio` / `self->count`, and `Sub *self` with `self->x`
+    through the folded offset variable.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_meta_arm64</com>
+  <com>option objc off</com>
+  <com>read symbols</com>
+  <com>load addr 0x10000083c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000860</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_meta_arm64</com>
+  <com>option objc on</com>
+  <com>option objcivars off</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000830</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10000083c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000860</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function _use</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_meta_arm64</com>
+  <com>option objc on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000830</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10000083c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x100000860</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="OBJCMETA #1: off leaves the category method anonymous" min="1" max="1">int4 sub_10000083c\(void \*a0,unsigned long a1,int4 a2\)</stringmatch>
+<stringmatch name="OBJCMETA #2: off reads the ivar through an anonymous offset variable" min="1" max="1">\*\(unsigned int \*\)\(a0 \+ dat_100008388\)</stringmatch>
+<stringmatch name="OBJCMETA #3: off calls the protocol-declared selector's stub anonymously" min="1" max="1">sub_1000008e0\(\);</stringmatch>
+<stringmatch name="OBJCMETA #4: on names the category method after its class and category, in both arms" min="2" max="2">-\[Base\(Extra\) greet:\]\(</stringmatch>
+<stringmatch name="OBJCMETA #5: objcivars off keeps self untyped and names the offset variable" min="1" max="1">int4 -\[Sub x\]\(objc_object \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="OBJCMETA #6: objcivars off reads the ivar through the named offset variable" min="1" max="1">\(int8\)self \+ \(int8\)Sub::x</stringmatch>
+<stringmatch name="OBJCMETA #7: a protocol-declared selector types its stub" min="1" max="1">objc_msgSend\$wave\(a0\);</stringmatch>
+<stringmatch name="OBJCMETA #8: objcivars types self with the class struct" min="1" max="1">float8 -\[Base ratio\]\(Base \*self,objc_selector \*_cmd\)</stringmatch>
+<stringmatch name="OBJCMETA #9: objcivars renders a fragile ivar access as a field" min="1" max="1">return self->ratio \+ self->ratio;</stringmatch>
+<stringmatch name="OBJCMETA #10: objcivars types a category method's self with its class" min="1" max="1">-\[Base\(Extra\) greet:\]\(Base \*self,objc_selector \*_cmd,int4 arg1\)</stringmatch>
+<stringmatch name="OBJCMETA #11: objcivars folds the offset variable into a field access" min="1" max="1">return self->x;</stringmatch>
+<stringmatch name="OBJCMETA #12: the subclass of an imported class gets its own struct" min="1" max="1">int4 -\[Sub x\]\(Sub \*self,objc_selector \*_cmd\)</stringmatch>
+</decompilertest>

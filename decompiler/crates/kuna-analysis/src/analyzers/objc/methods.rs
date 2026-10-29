@@ -50,15 +50,16 @@ pub struct Method {
     pub selector_va: u64,
     /// The ObjC type encoding (`i20@0:8i16`), or `None` when unreadable.
     pub types: Option<String>,
-    /// The IMP function virtual address (the rename / function-definition target).
+    /// The IMP function virtual address (the rename / function-definition target);
+    /// `0` for a declaration without one (a protocol method).
     pub imp: u64,
 }
 
 /// Walk a `method_list_t` at `list_va`, returning each resolved [`Method`].
 ///
 /// Caps the count at a sane bound so a corrupt header can never spin. A record
-/// whose selector/imp is unreadable is skipped (additive, never fails). Empty for
-/// a NULL/unreadable list.
+/// whose selector is unreadable is skipped (additive, never fails); a protocol's
+/// IMP-less declaration is kept with `imp == 0`. Empty for a NULL/unreadable list.
 pub fn walk_method_list(img: &MachoImage, list_va: u64, architecture: Architecture) -> Vec<Method> {
     let mut out = Vec::new();
     let Some(ent) = img.read_u32(list_va + method_list::ENTSIZE_AND_FLAGS) else {
@@ -103,9 +104,6 @@ fn read_large(img: &MachoImage, m: u64, architecture: Architecture) -> Option<Me
     let name_ptr = img.read_ptr(m)?;
     let types_ptr = img.read_ptr(m.wrapping_add(ps))?;
     let imp = img.read_ptr(m.wrapping_add(2 * ps))?;
-    if imp == 0 {
-        return None;
-    }
     let selector = img.read_cstr(name_ptr)?;
     let types = img.read_cstr(types_ptr);
     Some(Method {
@@ -139,11 +137,8 @@ fn read_small(img: &MachoImage, m: u64, architecture: Architecture) -> Option<Me
     let types_va = rel_to(m.wrapping_add(4), t_rel);
     let types = img.read_cstr(types_va);
 
-    // imp: self-relative (field at m+8) to the function VA.
-    let imp = rel_to(m.wrapping_add(8), i_rel);
-    if imp == 0 {
-        return None;
-    }
+    // imp: self-relative (field at m+8) to the function VA; 0 for a declaration.
+    let imp = if i_rel == 0 { 0 } else { rel_to(m.wrapping_add(8), i_rel) };
     Some(Method {
         selector,
         selector_va: sel_ptr,
