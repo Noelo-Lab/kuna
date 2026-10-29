@@ -1621,6 +1621,11 @@ pub struct Architecture {
     /// one op across several leaves, and suppressing by identity would delete
     /// genuine mid-body early returns).
     pub voidtailreturn: bool,
+    /// (kuna `importdata`) Render a data read through a loader-marked import slot
+    /// (a GOT / `__got` / `__auth_got` / IAT entry holding an import's address) as
+    /// the import itself, instead of a dereference of the anonymous slot. Default
+    /// **off**.
+    pub import_data: bool,
     /// (kuna `castimplied`) Leave out a cast C's own conversion rules already
     /// perform: a value-preserving integer widening passed to a trusted
     /// parameter, assigned to or returned as exactly its type, or stacked under
@@ -3321,6 +3326,7 @@ impl Architecture {
             slot_report: false, // (kuna) option slotreport; reset_defaults sets the shipped default
             slot_split: false, // (kuna) option slotsplit; reset_defaults sets the shipped default
             voidtailreturn: false, // (kuna) option voidtailreturn; reset_defaults sets the shipped default
+            import_data: false,
             cast_implied: false, // (kuna) option castimplied; reset_defaults sets the shipped default
             cast_sign: false, // (kuna) option castsign; reset_defaults sets the shipped default
             cast_ternary: false, // (kuna) option castternary; reset_defaults sets the shipped default
@@ -3756,6 +3762,7 @@ impl Architecture {
         self.reg_locals = true; // (kuna) option reglocals default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +205 type_match-perfect / 0 lost, 2,207 improved / 10 worse over 10,748 scored functions of the 444 decbench slices
         self.byte_honest = true; // (kuna) default-on: JSON-surface only (no p-code, no emitted C), so the 675-assertion datatest corpus cannot observe it; measured +10 type_match-perfect / 121 improved / 0 worse over 5,298 scored decbench functions
         self.voidtailreturn = false; // (kuna) option voidtailreturn; default-OFF until its corpus bidirectional sweep is recorded in a DIV row
+        self.import_data = false; // (kuna) option importdata; default-off
         self.cast_implied = true; // (kuna) option castimplied default-on: leaves out only a value-preserving integer conversion C performs itself (argument to a type-locked parameter, assignment to a local or parameter declared that spelling, return, or under another conversion); 1/675 datatest assertion moved (Union #26, the intended form, pinned to upstream by a per-test opt-out), 10 stage assertions moved to the new form, speed within budget; docs/features/castimplied/default-on-evaluation.md
         self.cast_sign = true; // (kuna) option castsign default-on: a frame local or pointer index only ever compared signed, never an operand of + - * <<, and never met by a top-bit constant in == != & | ^, is declared signed; 0/675 datatest assertions and 0 stage assertions moved, test-cli unchanged, the 444-slice typesweep identical, casts 38,703 -> 38,602 on the census corpus, 41 functions fewer and 0 more; docs/features/castsign/default-on-evaluation.md
         self.cast_ternary = true; // (kuna) option castternary default-on (provisional; see docs/features/castternary)

@@ -8874,6 +8874,16 @@ impl PrintC {
             Some(v) => v,
             None => return,
         };
+        if let Some(name) = arch.import_data.then(|| import_slot_name(fd, ptr)).flatten() {
+            self.push_atom(&Atom::with_op_vn(
+                name,
+                TagType::VarToken,
+                crate::printlanguage::SyntaxHighlight::global_color,
+                op_key(op),
+                vn_key(ptr),
+            ));
+            return;
+        }
         let usearray = self.check_array_deref(fd, ptr) || self.is_value_indirect_input(fd, ptr);
         let mut m = self.context.mods();
         if usearray && !self.context.is_set(modifiers::FORCE_POINTER) {
@@ -12215,6 +12225,25 @@ impl PrintC {
         }
         true
     }
+}
+
+/// The import a `LOAD` reads through when its pointer is a loader-marked
+/// external-reference slot. The slot holds the import's address, so `*slot` is
+/// the import itself. Resolved like `ActionDeindirect` resolves a call through
+/// the same slot: `query_function` on the externref persist address.
+fn import_slot_name(fd: &Funcdata, mut vn: VarnodeId) -> Option<String> {
+    while let Some(def) = fd.vbank().get(vn).filter(|v| v.is_written()).and_then(|v| v.get_def()) {
+        let o = fd.obank().get(def)?;
+        if o.code() != OpCode::CPUI_COPY {
+            break;
+        }
+        vn = o.get_in(0)?;
+    }
+    let v = fd.vbank().get(vn)?;
+    if !(v.is_persist() && v.is_external_ref()) {
+        return None;
+    }
+    fd.get_arch().query_function(v.get_addr()).map(|(name, _, _)| name)
 }
 
 /// A same-width scalar a byte-copy helper can copy into or out of without conversion.

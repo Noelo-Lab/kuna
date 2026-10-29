@@ -1,0 +1,55 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Data imports read through an import slot (`option importdata on|off`).
+
+    Issue: a data import is reached through a slot the dynamic loader fills
+    with the import's address, `ldr x8,[slot]; ldr w8,[x8]`. kuna names that
+    slot for the import and paints it externref, which is how a CALL through it
+    deindirects to the import; a DATA read is not a call, so it printed as a
+    dereference of the anonymous slot. On the A13 trustd that is 921 reads,
+    `if (*dat_1041cc6c8 == ...)` for the stack-protector guard on Toyota.
+
+    Stage / sub-stage: P9 naming-policy, `PrintC::op_load`
+    (`kuna-decomp/src/p9_emit/printc.rs`, `import_slot_name`), resolved as
+    ActionDeindirect resolves a call through the same slot.
+
+    P0 assertion: `option importdata on|off` (default off). It is read when C is
+    printed; `clear architecture` resets it, so pass 2 sets it after its load.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear
+    it and load the real arm64 Mach-O fixture `macho_gotdata` (built from
+    `macho_gotdata.c`, see the fixtures README): `_main` @0x100000448 reads
+    `imported_counter` and `imported_name` through their `__DATA_CONST,__got`
+    slots @0x100004000 and @0x100004008.
+
+    Pass 1 (the default, the BUG): the reads are `*dat_100004000` and
+    `*dat_100004008`. Pass 2 (`option importdata on`, the FIX): they are
+    `imported_counter` and `imported_name`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_gotdata</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000448</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_gotdata</com>
+  <com>option importdata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x100000448</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="importdata off: the imported counter is read through its __got slot" min="1" max="1">v1 = \*dat_100004000;</stringmatch>
+<stringmatch name="importdata off: the imported pointer is tested through its __got slot" min="1" max="1">if \(\*dat_100004008\)</stringmatch>
+<stringmatch name="importdata on: the imported counter renders as the import" min="1" max="1">v1 = imported_counter;</stringmatch>
+<stringmatch name="importdata on: the imported pointer renders as the import" min="1" max="1">if \(imported_name\)</stringmatch>
+</decompilertest>
