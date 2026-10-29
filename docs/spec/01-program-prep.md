@@ -1433,8 +1433,20 @@ funcsym stream:
   keeps the previous refusal behavior, while BSS-PLT and absolute stubs remain
   available. In the console, set this option before `load file`; CLI options
   are bridged before either loader runs.
+  Recovery is all-or-nothing for an image: one caller the walk cannot certify
+  withdraws every PIC contract, since its unproven transfer could enter any stub.
+  Such callers include a call through a register, a call to a local function
+  followed by a return, a stack address passed to an import, a CR-logical
+  instruction such as the `crxor` before a variadic call, and, on any path to a
+  return, an untracked instruction such as
+  `add` or `cmpw`, or a store through an untracked pointer between the
+  return-address spill and its reload. The standard C start files call through
+  registers, so images linked with them stay unresolved; recovery reaches
+  directly linked images whose functions only load values and call imports.
   It remains opt-in because proving caller state across a large import inventory
-  adds load-time work; unrelated formats and the default path do not pay that cost. `DT_PPC_GOT`, a valid GOT header and a retained
+  adds load-time work. The proof is remembered per image content, so the repeated
+  import queries of one load pay for it once; unrelated formats and the default
+  path do not pay that cost. `DT_PPC_GOT`, a valid GOT header and a retained
   `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
   In particular, GNU ld can discard an empty `.got2` while callers still use
   its per-object base; assuming the GOT then names a different relocation and
