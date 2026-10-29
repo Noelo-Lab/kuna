@@ -6325,17 +6325,33 @@ carries instead is the pool word itself, from the load to whatever composes it.
 
 A pool word is admitted as a *displacement* only where it comes out of the same
 read-only, pointer-sized, pointer-aligned slot literal-pool following already
-vouches for **and** literal-pool following declined it, so the two rules never
-claim one word: a value that is already a mapped address is a pointer, not a
-displacement. It is then carried forward along fall-through alone, for a bounded
-run of instructions, and dropped at the first write of its register and at any
-branch, call or return — the walk is breadth-first, so the values are keyed by
+vouches for, whatever the word itself looks like: in an ARM executable linked at
+a fixed low address (0x10000) a displacement often lands in a mapped section by
+chance, and only the PC fold below decides that it is one. A32 reads the slot
+with a `LOAD` from a constant address; Thumb's literal loads, the 16-bit `ldr`
+and `ldr.w`, export the slot itself with the word-aligned PC already folded in,
+so they lift as a `COPY` out of the image, and both forms are read. Both of
+these, the mapped-looking word and the Thumb `COPY`, are admitted only in an
+image that has a GOT (`.got` or `.got.plt`) or a `.dynamic` section, which is
+what position-independent code links into; a static image with none of them,
+which is what bare-metal firmware is, admits only an A32 `LOAD` of a word that
+is not a mapped address. That keeps the walk on such firmware, whose Thumb code
+is dense with literal loads of pointers, at the cost it had before Thumb was
+read, and its output is unchanged: over the 98 decbench ARM firmware images, their
+stripped copies, and firmware relinked at 0x0, the wider admission formed no
+reference. It is then
+carried forward along fall-through alone, for a bounded run of instructions, and
+dropped at the first write of its register, at any branch or return, and at a
+call unless its register is callee-saved (GCC schedules the load before a call
+and its `add` after). A user-defined operation ends it too, except inside a
+call, where it is the Thumb `bl`'s instruction-set switch and the call's own rule
+decides — the walk is breadth-first, so the values are keyed by
 the address they reach rather than held as "the previous instruction's state",
 which is what makes the carry independent of the order the queue happens to visit
 a function in. The composition itself is a one-instruction constant fold over
 `COPY`/`INT_ADD`/`INT_SUB` and nothing else, and it reports a value only when
 **both** a pool word and a constant the instruction materialised from its own
-address contributed to it. That second taint is the whole guard: `add r0,r0,#4`
+address contributed to it (`inst_start + 8` on A32, `+ 4` on Thumb). That second taint is the whole guard: `add r0,r0,#4`
 on the same word can land on a real literal, and only the missing PC separates it
 from a reference. A value that stays in a temporary is not reported, for the same
 reason PIC base folding does not report one — the GOT idiom `ldr r1,[pool]; ldr
@@ -6351,6 +6367,84 @@ result has to pass. Measured over a 417-image sweep of the crackme corpus, the
 vendored fixtures and a set of host binaries: no edge is added on any x86-64 or
 PE image (a RIP-relative load already encodes the address it forms), no
 attribution is lost anywhere, and the composed edges are all on ARM images.
+
+When a pool word that is itself a mapped address is carried on, literal-pool
+following's pointer edge for it is held until the function's walk ends and is
+filed only if no PC fold consumed the word, so a displacement is never also
+reported as an absolute pointer from its load.
+
+ARM `-fPIC` code also reaches data and functions through the GOT. The function
+makes the GOT address once with the same pair (`ldr r4,[pool]; add r4,pc,r4`) and
+keeps it in a callee-saved register; each use loads a GOT offset from the pool
+and reads the slot (`ldr r2,[r4,r2]`). A composed value that lands in `.got` is
+therefore tracked as a **GOT base** along every edge of the function, branches
+included, and across a call when its register is callee-saved, until the register
+is written. A load whose address is a GOT base plus a carried pool word files a
+read of the slot and, when the slot's file word is a mapped address, a data
+reference to that word from the load. `.got` is writable, so literal-pool
+following does not hold it; its file bytes are what the loader starts from, and
+in a non-PIE executable the linker writes a local function's or object's address
+there with no relocation (an import's slot holds 0 and names nothing). Only base
+plus a pool word (the GOTOFF form) is an address: base plus an immediate is
+arithmetic on the base and names nothing, and a plain copy of the base files
+nothing but is itself a base, so `mov r5,r4; ldr r3,[r5,r3]` still finds the
+slot. A switch's case bodies are the dispatcher's own code, so each case target
+receives the bases the dispatch holds. On ARM a Thumb function's slot word, and a
+Thumb function's PC-composed address, carry bit 0. Whether an odd address whose
+even half lies in an executable section is such a pointer or a datum at an odd
+address (a string in a `.rodata` linked into `.text`) is decided once the whole
+walk is done: it names the function, bit 0 cleared, when the walk decoded an
+instruction or knows a function at the even address, or when the nearest ARM
+mapping symbol at or below it is `$t`; a `$d` or `$a` there leaves it at its own
+address. An image with no mapping symbols says nothing either way, and the
+Thumb pointer, by far the commoner of the two, is assumed.
+
+Because the walk decodes each instruction once, breadth-first, it can decode a
+join before it has seen every edge into it, so what it carries is only a
+candidate. Each instruction that sees a tracked value is recorded with the
+values it was handed, what it passes on and which addresses it forms, each
+naming the incoming values it was computed from; every edge is recorded as it is
+taken, switch cases included, whether or not the dispatch carried anything. When
+the walk of the function ends, a value is kept at an instruction only if every
+recorded predecessor passes on the same one, and everything computed from a
+dropped value goes with it, repeated until nothing changes. Only addresses whose
+inputs all survived are filed. The entry needs no rule of its own: the walk
+decodes it first, so nothing is carried into it. This is stricter than Ghidra's
+`SymbolicPropogator`, which follows each path with its own copy of the state and
+keeps the union of what the paths find.
+
+A predicated instruction lifts as a branch to the next instruction when its
+condition fails, ahead of its body, so it reaches the next instruction along two
+edges: the one where it ran and fell through, and the one where it did not run,
+which carries what it was handed less what its condition wrote. A base meets
+both, so a conditional write to the base ends it after the instruction, while a
+predicated return such as `popeq {r4-r6,pc}` leaves the base to the path that
+falls past it. Pool words follow the instruction when it falls through, because
+a predicated pair (`ldrne; addne`) runs under one condition.
+
+Nothing is recorded before a body's first pool load, since nothing can be in
+flight; this keeps the walk's cost on bodies, and architectures, that never form
+one of these pairs to one scan of each instruction's operations. Soundness does
+not need the earlier edges: at the first load, everything the walk has queued and
+not yet decoded was queued by an instruction that carried nothing, so nothing
+holds there, which is exactly what the meet over every edge would answer. An
+instruction that a recovered frame's walk refused to enter is treated the same
+way, because the frame's edge into it is in no other body's record.
+
+Six shapes are not covered, or not exactly. A GOT base inherited from a caller
+(one the function never forms itself) is not tracked: on ARM the register that holds it is
+only callee-saved, not reserved, so assuming it would need every caller to
+agree. A pool word does not cross a branch, so a slot load reached by a branch, as when
+GCC merges the tails of switch cases into one shared `ldr r3,[r6,r3]`, files
+nothing, even when every path brings the same offset. Code that a function walked
+later reaches by jumping into a body already walked is not part of that body's
+meet. A pool word the PC meets only inside an address (`ldr r3,[pc,r3]`, the A32
+read of a TLS initial-exec slot) composes nothing a register holds, so the slot is
+not read, and a word that is itself a mapped address keeps its pointer edge from
+the load. A position-independent static image with no GOT and no `.dynamic`
+section (code that touches only its own strings and statics) is read as
+firmware. And in an image stripped of its mapping symbols, a datum at an odd
+address inside an executable section is filed one byte low.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.

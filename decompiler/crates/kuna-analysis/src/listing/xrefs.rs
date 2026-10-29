@@ -78,7 +78,7 @@ use object::SectionKind;
 use super::classify::classify;
 use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
-use super::kuna_picpool::PicPool;
+use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
@@ -718,6 +718,8 @@ fn descend(
     // read-only mapped section, and every relocatable object, whose sections are
     // not the runtime ones) leaves every reference below exactly as it was.
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
+    // (kuna) `picpool`: the GOT's file bytes, read through a PC-composed base.
+    let got = if mapped.is_empty() { None } else { GotImage::new(file) };
     let max_entries = match arch.max_jumptable_size {
         0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
         n => n as usize,
@@ -728,6 +730,17 @@ fn descend(
         preserved: if arch.analysis_switchreach { &preserved } else { &[] },
         far: arch.analysis_switchreach,
     };
+    let arm = file.architecture() == object::Architecture::Arm;
+    let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
+        pool,
+        mapped: &mapped,
+        extended: [".got", ".got.plt", ".dynamic"].iter().any(|name| file.section_by_name(name).is_some()),
+        data_space: data_space.as_ref(),
+        got: got.as_ref(),
+        preserved: &preserved,
+    });
+    // (kuna) `picpool`: odd composed addresses held for the Thumb-bit decision.
+    let mut thumb_refs: Vec<(u64, u64, XrefKind, String)> = Vec::new();
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
     // decoded instruction ending at the key, as `(dispatch, mode, branch)`.
     let mut waiting: HashMap<u64, Vec<(u64, _, VarnodeData)>> = HashMap::new();
@@ -979,6 +992,9 @@ fn descend(
         // `add` that turns each into an address. Per function, because the values
         // it tracks are live only inside one straight-line run.
         let mut picpool = PicPool::default();
+        // (kuna) `picpool`: `poolref` rows for pool words still in flight, filed
+        // once the body drains unless a PC fold consumed the word.
+        let mut held: Vec<(u64, u64, String)> = Vec::new();
         // (kuna) `switchtable`: a dispatch can be decoded before the code that
         // falls into it -- breadth-first, or by a `.cold` fragment's jump back
         // into its parent's loop ahead of the parent's own walk -- and the slice
@@ -1009,6 +1025,7 @@ fn descend(
                 }
                 let text = if read.cases.is_empty() { String::new() } else { assembly(translate, vma, &code_space) };
                 st.take_switch(vma, entry, &read.cases, read.stated, max_entries, &text);
+                picpool.cases(vma, &read.cases);
                 insn_queue.extend(read.cases.iter().map(|&target| (target, mode)));
             }
             insn_queue.pop_front()
@@ -1030,6 +1047,7 @@ fn descend(
                 && frame_candidates.binary_search(&vma).is_ok()
                 && !frame_cache.body_covers(entry, vma)
             {
+                st.refused.insert(vma);
                 continue;
             }
             if sections_are_runtime && !in_range(&exec_set, vma) {
@@ -1074,7 +1092,7 @@ fn descend(
                     flow.jumps.extend(c.flows.iter().map(|&to| (vma, to)));
                 }
             }
-            let drefs = if mapped.is_empty() {
+            let mut drefs = if mapped.is_empty() {
                 Vec::new()
             } else {
                 let fall_through = vma.wrapping_add(len as u64);
@@ -1083,24 +1101,30 @@ fn descend(
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
-            let picrefs = match pool.as_ref() {
-                Some(p) => picpool.step(
+            let seeded = pic_image.as_ref().and_then(|img| {
+                let insn = Insn {
                     vma,
                     len,
-                    cap.ops(),
-                    p,
-                    &mapped,
-                    data_space.as_ref(),
-                ),
-                None => Vec::new(),
-            };
+                    fall: c.fall_through,
+                    ops: cap.ops(),
+                    branches: if c.flow.is_call { &[] } else { &c.flows },
+                };
+                picpool.step(img, insn, || insn_queue.iter().map(|&(at, _)| at).collect())
+            });
+            let pointer = seeded.and_then(|word| {
+                let i = drefs.iter().position(|&r| r == (word, XrefKind::Data))?;
+                Some(drefs.remove(i).0)
+            });
             // Every row this instruction produces carries the same render, and an
             // instruction that produces none needs no render at all.
-            let mut text = if c.flows.is_empty() && drefs.is_empty() && picrefs.is_empty() {
+            let mut text = if c.flows.is_empty() && drefs.is_empty() && pointer.is_none() {
                 String::new()
             } else {
                 assembly(translate, vma, &code_space)
             };
+            if let Some(word) = pointer {
+                held.push((vma, word, text.clone()));
+            }
 
             if cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CALLIND) {
                 st.indirect_call_sites.insert(vma);
@@ -1186,15 +1210,13 @@ fn descend(
                         text = assembly(translate, vma, &code_space);
                     }
                     st.take_switch(vma, entry, &cases, stated, max_entries, &text);
+                    picpool.cases(vma, &cases);
                     insn_queue.extend(cases.iter().map(|&target| (target, mode)));
                 }
             }
 
             for &(to, kind) in &drefs {
                 st.file(vma, to, kind, &text);
-            }
-            for &to in &picrefs {
-                st.file(vma, to, XrefKind::Data, &text);
             }
             // Both halves the deferred base-relative pass needs are pure
             // functions of this instruction's ops, so they are computed here
@@ -1212,6 +1234,24 @@ fn descend(
                         fall_through,
                     ),
                 });
+            }
+        }
+
+        let verdict = picpool.finish(&st.refused);
+        for (vma, word, text) in held {
+            if !verdict.displaced.contains(&vma) {
+                st.file(vma, word, XrefKind::Data, &text);
+            }
+        }
+        // Rendered here for the same reason as `picbase`'s rows below: few
+        // instructions compose an address. An odd address whose even half is
+        // code waits for the whole walk to say whether it is a Thumb pointer.
+        for &(vma, to, kind) in &verdict.refs {
+            let text = assembly(translate, vma, &code_space);
+            if arm && to & 1 == 1 && in_range(&exec_set, to & !1) {
+                thumb_refs.push((vma, to, kind, text));
+            } else {
+                st.file(vma, to, kind, &text);
             }
         }
 
@@ -1246,6 +1286,15 @@ fn descend(
     for f in focused {
         if !st.decoded.contains(&f) {
             st.funcs.remove(&f);
+        }
+    }
+    // (kuna) `picpool`: a Thumb pointer is its entry with bit 0 set. See
+    // [`thumb_target`].
+    if !thumb_refs.is_empty() {
+        let markers = mapping_markers(file);
+        for (vma, to, kind, text) in thumb_refs {
+            let to = thumb_target(to, &st, &markers);
+            st.file(vma, to, kind, &text);
         }
     }
 
@@ -1503,6 +1552,10 @@ struct State {
     indirect_call_sites: BTreeSet<u64>,
     flow: Option<FlowGraph>,
     switches: Vec<SwitchTable>,
+    /// (kuna) `picpool`: instructions a recovered frame's walk refused to enter.
+    /// The frame's own edges into one are in no other body's record, so a body
+    /// that decodes it later cannot trust what it carries there.
+    refused: HashSet<u64>,
 }
 
 impl State {
@@ -1518,6 +1571,7 @@ impl State {
                 ..FlowGraph::default()
             }),
             switches: Vec::new(),
+            refused: HashSet::new(),
         }
     }
 
@@ -1611,6 +1665,45 @@ impl State {
             flow: self.flow,
             switches: self.switches,
         }
+    }
+}
+
+/// (kuna) `picpool`: the address an odd value `v` whose even half is in an
+/// executable section names. It is a Thumb pointer, filed at `v & !1`, when the
+/// walk decoded code or knows a function there, or when the nearest ARM mapping
+/// symbol at or below it is `$t`; a `$d` or `$a` there makes it a datum at an
+/// odd address (a string in a `.rodata` linked into `.text`), filed as it is.
+/// An image with no mapping symbols says nothing, and the Thumb pointer, by far
+/// the commoner of the two, is assumed.
+fn thumb_target(v: u64, st: &State, markers: &[(u64, u8)]) -> u64 {
+    let entry = v & !1;
+    if st.decoded.contains(&entry) || st.funcs.contains(&entry) {
+        return entry;
+    }
+    let at = markers.partition_point(|&(a, _)| a <= entry);
+    match at.checked_sub(1).map(|i| markers[i].1) {
+        Some(b'd' | b'a') => v,
+        _ => entry,
+    }
+}
+
+/// (kuna) `picpool`: the ARM mapping symbols (`$a`, `$t`, `$d`), by address.
+fn mapping_markers(file: &object::File) -> Vec<(u64, u8)> {
+    let mut out: Vec<(u64, u8)> = file
+        .symbols()
+        .filter_map(|sym| Some((sym.address(), mapping_kind(sym.name().ok()?)?)))
+        .collect();
+    out.sort_unstable();
+    out
+}
+
+/// The kind byte of an ARM mapping symbol name (`$a`, `$t`, `$d`, or one of
+/// them followed by `.` and anything), read by byte so no other name can split
+/// a character.
+fn mapping_kind(name: &str) -> Option<u8> {
+    match name.as_bytes() {
+        [b'$', kind @ (b'a' | b't' | b'd')] | [b'$', kind @ (b'a' | b't' | b'd'), b'.', ..] => Some(*kind),
+        _ => None,
     }
 }
 
@@ -1971,6 +2064,19 @@ mod tests {
 
     use super::*;
 
+    /// Only `$a`, `$t`, `$d` and their `.`-suffixed forms are mapping symbols,
+    /// and a `$` name with a multi-byte character after it is read without
+    /// slicing through that character.
+    #[test]
+    fn mapping_symbol_names_are_read_by_byte() {
+        for (name, kind) in [("$a", b'a'), ("$t", b't'), ("$d", b'd'), ("$t.foo", b't'), ("$d.realdata", b'd')] {
+            assert_eq!(mapping_kind(name), Some(kind), "{name}");
+        }
+        for name in ["$", "$x", "$é", "$\u{e9}t", "$ta", "$t_", "t", "", "é"] {
+            assert_eq!(mapping_kind(name), None, "{name:?}");
+        }
+    }
+
     /// A throwaway `(ram, constant)` space pair. `ram` stands in for the default
     /// data space; its index is what [`data_refs`] is told to match.
     fn spaces() -> (Rc<AddrSpace>, Rc<AddrSpace>) {
@@ -2261,6 +2367,7 @@ mod tests {
             indirect_call_sites: BTreeSet::new(),
             flow: None,
             switches: Vec::new(),
+            refused: HashSet::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -2318,6 +2425,7 @@ mod tests {
             indirect_call_sites: BTreeSet::from([0x1188]),
             flow: None,
             switches: Vec::new(),
+            refused: HashSet::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new(), false);
@@ -2353,6 +2461,7 @@ mod tests {
                 seeds: vec![0x3000, 0x1000, 0x3000, 0x2000],
             }),
             switches: Vec::new(),
+            refused: HashSet::new(),
         };
         let index = st.finish(BTreeMap::new(), true);
         assert_eq!(index.function_containing(0x1001), Some(0x1000));
