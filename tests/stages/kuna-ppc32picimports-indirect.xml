@@ -1,0 +1,19 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option ppc32picimports on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-indirect.elf</com>
+  <com>read symbols</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PIC indirect caller is decompiled" min="1" max="1">check2\(void\)</stringmatch>
+<stringmatch name="PIC indirect returning call retains return 7" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="PIC conflicting indirect caller acquires no global contract" min="0" max="0">__stack_chk_fail|no-return</stringmatch>
+</decompilertest>

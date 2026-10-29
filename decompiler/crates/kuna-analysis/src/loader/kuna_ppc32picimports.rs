@@ -7,17 +7,103 @@ use object::{Object, ObjectSection, ObjectSymbol, SectionFlags, SectionKind, Sym
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Value {
+    #[default]
+    Unknown,
+    Constant(u32),
+    Return,
+    Stack(u32),
+}
+
+impl Value {
+    fn add(self, offset: u32) -> Self {
+        match self {
+            Self::Constant(value) => Self::Constant(value.wrapping_add(offset)),
+            Self::Stack(value) => Self::Stack(value.wrapping_add(offset)),
+            other if offset == 0 => other,
+            _ => Self::Unknown,
+        }
+    }
+
+    fn constant(self) -> Option<u32> {
+        if let Self::Constant(value) = self {
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct State {
-    r30: Option<u32>,
-    lr: Option<u32>,
+    regs: [Value; 32],
+    lr: Value,
+    saved_return: Option<u32>,
 }
 
 impl State {
+    fn entry() -> Self {
+        let mut state = Self {
+            lr: Value::Return,
+            ..Self::default()
+        };
+        state.regs[1] = Value::Stack(0);
+        state
+    }
+
     fn meet(self, other: Self) -> Self {
         Self {
-            r30: self.r30.filter(|v| Some(*v) == other.r30),
-            lr: self.lr.filter(|v| Some(*v) == other.lr),
+            regs: std::array::from_fn(|i| {
+                if self.regs[i] == other.regs[i] {
+                    self.regs[i]
+                } else {
+                    Value::Unknown
+                }
+            }),
+            lr: if self.lr == other.lr {
+                self.lr
+            } else {
+                Value::Unknown
+            },
+            saved_return: self.saved_return.filter(|v| Some(*v) == other.saved_return),
         }
+    }
+
+    fn base(self, register: usize) -> Value {
+        if register == 0 {
+            Value::Constant(0)
+        } else {
+            self.regs[register]
+        }
+    }
+
+    fn store(&mut self, address: Value, width: u32, value: Value) {
+        if let Some(saved) = self.saved_return {
+            let disjoint = matches!(address, Value::Stack(at)
+                if saved.wrapping_sub(at) >= width && at.wrapping_sub(saved) >= 4);
+            if !disjoint {
+                self.saved_return = None;
+            }
+        }
+        if width == 4 && value == Value::Return {
+            if let Value::Stack(at) = address {
+                self.saved_return = Some(at);
+            }
+        }
+    }
+
+    fn after_import(&mut self) {
+        if self.saved_return != Some(4)
+            || !matches!(self.regs[1], Value::Stack(at) if (at as i32) <= -16)
+            || self.regs[3..11]
+                .iter()
+                .any(|v| matches!(v, Value::Stack(_)))
+        {
+            self.saved_return = None;
+        }
+        self.regs[0] = Value::Unknown;
+        self.regs[2..14].fill(Value::Unknown);
+        self.lr = Value::Unknown;
     }
 }
 
@@ -45,72 +131,74 @@ fn signed(word: u32) -> u32 {
     word as u16 as i16 as u32
 }
 
-/// Interpret only instructions whose effects on r30 and LR are known. Other
-/// arithmetic conservatively kills both facts; indirect jumps reject the caller.
+/// Track constants separately from the entry LR token and its stack spill.
+/// Unsupported effects discard evidence; unknown values are never returns.
 fn transfer(word: u32, mut state: State) -> State {
-    let rt = (word >> 21) & 31;
-    let ra = (word >> 16) & 31;
-    match word >> 26 {
-        14 | 15 if rt == 30 => {
-            let base = match ra {
-                0 => Some(0),
-                30 => state.r30,
-                _ => None,
-            };
-            let delta = if word >> 26 == 15 {
+    let rt = ((word >> 21) & 31) as usize;
+    let ra = ((word >> 16) & 31) as usize;
+    let rb = ((word >> 11) & 31) as usize;
+    let opcode = word >> 26;
+    let address = state.base(ra).add(signed(word));
+    match opcode {
+        14 | 15 => {
+            state.regs[rt] = state.base(ra).add(if opcode == 15 {
                 signed(word) << 16
             } else {
                 signed(word)
-            };
-            state.r30 = base.map(|v| v.wrapping_add(delta));
+            });
         }
-        14 | 15 | 10 | 11 | 36 | 38 | 44 | 47 | 48 | 50 | 52 | 54 => {}
-        24 | 25 if ra == 30 => {
-            let mask = if word >> 26 == 25 {
+        10 | 11 | 48 | 50 => {}
+        24 | 25 => {
+            let mask = if opcode == 25 {
                 word << 16
             } else {
                 word & 0xffff
             };
-            state.r30 = if rt == 30 {
-                state.r30.map(|v| v | mask)
+            state.regs[ra] = if mask == 0 {
+                state.regs[rt]
             } else {
-                None
+                state.regs[rt]
+                    .constant()
+                    .map_or(Value::Unknown, |v| Value::Constant(v | mask))
             };
         }
-        20..=29 => {
-            if ra == 30 {
-                state.r30 = None;
+        20..=29 => state.regs[ra] = Value::Unknown,
+        32..=35 | 40..=43 => {
+            state.regs[rt] = if opcode == 32
+                && matches!(address, Value::Stack(at) if Some(at) == state.saved_return)
+            {
+                Value::Return
+            } else {
+                Value::Unknown
+            };
+            if opcode & 1 != 0 {
+                state.regs[ra] = if ra == rt { Value::Unknown } else { address };
             }
         }
-        32 | 34 | 40 | 42 => {
-            if rt == 30 {
-                state.r30 = None;
+        36..=39 | 44..=45 | 47 | 52..=55 => {
+            let width = match opcode {
+                38 | 39 => 1,
+                44 | 45 => 2,
+                47 => 4 * (32 - rt as u32),
+                54 | 55 => 8,
+                _ => 4,
+            };
+            let value = if matches!(opcode, 36 | 37) {
+                state.regs[rt]
+            } else {
+                Value::Unknown
+            };
+            state.store(address, width, value);
+            if matches!(opcode, 37 | 39 | 45 | 53 | 55) {
+                state.regs[ra] = address;
             }
         }
-        33 | 35 | 41 | 43 => {
-            if rt == 30 || ra == 30 {
-                state.r30 = None;
-            }
-        }
-        37 | 39 | 45 | 49 | 51 | 53 | 55 => {
-            if ra == 30 {
-                state.r30 = None;
-            }
-        }
-        46 => {
-            if rt <= 30 {
-                state.r30 = None;
-            }
-        }
-        31 if word & 0xfc1f_ffff == 0x7c08_02a6 => {
-            if rt == 30 {
-                state.r30 = state.lr;
-            }
-        }
-        31 if word & 0xfc1f_ffff == 0x7c08_03a6 => {
-            state.lr = if rt == 30 { state.r30 } else { None };
-        }
+        49 | 51 => state.regs[ra] = address,
+        46 => state.regs[rt..].fill(Value::Unknown),
+        31 if word & 0xfc1f_ffff == 0x7c08_02a6 => state.regs[rt] = state.lr,
+        31 if word & 0xfc1f_ffff == 0x7c08_03a6 => state.lr = state.regs[rt],
         31 if word & 0xfc1f_ffff == 0x7c09_03a6 => {}
+        31 if (word >> 1) & 1023 == 444 && rt == rb => state.regs[ra] = state.regs[rt],
         _ => state = State::default(),
     }
     state
@@ -137,8 +225,20 @@ fn slot(
     stubs: &BTreeMap<u32, u32>,
     slots: &BTreeMap<u64, Vec<u8>>,
 ) -> Option<u32> {
-    let addr = state.r30?.wrapping_add(*stubs.get(&pc)?);
+    let addr = state.regs[30].constant()?.wrapping_add(*stubs.get(&pc)?);
     slots.contains_key(&u64::from(addr)).then_some(addr)
+}
+
+fn terminal_import(
+    pc: u32,
+    state: State,
+    stubs: &BTreeMap<u32, u32>,
+    slots: &BTreeMap<u64, Vec<u8>>,
+) -> bool {
+    slot(pc, state, stubs, slots)
+        .and_then(|addr| slots.get(&u64::from(addr)))
+        .and_then(|name| std::str::from_utf8(name).ok())
+        .is_some_and(kuna_decomp::kuna_noreturnextern::matches_noreturn_extern_name)
 }
 
 /// One symbol-bounded caller. Its entry register values are unknown, joins keep
@@ -155,7 +255,7 @@ fn caller(
     }
     let mut states = vec![None; code.len()];
     let mut queue = VecDeque::from([0]);
-    states[0] = Some(State::default());
+    states[0] = Some(State::entry());
     let mut steps = 0;
     while let Some(i) = queue.pop_front() {
         steps += 1;
@@ -166,22 +266,23 @@ fn caller(
         let word = code[i];
         let mut state = states[i]?;
         let mut targets = [None, None];
+        let mut terminal = None;
         if let Some(b) = branch(pc, word) {
+            if terminal_import(b.target, state, stubs, slots) {
+                terminal = Some(b.target);
+            }
             if b.link && b.target == pc + 4 {
-                state.lr = Some(pc + 4);
+                state.lr = Value::Constant(pc + 4);
                 targets[0] = Some(pc + 4);
             } else if b.link {
-                state = State {
-                    r30: if absolute.contains(&b.target)
-                        || slot(b.target, state, stubs, slots).is_some()
-                    {
-                        state.r30
-                    } else {
-                        None
-                    },
-                    lr: None,
-                };
-                targets[0] = Some(pc + 4);
+                if absolute.contains(&b.target) || slot(b.target, state, stubs, slots).is_some() {
+                    state.after_import();
+                } else {
+                    state = State::default();
+                }
+                if terminal.is_none() || b.conditional {
+                    targets[0] = Some(pc + 4);
+                }
             } else {
                 targets[0] = Some(b.target);
                 if b.conditional {
@@ -189,14 +290,10 @@ fn caller(
                 }
             }
         } else if word >> 26 == 19 && (word >> 1) & 1023 == 16 {
-            // A known LR is a computed jump, not the ABI return address.
-            if state.lr.is_some() {
+            if state.lr != Value::Return || word & 1 != 0 {
                 return None;
             }
-            if word & 1 != 0 {
-                state = State::default();
-                targets[0] = Some(pc + 4);
-            } else if (word >> 21) & 20 != 20 {
+            if (word >> 21) & 20 != 20 {
                 targets[0] = Some(pc + 4);
             }
         } else if word >> 26 == 19 || word >> 26 == 17 {
@@ -206,6 +303,12 @@ fn caller(
             targets[0] = Some(pc + 4);
         }
         for target in targets.into_iter().flatten() {
+            if !(start..start + code.len() as u32 * 4).contains(&target)
+                && state.lr != Value::Return
+                && terminal != Some(target)
+            {
+                return None;
+            }
             let Some(offset) = target.checked_sub(start) else {
                 continue;
             };
@@ -221,6 +324,84 @@ fn caller(
         }
     }
     Some(states)
+}
+
+/// The complete GNU/LLD lazy resolver loads its branch target from GOT[1].
+/// This is a loader-defined dispatch, not an arbitrary application indirect edge.
+fn resolver_exit(file: &object::File<'_>, code: &[(u32, u32)]) -> BTreeSet<u32> {
+    let mut exits = BTreeSet::new();
+    let Some(dynamic) = file.section_by_name(".dynamic") else {
+        return exits;
+    };
+    let Ok(bytes) = dynamic.data() else {
+        return exits;
+    };
+    let mut got = None;
+    for tag in bytes.chunks_exact(8) {
+        let key = super::kuna_ppc32_imports::word(file, tag);
+        if key == 0 {
+            break;
+        }
+        if i64::from(key) == object::elf::DT_PPC_GOT {
+            if got.is_some() {
+                return exits;
+            }
+            got = Some(super::kuna_ppc32_imports::word(file, &tag[4..]));
+        }
+    }
+    let Some(got) = got else { return exits };
+    if got & 3 != 0
+        || !file.sections().any(|section| {
+            matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 2)
+                && u64::from(got) >= section.address()
+                && u64::from(got) + 12 <= section.address().saturating_add(section.size())
+                && section
+                    .data()
+                    .ok()
+                    .and_then(|data| data.get((u64::from(got) - section.address()) as usize..))
+                    .is_some_and(|data| {
+                        data.len() >= 12
+                            && u64::from(super::kuna_ppc32_imports::word(file, data))
+                                == dynamic.address()
+                    })
+        })
+    {
+        return exits;
+    }
+    for window in code.windows(14) {
+        let start = window[0].0;
+        if window[13].0 != start + 52 {
+            continue;
+        }
+        let w: [u32; 14] = std::array::from_fn(|i| window[i].1);
+        if w[0] & 0xffff0000 != 0x3d6b0000
+            || w[1] != 0x7c0802a6
+            || w[2] != 0x429f0005
+            || w[3] & 0xffff0000 != 0x396b0000
+            || w[4..7] != [0x7d8802a6, 0x7c0803a6, 0x7d6c5850]
+            || w[7] & 0xffff0000 != 0x3d8c0000
+            || w[8] & 0xffff0000 != 0x800c0000
+            || w[9] & 0xffff0000 != 0x818c0000
+            || w[10..] != [0x7c0903a6, 0x7c0b5a14, 0x7d605a14, 0x4e800420]
+        {
+            continue;
+        }
+        let base = (start + 12).wrapping_add(w[7] << 16);
+        if base.wrapping_add(signed(w[8])) != got.wrapping_add(4)
+            || base.wrapping_add(signed(w[9])) != got.wrapping_add(8)
+        {
+            continue;
+        }
+        // An entry bypassing the load invalidates the dispatch certificate.
+        if code.iter().any(|&(pc, word)| {
+            branch(pc, word)
+                .is_some_and(|b| b.target > start && b.target <= start + 52 && pc != start + 8)
+        }) {
+            continue;
+        }
+        exits.insert(start + 52);
+    }
+    exits
 }
 
 pub(super) fn resolve(
@@ -267,6 +448,8 @@ pub(super) fn resolve(
     let mut functions: BTreeMap<u32, u32> = BTreeMap::new();
     let mut blocked = BTreeSet::new();
     let mut tainted = BTreeSet::new();
+    let mut pointers = BTreeSet::new();
+    let mut entries = BTreeSet::new();
     for symbol in file.symbols().chain(file.dynamic_symbols()) {
         if symbol.is_undefined() {
             continue;
@@ -275,8 +458,11 @@ pub(super) fn resolve(
         if addr > u32::MAX as u64 {
             continue;
         }
-        if stubs.contains_key(&(addr as u32)) && symbol.is_global() {
-            blocked.insert(addr as u32);
+        entries.insert(addr as u32);
+        if let Some((&stub, _)) = stubs.range(..=addr as u32).next_back() {
+            if addr < u64::from(stub) + 16 && (addr != u64::from(stub) || symbol.is_global()) {
+                blocked.insert(stub);
+            }
         }
         if symbol.kind() == SymbolKind::Text
             && symbol.size() != 0
@@ -297,7 +483,12 @@ pub(super) fn resolve(
         }
     }
     if let Ok(entry) = u32::try_from(file.entry()) {
-        blocked.insert(entry);
+        entries.insert(entry);
+        if let Some((&stub, _)) = stubs.range(..=entry).next_back() {
+            if entry < stub + 16 {
+                blocked.insert(stub);
+            }
+        }
     }
     for section in file.sections() {
         if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 2)
@@ -311,6 +502,7 @@ pub(super) fn resolve(
         if let Ok(bytes) = section.data() {
             for word in bytes.chunks_exact(4) {
                 let addr = super::kuna_ppc32_imports::word(file, word);
+                pointers.insert(addr);
                 if let Some((&stub, _)) = stubs.range(..=addr).next_back() {
                     if addr < stub + 16 {
                         blocked.insert(stub);
@@ -324,6 +516,7 @@ pub(super) fn resolve(
         let Ok(address) = u32::try_from(address) else {
             return;
         };
+        pointers.insert(address);
         if let Some((&stub, _)) = stubs.range(..=address).next_back() {
             if address < stub + 16 {
                 blocked.insert(stub);
@@ -342,8 +535,16 @@ pub(super) fn resolve(
         .collect();
     if let Some(relocations) = file.dynamic_relocations() {
         for (address, relocation) in relocations {
-            invalidate(address);
             let width = u64::from(relocation.size()).div_ceil(8).max(4);
+            let first = code.partition_point(|&(pc, _)| u64::from(pc) + 4 <= address);
+            if code
+                .get(first)
+                .is_some_and(|&(pc, _)| u64::from(pc) < address.saturating_add(width))
+            {
+                // Runtime writes can change both callee clobbers and the edge census.
+                return Vec::new();
+            }
+            invalidate(address);
             invalidate(address.saturating_add(width - 1));
             if let object::RelocationTarget::Symbol(index) = relocation.target() {
                 if let Some(&value) = dynamic_addresses.get(&index.0) {
@@ -357,6 +558,13 @@ pub(super) fn resolve(
                 }
             ) {
                 invalidate(relocation.addend() as u32 as u64);
+            }
+        }
+    }
+    for &address in &pointers {
+        if let Some((&start, &end)) = functions.range(..=address).next_back() {
+            if address > start && address < end {
+                tainted.insert(start);
             }
         }
     }
@@ -375,11 +583,13 @@ pub(super) fn resolve(
             tainted.insert(start);
         }
     }
+    let mut branch_targets = BTreeSet::new();
     for &(pc, word) in &code {
         let Some(b) = branch(pc, word) else { continue };
         if b.link && b.target == pc + 4 {
             continue;
         }
+        branch_targets.insert(b.target);
         if stubs.contains_key(&b.target) {
             sites.entry(b.target).or_default().push((pc, false));
         } else if let Some((&stub, _)) = stubs.range(..=b.target).next_back() {
@@ -397,6 +607,9 @@ pub(super) fn resolve(
         let mut pc = stub.wrapping_sub(4);
         let mut padding = 0;
         while word_at(pc) == Some(0x60000000) && padding < 16 {
+            if branch_targets.contains(&pc) || pointers.contains(&pc) || entries.contains(&pc) {
+                blocked.insert(stub);
+            }
             pc = pc.wrapping_sub(4);
             padding += 1;
         }
@@ -407,7 +620,32 @@ pub(super) fn resolve(
             sites.entry(stub).or_default().push((pc, true));
         }
     }
+    if !blocked.is_empty() {
+        return Vec::new();
+    }
     let absolute: BTreeSet<_> = imports.iter().map(|s| s.addr as u32).collect();
+    let mut trusted_indirect = resolver_exit(file, &code);
+    trusted_indirect.retain(|&exit| {
+        pointers.range((exit - 52 + 1)..=exit).next().is_none()
+            && entries.range((exit - 52 + 1)..=exit).next().is_none()
+    });
+    let resolver_starts: BTreeSet<_> = trusted_indirect.iter().map(|&exit| exit - 52).collect();
+    let mut covered: BTreeSet<_> = resolver_starts
+        .iter()
+        .flat_map(|&start| (start..start + 56).step_by(4))
+        .collect();
+    for &stub in stubs.keys().chain(absolute.iter()) {
+        if word_at(stub).is_none() {
+            continue;
+        }
+        covered.extend((stub..stub + 16).step_by(4));
+        let exit = if word_at(stub + 8) == Some(0x4e800420) {
+            stub + 8
+        } else {
+            stub + 12
+        };
+        trusted_indirect.insert(exit);
+    }
     let mut evidence = BTreeMap::new();
     let required: BTreeSet<_> = sites.values().flatten().map(|&(pc, _)| pc).collect();
     let ranges: Vec<_> = functions.into_iter().collect();
@@ -420,24 +658,46 @@ pub(super) fn resolve(
             || overlaps_prior
             || ranges.get(index + 1).is_some_and(|&(next, _)| next < end)
         {
-            continue;
+            return Vec::new();
         }
-        if required.range(start..end).next().is_none() {
+
+        if stubs.contains_key(&start)
+            || absolute.contains(&start)
+            || resolver_starts.contains(&start)
+        {
             continue;
         }
         let body: Option<Vec<_>> = (start..end).step_by(4).map(|pc| word_at(pc)).collect();
-        let Some(body) = body else { continue };
+        let Some(body) = body else { return Vec::new() };
         let Some(states) = caller(start, &body, &stubs, slots, &absolute) else {
-            continue;
+            return Vec::new();
         };
+        covered.extend((start..end).step_by(4));
         for (i, state) in states.into_iter().enumerate() {
             let pc = start + i as u32 * 4;
+            if word_at(pc).is_some_and(|w| w >> 26 == 19 && matches!((w >> 1) & 1023, 16 | 528)) {
+                if state.is_none()
+                    || state.is_some_and(|s| s.lr == Value::Return)
+                        && word_at(pc).is_some_and(|w| (w >> 1) & 1023 == 16 && w & 1 == 0)
+                {
+                    trusted_indirect.insert(pc);
+                }
+            }
             if required.contains(&pc) {
                 if let Some(state) = state {
                     evidence.insert(pc, state);
                 }
             }
         }
+    }
+    if code.iter().any(|&(pc, word)| {
+        (word >> 26 == 19
+            && matches!((word >> 1) & 1023, 16 | 528)
+            && !trusted_indirect.contains(&pc))
+            || (!covered.contains(&pc)
+                && (word & 0xfc1f_ffff == 0x7c08_03a6 || branch(pc, word).is_some_and(|b| b.link)))
+    }) {
+        return Vec::new();
     }
     let mut out = Vec::new();
     for (stub, callers) in sites {
@@ -488,7 +748,9 @@ mod tests {
     fn at_call(words: &[u32], at: usize) -> Option<u32> {
         let stubs = BTreeMap::from([(0x1800, 0x800)]);
         let slots = BTreeMap::from([(0x3000, b"first".to_vec()), (0x3004, b"second".to_vec())]);
-        caller(0x1000, words, &stubs, &slots, &BTreeSet::new())?[at]?.r30
+        let mut body = words.to_vec();
+        body.push(0x48000000); // Keep partial instruction probes inside their extent.
+        caller(0x1000, &body, &stubs, &slots, &BTreeSet::new())?[at]?.regs[30].constant()
     }
 
     #[test]
@@ -550,5 +812,72 @@ mod tests {
         assert_eq!(at_call(&code, 1), None);
         let captured_lr = [0x429f0005, 0x7fc802a6, 0x3bde17fc, 0x4e800020];
         assert_eq!(at_call(&captured_lr, 2), None);
+    }
+    #[test]
+    fn only_the_saved_entry_lr_proves_a_return() {
+        let good = [
+            0x7c0802a6, 0x9421fff0, 0x90010014, 0x3bc02800, 0x480007f1, 0x80010014, 0x38210010,
+            0x7c0803a6, 0x4e800020,
+        ];
+        assert_eq!(at_call(&good, 4), Some(0x2800));
+        let mut computed = good;
+        computed[0] = 0x38001008;
+        assert_eq!(at_call(&computed, 4), None);
+        let mut clobbered = good;
+        clobbered[5] = 0x7c002214;
+        assert_eq!(at_call(&clobbered, 4), None);
+        let mut unknown = good;
+        unknown[5] = 0x80010018;
+        assert_eq!(at_call(&unknown, 4), None);
+        assert_eq!(at_call(&[0x3bc02800, 0x480007fd, 0x4e800020], 1), None);
+        assert!(caller(
+            0x1000,
+            &[0x38001008, 0x7c0803a6],
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn a_conflicting_computed_lr_join_is_not_a_return() {
+        let code = [
+            0x3bc02800, 0x2c030000, 0x41820008, 0x480007f5, 0x2c040000, 0x41820014, 0x3bc0100c,
+            0x7fc803a6, 0x48000014, 0x60000000, 0x3bc01008, 0x7fc803a6, 0x60000000, 0x3bc02804,
+            0x4e800020,
+        ];
+        assert_eq!(at_call(&code, 3), None);
+    }
+
+    #[test]
+    fn overwriting_or_exposing_the_saved_lr_discards_return_evidence() {
+        let prefix = [0x7c0802a6, 0x9421fff0, 0x90010014];
+        for (write, valid) in [(0x90610008, true), (0x98610015, false), (0x90640000, false)] {
+            let mut code = prefix.to_vec();
+            code.extend([
+                write, 0x3bc02800, 0x480007ed, 0x80010014, 0x7c0803a6, 0x4e800020,
+            ]);
+            assert_eq!(at_call(&code, 5), valid.then_some(0x2800));
+        }
+        let mut exposed = prefix.to_vec();
+        exposed.extend([
+            0x38610014, 0x3bc02800, 0x480007ed, 0x80010014, 0x7c0803a6, 0x4e800020,
+        ]);
+        assert_eq!(at_call(&exposed, 5), None);
+        // A callee can overwrite its incoming linkage area and unallocated stack.
+        for (frame, spill) in [(0x60000000, 4), (0x9421fff0, 4), (0x9421fff0, 0xfffc)] {
+            let code = [
+                0x7c0802a6,
+                frame,
+                0x90010000 | spill,
+                0x3bc02800,
+                0x480007f1,
+                0x80010000 | spill,
+                0x7c0803a6,
+                0x4e800020,
+            ];
+            assert_eq!(at_call(&code, 4), None);
+        }
     }
 }

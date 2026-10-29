@@ -338,3 +338,7 @@ option off and on. The caller's PC-relative r30 selects `extra`; the unrelated
 GOT base would select `__stack_chk_fail`. Both passes retain `return 7`, and
 only the enabled pass names `extra`. The CLI companion generates both byte
 orders, both stub forms, multiple callers and conflicting control-flow paths.
+
+`kuna-ppc32picimports-indirect.xml` checks a second, indirect caller selecting a
+returning slot through the same PIC stub as a no-return direct caller. The
+ambiguous stub stays unresolved and the indirect caller retains `return 7`.
