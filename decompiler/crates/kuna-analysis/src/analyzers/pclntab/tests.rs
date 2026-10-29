@@ -605,3 +605,23 @@ fn zero_text_start_resolves_against_moduledata_text() {
         )
     );
 }
+
+#[test]
+fn macho_lrodata_gopcln_section_is_found_and_decoded() {
+    let text_vma = 0x1_0000_11c0u64;
+    let funcs = [(0x10u32, "main.main"), (0x140u32, "main.helper")];
+    let blob = build_go118_image(0, 0, &funcs);
+    let text = vec![0u8; 0x400];
+    let bytes = build_macho(&[
+        ("__TEXT", "__text", text_vma, &text, 0x8000_0400),
+        ("__TEXT", "__lrodata_gopcln", 0x1_03eb_2ea0, &blob, 0),
+    ]);
+    let file = object::File::parse(&bytes[..]).expect("hand-built Mach-O must parse");
+    assert_eq!(
+        recover_go_functions(&file),
+        vec![
+            GoFunc { addr: text_vma + 0x10, name: "main.main".into() },
+            GoFunc { addr: text_vma + 0x140, name: "main.helper".into() },
+        ]
+    );
+}

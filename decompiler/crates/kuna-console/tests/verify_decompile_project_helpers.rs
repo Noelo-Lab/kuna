@@ -333,7 +333,7 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
         jobs: 4,
         ..StreamProgress::default()
     };
-    let loading = render_readme_streaming(&facts, &progress);
+    let loading = render_readme_streaming(&facts, &progress, ReadmeLayout::Streamed);
     assert!(loading.starts_with("# fauxware — kuna project export\n\n**This export is still streaming**"));
     assert!(loading.contains("| Architecture | pending |\n"));
     assert!(loading.contains("| Entry point | pending |\n"));
@@ -353,6 +353,7 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
             error: Some("cannot load the binary".into()),
             ..StreamProgress::default()
         },
+        ReadmeLayout::Streamed,
     );
     assert!(failed.contains("| Phase | failed |\n"));
     assert!(failed.contains("| Error | cannot load the binary |\n"));
@@ -382,6 +383,7 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
             done: 4,
             ..StreamProgress::default()
         },
+        ReadmeLayout::Streamed,
     );
     assert!(failed_late.contains("## Files"), "{failed_late}");
     assert!(failed_late.contains("| Functions written | 4 of 10 (0 failed) |\n"));
@@ -405,6 +407,7 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
             elapsed_s: 7,
             artifacts: true,
         },
+        ReadmeLayout::Streamed,
     );
     assert!(running.contains("| Functions | 10 total, 3 decompiled, 1 failed |\n"));
     assert!(running.contains("| Functions written | 4 of 10 (1 failed) |\n"));
@@ -427,4 +430,32 @@ fn streaming_readme_renders_pending_facts_then_the_streamed_layout() {
         build_readme(&fauxware(), "/tmp/fauxware", "fauxware", &prog, &results),
         "the Standard layout is what build_readme has always written"
     );
+}
+
+/// A running `--progress` export inventories the non-stream artifacts and
+/// says they arrive at the end, behind a feed whose offsets are not set yet.
+#[test]
+fn progress_readme_describes_the_final_artifacts() {
+    let prog = loaded_fauxware();
+    let facts = ReadmeFacts::snapshot(&fauxware(), "/tmp/fauxware", "fauxware", &prog);
+    let running = render_readme_streaming(
+        &facts,
+        &StreamProgress {
+            phase: StreamPhase::Decompiling,
+            jobs: 4,
+            total: Some(10),
+            done: 4,
+            artifacts: true,
+            ..StreamProgress::default()
+        },
+        ReadmeLayout::Progress,
+    );
+    assert!(running.contains("**This export is still streaming**"), "{running}");
+    assert!(running.contains("decompile-project --progress"), "{running}");
+    assert!(running.contains("address-ordered"), "{running}");
+    assert!(!running.contains("DECOMPILE order"), "{running}");
+    assert!(!running.contains("; --- variables ---"), "{running}");
+    assert!(running.contains("`c_offset`/`c_len` null"), "{running}");
+    assert!(running.contains("do not exist yet"), "{running}");
+    assert!(!running.contains("append-only"), "{running}");
 }

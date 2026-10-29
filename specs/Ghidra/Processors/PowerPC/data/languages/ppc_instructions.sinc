@@ -2117,10 +2117,20 @@
 }
 
 @ifndef IS_ISA
-#ldarx r0,r2,r0	 0x7c 02 00 2a
-:ldarx D,RA_OR_ZERO,B	is OP=31 & D & RA_OR_ZERO & B & XOP_1_10=21 & BIT_0=0
+#ldx r0,r2,r0	 0x7c 02 00 2a
+:ldx D,RA_OR_ZERO,B	is OP=31 & D & RA_OR_ZERO & B & XOP_1_10=21 & BIT_0=0
 {
 	ea:$(REGISTER_SIZE) = RA_OR_ZERO+B;
+	D = *:8(ea);
+}
+
+#ldarx r0,r2,r0	 0x7c 02 00 a8
+:ldarx D,RA_OR_ZERO,B	is OP=31 & D & RA_OR_ZERO & B & XOP_1_10=84 & BIT_0=0
+{
+	ea:$(REGISTER_SIZE) = RA_OR_ZERO+B;
+	RESERVE = 1;
+	RESERVE_LENGTH = 8;
+	RESERVE_ADDRESS = ea;
 	D = *:8(ea);
 }
 @endif
@@ -2265,8 +2275,9 @@ define pcodeop lswxOp;
 :lwarx D,RA_OR_ZERO,B	is OP=31 & D & RA_OR_ZERO & B & XOP_1_10=20 & BIT_0=0
 {
 	ea:$(REGISTER_SIZE) = RA_OR_ZERO+B;
-	#RESERVE = 1;
-	#RESERVE_ADDRSS:$(REGISTER_SIZE) = ea;
+	RESERVE = 1;
+	RESERVE_LENGTH = 4;
+	RESERVE_ADDRESS = ea;
 @ifdef BIT_64
 	D = zext(*:4(ea));
 @else

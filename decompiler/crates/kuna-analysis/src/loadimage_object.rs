@@ -914,11 +914,17 @@ impl ObjectLoadImage {
         // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
+        let ppc32_names: std::collections::HashMap<_, _> = if is_elf && file.architecture() == object::Architecture::PowerPc {
+            funcsyms.iter().enumerate().map(|(i, s)| (s.addr, i)).collect()
+        } else { std::collections::HashMap::new() };
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
             let name = demangle_funcsym_name(p.name, namechars);
             if seen.insert(p.addr) {
                 funcsyms.push(FuncSym { addr: p.addr, name });
+            } else if let Some(&i) = ppc32_names.get(&p.addr) {
+                let previous = std::mem::replace(&mut funcsyms[i].name, name);
+                aliases.push(FuncSym { addr: p.addr, name: previous });
             } else if is_elf {
                 aliases.push(FuncSym { addr: p.addr, name });
             }

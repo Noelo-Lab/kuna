@@ -418,14 +418,22 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// Locate the pclntab header VMA. In precedence order (faithful to
 /// `GoPcHeader.getPcHeaderAddress` + `GoModuledata.getFirstModuledata`, plus a
 /// scan fallback for stripped binaries):
-/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`) section start;
+/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`, or the large
+///    read-only data split's `.lrodata_gopclntab` / Mach-O `__lrodata_gopcln`)
+///    section start;
 /// 2. the `runtime.pclntab` / `runtime.firstmoduledata`-adjacent symbol — kuna
 ///    resolves the `runtime.pclntab` symbol directly when present;
 /// 3. a byte scan of the read-only data sections for the validated header magic.
 pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
     // (1) The named section. Go's ELF uses `.gopclntab`; some toolchains/PE use
     // `gopclntab` (no dot); Mach-O names it `__gopclntab` (in `__DATA_CONST`).
-    for name in [".gopclntab", "gopclntab", "__gopclntab"] {
+    for name in [
+        ".gopclntab",
+        "gopclntab",
+        "__gopclntab",
+        ".lrodata_gopclntab",
+        "__lrodata_gopcln",
+    ] {
         if let Some(sec) = file.section_by_name(name) {
             let vma = sec.address();
             if let Some(hdr) = img.read(vma, 8) {

@@ -650,3 +650,6 @@ mod float_nan_quieting;
 
 #[path = "storage_load_transfers.rs"]
 mod storage_load_transfers;
+
+#[path = "ppc32_imports.rs"]
+mod ppc32_imports;

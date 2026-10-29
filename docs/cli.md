@@ -1872,7 +1872,8 @@ Behaviors specific to `decompile-all`:
     concrete `--mode`, every resolved `--option` and the watchdog budget are
     settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
-    observable, and only in the order of the `.c`: a streamed export writes each
+    observable, and only in the order of the `.c` (`--progress` reports on a
+    non-stream export instead). A streamed export writes each
     function as it finishes, so under `--jobs N` the interleaving is worker
     completion order and is not reproducible run to run. The set of functions,
     the prototypes and the disassembly are what the same selection produces
@@ -2945,6 +2946,7 @@ kuna decompile-project ./a.out                         # writes ./a.out.kuna/
 kuna decompile-project ./a.out -o proj --functions main,parse
 kuna decompile-project ./a.out --jobs 12               # 12 processes, protoorder-off artifacts
 kuna decompile-project ./a.out --stream --jobs 12      # readable while it fills
+kuna decompile-project ./a.out --progress --jobs 12    # progress, artifacts at the end
 ```
 
 The project-export face of the same in-process core
@@ -2953,7 +2955,7 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--option`/
-`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`; no `--json`. Omitted mode is the same
+`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`. Omitted mode is the same
 size-based `auto` policy as the other file front-ends. In particular, a project input
 at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
 scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -3279,6 +3281,72 @@ is the load, which is the same wait either way — and it finishes about 5% late
 static longest-first plan a non-stream `--jobs N` run uses is close to the best
 makespan available and entry-point-first order is not. At this size that is under a
 minute of tail for twenty minutes of head start.
+
+### `--progress` — progress reporting over an ordinary export
+
+```bash
+kuna decompile-project ./ssh -o ssh.kuna --progress --jobs 4
+```
+
+Two things are bundled in `--stream`: progress reporting (`.streaming` and the
+`index.jsonl` feed) and incremental artifacts (a `.c` readable while it fills). The
+second is what costs reproducibility — an append-only `.c` can only hold functions in
+the order they finish. `--progress` is the first without the second, for a caller that
+only needs to know how far the export has got, such as a pipeline that stores the
+folder content-addressed.
+
+| | progress feed | artifacts written | reproducible under `--jobs N` |
+|---|---|---|---|
+| neither flag | no | at the end | yes |
+| `--progress` | yes | at the end | yes |
+| `--stream` | yes | as the run goes, decompile order | no |
+
+`--stream` already reports progress, so with both flags the export is the streamed one.
+
+`--progress` runs the non-stream export unchanged — the same serial or pooled
+decompile, the static longest-first plan, the structure-naming replay, the positional
+merge — and reports on it while it runs. When it succeeds, `<name>.c`, `<name>.h`,
+`<name>.asm` and `README.md` are byte-identical to `kuna decompile-project` with the
+same arguments minus `--progress`, and `index.jsonl` is the address-ordered index of
+that `.c`, the same file whatever the job count. So the folder is as reproducible as
+the non-stream export: under `--jobs N` it does not depend on `N` and is the `--jobs 1
+--option protoorder off` answer (the `--jobs` bullets above give the exceptions, which
+apply here unchanged). Measured on `/usr/bin/ssh` (1,090 functions): `--progress` runs
+at `--jobs 4` and `--jobs 2` and a plain `--jobs 4` run leave identical folders apart
+from `index.jsonl`, and the CPU time of the two `--jobs 4` arms is within run-to-run
+noise (158–170 s user each).
+
+**What appears when.** The load is reported as under `--stream`: `README.md` and
+`.streaming` (phase `loading`) are written first and a previous export is untouched.
+Once the program is loaded and the target set is non-empty, the previous export's
+`<name>.c`, `<name>.h` and `<name>.asm` are removed, so a reader never takes them for this
+run's, and `index.jsonl` is truncated. `.streaming` moves to `decompiling` with
+`functions_total`, and from there:
+
+- `index.jsonl` is the **feed**: a line is appended as each function's first decompile
+  lands, in completion order, with `c_offset` and `c_len` `null` because there is no
+  `.c` to point into yet. Under `--jobs N` lines land a pool chunk at a time
+  (`--jobs-chunk K` bounds that); serially, one function at a time. The `error` field is
+  that first decompile's. A structure-naming or convergence pass that decides a function
+  again later is not fed.
+- `.streaming` counts the feed (`functions_done`, `functions_failed`,
+  `seconds_since_last_result`) on its own 500 ms clock, with `jobs` the workers the pool
+  actually started. `seeds` is `0` and `c_bytes` stays `0` until the `.c` exists; `asm`
+  is `pending` until the artifacts are built.
+- Once every function is in, `phase` is `finalizing` while the pool finishes naming
+  structures and the artifacts are built (`asm` then reads `sweeping`). The README stops
+  being rewritten at that point.
+- At the end the four artifacts are written, `index.jsonl` is **replaced** (one atomic
+  rename) by the final index, and `.streaming` is removed.
+
+So `index.jsonl` changes meaning once: while `.streaming` exists it is the feed; once
+`.streaming` is gone it is the final index, sorted by address, `seq` its line number,
+and every `c_offset`/`c_len` slicing the `.c` to exactly that function's block. A
+reader tailing the feed by byte offset should stop when `phase` reads `finalizing`.
+A failed append to the feed warns once on stderr and ends the feed; the run goes on
+and still writes the final index, which is the artifact. Failure reporting and the
+refusal to export into a folder a live run is writing are `--stream`'s. Unlike
+`--stream`, `--progress` accepts `--assert`, with the non-stream export's rules.
 
 ## `kuna decompile-graph` — the whole program as one JSON graph
 

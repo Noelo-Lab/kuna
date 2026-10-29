@@ -1110,6 +1110,27 @@ funcsym stream:
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
   named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+  PPC32 linked images use
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (resolve)`:
+  a zero-addend `R_PPC_JMP_SLOT` names its call target directly inside an
+  allocated, writable, executable NOBITS `.plt`, after the reserved 72-byte
+  header. Secure-PLT entries are pointer slots instead: complete `r11` load,
+  `mtctr r11`, `bctr` stubs in executable sections are named only when their
+  decoded address matches such a relocation in the non-executable `.plt`.
+  Only absolute stubs carry enough evidence to establish that address here.
+  Both short and long `r30`-relative stubs remain unresolved until the caller's
+  register value is proven. `DT_PPC_GOT`, a valid GOT header and a retained
+  `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
+  In particular, GNU ld can discard an empty `.got2` while callers still use
+  its per-object base; assuming the GOT then names a different relocation and
+  can incorrectly remove reachable flow via a no-return contract. The presence,
+  size or absence of `.got2` provides no register-value proof. Duplicate relocation
+  slots, nonzero addends, data symbols and incomplete stubs provide no import
+  identity. Both ELF byte orders are supported. Resolved PPC32 import names
+  take precedence over local stub labels, which remain aliases. Existing
+  library prototypes, no-return facts and name-based xrefs therefore see the
+  same imported identity, including when a terminal call has no mapped
+  fall-through bytes. This does not add a sectionless PPC32 resolver.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
@@ -3198,8 +3219,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   handles all four header magics (go1.2/1.16/1.18/1.20 layouts) and emits one
   function symbol per entry, so a stripped Go binary renders `main.main` and
   `runtime.*` instead of `sub_<addr>`. It is format-neutral: the table is located
-  by its ELF `.gopclntab` / Mach-O `__gopclntab` section (or a scan of the
-  read-only data sections that Go places it in), and an entry is admitted only
+  by its ELF `.gopclntab` / Mach-O `__gopclntab` section, or the
+  `.lrodata_gopclntab` / `__lrodata_gopcln` section a link that splits out large
+  read-only data gives it (or a scan of the read-only data sections that Go places
+  it in), and an entry is admitted only
   when it lands in an executable extent — a corrupt table cannot mint a function
   over data. Because the `functab` also carries each function's **end**, the pass
   feeds those extents to the interior-entry rejection, so a jump-table case block

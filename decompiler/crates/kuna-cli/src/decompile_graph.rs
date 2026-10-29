@@ -182,6 +182,7 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
             // run these names come from is the plain one.
             /* serial_callee_first= */ false,
             crate::decompile_all::worker_arm_frames(&prog),
+            None,
         )?
         .results
     } else {
