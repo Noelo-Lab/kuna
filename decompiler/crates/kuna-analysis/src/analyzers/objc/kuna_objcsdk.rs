@@ -181,8 +181,9 @@ impl Types {
     /// Record every `typedef` statement of `text`.
     fn scan_typedefs(&mut self, text: &str) {
         for stmt in statements(text) {
-            let Some(rest) = stmt.strip_prefix("typedef") else { continue };
-            let rest = rest.trim();
+            // The statement may start with what preceded the last `;` (`@end`).
+            let Some(k) = stmt.find("typedef ").filter(|&k| k == 0 || stmt.as_bytes()[k - 1].is_ascii_whitespace()) else { continue };
+            let rest = stmt[k + 8..].trim();
             // typedef NS_ENUM(NSInteger, Name) { … }  /  NS_OPTIONS / NS_CLOSED_ENUM / NS_ERROR_ENUM(domain, Name)
             if let Some((macro_name, inner)) = rest.split_once('(') {
                 let m = macro_name.trim();
@@ -255,7 +256,7 @@ impl Types {
             .filter(|t| !matches!(*t, "nullable" | "nonnull" | "null_unspecified" | "null_resettable" | "_Nullable" | "_Nonnull" | "_Null_unspecified" | "__kindof" | "const" | "volatile" | "__unsafe_unretained" | "__weak" | "__strong" | "__autoreleasing" | "in" | "out" | "inout" | "bycopy" | "byref" | "oneway" | "struct" | "enum" | "union" | "NS_NOESCAPE"))
             .filter(|t| !t.starts_with('<') && !t.starts_with("__attribute__"))
             .collect();
-        if text.contains("(^") || text.contains("^)") || toks.iter().any(|t| t.starts_with('(')) {
+        if text.trim() == "@?" || text.contains("(^") || text.contains("^)") || toks.iter().any(|t| t.starts_with('(')) {
             return Some("@?".to_string());
         }
         let stars = toks.iter().rev().take_while(|t| **t == "*").count();
@@ -368,8 +369,8 @@ fn erase_classes(enc: &str) -> String {
     out
 }
 
-/// `- (ret)part:(T)name part2:(T2)name2 …` → the selector and its encoding
-/// (`None` when a type does not encode).
+/// `- (ret)part:(T)name part2:(T2)name2 …` → the selector and its encoding,
+/// `None` when a type does not encode (the selector is still claimed).
 fn method(s: &str, types: &Types) -> Option<(String, Option<String>)> {
     let b = s.as_bytes();
     let mut i = 1;
@@ -392,7 +393,10 @@ fn method(s: &str, types: &Types) -> Option<(String, Option<String>)> {
         if j < b.len() && b[j] == b':' {
             i = j + 1;
             skip_ws(b, &mut i);
-            let ty = paren_group(b, &mut i)?;
+            let Some(ty) = paren_group(b, &mut i) else {
+                encs.push(None);
+                break;
+            };
             encs.push(types.encode(&ty, 0));
             sel.push_str(part);
             sel.push(':');
@@ -410,9 +414,12 @@ fn method(s: &str, types: &Types) -> Option<(String, Option<String>)> {
     if sel.is_empty() {
         return None;
     }
-    let mut enc = types.encode(&ret, 0)?;
+    // A declaration with a type this reader cannot spell still claims its
+    // selector, so another class's spelling of it is not taken for this one.
+    let Some(mut enc) = types.encode(&ret, 0) else { return Some((sel, None)) };
     for e in encs {
-        enc.push_str(&e?);
+        let Some(e) = e else { return Some((sel, None)) };
+        enc.push_str(&e);
     }
     Some((sel, Some(enc)))
 }
@@ -655,6 +662,9 @@ mod tests {
         assert_eq!(get("alpha").as_deref(), Some("d@:"));
         assert_eq!(get("setFrame:").as_deref(), Some("v@:{CGRect={CGPoint=dd}{CGSize=dd}}"));
         assert_eq!(get("setTag:").as_deref(), Some("v@:q"));
+        assert_eq!(sigs.get("setBadge:"), Some(&None), "Gadget's unspellable setBadge: claims the selector too");
+        assert_eq!(get("setOnChange:").as_deref(), Some("v@:@?"), "a block property");
+        assert_eq!(get("setHandler:").as_deref(), Some("v@:@?"), "a named block typedef");
         assert_eq!(get("isHidden").as_deref(), Some("B@:"));
         assert_eq!(get("setHidden:").as_deref(), Some("v@:B"));
         assert!(!sigs.contains_key("hidden"), "getter=isHidden replaces the plain getter");

@@ -37,4 +37,13 @@ typedef struct OpaqueThing OpaqueThing;
                  animations:(void (^)(void))animations API_AVAILABLE(ios(4.0));
 - (CGRect)convertRect:(CGRect)rect;
 - (void)setRemoteGreeting:(NSInteger)n;
+- (void)setBadge:(NSInteger)badge;
+@property (nonatomic, copy) void (^onChange)(NSInteger what);
+@end
+
+typedef void (^WidgetHandler)(NSInteger what);
+
+@interface Gadget : NSObject
+- (void)setBadge:(OpaqueThing)badge; // the same selector as Widget's, with a type the reader cannot spell
+- (void)setHandler:(WidgetHandler)handler;
 @end

@@ -209,8 +209,9 @@ fn push_slot(ranges: &mut Vec<(u64, u64)>, va: u64, ps: u64) {
 /// method's signature without `_cmd`, every parameter pinned to the register
 /// the full `(self, _cmd, …)` call places it in, so a caller renders
 /// `objc_msgSend$greet:(obj, 5)` rather than passing a dead `x1` through.
-/// Register-class integer and pointer arguments take the next `x` register,
-/// floating-point ones the next `d`; a struct passed by value is spread over
+/// Register-class integer and pointer arguments take the next `x` register
+/// (`rdi, rdx, …` on x86-64), floating-point ones the next `d` (`xmm`); a
+/// struct passed by value is spread over
 /// its members the way AAPCS64 spreads it — a homogeneous aggregate of up to
 /// four doubles (`CGRect`) over `d` registers, two 8-byte integers (`NSRange`)
 /// over `x` registers, each member its own `argN_k` parameter — and a larger
@@ -229,7 +230,10 @@ fn stub_prototype(
             &["x0", "x2", "x3", "x4", "x5", "x6", "x7"],
             &["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7"],
         ),
-        object::Architecture::X86_64 => (&["RDI", "RDX", "RCX", "R8", "R9"], &[]),
+        object::Architecture::X86_64 => (
+            &["RDI", "RDX", "RCX", "R8", "R9"],
+            &["XMM0_Qa", "XMM1_Qa", "XMM2_Qa", "XMM3_Qa", "XMM4_Qa", "XMM5_Qa", "XMM6_Qa", "XMM7_Qa"],
+        ),
         _ => return None,
     };
     let (ret, args) = encoding::split_method(enc)?;
