@@ -157,67 +157,74 @@ where
 // `__unwind_info` second-level page kinds (Apple `mach-o/compact_unwind_encoding.h`).
 const SECOND_LEVEL_REGULAR: u32 = 2;
 const SECOND_LEVEL_COMPRESSED: u32 = 3;
+// ld64 writes second-level pages of at most 4 KiB; an entry array is read only
+// within its own page, so a malformed count cannot run on into the next page.
+const SECOND_LEVEL_PAGE_SIZE: usize = 4096;
 // Low 24 bits of a compressed entry are the function offset from the page's first
 // function; the top 8 are an encoding index this oracle does not read.
 const COMPRESSED_ENTRY_FUNC_OFFSET: u32 = 0x00FF_FFFF;
+// The smallest entry (compressed) is 4 bytes, so a section of `n` bytes describes
+// at most `n / 4` functions. Capping the output there keeps the work linear in the
+// section size when index entries point at the same or overlapping pages.
+const MIN_ENTRY_SIZE: usize = 4;
 
 /// Parse a `__unwind_info` blob, pushing `base + functionOffset` for every entry
-/// in every second-level page. Total: a short or malformed blob yields fewer
-/// starts, never a panic (every read is bounds-checked).
+/// in every second-level page. Total and linear in `buf.len()`: a short or
+/// malformed blob yields fewer starts, never a panic or a runaway loop.
 fn parse_unwind_info(buf: &[u8], base: u64, out: &mut Vec<u64>) {
     // unwind_info_section_header: version, then three (offset, count) pairs; the
     // index array is the last pair.
-    let _version = read_u32(buf, 0);
-    let index_off = match read_u32(buf, 20) {
-        Some(v) => v as usize,
-        None => return,
+    let (Some(index_off), Some(index_count)) = (read_u32(buf, 20), read_u32(buf, 24)) else {
+        return;
     };
-    let index_count = match read_u32(buf, 24) {
-        Some(v) => v as usize,
-        None => return,
-    };
+    let index_off = index_off as usize;
     // Each index entry is 12 bytes: functionOffset, secondLevelPagesSectionOffset,
-    // lsdaIndexArraySectionOffset. The last entry is a sentinel (end address,
-    // no page), so iterate to count-1.
-    for i in 0..index_count.saturating_sub(1) {
-        let eo = match index_off.checked_add(i * 12) {
-            Some(v) => v,
-            None => break,
+    // lsdaIndexArraySectionOffset. The last entry is a sentinel (end address, no
+    // page), and only entries that lie inside the section are read.
+    let fit = buf.len().saturating_sub(index_off) / 12;
+    let pages = (index_count as usize).saturating_sub(1).min(fit);
+    let limit = out.len().saturating_add(buf.len() / MIN_ENTRY_SIZE);
+    for i in 0..pages {
+        let eo = index_off + i * 12;
+        let (Some(first_func), Some(page_off)) = (read_u32(buf, eo), read_u32(buf, eo + 4)) else {
+            break;
         };
-        let (first_func, page_off) = match (read_u32(buf, eo), read_u32(buf, eo + 4)) {
-            (Some(f), Some(p)) => (f as u64, p as usize),
-            _ => continue,
-        };
+        let page_off = page_off as usize;
         if page_off == 0 {
             continue;
         }
         match read_u32(buf, page_off) {
-            Some(SECOND_LEVEL_REGULAR) => parse_regular_page(buf, page_off, base, out),
+            Some(SECOND_LEVEL_REGULAR) => parse_regular_page(buf, page_off, base, limit, out),
             Some(SECOND_LEVEL_COMPRESSED) => {
-                parse_compressed_page(buf, page_off, base, first_func, out)
+                parse_compressed_page(buf, page_off, base, first_func as u64, limit, out)
             }
             _ => {}
+        }
+        if out.len() >= limit {
+            return;
         }
     }
 }
 
+/// The entry array of the second-level page at `page_off` as `(offset of the
+/// first entry, entry count)`, the count clamped to what fits inside the page's
+/// 4 KiB extent and inside the section.
+fn page_entries(buf: &[u8], page_off: usize, entry_size: usize) -> Option<(usize, usize)> {
+    let entry_page_off = read_u16(buf, page_off.checked_add(4)?)? as usize;
+    let entry_count = read_u16(buf, page_off.checked_add(6)?)? as usize;
+    let first = page_off.checked_add(entry_page_off)?;
+    let end = page_off.saturating_add(SECOND_LEVEL_PAGE_SIZE).min(buf.len());
+    Some((first, entry_count.min(end.saturating_sub(first) / entry_size)))
+}
+
 /// Regular second-level page: a `(functionOffset, encoding)` pair per entry,
 /// functionOffset already image-relative.
-fn parse_regular_page(buf: &[u8], page_off: usize, base: u64, out: &mut Vec<u64>) {
-    let entry_page_off = match read_u16(buf, page_off + 4) {
-        Some(v) => v as usize,
-        None => return,
+fn parse_regular_page(buf: &[u8], page_off: usize, base: u64, limit: usize, out: &mut Vec<u64>) {
+    let Some((first, count)) = page_entries(buf, page_off, 8) else {
+        return;
     };
-    let entry_count = match read_u16(buf, page_off + 6) {
-        Some(v) => v as usize,
-        None => return,
-    };
-    for e in 0..entry_count {
-        let eo = match page_off.checked_add(entry_page_off).and_then(|b| b.checked_add(e * 8)) {
-            Some(v) => v,
-            None => break,
-        };
-        if let Some(func_off) = read_u32(buf, eo) {
+    for e in 0..count.min(limit.saturating_sub(out.len())) {
+        if let Some(func_off) = read_u32(buf, first + e * 8) {
             out.push(base.wrapping_add(func_off as u64));
         }
     }
@@ -225,21 +232,19 @@ fn parse_regular_page(buf: &[u8], page_off: usize, base: u64, out: &mut Vec<u64>
 
 /// Compressed second-level page: a `u32` per entry whose low 24 bits are the
 /// function offset from the page's first function (`first_func`, image-relative).
-fn parse_compressed_page(buf: &[u8], page_off: usize, base: u64, first_func: u64, out: &mut Vec<u64>) {
-    let entry_page_off = match read_u16(buf, page_off + 4) {
-        Some(v) => v as usize,
-        None => return,
+fn parse_compressed_page(
+    buf: &[u8],
+    page_off: usize,
+    base: u64,
+    first_func: u64,
+    limit: usize,
+    out: &mut Vec<u64>,
+) {
+    let Some((first, count)) = page_entries(buf, page_off, 4) else {
+        return;
     };
-    let entry_count = match read_u16(buf, page_off + 6) {
-        Some(v) => v as usize,
-        None => return,
-    };
-    for e in 0..entry_count {
-        let eo = match page_off.checked_add(entry_page_off).and_then(|b| b.checked_add(e * 4)) {
-            Some(v) => v,
-            None => break,
-        };
-        if let Some(val) = read_u32(buf, eo) {
+    for e in 0..count.min(limit.saturating_sub(out.len())) {
+        if let Some(val) = read_u32(buf, first + e * 4) {
             let delta = (val & COMPRESSED_ENTRY_FUNC_OFFSET) as u64;
             out.push(base.wrapping_add(first_func + delta));
         }
@@ -248,12 +253,14 @@ fn parse_compressed_page(buf: &[u8], page_off: usize, base: u64, first_func: u64
 
 /// Little-endian `u32` at `buf[off..off+4]`, or `None` if out of range.
 fn read_u32(buf: &[u8], off: usize) -> Option<u32> {
-    buf.get(off..off + 4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    let b = buf.get(off..off.checked_add(4)?)?;
+    Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
 }
 
 /// Little-endian `u16` at `buf[off..off+2]`, or `None` if out of range.
 fn read_u16(buf: &[u8], off: usize) -> Option<u16> {
-    buf.get(off..off + 2).map(|b| u16::from_le_bytes([b[0], b[1]]))
+    let b = buf.get(off..off.checked_add(2)?)?;
+    Some(u16::from_le_bytes([b[0], b[1]]))
 }
 
 /// Trim a NUL-padded fixed-size Mach-O name field to its content bytes.
@@ -330,5 +337,71 @@ mod tests {
         parse_unwind_info(&[1, 0, 0, 0], 0x1000, &mut out);
         parse_unwind_info(&[0u8; 27], 0x1000, &mut out);
         assert!(out.is_empty());
+    }
+
+    /// A section header: version 1, no common encodings or personalities, and an
+    /// index array of `index_count` entries at `index_off`.
+    fn header(index_off: u32, index_count: u32) -> Vec<u8> {
+        let mut b = Vec::new();
+        for v in [1u32, 0, 0, 0, 0, index_off, index_count] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        b
+    }
+
+    /// A compressed second-level page claiming `entry_count` entries, padded with
+    /// zero entries to `len` bytes.
+    fn compressed_page(entry_count: u16, len: usize) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&3u32.to_le_bytes());
+        p.extend_from_slice(&12u16.to_le_bytes());
+        p.extend_from_slice(&entry_count.to_le_bytes());
+        p.extend_from_slice(&[0u8; 4]);
+        p.resize(len, 0);
+        p
+    }
+
+    /// An index count near `u32::MAX` over a 28-byte section reads the index
+    /// entries that fit (none) and stops, rather than looping over the count.
+    #[test]
+    fn huge_index_count_is_clamped_to_the_section() {
+        let mut out = Vec::new();
+        parse_unwind_info(&header(28, u32::MAX), 0x1000, &mut out);
+        assert!(out.is_empty());
+    }
+
+    /// A page whose entry count runs past its 4 KiB extent yields only the entries
+    /// inside the page; the bytes after it are not read as function offsets.
+    #[test]
+    fn page_entries_stay_inside_their_page() {
+        let mut buf = header(28, 2);
+        for v in [0x1000u32, 64, 0, 0x2000, 0, 0] {
+            buf.extend_from_slice(&v.to_le_bytes());
+        }
+        buf.resize(64, 0);
+        buf.extend_from_slice(&compressed_page(0xFFFF, 2 * SECOND_LEVEL_PAGE_SIZE));
+        let mut out = Vec::new();
+        parse_unwind_info(&buf, 0, &mut out);
+        assert_eq!(out.len(), (SECOND_LEVEL_PAGE_SIZE - 12) / 4);
+    }
+
+    /// Many index entries naming the same full page cannot multiply the output:
+    /// it is capped at one start per four section bytes.
+    #[test]
+    fn repeated_pages_are_capped_by_the_section_size() {
+        let pages = 200u32;
+        let page_off = 28 + (pages + 1) * 12;
+        let mut buf = header(28, pages + 1);
+        for _ in 0..pages {
+            for v in [0x1000u32, page_off, 0] {
+                buf.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        buf.extend_from_slice(&[0u8; 12]);
+        buf.extend_from_slice(&compressed_page(0xFFFF, SECOND_LEVEL_PAGE_SIZE));
+        let mut out = Vec::new();
+        parse_unwind_info(&buf, 0, &mut out);
+        assert!(!out.is_empty());
+        assert!(out.len() <= buf.len() / MIN_ENTRY_SIZE, "{} starts from {} bytes", out.len(), buf.len());
     }
 }
