@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    Mach-O __unwind_info function starts (`option unwindstarts on|off`).
+
+    Issue: a Mach-O whose LC_FUNCTION_STARTS was stripped loses almost its whole
+    function inventory. On a decrypted 249 MB arm64 Instagram.app with no
+    LC_FUNCTION_STARTS, kuna discovered 23 of the real __text functions; the
+    rest of its 59,222 entries were __got slots and __stubs. arm64 has no
+    default prologue sweep, so LC_MAIN, the exports, __mod_init_func and the
+    symbol table are the only seeds and nothing starts a function between them.
+    __TEXT,__unwind_info survives the strip and still records 204,800 starts.
+
+    Stage / sub-stage: P1 code-data-partition, the Mach-O entry-discovery
+    oracles (`kuna-analysis/src/analyzers/entry/kuna_unwindinfo.rs`), committed
+    at `read symbols`.
+
+    P0 assertion: `option unwindstarts on|off` (default off). It is set after
+    `load file` and before the `read symbols` that commits the discovered
+    entries. The default pass runs first with the option never set.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear
+    it and load the real arm64 Mach-O fixture `macho_unwind_only_arm64` (built
+    from `macho_unwind_only_arm64.c`): LC_FUNCTION_STARTS and the local symbols
+    are stripped, and four `uw_*` functions with no caller and no symbol are
+    recorded only in __unwind_info (each has its own stack size, so the linker
+    does not fold their entries).
+
+    Pass 1 (the default, the BUG): `functions` lists only `_main`; the four
+    unwind-only bodies are absent from the inventory. Pass 2 (`option
+    unwindstarts on`, the FIX): the four starts are listed, and one of them
+    (uw_delta, a 320-byte buffer fill and sum) decompiles as a function.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_unwind_only_arm64</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_unwind_only_arm64</com>
+  <com>option unwindstarts on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>load function sub_1000003bc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="both passes discover the LC_MAIN entry" min="2" max="2">0x10000040c _main</stringmatch>
+<stringmatch name="unwindstarts on: the first unwind-only start joins the inventory (default pass: absent)" min="1" max="1">0x1000002e0 sub_1000002e0</stringmatch>
+<stringmatch name="unwindstarts on: the second unwind-only start joins the inventory (default pass: absent)" min="1" max="1">0x100000328 sub_100000328</stringmatch>
+<stringmatch name="unwindstarts on: the third unwind-only start joins the inventory (default pass: absent)" min="1" max="1">0x100000370 sub_100000370</stringmatch>
+<stringmatch name="unwindstarts on: the fourth unwind-only start joins the inventory (default pass: absent)" min="1" max="1">0x1000003bc sub_1000003bc</stringmatch>
+<stringmatch name="unwindstarts on: a recovered start decompiles as a function" min="1" max="1">int4 sub_1000003bc\(char a0\)</stringmatch>
+<stringmatch name="unwindstarts on: the recovered body keeps its 320-byte buffer" min="1" max="1">char v1 \[320\];</stringmatch>
+</decompilertest>
