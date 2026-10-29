@@ -2,387 +2,9 @@ use crate::common;
 use object::Object as _;
 use std::process::Command;
 
-#[derive(Clone, Copy, Debug)]
-enum Plt {
-    Bss,
-    Short,
-    Long,
-    Absolute,
-}
-
-struct Fixture {
-    plt: Plt,
-    import: &'static str,
-    symbolized: bool,
-    padded: bool,
-    little: bool,
-    relocation: u32,
-    addend: u32,
-    got2: bool,
-    got_tag: bool,
-    bad_stub: bool,
-    pic_collision: bool,
-    missing_got2: bool,
-}
-impl Fixture {
-    fn new(plt: Plt) -> Self {
-        Self {
-            plt,
-            import: "__stack_chk_fail",
-            symbolized: false,
-            padded: false,
-            little: false,
-            relocation: object::elf::R_PPC_JMP_SLOT,
-            addend: 0,
-            got2: false,
-            got_tag: true,
-            bad_stub: false,
-            pic_collision: false,
-            missing_got2: false,
-        }
-    }
-    fn target(&self) -> u32 {
-        if matches!(self.plt, Plt::Bss) {
-            0x3048
-        } else {
-            0x1800
-        }
-    }
-    fn word(&self, n: u32) -> [u8; 4] {
-        if self.little {
-            n.to_le_bytes()
-        } else {
-            n.to_be_bytes()
-        }
-    }
-    fn half(&self, n: u16) -> [u8; 2] {
-        if self.little {
-            n.to_le_bytes()
-        } else {
-            n.to_be_bytes()
-        }
-    }
-    fn words(&self, words: &[u32]) -> Vec<u8> {
-        words.iter().flat_map(|&n| self.word(n)).collect()
-    }
-    fn symbol(&self, name: u32, value: u32, size: u32, info: u8, section: u16) -> Vec<u8> {
-        let mut b = self.words(&[name, value, size]);
-        b.extend([info, 0]);
-        b.extend(self.half(section));
-        b
-    }
-
-    /// Authored ELF32 image, independent of an external assembler or linker.
-    fn bytes(&self) -> Vec<u8> {
-        struct Section {
-            name: &'static str,
-            kind: u32,
-            flags: u32,
-            addr: u32,
-            data: Vec<u8>,
-            size: u32,
-            link: u32,
-            info: u32,
-            entsize: u32,
-        }
-        let mut sections = Vec::new();
-        let mut section = |name, kind, flags, addr, data: Vec<u8>, size, link, info, entsize| {
-            sections.push(Section {
-                name,
-                kind,
-                flags,
-                addr,
-                data,
-                size,
-                link,
-                info,
-                entsize,
-            });
-        };
-        let returning = self.import == "returning_import";
-        let mut code = self.words(&[
-            0x2c030000,
-            0x4082000c,
-            0x38600007,
-            0x4e800020,
-            0x48000001 | ((self.target() - 0x1010) & 0x03fffffc),
-        ]);
-        if returning {
-            code.extend(self.words(&[0x38600009, 0x4e800020]));
-        }
-        if self.pic_collision {
-            let base = if matches!(self.plt, Plt::Long) {
-                0x20004u32
-            } else {
-                0x2804
-            };
-            let delta = base.wrapping_sub(0x1014);
-            code = self.words(&[
-                0x7c0802a6,
-                0x9421fff0,
-                0x90010014,
-                0x93c10008,
-                0x429f0005,
-                0x7fc802a6,
-                0x3fde0000 | (delta.wrapping_add(0x8000) >> 16),
-                0x3bde0000 | delta as u16 as u32,
-                0x48000001 | ((self.target() - 0x1020) & 0x03fffffc),
-                0x38600007,
-                0x80010014,
-                0x83c10008,
-                0x38210010,
-                0x7c0803a6,
-                0x4e800020,
-            ]);
-        }
-        let code_size = code.len() as u32;
-        if self.padded {
-            code.resize(0x100, 0);
-        }
-        section(".text", 1, 6, 0x1000, code, 0, 0, 0, 0);
-        let got = if matches!(self.plt, Plt::Long) {
-            0x20000u32
-        } else {
-            0x2800u32
-        };
-        let delta = 0x3000u32.wrapping_sub(got);
-        let mut stub = match self.plt {
-            Plt::Bss => vec![],
-            Plt::Short => self.words(&[
-                0x817e0000 | delta as u16 as u32,
-                0x7d6903a6,
-                0x4e800420,
-                0x60000000,
-            ]),
-            Plt::Long => self.words(&[
-                0x3d7e0000 | (delta.wrapping_add(0x8000) >> 16),
-                0x816b0000 | delta as u16 as u32,
-                0x7d6903a6,
-                0x4e800420,
-            ]),
-            Plt::Absolute => self.words(&[0x3d600000, 0x816b3000, 0x7d6903a6, 0x4e800420]),
-        };
-        if self.bad_stub && !stub.is_empty() {
-            let end = stub.len();
-            stub[end - 8..end - 4].copy_from_slice(&self.word(0x4e800020));
-        }
-        section(".glink", 1, 6, 0x1800, stub, 0, 0, 0, 0);
-        section(
-            ".plt",
-            if matches!(self.plt, Plt::Bss) { 8 } else { 1 },
-            if matches!(self.plt, Plt::Bss) { 7 } else { 3 },
-            0x3000,
-            if matches!(self.plt, Plt::Bss) {
-                vec![]
-            } else {
-                self.words(if self.pic_collision {
-                    &[0x1900, 0x1904]
-                } else {
-                    &[0x1900]
-                })
-            },
-            if matches!(self.plt, Plt::Bss) {
-                0x54
-            } else if self.pic_collision {
-                8
-            } else {
-                4
-            },
-            0,
-            0,
-            0,
-        );
-        section(".got", 1, 3, got, self.words(&[0x2900, 0, 0]), 0, 0, 0, 0);
-        section(
-            if self.missing_got2 {
-                ".unused"
-            } else {
-                ".got2"
-            },
-            1,
-            3,
-            0x4000,
-            vec![0; if self.got2 { 4 } else { 0 }],
-            0,
-            0,
-            0,
-            0,
-        );
-        section(
-            ".dynamic",
-            6,
-            3,
-            0x2900,
-            self.words(&[
-                3,
-                0x3000,
-                if self.got_tag { 0x70000000 } else { 0 },
-                got,
-                0,
-                0,
-            ]),
-            0,
-            8,
-            0,
-            8,
-        );
-        let mut syms = vec![0; 16];
-        syms.extend(self.symbol(1, 0, 0, 0x10, 0));
-        syms.extend(self.symbol(self.import.len() as u32 + 2, 0x1000, code_size, 0x12, 1));
-        if self.pic_collision {
-            syms.extend(self.symbol(self.import.len() as u32 + 8, 0, 0, 0x10, 0));
-        }
-        section(".dynsym", 11, 2, 0x5000, syms, 0, 8, 1, 16);
-        let names = format!("\0{}\0check\0extra\0", self.import).into_bytes();
-        section(".dynstr", 3, 2, 0x5100, names, 0, 0, 0, 0);
-        let slot = if matches!(self.plt, Plt::Bss) {
-            0x3048
-        } else {
-            0x3000
-        };
-        section(
-            ".rela.plt",
-            4,
-            2,
-            0x5200,
-            if self.pic_collision {
-                self.words(&[
-                    slot,
-                    0x100 | self.relocation,
-                    self.addend,
-                    slot + 4,
-                    0x315,
-                    0,
-                ])
-            } else {
-                self.words(&[slot, 0x100 | self.relocation, self.addend])
-            },
-            0,
-            7,
-            3,
-            12,
-        );
-        if self.symbolized {
-            let mut syms = vec![0; 16];
-            syms.extend(self.symbol(
-                1,
-                self.target(),
-                16,
-                2,
-                if matches!(self.plt, Plt::Bss) { 3 } else { 2 },
-            ));
-            section(".symtab", 2, 0, 0, syms, 0, 11, 2, 16);
-            section(
-                ".strtab",
-                3,
-                0,
-                0,
-                format!(
-                    "\000000000.plt_pic32.{}\0",
-                    if self.pic_collision {
-                        "extra"
-                    } else {
-                        self.import
-                    }
-                )
-                .into_bytes(),
-                0,
-                0,
-                0,
-                0,
-            );
-        }
-        let mut names = vec![0];
-        let mut offsets = Vec::new();
-        for s in &sections {
-            offsets.push(names.len() as u32);
-            names.extend(s.name.as_bytes());
-            names.push(0);
-        }
-        let shstr = sections.len() + 1;
-        offsets.push(names.len() as u32);
-        names.extend(b".shstrtab\0");
-        sections.push(Section {
-            name: ".shstrtab",
-            kind: 3,
-            flags: 0,
-            addr: 0,
-            data: names,
-            size: 0,
-            link: 0,
-            info: 0,
-            entsize: 0,
-        });
-        let loads = sections
-            .iter()
-            .filter(|s| s.flags & 2 != 0 && (s.size != 0 || !s.data.is_empty()))
-            .count();
-        let mut bytes = vec![0; 52 + loads * 32];
-        bytes[..7].copy_from_slice(&[
-            0x7f,
-            b'E',
-            b'L',
-            b'F',
-            1,
-            if self.little { 1 } else { 2 },
-            1,
-        ]);
-        bytes[16..18].copy_from_slice(&self.half(3));
-        bytes[18..20].copy_from_slice(&self.half(20));
-        bytes[20..24].copy_from_slice(&self.word(1));
-        bytes[24..28].copy_from_slice(&self.word(0x1000));
-        bytes[28..32].copy_from_slice(&self.word(52));
-        for (off, n) in [
-            (40, 52),
-            (42, 32),
-            (44, loads as u16),
-            (46, 40),
-            (48, sections.len() as u16 + 1),
-            (50, shstr as u16),
-        ] {
-            bytes[off..off + 2].copy_from_slice(&self.half(n));
-        }
-        let mut headers = vec![0; 40];
-        let mut ph = 52;
-        for (i, s) in sections.iter().enumerate() {
-            while bytes.len() % 4 != 0 {
-                bytes.push(0);
-            }
-            let offset = bytes.len() as u32;
-            let size = if s.size != 0 {
-                s.size
-            } else {
-                s.data.len() as u32
-            };
-            bytes.extend(&s.data);
-            headers.extend(self.words(&[
-                offsets[i], s.kind, s.flags, s.addr, offset, size, s.link, s.info, 4, s.entsize,
-            ]));
-            if s.flags & 2 != 0 && size != 0 {
-                let p = self.words(&[
-                    1,
-                    offset,
-                    s.addr,
-                    s.addr,
-                    if s.kind == 8 { 0 } else { size },
-                    size,
-                    4 | (if s.flags & 1 != 0 { 2 } else { 0 })
-                        | (if s.flags & 4 != 0 { 1 } else { 0 }),
-                    1,
-                ]);
-                bytes[ph..ph + 32].copy_from_slice(&p);
-                ph += 32;
-            }
-        }
-        while bytes.len() % 4 != 0 {
-            bytes.push(0);
-        }
-        let shoff = bytes.len() as u32;
-        bytes[32..36].copy_from_slice(&self.word(shoff));
-        bytes.extend(headers);
-        bytes
-    }
-}
+#[path = "fixtures/ppc32_import_fixture.rs"]
+mod fixture;
+use fixture::{Fixture, Plt};
 
 #[test]
 fn ppc32_import_names_follow_jump_slots_and_complete_stubs() {
@@ -494,7 +116,7 @@ fn ppc32_declines_unproven_import_contracts() {
             }
             let bytes = fixture.bytes();
             let file = object::File::parse(&*bytes).unwrap();
-            let imports = kuna_analysis::loader::format::resolve_imports(&file, &bytes);
+            let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
             assert!(imports.is_empty(), "{plt:?} change={change}");
         }
     }
@@ -556,7 +178,7 @@ fn ppc32_rejects_malformed_metadata_and_out_of_range_slots() {
             }
             let file = object::File::parse(&*bytes).unwrap();
             assert!(
-                kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty(),
+                kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty(),
                 "{plt:?} change={change}"
             );
         }
@@ -588,7 +210,7 @@ fn ppc32_empty_got2_must_not_supply_a_conflicting_slot() {
         bytes[at..at + 4].copy_from_slice(&value.to_be_bytes());
     }
     let file = object::File::parse(&*bytes).unwrap();
-    assert!(kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty());
+    assert!(kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty());
 }
 
 /// The caller's PC-relative setup establishes r30 = DT_PPC_GOT + 4.
@@ -607,7 +229,7 @@ fn ppc32_caller_r30_cannot_be_replaced_by_dt_ppc_got() {
                 let file = object::File::parse(&*bytes).unwrap();
                 assert_eq!(file.section_by_name(".got2").is_none(), missing_got2);
                 assert_eq!(file.dynamic_relocations().unwrap().count(), 2);
-                let imports = kuna_analysis::loader::format::resolve_imports(&file, &bytes);
+                let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
                 assert!(
                     !imports.iter().any(|s| s.addr == u64::from(fixture.target())
                         && s.name == b"__stack_chk_fail"),
@@ -691,44 +313,60 @@ int check(void) { extra(); return 7; }
             .arg("-o")
             .arg(&obj),
     );
-    for stripped in [false, true] {
-        let path = root.join(if stripped {
-            "stripped.so"
-        } else {
-            "symbolized.so"
-        });
-        let mut link = Command::new("powerpc-linux-gnu-ld");
-        link.args(["-shared", "--secure-plt", "--spare-dynamic-tags=4081"]);
-        if stripped {
-            link.arg("--strip-all");
+    for linker in ["powerpc-linux-gnu-ld", "ld.lld-21"] {
+        if process::optional_output(Command::new(linker).arg("--version")).is_none() {
+            continue;
         }
-        process::required_output(link.arg(&obj).arg("-o").arg(&path));
-        let bytes = std::fs::read(&path).unwrap();
-        let file = object::File::parse(&*bytes).unwrap();
-        assert!(file.section_by_name(".got2").is_none());
-        assert_eq!(file.dynamic_relocations().unwrap().count(), 4);
-        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-            .args([
-                "decompile",
-                path.to_str().unwrap(),
-                "check",
-                "--mode",
-                "fast",
-            ])
-            .output()
-            .unwrap();
-        let text = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            out.status.success(),
-            "{text}\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert!(
-            text.contains("return 7;")
-                && !text.contains("__stack_chk_fail(")
-                && !text.contains("no-return"),
-            "stripped={stripped}: {text}"
-        );
+        for stripped in [false, true] {
+            let path = root.join(if stripped {
+                "stripped.so"
+            } else {
+                "symbolized.so"
+            });
+            let mut link = Command::new(linker);
+            link.arg("-shared");
+            if linker == "powerpc-linux-gnu-ld" {
+                link.args(["--secure-plt", "--spare-dynamic-tags=4081"]);
+            }
+            if stripped {
+                link.arg("--strip-all");
+            }
+            process::required_output(link.arg(&obj).arg("-o").arg(&path));
+            let bytes = std::fs::read(&path).unwrap();
+            let file = object::File::parse(&*bytes).unwrap();
+            if linker == "powerpc-linux-gnu-ld" {
+                assert!(file.section_by_name(".got2").is_none());
+            }
+            assert_eq!(file.dynamic_relocations().unwrap().count(), 4);
+            for option in ["off", "on"] {
+                let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .args([
+                        "decompile",
+                        path.to_str().unwrap(),
+                        "check",
+                        "--mode",
+                        "fast",
+                        "--option",
+                        "ppc32picimports",
+                        option,
+                    ])
+                    .output()
+                    .unwrap();
+                let text = String::from_utf8_lossy(&out.stdout);
+                assert!(
+                    out.status.success(),
+                    "{text}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(
+                    text.contains("return 7;")
+                        && text.contains("extra(") == (option == "on")
+                        && !text.contains("__stack_chk_fail(")
+                        && !text.contains("no-return"),
+                    "{linker} stripped={stripped} option={option}: {text}"
+                );
+            }
+        }
     }
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -746,10 +384,556 @@ fn ppc32_got_metadata_does_not_establish_r30() {
                     let bytes = fixture.bytes();
                     let file = object::File::parse(&*bytes).unwrap();
                     assert!(
-                        kuna_analysis::loader::format::resolve_imports(&file, &bytes).is_empty(),
+                        kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty(),
                         "{plt:?} little={little} symbolized={symbolized} missing_got2={missing_got2}"
                     );
                 }
+            }
+        }
+    }
+}
+
+#[test]
+fn ppc32_pic_import_identity_uses_the_proved_caller_base() {
+    for plt in [Plt::Short, Plt::Long] {
+        for little in [false, true] {
+            for symbolized in [false, true] {
+                for got2 in [0, 1, 2] {
+                    let mut fixture = Fixture::new(plt);
+                    fixture.pic_collision = true;
+                    fixture.little = little;
+                    fixture.symbolized = symbolized;
+                    fixture.missing_got2 = got2 == 0;
+                    fixture.got2 = got2 == 2;
+                    let bytes = fixture.bytes();
+                    let file = object::File::parse(&*bytes).unwrap();
+                    let imports =
+                        kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+                    assert_eq!(
+                        imports.len(),
+                        1,
+                        "{plt:?} little={little} symbolized={symbolized} got2={got2}"
+                    );
+                    assert_eq!(imports[0].addr, u64::from(fixture.target()));
+                    assert_eq!(imports[0].name, b"extra");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn ppc32_pic_proof_requires_all_paths_and_callers_to_agree() {
+    let call = |pc: u32| 0x48000000 | ((0x1800u32.wrapping_sub(pc)) & 0x03fffffc);
+    for little in [false, true] {
+        for (middle, proven) in [
+            (0x60000000, true),
+            (0x3bc02804, true),
+            (0x3bc02800, false),
+            (0x83c10008, false),
+            (0x97de0004, false),
+            (0xbb810000, false),
+            (0x7fde2214, false),
+        ] {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.little = little;
+            fixture.pic_collision = true;
+            fixture.caller = Some(vec![
+                0x3bc02804,
+                0x2c030000,
+                0x41820008,
+                middle,
+                call(0x1010),
+                0x4e800020,
+            ]);
+            let bytes = fixture.bytes();
+            let file = object::File::parse(&*bytes).unwrap();
+            let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+            assert_eq!(
+                imports.len(),
+                usize::from(proven),
+                "middle={middle:x} little={little}"
+            );
+            if proven {
+                assert_eq!(imports[0].name, b"extra");
+            }
+        }
+        for second_base in [Some(0x2804), Some(0x2800), None] {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.little = little;
+            fixture.pic_collision = true;
+            fixture.caller = Some(vec![0x3bc02804, call(0x1004), 0x4e800020]);
+            fixture.second_caller = Some(vec![
+                second_base.map_or(0x60000000, |base| 0x3bc00000 | base),
+                call(0x1010),
+                0x4e800020,
+            ]);
+            let bytes = fixture.bytes();
+            let file = object::File::parse(&*bytes).unwrap();
+            let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+            assert_eq!(
+                imports.len(),
+                usize::from(second_base == Some(0x2804)),
+                "second={second_base:?} little={little}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ppc32_pic_option_controls_names_contracts_and_xrefs() {
+    for noreturn in [false, true] {
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.pic_collision = true;
+        if noreturn {
+            let delta = 0x2800u32 - 0x1014;
+            fixture.caller = Some(vec![
+                0x7c0802a6,
+                0x9421fff0,
+                0x90010014,
+                0x93c10008,
+                0x429f0005,
+                0x7fc802a6,
+                0x3fde0000,
+                0x3bde0000 | delta,
+                0x480007e1,
+            ]);
+        }
+        let path = common::scratch_file("ppc32-proved-pic", "so");
+        std::fs::write(&path, fixture.bytes()).unwrap();
+        let name = if noreturn {
+            "__stack_chk_fail"
+        } else {
+            "extra"
+        };
+        for option in ["default", "off", "on"] {
+            let enabled = option == "on";
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.args([
+                "decompile",
+                path.to_str().unwrap(),
+                "check",
+                "--mode",
+                "fast",
+            ]);
+            if option != "default" {
+                command.args(["--option", "ppc32picimports", option]);
+            }
+            let out = command.output().unwrap();
+            let text = String::from_utf8_lossy(&out.stdout);
+            if noreturn && !enabled {
+                assert!(!out.status.success());
+                assert!(String::from_utf8_lossy(&out.stderr).contains("Unable to load"));
+            } else {
+                assert!(
+                    out.status.success(),
+                    "{text}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            assert_eq!(text.contains(&format!("{name}(")), enabled, "{text}");
+            assert_eq!(text.contains("no-return"), enabled && noreturn, "{text}");
+            if !noreturn {
+                assert!(text.contains("return 7;"), "{text}");
+            }
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.args(["xrefs", path.to_str().unwrap(), "--to", name, "--json"]);
+            if option != "default" {
+                command.args(["--option", "ppc32picimports", option]);
+            }
+            let out = command.output().unwrap();
+            if enabled {
+                assert!(
+                    out.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                let rows: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+                assert!(rows.to_string().contains("0x1020"), "{rows}");
+            }
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn ppc32_pic_stage_fixture_matches_authored_bytes() {
+    assert_eq!(
+        include_bytes!("fixtures/ppc32-pic-indirect.elf").as_slice(),
+        fixture::proof_gap("indirect", false)
+    );
+    let mut fixture = Fixture::new(Plt::Short);
+    fixture.pic_collision = true;
+    assert_eq!(
+        include_bytes!("fixtures/ppc32-pic-imports.elf").as_slice(),
+        fixture.bytes()
+    );
+}
+
+#[test]
+fn ppc32_pic_proof_rejects_missing_bounds_entries_and_relocated_code() {
+    use object::ObjectSection;
+    for little in [false, true] {
+        for mutation in [
+            "size",
+            "entry",
+            "text-relocation",
+            "overlap-relocation",
+            "address-taken",
+            "interior-entry",
+        ] {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.pic_collision = true;
+            fixture.little = little;
+            if mutation == "interior-entry" {
+                fixture.second_caller = Some(vec![0x4bffffe0, 0x4e800020]); // b check+0x1c
+            }
+            let mut bytes = fixture.bytes();
+            let file = object::File::parse(&*bytes).unwrap();
+            let change = match mutation {
+                "size" => Some((
+                    file.section_by_name(".dynsym")
+                        .unwrap()
+                        .file_range()
+                        .unwrap()
+                        .0 as usize
+                        + 2 * 16
+                        + 8,
+                    0,
+                )),
+                "entry" => Some((24, 0x101c)),
+                "text-relocation" => Some((
+                    file.section_by_name(".rela.plt")
+                        .unwrap()
+                        .file_range()
+                        .unwrap()
+                        .0 as usize,
+                    0x1018,
+                )),
+                "overlap-relocation" => Some((
+                    file.section_by_name(".rela.plt")
+                        .unwrap()
+                        .file_range()
+                        .unwrap()
+                        .0 as usize,
+                    0xffe,
+                )),
+                "address-taken" => Some((
+                    file.section_by_name(".got")
+                        .unwrap()
+                        .file_range()
+                        .unwrap()
+                        .0 as usize,
+                    0x1800,
+                )),
+                _ => None,
+            };
+            if let Some((offset, value)) = change {
+                bytes[offset..offset + 4].copy_from_slice(&fixture.word(value));
+            }
+            let file = object::File::parse(&*bytes).unwrap();
+            assert!(
+                kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty(),
+                "{mutation}, little={little}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ppc32_per_object_bases_resolve_distinct_stubs_independently() {
+    for little in [false, true] {
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.little = little;
+        fixture.pic_collision = true;
+        fixture.second_stub = true;
+        fixture.caller = Some(vec![0x3bc02804, 0x480007fc, 0x4e800020]);
+        fixture.second_caller = Some(vec![0x3bc02808, 0x48000800, 0x4e800020]);
+        let bytes = fixture.bytes();
+        let file = object::File::parse(&*bytes).unwrap();
+        let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+        assert_eq!(
+            imports
+                .iter()
+                .map(|s| (s.addr, s.name.as_slice()))
+                .collect::<Vec<_>>(),
+            vec![(0x1800, b"extra".as_slice()), (0x1810, b"extra".as_slice())]
+        );
+    }
+}
+
+#[test]
+fn ppc32_pic_relocation_metadata_is_not_an_address_taken_stub() {
+    use object::ObjectSection;
+    let mut fixture = Fixture::new(Plt::Short);
+    fixture.pic_collision = true;
+    let mut bytes = fixture.bytes();
+    let file = object::File::parse(&*bytes).unwrap();
+    let offset = file
+        .section_by_name(".rela.plt")
+        .unwrap()
+        .file_range()
+        .unwrap()
+        .0 as usize;
+    // An unrelated relocation's packed index/type resembles a stub address.
+    // It is not a data pointer and contributes no import slot itself.
+    bytes[offset + 4..offset + 8].copy_from_slice(&fixture.word(0x1805));
+    let file = object::File::parse(&*bytes).unwrap();
+    let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+    assert_eq!(imports.len(), 1);
+    assert_eq!(imports[0].name, b"extra");
+}
+
+#[test]
+fn ppc32_pic_dynamic_pointer_relocations_prevent_global_contracts() {
+    use object::ObjectSection;
+    for relative in [false, true] {
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.pic_collision = true;
+        let mut bytes = fixture.bytes();
+        let file = object::File::parse(&*bytes).unwrap();
+        let offset = file
+            .section_by_name(".rela.plt")
+            .unwrap()
+            .file_range()
+            .unwrap()
+            .0 as usize;
+        let relocation = if relative {
+            [0x2800, object::elf::R_PPC_RELATIVE, 0x1800]
+        } else {
+            [0x2800, 0x200 | object::elf::R_PPC_ADDR32, 0x800] // check + 0x800
+        };
+        bytes[offset..offset + 12].copy_from_slice(&fixture.words(&relocation));
+        let file = object::File::parse(&*bytes).unwrap();
+        assert!(kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty());
+    }
+}
+
+#[test]
+fn ppc32_pic_nested_symbol_overlap_does_not_hide_an_enclosing_function() {
+    use object::ObjectSection;
+    for little in [false, true] {
+        for (outer_size, duplicate_size) in [(4, None), (24, None), (4, Some(24)), (24, Some(4))] {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.little = little;
+            fixture.pic_collision = true;
+            fixture.caller = Some(vec![
+                0x4e800020, 0x4e800020, 0x60000000, 0x3bc02804, 0x480007f0, 0x4e800020,
+            ]);
+            let mut bytes = fixture.bytes();
+            let file = object::File::parse(&*bytes).unwrap();
+            let section = file.section_by_name(".dynsym").unwrap();
+            let index = section.index().0;
+            let mut syms = section.data().unwrap().to_vec();
+            syms[40..44].copy_from_slice(&fixture.word(outer_size));
+            if let Some(size) = duplicate_size {
+                syms.extend(fixture.symbol(0, 0x1000, size, 0x12, 1));
+            }
+            syms.extend(fixture.symbol(0, 0x1004, 4, 0x12, 1));
+            syms.extend(fixture.symbol(0, 0x100c, 12, 0x12, 1));
+            let shoff = if little {
+                u32::from_le_bytes(bytes[32..36].try_into().unwrap())
+            } else {
+                u32::from_be_bytes(bytes[32..36].try_into().unwrap())
+            } as usize;
+            let offset = bytes.len() as u32;
+            let size = syms.len() as u32;
+            bytes.extend(syms);
+            for (field, value) in [(16, offset), (20, size)] {
+                let at = shoff + index * 40 + field;
+                bytes[at..at + 4].copy_from_slice(&fixture.word(value));
+            }
+            let file = object::File::parse(&*bytes).unwrap();
+            let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+            let disjoint = outer_size == 4 && duplicate_size.is_none();
+            assert_eq!(imports.len(), usize::from(disjoint));
+            if disjoint {
+                assert_eq!(imports[0].name, b"extra");
+            }
+        }
+    }
+}
+
+#[test]
+fn ppc32_proved_tail_stub_becomes_a_separate_named_function() {
+    let mut fixture = Fixture::new(Plt::Short);
+    fixture.pic_collision = true;
+    fixture.caller = Some(vec![
+        0x7c0802a6, 0x9421fff0, 0x90010014, 0x93c10008, 0x429f0005, 0x7fc802a6, 0x3fde0000,
+        0x3bde17ec, 0x480007e0,
+    ]);
+    let path = common::scratch_file("ppc32-pic-tail", "so");
+    std::fs::write(&path, fixture.bytes()).unwrap();
+    for option in ["off", "on"] {
+        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .args([
+                "functions",
+                path.to_str().unwrap(),
+                "--json",
+                "--option",
+                "ppc32picimports",
+                option,
+            ])
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let inventory: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        let functions = inventory["functions"].as_array().unwrap();
+        assert_eq!(
+            functions.len(),
+            if option == "on" { 2 } else { 1 },
+            "{inventory}"
+        );
+        if option == "on" {
+            assert!(functions
+                .iter()
+                .any(|f| f["address"] == 0x1800 && f["name"] == "__stack_chk_fail"));
+        }
+    }
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            path.to_str().unwrap(),
+            "check",
+            "--mode",
+            "fast",
+            "--option",
+            "ppc32picimports",
+            "on",
+        ])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        text.contains("__stack_chk_fail(); // tail-call, no-return"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("halt_baddata") && !text.contains("return;"),
+        "{text}"
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+fn assert_proof_gap_refused(name: &str) {
+    for little in [false, true] {
+        let bytes = fixture::proof_gap(name, little);
+        let file = object::File::parse(&*bytes).unwrap();
+        assert!(
+            kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty(),
+            "{name} little={little}: ambiguous code must not acquire a global contract"
+        );
+    }
+}
+
+#[test]
+fn ppc32_pic_code_derived_indirect_caller_blocks_global_contract() {
+    assert_proof_gap_refused("indirect");
+    let path = common::scratch_file("ppc32-indirect-contract", "elf");
+    std::fs::write(&path, fixture::proof_gap("indirect", false)).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            path.to_str().unwrap(),
+            "check2",
+            "--mode",
+            "fast",
+            "--option",
+            "ppc32picimports",
+            "on",
+        ])
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "{text}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(text.contains("return 7;"), "{text}");
+    assert!(
+        !text.contains("__stack_chk_fail") && !text.contains("no-return"),
+        "{text}"
+    );
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn ppc32_pic_computed_lr_join_does_not_become_an_abi_return() {
+    assert_proof_gap_refused("lr-join");
+}
+
+#[test]
+fn ppc32_pic_unbounded_lr_writer_cannot_supply_a_return_token() {
+    use object::ObjectSection;
+    for little in [false, true] {
+        let mut f = Fixture::new(Plt::Short);
+        f.pic_collision = true;
+        f.little = little;
+        // check restores this computed LR and r30, then revisits its import call.
+        f.second_caller = Some(vec![0x38001020, 0x7c0803a6, 0x3bc02800, 0x4bffffb8]);
+        let mut bytes = f.bytes();
+        let file = object::File::parse(&*bytes).unwrap();
+        let symbols = file.section_by_name(".dynsym").unwrap();
+        let end = (symbols.file_range().unwrap().0 + symbols.size()) as usize;
+        bytes[end - 8..end - 4].copy_from_slice(&f.word(0));
+        let file = object::File::parse(&*bytes).unwrap();
+        assert!(kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty());
+    }
+}
+
+#[test]
+fn ppc32_pic_padding_entry_contributes_to_the_stub_proof() {
+    assert_proof_gap_refused("padding");
+}
+
+#[test]
+fn ppc32_pic_relocated_stub_does_not_preserve_the_callers_base() {
+    assert_proof_gap_refused("relocated");
+}
+
+#[test]
+fn ppc32_pic_lazy_resolver_requires_its_got_load_and_no_bypass_entry() {
+    use object::ObjectSection;
+    for little in [false, true] {
+        for mutation in ["none", "got", "load", "entry"] {
+            let mut f = Fixture::new(Plt::Short);
+            f.pic_collision = true;
+            f.little = little;
+            f.lazy_resolver = true;
+            f.got_tag = mutation != "got";
+            if mutation == "entry" {
+                f.second_caller = Some(vec![0x480007fc]); // tail into mtctr, bypassing the GOT load
+            }
+            let mut bytes = f.bytes();
+            if mutation == "load" {
+                let file = object::File::parse(&*bytes).unwrap();
+                let offset = file
+                    .section_by_name(".glink")
+                    .unwrap()
+                    .file_range()
+                    .unwrap()
+                    .0 as usize;
+                bytes[offset + 48..offset + 52].copy_from_slice(&f.word(0x60000000));
+            }
+            let file = object::File::parse(&*bytes).unwrap();
+            let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+            assert_eq!(
+                imports.len(),
+                usize::from(mutation == "none"),
+                "{mutation}, little={little}"
+            );
+            if mutation == "none" {
+                assert_eq!(imports[0].name, b"extra");
             }
         }
     }

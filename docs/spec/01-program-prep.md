@@ -134,6 +134,7 @@ Two timing consequences shape the tier. First, anything that must influence the
 **loader itself** runs before any `option` line exists, so load-time gates are
 bridged across the process by environment variables the CLI exports:
 `KUNA_RELOC_OBJECTS` (`relocobjects`), `KUNA_I386_PIE_PLT` (`i386_pie_plt`),
+`KUNA_PPC32PICIMPORTS` (`ppc32picimports`),
 `KUNA_RELOCREBASE` (`relocrebase`), `KUNA_DYNRELOCS` (`dynrelocs`),
 `KUNA_MSVCFPCONST` (`msvcfpconst`), `KUNA_PDATACHAINED` (`pdatachained`),
 `KUNA_REXTHUNK` (`rexthunk`), `KUNA_PEORDINAL` (`peordinal`),
@@ -1117,9 +1118,50 @@ funcsym stream:
   header. Secure-PLT entries are pointer slots instead: complete `r11` load,
   `mtctr r11`, `bctr` stubs in executable sections are named only when their
   decoded address matches such a relocation in the non-executable `.plt`.
-  Only absolute stubs carry enough evidence to establish that address here.
-  Both short and long `r30`-relative stubs remain unresolved until the caller's
-  register value is proven. `DT_PPC_GOT`, a valid GOT header and a retained
+  Absolute stubs encode the address directly. The default-off, loader-time
+  `ppc32picimports` option additionally resolves short and long PIC stubs through
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32picimports.rs (resolve)`.
+  Each incoming direct transfer must belong to a disjoint, sized text-symbol
+  extent and prove the same relocation slot. The bounded caller walk tracks
+  register constants, the original return-address token and its stack spill.
+  Joins retain equal values; merging computed LR values yields unknown, never
+  an ABI return. A return requires the original token, including a verified
+  save/load sequence. Across import calls, only the entry linkage-area LR spill
+  above an allocated stack frame is retained. Overwriting or exposing its spill
+  discards that evidence. LR writes outside certified code prevent proof too.
+  Only a call proved to select an import slot may preserve nonvolatile registers;
+  unknown calls and unsupported effects discard evidence. A tail transfer or
+  fallthrough across function bounds needs a proven return token or a proven
+  known no-return import.
+  Application indirect transfers that the walk cannot certify prevent PIC
+  contracts for the image, including addresses constructed in instructions.
+  The exceptions are complete import stubs and the validated GNU/LLD lazy
+  resolver whose complete instruction sequence loads its dispatch target from
+  the designated GOT header. Entries bypassing that sequence invalidate it.
+  Executable dynamic relocations prevent PIC proof: modified instructions could
+  introduce new edges or overwrite r30 in a previously recognized stub.
+  Branches, symbols, the image entry and stored pointers into skipped pre-stub padding prevent a
+  contract. Exported/address-taken stubs, interior entries and ambiguous caller
+  extents stay unresolved. Sized `.dynsym` exports suffice after `.symtab` is
+  stripped; missing local bounds and indirect-call-heavy images can remain
+  unresolved. Both stub forms support both byte orders. The option off path
+  keeps the previous refusal behavior, while BSS-PLT and absolute stubs remain
+  available. In the console, set this option before `load file`; CLI options
+  are bridged before either loader runs.
+  Recovery is all-or-nothing for an image: one caller the walk cannot certify
+  withdraws every PIC contract, since its unproven transfer could enter any stub.
+  Such callers include a call through a register, a call to a local function
+  followed by a return, a stack address passed to an import, a CR-logical
+  instruction such as the `crxor` before a variadic call, and, on any path to a
+  return, an untracked instruction such as
+  `add` or `cmpw`, or a store through an untracked pointer between the
+  return-address spill and its reload. The standard C start files call through
+  registers, so images linked with them stay unresolved; recovery reaches
+  directly linked images whose functions only load values and call imports.
+  It remains opt-in because proving caller state across a large import inventory
+  adds load-time work. The proof is remembered per image content, so the repeated
+  import queries of one load pay for it once; unrelated formats and the default
+  path do not pay that cost. `DT_PPC_GOT`, a valid GOT header and a retained
   `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
   In particular, GNU ld can discard an empty `.got2` while callers still use
   its per-object base; assuming the GOT then names a different relocation and
