@@ -301,6 +301,8 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         let Some(outvn) = data.obank().get(fc.get_op()).filter(|o| !o.is_dead()).and_then(|o| o.get_out()) else {
             continue;
         };
+        let before = data.kuna_narrowret_read(fc.get_op()).cloned();
+        let outvn = crate::kuna_narrowret::widened_read(data, outvn);
         let result = holder(data, outvn);
         if hands_on(data, result) {
             handed.insert(callee);
@@ -309,6 +311,11 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             && !wider_than_return(arch, callee, data, outvn)
             && !(arch.kuna_voidret.float_bits.contains(&callee) && elsewhere_than_return(arch, callee, data, result))
             && !held_as_float(data, outvn, result)
+            && !arch
+                .kuna_voidret
+                .storage
+                .get(&callee)
+                .is_some_and(|(addr, size)| crate::kuna_armfloatreturn::convention_float_storage(data, addr, *size))
         {
             arch.kuna_voidret.float_refused.entry(callee).or_default().insert(own);
         }
@@ -316,10 +323,14 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             arch.kuna_voidret.held.insert((own, callee), h);
         }
         arch.kuna_voidret.readers.entry(callee).or_default().insert(own);
-        if let Some(used) = used_storage(data, result) {
+        let (used, read) = match before {
+            Some(b) => (b.used, b.read),
+            None => (used_storage(data, result), data.vbank().get(result).and_then(read_storage)),
+        };
+        if let Some(used) = used {
             file_use(arch, callee, used);
         }
-        let Some(storage) = data.vbank().get(result).and_then(read_storage) else { continue };
+        let Some(storage) = read else { continue };
         file_claim(arch, own, callee, storage);
     }
     for (callee, storage) in data.kuna_forced_claims().to_vec() {
@@ -650,13 +661,19 @@ fn float_call_result(data: &Funcdata, node: &crate::varnode::Varnode) -> bool {
 /// for the bits of their float-register input is left as it is: withdrawn, it
 /// would lose the return its readers forced, and it returns what the callees
 /// return once they are withdrawn and it is decompiled again as their reader.
+///
+/// Where `armfloatreturn` applies, a function over
+/// [`crate::kuna_callrettype::AUDIT_MAX_OPS`] live ops keeps its float: NEON
+/// code that leaves a vector in `d0` was each decompiled twice for it.
 pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
+    let vfp = crate::kuna_armfloatreturn::applies(arch);
     let ledger = &mut arch.kuna_voidret;
+    let bounded = |k: &(int4, uintb)| vfp && ledger.ops.get(k).is_some_and(|&n| n > crate::kuna_callrettype::AUDIT_MAX_OPS);
     let float = |k: &(int4, uintb)| ledger.returns.get(k) == Some(&Returns::Float);
     let refused: Vec<(int4, uintb)> = ledger
         .float_refused
         .iter()
-        .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k))
+        .filter(|(k, readers)| !readers.is_empty() && float(k) && !ledger.displacing.contains(k) && !bounded(k))
         .map(|(k, _)| *k)
         .collect();
     let bits = |s: &(int4, uintb)| ledger.float_bits.contains(s) || ledger.bits_withdrawn.contains(s);
@@ -676,7 +693,7 @@ pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
             continue;
         }
         let kept = |s: &(int4, uintb)| ledger.float_bits.contains(s) && ledger.own_float.contains(&k);
-        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s) && !kept(s)) {
+        for s in ledger.float_sources.get(&k).into_iter().flatten().filter(|s| float(s) && !kept(s) && !bounded(s)) {
             if !ledger.withdrawn.contains(s) {
                 out.insert(*s);
             }
@@ -843,7 +860,7 @@ fn widens(storage: &(Address, int4), word: &(Address, int4, bool)) -> bool {
 /// function was not narrowed to, but computes only with `eax`. A shift on the
 /// way moves the upper bits where the RETURN or the argument takes them:
 /// `return (long)z6(x) >> 1` hands on bit 32 of the result.
-fn used_storage(data: &Funcdata, out: crate::context::VarnodeId) -> Option<(Address, int4)> {
+pub(crate) fn used_storage(data: &Funcdata, out: crate::context::VarnodeId) -> Option<(Address, int4)> {
     let node = data.vbank().get(out)?;
     let addr = node.get_addr();
     let size = node.get_size();
@@ -946,7 +963,7 @@ fn operated_bits(data: &Funcdata, out: crate::context::VarnodeId, size: int4) ->
 /// The storage a caller reads of the call result `out`: the bytes its uses
 /// consume (a `movss` of an `xmm0` result reads four), at the least
 /// significant end of the register.
-fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
+pub(crate) fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, int4)> {
     let addr = out.get_addr();
     let size = out.get_size();
     match addr.get_space()?.get_type() {
@@ -1063,7 +1080,9 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 /// something else, or a float it held from a callee whose float return was
 /// withdrawn. Its other stale text is a conversion the listing leaves out; a
 /// second decompile of sort -O2's `main` alone cost ten seconds, two thirds of
-/// the first.
+/// the first. Where `armfloatreturn` applies, a float result it held as
+/// something else does not count: the widened model makes many more callees
+/// return a float, and those redos were most of the option's cost.
 ///
 /// (kuna `floatbits`) A function whose bit-op float its withdrawal took back
 /// also takes back its float parameters, so every function that called it
@@ -1075,12 +1094,16 @@ pub fn stale_readers(
     stamp_of: &BTreeMap<(int4, uintb), usize>,
     changed: &BTreeMap<(int4, uintb), usize>,
 ) -> BTreeSet<(int4, uintb)> {
+    let vfp = crate::kuna_armfloatreturn::applies(arch);
     let mut out = BTreeSet::new();
     for (callee, &at) in changed {
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
         let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
         let widened = arch.kuna_voidret.wide.contains_key(callee);
-        let states = float || withdrawn || arch.kuna_callret_types.contains_key(callee);
+        let states = float
+            || withdrawn
+            || arch.kuna_callret_types.contains_key(callee)
+            || arch.kuna_narrowret.contains_key(callee);
         let scaled = arch.kuna_callret_types.get(callee).is_some_and(|s| {
             s.ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
                 && s.ct.get_ptr_to().is_some_and(|p| {
@@ -1107,7 +1130,7 @@ pub fn stale_readers(
                 .get(&(*reader, *callee))
                 .is_some_and(|h| {
                     (scaled && !h.pointer && h.arithmetic)
-                        || (float && !h.float)
+                        || (float && !h.float && !(large && vfp))
                         || (withdrawn && h.float)
                         || (widened && h.signed)
                 });
@@ -1266,7 +1289,10 @@ pub fn plant(data: &mut Funcdata) {
 }
 
 pub(crate) fn plant_piece(data: &mut Funcdata, addr: Address, size: int4) {
-    if crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size) || touched_beyond(data, &addr, size) {
+    if (crate::p4_calls::kuna_passthrough::suppresses_return_trial(data, &addr, size)
+        && !crate::kuna_armfloatreturn::forwarded_vfp_return(data, &addr, size))
+        || touched_beyond(data, &addr, size)
+    {
         return;
     }
     let rets: Vec<crate::context::OpId> = data

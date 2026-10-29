@@ -4,6 +4,8 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod heritage;
+mod kuna_leafmemory;
+pub(crate) mod kuna_globalcallranges;
 pub mod subflow;
 mod kuna_constantbytes;
 pub mod condexe;
@@ -23,6 +25,7 @@ pub mod kuna_globalstorekeep;
 pub mod kuna_globalorderkeep;
 pub mod kuna_globalcallstore;
 pub mod kuna_intfloatround;
+pub mod kuna_floatquiet;
 pub mod kuna_mulblob; // (kuna) keep a widened multiply operand a value, not an aggregate
 pub mod kuna_booleanmask;
 pub mod kuna_ovlesssimplify;
@@ -33,9 +36,11 @@ pub mod kuna_compareform;
 pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anchors to the op it speaks for
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
+pub(crate) mod kuna_multiregargs;
 pub mod kuna_indexaliasguard;
 pub mod kuna_stackeffects;
 pub mod kuna_calleememory;
+mod kuna_calleeflags;
 pub(crate) mod kuna_calleehomes;
 pub(crate) mod kuna_partialglobalload;
 pub(crate) mod kuna_stackstoreguard;
@@ -43,15 +48,22 @@ pub(crate) mod kuna_stackbytecopy;
 pub(crate) mod kuna_spillstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
+pub mod kuna_pairrefine;
 pub mod kuna_splitstorekeep;
 pub mod kuna_pointeestorekeep;
 pub mod kuna_constspaceload;
 pub mod kuna_simdlane;
+pub mod kuna_x87truncate;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
 pub mod kuna_devectorize;
+pub mod kuna_strlenscan;
 pub mod kuna_narrowload; // (kuna) a narrow LOAD keeps its own width
+pub mod kuna_regnarrow;
 pub(crate) mod kuna_volatileload;
 pub(crate) mod kuna_floatnegation;
 pub(crate) mod kuna_floatnegpiece;
 pub(crate) mod kuna_globalarrayanchor;
+pub(crate) mod kuna_globalfieldstore;
+pub(crate) mod kuna_stackreadscope;
+pub(crate) mod kuna_inputrefinement;

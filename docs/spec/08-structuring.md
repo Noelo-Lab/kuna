@@ -479,7 +479,14 @@ region path is never *worse* than upstream.
 **The rest of the file.** The same module carries the structuring-adjacent
 actions from upstream: `blockaction.rs (ActionNodeJoin)` /
 `(ConditionalJoin)` rejoin a split conditional (two blocks computing the same
-branch condition merge into one decision point); `blockaction.rs
+branch condition merge into one decision point). Both merge discovery and
+exit-edge repair inspect every MULTIEQUAL in each exit block. Stack analysis
+can replace an earlier stack-pointer phi with an INT_ADD in place, leaving
+other live phis behind it. Rejoining two predecessor edges must still merge
+their two values and remove exactly one input from each later phi, preserving
+unrelated predecessors and their input order. Ordinary exit operations retain
+their operands and block; a phi that has only one input after the repair becomes
+a COPY. `blockaction.rs
 (ActionReturnSplit)` is upstream's goto-driven epilogue splitter — it
 duplicates a shared RETURN block only when structuring left a **goto** into
 it (the Ghidra analog of what angr calls `ReturnDuplicatorLow`; the gotoless
@@ -490,6 +497,15 @@ the print-prep — for-loop rerolling, switch-case label assignment and
 sorting, the §8.3 `scopeBreak` hook, `mark_unstructured` (labelling every
 goto target so the printer emits `label_N:`), and `mark_label_bump_up` (a
 loop-head label is hoisted above the loop rather than into its condition).
+A for-loop header's initializer and iterator are each a statement moved out
+of the body or the pre-loop block into the header, so the move must not
+reorder them against a printed statement. When the PHI's input is a hidden
+COPY, the statement the header prints is the one feeding that COPY, not the
+COPY itself; `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::while_test_terminal)` therefore requires that statement to move,
+respecting cover, up to the COPY as well. A call, or a statement whose result a
+printed statement between them reads (`n = v & 1;` ahead of a loop over
+`v = strtoul(...)`), keeps its place, and the header goes without it.
 `blockaction.rs (ActionNormalizeBranches)` remains a non-mutating compatibility
 action in the `jumptable` and `normalize` groups. It preserves its registration
 and initialized-root check, but does not traverse branches or allocate unused
@@ -635,7 +651,14 @@ A hang-guard caps the rounds at `2*n^2 + 64` (`region_structurer.rs
 (round_cap)`) so a mis-port fails cleanly instead of spinning; the cap, a
 stuck knot, or a schema error all make `structure()` report non-convergence,
 upon which `ActionBlockStructure` re-seeds and falls back to
-`CollapseStructure` (§8.1) — the structurer never aborts the run.
+`CollapseStructure` (§8.1).
+
+The condition-folding and schema loops also check the current function's time
+and memory budget before each round. Exhaustion stops the attempt, and
+`ActionBlockStructure` returns without re-seeding or invoking the fallback
+structurer. The drive then reports the usual per-function budget error instead
+of printing the unfinished graph; later functions in a batch still run. With no
+budget, these checks do not change the folding order or output.
 
 A doomed attempt is also cut short. Every schema except the switch-loop
 absorb merges components along edges, and no step adds an edge, so a live
@@ -669,7 +692,17 @@ the port of `phoenix._last_resort_refinement` +
 components, compute forward immediate dominators, and bucket the candidates —
 *crossing* edges (neither endpoint dominates the other) are virtualized
 before *secondary* edges (destination dominates source); a forward tree edge
-is never chosen. Within the winning bucket (`sailr_order_within_bucket`): H1;
+is never chosen. Candidate dominance queries use an iterative dominator-tree
+interval index (`p8_structure/kuna_domindex.rs`) built once per immutable
+snapshot. Subtree containment replaces repeated parent-chain walks; absent
+nodes retain the chain walk's self-dominance behavior. The index is discarded
+with the snapshot, so graph changes cannot leave stale intervals. Interval
+slots are arrays indexed by node arena id (each snapshot has a fresh pool, so
+ids are dense): building costs one immediate-dominator lookup per node plus
+linear array work, and each query is two array reads independent of
+dominator-tree depth, so the index is cheaper than the chain walk even on the
+shallow trees of ordinary functions. Candidate order and ranking are unchanged.
+Within the winning bucket (`sailr_order_within_bucket`): H1;
 then H2 — remove each candidate, recompute post-dominators, and keep the
 edges whose removal yields the *most* post-dominators (most-linear result) —
 bounded by `region_structurer.rs (POSTDOM_MAX_EDGES)` = 10 candidate edges
@@ -1171,6 +1204,39 @@ the merged and split forms compile to the same object code, and where the source
 did write the cascade the gate is wrong (`coreutils factor`, GED 0 → 12).
 `docs/decbench/returndup-o0-measurement.md` and
 `docs/decbench/returndup-regression-triage.md` hold the corpus tables.
+
+### rettriangle — the join of a one-block `if`
+
+A shared constant-return block whose two predecessors are the arms of a
+one-block `if` is no guard either. The condition `C` goes straight to the
+return `R` or through one block `T` that is entered only from `C` and runs
+into `R`; splitting `R` prints `if (c) f(); return 0;` as
+`if (!c) return 0; f(); return 0;`, with one statement more and the return
+written twice, where IDA and Ghidra print the `if`. The common source of the
+shared block is a stack-protected function: once `stackguard` strips the canary
+check, every exit reaches one bare `return 0`. With `option rettriangle on`,
+`Funcdata::returndup_apply` drops such a block from its candidates
+(`decompiler/crates/kuna-decomp/src/p8_structure/kuna_rettriangle.rs
+(is_triangle_join)`): exactly two predecessors, one a two-way block whose other
+successor is the second predecessor, which has that block as its only
+predecessor and `R` as its only successor. Every other candidate of the
+function still splits, so the option can only make `returndup` fire less, and
+it is inert with `returndup off`.
+
+The same shape is also a source guard clause, `if (!ok) return 0; ...;
+return 0;`, which the option prints as `if (ok) { ... } return 0;`, so the binary
+cannot tell the two apart. Over a decbench sample (12 projects, 126 slices,
+`scripts.decbench.optsweep`) it moves O0 GED 31,382 → 31,219 and GED-perfect
++56 (64 functions to a perfect match, 8 off, McNemar z = +6.6), and O2 GED
+69,032 → 69,092 with GED-perfect +1; most of the O2 cost is in tar's pax
+decoders, whose source is the one-block `if` the option prints. Because the
+O2 aggregate rises, the option ships off and is a member of the `aggressive`
+preset, which `--mode auto` selects under 500 KiB.
+`tests/stages/kuna-rettriangle.xml` decompiles gcc -O0 functions with the
+default and with the option on, and
+`kuna-cli/tests/rettriangle_round_trip.rs` compiles the printed C of gcc
+-O0/-O2 and clang -O0 builds beside the source and checks each function
+returns and calls what the source does.
 
 ## 8.4 The quality signal
 

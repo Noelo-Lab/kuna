@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: name a recovered Rust enum's discriminant VALUES (`option
+    variantnames`, docs/multilang.md - the first VariantLayout consumer).
+
+    Stage / sub-stage: P1 program-prep, external-refinement (the DWARF importer).
+    P0 assertion:      option variantnames on|off  (default on).
+
+    `dwarfvariants` (DIV-87) imports a DW_TAG_variant_part into
+    `struct E { tag; union E::payload {...} }` and records every
+    DW_AT_discr_value and variant name, but the tag member keeps the plain
+    integer type DWARF declares for it, so discriminant logic renders bare
+    constants: `rethidden->tag = 0` where the compiler said `0` selects `A`.
+    With `variantnames` on the importer gives the tag member a synthesized
+    enum, `<enum>::Discriminant`, built from the variant part's own
+    discriminant->name map, and the stock enum-constant rendering prints the
+    variant name instead.
+
+    The XML wrapper only supplies the harness architecture. Both passes clear
+    it and load the same real x86-64 ELF fixture
+    (`decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64`,
+    `rustc 1.90.0 -C debuginfo=2 -C opt-level=1`, source vendored beside it):
+    a bytechunk carries no DWARF, and the decision is made inside `load file`,
+    so each pass's `option` line comes BEFORE its `load file`.
+
+    The witness is `ret_three` (a three-variant tagged enum): the off pass
+    stores bare `0`/`1`/`2` into the tag and declares the latch local as a
+    plain integer; the on pass stores `A`/`B`/`C` and declares the local as
+    `fx::Three::Discriminant`. The payload stores are asserted at exactly two
+    occurrences - one per pass - to pin that only the tag's VOCABULARY moved.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+90
+</bytechunk>
+</binaryimage>
+<script>
+  <com>option variantnames off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64</com>
+  <com>read symbols</com>
+  <com>load function ret_three</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option variantnames on</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfvariants_x86_64</com>
+  <com>read symbols</com>
+  <com>load function ret_three</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="VARIANTNAMES #1: off stores the bare discriminant" min="1" max="1">rethidden-&gt;tag = 0;</stringmatch>
+<stringmatch name="VARIANTNAMES #2: on stores the variant name" min="1" max="1">rethidden-&gt;tag = A;</stringmatch>
+<stringmatch name="VARIANTNAMES #3: on types the latch local as the discriminant enum" min="1" max="1">Three::Discriminant v1;</stringmatch>
+<stringmatch name="VARIANTNAMES #4: the payload store is identical in both passes" min="2" max="2">\(rethidden-&gt;payload\).A.__0 = x;</stringmatch>
+</decompilertest>

@@ -1,0 +1,655 @@
+{
+  "slug": "callwide",
+  "opportunity": "issue-904::typed-caller-proved-wide-return",
+  "test_name": "callwide-mips-typed-consumer-low-word",
+  "binary": "reproduce from analysis.md caller.c",
+  "selector": "produce_sum",
+  "func_addr": "0x100000",
+  "option": "callwide",
+  "flag": "call_wide",
+  "element_id": null,
+  "phase": "P4",
+  "tier": "core",
+  "change_kind": "new-caller-evidence",
+  "source_decompiler": "kuna",
+  "inspiration": "One declared eight-byte consuming formal plus whole-return provenance and complete callable-consumer evidence",
+  "issue": 904,
+  "proposal": true,
+  "implementation_status": "validated on actual merged1216 base74d0bab7; all final release gates, seven CLI acceptance tests, seven firing stage assertions, independent default/refusal panel and bounded timing pass; ready for review",
+  "human_approval": "approved implementation",
+  "requested_approval": "implementation-only",
+  "default_on": false,
+  "ablation_changed": true,
+  "parity": {
+    "upstream": {
+      "passed": 675,
+      "total": 675,
+      "baseline_unchanged": true
+    },
+    "stages": {
+      "passed": 3158,
+      "total": 3158,
+      "new_firing_assertions": 7,
+      "catalog_count_updated": 326
+    }
+  },
+  "speed": {
+    "default_on": false,
+    "budget_percent": 5,
+    "quiet": false,
+    "cpu_affinity": [
+      24
+    ],
+    "statistic": "median paired percentage change",
+    "rows": {
+      "healthy154": {
+        "repetitions": 7,
+        "default_cpu_vs_baseline_pct": -0.3374114191904254,
+        "enabled_cpu_vs_default_pct": 1.354863709392462,
+        "enabled_wall_vs_default_pct": 1.3581612414137467
+      },
+      "sealed11": {
+        "repetitions": 21,
+        "default_cpu_vs_baseline_pct": 2.4386679194216887,
+        "enabled_cpu_vs_default_pct": 1.9033379132020967,
+        "enabled_wall_vs_default_pct": 1.9401059508666885
+      },
+      "sealed256": {
+        "repetitions": 7,
+        "default_cpu_vs_baseline_pct": -0.4022261988820053,
+        "enabled_cpu_vs_default_pct": 9.52028602111068,
+        "enabled_wall_vs_default_pct": 9.420682237787336
+      }
+    },
+    "all_samples_retained": true,
+    "followup_required": false,
+    "receipt": {
+      "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff-74d/speed-verification.json",
+      "sha256": "772fb41d2886a6ee14a36c2146eae44de52af28f0ce29f19f8d14159c2b9ea8b"
+    }
+  },
+  "base_commit": "74d0bab7238ceacccedc6d1d888d56762b9f71f2",
+  "base_tree": "9aa8a74713a0f025ffd61f464c3c6bf4ba88b0d1",
+  "spec_chapter": "docs/spec/04-calls-and-prototypes.md",
+  "revalidate_after_rebase": false,
+  "primary_acceptance": {
+    "architecture": "MIPS32-BE, non-PIC linked executable",
+    "producer_untyped": true,
+    "dwarf_enabled": false,
+    "typed_consumer": "unsigned long long consume64(unsigned long long x)",
+    "input_a": "0x0000000100000002",
+    "input_b": "0x0000000300000004",
+    "expected": "0x112233405566778e",
+    "default_emitted_project_result": "0x1122334055667788",
+    "supplied_producer_prototype_result": "0x112233405566778e",
+    "mips_producer_hex": "00c4082100e518210067102b03e0000800221021"
+  },
+  "measurements": {
+    "kind": "baseline-only",
+    "caller_decompile_cells": 117,
+    "comparison_checks": 36,
+    "target_emulated_runs": 6,
+    "target_emulated_runs_passed": 6,
+    "vectors_per_target_run": {
+      "wide": 5,
+      "high32": 5
+    },
+    "target_body_identity_checks": 36,
+    "target_body_identity_passed": 36,
+    "whole_c_replays": 36,
+    "whole_c_baseline_failure_runs": 10,
+    "project_exports": 6,
+    "project_c_header_replays": 12,
+    "project_baseline_failure_runs": 2,
+    "separate_typed_probe_cells": 198,
+    "separate_typed_functions": 33,
+    "new_feature_firing_cases": null,
+    "new_feature_corpus_diff": null,
+    "speed_delta_pct": null,
+    "note": "These measurements are historical baseline evidence. Provisional implementation evidence is retained separately; implementation_validation records the final actual-base acceptance. No default-on decision is claimed."
+  },
+  "evidence": {
+    "baseline_cli_sha256": "785fb5797ad9001206b85f572fd00fa9469449a8eb90e636edeea7f4190a1bca",
+    "source_sha256": "2b669acf58ef775e521cdade7e5493dfdae3dd58c764cabd7cf2409d8e1c6940",
+    "images": {
+      "ppc": {
+        "sha256": "d304b035a6a31db11a6f73ea0d24c111f4dc6951977b5cd3fe73d7dea9f0b5f6",
+        "producer_address": "0x100000",
+        "producer_hex": "7c8620147c6519144e800020"
+      },
+      "armeb": {
+        "sha256": "5496884c38e2c878a6d3b0a0e9724b0c75153fc228edefeded715371a4884cef",
+        "producer_address": "0x100000",
+        "producer_hex": "e0931001e0a20000e12fff1e"
+      },
+      "mips": {
+        "sha256": "b7e305cd3611f82f39fceeda12994340312d5445de74c4c8ecb6094baa493b04",
+        "producer_address": "0x100000",
+        "producer_hex": "00c4082100e518210067102b03e0000800221021"
+      }
+    },
+    "target_environment": "Official Ubuntu qemu-user-static6.2 extracted only under scratch; actual cross-target ELF executions, no physical target hardware",
+    "scratch_directory": "/home/mahaloz/kwt/issues1019/scratch/904-caller",
+    "artifact_sha256": {
+      "caller.c": "2b669acf58ef775e521cdade7e5493dfdae3dd58c764cabd7cf2409d8e1c6940",
+      "build.json": "44953c1a035841a9e112db3917bf95422763d0c9057baff2f19395df28d6afec",
+      "artifacts.json": "96df3c0bfbc5e5776111def2bad5b8a9c1d6ff25a3c9fcc278aeda5a66b387d1",
+      "report.json": "5957f78fb2c96a6f8a0d740dce59f34e5ae623cd109627608b52e7b0a6bf471c",
+      "comparison.json": "867f20e1e4f9e6fbb9fea22ea7a2bfdd84671de2c4f83b8fad0f3ead8bb72d21",
+      "native.json": "e12033a9f42c3cd3c90b8cb0e3a203ce6ef0faa76eaef010846b14466bd11ab4",
+      "allmode-replay.json": "31a574ae1db77c0b25183cf6d035129463f77c93a9113a4cf0ef1b503076eb48",
+      "project.json": "bf28f9ae36fb61162d714e1233572128b0a924b4f76222a89cf92c043d05e926",
+      "project-replay.json": "07f87d4c36e5f629fd1b3916048c9f8c8616c9c19660654066ddf87fd943aeef",
+      "arm-closure-probe.log": "90ed2597464d34db0bf7f0d1fbec68e1728135ca3a170d8dcf373531ebc4c0c7",
+      "arm-producer-xrefs.json": "9ffcb0c8e4c799adf28e602e70e08363f78c62a018b06889ad7f11dff8ab4ad4",
+      "local-doc-repro/report.json": "452c5b31460c8ee24a4a2839fc8cd8f3786c825b8d0221ba160692854f5d52c7"
+    },
+    "typed_artifact_directory": "/home/mahaloz/kwt/issues1019/scratch/904-typed",
+    "typed_artifact_sha256": {
+      "probe.c": "c221e5b4e3d0d09c5fe9dd152ddef354e9a731490220af311b724a634166a9e2",
+      "build-report.json": "9e5bdb1ded0ba16eb2f5afb6026c8cd86e64674e85d0d5cb0c8e74499652c28e",
+      "matrix.json": "e7c4979f37cf9d91c8899227cc03852aaad851764806c7bbd7dac291ebb42999",
+      "typed-comparison.json": "d6dd63f2c828cbaa79b3fa14f1b97d3dc1bf076fa6a377f71d4b4e88e3f19ecc"
+    },
+    "source_seams_sha256": {
+      "decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs": "934583e6cbd193eee55d68ecba4fcaa6ecd0b5a3caa49009734ce93bc7d7cc68",
+      "decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs": "db9012bf4374ab26024b95b868e6666e868fe434dd6368ff043663919325529c",
+      "decompiler/crates/kuna-decomp/src/p4_calls/coreaction_protos.rs": "6e606e8678cb8790608affd3ad3423909b49aac36404b017f3ffc54b0d6a5bfc",
+      "decompiler/crates/kuna-decomp/src/p4_calls/kuna_callerreads.rs": "5ceadb83414dbda5b4674356ced10351b21e1a29d9ce5e4687a1619793e63cc2",
+      "decompiler/crates/kuna-cli/src/callgraph.rs": "13410ce56c6837888ac978d9b19cff55fa8b481515f949fba35925471dfd206c",
+      "decompiler/crates/kuna-cli/src/callgraph/arm_closure.rs": "f8c32c3cc6602839a1885d2a285fdfa9647cc739e19f3c89aaf0f351f8246c75"
+    },
+    "self_contained_repro": {
+      "document": "analysis.md",
+      "verified_with_frozen_baseline": true,
+      "regenerated_elf_sha256": "b7e305cd3611f82f39fceeda12994340312d5445de74c4c8ecb6094baa493b04",
+      "native_no_feature_claim": true
+    }
+  },
+  "scope": {
+    "first_architectures": [
+      "sealed MIPS32-BE ET_EXEC, non-PIC, complete executed-transfer and initialized private-frame proof"
+    ],
+    "arm_only_satisfies_primary_acceptance": false,
+    "unknown_or_address_taken_consumers": "refuse automatic promotion",
+    "mips_return_provenance": "entry-ra token, or exactly matched canonical private-frame save/reload; arbitrary ra writes including moved function-pointer tokens decline",
+    "general_cfg_alias_points_to_framework": false,
+    "broader_mips_pic_indirect_coverage": "separate prerequisite proposal if pursued",
+    "bound_values_proposed": {
+      "mips_executable_bytes": 65536,
+      "mips_aligned_words": 16384,
+      "producer_sites": 256,
+      "forward_instructions": 32,
+      "forward_pcode_ops": 1024,
+      "producer_instructions": 512,
+      "producer_pcode_ops": 20000
+    },
+    "aggregate_budget_required": true,
+    "approved_proposal_architectures": [
+      "ARM32-BE with existing arm_closed_sites proof",
+      "MIPS32-BE ET_EXEC, non-PIC, bounded complete direct-transfer image proof"
+    ],
+    "arm_admission": "refuse unchanged; existing CLI caller scan is not this feature's complete control proof"
+  },
+  "scope_review_verdict": "The approved cross-function feature requires a draft proposal. Implementation is conservatively narrowed to sealed MIPS control closure because the existing ARM caller scan does not establish the same complete executed transfer/return-token proof. ARM declines unchanged; no second architecture framework is introduced.",
+  "original_issue_acceptance": {
+    "partial_family": true,
+    "closure_claim": false,
+    "remaining": [
+      "sound default behavior not implemented or validated",
+      "other architectures",
+      "open/PIC/indirect consumers",
+      "ambiguous body-only inference",
+      "returned-call recursion"
+    ],
+    "et_rel_debug_relocation": "separate excluded problem"
+  },
+  "decisions": [
+    "Primary acceptance is the demonstrated MIPS low-word loss, not an ARM-only cosmetic gain.",
+    "Require one positively declared eight-byte consuming formal, unchanged pair forwarding, both words computed on every producer return, and complete callable-consumer admission.",
+    "A RETURN opcode or JR-ra mnemonic is not a return-token proof.",
+    "Publish one immutable producer/caller verdict before any artifact renders; no order-dependent feedback or chunk-local proof.",
+    "Keep first-register-only callers consistent via high-piece extraction; unsupported consumers decline the whole candidate.",
+    "Preserve existing bejoin off/on and declared prototype precedence.",
+    "Approval authorizes implementation only; default activation and issue closure require separate validated evidence."
+  ],
+  "proposal_validation": {
+    "base_commit": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+    "runtime_tree": "7336b195792e070ba12a7b48e329d1278a311247",
+    "scope": "Documentation-only validation using the unchanged6d7 runtime; no callwide implementation or ON ablation.",
+    "mandatory": {
+      "make test": {
+        "status": "pass",
+        "assertions": 675,
+        "parity": "OK"
+      },
+      "make test-stages": {
+        "status": "pass",
+        "assertions": 3127,
+        "parity": "OK"
+      },
+      "make rust-test": {
+        "status": "pass",
+        "exit_code": 0,
+        "result_groups": 66,
+        "passed": 9155,
+        "failed": 0,
+        "ignored": 38
+      },
+      "make check-spec": {
+        "status": "pass"
+      }
+    },
+    "additional": {
+      "make test-tools": {
+        "status": "pass",
+        "tests": 114,
+        "skipped": 1
+      },
+      "strict spec": {
+        "status": "pass"
+      },
+      "catalog --check": {
+        "status": "pass"
+      },
+      "mergecheck against origin/main": {
+        "status": "pass",
+        "rejects": 0
+      },
+      "PR runnable repro": {
+        "status": "pass",
+        "known_wrong_output_confirmed": true
+      }
+    },
+    "rust_workspace_environment": {
+      "unset": [
+        "KUNA_DECOMP_TEST",
+        "KUNA_DECOMP_DBG"
+      ],
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_PROFILE_DEV_DEBUG": "0",
+      "CARGO_PROFILE_TEST_DEBUG": "0",
+      "CARGO_BUILD_JOBS": "8",
+      "CARGO_TARGET_DIR": "/home/mahaloz/kwt/issues1019/callwide-proposal/decompiler/target"
+    },
+    "main_sla_symlinks": 149,
+    "own_debug_target_removed": true,
+    "release_trio_sha256": {
+      "kuna": "785fb5797ad9001206b85f572fd00fa9469449a8eb90e636edeea7f4190a1bca",
+      "decomp_dbg": "15e4a3f1171001799f614b66d5036fda2236adede1a55f52756ab42b2c90cc10",
+      "decomp_test_dbg": "f380ca54ada2e8cbdabed15ac6d89d68ccdd14122a6ce1de688aa32e69e82961"
+    },
+    "gate_artifact": "/home/mahaloz/kwt/issues1019/scratch/904-caller/proposal-validation/summary.json",
+    "gate_artifact_sha256": "5fe797234cafd037d4bae924bed5e38d46b35e5d6438692692859c6295829725"
+  },
+  "implementation_scope": {
+    "mips_closure": "whole executable CONTROL closure with exact sole16-byte JAL/NOP/Jself/NOP entry; no external communication; ordinary canonical return/private initialized frame DAG",
+    "numeric_address_claim": "no assertion that arithmetic cannot equal code; constructor heuristics removed",
+    "returnable_fragment": "explicit refusal; producer/caller/consumer bytes preserved in sealed-entry acceptance fixture",
+    "issue_904": "remains open",
+    "runtime_base_commit": "74d0bab7238ceacccedc6d1d888d56762b9f71f2",
+    "final_rebase": "completed onto actual merged1216 commit74d0bab7, preserving all three foreign overlapping-case bugfix paths; all66 feature paths byte-identical fe29 before final evidence updates",
+    "validation": "Final actual-base release: all7 CLI tests and7 true-firing stage assertions pass; whole/selected/project/worker/stream actual C and headers pass eight-vector MIPS O0/O2 replay; all four gates, tooling/lint/strict-spec/catalog, independent default/refusal panel and bounded timing pass.",
+    "architectures": [
+      "MIPS32-BE legacy default compiler only"
+    ],
+    "project_export": "Read-only local actual-operand/finalized-word-storage snapshot, including empty recovered call-prototype stores; canonical UNKNOWN8 uses the existing C unsigned projection. A selected own prototype may resolve signed/unsigned four-byte ABI words. External-only conflicts remain errors; streams defer only exact preknown selected producers within bounded FIFO storage.",
+    "runtime_base_tree": "9aa8a74713a0f025ffd61f464c3c6bf4ba88b0d1",
+    "runtime_base_status": "actual merged1216 main"
+  },
+  "implementation_evidence_provisional": {
+    "base": "abace009d9e1fe3435839021bb7a92f579362c40",
+    "manifest_sha256": "24455e0fc2b6de7606c54bab1e6de10ce0ad9987d77a7cc745f59ce995c6bf04",
+    "cli_sha256": "1b60996bf320d70ab352c264a917dacf36fdc1db9b9e5b8e3e7a0a2d106f8ead",
+    "native_report_sha256": "cdb2b199d4a4c75b4f47fd28459bfb9de468ef1c477a66c59e7dfee3b67f2b65",
+    "cross_mips_qemu_generated_c_header_o0_o2_runs": 4,
+    "host_gcc_clang_generated_c_header_o0_o2_runs": 8,
+    "vectors_per_run": 6,
+    "unchanged_generated_inputs": true,
+    "strict_dwarf_route_validated": true,
+    "actual_final_base_validated": false,
+    "sixth_candidate": {
+      "manifest_sha256": "becbda9b38a6d4b612004f9faecef03e8015deb64fc8703f3a74b21ef9b3cca2",
+      "cli_sha256": "2b47608cc8feada67437880f0b9eb4574c6b277a0c60bcbb574edf70da32b951",
+      "acceptance_report_sha256": "5263a303c35cb2eeb569b20964e5f4e7e930f4dc998fd56652c6e0b4330d1709",
+      "acceptance_tests_passed": 6,
+      "acceptance_tests_failed": 1,
+      "pending_failure": "selected caller project header omits unselected proved eight-byte producer; exact-call declaration integration required",
+      "word_mutation_refusals": 18,
+      "native_vectors_per_replay": 8,
+      "dwarf_helper_replay": true,
+      "dwarf_narrow_policy": "compiler explicitly selected; abi/off preserve ordinary output",
+      "join_pool_refusal_identity": "entire13-function JSON byte identity; original fifth counterexample preserved",
+      "site_limit_report_sha256": "b828467ffc95928bbc2ffb0483242b29b3877969e33df041bec4d97769c9f2d6",
+      "site_limit_controls": "32 positive, conflicting33rd refuses;256 positive,257 refuses"
+    },
+    "seventh_candidate": {
+      "manifest_sha256": "92a4f317eadc7bba36efaffef0a24be1451449caa22cf3088afec7bd30f49006",
+      "cli_sha256": "815278fb6f8ebe6919cc3e05dae75ab38403be5df8de98db9455cd2e4783f59f",
+      "acceptance_report_sha256": "03be0bd548b3db4a3a35e2e61f3b873a18f174bc8775611220062c8e0231f335",
+      "acceptance_tests_passed": 2,
+      "acceptance_tests_failed": 5,
+      "failure": "Exact export guards incorrectly required populated recovered call stores and typed outputs; real finalized calls have empty stores, canonical UNKNOWN8, and ignored calls without outputs. Bodies were withheld honestly; no native or mutation rerun is claimed.",
+      "true_firing_stage_assertions_passed": 7,
+      "true_firing_stage_report_sha256": "22ae25313226d947ca8d2abf084646b382f02d823be89ff5fcc61136eb823a2c"
+    },
+    "actual_snapshot_correction": {
+      "core_sha256": "960ea7e94a4bf3e903a0e444d0cb7e646a548c058c01bd25bb644f52950686f8",
+      "p9_sha256": "0170d8b99c9bcace83faf47b663fccf4ef5a03ed99f8b7da1d02710dca927b71",
+      "p4_private_tests_passed": 44,
+      "project_header_tests_passed": 15,
+      "preflight_tests_passed": 10,
+      "runtime_acceptance": "pending matching eighth trio and final-base replay",
+      "real_fd_print_order_report": "/tmp/kuna-callwide-frontend-checks-20261020/real-fd/print-order-report.json",
+      "capture_order": "original post-print position, before body publication"
+    },
+    "eighth_candidate": {
+      "base": "abace009d9e1fe3435839021bb7a92f579362c40",
+      "manifest_sha256": "06ed6857ddf2ffe6927ea1fcad3abbf8b6a207437388b014ee6095b310319e8c",
+      "cli_sha256": "69b22aacc1aca2c18cb21bf4930d23a6b004c847984380568fd71c1c0963bc54",
+      "console_sha256": "6cbc13602351c129d967b724beeabc2f8d1714e67a71dcb04b63e34c7c6ef846",
+      "harness_sha256": "55f44d1494fe25cd5ba85589fecbe8f03545ddf3e45d3c52fc293897d09eb7fa",
+      "all_seven_report_sha256": "d3bff17ba5a06d06d0984450b7106be0008a05e51ff68a2e196873fcda393490",
+      "acceptance_tests_passed": 7,
+      "acceptance_tests_failed": 0,
+      "acceptance_tests_ignored": 0,
+      "selected_first_report_sha256": "a65816405e86be97f65ea45d4a32adafcd9ceca1bc0700877df4d1d40578ab47",
+      "stage_assertions_passed": 7,
+      "stage_report_sha256": "448912f3f5e739706e18df90fa18a8374de6ac89cc02222ae4cc028b117d48ad",
+      "frozen_spec_inputs": 401,
+      "word_mutation_refusals": 18,
+      "vectors_per_replay": 8,
+      "dwarf_composition_helpers": 2,
+      "direct_producer_oracle": true,
+      "safe_runtime_executions": {
+        "MIPS_QEMU": 64,
+        "host": 44
+      },
+      "runtime_whitelist_sha256": "842ebb25aa43b8ab1a70d0e06c266420c2d7ad4de1ae5eabafa8a62ed358beff",
+      "projection_report_sha256": "c49f2e306dc4385e92d6864cebd9ec6cba72efe6c96d493430ac1cef2b8775ad",
+      "stream_arrival_receipt_sha256": "a30506d2632ef9068926b83afb90115342c50d1440a3c7dfa5c4a940ab27eab0",
+      "stream_order_boundary": "Actual serial and parallel streams passed native replay, but both delivered producer before ignored caller. Focused writer controls cover mixed-sign callers before own definition; actual-engine writer replay remains separate pending evidence.",
+      "off_project_regression": "seventh versus eighth actual C/header/asm byte-identical for declared and DWARF fixtures",
+      "final_base_validated": false
+    },
+    "actual_main_fifo": {
+      "base": "377bc5be1cd8d795846abf36bd02d56314506685",
+      "tree": "b88756d12adcf860a6fc795c50648089850c5c4c",
+      "frontend_receipt_sha256": "48c9a11b82c4654561e661ecb43fdac5edf45723a32b592e61fc4b630ed28d4f",
+      "focused_counts": {
+        "P4": 44,
+        "project": 16,
+        "worker": 26,
+        "stream": 16,
+        "preflight": 10
+      },
+      "native_receipt_sha256": "03ba7537975be62fe1f8034c411e49261813228515748783d0c1b63c899757aa",
+      "arrival_order": [
+        "caller64",
+        "caller_ignored",
+        "produce_sum"
+      ],
+      "actual_engine_results": true,
+      "generated_C_and_header_untouched": true,
+      "MIPS_QEMU_optimizations": [
+        "O0",
+        "O2"
+      ],
+      "vectors": 8,
+      "proof_RX_and_original_function_identity_verified": true,
+      "scheduler_changed": false
+    }
+  },
+  "published_scope_review_verdict": "This needs the proposal route under standing requirement 5. It adds cross-function typed-use proof, complete-caller admission and shared evidence lifetime, then changes producer trial retention and every consumer's representation. The MIPS wrong-C cannot be corrected by the existing join-order hook alone. Restricting admission to existing ARM closure plus a bounded direct-transfer-only MIPS image predicate avoids a general points-to framework, but does not make this one Action/Rule-shaped pass. An ARM-only result must not be reported as fixing MIPS or closing #904.",
+  "proposal_base_commit": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+  "proposal_base_tree": "7336b195792e070ba12a7b48e329d1278a311247",
+  "implementation_validation": {
+    "base": "74d0bab7238ceacccedc6d1d888d56762b9f71f2",
+    "base_tree": "9aa8a74713a0f025ffd61f464c3c6bf4ba88b0d1",
+    "source_tree": "824561aa9da5cc542c775e00ebc146f867a2ee28",
+    "immutable_manifest": {
+      "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-candidate-74d/manifest.json",
+      "sha256": "8a91eddbd2339ca10e05b53dd44c18cc4eec4924b9ca304ec6084afcd3bbf2d0"
+    },
+    "source_identity": {
+      "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/source-identity.json",
+      "sha256": "46f4f17d8496fc94f37773c9fd9ba3e5238c24b4de105a46b91ebc11fe624885"
+    },
+    "source_archive": {
+      "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-candidate-74d/source.tar.gz",
+      "sha256": "d5dbfd3a708cbef9b19371ad1f0c62422687b428c89122edc51a871bbab13a55"
+    },
+    "validation_receipt": {
+      "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff-74d/validation.json",
+      "sha256": "dab1bb26df8d16fb94bdf4c8fe5d43489948b140be19a00ad4829734d6a6686d"
+    },
+    "checks": {
+      "make test": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/gate-test.log",
+          "sha256": "ac8ffd61ec6eaa502287bc8713423af76750dc723665a6be426ddd8a6a2f23d3"
+        }
+      },
+      "make test-stages": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/gate-test-stages.log",
+          "sha256": "aa135c3a9cc6bb6a964896bc1c395e83dbf1d4c632812d49e25c95eb7ac8dc6d"
+        }
+      },
+      "make rust-test": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/gate-rust-test.log",
+          "sha256": "780df3e74282cfdd1ce3f5dfbbabc8374ae1283e7cd136c5a57b02997dd0c010"
+        }
+      },
+      "make check-spec": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/check-spec.log",
+          "sha256": "0dfd24a06eda0df8ce630a8095669c7c13654db38a1906c31430a9f9ab5bc36c"
+        }
+      },
+      "make test-tools": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/test-tools.log",
+          "sha256": "8b43e398582b1880c0ccef537b79ffbffba61d189f7f05332a5c9b912d6e4c7a"
+        }
+      },
+      "make lint": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/lint.log",
+          "sha256": "753dd76a2fad6c0c9b4677c29dea6078b301e61e9e2bffb6be952099b60657af"
+        }
+      },
+      "python3 tools/check_spec.py --strict": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/check-spec-strict.log",
+          "sha256": "472b1b56a6d6fc1aa349c87ed6b33255178c5616737f46ca2988379a7e23ce0b"
+        }
+      },
+      "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-candidate-74d/kuna catalog --check": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/catalog.log",
+          "sha256": "7852f1712deaef86097ab707621d739a18eec75b56acd8d719751595f4978daa"
+        }
+      },
+      "python3 -m scripts.repipe.mergecheck --against origin/main --kuna /home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-candidate-74d/kuna --json": {
+        "exit_code": 0,
+        "log": {
+          "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/mergecheck.json",
+          "sha256": "d262adb021d4288b0d242c85c5b917f9ab9df1e34dc5adbb3db253c9cafbd431"
+        }
+      }
+    },
+    "counts": {
+      "datatest_assertions": 675,
+      "stage_assertions": 3158,
+      "stage_xml_files": 497,
+      "total_xml_files": 580,
+      "rust_passed": 9317,
+      "rust_failed": 0,
+      "rust_ignored": 38,
+      "rust_result_groups": 66,
+      "tooling_tests": 114,
+      "tooling_skipped": 1,
+      "catalog_rows": 326,
+      "tiers": {
+        "core": 119,
+        "transform": 126,
+        "analysis": 81
+      },
+      "live_option_fields": 153,
+      "element_id_introduced": null,
+      "next_element_id": 4179,
+      "worker_result_protocol": 11,
+      "empty_worker_record_bytes": 81
+    },
+    "acceptance": {
+      "final_all_seven": {
+        "path": "/tmp/kuna-callwide-fixture-validation-20261020/cli-acceptance/reanchor74d-all-seven/report.json",
+        "sha256": "4be81174a8122d216cc1b68b2bd43359ebb0616c004d298e60dcce53f376ed8d"
+      },
+      "final_true_firing_stage": {
+        "path": "/tmp/kuna-callwide-fixture-validation-20261020/cli-acceptance/reanchor74d-stage/report.json",
+        "sha256": "e3b60d479926e131981d5774ce513fc712591d41b893d1326aa073e5a6df9ec5"
+      },
+      "final_runtime_whitelist": {
+        "path": "/tmp/kuna-callwide-fixture-validation-20261020/cli-acceptance/reanchor74d-all-seven/safe-runtime-whitelist.json",
+        "sha256": "269db6028bfc87475c1fafc2d359563317ac03e1e4e205a8bcdfb8f44dd58bc9"
+      },
+      "final_projection": {
+        "path": "/tmp/kuna-callwide-fixture-validation-20261020/cli-acceptance/reanchor74d-all-seven/projection-receipt.json",
+        "sha256": "36641645e4c9e47d0eef357ac0869391332afc1ade4c7642186e219f2f008de5"
+      },
+      "final_stream_arrivals": {
+        "path": "/tmp/kuna-callwide-fixture-validation-20261020/cli-acceptance/reanchor74d-all-seven/stream-arrival-receipt.json",
+        "sha256": "961093b33fda335b83690926a1b8a7172c15bca3b7a839be9e7244b2f270dd31"
+      },
+      "independent_default_refusal": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/callwide-composition74d/run-1/verification.json",
+        "sha256": "ac1a75108d9ad899c45b28ffe0c65158d41a22f9ab36d1b3bb99bea045efe53c"
+      }
+    },
+    "cli_acceptance": {
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "word_mutation_refusals": 18,
+      "vectors": 8,
+      "direct_producer_oracle": true,
+      "dwarf_composition_helpers": 2,
+      "MIPS_QEMU_optimizations": [
+        "O0",
+        "O2"
+      ],
+      "safe_MIPS_executables": 64,
+      "safe_host_executables": 44,
+      "actual_C_and_header_untouched": true,
+      "RX_and_function_identity_verified": true,
+      "projection_modes": [
+        "ctypes on",
+        "ctypes off/realtypes on",
+        "ctypes off/realtypes off xunknown8"
+      ]
+    },
+    "independent_default_refusal": {
+      "queries": 144,
+      "JSON_documents": 132,
+      "full_function_records": 375,
+      "project_exports": 12,
+      "C_header_files": 24,
+      "all_byte_identical": true,
+      "errors": 0,
+      "expected_refusal_diagnostics_retained": 48
+    },
+    "stage_baseline_diff": {
+      "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/stage-baseline-diff.json",
+      "sha256": "46d28416cca9e29dad5dda92051a089024b7b0e11bc1884d4e07cc065a246edb"
+    },
+    "own_debug_target_removed": true,
+    "default_on": false,
+    "issue_904": "remains open",
+    "post_runtime_freeze_changes": "Only analysis.md, proposal.md and this record receive final validation/status/evidence updates. No runtime, test, spec, option, generated catalog or fixture changes follow the immutable release snapshot.",
+    "historical_validation": {
+      "base": "377bc5be1cd8d795846abf36bd02d56314506685",
+      "committed_feature": "fe29f3d5025e64dc5df9d33836cfdb69d308659d",
+      "validation": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff/validation.json",
+        "sha256": "c4caf105678160cf5806cdc28139362deaeb14871017429c376fe061e3a1f4b3"
+      },
+      "speed": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff/speed-verification.json",
+        "sha256": "491f4bcdeee6def567e88b796551c3aa551d5cca5fee42386222af12eae22e14"
+      },
+      "handoff": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff/handoff.json",
+        "sha256": "6636bcda836d60da6c3bc093d4c5e3bc3b38a45a271b5d70c441ce7456c46709"
+      },
+      "preserved_failures": {
+        "first_full_rust": {
+          "log": {
+            "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/integration-abace-to1215/gate-rust-test.log",
+            "sha256": "5a32c7f49bafb2f1d803f0a437aa0a7446bf0c78bfbf284be74b4e98ac43a7b4"
+          },
+          "cause": "test-only live-option-field count 152 instead of 153; fixed before final source freeze; complete retry passes"
+        },
+        "first_stage_record": {
+          "log": {
+            "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/integration-abace-to1215/stage-rerecord.log",
+            "sha256": "47e5e7dbde0a45b8e62942d73442f78299f27fbb914b3e63b23a60483943a7fa"
+          },
+          "empty_result": {
+            "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/integration-abace-to1215/stage-rerecord-failed-zero.json",
+            "sha256": "ee8298f5ae12cde9f4c4c6a0c210ff2e0d732d4a4b50a85d21aadae87757f8f0"
+          },
+          "cause": "incorrect absent frozen-specs path; restored prior baseline before correct 3158/3158 re-record"
+        },
+        "historical_implementation_failures": "Preserved first through eighth immutable snapshots and reports; final actual-main acceptance supersedes them without deleting them."
+      },
+      "actual_engine_FIFO_native": {
+        "path": "/tmp/kuna-callwide-fixture-validation-20261020/cli-acceptance/actual-main-fifo-native/report.json",
+        "sha256": "03ba7537975be62fe1f8034c411e49261813228515748783d0c1b63c899757aa"
+      },
+      "note": "Historical receipts unchanged. Fresh full-workspace execution includes the same actual-engine FIFO test; its native composition receipt remains explicitly historical."
+    },
+    "reanchor": {
+      "integration": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/reanchor-74d/integration.json",
+        "sha256": "40c237afea512076817e0f53e71b80ac190aa658d6dd274115cb303189bb3e0f"
+      },
+      "foreign_paths_preserved": [
+        "decompiler/crates/kuna-analysis/src/listing/kuna_x86listingswitch.rs",
+        "decompiler/crates/kuna-console/tests/verify_x86listingswitch.rs",
+        "docs/spec/01-program-prep.md"
+      ],
+      "all_66_feature_paths_byte_identical_to_fe29_before_evidence_updates": true,
+      "no_runtime_feature_changes": true
+    }
+  },
+  "historical_actual_base_validations": [
+    {
+      "base": "377bc5be1cd8d795846abf36bd02d56314506685",
+      "feature_commit": "fe29f3d5025e64dc5df9d33836cfdb69d308659d",
+      "immutable_manifest": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-candidate/manifest.json",
+        "sha256": "818d827f8d45201714d2e2c89abd7f30efc4e42baa423214d2465eda6f0a9e1d"
+      },
+      "validation_receipt": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff/validation.json",
+        "sha256": "c4caf105678160cf5806cdc28139362deaeb14871017429c376fe061e3a1f4b3"
+      },
+      "speed_receipt": {
+        "path": "/home/mahaloz/kwt/issues1019/scratch/904-caller/implementation-preparation/final-handoff/speed-verification.json",
+        "sha256": "491f4bcdeee6def567e88b796551c3aa551d5cca5fee42386222af12eae22e14"
+      },
+      "status": "passed; preserved unchanged as historical evidence after foreign1216 advanced main"
+    }
+  ]
+}

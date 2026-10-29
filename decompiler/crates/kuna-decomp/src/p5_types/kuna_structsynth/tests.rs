@@ -5,6 +5,74 @@ use super::*;
 /// The sibling merge is a separate option; these tests hold it off.
 const OFF: crate::kuna_structmerge::StructMergeMode = crate::kuna_structmerge::StructMergeMode::Off;
 
+fn indexed_access_family(scales: &[Option<u64>], copies: u32) -> (Funcdata, VarnodeId) {
+    use crate::context::ArchContext;
+    use kuna_base::address::Address;
+    use kuna_base::space::{spacetype, AddrSpace, AddrSpaceManager, ConstantSpace, UniqueSpace};
+
+    let mut manage = AddrSpaceManager::new();
+    manage.insert_space(Rc::new(ConstantSpace::new())).unwrap();
+    manage.insert_space(Rc::new(UniqueSpace::new(1, 0, false))).unwrap();
+    let ram = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, 0, 1, 1));
+    manage.insert_space(Rc::clone(&ram)).unwrap();
+    let mut data = Funcdata::new("f", "f", Rc::new(ArchContext::new(manage)), Address::new(Rc::clone(&ram), 0x1000), 0x10000000, 0).unwrap();
+    let base = data.new_varnode(8, &Address::new(Rc::clone(&ram), 0x2000), None);
+    let base = data.set_input_varnode(base).unwrap();
+    let index = data.new_varnode(8, &Address::new(Rc::clone(&ram), 0x3000), None);
+    let index = data.set_input_varnode(index).unwrap();
+    let root = data.bblocks_ref().root.unwrap();
+    let block = data.bblocks_mut().new_block_basic(root);
+    let mut address = base;
+    for scale in scales {
+        let op = data.new_op(3, Address::new(Rc::clone(&ram), 0x1000));
+        data.op_set_opcode_code(op, OpCode::CPUI_PTRADD);
+        data.op_set_input(op, address, 0).unwrap();
+        data.op_set_input(op, index, 1).unwrap();
+        let size = scale.map(|size| data.new_constant(8, size)).unwrap_or(index);
+        data.op_set_input(op, size, 2).unwrap();
+        address = data.new_unique_out(8, op).unwrap();
+        data.op_insert_end(op, block);
+    }
+    for _ in 0..copies {
+        let op = data.new_op(1, Address::new(Rc::clone(&ram), 0x1000));
+        data.op_set_opcode_code(op, OpCode::CPUI_COPY);
+        data.op_set_input(op, address, 0).unwrap();
+        address = data.new_unique_out(8, op).unwrap();
+        data.op_insert_end(op, block);
+    }
+    for pointer in [base, address] {
+        let op = data.new_op(2, Address::new(Rc::clone(&ram), 0x1000));
+        data.op_set_opcode_code(op, OpCode::CPUI_LOAD);
+        let space = data.new_constant(4, ram.get_index() as u64);
+        data.op_set_input(op, space, 0).unwrap();
+        data.op_set_input(op, pointer, 1).unwrap();
+        data.new_unique_out(8, op).unwrap();
+        data.op_insert_end(op, block);
+    }
+    (data, base)
+}
+
+#[test]
+fn float_pointee_requires_every_nested_stride_to_agree_without_truncation() {
+    for (scales, admit) in [
+        (vec![Some(8), Some(8)], true),
+        (vec![Some(8), Some(4)], false),
+        (vec![Some(4), Some(8)], false),
+        (vec![Some(8), None], false),
+        (vec![None, Some(8)], false),
+        (vec![Some((1 << 32) + 8)], false),
+    ] {
+        let (data, base) = indexed_access_family(&scales, 0);
+        assert_eq!(every_access_through(&data, base, 8), admit, "{scales:?}");
+    }
+}
+
+#[test]
+fn an_unproven_access_cannot_hide_beside_a_proven_access() {
+    let (data, base) = indexed_access_family(&[], MAX_PEEL_DEPTH + 1);
+    assert!(!every_access_through(&data, base, 8));
+}
+
 #[test]
 fn option_parses_every_mode_and_rejects_anything_else() {
     assert_eq!(OptionStructSynth.apply("off").unwrap().0, StructSynthMode::Off);

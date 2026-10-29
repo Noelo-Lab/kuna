@@ -80,6 +80,13 @@ pub struct FuncResult {
     /// header, and `decompile-graph`'s per-function row.  Always `None` on the
     /// `decompile-all` path, which does not serialize prototypes.
     pub proto: Option<String>,
+    /// Actual C identifier used by project definitions and prototypes. Selection
+    /// names and aliases retain their inventory meaning, including in streams.
+    pub emitted_c_name: Option<String>,
+    /// Complete declarations for named callees, retained when bodies stream out.
+    pub call_declarations: Vec<String>,
+    /// Private project/worker contracts for live callwide proofs.
+    pub callwide_prototypes: Vec<kuna_decomp::kuna_callwide::ExportPrototype>,
     pub variables: Vec<VarInfo>,
     /// (kuna `structdefs`) The composite/enum/typedef definitions this
     /// function's C names, in definition-before-use order. Empty unless the
@@ -280,7 +287,7 @@ pub fn decompile_targets(
         want_tokens: false,
         want_pointer_arguments: false,
     };
-    decompile_batch(prog, targets, &opts)
+    decompile_batch(prog, targets, &opts, &mut |_| {})
 }
 
 /// [`decompile_targets`] with every option explicit: the same batch, including
@@ -291,7 +298,7 @@ pub fn decompile_targets_with(
     targets: Vec<FunctionEntry>,
     opts: &DecompileOptions,
 ) -> Vec<FuncResult> {
-    decompile_batch(prog, targets, opts)
+    decompile_batch(prog, targets, opts, &mut |_| {})
 }
 
 /// The project-export form of [`decompile_targets`]: prototypes for the `.h`,
@@ -305,8 +312,18 @@ pub fn decompile_export_targets(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
 ) -> Vec<FuncResult> {
+    decompile_export_targets_watched(prog, targets, &mut |_| {})
+}
+
+/// [`decompile_export_targets`], handing `landed` each target's first result as
+/// it finishes — before a convergence sweep may decide it again.
+pub fn decompile_export_targets_watched(
+    prog: &mut ConsoleProgram,
+    targets: Vec<FunctionEntry>,
+    landed: &mut dyn FnMut(&FuncResult),
+) -> Vec<FuncResult> {
     let opts = export_options(targets.len() == 1);
-    decompile_batch(prog, targets, &opts)
+    decompile_batch(prog, targets, &opts, landed)
 }
 
 /// The options [`decompile_export_targets`] runs with, for a driver that owns
@@ -329,6 +346,7 @@ fn decompile_batch(
     prog: &mut ConsoleProgram,
     targets: Vec<FunctionEntry>,
     opts: &DecompileOptions,
+    landed: &mut dyn FnMut(&FuncResult),
 ) -> Vec<FuncResult> {
     let mut out = Vec::with_capacity(targets.len());
     // Only the surfaces that can decide a function again pay for the replay list.
@@ -339,7 +357,10 @@ fn decompile_batch(
     };
     kuna_decomp::kuna_elemptr::start(prog.arch_mut(), targets.len() <= 1);
     let mut pending = targets.into_iter();
-    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| out.push(r));
+    decompile_pulled(prog, opts, &mut || pending.next(), &mut |r| {
+        landed(&r);
+        out.push(r);
+    });
     converge_synthesized_structs(prog, opts, &replay, &mut out);
     converge_element_globals(prog, opts, &replay, &mut out);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
@@ -450,6 +471,7 @@ pub fn names_any_type(r: &FuncResult, names: &[String]) -> bool {
     let mut hit = |hay: &str| names.iter().any(|n| contains_identifier(hay, n));
     r.code.as_deref().is_some_and(&mut hit)
         || r.proto.as_deref().is_some_and(&mut hit)
+        || r.call_declarations.iter().any(|declaration| hit(declaration))
         || r.variables.iter().any(|v| hit(&v.type_name))
         || r.types.iter().any(|t| hit(&t.name))
         || r.globals.iter().any(|g| hit(&g.declaration))
@@ -502,6 +524,7 @@ pub fn decompile_pulled(
     next: &mut dyn FnMut() -> Option<FunctionEntry>,
     sink: &mut dyn FnMut(FuncResult),
 ) {
+    crate::kuna_callwide::prepare(prog);
     let DecompileOptions {
         no_vars,
         want_proto,
@@ -522,6 +545,8 @@ pub fn decompile_pulled(
     // every other batch keeps the preamble, because its document has nothing
     // else that carries a definition. Restored on the way out so one program
     // can drive both surfaces.
+    let previous_header = prog.arch().print().options.header_carries_types;
+    prog.arch_mut().print_mut().options.header_carries_types = header_carries_types;
     let preamble = prog.arch().print().options.struct_defs();
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(false);
@@ -557,6 +582,9 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: Some(error),
                 proto: None,
+                emitted_c_name: None,
+                call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -593,6 +621,9 @@ pub fn decompile_pulled(
                 size: size as i64,
                 error: None,
                 proto: None,
+                emitted_c_name: None,
+                call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -617,6 +648,9 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some("entry address is not mapped in this input".into()),
                 proto: None,
+                emitted_c_name: None,
+                call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -694,6 +728,7 @@ pub fn decompile_pulled(
             entry.clone(),
             declared,
             &crate::decompile_step::DecompileSeed {
+                purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
                 mapped_symbols: &mapped,
                 usepoint_symbols: &[],
                 dynamic_symbols: &[],
@@ -712,9 +747,10 @@ pub fn decompile_pulled(
         // console's `decompile` / `rename` / `decompile` sequence). Emitted only
         // when such a directive actually bound to this function, so every other
         // invocation keeps its current cost.
+        let mut replayed: Vec<crate::assertions::Expected> = Vec::new();
         let result = match step.result {
             Ok(mut fd) if replay => {
-                if crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
+                if let Some(expected) = crate::assertions::apply_symbol_scoped(prog, &mut fd, &name, single_target) {
                     let carried = crate::assertions::carried_symbols(&fd);
                     let carried_usepoint = crate::assertions::carried_usepoint_symbols(&fd);
                     let carried_dynamic = crate::assertions::carried_dynamic_symbols(&fd);
@@ -727,6 +763,7 @@ pub fn decompile_pulled(
                         entry,
                         declared,
                         &crate::decompile_step::DecompileSeed {
+                            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
                             mapped_symbols: &carried,
                             usepoint_symbols: &carried_usepoint,
                             dynamic_symbols: &carried_dynamic,
@@ -739,6 +776,7 @@ pub fn decompile_pulled(
                     )
                     .result;
                     prog.arch_mut().kuna_prior_names = Default::default();
+                    replayed = expected;
                     second
                 } else {
                     Ok(fd)
@@ -762,6 +800,10 @@ pub fn decompile_pulled(
                 // would otherwise abort the WHOLE binary and discard every function
                 // already decompiled. Containing it here honors the per-function
                 // isolation contract (one bad function → one `error` record).
+                // (kuna `narrowargs callers`) Record what this function passes at each call.
+                if prog.arch().kuna_callerargs.recording {
+                    kuna_decomp::kuna_callerargs::record(prog.arch_mut(), &park_entry, &fd);
+                }
                 // (kuna `protoorder`) State what this function's recovery found for its callers.
                 if opts.park_recovered_proto {
                     let mode = prog.arch().protoorder;
@@ -790,6 +832,8 @@ pub fn decompile_pulled(
                 // (kuna `callrettype`) State what this function returns for its callers.
                 if opts.park_recovered_proto {
                     kuna_decomp::kuna_callrettype::record(prog.arch_mut(), &park_entry, &fd);
+                    // (kuna `narrowret`) And the narrow value it returns zero-extended.
+                    kuna_decomp::kuna_narrowret::record(prog.arch_mut(), &park_entry, &fd);
                     // (kuna `voidret`) And whether it returns nothing a caller reads.
                     kuna_decomp::kuna_voidret::record(prog.arch_mut(), &park_entry, &fd);
                     // (kuna `elemptr`) And which of its pointers are indexed buffers.
@@ -806,8 +850,19 @@ pub fn decompile_pulled(
                 }
                 // (kuna `elemptr`) Record what this function said about each global.
                 kuna_decomp::kuna_elemptr::record(prog.arch_mut(), &fd);
+                let original_display = fd.get_display_name().to_string();
+                if header_carries_types {
+                    if let Some(display) = crate::kuna_projectfunctionnames::display(prog.arch(), &fd) {
+                        fd.set_display_name(&display);
+                    }
+                }
+                let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    if header_carries_types {
+                        crate::kuna_projectfunctionnames::reserve(prog.arch(), &mut fd)
+                            .expect("project C symbol names must remain distinct");
+                    }
                     // Trim the surrounding newlines the same way `kuna decompile`
                     // does (`decompile.rs::trim_newlines`), so the per-function
                     // `code` is byte-identical to the single-shot path.
@@ -822,13 +877,21 @@ pub fn decompile_pulled(
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
+                    let calls = if want_proto && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C {
+                        kuna_decomp::kuna_callprototypes::declarations(prog.arch(), &fd)?
+                    } else { Default::default() };
+                    let call_declarations = calls.declarations;
+                    let callwide_prototypes = calls.callwide_prototypes;
                     let field_calls = kuna_decomp::kuna_calltargettype::field_declarations(prog.arch(), &fd);
                     let mut variables =
                         if no_vars { Vec::new() } else { extract_variables(prog.arch(), &fd) };
                     // (kuna `structdefs`) The layout side of the same function:
                     // the definitions the preamble just printed above the body,
                     // as records. Empty unless the option is on.
-                    let types = extract_type_definitions(prog.arch(), &fd);
+                    let mut types = extract_type_definitions(prog.arch(), &fd);
+                    if want_proto {
+                        types.extend(kuna_decomp::kuna_callprototypes::type_definitions(prog.arch(), &fd));
+                    }
                     let mut stack_objects = if no_vars { Vec::new() } else {
                         kuna_decomp::kuna_stackobjectinfo::extract(prog.arch(), &fd)
                     };
@@ -837,7 +900,7 @@ pub fn decompile_pulled(
                             use_.address = prog.output_code_offset(use_.address);
                         }
                     }
-                    let var_refs = provenance.apply_to_variables_with_refs(&fd, &mut variables);
+                    let var_refs = provenance.apply_to_variables_with_refs(prog.arch(), &fd, &mut variables);
                     let detail = want_tokens.then(|| {
                         Box::new(crate::inspect::FuncDetail::resolve(
                             prog, &fd, &var_refs, &raw_tokens, &untrimmed, &code, &variables,
@@ -866,10 +929,13 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
-                    (code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)
-                }));
+                    Ok::<_, String>((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects))
+                })).unwrap_or_else(|_| Err("panic while rendering C / extracting variables".into()));
+                fd.set_display_name(&original_display);
                 match rendered {
-                    Ok((code, variables, types, (globals, field_calls), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => sink(FuncResult {
+                    Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {
+                    crate::assertions::verify_printed(prog, &fd, &code, &replayed);
+                    sink(FuncResult {
                         name,
                         address,
                         byte_address,
@@ -877,6 +943,9 @@ pub fn decompile_pulled(
                         code: Some(code),
                         error: None,
                         proto,
+                        emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
+                        call_declarations,
+                        callwide_prototypes,
                         variables,
                         stack_objects,
                         types,
@@ -889,15 +958,19 @@ pub fn decompile_pulled(
                         synth: None,
                         pointerargs,
                         detail,
-                    }),
-                    Err(_) => sink(FuncResult {
+                    })
+                    }
+                    Err(error) => sink(FuncResult {
                         name,
                         address,
                         byte_address,
                         size: size as i64,
                         code: None,
-                        error: Some("panic while rendering C / extracting variables".into()),
+                        error: Some(error),
                         proto: None,
+                        emitted_c_name: None,
+                        call_declarations: Vec::new(),
+                        callwide_prototypes: Vec::new(),
                         variables: Vec::new(),
                         types: Vec::new(),
                         stack_objects: Vec::new(),
@@ -921,6 +994,9 @@ pub fn decompile_pulled(
                 code: None,
                 error: Some(e.explain().to_string()),
                 proto: None,
+                emitted_c_name: None,
+                call_declarations: Vec::new(),
+                callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
                 stack_objects: Vec::new(),
@@ -936,6 +1012,7 @@ pub fn decompile_pulled(
             }),
         }
     }
+    prog.arch_mut().print_mut().options.header_carries_types = previous_header;
     if header_carries_types && preamble {
         prog.arch_mut().print_mut().options.set_struct_defs(true);
     }
@@ -1175,6 +1252,121 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
     None
 }
 
+/// A proven wide call requires one compatible declaration or selected definition.
+/// External declaration text differences conservatively refuse the export.
+pub fn validate_callwide_header<'a>(
+    prelude: &str,
+    types: &str,
+    results: impl IntoIterator<Item = &'a FuncResult>,
+) -> Result<(), String> {
+    deferred_callwide_header(prelude, types, results, &BTreeSet::new()).map(|_| ())
+}
+
+/// Defer only a compatible raw-word conflict awaiting its selected producer.
+pub fn deferred_callwide_header<'a>(
+    prelude: &str,
+    types: &str,
+    results: impl IntoIterator<Item = &'a FuncResult>,
+    selected_entries: &BTreeSet<u64>,
+) -> Result<BTreeSet<u64>, String> {
+    let results: Vec<_> = results.into_iter().collect();
+    if !results.iter().any(|r| r.error.is_none() && !r.callwide_prototypes.is_empty()) {
+        return Ok(BTreeSet::new());
+    }
+    let completed: BTreeSet<_> = results.iter().map(|r| r.byte_address).collect();
+    let results: Vec<_> = results.into_iter().filter(|r| r.error.is_none()).collect();
+    let same = |a: &kuna_decomp::kuna_callwide::ExportPrototype,
+                b: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        a.name == b.name && a.entry == b.entry && a.signed == b.signed && a.inputs == b.inputs
+    };
+    let same_words = |a: &kuna_decomp::kuna_callwide::ExportPrototype,
+                      b: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        a.name == b.name && a.entry == b.entry && a.signed == b.signed && a.inputs.len() == b.inputs.len()
+    };
+    let mut selected: BTreeMap<String, Vec<&FuncResult>> = BTreeMap::new();
+    for result in &results {
+        if let Some(proto) = result.proto.as_deref() {
+            selected.entry(declarator_name(proto.trim().trim_end_matches(';'))).or_default().push(result);
+        }
+    }
+    let agrees = |a: &kuna_decomp::kuna_callwide::ExportPrototype,
+                  b: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        same(a, b) || (same_words(a, b) && selected.get(&a.name).is_some_and(|own| {
+            own.len() == 1 && own[0].callwide_prototypes.iter().any(|definition| {
+                definition.definition && same_words(a, definition)
+            })
+        }))
+    };
+    let mut contracts = BTreeMap::new();
+    let mut required = BTreeSet::new();
+    let mut pending = BTreeSet::new();
+    let can_wait = |contract: &kuna_decomp::kuna_callwide::ExportPrototype| {
+        selected_entries.contains(&contract.entry) && !completed.contains(&contract.entry)
+            && !selected.contains_key(&contract.name)
+    };
+    for result in &results {
+        for contract in &result.callwide_prototypes {
+            if let Some(previous) = contracts.insert(contract.name.as_str(), contract) {
+                if !agrees(previous, contract) {
+                    if same_words(previous, contract) && can_wait(contract) {
+                        pending.insert(contract.entry);
+                    } else {
+                        return Err(format!("callwide export: incompatible contracts for {}", contract.name));
+                    }
+                }
+            }
+            if contract.definition {
+                if contract.entry != result.byte_address || !result.proto.as_deref().is_some_and(|proto| {
+                    declarator_name(proto.trim().trim_end_matches(';')) == contract.name
+                }) {
+                    return Err(format!("callwide export: missing selected definition for {}", contract.name));
+                }
+            } else {
+                required.insert(contract.name.as_str());
+                if !result.call_declarations.iter().any(|decl| {
+                    declarator_name(decl.trim().trim_end_matches(';')) == contract.name
+                }) {
+                    return Err(format!("callwide export: missing call declaration for {}", contract.name));
+                }
+            }
+        }
+    }
+    let shadowed: BTreeSet<_> = typedef_names(prelude).into_iter().chain(typedef_names(types)).collect();
+    let globals: BTreeSet<_> = results.iter().flat_map(|r| &r.globals).map(|g| g.name.as_str()).collect();
+    for name in contracts.keys() {
+        if shadowed.contains(*name) {
+            return Err(format!("callwide export: {} conflicts with a type name", name));
+        }
+        if globals.contains(*name) {
+            return Err(format!("callwide export: {} conflicts with a data name", name));
+        }
+        if selected.get(*name).is_some_and(|own| own.len() != 1) {
+            return Err(format!("callwide export: multiple selected definitions for {name}"));
+        }
+    }
+    for name in required {
+        if let Some(own) = selected.get(name) {
+            if own.len() != 1 || !own[0].callwide_prototypes.iter().any(|definition| {
+                definition.definition && same_words(contracts[name], definition)
+            }) {
+                return Err(format!("callwide export: selected definition disagrees for {name}"));
+            }
+            continue;
+        }
+        let declarations: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations)
+            .filter(|decl| declarator_name(decl.trim().trim_end_matches(';')) == name)
+            .map(|decl| decl.trim()).collect();
+        if declarations.len() != 1 {
+            if declarations.len() > 1 && can_wait(contracts[name]) {
+                pending.insert(contracts[name].entry);
+            } else {
+                return Err(format!("callwide export: external declarations disagree for {name}"));
+            }
+        }
+    }
+    Ok(pending)
+}
+
 /// `<name>.h`: include guard + recompile prelude + user type definitions +
 /// the prototype section (successes in address order; failures as comments).
 ///
@@ -1186,11 +1378,16 @@ fn matching_open(text: &str, open: char, close: char) -> Option<usize> {
 /// mentions it depends on it, while the suppressed prototype is one line, still
 /// printed verbatim in the comment.
 ///
+/// A C function name claimed by several entries, or also by a data or type
+/// declaration, is listed in an address-only comment (complete records, so
+/// streamed and parallel exports report the same); the export still completes.
+///
 /// The type block is filtered by [`prune_unreferenced_synth_types`] first, so a
 /// synthesized structure the document no longer names is not declared.
-pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> String {
+pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[FuncResult]) -> Result<String, String> {
     let guard = sanitize_guard(file_name);
     let types = &declare_called_fields(&prune_unreferenced_synth_types(types, results), results);
+    validate_callwide_header(prelude, types, results.iter())?;
     let shadowed = typedef_names(types);
     let mut out = String::new();
     out.push_str(&format!("#ifndef {guard}\n#define {guard}\n\n"));
@@ -1199,15 +1396,45 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         out.push_str("\n/* user-defined types */\n");
         out.push_str(types);
     }
+    let conflicts = crate::kuna_projectfunctionnames::conflicts(results, &shadowed);
+    if !conflicts.is_empty() {
+        out.push_str("\n/* C name conflicts: the generated C does not compile until these are renamed */\n");
+        for conflict in conflicts {
+            let _ = writeln!(out, "/* {conflict} */");
+        }
+    }
     let globals = global_declarations(results);
     if !globals.is_empty() {
         out.push_str("\n/* globals the code names by address */\n");
         out.push_str(&globals);
     }
+    let own: BTreeSet<_> = results.iter().filter(|r| r.error.is_none())
+        .filter_map(|r| r.proto.as_deref())
+        .map(|proto| declarator_name(proto.trim().trim_end_matches(';')))
+        .collect();
+    let mut calls: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
+    for declaration in results.iter().flat_map(|r| &r.call_declarations) {
+        let name = declarator_name(declaration.trim().trim_end_matches(';'));
+        if !own.contains(&name) {
+            calls.entry(name).or_default().insert(declaration.trim());
+        }
+    }
+    if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
+    for (name, declarations) in calls {
+        let text = declarations.iter().copied().collect::<Vec<_>>().join(" ");
+        let quoted = text.replace("/*", "/ *").replace("*/", "* /");
+        if shadowed.contains(&name) {
+            let _ = writeln!(out, "/* Call target declaration conflicts with a type: {quoted} */");
+        } else if declarations.len() > 1 {
+            let _ = writeln!(out, "/* Call target declarations disagree: {quoted} */");
+        } else {
+            let _ = writeln!(out, "extern {text}");
+        }
+    }
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
-            (Some(proto), None) if shadowed.contains(&r.name) => {
+            (Some(proto), None) if shadowed.contains(r.emitted_c_name.as_deref().unwrap_or(&r.name)) => {
                 out.push_str(&format!(
                     "/* `{}` is a type name above; prototype omitted: {} */\n",
                     r.name,
@@ -1229,12 +1456,12 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
         }
     }
     out.push_str(&format!("\n#endif /* {guard} */\n"));
-    out
+    Ok(out)
 }
 
 /// (kuna `globalref`) One `extern` line per global the functions name by address,
-/// in address order, and (kuna `elemptr`) per global a function reads directly
-/// and `elemptr` typed an element pointer: a subscript `dat_5068[i]` reads the
+/// in address order, including direct scalar reads and writes and (kuna
+/// `elemptr`) direct element pointers: a subscript `dat_5068[i]` reads the
 /// element its declaration names.
 ///
 /// Each function declares the object at the type IT uses it at, so two
@@ -1254,8 +1481,13 @@ pub fn build_header(file_name: &str, prelude: &str, types: &str, results: &[Func
 ///   a body reads `dat_4020[i]` at the declared element, so either one would
 ///   change what the other computes (the batch's agreement pass keeps this
 ///   from happening; a `--jobs` worker cannot see the other functions);
-/// * otherwise the one type the direct accesses agree on;
+/// * otherwise the one type the direct accesses agree on, where a named
+///   object a function uses only in ways any integer of its width serves
+///   takes the integer type the other functions' accesses agree on;
 /// * otherwise, with direct accesses at two types, nothing, and a comment says so;
+/// * a name only read and written directly whose bytes another global's
+///   overlap gets nothing, and a comment: two declarations would make one
+///   storage two objects, so a store through one would never reach the other;
 /// * with no direct access, a type over the unknown byte a `void *` use stands
 ///   for, then the larger object, then the declaration more functions make,
 ///   then the earlier function.
@@ -1268,12 +1500,37 @@ fn global_declarations(results: &[FuncResult]) -> String {
         if g.direct { e.1.push(g) } else { e.0.push(g) }
     }
     let quote = |d: &str| d.replace("/*", "/ *").replace("*/", "* /");
+    let mut name_addresses: BTreeMap<&str, BTreeSet<u64>> = BTreeMap::new();
+    for g in results.iter().flat_map(|r| r.globals.iter()) {
+        name_addresses.entry(&g.name).or_default().insert(g.address);
+    }
     let mut out = String::new();
-    for (taken, direct) in by_addr.values() {
-        if taken.is_empty() && !direct.iter().any(|g| g.elem) {
+    let mut reach: Option<(u64, &str)> = None;
+    for (&address, (taken, direct)) in &by_addr {
+        let integers = direct.iter().any(|g| !g.unknown) && direct.iter().all(|g| g.unknown || g.integer);
+        let direct: Vec<&GlobalInfo> =
+            direct.iter().copied().filter(|g| !(integers && g.unknown && g.integer)).collect();
+        let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
+        let end = taken.iter().chain(direct.iter()).map(|g| address.saturating_add(g.size.max(1) as u64)).max();
+        let end = end.unwrap_or(address).max(address.saturating_add(1));
+        let overlap = reach.filter(|&(r, _)| r > address).map(|(_, n)| n).or_else(|| {
+            let (t, d) = by_addr.range(address.saturating_add(1)..end).next()?.1;
+            t.iter().chain(d.iter()).next().map(|g| g.name.as_str())
+        });
+        if reach.map_or(true, |(r, _)| end > r) {
+            reach = Some((end, name));
+        }
+        let names: BTreeSet<&str> = taken.iter().chain(direct.iter()).map(|g| g.name.as_str()).collect();
+        if names.iter().any(|name| name_addresses[name].len() > 1) {
+            let _ = writeln!(out, "/* Global name denotes multiple storage addresses; declaration omitted: {} */",
+                names.iter().map(|name| quote(name)).collect::<Vec<_>>().join(", "));
             continue;
         }
-        let name = taken.iter().chain(direct.iter()).next().map_or("", |g| g.name.as_str());
+        if names.len() > 1 {
+            let _ = writeln!(out, "/* Global aliases require shared storage; declarations omitted: {} */",
+                names.iter().map(|name| quote(name)).collect::<Vec<_>>().join(", "));
+            continue;
+        }
         let mut decls: Vec<(&GlobalInfo, usize)> = Vec::new();
         for g in taken.iter().chain(direct.iter()) {
             match decls.iter_mut().find(|(d, _)| d.declaration == g.declaration) {
@@ -1312,6 +1569,10 @@ fn global_declarations(results: &[FuncResult]) -> String {
                 continue;
             }
         };
+        if let Some(other) = overlap.filter(|_| taken.is_empty() && !direct.iter().any(|g| g.elem)) {
+            let _ = writeln!(out, "/* {name} is overlapped by {other}, so it is not declared: {} */", quote(&chosen));
+            continue;
+        }
         let others: Vec<String> =
             decls.iter().filter(|(g, _)| g.declaration != chosen).map(|(g, _)| quote(&g.declaration)).collect();
         if others.is_empty() {
@@ -1634,6 +1895,248 @@ mod tests {
         FuncResult,
     };
 
+    #[test]
+    fn named_globals_do_not_collapse_distinct_storage_or_split_aliases() {
+        let mut result = streamed("void sample(void)", "int");
+        let object = |name: &str, address| super::GlobalInfo {
+            address,
+            name: name.into(),
+            declaration: format!("unsigned int {name}"),
+            size: 4,
+            unknown: false,
+            direct: true,
+            aggregate: false,
+            elem: false,
+            integer: true,
+        };
+        result.globals = vec![object("counter", 0x5000), object("counter", 0x5000)];
+        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int counter;\n");
+        result.globals.push(object("counter", 0x6000));
+        let declarations = super::global_declarations(std::slice::from_ref(&result));
+        assert!(declarations.contains("multiple storage addresses"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        result.globals = vec![object("counter", 0x5000), object("alias", 0x5000)];
+        let declarations = super::global_declarations(&[result]);
+        assert!(declarations.contains("aliases require shared storage"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        let mut whole = object("whole", 0x5000);
+        whole.size = 8;
+        whole.declaration = "unsigned long whole".into();
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![whole, object("interior", 0x5004)];
+        let declarations = super::global_declarations(&[result]);
+        assert!(declarations.contains("overlapped"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+    }
+
+    #[test]
+    fn named_globals_take_the_integer_type_other_functions_read_them_at() {
+        let named = |declaration: &str, unknown: bool, integer: bool| super::GlobalInfo {
+            address: 0x5000,
+            name: "count".into(),
+            declaration: declaration.into(),
+            size: 8,
+            unknown,
+            direct: true,
+            aggregate: false,
+            elem: false,
+            integer,
+        };
+        let mut agnostic = streamed("void bump(void)", "int");
+        agnostic.globals = vec![named("unsigned long count", true, true)];
+        let mut signed = streamed("int test(void)", "int");
+        signed.globals = vec![named("long count", false, true)];
+        let declarations = super::global_declarations(&[agnostic.clone(), signed]);
+        assert_eq!(declarations, "extern long count;\n");
+        let mut pointer = streamed("char *name(void)", "int");
+        pointer.globals = vec![named("char *count", false, false)];
+        let declarations = super::global_declarations(&[agnostic.clone(), pointer]);
+        assert!(declarations.contains("read at two types"), "{declarations}");
+        assert!(!declarations.contains("extern "), "{declarations}");
+        let declarations = super::global_declarations(std::slice::from_ref(&agnostic));
+        assert_eq!(declarations, "extern unsigned long count;\n");
+    }
+
+    #[test]
+    fn scalar_global_declarations_keep_conflicting_direct_types_diagnostic() {
+        let mut result = streamed("void sample(void)", "int");
+        let direct = |ty: &str| super::GlobalInfo {
+            address: 0x5000,
+            name: "dat_5000".into(),
+            declaration: format!("{ty} dat_5000"),
+            size: 4,
+            unknown: false,
+            direct: true,
+            aggregate: false,
+            elem: false,
+            integer: ty != "float",
+        };
+        result.globals = vec![direct("unsigned int")];
+        assert_eq!(super::global_declarations(std::slice::from_ref(&result)), "extern unsigned int dat_5000;\n");
+        result.globals.push(direct("float"));
+        let declarations = super::global_declarations(&[result]);
+        assert!(!declarations.contains("extern "), "{declarations}");
+        assert!(declarations.contains("read at two types"), "{declarations}");
+        assert!(declarations.contains("unsigned int dat_5000"), "{declarations}");
+        assert!(declarations.contains("float dat_5000"), "{declarations}");
+    }
+
+    #[test]
+    fn overlapping_direct_globals_are_not_split_into_two_objects() {
+        let global = |address: u64, ty: &str, size: i64, direct: bool| super::GlobalInfo {
+            address,
+            name: format!("dat_{address:x}"),
+            declaration: format!("{ty} dat_{address:x}"),
+            size,
+            unknown: false,
+            direct,
+            aggregate: false,
+            elem: false,
+            integer: true,
+        };
+        let mut result = streamed("void sample(void)", "int");
+        result.globals = vec![global(0x5000, "unsigned int", 4, true), global(0x5004, "unsigned int", 4, true)];
+        let adjacent = super::global_declarations(std::slice::from_ref(&result));
+        assert_eq!(adjacent, "extern unsigned int dat_5000;\nextern unsigned int dat_5004;\n");
+        result.globals = vec![global(0x5000, "unsigned long", 8, true), global(0x5004, "unsigned int", 4, true)];
+        let split = super::global_declarations(std::slice::from_ref(&result));
+        assert!(!split.contains("extern "), "{split}");
+        assert!(split.contains("dat_5000 is overlapped by dat_5004"), "{split}");
+        assert!(split.contains("dat_5004 is overlapped by dat_5000"), "{split}");
+        result.globals = vec![global(0x5000, "long", 8, false), global(0x5004, "int", 4, true)];
+        let taken = super::global_declarations(&[result]);
+        assert!(taken.starts_with("extern long dat_5000;\n"), "{taken}");
+        assert!(taken.contains("dat_5004 is overlapped by dat_5000"), "{taken}");
+        assert!(!taken.contains("extern int dat_5004"), "{taken}");
+    }
+
+    #[test]
+    fn complete_project_checks_actual_c_names_after_bodies_are_streamed() {
+        let conflicts = |types: &str, records: &[FuncResult]| {
+            crate::kuna_projectfunctionnames::conflicts(records, &super::typedef_names(types)).len()
+        };
+        let mut first = streamed("void linked(void)", "int");
+        first.name = "source_one".into();
+        first.emitted_c_name = Some("linked".into());
+        first.byte_address = 0x1000;
+        let mut second = first.clone();
+        second.name = "source_two".into();
+        second.byte_address = 0x2000;
+        assert_eq!(conflicts("", &[first.clone(), first.clone()]), 0);
+        let records = [first.clone(), second];
+        assert_eq!(conflicts("", &records), 1);
+        let header = super::build_header("fresh.so", "", "", &records).unwrap();
+        assert!(header.contains("/* C function name has multiple owning entries, including 0x1000 */"), "{header}");
+        assert!(!header.contains("#error"), "{header}");
+        assert_eq!(conflicts("typedef int linked;", &[first.clone()]), 1);
+        first.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "linked".into(), declaration: "int linked".into(),
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false, integer: false,
+        });
+        assert_eq!(conflicts("", &[first]), 1);
+    }
+
+    #[test]
+    fn streamed_call_declarations_keep_types_and_avoid_repeating_definitions() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "int local(int);".into(),
+            "int external_value(struct_42 *value);".into(),
+            "int external_value(struct_42 *value);".into(),
+            "int split(int);".into(),
+            "long split(long);".into(),
+        ];
+        assert!(super::names_any_type(&result, &["struct_42".into()]));
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        assert_eq!(header.matches("extern int external_value").count(), 1);
+        assert!(!header.contains("extern int local"));
+        assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
+    }
+
+    fn wide_call() -> FuncResult {
+        let mut result = streamed("unsigned long long caller(void);", "unsigned long long");
+        result.call_declarations = vec!["unsigned long long producer(int,int,int,int);".into()];
+        result.callwide_prototypes = vec![kuna_decomp::kuna_callwide::ExportPrototype {
+            name: "producer".into(), entry: 0x2000, signed: false,
+            inputs: vec![true; 4], definition: false,
+        }];
+        result
+    }
+
+    #[test]
+    fn wide_call_header_conflicts_refuse_instead_of_omitting_the_declaration() {
+        let result = wide_call();
+        let header = super::build_header("fresh", "", "", std::slice::from_ref(&result)).unwrap();
+        assert!(header.contains("extern unsigned long long producer(int,int,int,int);"));
+        let mut missing = result.clone();
+        missing.call_declarations.clear();
+        assert!(super::build_header("fresh", "", "", &[missing]).is_err());
+        let mut conflicting = result.clone();
+        conflicting.call_declarations.push("long long producer(int,int,int,int);".into());
+        assert!(super::build_header("fresh", "", "", &[conflicting]).is_err());
+        for types in ["typedef int producer;", ""] {
+            let prelude = if types.is_empty() { "typedef int producer;" } else { "" };
+            assert!(super::build_header("fresh", prelude, types, std::slice::from_ref(&result)).is_err());
+        }
+        let mut data_collision = result.clone();
+        data_collision.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "producer".into(), declaration: "int producer".into(),
+            size: 4, unknown: false, direct: false, aggregate: false, elem: false, integer: false,
+        });
+        assert!(super::build_header("fresh", "", "", &[data_collision]).is_err());
+        for change in 0..3 {
+            let mut another = result.clone();
+            match change {
+                0 => another.callwide_prototypes[0].signed = true,
+                1 => another.callwide_prototypes[0].inputs.pop().map(|_| ()).unwrap(),
+                _ => another.callwide_prototypes[0].entry += 4,
+            }
+            assert!(super::build_header("fresh", "", "", &[result.clone(), another]).is_err());
+        }
+        let mut buffered = result.clone();
+        buffered.code = Some("unsigned long long caller(void) { return producer(1,2,3,4); }".into());
+        assert_eq!(super::build_header("fresh", "", "", &[buffered]).unwrap(), header);
+    }
+
+    #[test]
+    fn selected_wide_definition_requires_the_exact_typed_contract() {
+        let caller = wide_call();
+        let mut definition = streamed("unsigned long long producer(int a,int b,int c,int d);", "int");
+        definition.address = 0x2000;
+        definition.byte_address = 0x2000;
+        definition.callwide_prototypes = caller.callwide_prototypes.clone();
+        definition.callwide_prototypes[0].definition = true;
+        let header = super::build_header("fresh", "", "", &[caller.clone(), definition.clone()]).unwrap();
+        assert!(!header.contains("extern unsigned long long producer"));
+        assert!(header.contains("producer(int a,int b,int c,int d)"));
+        let mut duplicate = definition.clone();
+        duplicate.byte_address = 0x3000;
+        duplicate.callwide_prototypes.clear();
+        assert!(super::build_header("fresh", "", "", &[definition.clone(), duplicate]).is_err());
+        let mut missing = definition.clone();
+        missing.callwide_prototypes.clear();
+        assert!(super::build_header("fresh", "", "", &[caller.clone(), missing]).is_err());
+        let mut unsigned_input = definition.clone();
+        unsigned_input.proto = Some("unsigned long long producer(int a,int b,int c,unsigned int d);".into());
+        unsigned_input.callwide_prototypes[0].inputs[3] = false;
+        let mut unsigned_caller = caller.clone();
+        unsigned_caller.call_declarations = vec!["unsigned long long producer(unsigned int,int,int,int);".into()];
+        unsigned_caller.callwide_prototypes[0].inputs[0] = false;
+        assert!(super::build_header("fresh", "", "", &[caller.clone(), unsigned_caller.clone()]).is_err());
+        let header = super::build_header("fresh", "", "", &[caller.clone(), unsigned_caller, unsigned_input]).unwrap();
+        assert!(header.contains("producer(int a,int b,int c,unsigned int d)"));
+        assert!(!header.contains("extern unsigned long long producer"));
+        for change in 0..3 {
+            let mut wrong = definition.clone();
+            match change {
+                0 => wrong.callwide_prototypes[0].signed = true,
+                1 => wrong.callwide_prototypes[0].inputs.push(true),
+                _ => wrong.callwide_prototypes[0].entry += 4,
+            }
+            assert!(super::build_header("fresh", "", "", &[caller.clone(), wrong]).is_err());
+        }
+    }
+
     /// A result carrying only what the streaming export keeps.
     fn streamed(proto: &str, param_type: &str) -> FuncResult {
         FuncResult {
@@ -1646,6 +2149,9 @@ mod tests {
             code: None,
             error: None,
             proto: Some(proto.into()),
+            emitted_c_name: None,
+            call_declarations: Vec::new(),
+            callwide_prototypes: Vec::new(),
             variables: vec![super::VarInfo {
                 name: "a0".into(),
                 type_name: param_type.into(),
@@ -1655,6 +2161,7 @@ mod tests {
                 arg_index: Some(0),
                 line_numbers: vec![],
                 addresses: vec![],
+                split_piece: false,
             }],
             types: vec![],
             stack_objects: Vec::new(),
@@ -1668,6 +2175,33 @@ mod tests {
             pointerargs: None,
             detail: None,
         }
+    }
+
+    #[test]
+    fn a_register_local_has_no_asm_variable_comment() {
+        let row = |name: &str, stack_offset: Option<i64>| super::VarInfo {
+            name: name.into(),
+            type_name: "long".into(),
+            stack_offset,
+            size: 8,
+            is_param: false,
+            arg_index: None,
+            line_numbers: vec![],
+            addresses: vec![],
+            split_piece: false,
+        };
+        let mut r = streamed("long sub_1000(long);", "long");
+        r.variables.extend([row("local_18", Some(-0x18)), row("v1", None)]);
+        assert_eq!(
+            super::var_header_lines(&r),
+            "; arg:   a0 (long)\n; stack: local_18 @ [stack-0x18] (long)\n"
+        );
+        r.variables.retain(|v| v.kind() == "register");
+        assert_eq!(super::var_header_lines(&r), "");
+        assert_eq!(
+            crate::project_stream::render_variables_section(&[r]),
+            "\n; --- variables ---\n"
+        );
     }
 
     #[test]
@@ -1910,7 +2444,8 @@ mod tests {
 
 /// The per-function variable comment block: `; arg:` lines (ABI order), then
 /// `; stack:` lines with the signed frame offset the decompiled name lives at.
-/// Empty when the function recovered no variables.
+/// A local outside the frame has no line. Empty when the function recovered no
+/// variables.
 pub(crate) fn var_header_lines(r: &FuncResult) -> String {
     let mut out = String::new();
     emit_var_header(r, &mut out);
@@ -1922,19 +2457,15 @@ fn emit_var_header(r: &FuncResult, out: &mut String) {
         out.push_str(&format!("; arg:   {} ({})\n", v.name, v.type_name));
     }
     for v in r.variables.iter().filter(|v| !v.is_param) {
-        match v.stack_offset {
-            Some(off) => {
-                let sign = if off < 0 { '-' } else { '+' };
-                out.push_str(&format!(
-                    "; stack: {} @ [stack{}0x{:x}] ({})\n",
-                    v.name,
-                    sign,
-                    off.unsigned_abs(),
-                    v.type_name
-                ));
-            }
-            None => out.push_str(&format!("; stack: {} ({})\n", v.name, v.type_name)),
-        }
+        let Some(off) = v.stack_offset else { continue };
+        let sign = if off < 0 { '-' } else { '+' };
+        out.push_str(&format!(
+            "; stack: {} @ [stack{}0x{:x}] ({})\n",
+            v.name,
+            sign,
+            off.unsigned_abs(),
+            v.type_name
+        ));
     }
 }
 
@@ -2177,6 +2708,10 @@ pub enum ReadmeLayout {
     /// A `--stream` export: decompile-ordered `.c`, `.asm` variable comments in
     /// their own section, plus `index.jsonl` and `.streaming`.
     Streamed,
+    /// A running `--progress` export: the [`Self::Standard`]
+    /// artifacts, written when it completes, behind a live `index.jsonl` feed and
+    /// `.streaming`.  A completed one writes the [`Self::Standard`] README.
+    Progress,
 }
 
 /// Which phase a streamed export is in — the `phase` field of `.streaming`.
@@ -2285,7 +2820,11 @@ pub fn render_readme(
 
 /// The README of an export that is still running: [`render_readme`] with a
 /// banner and a streaming-status section around it.
-pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -> String {
+pub fn render_readme_streaming(
+    facts: &ReadmeFacts,
+    progress: &StreamProgress,
+    layout: ReadmeLayout,
+) -> String {
     // Nothing was created, so there is nothing to inventory: a file list naming
     // a `.c` that does not exist, and a guide to reading artifacts that were
     // never written, is worse than no README at all.
@@ -2298,9 +2837,9 @@ pub fn render_readme_streaming(facts: &ReadmeFacts, progress: &StreamProgress) -
         "**This export is still streaming** — `.streaming` exists until every artifact is \
          final; files are appended / rewritten while it does.",
     );
-    let mut out = render_readme_inner(facts, progress.counts(), ReadmeLayout::Streamed, banner);
+    let mut out = render_readme_inner(facts, progress.counts(), layout, banner);
     out.push_str(&render_streaming_status(progress));
-    out.push_str(&render_streaming_caveats(facts));
+    out.push_str(&render_streaming_caveats(facts, layout));
     out
 }
 
@@ -2344,6 +2883,9 @@ fn render_readme_inner(
         ReadmeLayout::Streamed => {
             out.push_str("Generated by `kuna decompile-project --stream`.\n\n")
         }
+        ReadmeLayout::Progress => {
+            out.push_str("Generated by `kuna decompile-project --progress`.\n\n")
+        }
     }
     out.push_str("## Binary\n\n");
     out.push_str("| Field | Value |\n|---|---|\n");
@@ -2379,7 +2921,7 @@ fn render_readme_inner(
 
     out.push_str("\n## Files\n\n");
     match layout {
-        ReadmeLayout::Standard => out.push_str(&format!(
+        ReadmeLayout::Standard | ReadmeLayout::Progress => out.push_str(&format!(
             "- `{file_name}.c` — every decompiled function, address-ordered, each under a\n\
              \x20 `// Function: <name> @ <addr>` header (failures appear as\n\
              \x20 `// Function: <name> @ <addr>  (error: ...)` comments). Includes `{file_name}.h`.\n"
@@ -2403,7 +2945,7 @@ fn render_readme_inner(
          \x20 with a pointer member lays out differently here than in the binary.\n"
     ));
     match layout {
-        ReadmeLayout::Standard => out.push_str(&format!(
+        ReadmeLayout::Standard | ReadmeLayout::Progress => out.push_str(&format!(
             "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
              \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); under each label\n\
              \x20 a comment block maps the decompiled variables to their storage\n\
@@ -2430,6 +2972,21 @@ fn render_readme_inner(
              \x20 `.c` block is written: `{\"seq\", \"name\", \"addr\", \"size\", \"c_offset\",\n\
              \x20 \"c_len\", \"error\"}`. `c_offset`/`c_len` slice the `.c` to exactly that\n\
              \x20 block, so the line is also the proof the block is complete.\n\
+             - `.streaming` — present only while the export is running: a JSON status file\n\
+             \x20 (`schema`, `phase`, `pid`, timestamps, counts, `asm`, `error`), rewritten as\n\
+             \x20 the run progresses and removed when it succeeds. A `failed` phase records\n\
+             \x20 why the run stopped; a `.streaming` left behind with a dead `pid` and no\n\
+             \x20 `failed` phase means the run was killed.\n",
+        );
+    }
+    if layout == ReadmeLayout::Progress {
+        out.push_str(
+            "- `index.jsonl` — one JSON object per function: `{\"seq\", \"name\", \"addr\",\n\
+             \x20 \"size\", \"c_offset\", \"c_len\", \"error\"}`. While the export runs it is a\n\
+             \x20 feed, a line appended as each function's first decompile finishes, in\n\
+             \x20 completion order and with `c_offset`/`c_len` null; when the export completes\n\
+             \x20 it is replaced by the address-ordered index whose `c_offset`/`c_len` slice\n\
+             \x20 the `.c` to exactly that function's block.\n\
              - `.streaming` — present only while the export is running: a JSON status file\n\
              \x20 (`schema`, `phase`, `pid`, timestamps, counts, `asm`, `error`), rewritten as\n\
              \x20 the run progresses and removed when it succeeds. A `failed` phase records\n\
@@ -2473,9 +3030,21 @@ fn render_streaming_status(progress: &StreamProgress) -> String {
 
 /// How to read artifacts that are still being written — printed only when there
 /// are artifacts to read.
-fn render_streaming_caveats(facts: &ReadmeFacts) -> String {
+fn render_streaming_caveats(facts: &ReadmeFacts, layout: ReadmeLayout) -> String {
     let file_name = &facts.file_name;
     let mut out = String::new();
+    if layout == ReadmeLayout::Progress {
+        out.push_str(&format!(
+            "\nWhile `.streaming` exists the export is incomplete:\n\n\
+             - `{file_name}.c`, `{file_name}.h` and `{file_name}.asm` do not exist yet; they are\n\
+             \x20 written once, when every function is in, exactly as an export without\n\
+             \x20 `--progress` writes them.\n\
+             - `index.jsonl` is the progress feed: one line per finished function, in the\n\
+             \x20 order they finished, ignoring a last line with no newline. Its `error` is\n\
+             \x20 the first decompile's; the final index, written at the end, is authoritative.\n"
+        ));
+        return out;
+    }
     out.push_str(&format!(
         "\nWhile `.streaming` exists the export is incomplete:\n\n\
          - `{file_name}.c` and `{file_name}.asm` are append-only and may end mid-block; a\n\

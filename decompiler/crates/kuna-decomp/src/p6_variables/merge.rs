@@ -140,6 +140,14 @@ pub type BoundType = int4;
 /// `docs/rust-port/losses.md`); the [`Merge`] routine that calls them transcribes
 /// the surrounding structure verbatim so the body is correct once the hook fills.
 pub trait MergeContext: HighContext {
+    fn fpu_trunc_views_enabled(&self) -> bool {
+        false
+    }
+    fn fpu_trunc_view_highs(&self, _a: HighVariableId, _b: HighVariableId) -> bool { false }
+    fn fpu_trunc_root_high(&self, _high: HighVariableId) -> bool { false }
+    fn op_is_fpu_trunc_view(&self, _op: OpId) -> bool {
+        false
+    }
     // --- HighVariable flag/type reads (the C++ direct `high->is*`/`getType`) --
     // The bank lazily re-derives flags/type from members on read, so these take
     // `&mut self`; the `Funcdata` impl does the field-split borrow internally.
@@ -391,6 +399,14 @@ pub trait MergeContext: HighContext {
 
     /// (kuna) `option tiedphitrim`: [`crate::p6_variables::kuna_tiedphitrim`].
     fn kuna_tied_phi_trim(&self) -> bool;
+    /// (kuna) [`crate::kuna_stablenames::same_variable`].
+    fn kuna_same_prior_variable(&self, _a: HighVariableId, _b: HighVariableId) -> Option<bool> {
+        None
+    }
+    /// (kuna) [`crate::kuna_stablenames::variable_groups`].
+    fn kuna_prior_variable_groups(&self, _highs: &[HighVariableId]) -> Vec<Vec<HighVariableId>> {
+        Vec::new()
+    }
     /// (kuna) [`crate::p6_variables::kuna_pointeevalue::load_crosses_write`].
     fn vn_loads_across_write(&self, _vn: VarnodeId) -> bool {
         false
@@ -436,10 +452,12 @@ pub trait MergeContext: HighContext {
     /// `Merge::trimOpInput` prelude: the `(inVn, pc, isMultiequal)` it computes
     /// before allocating the trim COPY.
     fn trim_op_input_prep(&self, op: OpId, slot: int4) -> (VarnodeId, kuna_base::address::Address, bool);
-    /// `Merge::snipReads` insert-point resolution: `(block, pc, afterop)`.
+    /// `Merge::snipReads` insert point; guarded stack-read divergence lives in
+    /// `kuna_guardedreadtrim.rs`.
     fn snip_reads_insert_point(
         &self,
         vn: VarnodeId,
+        reads: &[OpId],
     ) -> (crate::context::BlockId, kuna_base::address::Address, Option<OpId>);
     /// `Merge::mergeIndirect` union-field inherit for the snipped INDIRECT.
     fn indirect_inherit_union(&mut self, outvn: VarnodeId, newop: OpId, indop: OpId);
@@ -651,10 +669,14 @@ impl Merge {
             return false;
         }
 
+        let prior = ctx.kuna_same_prior_variable(high_out, high_in);
+        if prior == Some(false) {
+            return false;
+        }
         // Make sure variables have the same type.
         let t_out = ctx.high_get_type(high_out);
         let t_in = ctx.high_get_type(high_in);
-        if !std::rc::Rc::ptr_eq(&t_out, &t_in) {
+        if !std::rc::Rc::ptr_eq(&t_out, &t_in) && prior.is_none() {
             return false;
         }
 
@@ -1188,7 +1210,9 @@ impl Merge {
         for high in order {
             let mut merged_into = false;
             for &out in &highstack {
-                let spec_ok = Self::merge_test_speculative(ctx, out, high);
+                let spec_ok = Self::merge_test_speculative(ctx, out, high)
+                    && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, out, high)
+                    && !crate::kuna_fputruncviews::keeps_root_alone(ctx, out, high);
                 if spec_ok && self.merge(ctx, out, high, true)? {
                     merged_into = true;
                     break;
@@ -1295,6 +1319,9 @@ impl Merge {
                 if ctx.op_code(op) != opc {
                     continue;
                 }
+                if opc == OpCode::CPUI_COPY && crate::kuna_fputruncviews::keeps_apart(ctx, op) {
+                    continue;
+                }
                 let vn1 = ctx.op_out(op);
                 if !Self::merge_test_basic(ctx, vn1) {
                     continue;
@@ -1316,6 +1343,7 @@ impl Merge {
                     let h1 = ctx.vn_high(vn1).expect("merge_opcode: vn1 no high");
                     let h2 = ctx.vn_high(vn2).expect("merge_opcode: vn2 no high");
                     if Self::merge_test_required(ctx, h1, h2)
+                        && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, h1, h2)
                         && !crate::p6_variables::kuna_globalvalue::keeps_apart(ctx, h1, h2)
                     {
                         self.merge(ctx, h1, h2, false)?; // required merge
@@ -1356,6 +1384,7 @@ impl Merge {
         for &h in &highlist {
             ctx.bank_clear_mark(h);
         }
+        let gathered = highlist.clone();
 
         // Group by exact type (Rc identity) preserving order; each group -> mergeLinear.
         let mut remaining: std::collections::VecDeque<HighVariableId> = highlist.into_iter().collect();
@@ -1372,6 +1401,9 @@ impl Merge {
                 }
             }
             remaining = rest;
+            self.merge_linear(ctx, &mut highvec)?;
+        }
+        for mut highvec in ctx.kuna_prior_variable_groups(&gathered) {
             self.merge_linear(ctx, &mut highvec)?;
         }
         Ok(())
@@ -1394,10 +1426,12 @@ impl Merge {
             let ct = ctx.op_output_type_local(op);
             let ni = ctx.op_num_input(op);
             for i in 0..ni {
-                if !std::rc::Rc::ptr_eq(&ct, &ctx.op_input_type_local(op, i)) {
+                let vn2 = ctx.op_in(op, i);
+                if !std::rc::Rc::ptr_eq(&ct, &ctx.op_input_type_local(op, i))
+                    && vn2.and_then(|vn2| ctx.vn_high(vn2)).and_then(|h| ctx.kuna_same_prior_variable(high_out, h)) != Some(true)
+                {
                     continue; // Only merge if types should be the same
                 }
-                let vn2 = ctx.op_in(op, i);
                 if !Self::merge_test_basic(ctx, vn2) {
                     continue;
                 }
@@ -1416,6 +1450,7 @@ impl Merge {
                 }
                 let high_in = ctx.vn_high(vn2).expect("merge_adjacent: vn2 no high");
                 if !Self::merge_test_adjacent(ctx, high_out, high_in)
+                    || crate::kuna_fputruncviews::keeps_highs_apart(ctx, high_out, high_in)
                     || crate::p6_variables::kuna_globalvalue::keeps_apart(ctx, high_out, high_in)
                 {
                     continue;
@@ -1930,7 +1965,7 @@ impl Merge {
         if markedop.is_empty() {
             return Ok(());
         }
-        let (bl, pc, afterop) = ctx.snip_reads_insert_point(vn);
+        let (bl, pc, afterop) = ctx.snip_reads_insert_point(vn, markedop);
         let copyop = self.allocate_copy_trim(ctx, vn, pc, markedop[0])?;
         match afterop {
             None => ctx.op_insert_begin(copyop, bl),
@@ -2901,7 +2936,7 @@ mod tests {
         fn trim_op_input_prep(&self, _op: OpId, _slot: int4) -> (VarnodeId, Address, bool) {
             panic!("mock: trim_op_input_prep not under test")
         }
-        fn snip_reads_insert_point(&self, _vn: VarnodeId) -> (crate::context::BlockId, Address, Option<OpId>) {
+        fn snip_reads_insert_point(&self, _vn: VarnodeId, _reads: &[OpId]) -> (crate::context::BlockId, Address, Option<OpId>) {
             panic!("mock: snip_reads_insert_point not under test")
         }
         fn indirect_inherit_union(&mut self, _outvn: VarnodeId, _newop: OpId, _indop: OpId) {}

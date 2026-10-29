@@ -2,7 +2,8 @@
 //!
 //! ```text
 //!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
-//!                          [--addr 0xVMA].. [--max-fn-seconds N] [--stream]
+//!                          [--addr 0xVMA].. [--max-fn-seconds N]
+//!                          [--stream | --progress]
 //!                          [--mode auto|reliable|aggressive|fast] [--option N V]..
 //!                          [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load]
 //!                          [--isa auto|arm|thumb] [--slice ARCH] [--target T]
@@ -34,24 +35,28 @@
 //! before the run finishes, entry-point-first, with an `index.jsonl` per-function
 //! feed and a `.streaming` status file — at the cost of a decompile-ordered
 //! `.c` and an `.asm` whose variable comments move to their own section
-//! ([`crate::project_stream`]).
+//! ([`crate::project_stream`]).  `--progress` keeps the feed and the status file
+//! but runs this module's export unchanged, so the artifacts are the non-stream
+//! ones and as reproducible under `--jobs N`.
 //!
 //! Individual failures remain records and exit 0 while at least one body was
 //! produced. A non-empty selection that produced zero bodies exits nonzero only
 //! after every artifact is complete (and a streamed export has removed its
 //! `.streaming` marker), with the summary on stdout and a run-level diagnostic
-//! on stderr. Load errors, an empty target set, and I/O errors also exit nonzero.
+//! on stderr. A rejected `--assert` under `--assert-strict`, or one the pipeline
+//! refused, exits nonzero the same way. Load errors, an empty target set, and I/O
+//! errors also exit nonzero.
 //!
 //! The decompile loop and the four artifact builders live in the shared
 //! decompile-project core (`kuna_console::project` — also reused by the
 //! `kuna_wasm` front-end); this module keeps the CLI wrapper + orchestration.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use kuna_console::engine::ConsoleProgram;
 use kuna_console::project::{
     build_asm, build_c, build_header, build_readme, collect_dat_addrs,
-    decompile_export_targets,
-    BatchOutcome,
+    decompile_export_targets_watched, BatchOutcome, FuncResult,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
@@ -59,6 +64,8 @@ use crate::decompile_all::{
     decompile_targets_pooled, load_program, parse_args, resolve_targets, synth_base, Args,
     DriverDefaults,
 };
+use crate::jobs::PoolWatch;
+use crate::project_stream::StreamMode;
 
 /// `kuna decompile-project` entry point.
 pub fn run(argv: &[String]) -> i32 {
@@ -66,11 +73,13 @@ pub fn run(argv: &[String]) -> i32 {
     // decompile-all-only flags, and hand the remainder to the shared parser.
     let mut output: Option<String> = None;
     let mut stream = false;
+    let mut progress = false;
     let mut rest: Vec<String> = Vec::new();
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
             "--stream" => stream = true,
+            "--progress" => progress = true,
             "-o" | "--output" => {
                 if i + 1 >= argv.len() {
                     eprintln!("error: {} requires a value", argv[i]);
@@ -101,6 +110,14 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
+    // `--stream` already reports progress, so it wins when both are given.
+    let mode = if stream {
+        Some(StreamMode::Stream)
+    } else if progress {
+        Some(StreamMode::Progress)
+    } else {
+        None
+    };
     // An unqualified `--assert` directive binds to "the function under
     // decompile", which a whole-binary streamed run would apply to every one of
     // them in turn.
@@ -112,11 +129,14 @@ pub fn run(argv: &[String]) -> i32 {
         );
         return 2;
     }
-    let run = if stream {
-        crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-project --stream");
-        crate::project_stream::run(&args, output.as_deref())
-    } else {
-        decompile_project(&args, output.as_deref())
+    let run = match mode {
+        Some(mode) => {
+            if mode == StreamMode::Stream {
+                crate::decompile_all::warn_protoorder_inert(&args.options, "decompile-project --stream");
+            }
+            crate::project_stream::run(&args, output.as_deref(), mode)
+        }
+        None => decompile_project(&args, output.as_deref(), None),
     };
     match run {
         Ok(completion) => emit_completion(completion),
@@ -148,7 +168,8 @@ fn usage() {
         "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
          \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
-         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] [--stream] \\\n\
+         \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
+         \x20                   [--stream | --progress] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
@@ -174,22 +195,50 @@ fn usage() {
          .h included: a worker cannot see another worker's callees, so the pool\n\
          does not type call arguments callee-first the way a serial export does,\n\
          nor declare a global or table an array (option elemptr)\n\
-         (with --stream, workers run with structsynth off). Progress goes to\n\
+         (with --stream, workers run with structsynth off).\n\
+         Progress goes to\n\
          stderr, and peak memory is roughly N times one worker's RSS.\n\
          --stream writes the folder as the run goes instead of at the end: the entry\n\
          point and what it calls are written first, index.jsonl announces each\n\
          finished function and .streaming reports progress until the export\n\
          completes. The .c is then in decompile order. Not available with --assert.\n\
+         --progress keeps the live .streaming and index.jsonl feed but writes\n\
+         .c/.h/.asm/README at the end, byte-identical to the export without it (so\n\
+         reproducible under --jobs N), and index.jsonl in address order.\n\
          Individual function failures are recorded in the artifacts. A mixed run\n\
          exits 0; a selected set that produced no body exits 1 only after all\n\
-         artifacts are complete. Load errors / an empty target set / I/O errors\n\
-         also exit nonzero."
+         artifacts are complete. A rejected --assert exits 1 the same way under\n\
+         --assert-strict, and a directive the pipeline refused always does.\n\
+         Load errors / an empty target set / I/O errors also exit nonzero."
     );
+}
+
+/// What a `--progress` export observes of [`decompile_project`]:
+/// the same export, reported on while it runs.
+pub(crate) trait ExportWatch: PoolWatch {
+    /// Load the program; the watcher keeps its own clock running meanwhile.
+    fn load(&self, args: &Args) -> Result<ConsoleProgram, String>;
+    /// The target set is final and the decompile starts.
+    fn decompiling(&self, prog: &ConsoleProgram, total: usize) -> Result<(), String>;
+    /// The artifacts are about to be built and written.
+    fn finalizing(&self);
+    /// The four artifacts are written; `results` are in the `.c`'s order.  Returns
+    /// any further files it wrote, for the completion summary.
+    fn written(
+        &self,
+        out_dir: &Path,
+        file_name: &str,
+        results: &[FuncResult],
+    ) -> Result<Vec<(String, usize)>, String>;
 }
 
 /// The whole flow: load once → decompile every target (with prototypes) →
 /// build the four artifacts → write them all at the end.
-fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectCompletion, String> {
+pub(crate) fn decompile_project(
+    args: &Args,
+    output: Option<&str>,
+    watch: Option<&dyn ExportWatch>,
+) -> Result<ProjectCompletion, String> {
     let binary_path = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?;
     let file_name = binary_path
@@ -206,7 +255,10 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
     };
 
     let load_started = std::time::Instant::now();
-    let mut prog = load_program(args, DriverDefaults::Decompile)?;
+    let mut prog = match watch {
+        Some(watch) => watch.load(args)?,
+        None => load_program(args, DriverDefaults::Decompile)?,
+    };
     let load_seconds = load_started.elapsed().as_secs_f64();
     // Per-function watchdog — same driver policy as `decompile-all` (10 s for
     // an unfiltered fast export, 120 s otherwise, 0 disables): a non-converging
@@ -230,6 +282,14 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
         return Err(format!("no functions selected/discovered in {}", args.binary));
     }
     crate::interior::selections(&prog, args, &targets);
+    if let Some(watch) = watch {
+        watch.decompiling(&prog, targets.len())?;
+    }
+    let mut landed = |r: &FuncResult| {
+        if let Some(watch) = watch {
+            watch.landed(std::slice::from_ref(r));
+        }
+    };
 
     // `--jobs N`: the per-function loop fans out over worker processes, but the
     // parent's program stays loaded — the `.asm` section sweep and the README
@@ -263,6 +323,8 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
             load_seconds,
             synth_base(&prog),
             callee_first,
+            crate::decompile_all::worker_arm_frames(&prog),
+            watch.map(|w| w as &dyn PoolWatch),
         )?;
         (pooled.results, pooled.types)
     } else if callee_first {
@@ -274,12 +336,16 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
             );
         }
         let base = kuna_console::project::export_options(targets.len() == 1);
-        let funcs =
-            crate::decompile_all::decompile_callee_first(&mut prog, args, targets, explicit, base);
+        let funcs = crate::decompile_all::decompile_callee_first(
+            &mut prog, args, targets, explicit, base, &mut landed,
+        );
         (funcs, None)
     } else {
-        (decompile_export_targets(&mut prog, targets), None)
+        (decompile_export_targets_watched(&mut prog, targets, &mut landed), None)
     };
+    if let Some(watch) = watch {
+        watch.finalizing();
+    }
     // Every artifact is address-ordered (resolve_targets only guarantees that
     // for the no-filter default; --addr/--functions arrive in user order).
     results.sort_by(|a, b| a.address.cmp(&b.address).then_with(|| a.name.cmp(&b.name)));
@@ -289,7 +355,7 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
     let prelude = print_c_recompile_prelude(prog.arch());
     let types = pooled_types.unwrap_or_else(|| print_c_types(prog.arch_mut()));
 
-    let header = build_header(&file_name, &prelude, &types, &results);
+    let header = build_header(&file_name, &prelude, &types, &results)?;
     let c_file = build_c(&file_name, &results);
     let dat_addrs = collect_dat_addrs(&results);
     let asm = build_asm(&prog, &results, &dat_addrs, &file_name);
@@ -311,10 +377,23 @@ fn decompile_project(args: &Args, output: Option<&str>) -> Result<ProjectComplet
         std::fs::write(&path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
         sizes.push((base, text.len()));
     }
+    if let Some(watch) = watch {
+        sizes.extend(watch.written(&out_dir, &file_name, &results)?);
+    }
 
     let ok = results.iter().filter(|r| r.error.is_none()).count();
     let failed = results.len() - ok;
-    let error = BatchOutcome::of(&results).all_failed_error(&args.binary);
+    let outcomes = prog.assertion_outcomes();
+    let rejected = crate::decompile_all::report_rejected_assertions(&outcomes);
+    let refused = crate::decompile_all::any_refused_assertion(&outcomes);
+    let assertion_error = if refused {
+        Some("the pipeline refused an assertion; exported C was produced without it".to_owned())
+    } else if args.assert_strict && rejected {
+        Some("one or more assertions were rejected (--assert-strict)".to_owned())
+    } else {
+        None
+    };
+    let error = BatchOutcome::of(&results).all_failed_error(&args.binary).or(assertion_error);
     let files = sizes
         .iter()
         .map(|(n, s)| format!("{n} ({s} bytes)"))

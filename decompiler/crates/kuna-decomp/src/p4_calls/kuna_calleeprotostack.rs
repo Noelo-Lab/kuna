@@ -41,7 +41,13 @@
 //!   MODEL leaves its extrapop unknown. A spec that states its own extrapop
 //!   (`x86gcc.cspec`'s `__cdecl extrapop="4"`, x86-64, every RISC spec) already
 //!   has the exact answer and is left alone — recomputing it from the parameter
-//!   list there would claim a `__cdecl` callee cleans its own arguments.
+//!   list there would claim a `__cdecl` callee cleans its own arguments. A
+//!   prototype the flow copied whole from the callee's symbol (a `prototype`
+//!   directive, `parse line`, a demangled or host-declared signature) is
+//!   resolved too, but only when its declaration NAMED the convention: one
+//!   that names none is laid out under the default model, which on x86 Windows
+//!   is `__stdcall`, and an MSVC `__cdecl` helper declared that way would
+//!   otherwise be credited with popping its own arguments.
 //! * **The reach.** Only for an input-locked, non-variadic prototype whose
 //!   extrapop is known by the rule above; only for a stack range wholly at or
 //!   above that extrapop in the CALLEE's frame (the return-address slot and the
@@ -106,6 +112,143 @@ pub fn declared_caller_frame_floor(on: bool, fp: &FuncProto) -> Option<int4> {
         return None;
     }
     Some(ep)
+}
+
+/// Whether a register captures the stack base more than once. Nested frame
+/// setup can save and restore a frame pointer through memory, breaking the
+/// additive alias walk. Inspect storage rather than SSA links: call guards are
+/// installed before this heritage pass has linked all register reads.
+pub(crate) fn rebound_frame_base(fd: &crate::funcdata::Funcdata) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else {
+        return false;
+    };
+    let Ok(base) = stack.get_spacebase(0) else {
+        return false;
+    };
+    let Some(space) = base.space.as_ref() else {
+        return false;
+    };
+    let mut captures = std::collections::BTreeSet::new();
+    for id in fd.obank().iter_alive() {
+        let Some(op) = fd.obank().get(id) else {
+            continue;
+        };
+        if op.code() != OpCode::CPUI_COPY {
+            continue;
+        }
+        let Some(input) = op.get_in(0).and_then(|id| fd.vbank().get(id)) else {
+            continue;
+        };
+        let Some(output) = op.get_out().and_then(|id| fd.vbank().get(id)) else {
+            continue;
+        };
+        if input.get_space().get_index() != space.get_index()
+            || input.get_offset() != base.offset
+            || input.get_size() != base.size as i32
+            || output.get_space().get_index() != space.get_index()
+            || output.get_size() != input.get_size()
+            || output.get_offset() == input.get_offset()
+        {
+            continue;
+        }
+        if !captures.insert((output.get_offset(), output.get_size())) {
+            return true;
+        }
+    }
+    false
+}
+
+/// A declared pointer input must be proved disjoint before suppressing a stack
+/// write guard. The global additive walk can lose a frame pointer saved to and
+/// restored from memory while a nested frame is active.
+pub(crate) fn pointer_input_may_alias(
+    fd: &crate::funcdata::Funcdata,
+    call: &crate::fspec::FuncCallSpecs,
+    offset: uintb,
+    size: int4,
+) -> bool {
+    for slot in 0..call.proto().num_params() {
+        let Some(parameter) = call.proto().get_param(slot) else {
+            return true;
+        };
+        if !parameter
+            .get_type()
+            .is_some_and(|ty| ty.get_metatype() == crate::dtype::type_metatype::TYPE_PTR)
+        {
+            continue;
+        }
+        let Some(input) = fd
+            .obank()
+            .get(call.get_op())
+            .and_then(|op| op.get_in(slot + 1))
+        else {
+            return true;
+        };
+        if crate::kuna_stackranges::may_alias(fd, input, offset, size) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Positive frame-alias evidence from a declared pointer, checked after pointer
+/// normalization. A cached `nolocalalias` mark cannot refute this concrete range.
+/// In a function that rebinds its frame base, an unresolved frame-derived
+/// expression must keep its guard until the frame merge resolves; a concrete
+/// disjoint range can still collapse later. Elsewhere an unresolved pointer
+/// (a cursor into a local buffer) defers to the alias mark.
+pub(crate) fn declared_pointer_reaches(
+    fd: &crate::funcdata::Funcdata,
+    call: &crate::fspec::FuncCallSpecs,
+    address: &kuna_base::address::Address,
+    size: int4,
+) -> bool {
+    let Some(stack) = fd.get_arch().manage().get_stack_space() else { return false; };
+    if size <= 0 || !address.get_space().is_some_and(|space| space.get_index() == stack.get_index())
+        || !call.proto().has_store() || !call.proto().is_input_locked()
+    { return false; }
+    for slot in 0..call.proto().num_params() {
+        let Some(ty) = call.proto().get_param(slot).and_then(|p| p.get_type()) else { continue; };
+        let Some(pointee) = ty.get_ptr_to() else { continue; };
+        let Some(input) = fd.obank().get(call.get_op()).and_then(|op| op.get_in(slot + 1)) else { continue; };
+        let Some(pointer) = crate::kuna_stackranges::frame_address(fd, input) else {
+            if fd.rebound_frame_base_seen() && depends_on_frame(fd, input) { return true; }
+            continue;
+        };
+        let Some((first, width)) = pointer.extent(pointee.get_size().max(1)) else { continue; };
+        let start = address.get_offset();
+        if stack.wrap_offset(first.wrapping_sub(start)) < size as uintb
+            || stack.wrap_offset(start.wrapping_sub(first)) < width as uintb
+        { return true; }
+    }
+    false
+}
+
+/// Follow pointer arithmetic and frame merges without treating an unrelated
+/// global or incoming pointer as positive evidence of a local frame address.
+fn depends_on_frame(fd: &crate::funcdata::Funcdata, input: crate::context::VarnodeId) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let mut pending = vec![input];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(id) = pending.pop() {
+        if !seen.insert(id) { continue; }
+        if seen.len() > 128 { return true; }
+        let Some(value) = fd.vbank().get(id) else { continue; };
+        if value.is_spacebase() && value.is_input() { return true; }
+        let Some(op) = value.get_def().and_then(|id| fd.obank().get(id)) else { continue; };
+        match op.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => {
+                if let Some(input) = op.get_in(0) { pending.push(input); }
+            }
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB | OpCode::CPUI_PTRADD
+            | OpCode::CPUI_PTRSUB | OpCode::CPUI_MULTIEQUAL => {
+                pending.extend((0..op.num_input()).filter_map(|slot| op.get_in(slot)));
+            }
+            _ => (),
+        }
+    }
+    false
 }
 
 /// True when `[offset, offset+size)` — a CALLEE-relative stack range — lies

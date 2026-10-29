@@ -497,6 +497,8 @@ pub struct ObjectLoadImage {
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
+    /// A PE image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
+    data_exports: Vec<(u64, String)>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
     /// the program's own data objects live in; see
     /// [`crate::loader::kuna_globalref`].
@@ -583,7 +585,9 @@ fn collect_data_sym<'a>(
     }
     // (kuna `symbolnamechars`, GH-340) A data symbol's name reaches emitted C
     // exactly as a function symbol's does, so it is sanitized at the same mint.
-    let name = sanitize_symbol_name_bytes(&name, mode).into_owned();
+    // Defer identifier folding until all data names can be reserved together.
+    let data_mode = if mode == NameChars::Ident { NameChars::Safe } else { mode };
+    let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
     let addr = sym.address();
     if seen.insert(addr) {
         out.push(DataSym { addr, name, size });
@@ -910,11 +914,17 @@ impl ObjectLoadImage {
         // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
+        let ppc32_names: std::collections::HashMap<_, _> = if is_elf && file.architecture() == object::Architecture::PowerPc {
+            funcsyms.iter().enumerate().map(|(i, s)| (s.addr, i)).collect()
+        } else { std::collections::HashMap::new() };
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
             let name = demangle_funcsym_name(p.name, namechars);
             if seen.insert(p.addr) {
                 funcsyms.push(FuncSym { addr: p.addr, name });
+            } else if let Some(&i) = ppc32_names.get(&p.addr) {
+                let previous = std::mem::replace(&mut funcsyms[i].name, name);
+                aliases.push(FuncSym { addr: p.addr, name: previous });
             } else if is_elf {
                 aliases.push(FuncSym { addr: p.addr, name });
             }
@@ -1004,6 +1014,10 @@ impl ObjectLoadImage {
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
             datasyms,
+            data_exports: crate::loader::pe_iat::data_exports(&file)
+                .into_iter()
+                .map(|(addr, name)| (addr, String::from_utf8_lossy(&name).into_owned()))
+                .collect(),
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
@@ -1095,11 +1109,14 @@ impl ObjectLoadImage {
                 ))
             })
             .collect();
+        // Common symbols have allocated storage but no input section. Include
+        // that storage without treating unresolved external slots as objects.
+        let common_objects = layout.common_range.map(|(lo, hi)| (lo, hi - lo));
         let data_objects = crate::loader::kuna_globalref::merged_ranges(file.sections().filter_map(|sec| {
             let vma = *layout.section_vma.get(&sec.index())?;
             crate::loader::kuna_globalref::holds_program_objects(sec.name().ok()?, sec.kind())
                 .then_some((vma, sec.size()))
-        }));
+        }).chain(common_objects));
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
@@ -1152,6 +1169,7 @@ impl ObjectLoadImage {
             // function half only (`RelocLayout::funcsyms`).  Data-symbol naming is
             // therefore linked-image-only; an `ET_REL` load keeps today's behavior.
             datasyms: Vec::new(),
+            data_exports: Vec::new(),
             data_objects,
             const_ranges: Vec::new(),
             // (kuna) The foldable-range exception list. `dynrelocs` itself is
@@ -1324,6 +1342,13 @@ impl ObjectLoadImage {
             .iter()
             .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned(), s.size))
             .collect()
+    }
+
+    /// A PE image's data exports as `(vma, name)`: the named exports outside
+    /// every code section. They carry no extent, so they name addresses for
+    /// lookup only and never become globals.
+    pub fn data_exports(&self) -> &[(u64, String)] {
+        &self.data_exports
     }
 
     /// Write `data` over the mapped bytes at `vma` (the write twin of
@@ -1601,6 +1626,24 @@ fn language_id_for(
     // `gcc` (x86/RISCV) / `default` (everything else), reproducing the old
     // hard-coded id strings exactly.
     let model = fmt.compiler_model(arch);
+    // (kuna `goabi`) A Go image takes the vendored golang compiler spec on the
+    // three architectures that ship one: Go's register ABI is not the platform
+    // C ABI (RAX/RBX/… carry arguments and multiple returns on x86-64), so
+    // under the default model every Go function's parameters are invisible and
+    // a second return value is dead-coded away with the statements feeding it.
+    // Cheap gates first: the env toggle (`option goabi off` clears it), the
+    // arch allowlist, then language detection (which honours the
+    // `KUNA_SOURCELANG` force). Everything else keeps `model` untouched, and
+    // the engine's default-model retry covers a spec that fails to load.
+    let model = if kuna_decomp::kuna_goabi::goabi_env_enabled()
+        && little
+        && matches!(arch, Architecture::X86_64 | Architecture::I386 | Architecture::Aarch64)
+        && crate::sourcelang::effective_compiler(file, bytes).is_golang()
+    {
+        Some("golang")
+    } else {
+        model
+    };
     let id: String = match compose_language_id(arch, endian, model) {
         Some(id) => id,
         None => {
@@ -1855,6 +1898,14 @@ pub fn elf_language_ids() -> Vec<String> {
             }
         }
     }
+    // (kuna `goabi`) The golang-model ids a Go ELF composes on the three
+    // architectures that vendor a golang cspec (LE only — Go has no big-endian
+    // target among them), so the resolves-in-the-DB gate proves them too.
+    for arch in [Architecture::X86_64, Architecture::I386, Architecture::Aarch64] {
+        if let Some(id) = compose_language_id(arch, "LE", Some("golang")) {
+            out.push(id);
+        }
+    }
     out.sort();
     out.dedup();
     out
@@ -1949,6 +2000,58 @@ mod alias_tests;
 mod tests {
     use super::*;
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpaceManager, ConstantSpace};
+
+    /// (kuna `goabi`) A Go-marked image composes the `:golang` compiler field;
+    /// the same image without the marker keeps the platform model; a Go image
+    /// on an architecture with no vendored golang cspec keeps its default.
+    #[test]
+    fn go_image_composes_the_golang_language_id() {
+        use object::write::Object as WObject;
+        let build = |arch: object::Architecture, go: bool| -> Vec<u8> {
+            let mut obj = WObject::new(
+                object::BinaryFormat::Elf,
+                arch,
+                object::Endianness::Little,
+            );
+            let text = obj.add_section(vec![], b".text".to_vec(), object::SectionKind::Text);
+            obj.append_section_data(text, &[0xc3], 1);
+            if go {
+                let s = obj.add_section(
+                    vec![],
+                    b".go.buildinfo".to_vec(),
+                    object::SectionKind::ReadOnlyData,
+                );
+                obj.append_section_data(s, b"\xff Go buildinf:", 1);
+            }
+            obj.write().expect("write synthetic ELF")
+        };
+        let fmt = crate::loader::format::elf::ElfFormat;
+        let id = |arch: object::Architecture, go: bool, karch: Architecture| -> String {
+            let bytes = build(arch, go);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            String::from_utf8(
+                language_id_for(&file, &fmt, &bytes, "synthetic", karch, None).expect("id"),
+            )
+            .expect("utf8")
+        };
+        assert_eq!(
+            id(object::Architecture::X86_64, true, Architecture::X86_64),
+            "x86:LE:64:default:golang"
+        );
+        assert_eq!(
+            id(object::Architecture::X86_64, false, Architecture::X86_64),
+            "x86:LE:64:default:gcc"
+        );
+        assert_eq!(
+            id(object::Architecture::Aarch64, true, Architecture::Aarch64),
+            "AARCH64:LE:64:v8A:golang"
+        );
+        // No vendored golang cspec for RISC-V: a Go image keeps the default.
+        assert_eq!(
+            id(object::Architecture::Riscv64, true, Architecture::Riscv64),
+            "RISCV:LE:64:RV64GC:gcc"
+        );
+    }
 
     #[test]
     fn executable_ranges_use_sectionless_load_segments_and_rebase() {

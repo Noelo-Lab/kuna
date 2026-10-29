@@ -187,8 +187,8 @@ fn single_arguments_written_over_a_double_result_are_read_as_written() {
 fn armfloatargs_without_armfloatreturn_changes_nothing() {
     for bytes in [image(Some(1)), word_input_image(), backfill_image(false)] {
         assert_eq!(
-            decompile_with(&bytes, &["armfloatargs", "on"]),
-            decompile_with(&bytes, &["armfloatargs", "off"])
+            decompile_with(&bytes, &["armfloatreturn", "off", "armfloatargs", "on"]),
+            decompile_with(&bytes, &["armfloatreturn", "off", "armfloatargs", "off"])
         );
     }
 }
@@ -370,7 +370,7 @@ fn calls_take_exactly_the_vfp_inputs_their_callee_states() {
         }
         if spilled {
             assert!(
-                code.contains("(float)(long long)a0 * 3.0,"),
+                code.contains("(float)(long long)a0 * 3.0f,"),
                 "{build}\n{code}"
             );
         }
@@ -560,10 +560,10 @@ fn a_parameter_returned_on_some_path_keeps_its_argument() {
         )
     });
     let calls: [(&str, &str); 4] = [
-        ("wf", "clampf(v1,2.5,a0)"),
+        ("wf", "clampf(v1,2.5f,a0)"),
         ("wd", "clampd(v1,2.5,a0)"),
-        ("wp", "pickf(v1,2.5,a0)"),
-        ("wq", "pickf(v1,1.5,a0)"),
+        ("wp", "pickf(v1,2.5f,a0)"),
+        ("wq", "pickf(v1,1.5f,a0)"),
     ];
     for build in ["arm-O2", "thumb-O2", "thumb-Os"] {
         let bytes =
@@ -612,7 +612,7 @@ fn leaf_callees_with_conditional_code_take_zero_for_unread_words() {
     for build in ["arm-O2", "thumb-O2", "thumb-O1"] {
         let bytes = std::fs::read(fixtures.join(format!("armfloatargs_early_{build}.o"))).unwrap();
         let code = decompile_with(&bytes, &["armfloatreturn", "on", "armfloatargs", "on"]);
-        for call in ["C2(5.5,0.0,v1,", "C9(5.5,a0,v1,a1)", "C3(0.0,0.0,(double)v1,a0)"] {
+        for call in ["C2(5.5f,0.0f,v1,", "C9(5.5f,a0,v1,a1)", "C3(0.0,0.0,(double)v1,a0)"] {
             assert!(code.contains(call), "{build}: lacks {call}\n{code}");
         }
         assert!(!code.contains("unsigned long long"), "{build}\n{code}");
@@ -688,10 +688,10 @@ fn narrowing_calls_keep_additional_double_and_float_inputs() {
     for expected in [
         "float pair_narrow(double a0,double a1)",
         "float use_pair_narrow(double a0,double a1)",
-        "return pair_narrow(a0,a1) + 1.0;",
+        "return pair_narrow(a0,a1) + 1.0f;",
         "float mixed_narrow(double a0,float a1)",
         "float use_mixed_narrow(double a0,float a1)",
-        "return mixed_narrow(a0,a1) + 1.0;",
+        "return mixed_narrow(a0,a1) + 1.0f;",
     ] {
         assert!(code.contains(expected), "missing {expected}\n{code}");
     }
@@ -740,7 +740,7 @@ fn scalar_inputs_and_overlapping_call_results_keep_their_widths() {
     for expected in [
         "float narrow(double a0)",
         "float use_narrow(double a0)",
-        "return narrow(a0) + 1.0;",
+        "return narrow(a0) + 1.0f;",
         "float after_clobber(double a0)",
         "float cast_only(double a0)",
         "return (float)a0;",
@@ -958,10 +958,10 @@ fn compiled_arm_and_thumb_sources_preserve_mixed_values_and_declared_order_contr
                 "return narrow(a0);",
                 "float pair_narrow(double a0,double a1)",
                 "float use_pair_narrow(double a0,double a1)",
-                "return pair_narrow(a0,a1) + 1.0;",
+                "return pair_narrow(a0,a1) + 1.0f;",
                 "float mixed_narrow(double a0,float a1)",
                 "float use_mixed_narrow(double a0,float a1)",
-                "return mixed_narrow(a0,a1) + 1.0;",
+                "return mixed_narrow(a0,a1) + 1.0f;",
                 "float use_narrow(double a0)",
                 "narrow(a0)",
                 "float cast_only(double a0)",

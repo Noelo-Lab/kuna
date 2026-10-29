@@ -19,7 +19,20 @@ The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
 `fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
 compiler on the corrected sources, which reproduces the previous hashes on the
 unmodified sources; the `fqtox` correction was regenerated with `slacomp`,
-which reproduces those C++ digests.
+which reproduces those C++ digests. The current digests also cover the branch
+conditions sampled before a delay slot (`icc`/`xcc` `cs`, `neg` and `vs`, and
+the non-annulled register branches). They were regenerated with the recorded
+C++ compiler, which reproduces the previous SPARC digests on the previous
+sources; `slacomp` produces the same digests.
+
+The x86 entries include the width-specific x87 integer-conversion operations,
+the control-word writes of `FXRSTOR` and `XRSTOR`/`XRSTORS`, and the signed
+BOUND operand loads and bounds-check user-ops.
+They were regenerated with the recorded C++ compiler after checking that it
+reproduces both unmodified x86 hashes; kuna’s compiler produces the same changed
+element streams.
+The combined digests were produced with `slacomp`, which reproduces the
+pinned C++ digests for each of those changes applied alone.
 
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both

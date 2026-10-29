@@ -52,6 +52,7 @@ use super::{
 };
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use kuna_decomp::kuna_typedcallabi;
+use object::Object;
 
 /// Seed the measured libc signature extension onto imported functions.
 pub struct LibcSigsPass;
@@ -635,9 +636,10 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     // The same corpus rule with `float` and `double` in the vocabulary: every
     // slot is a 4- or 8-byte IEEE value on every target these tables apply to.
     // `long double` (`strtold`) still has no fixed width and stays out. Seeded
-    // only on x86 and AArch64 (`returns_doubles_whole`): ARM recovers a
-    // function returning a `double` from these at half its width (hard-float)
-    // or beside callers holding `r0:r1` as an integer (soft-float, softfp).
+    // on x86 and AArch64 (`returns_doubles_whole`), and on a hard-float ARM
+    // image once `armfloatreturn` applies: without it ARM recovers a function
+    // returning a `double` from these at half its width (hard-float) or beside
+    // callers holding `r0:r1` as an integer (soft-float, softfp).
     ("ceil", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
     ("log2", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
     ("modf", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::VoidPtr], vararg: -1 }),
@@ -650,6 +652,107 @@ pub(super) const LIBC_EXT: &[(&str, Sig)] = &[
     // converts `c_strtod`'s result by value.
     ("strtod_l", Sig { ret: Ty::Double, params: &[Ty::CharPtr, Ty::CharPtrPtr, Ty::VoidPtr], vararg: -1 }),
     ("strtof", Sig { ret: Ty::Float, params: &[Ty::CharPtr, Ty::CharPtrPtr], vararg: -1 }),
+];
+
+/// (kuna `armfloatreturn`) The C99 `<math.h>` functions (and glibc's `sincos`)
+/// a hard-float ARM image imports, laid out by the widened VFP model once the
+/// option applies: a `double` in `d0`, a `float` in `s0`, `long` 4 bytes. Seeded
+/// on ARM only, into [`AnalysisOutput::arm_float_prototypes`], so a caller reads
+/// `log`'s `double` on its first decompile instead of after the return-recovery
+/// redo of the PLT stub and of every reader. `double *` slots are `void *`, as
+/// in `modf`.
+pub(super) const LIBM_VFP: &[(&str, Sig)] = &[
+    ("acos", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("acosf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("acosh", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("acoshf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("asin", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("asinf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("asinh", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("asinhf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("atan", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("atan2", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("atan2f", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("atanf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("atanh", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("atanhf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("cbrt", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("cbrtf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("ceilf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("copysign", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("copysignf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("cos", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("cosf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("cosh", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("coshf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("erf", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("erfc", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("erfcf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("erff", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("exp", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("exp2", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("exp2f", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("expf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("expm1", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("expm1f", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("fabs", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("fabsf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("fdim", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("fdimf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("floor", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("floorf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("fmax", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("fmaxf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("fmin", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("fminf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("fmod", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("fmodf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("frexp", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::IntPtr], vararg: -1 }),
+    ("frexpf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::IntPtr], vararg: -1 }),
+    ("hypot", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("hypotf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("ldexp", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Int], vararg: -1 }),
+    ("ldexpf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Int], vararg: -1 }),
+    ("lgamma", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("lgammaf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("log", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("log10", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("log10f", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("log1p", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("log1pf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("log2f", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("logf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("lrint", Sig { ret: Ty::Long, params: &[Ty::Double], vararg: -1 }),
+    ("lrintf", Sig { ret: Ty::Long, params: &[Ty::Float], vararg: -1 }),
+    ("lround", Sig { ret: Ty::Long, params: &[Ty::Double], vararg: -1 }),
+    ("lroundf", Sig { ret: Ty::Long, params: &[Ty::Float], vararg: -1 }),
+    ("modff", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::VoidPtr], vararg: -1 }),
+    ("nearbyint", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("nearbyintf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("powf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("remainder", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Double], vararg: -1 }),
+    ("remainderf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Float], vararg: -1 }),
+    ("rint", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("rintf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("round", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("roundf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("scalbn", Sig { ret: Ty::Double, params: &[Ty::Double, Ty::Int], vararg: -1 }),
+    ("scalbnf", Sig { ret: Ty::Float, params: &[Ty::Float, Ty::Int], vararg: -1 }),
+    ("sin", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("sincos", Sig { ret: Ty::Void, params: &[Ty::Double, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("sincosf", Sig { ret: Ty::Void, params: &[Ty::Float, Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("sinf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("sinh", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("sinhf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("sqrtf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("tan", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("tanf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("tanh", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("tanhf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("tgamma", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("tgammaf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
+    ("trunc", Sig { ret: Ty::Double, params: &[Ty::Double], vararg: -1 }),
+    ("truncf", Sig { ret: Ty::Float, params: &[Ty::Float], vararg: -1 }),
 ];
 
 impl AnalysisPass for LibcSigsPass {
@@ -669,9 +772,38 @@ impl AnalysisPass for LibcSigsPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &imported, LIBC_EXT, types, word_size, super::L);
         seed_resolved_prototypes(&mut out, &resolved, LIBC_EXT, types, word_size, super::L);
-        if !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
-            out.prototypes.retain(|p| !kuna_typedcallabi::declares_a_float(p));
-            out.prototypes_at.retain(|(_, p)| !kuna_typedcallabi::declares_a_float(p));
+        let complex_max = crate::analyzers::dwarf::kuna_dwarfcomplex::max_size(
+            ctx.file.format(),
+            ctx.file.architecture(),
+            &ctx.arch.archid,
+        );
+        let complex: Vec<_> = [
+            (8, ("cexpf", Sig { ret: Ty::Complex(8), params: &[Ty::Complex(8)], vararg: -1 })),
+            (16, ("cexp", Sig { ret: Ty::Complex(16), params: &[Ty::Complex(16)], vararg: -1 })),
+        ]
+        .into_iter()
+        .filter(|(size, _)| *size <= complex_max)
+        .map(|(_, row)| row)
+        .collect();
+        seed_named_prototypes(&mut out, &imported, &complex, types, word_size, super::L);
+        seed_resolved_prototypes(&mut out, &resolved, &complex, types, word_size, super::L);
+        let arm = ctx.arch.archid.starts_with("ARM:");
+        if arm || !kuna_typedcallabi::returns_doubles_whole(ctx.arch) {
+            let (float, kept): (Vec<_>, Vec<_>) =
+                std::mem::take(&mut out.prototypes).into_iter().partition(kuna_typedcallabi::declares_a_float);
+            out.prototypes = kept;
+            let (float_at, kept_at): (Vec<_>, Vec<_>) = std::mem::take(&mut out.prototypes_at)
+                .into_iter()
+                .partition(|(_, p)| kuna_typedcallabi::declares_a_float(p));
+            out.prototypes_at = kept_at;
+            if arm {
+                let mut libm = AnalysisOutput::default();
+                seed_named_prototypes(&mut libm, &imported, LIBM_VFP, types, word_size, super::L);
+                seed_resolved_prototypes(&mut libm, &resolved, LIBM_VFP, types, word_size, super::L);
+                let float = float.into_iter().chain(libm.prototypes).map(|p| (None, p));
+                let float_at = float_at.into_iter().chain(libm.prototypes_at).map(|(at, p)| (Some(at), p));
+                out.arm_float_prototypes.extend(float.chain(float_at));
+            }
         }
         out
     }
@@ -681,6 +813,15 @@ impl AnalysisPass for LibcSigsPass {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn libm_table_is_disjoint_and_declares_a_float() {
+        for (name, sig) in LIBM_VFP {
+            assert!(!super::super::LIBC.iter().chain(LIBC_EXT).any(|(n, _)| n == name), "{name}");
+            assert!(matches!(sig.ret, Ty::Float | Ty::Double) || sig.params.iter().any(|p| matches!(p, Ty::Float | Ty::Double)), "{name}");
+        }
+        assert!(LIBM_VFP.windows(2).all(|w| w[0].0 < w[1].0));
+    }
 
     #[test]
     fn table_is_disjoint_from_base() {

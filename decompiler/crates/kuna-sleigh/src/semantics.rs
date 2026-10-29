@@ -279,7 +279,7 @@ impl ConstTpl {
     /// C++ `fix(const ParserWalker &)`: get the value of the ConstTpl in
     /// context.  NOTE: if the property is dynamic this returns the property
     /// of the temporary storage.
-    pub fn fix(&self, walker: &dyn SymbolWalker) -> KunaResult<u64> {
+    pub fn fix(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<u64> {
         match self.type_ {
             // Fill in starting address placeholder with real address
             ConstType::JStart => Ok(walker.get_addr().get_offset()),
@@ -300,7 +300,7 @@ impl ConstTpl {
             ConstType::JCurspaceSize => Ok(u64::from(walker.get_cur_space().get_addr_size())),
             ConstType::JCurspace => Ok(space_to_const(&walker.get_cur_space())),
             ConstType::Handle => {
-                let hand = walker.get_fixed_handle(self.value_handle_index)?;
+                let hand = walker.borrow_fixed_handle(self.value_handle_index)?;
                 match self.select {
                     VField::VSpace => {
                         if hand.offset_space.is_none() {
@@ -352,16 +352,13 @@ impl ConstTpl {
     /// C++ `fixSpace`: get the value of the ConstTpl in context when we
     /// know it is a space.  `Option` mirrors the nullable C++ result
     /// pointer; `Err` mirrors the C++ `LowlevelError`.
-    pub fn fix_space(&self, walker: &dyn SymbolWalker) -> KunaResult<Option<Rc<AddrSpace>>> {
+    pub fn fix_space(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<Option<Rc<AddrSpace>>> {
         match self.type_ {
             ConstType::JCurspace => return Ok(Some(walker.get_cur_space())),
             ConstType::Handle => {
-                let hand = walker.get_fixed_handle(self.value_handle_index)?;
+                let hand = walker.borrow_fixed_handle(self.value_handle_index)?;
                 if self.select == VField::VSpace {
-                    if hand.offset_space.is_none() {
-                        return Ok(hand.space);
-                    }
-                    return Ok(hand.temp_space);
+                    return Ok(crate::kuna_handleview::resolved_space(hand));
                 }
                 // other selects fall through to the throw
             }
@@ -377,7 +374,7 @@ impl ConstTpl {
     pub fn fillin_space(
         &self,
         hand: &mut FixedHandle,
-        walker: &dyn SymbolWalker,
+        walker: &(impl SymbolWalker + ?Sized),
     ) -> KunaResult<()> {
         match self.type_ {
             ConstType::JCurspace => {
@@ -385,9 +382,9 @@ impl ConstTpl {
                 return Ok(());
             }
             ConstType::Handle => {
-                let otherhand = walker.get_fixed_handle(self.value_handle_index)?;
+                let otherhand = walker.borrow_fixed_handle(self.value_handle_index)?;
                 if self.select == VField::VSpace {
-                    hand.space = otherhand.space;
+                    hand.space = crate::kuna_handleview::export_space(otherhand);
                     return Ok(());
                 }
                 // other selects fall through to the throw
@@ -408,15 +405,11 @@ impl ConstTpl {
     pub fn fillin_offset(
         &self,
         hand: &mut FixedHandle,
-        walker: &dyn SymbolWalker,
+        walker: &(impl SymbolWalker + ?Sized),
     ) -> KunaResult<()> {
         if self.type_ == ConstType::Handle {
-            let otherhand = walker.get_fixed_handle(self.value_handle_index)?;
-            hand.offset_space = otherhand.offset_space;
-            hand.offset_offset = otherhand.offset_offset;
-            hand.offset_size = otherhand.offset_size;
-            hand.temp_space = otherhand.temp_space;
-            hand.temp_offset = otherhand.temp_offset;
+            let otherhand = walker.borrow_fixed_handle(self.value_handle_index)?;
+            crate::kuna_handleview::export_offset(otherhand, hand);
         } else {
             hand.offset_space = None;
             let fixed = self.fix(walker)?;
@@ -674,14 +667,14 @@ impl VarnodeTpl {
     }
 
     /// C++ `isDynamic`.
-    pub fn is_dynamic(&self, walker: &dyn SymbolWalker) -> KunaResult<bool> {
+    pub fn is_dynamic(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<bool> {
         if self.offset.get_type() != ConstType::Handle {
             return Ok(false);
         }
         // Technically we should probably check all three
         // ConstTpls for dynamic handles, but in all cases
         // if there is any dynamic piece then the offset is
-        let hand = walker.get_fixed_handle(self.offset.get_handle_index())?;
+        let hand = walker.borrow_fixed_handle(self.offset.get_handle_index())?;
         Ok(hand.offset_space.is_some())
     }
 
@@ -950,7 +943,7 @@ impl HandleTpl {
     }
 
     /// C++ `fix`: resolve this template into `hand` against the walker.
-    pub fn fix(&self, hand: &mut FixedHandle, walker: &dyn SymbolWalker) -> KunaResult<()> {
+    pub fn fix(&self, hand: &mut FixedHandle, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<()> {
         if self.ptrspace.get_type() == ConstType::Real {
             // The export is unstarred, but this doesn't mean the varnode
             // being exported isn't dynamic
@@ -1499,6 +1492,8 @@ mod tests {
     use kuna_base::address::Address;
     use kuna_base::marshal::{PackedDecode, PackedEncode};
     use kuna_base::space::{addrspace_flags, AddrSpaceManager, ConstantSpace, UniqueSpace};
+    use std::borrow::Cow;
+    use std::cell::Cell;
 
     use super::*;
     use crate::slghpatexpress::PatternExpressionContext;
@@ -1549,6 +1544,8 @@ mod tests {
         const_space: Rc<AddrSpace>,
         cur_space: Rc<AddrSpace>,
         handles: Vec<FixedHandle>,
+        borrowed_handles: bool,
+        owned_reads: Cell<usize>,
     }
 
     impl TestWalker {
@@ -1562,6 +1559,8 @@ mod tests {
                 const_space: cspace(manager),
                 cur_space: ram(manager),
                 handles: Vec::new(),
+                borrowed_handles: false,
+                owned_reads: Cell::new(0),
             }
         }
     }
@@ -1600,10 +1599,19 @@ mod tests {
             Err(KunaError::sleigh("no constructor in semantics tests"))
         }
         fn get_fixed_handle(&self, i: i32) -> KunaResult<FixedHandle> {
+            self.owned_reads.set(self.owned_reads.get() + 1);
             self.handles
                 .get(i as usize)
                 .cloned()
                 .ok_or_else(|| KunaError::sleigh("no fixed handle for operand"))
+        }
+        fn borrow_fixed_handle(&self, i: i32) -> KunaResult<Cow<'_, FixedHandle>> {
+            if self.borrowed_handles {
+                self.handles.get(i as usize).map(Cow::Borrowed)
+                    .ok_or_else(|| KunaError::sleigh("no fixed handle for operand"))
+            } else {
+                self.get_fixed_handle(i).map(Cow::Owned)
+            }
         }
         fn get_const_space(&self) -> Rc<AddrSpace> {
             Rc::clone(&self.const_space)
@@ -1938,6 +1946,42 @@ mod tests {
     }
 
     // -- equality / ordering ----------------------------------------------------
+
+    #[test]
+    fn borrowed_handles_preserve_scalar_fields_and_dynamic_exports() {
+        let manager = test_manager();
+        let mut owned = TestWalker::new(&manager);
+        owned.handles = vec![static_handle(&manager), dynamic_handle(&manager), const_handle(&manager)];
+        let mut borrowed = TestWalker::new(&manager);
+        borrowed.handles = owned.handles.clone();
+        borrowed.borrowed_handles = true;
+        let space_id = |space: &Option<Rc<AddrSpace>>| space.as_ref().map(Rc::as_ptr);
+        for index in 0..3 {
+            for field in [VField::VSpace, VField::VOffset, VField::VSize, VField::VOffsetPlus] {
+                let tpl = ConstTpl::new_handle_plus(index, field, 0x0004_0002);
+                assert_eq!(tpl.fix(&owned).unwrap(), tpl.fix(&borrowed).unwrap());
+            }
+            let space = ConstTpl::new_handle(index, VField::VSpace);
+            assert_eq!(space_id(&space.fix_space(&owned).unwrap()), space_id(&space.fix_space(&borrowed).unwrap()));
+            let varnode = VarnodeTpl::new_from_handle(index, false);
+            assert_eq!(varnode.is_dynamic(&owned).unwrap(), varnode.is_dynamic(&borrowed).unwrap());
+            let tpl = HandleTpl::new_from_varnode(&varnode);
+            let mut owned_export = FixedHandle::default();
+            let mut borrowed_export = FixedHandle::default();
+            tpl.fix(&mut owned_export, &owned).unwrap();
+            tpl.fix(&mut borrowed_export, &borrowed).unwrap();
+            assert_eq!(space_id(&owned_export.space), space_id(&borrowed_export.space));
+            assert_eq!(owned_export.size, borrowed_export.size);
+            assert_eq!(space_id(&owned_export.offset_space), space_id(&borrowed_export.offset_space));
+            assert_eq!(owned_export.offset_offset, borrowed_export.offset_offset);
+            assert_eq!(owned_export.offset_size, borrowed_export.offset_size);
+            assert_eq!(space_id(&owned_export.temp_space), space_id(&borrowed_export.temp_space));
+            assert_eq!(owned_export.temp_offset, borrowed_export.temp_offset);
+        }
+        assert!(ConstTpl::new_handle(3, VField::VSize).fix(&borrowed).is_err());
+        assert_eq!(borrowed.owned_reads.get(), 0);
+        assert!(owned.owned_reads.get() > 0);
+    }
 
     #[test]
     fn semantics_consttpl_equality_and_order() {

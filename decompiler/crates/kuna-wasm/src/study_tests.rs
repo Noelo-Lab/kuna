@@ -1,8 +1,12 @@
 //! The study view's commands on the browser example (`sample.elf`): `inspect`
 //! against `decompile`, the instruction listing against the C and the file,
 //! `read`, and the `--assert` plane end to end; `strings` on the crackme
-//! example (`crackme.elf`); and the type definitions `inspect` prints above a
-//! function (`structs.elf`).
+//! example (`crackme.elf`); the type definitions `inspect` prints above a
+//! function (`structs.elf`); and the globals a function names, the `data`
+//! window around one and the `uses` of it (`globals.elf`, and its stripped
+//! twin); and where each function's frame pointer and stack pointer sit
+//! (`frames-O2.elf`, `frames-asm.elf`, `frames-i386.o`, `frames-arm.o`,
+//! `sample_aarch64.o`).
 
 use std::path::PathBuf;
 
@@ -210,13 +214,72 @@ fn inspected_lines(binary: &str, function: &str, asserts: &[&str], renames: &[(&
 }
 
 /// The page sends every rename on every request, each naming the local as the
-/// first decompile printed it, so a rename must not renumber another local:
-/// `check`'s `v2` stays `v2` when `v1` is renamed.
+/// first decompile printed it, so a rename must not rename another local:
+/// `check`'s `len` (named after `strlen`'s result, `libcnames`) stays `len`
+/// when `v1` is renamed, and `v1` stays `v1` when `len` is.
 #[test]
 fn a_local_rename_moves_no_other_local_number() {
     let plain = inspected_lines("crackme.elf", "check", &[], &[]);
-    assert!(plain.iter().any(|line| line.contains(" v2; // ")), "{plain:?}");
+    assert!(plain.iter().any(|line| line.contains(" len; // ")), "{plain:?}");
+    assert!(plain.iter().any(|line| line.contains(" v1; // ")), "{plain:?}");
     assert_eq!(inspected_lines("crackme.elf", "check", &["name v1 ok"], &[("ok", "v1")]), plain);
+    assert_eq!(inspected_lines("crackme.elf", "check", &["name len size"], &[("size", "len")]), plain);
+}
+
+/// The C of `check` in crackme under `asserts`, in `mode`.
+fn check_in_mode(mode: Option<&str>, asserts: &[&str]) -> String {
+    let (binary, specs) = fixture_named("crackme.elf");
+    let args = vec!["check".to_string()];
+    let asserts: Vec<String> = asserts.iter().map(|s| s.to_string()).collect();
+    let out = run_request(&Request {
+        binary: &binary,
+        spec_root: &specs,
+        cmd: "inspect",
+        args: &args,
+        mode,
+        language: None,
+        asserts: &asserts,
+    })
+    .expect("inspect check");
+    let doc: Value = serde_json::from_str(&out).expect("valid JSON");
+    assert!(
+        doc["assertions"].as_array().is_none_or(|a| a.iter().all(|o| o["status"] == "applied")),
+        "{mode:?} {asserts:?}: {}",
+        doc["assertions"]
+    );
+    doc["function"]["code"].as_str().expect("code").to_string()
+}
+
+/// `check`'s `len` keeps the number it has in Reliable, so a rename the page
+/// sent in Auto reaches the same local after a switch, whichever name it used.
+#[test]
+fn a_rename_reaches_the_same_local_after_a_mode_switch() {
+    for asserts in [["name len size"], ["name v2 size"]] {
+        for mode in [None, Some("reliable"), Some("aggressive")] {
+            let code = check_in_mode(mode, &asserts);
+            assert!(code.contains("  size = strlen(input);\n"), "{mode:?} {asserts:?}:\n{code}");
+        }
+    }
+}
+
+/// A rename to a number-shaped name is kept: `len` renamed `v7` prints `v7`,
+/// and the next rename reaches it by that name.
+#[test]
+fn a_number_shaped_rename_of_a_library_name_is_kept() {
+    let code = check_in_mode(None, &["name len v7"]);
+    assert!(code.contains("  v7 = strlen(input);\n") && !code.contains(" len;"), "{code}");
+    let code = check_in_mode(None, &["name len v7", "name v7 size"]);
+    assert!(code.contains("  size = strlen(input);\n"), "{code}");
+}
+
+/// A rename onto `len` leaves `strlen`'s local its number `v2`, and the next
+/// rename reaches it by that number.
+#[test]
+fn a_rename_onto_a_library_name_leaves_the_other_local_addressable() {
+    let code = check_in_mode(None, &["name v1 len"]);
+    assert!(code.contains("  v2 = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
+    let code = check_in_mode(None, &["name v1 len", "name v2 size"]);
+    assert!(code.contains("  size = strlen(input);\n") && code.contains("  len = 0;\n"), "{code}");
 }
 
 /// Two renames in turn, the second naming the local the page showed as `v7`
@@ -235,14 +298,73 @@ fn two_renames_in_turn_both_survive() {
 
 /// A rename names the whole printed variable: `long.elf`'s `v2` lives in
 /// `eax` and two stack slots, and renaming it used to split off a new `v15`;
-/// renaming `v3` used to swallow `v1`.
+/// renaming `v3` used to swallow `v1`. `v3` prints as `fopen`'s `fp`
+/// (`libcnames`), and the directive reaches it by its number.
 #[test]
 fn a_rename_names_the_whole_variable() {
     let plain = inspected_lines("long.elf", "main", &[], &[]);
-    for (from, to) in [("v2", "count"), ("v3", "input")] {
+    for (from, to, printed) in [("v2", "count", "v2"), ("v3", "input", "fp")] {
         let directive = format!("name main::{from} {to}");
-        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, from)]), plain, "{directive}");
+        assert_eq!(inspected_lines("long.elf", "main", &[&directive], &[(to, printed)]), plain, "{directive}");
     }
+}
+
+/// A retype that keeps a local's width types the whole printed variable:
+/// `type v2 unsigned int count` used to leave `v2`'s other definitions behind
+/// as a new `unsigned int v15`. Only the declaration and the casts at its uses
+/// change, whether the page retypes it alone or renames it first.
+#[test]
+fn a_same_width_retype_types_the_whole_variable() {
+    let uncast = |lines: Vec<String>| -> Vec<String> {
+        let mut out: Vec<String> = lines
+            .into_iter()
+            .map(|line| line.replace("(unsigned int)", "").replace("(int)", "").replace("  unsigned int v2;", "  int v2;"))
+            .collect();
+        out.sort();
+        out
+    };
+    let plain = uncast(inspected_lines("long.elf", "main", &[], &[]));
+    for asserts in [
+        &["type main::v2 unsigned int count"][..],
+        &["type main::v2 unsigned int"][..],
+        &["name main::v2 count", "type main::count unsigned int count"][..],
+    ] {
+        let retyped = uncast(inspected_lines("long.elf", "main", asserts, &[("count", "v2")]));
+        assert_eq!(retyped, plain, "{asserts:?}");
+    }
+}
+
+/// A rename to a name the program already uses (`score` is a function) is
+/// printed suffixed, and is applied: the page shows what it became instead of
+/// a refusal.
+#[test]
+fn a_rename_the_printer_suffixes_is_applied() {
+    let inspected = run_on("long.elf", "inspect", &["main"], &["name main::v7 score"]).expect("inspect");
+    assert!(inspected["function"]["code"].as_str().expect("code").contains("  int score_1;"));
+    let row = &inspected["assertions"].as_array().expect("array")[0];
+    assert_eq!(row["status"].as_str(), Some("applied"));
+    assert_eq!(row["detail"].as_str(), Some("applied as `score_1`: `score` is already another identifier here"));
+}
+
+/// The page edits a local by the name it shows: after `score` printed as
+/// `score_1`, a rename and a retype of `score_1` reach that local.
+#[test]
+fn a_local_is_edited_by_its_suffixed_name() {
+    let rows = |inspected: &serde_json::Value| -> Vec<(String, Option<String>)> {
+        inspected["assertions"]
+            .as_array()
+            .expect("array")
+            .iter()
+            .map(|row| (row["status"].as_str().unwrap_or_default().to_string(), row["detail"].as_str().map(str::to_string)))
+            .collect()
+    };
+    let renamed = run_on("long.elf", "inspect", &["main"], &["name main::v7 score", "name main::score_1 total"]).expect("inspect");
+    assert!(renamed["function"]["code"].as_str().expect("code").contains("  int total;"));
+    assert_eq!(rows(&renamed), vec![("applied".to_string(), None), ("applied".to_string(), None)]);
+    let retyped =
+        run_on("long.elf", "inspect", &["main"], &["name main::v7 score", "type main::score_1 unsigned int"]).expect("inspect");
+    assert!(retyped["function"]["code"].as_str().expect("code").contains("  unsigned int score_1;"));
+    assert!(rows(&retyped).iter().all(|(status, _)| status == "applied"), "{:?}", rows(&retyped));
 }
 
 /// A `bytes` overlay is what every later read of the image sees.
@@ -424,4 +546,184 @@ fn inspect_defines_the_types_a_function_uses_above_it() {
         .flat_map(|i| i["lines"].as_array().expect("lines").iter().filter_map(Value::as_u64))
         .collect();
     assert!(!lines.is_empty() && lines.iter().all(|&l| l > shift + 1), "{shift} {lines:?}");
+}
+
+fn token_globals(doc: &Value) -> Vec<(String, Option<String>)> {
+    doc["function"]["tokens"]
+        .as_array()
+        .expect("tokens")
+        .iter()
+        .filter(|t| t["kind"].as_str() == Some("variable") && t.get("var").is_none() && t.get("decl").is_none())
+        .map(|t| (t["text"].as_str().unwrap().to_string(), t["global_hex"].as_str().map(str::to_string)))
+        .collect()
+}
+
+/// Every token that names global data carries the global's address: a symbol
+/// the program names (`primes`) and one the decompiler names by its address
+/// (`dat_4040` in the stripped twin), and `globals` lists both kinds. A local
+/// never does.
+#[test]
+fn inspect_puts_the_address_of_global_data_on_its_tokens() {
+    let named = run_on("globals.elf", "inspect", &["main"], &[]).expect("inspect main");
+    let tokens = token_globals(&named);
+    let at = |name: &str| tokens.iter().find(|(t, _)| t == name).and_then(|(_, g)| g.clone());
+    assert_eq!(at("primes").as_deref(), Some("0x4040"), "{tokens:?}");
+    assert_eq!(at("greeting").as_deref(), Some("0x4020"));
+    assert_eq!(at("scratch").as_deref(), Some("0x40c0"));
+    assert_eq!(at("origin").as_deref(), Some("0x4060"));
+    assert_eq!(at("op").as_deref(), Some("0x4078"));
+    assert_eq!(at("favorite").as_deref(), Some("0x4080"));
+    assert_eq!(at("banner").as_deref(), Some("0x4070"));
+    assert!(tokens.iter().filter(|(t, _)| t.starts_with('v')).all(|(_, g)| g.is_none()), "{tokens:?}");
+    let globals = named["function"]["globals"].as_array().expect("globals");
+    let primes = globals.iter().find(|g| g["name"].as_str() == Some("primes")).expect("primes listed");
+    assert_eq!(primes["address_hex"].as_str(), Some("0x4040"));
+    assert_eq!(primes["size"].as_u64(), Some(32));
+
+    let retyped = run_on("globals.elf", "inspect", &["main"], &["data 0x4060 point origin"]).expect("inspect main");
+    assert!(retyped["function"]["code"].as_str().unwrap().contains("(*op)(origin.x)"));
+    assert!(token_globals(&retyped).iter().any(|(t, g)| t == "origin" && g.as_deref() == Some("0x4060")));
+
+    let stripped = run_on("globals-stripped.elf", "inspect", &["main"], &[]).expect("inspect main");
+    let tokens = token_globals(&stripped);
+    assert!(tokens.iter().any(|(t, g)| t == "dat_4040" && g.as_deref() == Some("0x4040")), "{tokens:?}");
+    let globals = stripped["function"]["globals"].as_array().expect("globals");
+    let minted = globals.iter().find(|g| g["name"].as_str() == Some("dat_4078")).expect("dat_4078 listed");
+    assert_eq!(minted["declaration"].as_str(), Some("int (*dat_4078)(unsigned int)"));
+}
+
+fn item<'a>(doc: &'a Value, name: &str) -> &'a Value {
+    doc["items"]
+        .as_array()
+        .expect("items")
+        .iter()
+        .find(|i| i["name"].as_str() == Some(name))
+        .unwrap_or_else(|| panic!("{name} is an item: {:?}", doc["items"]))
+}
+
+/// `data` shows the section around a global: its labelled items with their
+/// types and layouts, the bytes as loaded, and what each pointer word points
+/// at. A retype is a `data` directive the window honours, a struct's fields
+/// included; a `.bss` buffer has no file bytes behind it.
+#[test]
+fn data_shows_the_typed_items_around_a_global() {
+    let doc = run_on("globals.elf", "data", &["0x4040"], &[]).expect("data");
+    assert_eq!(doc["section"]["name"].as_str(), Some(".data"));
+    assert_eq!(doc["pointer_size"].as_u64(), Some(8));
+    let start = doc["start"].as_u64().expect("start");
+    assert!(start <= 0x4020, "{doc:?}");
+    let bytes = doc["bytes"].as_str().expect("bytes");
+    let at = |addr: u64, len: usize| &bytes[(addr - start) as usize * 2..(addr - start) as usize * 2 + len * 2];
+    assert_eq!(at(0x4040, 8), "0200000003000000");
+    assert_eq!(at(0x4020, 12), hex(b"hello, data\0"));
+    assert_eq!(item(&doc, "primes")["size"].as_u64(), Some(32));
+    let targets = doc["targets"].as_array().expect("targets");
+    let to = |at: &str| targets.iter().find(|t| t["at_hex"].as_str() == Some(at)).unwrap_or_else(|| panic!("{at}: {targets:?}"));
+    assert_eq!(to("0x4078")["name"].as_str(), Some("twice"));
+    assert_eq!(to("0x4080")["name"].as_str(), Some("primes"));
+    assert_eq!(to("0x4080")["offset"].as_u64(), Some(12));
+    assert_eq!(to("0x4070")["text"].as_str(), Some("kuna data tab"));
+
+    let typed = run_on(
+        "globals.elf",
+        "data",
+        &["0x4060"],
+        &["data 0x4040 int primes[8]", "data 0x4060 point origin", "data 0x4078 int (*op)(int)"],
+    )
+    .expect("data");
+    let primes = &item(&typed, "primes")["layout"];
+    assert_eq!(primes["kind"].as_str(), Some("array"));
+    assert_eq!(primes["count"].as_u64(), Some(8));
+    assert_eq!(primes["elem"]["kind"].as_str(), Some("int"));
+    let origin = item(&typed, "origin");
+    assert_eq!(origin["declaration"].as_str(), Some("point origin"));
+    let fields: Vec<(&str, u64, &str)> = origin["layout"]["fields"]
+        .as_array()
+        .expect("fields")
+        .iter()
+        .map(|f| (f["name"].as_str().unwrap(), f["offset"].as_u64().unwrap(), f["type"]["kind"].as_str().unwrap()))
+        .collect();
+    assert_eq!(fields, vec![("x", 0, "int"), ("y", 4, "int"), ("label", 8, "pointer")]);
+    assert_eq!(item(&typed, "op")["declaration"].as_str(), Some("int (*op)(int)"));
+    assert_eq!(item(&typed, "op")["layout"]["to"]["kind"].as_str(), Some("code"));
+
+    let bss = run_on("globals.elf", "data", &["0x40c0"], &[]).expect("data");
+    assert_eq!(bss["section"]["name"].as_str(), Some(".bss"));
+    assert_eq!(bss["section"]["file_offset"], Value::Null);
+    assert_eq!(item(&bss, "scratch")["size"].as_u64(), Some(64));
+
+    let exact = run_on("globals.elf", "data", &["0x2010", "8"], &[]).expect("data");
+    assert_eq!(exact["start_hex"].as_str(), Some("0x2010"));
+    assert_eq!(exact["bytes"].as_str(), Some("e803000000000000"));
+    assert_eq!(exact["section"]["name"].as_str(), Some(".rodata"));
+    assert!(run_on("globals.elf", "data", &["0x4040", "0"], &[]).is_err());
+    let nowhere = run_on("globals.elf", "data", &["0xfffffffffffffff8"], &[]).expect("data at the top of memory");
+    assert_eq!(nowhere["size"].as_u64(), Some(0));
+    assert_eq!(nowhere["section"], Value::Null);
+}
+
+/// `uses` names the instruction behind every use of the data in a range, with
+/// the byte it uses: `main` takes the address of `primes` and reads `op`.
+#[test]
+fn uses_names_the_instructions_that_use_the_data() {
+    let doc = run_on("globals.elf", "uses", &["0x4040", "0x48"], &[]).expect("uses");
+    let uses = doc["uses"].as_array().expect("uses");
+    let first = |to: &str| uses.iter().find(|u| u["to_hex"].as_str() == Some(to)).unwrap_or_else(|| panic!("{to}: {uses:?}"));
+    assert_eq!(first("0x4040")["name"].as_str(), Some("main"));
+    assert_eq!(first("0x4040")["kind"].as_str(), Some("data"));
+    assert!(first("0x4040")["instruction"].as_str().unwrap().contains("0x4040"));
+    assert_eq!(first("0x4078")["kind"].as_str(), Some("read"));
+    let main = run_on("globals.elf", "inspect", &["main"], &[]).expect("inspect main");
+    let sites: Vec<&str> = main["function"]["instructions"]
+        .as_array()
+        .expect("instructions")
+        .iter()
+        .filter_map(|i| i["address_hex"].as_str())
+        .collect();
+    for u in uses {
+        assert_eq!(u["address_hex"], main["function"]["address_hex"], "{u:?}");
+        assert!(sites.contains(&u["at_hex"].as_str().unwrap()), "{u:?}");
+        let to = u["to"].as_u64().unwrap();
+        assert!((0x4040..0x4088).contains(&to), "{u:?}");
+    }
+}
+
+fn frame_of(name: &str, function: &str) -> (Value, Value, Value) {
+    let doc = run_on(name, "inspect", &[function], &[]).unwrap_or_else(|e| panic!("inspect {function}: {e}"));
+    let frame = &doc["function"]["frame"];
+    (frame["frame_pointer"].clone(), frame["stack_pointer"].clone(), frame["base"].clone())
+}
+
+fn reg(register: &str, offset: i64) -> Value {
+    serde_json::json!({ "register": register, "offset": offset })
+}
+
+/// `frame` says where the prologue leaves the frame pointer and the stack
+/// pointer, from the stack pointer at entry, and which one the code reads its
+/// stack through: RBP at the saved RBP after `PUSH RBP; MOV RBP,RSP`, also in a
+/// leaf that pops it before returning; no frame pointer when optimized code
+/// copies RSP into RBP after reserving its locals; the frame a shrink-wrapped
+/// prologue sets up after its early-exit test or a conditional tail call, past a
+/// CMOV between pushes, past an i386 get-PC thunk call (but not into a call
+/// site's padding), and on ARM and Thumb past a conditional call or return; no stack pointer once a probe loop moves
+/// it, also one entered at its test; x29 at AArch64's frame record, read
+/// through sp when the code does, and none in a leaf that keeps no record.
+#[test]
+fn inspect_reports_the_frame_pointer_and_the_stack_pointer() {
+    let (fp, sp) = (Value::from("frame_pointer"), Value::from("stack_pointer"));
+    assert_eq!(frame_of("sample.elf", "main"), (reg("rbp", -8), reg("rsp", -0x28), fp.clone()));
+    assert_eq!(frame_of("sample.elf", "add"), (reg("rbp", -8), reg("rsp", -8), fp.clone()));
+    assert_eq!(frame_of("frames-O2.elf", "read_name"), (Value::Null, reg("rsp", -0x58), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "shrink_wrapped"), (Value::Null, reg("rsp", -0x28), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "probed"), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(frame_of("frames-asm.elf", "rotated"), (Value::Null, Value::Null, Value::Null));
+    assert_eq!(frame_of("frames-asm.elf", "interleaved"), (Value::Null, reg("rsp", -0x20), sp.clone()));
+    assert_eq!(frame_of("frames-asm.elf", "tail_first"), (Value::Null, reg("rsp", -0x28), sp.clone()));
+    assert_eq!(frame_of("frames-i386.o", "pic"), (Value::Null, reg("esp", -0x44), sp.clone()));
+    assert_eq!(frame_of("frames-i386.o", "padded"), (Value::Null, reg("esp", -0x1c), sp.clone()));
+    for (function, depth) in [("condcall", -0x30), ("condret", -0x30), ("condpop", -0x40), ("tcondcall", -0x40)] {
+        assert_eq!(frame_of("frames-arm.o", function), (Value::Null, reg("sp", depth), sp.clone()), "{function}");
+    }
+    assert_eq!(frame_of("sample_aarch64.o", "_start"), (reg("x29", -0x10), reg("sp", -0x30), sp.clone()));
+    assert_eq!(frame_of("sample_aarch64.o", "sum_to"), (Value::Null, reg("sp", -0x20), sp));
 }

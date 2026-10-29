@@ -369,6 +369,8 @@ pub fn universal_sched(
         rrow!("boolsignshift", "analysis", crate::kuna_booleanmask::RuleBoolSignShift::with_group(false, "analysis")),
         rrow!("simdshufflelane", "analysis", crate::kuna_simdlane::RuleSimdShuffleLane::with_group(false, "analysis")),
         rrow!("constspaceload", "analysis", crate::kuna_constspaceload::RuleConstSpaceLoad::with_group(false, "analysis")),
+        rrow!("x87truncate", "analysis", crate::kuna_x87truncate::RuleX87Truncate::new("analysis")),
+        rrow!("gobool", "analysis", crate::kuna_gobool::RuleGoBoolReturn::with_group(false, "analysis")),
         rrow!("boolsignless", "analysis", crate::kuna_flagcompare::RuleBoolSignLess::with_group(false, "analysis")),
         rrow!("sborrowge", "analysis", crate::kuna_flagcompare::RuleSborrowGe::with_group(false, "analysis")),
         rrow!("shiftcompare", "analysis", crate::ruleaction_2::RuleShiftCompare),
@@ -512,6 +514,7 @@ pub fn universal_sched(
         rrow!("stringstore", "constsequence", crate::constseq::RuleStringStore::new("constsequence")),
         rrow!("memsetcopy", "constsequence", crate::kuna_memsetsequence::RuleMemsetCopy::with_group(false, "constsequence")),
         rrow!("rodatastringcopy", "constsequence", crate::kuna_rodatastring::RuleRodataStringCopy::with_group(false, "constsequence")),
+        rrow!("fatstr", "constsequence", crate::kuna_fatstr::RuleFatStr::with_group(false, "constsequence")),
         rrow!("bitfield_store", "bitfields", crate::bitfield::RuleBitFieldStore),
         rrow!("bitfield_out", "bitfields", crate::bitfield::RuleBitFieldOut),
         rrow!("bitfield_load", "bitfields", crate::bitfield::RuleBitFieldLoad),
@@ -562,6 +565,8 @@ pub fn universal_sched(
             // fed the drop.  Before `outline`, so a region whose only call was drop
             // glue becomes outline-eligible.  Inert on a non-Rust binary.
             act!(crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode::boxed("deadcode")),
+            act!(crate::p2_lift::kuna_gomorestack::ActionGoMorestack::boxed("deadcode")),
+            act!(crate::p2_lift::kuna_gowritebarrier::ActionGoWriteBarrier::boxed("deadcode")),
             // (kuna) outline (option `outline`, default-OFF - destructive, and inert
             // with no region supplied).  Excise a SUPPLIED single-entry region and
             // emit a call to a synthesized pseudofunction in its place.
@@ -631,7 +636,7 @@ pub fn universal_sched(
             act!(ActionLikelyTrash::boxed("protorecovery")),
             act!(ActionDirectWrite::boxed("protorecovery_a", true)),
             act!(ActionDirectWrite::boxed("protorecovery_b", false)),
-            act!(ActionDeadCode::boxed("deadcode")),
+            act!(ActionDeadCode::boxed_narrowing("deadcode")),
             act!(ActionDoNothing::boxed("deadcontrolflow")),
             act!(ActionSwitchNorm::boxed("switchnorm")),
             SchedNode::Action(Box::new(move || {
@@ -674,6 +679,13 @@ pub fn universal_sched(
             // mainloop's dead-code passes over the reduced graph before P8
             // structures it.
             act!(Box::new(crate::kuna_devectorize::ActionDevectorize::new(false, "returnsplit"))),
+            // (kuna) strlenscan (option `strlenscan`): collapse the loop SLEIGH
+            // lifts an inline `repnz scasb` string length to into `strlen`, by
+            // giving the loop its final values and removing its back edge and
+            // its never-taken count-exhausted exit.  Here with the edge-removal
+            // passes above: mainloop has settled the count and the searched byte
+            // to constants, and the repeating fullloop folds what it leaves.
+            act!(Box::new(crate::kuna_strlenscan::ActionStrlenScan::new(false, "returnsplit"))),
             act!(ActionReturnSplit::boxed("returnsplit")),
             // (kuna) angr SAILR gotoless `ReturnDuplicatorHigh` (option `returndup`,
             // default-OFF).  Runs right after ActionReturnSplit (the goto-driven

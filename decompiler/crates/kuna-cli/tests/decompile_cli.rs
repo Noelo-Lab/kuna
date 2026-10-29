@@ -451,6 +451,29 @@ fn pe_iat_json_selection_is_a_non_success_without_code() {
     assert!(!stdout.contains("CARRY1(") && !stdout.contains("*v"));
 }
 
+/// An imported constructor declares no return type, so only its input is locked.
+/// `void Arr::Reset()` has the same C signature and is applied first; its void
+/// return must not be what the constructor's call reads.
+#[test]
+fn msvc_constructor_return_survives_a_void_member_with_its_signature() {
+    let binary = pe_fixture("msvcretlock_i386.exe");
+    let out = run_pe_decompile(&binary, "0x401000", &["--addr"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "decompile failed: {stderr}");
+    let ctor = stdout
+        .lines()
+        .find(|line| line.contains("Arr::Arr(a0)"))
+        .unwrap_or_else(|| panic!("no constructor call:\n{stdout}"));
+    let (object, _) = ctor
+        .trim()
+        .split_once(" = ")
+        .unwrap_or_else(|| panic!("the constructor's result was dropped:\n{stdout}"));
+    for read in [format!("Arr::Reset({object});"), format!("Use({object});"), format!("return {object};")] {
+        assert!(stdout.contains(&read), "{read} does not read the constructed object:\n{stdout}");
+    }
+}
+
 /// The DIV-88 fixture: an ELF whose `.symtab` carries `::b`, a qualified name
 /// with an empty scope component.  `symbolnamerepair` (default-ON) skips the
 /// degenerate component; `off` restores the hard load failure this test needs.

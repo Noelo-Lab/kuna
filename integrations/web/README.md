@@ -1,14 +1,15 @@
 # The kuna site (and the in-browser decompiler)
 
-**kuna.noelo.org** — the project site, its public development visualization, and the
-decompiler that runs **entirely client-side in a web browser**: no server, no backend, no
-upload. Three pages and a redirect, one static bundle:
+**kuna.noelo.org** — the project site and its public development visualization — and
+**decompile.run**, the decompiler that runs **entirely client-side in a web browser**: no
+server, no backend, no upload. One static bundle, split into the two sites at deploy time
+(paths below are the bundle's; `/decompile/` is the root of decompile.run once deployed):
 
 | URL | Page |
 |---|---|
 | `/` | **Landing** — what kuna is, a side-by-side compare section, the three project goals. Inert: no wasm, no network. |
-| `/dev-viz/` | **Development record** — phase activity, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
-| `/decompile/` | **The decompiler** — full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: open an ELF/PE/Mach-O (the *Open file* button, or drop it anywhere) and read one function as its code (C or Rust), assembly, bytes and stack frame linked line by line, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. *Show hints* (off by default; `?student=true` turns it on) adds the teaching notes and the hover cards that explain what the pointer rests on. *Collaborate* starts a live session with no server: up to 8 people on one program, each other's edits, pointers and pings, the program sent to whoever joins (invite link, reply link; tabs of one browser need only the invite), on one network or, with *Connect across the internet* ticked, across it through Cloudflare's STUN server. |
+| `/dev-viz/` | **Development record** — phase activity, what each phase holds and the order its passes run in, commit cadence, option provenance, DecBench evidence, and the autonomous improvement loop. Generated from tracked repository evidence at build time. |
+| `/decompile/` | **The decompiler** — full screen, in plain words, in the site's Noelo palette (dark by default, light on a toggle) with its own app type: open an ELF/PE/Mach-O (the *Open file* button, or drop it anywhere) and read one function as its code (C or Rust), assembly, bytes and stack frame linked line by line, double-click a global to see its data, an Explain panel for whatever is selected, renames/retypes/prototypes/notes and byte patches the engine applies, a patched-program download, and a changes file the CLI replays. *Show hints* (off by default; `?student=true` turns it on) adds the teaching notes and the hover cards that explain what the pointer rests on. *Collaborate* starts a live session with no server: up to 8 people on one program, each other's edits, pointers and pings, the program sent to whoever joins (invite link, reply link; tabs of one browser need only the invite), on one network or, with *Connect across the internet* ticked, across it through Cloudflare's STUN server. |
 
 The engine (Ghidra's decompiler, ported to Rust) compiles to `wasm32-wasip1` and runs in
 the page under a pure-JS WASI shim; the SLEIGH specs and the binary you decompile live in
@@ -64,24 +65,35 @@ function listing, decompilation, and project export. The JavaScript glue request
 
 `.github/workflows/pages.yml` builds this bundle and publishes it to GitHub Pages on every
 push to `main` that touches `integrations/web/`, `decompiler/`, or `specs/` (and on manual
-dispatch). The workflow builds the SLEIGH specs (`make specs`), runs `build.sh`,
-and deploys `dist/` — nothing is committed. The site is served at **`kuna.noelo.org`**
-(the `CNAME` in the bundle), and equally from `https://<owner>.github.io/<repo>/` — every
-asset path is relative, so a project subpath just works.
+dispatch). The workflow builds the SLEIGH specs (`make specs`), runs `build.sh` and the
+tests, then `split-sites.sh`, which divides `dist/` into the two sites:
 
-**One-time enablement** (repo admin): *Settings → Pages → Build and deployment → Source =
-**GitHub Actions***. The next push to `main` (or a manual run from the Actions tab) deploys.
+- **`decompile.run`** — `dist-run/`: the decompiler at the root, with the wasm, specs,
+  Worker and assets beside it. The workflow force-pushes it as a single commit to
+  [`Noelo-Lab/decompile.run`](https://github.com/Noelo-Lab/decompile.run), whose Pages
+  serves its `main` branch. The push uses the `DECOMPILE_RUN_DEPLOY_KEY` secret, the
+  private half of a write deploy key on that repo. Its `README.md` and `CNAME` come from
+  `decompile-run/` here.
+- **`kuna.noelo.org`** — what is left in `dist/`: the landing page and `/dev-viz/`, with
+  their decompiler links pointed at decompile.run, and `/decompile/` replaced by
+  `decompile-run/redirect.html`, which forwards with the query and fragment intact so old
+  invite and student links keep working. This repo's Pages deploys it via
+  `actions/deploy-pages` (*Settings → Pages → Source = GitHub Actions*).
+
+Nothing built is committed to this repo. Locally, `build.sh --serve` keeps the single
+bundle with the decompiler at `/decompile/`, which is also what the tests serve.
 
 ## What's here
 
 | Path | Role |
 |---|---|
 | `index.html` | The landing page: hero, the compare section, the three goals. Static — its only script wires the two dropdowns. |
-| `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
-| `decompile/` | The decompiler: `index.html` + `decompile.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the code and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, instruction notes and help. `collab/` is *Working together*, loaded only when a session starts or an invite or reply link is opened: the controller and its dialogs, the group protocol, WebRTC and BroadcastChannel links, the shared registers, message checks and codes, pointers and pings. `docs/web-integration.md` §4.2 has the layout, the module table and *Working together*. |
+| `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`, and reuses the observatory's atlas generator (`scripts/observatory/atlas.py`, `docs/observatory.md`) for per-phase source sizes and the default pass schedule, so it needs `cargo` on the path; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
+| `decompile/` | The decompiler: `index.html` + `decompile.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the code and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, the Data tab (a global's data, decoded by type, and who uses it), instruction notes and help. `collab/` is *Working together*, loaded only when a session starts or an invite or reply link is opened: the controller and its dialogs, the group protocol, WebRTC and BroadcastChannel links, the shared registers, message checks and codes, pointers and pings. `docs/web-integration.md` §4.2 has the layout, the module table and *Working together*. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
 | `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark + favicon, derived from `assets/kuna.png`), `js/highlight-c.js` — the one C highlighter the landing page and the decompiler use — and `js/fnfilter.js`, the DOM-free matcher behind the /decompile function search. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
+| `decompile-run/` | What `split-sites.sh` adds to the two sites: decompile.run's `README.md` and `CNAME`, and `redirect.html`, kuna.noelo.org's `/decompile/`. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
 | `kuna-worker.js` | The module Worker: owns the binary and WASI handle, lists first, decompiles one selected address, and builds whole-project ZIPs off the UI thread. |
 | `kuna-worker-client.js` | The page-side RPC client. Cancellation terminates/recreates its Worker and rehydrates the retained binary on the next request. |
@@ -90,7 +102,7 @@ asset path is relative, so a project subpath just works.
 
 The development chart spaces active UTC days equally and marks omitted dates below
 the axis. Ghidra’s two catalog source labels are combined in both the counts and
-the source filter. Community counts come from `dev-viz/community.json`: a reviewed
+the source filter, and catalog sources are compared case-insensitively. Community counts come from `dev-viz/community.json`: a reviewed
 list of merged outside PRs and merged PRs linked to outside issue reports. Each PR
 counts once, only when it appears in the checked-out commit history. The list’s
 review date is shown on the page; builds do not query GitHub. When updating it,
@@ -107,8 +119,9 @@ node integrations/web/test/dev-viz.mjs ../
 python3 -m http.server 8000 --directory integrations/web
 ```
 | `build.sh` | Builds `kuna_wasm.wasm`, copies the full runtime SLEIGH tree + the shim + the pages + `assets/` into `dist/`, and bundles the small spec files into `specs-small.json`. `wasm-opt -Oz` is applied if present. |
+| `split-sites.sh` | Run after `build.sh` at deploy time: moves the decompiler to the root of `dist-run/` (decompile.run) and leaves `dist/` as kuna.noelo.org with a forwarding `/decompile/`. |
 | `test/` | Automated gates (below) + committed ELF/Mach-O fixtures. |
-| `dist/` | Assembled output (gitignored — regenerate with `build.sh`). |
+| `dist/`, `dist-run/` | Assembled output (gitignored — regenerate with `build.sh`, then `split-sites.sh`). |
 
 The wasm module itself is the `kuna-wasm` crate (`decompiler/crates/kuna-wasm`), a thin
 front-end over the `kuna-console` in-process path. It builds natively too — that native
@@ -155,6 +168,7 @@ node integrations/web/test/decompile-bytes.mjs
 node integrations/web/test/decompile-learn.mjs
 node integrations/web/test/decompile-groups.mjs
 node integrations/web/test/decompile-strings.mjs
+node integrations/web/test/decompile-data.mjs
 node integrations/web/test/decompile-base64.mjs
 node integrations/web/test/decompile-collab.mjs
 node integrations/web/test/decompile-collab-cases.mjs
@@ -169,6 +183,7 @@ node integrations/web/test/decompile-worker.mjs
 
 # I. The decompiler page in headless Chrome over the DevTools protocol (skips without Chrome).
 node integrations/web/test/decompile-browser.mjs
+node integrations/web/test/decompile-data-browser.mjs [--shots DIR]
 
 # J. Live sessions: tabs of one Chrome, then two Chrome processes over WebRTC.
 node integrations/web/test/decompile-collab-browser.mjs [--shots DIR]   # COLLAB_TRACE=1 traces links on a failure
@@ -207,6 +222,10 @@ node integrations/web/test/decompile-collab-rtc.mjs [--late 60]
   `Enter`/`Escape`/arrows) needs a browser — see the optional Chrome check below.
 - **`run-wasm.mjs`** is a small reusable CLI runner (used by `parity.mjs`; also handy for
   driving the wasm by hand under `node:wasi`).
+- **`decompile-data.mjs`** pins the Data tab's rows on what the native `kuna_wasm`
+  prints for `fixtures/globals.elf` and its stripped twin: values decoded by type
+  (integers, text, pointers, arrays and structs), bytes that start as zeros, unlabelled
+  bytes, who uses an item, escaping.
 - **`decompile-render/session/bytes/learn/groups.mjs`** pin the decompiler page's pure
   modules from the source tree: the shared highlighter (`highlight*` output byte for
   byte), the token stream and its per-line fallback, the index and the assembly rows (as

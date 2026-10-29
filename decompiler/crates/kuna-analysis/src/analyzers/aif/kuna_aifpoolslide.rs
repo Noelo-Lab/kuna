@@ -81,7 +81,16 @@ impl<'a> LiteralWords<'a> {
 
     /// Add the words the speculative body `body` loads.
     pub(super) fn add_body(&mut self, listing: &Listing, decoder: &GapDecoder, body: &BTreeSet<u64>) {
-        for &at in body {
+        self.add_instructions(listing, decoder, body.iter().copied());
+    }
+
+    pub(super) fn add_instructions(
+        &mut self,
+        listing: &Listing,
+        decoder: &GapDecoder,
+        addresses: impl IntoIterator<Item = u64>,
+    ) {
+        for at in addresses {
             let insn = decoder.recorded(at);
             self.note(listing, at, &insn.mnemonic, &insn.operands);
         }

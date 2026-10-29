@@ -22,15 +22,14 @@ use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_sleigh::translate::Translate;
 
-use super::classify::classify;
 use super::context::ContextPainter;
-use super::decode::decode_one;
-use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Reference, RefKind};
+use super::model::{DiscoveredFunction, FlowKind, Insn, InsnLite, Mnemonic, Reference, RefKind};
 use super::ListingDetail;
 use super::kuna_insnstore::InstructionStore;
 
 /// The accumulating maps the walk fills. Lifted into [`super::Listing`] by
 /// [`super::Listing::build`].
+#[derive(Clone)]
 pub(super) struct WalkState {
     /// Instruction model, keyed by VMA.
     pub insns: InstructionStore,
@@ -55,6 +54,8 @@ pub(super) struct WalkState {
 pub(super) trait InsnSink {
     /// Has this address already been decoded?
     fn decoded(&self, vma: u64) -> bool;
+    /// Intern text in this serial store or parallel decode lane.
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic;
     /// File the decoded record.
     fn record(&mut self, insn: InsnLite);
 }
@@ -70,6 +71,10 @@ impl InsnSink for InstructionStore {
         // preserve exactly that: one decoder per address, and a record that does
         // not depend on which worker produced it.
         self.contains_key(&vma)
+    }
+
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        InstructionStore::intern_mnemonic(self, text)
     }
 
     fn record(&mut self, insn: InsnLite) {
@@ -232,6 +237,21 @@ pub(super) struct StepCtx<'a> {
     pub detail: ListingDetail,
     /// `thumbswitch`: the table reader for a Thumb `tbb`/`tbh` dispatch.
     pub tables: Option<&'a super::kuna_thumbswitch::HalfwordTables<'a>>,
+    /// `armframes`: the table reader for an A32 jump-table dispatch.
+    pub a32_tables: Option<&'a super::kuna_a32switch::A32Tables<'a>>,
+    /// `armframes`: the decodes certified by earlier frame-recovery rounds.
+    pub memo: Option<&'a super::kuna_decodememo::DecodeMemo>,
+}
+
+impl StepCtx<'_> {
+    /// The context commits of the last [`step`]'s decode.
+    fn last_context_commits(&self) -> Vec<kuna_sleigh::translate::ContextCommitRecord> {
+        if self.memo.is_some_and(|memo| memo.reused()) {
+            Vec::new()
+        } else {
+            self.translate.last_context_commits()
+        }
+    }
 }
 
 /// True if `vma` lands inside any executable range `[lo, hi)`.
@@ -268,21 +288,11 @@ where
         return false; // out-of-bounds gate (flow.rs:891 analog)
     }
 
-    let decoded = match decode_one(
-        ctx.translate,
-        vma,
-        ctx.code_space,
-        ctx.detail.assembly,
-        ctx.policy.stack_callbacks,
-    ) {
-        Ok(d) => d,
-        Err(_) => return false, // decode error: stop this path (mark gap)
+    // An undecodable or zero-length decode stops this path (mark gap).
+    let Some((decoded, c)) = super::kuna_decodememo::decode(ctx, vma, &mut |text| insns.intern_mnemonic(text))
+    else {
+        return false;
     };
-    if decoded.len == 0 {
-        return false; // zero-length decode would not advance; stop this path
-    }
-
-    let c = classify(&decoded.ops, vma, decoded.len);
 
     let fall_through = vma.wrapping_add(u64::from(decoded.len));
     let stack_values: Vec<u64> = if ctx.policy.stack_callbacks {
@@ -300,7 +310,8 @@ where
     // assembly parse; register immediates and absolute LOAD addresses do
     // not trigger a second decode.
     let mnemonic = if !stack_values.is_empty() && decoded.mnemonic.is_empty() {
-        super::decode::mnemonic_at(ctx.translate, vma, ctx.code_space)
+        let text = super::decode::mnemonic_at(ctx.translate, vma, ctx.code_space);
+        insns.intern_mnemonic(&text)
     } else {
         decoded.mnemonic
     };
@@ -363,6 +374,16 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
+    let skip = vma.wrapping_add(u64::from(decoded.len));
+    if let Some(tables) = ctx.a32_tables
+        .filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.iter().all(|&t| t == skip))
+    {
+        let decoded = |at: u64| insns.decoded(at);
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma) {
+            out.insn(target);
+            refs.file(vma, target, RefKind::Code);
+        }
+    }
     true
 }
 
@@ -390,7 +411,8 @@ impl Successors for Worklists<'_> {
 /// every decode (out-of-bounds = stop-this-path). `code_space` is the space the
 /// `Address`es are built in. `arch` exposes the engine's `ContextDatabase`, into
 /// which `painter` paints the per-address decode mode (ARM `TMode` / MIPS
-/// `ISA_MODE`) **before** any [`decode_one`] runs (design §4.2 / PR5) — without
+/// `ISA_MODE`) **before** any [`super::decode::decode_one_listing`] runs
+/// (design §4.2 / PR5) — without
 /// it a Thumb/MIPS16 function misdecodes as A32/MIPS32. On x86-64 (no decode-mode
 /// context) the painter is empty and this is a no-op.
 ///
@@ -405,9 +427,9 @@ impl Successors for Worklists<'_> {
 /// INTERIOR of the function at its value, so no function is claimed there. Empty
 /// on every other architecture and whenever the option is off.
 ///
-/// `detail.assembly` is forwarded to [`decode_one`]: `false` leaves every
+/// `detail.assembly` is forwarded to [`super::decode::decode_one_listing`]: `false` leaves every
 /// [`Insn::mnemonic`]/[`Insn::operands`] empty and skips the second SLEIGH parse
-/// that produces them (see [`decode_one`] for the cost).
+/// that produces them (see [`super::decode::decode_one_listing`] for the cost).
 ///
 /// `detail.refs` selects whether the reference model is filed at all
 /// (the reference sink becomes a no-op). Every instruction contributes an
@@ -431,6 +453,9 @@ pub(super) fn walk(
     frames: Option<&mut super::kuna_framemode::FrameModes>,
     resumed: Option<WalkState>,
     tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
+    a32_tables: Option<&super::kuna_a32switch::A32Tables<'_>>,
+    x86_tables: Option<&super::kuna_x86listingswitch::X86Tables<'_>>,
+    memo: Option<&super::kuna_decodememo::DecodeMemo>,
 ) -> WalkState {
     // Paint the decode-mode context (ARM TMode / MIPS ISA_MODE) into the engine's
     // ContextDatabase BEFORE we decode a single instruction — the timing the
@@ -445,13 +470,58 @@ pub(super) fn walk(
     }
 
     let policy = WalkPolicy::from_arch(arch, want_stack_callbacks);
-    let ctx = StepCtx { translate, code_space, exec_ranges, local_entries, policy, detail, tables };
+    let ctx = StepCtx {
+        translate, code_space, exec_ranges, local_entries, policy, detail, tables, a32_tables, memo,
+    };
 
-    let mut st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
+    let st = walk_plain(&ctx, arch, seeds, seed_funcs, painter, plan, frames, arm_walk, resumed);
+    let mut st = match x86_tables {
+        Some(tables) => super::kuna_x86listingswitch::reconcile(tables, &ctx, st),
+        None => st,
+    };
     if let Some(mode) = flow_mode {
         st.mode_runs.extend(super::kuna_flowmode::disagreeing_runs(&ctx, arch, mode));
     }
     st
+}
+
+/// Extend an isolated i386 candidate from instruction roots without claiming
+/// the roots as functions. CALL targets retain the ordinary claim rule.
+pub(super) fn extend_x86(
+    ctx: &StepCtx<'_>,
+    state: &mut WalkState,
+    edges: &BTreeMap<u64, Vec<u64>>,
+    mut within_budget: impl FnMut(&WalkState) -> bool,
+) -> bool {
+    let mut refs = RefCollector { want: ctx.detail.refs, edges: std::mem::take(&mut state.refs) };
+    let mut callbacks = CallbackEvidence::default();
+    for (&target, &source) in &state.stack_callback_refs {
+        callbacks.file(source, target);
+    }
+    let mut pending = Vec::new();
+    for (&from, targets) in edges {
+        for &target in targets {
+            pending.push(target);
+            refs.file(from, target, RefKind::Code);
+        }
+    }
+    let mut called = Vec::new();
+    let mut checked_at = state.insns.len();
+    loop {
+        let Some(at) = pending.pop().or_else(|| called.pop()) else { break };
+        let mut work = Worklists { insns: pending, funcs: &mut called };
+        step(ctx, at, &mut state.insns, &mut state.funcs, &mut refs, &mut callbacks, &mut work);
+        pending = work.insns;
+        if state.insns.len().saturating_sub(checked_at) >= 256 {
+            if !within_budget(state) {
+                return false;
+            }
+            checked_at = state.insns.len();
+        }
+    }
+    state.refs = refs.into_edges();
+    state.stack_callback_refs = callbacks.into_refs();
+    within_budget(state)
 }
 
 /// The serial or parallel walk, as [`walk`] runs it.
@@ -577,7 +647,7 @@ fn walk_serial(
             let mut work = Worklists { insns: std::mem::take(&mut successors), funcs: &mut func_worklist };
             if step(ctx, vma, &mut insns, &mut funcs, &mut refs, &mut callbacks, &mut work) {
                 let insn = insns.get(&vma).unwrap();
-                let commits = if walk_context.is_some() { ctx.translate.last_context_commits() }
+                let commits = if walk_context.is_some() { ctx.last_context_commits() }
                     else { Vec::new() };
                 if let Some(selection) = &selection { selection.accept(insn.len); }
                 if let Some(frames) = &mut frames { frames.record(entry, vma, insn.len, mode); }
@@ -665,7 +735,7 @@ fn walk_items(
         match (store.last, mode) {
             (Some(last), Some(mode)) => {
                 let commits = if last.target.is_some() {
-                    ctx.translate.last_context_commits()
+                    ctx.last_context_commits()
                 } else {
                     Vec::new()
                 };
@@ -708,6 +778,10 @@ struct LastRecord<'a> {
 impl InsnSink for LastRecord<'_> {
     fn decoded(&self, vma: u64) -> bool {
         self.store.decoded(vma)
+    }
+
+    fn intern_mnemonic(&mut self, text: &str) -> Mnemonic {
+        self.store.intern_mnemonic(text)
     }
 
     fn record(&mut self, insn: InsnLite) {

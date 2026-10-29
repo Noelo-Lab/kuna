@@ -168,6 +168,13 @@ pub struct RecoveredTypes {
     /// [`crate::p4_calls::kuna_passthrough`] never claims it.  Recorded only when
     /// `option passthrough` is on; empty otherwise.
     pub vararg_tail: Vec<Address>,
+    /// The incoming registers the body reads, itself or through a callee it
+    /// forwards them to ([`crate::kuna_entryreads`]). Recorded only when
+    /// `option passthrough` is on; empty otherwise.
+    pub reads: Vec<(Address, int4)>,
+    /// The part of [`Self::reads`] the body reads only by handing the register
+    /// on, to a declared parameter or a callee that reads it.
+    pub passes: Vec<(Address, int4)>,
 }
 
 impl RecoveredTypes {
@@ -323,6 +330,7 @@ fn inside_a_frame_aggregate(
     data: &Funcdata,
     node: &crate::varnode::Varnode,
     regions: &mut Option<Vec<(i64, Option<i64>)>>,
+    word_ok: bool,
 ) -> bool {
     let Some(scope) = data.get_scope_local() else { return false };
     let space = scope.get_space_id();
@@ -357,7 +365,8 @@ fn inside_a_frame_aggregate(
             .collect()
     });
     let o = signed(node.get_offset());
-    regions.iter().any(|&(c, end)| o >= c && end.is_none_or(|n| o < n))
+    let word = word_ok && node.get_size() == data.get_arch().types().map_or(8, |t| t.get_size_of_pointer());
+    regions.iter().any(|&(c, end)| o >= c && end.is_none_or(|n| o < n) && !(word && end == Some(c + 1)))
 }
 
 /// Is the LOAD `o` reached through an address computed from the value it
@@ -366,7 +375,7 @@ fn inside_a_frame_aggregate(
 fn loaded_through_itself(
     data: &Funcdata,
     o: &crate::op::PcodeOp,
-    members: &std::collections::HashSet<VarnodeId>,
+    members: &crate::kuna_fasthash::FxHashSet<VarnodeId>,
 ) -> bool {
     let mut at = o.get_in(1);
     for _ in 0..8 {
@@ -437,7 +446,7 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
         )
     };
     let mut family = vec![vn];
-    let mut seen: std::collections::HashSet<VarnodeId> = std::collections::HashSet::from([vn]);
+    let mut seen: crate::kuna_fasthash::FxHashSet<VarnodeId> = crate::kuna_fasthash::FxHashSet::from_iter([vn]);
     let mut at = 0;
     while at < family.len() && family.len() < 128 {
         let Some(node) = data.vbank().get(family[at]) else { break };
@@ -468,8 +477,10 @@ pub(crate) fn value_family(data: &Funcdata, vn: VarnodeId) -> Vec<VarnodeId> {
 #[derive(Clone, Copy)]
 enum Reading<'a> {
     Argument(OpId, int4),
-    Member(&'a std::collections::HashSet<OpId>),
+    Member(&'a crate::kuna_fasthash::FxHashSet<OpId>),
     Input,
+    /// An input whose other calls speak only through a declared prototype.
+    DeclaredInput,
 }
 
 /// (kuna `calleevote`) Does anything the function does with its input `vn`
@@ -479,6 +490,15 @@ enum Reading<'a> {
 pub(crate) fn input_refuses(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
     class_of(ct).is_none()
         || family_refuses(data, vn, Reading::Input, ct)
+        || indexes_a_pointer(data, vn)
+        || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
+}
+
+/// (kuna `callerptr`) [`input_refuses`], with the class a call reads the value as
+/// taken from a declared prototype only, never from another callee's recovery.
+pub(crate) fn input_refuses_declared(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    class_of(ct).is_none()
+        || family_refuses(data, vn, Reading::DeclaredInput, ct)
         || indexes_a_pointer(data, vn)
         || splits_a_wide_constant(data, &value_family(data, vn), ct, 0)
 }
@@ -580,19 +600,19 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
     let own = |op: OpId| matches!(reading, Reading::Member(set) if set.contains(&op));
     let mut regions: Option<Vec<(i64, Option<i64>)>> = None;
     let family = value_family(data, vn);
-    let members: std::collections::HashSet<VarnodeId> = family.iter().copied().collect();
+    let members: crate::kuna_fasthash::FxHashSet<VarnodeId> = family.iter().copied().collect();
     let mut globals: Vec<(Address, int4)> = Vec::new();
     for &v in &family {
         let Some(node) = data.vbank().get(v) else { continue };
         let float_global = float_vote && node.is_persist() && node.get_size() == ct.get_size();
         if node.is_type_lock()
             || (node.is_persist() && !float_global)
-            || inside_a_frame_aggregate(data, node, &mut regions)
+            || inside_a_frame_aggregate(data, node, &mut regions, matches!(reading, Reading::DeclaredInput))
             || (v != vn && addresses_a_frame_object(data, v))
         {
             return true;
         }
-        if float_global {
+        if float_global && !globals.iter().any(|(at, size)| at == node.get_addr() && *size == node.get_size()) {
             globals.push((node.get_addr().clone(), node.get_size()));
         }
         if float_vote && node.is_input() && !a_float_can_arrive_in(data, node) {
@@ -638,7 +658,12 @@ fn family_refuses(data: &Funcdata, vn: VarnodeId, reading: Reading, ct: &Datatyp
                         if o.get_in(s) != Some(v) || matches!(reading, Reading::Argument(c, k) if (c, k) == (r, s)) {
                             continue;
                         }
-                        match reader_class(data, r, s) {
+                        let read = if matches!(reading, Reading::DeclaredInput) {
+                            declared_reader_class(data, r, s)
+                        } else {
+                            reader_class(data, r, s)
+                        };
+                        match read {
                             Some(c) if Some(c) != class => return true,
                             Some(_) => {}
                             None if float_vote => {
@@ -708,6 +733,7 @@ fn a_float_can_arrive_in(data: &Funcdata, node: &crate::varnode::Varnode) -> boo
         intypes,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     };
     let mut fp = FuncProto::new();
     if fp.seed_locked_from_pieces(&pieces, Rc::clone(dfp), void_ty, types, arch.manage()).is_err() {
@@ -810,7 +836,7 @@ fn gcd(a: i64, b: i64) -> i64 {
 /// following constant offsets, indexing and copies, and where every address it
 /// derives points.  `None` when there are too many to follow.
 pub(crate) fn accesses_through(data: &Funcdata, family: &[VarnodeId]) -> Option<(Vec<Access>, Vec<(i64, i64)>)> {
-    let mut place: std::collections::HashMap<VarnodeId, (i64, i64)> =
+    let mut place: crate::kuna_fasthash::FxHashMap<VarnodeId, (i64, i64)> =
         family.iter().map(|&v| (v, (0, 0))).collect();
     let mut work: Vec<VarnodeId> = family.to_vec();
     let mut budget = 512;
@@ -1044,7 +1070,7 @@ fn pointee_refuses(data: &Funcdata, family: &[VarnodeId], ct: &Datatype, depth: 
             Member::Exact(_) => {}
         }
     }
-    let own: std::collections::HashSet<OpId> = floats.iter().map(|(a, _)| a.op).collect();
+    let own: crate::kuna_fasthash::FxHashSet<OpId> = floats.iter().map(|(a, _)| a.op).collect();
     floats.iter().any(|(a, t)| {
         if a.store && data.vbank().get(a.value).is_some_and(|n| n.is_constant()) {
             return !prints_exactly_as_a_float(data, a.value);
@@ -1194,6 +1220,16 @@ fn reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class> {
         }
     }
     stated_argument_type(data, fc, slot).and_then(|t| class_of(t))
+}
+
+/// The class a call reads its argument `slot` as, when the parameter is declared.
+fn declared_reader_class(data: &Funcdata, call: OpId, slot: int4) -> Option<Class> {
+    let fc = data.get_call_specs(data.get_call_specs_index(call)?);
+    let param = fc.proto().get_param(slot - 1)?;
+    if !param.is_type_locked() {
+        return None;
+    }
+    param.get_type().and_then(|t| class_of(t))
 }
 
 /// The class a call's result is declared as, when its output is locked.
@@ -1407,6 +1443,7 @@ pub fn recovered_pieces(
         first_var_arg_slot: nparams,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     };
     let mut storage: Vec<(Address, int4)> = Vec::new();
     for i in 0..nparams {
@@ -1664,7 +1701,16 @@ pub fn park_recovered(
         } else {
             Vec::new()
         };
-        let stated = Stated { arity_sound, output, result, vararg_tail };
+        let (reads, passes) = match data.kuna_entry_reads() {
+            Some(r) if arch.pass_through => {
+                let finals = crate::kuna_entryreads::final_forwards(data);
+                crate::kuna_entryreads::reads_through(r, &finals, |c, a, s| {
+                    crate::kuna_entryreads::callee_takes(data, c, a, s, true)
+                })
+            }
+            _ => (Vec::new(), Vec::new()),
+        };
+        let stated = Stated { arity_sound, output, result, vararg_tail, reads, passes };
         return state_recovered_types(arch, entry, pieces, storage, stated);
     }
     let mut trimmed = 0usize;
@@ -1759,6 +1805,8 @@ struct Stated {
     output: Option<(Address, int4, Rc<Datatype>)>,
     result: Option<(Address, int4)>,
     vararg_tail: Vec<Address>,
+    reads: Vec<(Address, int4)>,
+    passes: Vec<(Address, int4)>,
 }
 
 /// The storage of `proto`'s recovered return value, or `None` for `void`.
@@ -1825,7 +1873,7 @@ fn state_recovered_types(
     storage: Vec<(Address, int4)>,
     stated: Stated,
 ) -> Result<Recovered, Decline> {
-    let Stated { arity_sound, output, result, vararg_tail } = stated;
+    let Stated { arity_sound, output, result, vararg_tail, reads, passes } = stated;
     let inputs: Vec<(Address, int4, Rc<Datatype>)> = storage
         .iter()
         .zip(pieces.intypes.iter())
@@ -1839,7 +1887,7 @@ fn state_recovered_types(
         return Err(Decline::InvalidStorage);
     };
     arch.kuna_protoorder_types
-        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail }));
+        .insert(key, Rc::new(RecoveredTypes { inputs, arity_sound, output, result, vararg_tail, reads, passes }));
     Ok(Recovered { pieces, trimmed: 0 })
 }
 

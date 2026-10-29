@@ -26,6 +26,10 @@ __pycache__/
 # Rewritten patch left by tools/sync_upstream.py (dry runs / failed applies)
 .kuna_sync.patch
 
+# Generated codebase-observatory pages + data (`make observatory`; docs/observatory.md).
+# Root-anchored: scripts/observatory/ is the generator source and IS committed.
+/observatory/
+
 # Coverage / editor leftovers
 *.gcov
 *.gcno

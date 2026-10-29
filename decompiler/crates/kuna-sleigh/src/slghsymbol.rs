@@ -39,6 +39,9 @@ use crate::slghpatexpress::{
 use crate::slghpattern::{DisjointPattern, Pattern};
 use crate::semantics::{ConstTpl, ConstType, ConstructTpl, VarnodeTpl};
 
+#[path = "kuna_operandplan.rs"]
+pub(crate) mod kuna_operandplan;
+
 /// SLA IDs used by the symbol system.
 pub use crate::slaformat::ids as sla;
 
@@ -71,6 +74,10 @@ pub trait SymbolWalker: PatternExpressionContext {
     /// C++ `ParserWalker::getFixedHandle(int4 i)` (the resolved handle of
     /// child operand `i`; returned by value instead of const reference).
     fn get_fixed_handle(&self, i: i32) -> KunaResult<FixedHandle>;
+    /// Borrow a resolved handle when its storage belongs to the walker.
+    fn borrow_fixed_handle(&self, i: i32) -> KunaResult<Cow<'_, FixedHandle>> {
+        self.get_fixed_handle(i).map(Cow::Owned)
+    }
     /// C++ `ParserWalker::getConstSpace()`.
     fn get_const_space(&self) -> Rc<AddrSpace>;
     /// C++ `ParserWalker::getCurSpace()`.
@@ -350,10 +357,9 @@ impl ValueMapSymbol {
     }
 
     /// C++ `ValueMapSymbol::resolve` (always returns null Constructor).
-    fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<()> {
+    fn resolve(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<()> {
         if !self.tableisfilled {
-            let pw: &dyn PatternExpressionContext = walker;
-            let ind = self.value.patval()?.get_value(pw)?;
+            let ind = self.value.patval()?.get_value(walker)?;
             // C++ `(ind >= valuetable.size())||(ind<0)||...`: the first is
             // an intb vs size_t mixed comparison (ind converts to u64).
             if (ind as u64) >= self.valuetable.len() as u64
@@ -401,10 +407,9 @@ impl NameSymbol {
     }
 
     /// C++ `NameSymbol::resolve` (always returns null Constructor).
-    fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<()> {
+    fn resolve(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<()> {
         if !self.tableisfilled {
-            let pw: &dyn PatternExpressionContext = walker;
-            let ind = self.value.patval()?.get_value(pw)?;
+            let ind = self.value.patval()?.get_value(walker)?;
             // C++ `(ind >= nametable.size())||(ind<0)||...`: intb vs size_t
             // mixed comparison first (ind converts to u64).
             if (ind as u64) >= self.nametable.len() as u64
@@ -514,10 +519,9 @@ impl VarnodeListSymbol {
     }
 
     /// C++ `VarnodeListSymbol::resolve` (always returns null Constructor).
-    fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<()> {
+    fn resolve(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<()> {
         if !self.tableisfilled {
-            let pw: &dyn PatternExpressionContext = walker;
-            let ind = self.value.patval()?.get_value(pw)?;
+            let ind = self.value.patval()?.get_value(walker)?;
             // C++ `(ind<0)||(ind>=varnode_table.size())||(null entry)`: the
             // middle test is intb vs size_t (ind converts to u64), but a
             // negative ind is already caught by the first test.
@@ -721,7 +725,7 @@ impl OperandSymbol {
     fn print(
         &self,
         s: &mut String,
-        walker: &mut dyn SymbolWalker,
+        walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
         walker.push_operand(self.get_index())?;
@@ -739,8 +743,7 @@ impl OperandSymbol {
                 .defexp
                 .as_ref()
                 .ok_or_else(|| KunaError::sleigh("operand has no defining expression"))?;
-            let pw: &dyn PatternExpressionContext = &*walker;
-            let val = defexp.get_value(pw)?;
+            let val = defexp.get_value(walker)?;
             push_hex_intb(s, val);
         }
         walker.pop_operand()?;
@@ -834,6 +837,7 @@ impl SubtableSymbol {
 
     /// C++ `SubtableSymbol::getConstructor(uintm id)` — unchecked vector
     /// indexing in C++ (UB out of range); an error here.
+    #[inline]
     pub fn get_constructor(&self, id: u32) -> KunaResult<&Constructor> {
         self.construct
             .get(id as usize)
@@ -859,7 +863,7 @@ impl SubtableSymbol {
 
     /// C++ `SubtableSymbol::resolve`: `decisiontree->resolve(walker)`
     /// (a null tree dereference is UB in C++; an error here).
-    pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<u32> {
+    pub fn resolve(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<u32> {
         self.resolve_matched(walker).map(|(_, id)| *id)
     }
 
@@ -869,7 +873,7 @@ impl SubtableSymbol {
     /// fixed-bit mask.
     pub fn resolve_matched(
         &self,
-        walker: &dyn SymbolWalker,
+        walker: &(impl SymbolWalker + ?Sized),
     ) -> KunaResult<&(DisjointPattern, u32)> {
         let tree = self
             .decisiontree
@@ -952,15 +956,14 @@ impl ContextOp {
     }
 
     /// C++ `ContextOp::apply`.
-    pub fn apply(&self, walker: &mut dyn SymbolWalkerChange) -> KunaResult<()> {
+    pub fn apply(&self, walker: &mut (impl SymbolWalkerChange + ?Sized)) -> KunaResult<()> {
         let patexp = self
             .patexp
             .as_ref()
             .ok_or_else(|| KunaError::sleigh("context op has no expression (not decoded)"))?;
-        let pw: &dyn PatternExpressionContext = &*walker;
         // C++ `uintm val = patexp->getValue(walker)`: intb -> uintm
         // truncation
-        let mut val = patexp.get_value(pw)? as u32;
+        let mut val = patexp.get_value(walker)? as u32;
         // uintm <<= int4: shift is in [0,31] from calc_maskword; a decoded
         // shift is unchecked (C++ UB >= 32, x86-masked here)
         val = val.wshl(self.shift as u32); // count masked mod 32 anyway
@@ -1029,7 +1032,7 @@ impl ContextCommit {
     }
 
     /// C++ `ContextCommit::apply`.
-    pub fn apply(&self, walker: &mut dyn SymbolWalkerChange) {
+    pub fn apply(&self, walker: &mut (impl SymbolWalkerChange + ?Sized)) {
         walker.add_commit(self.sym, self.num, self.mask, self.flow);
     }
 
@@ -1089,7 +1092,7 @@ impl ContextChange {
     }
 
     /// C++ virtual `apply`.
-    pub fn apply(&self, walker: &mut dyn SymbolWalkerChange) -> KunaResult<()> {
+    pub fn apply(&self, walker: &mut (impl SymbolWalkerChange + ?Sized)) -> KunaResult<()> {
         match self {
             ContextChange::Op(op) => op.apply(walker),
             ContextChange::Commit(c) => {
@@ -1313,6 +1316,7 @@ impl Constructor {
 
     /// C++ `Constructor::getOperand(int4 i)` — the operand's symbol id
     /// (unchecked vector indexing in C++; an error here).
+    #[inline]
     pub fn get_operand(&self, i: i32) -> KunaResult<u32> {
         self.operands
             .get(i as usize)
@@ -1387,7 +1391,7 @@ impl Constructor {
     pub fn print(
         &self,
         s: &mut String,
-        walker: &mut dyn SymbolWalker,
+        walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
         for piece in &self.printpiece {
@@ -1400,7 +1404,7 @@ impl Constructor {
     fn print_piece(
         &self,
         s: &mut String,
-        walker: &mut dyn SymbolWalker,
+        walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
         piece: &[u8],
     ) -> KunaResult<()> {
@@ -1418,7 +1422,7 @@ impl Constructor {
     pub fn print_mnemonic(
         &self,
         s: &mut String,
-        walker: &mut dyn SymbolWalker,
+        walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
@@ -1446,7 +1450,7 @@ impl Constructor {
     pub fn print_body(
         &self,
         s: &mut String,
-        walker: &mut dyn SymbolWalker,
+        walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
         if self.flowthruindex != -1 && self.flowthru_subtable(table)?.is_some() {
@@ -1484,7 +1488,7 @@ impl Constructor {
     }
 
     /// C++ `Constructor::applyContext`.
-    pub fn apply_context(&self, walker: &mut dyn SymbolWalkerChange) -> KunaResult<()> {
+    pub fn apply_context(&self, walker: &mut (impl SymbolWalkerChange + ?Sized)) -> KunaResult<()> {
         for change in &self.context {
             change.apply(walker)?;
         }
@@ -1682,7 +1686,7 @@ pub struct DecisionNode {
 impl DecisionNode {
     /// C++ `DecisionNode::resolve`: dispatch to a constructor id, or the
     /// C++ `BadDataError` when no terminal pattern matches.
-    pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<u32> {
+    pub fn resolve(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<u32> {
         self.resolve_matched(walker).map(|(_, id)| *id)
     }
 
@@ -1691,12 +1695,11 @@ impl DecisionNode {
     /// matched pattern used by instruction masking.
     pub fn resolve_matched(
         &self,
-        walker: &dyn SymbolWalker,
+        walker: &(impl SymbolWalker + ?Sized),
     ) -> KunaResult<&(DisjointPattern, u32)> {
         if self.bitsize == 0 {
-            let pw: &dyn PatternExpressionContext = walker;
             for pair in &self.list {
-                if pair.0.is_match(pw)? {
+                if pair.0.is_match(walker)? {
                     return Ok(pair);
                 }
             }
@@ -2789,7 +2792,7 @@ impl SleighSymbol {
     /// only for a subtable; the table-driven family symbols validate their
     /// index and return `None` (C++ null), everything else is the base
     /// no-op.
-    pub fn resolve(&self, walker: &dyn SymbolWalker) -> KunaResult<Option<u32>> {
+    pub fn resolve(&self, walker: &(impl SymbolWalker + ?Sized)) -> KunaResult<Option<u32>> {
         match &self.kind {
             SymbolKind::ValueMap(v) => {
                 v.resolve(walker)?;
@@ -2813,7 +2816,7 @@ impl SleighSymbol {
     /// and return no pattern.
     pub fn resolve_matched(
         &self,
-        walker: &dyn SymbolWalker,
+        walker: &(impl SymbolWalker + ?Sized),
     ) -> KunaResult<(Option<u32>, Option<DisjointPattern>)> {
         match &self.kind {
             SymbolKind::Subtable(v) => {
@@ -2844,7 +2847,7 @@ impl SleighSymbol {
     pub fn get_fixed_handle(
         &self,
         hand: &mut FixedHandle,
-        walker: &dyn SymbolWalker,
+        walker: &(impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
         match &self.kind {
@@ -2865,19 +2868,17 @@ impl SleighSymbol {
                     SymbolKind::Context(c) => &c.value,
                     _ => unreachable!("outer match restricts the kind"),
                 };
-                let pw: &dyn PatternExpressionContext = walker;
                 hand.space = Some(walker.get_const_space());
                 hand.offset_space = None;
                 // C++ `(uintb) patval->getValue(walker)`: intb -> uintb
                 // two's-complement reinterpret
-                hand.offset_offset = v.patval()?.get_value(pw)? as u64;
+                hand.offset_offset = v.patval()?.get_value(walker)? as u64;
                 hand.size = 0; // Cannot provide size
             }
             SymbolKind::ValueMap(v) => {
-                let pw: &dyn PatternExpressionContext = walker;
                 // C++ `(uint4) patval->getValue(walker)`: intb -> uint4
                 // truncation
-                let ind = v.value.patval()?.get_value(pw)? as u32;
+                let ind = v.value.patval()?.get_value(walker)? as u32;
                 // The resolve routine has checked that -ind- must be a
                 // valid index (C++ indexes unchecked: panic on violation)
                 hand.space = Some(walker.get_const_space());
@@ -2893,10 +2894,9 @@ impl SleighSymbol {
                 hand.size = v.fix.size;
             }
             SymbolKind::VarnodeList(v) => {
-                let pw: &dyn PatternExpressionContext = walker;
                 // C++ `(uint4) patval->getValue(walker)`: intb -> uint4
                 // truncation
-                let ind = v.value.patval()?.get_value(pw)? as u32;
+                let ind = v.value.patval()?.get_value(walker)? as u32;
                 // The resolve routine has checked that -ind- must be a
                 // valid index; C++ dereferences the table entry unchecked
                 let vnid = v.varnode_table[ind as usize].ok_or_else(|| {
@@ -2910,7 +2910,7 @@ impl SleighSymbol {
             }
             SymbolKind::Operand(op) => {
                 // C++ `hnd = walker.getFixedHandle(hand)`: whole-struct copy
-                *hand = walker.get_fixed_handle(op.hand)?;
+                *hand = walker.borrow_fixed_handle(op.hand)?.into_owned();
             }
             SymbolKind::Start(_) => {
                 let spc = walker.get_cur_space();
@@ -2974,7 +2974,7 @@ impl SleighSymbol {
     pub fn print(
         &self,
         s: &mut String,
-        walker: &mut dyn SymbolWalker,
+        walker: &mut (impl SymbolWalker + ?Sized),
         table: &SymbolTable,
     ) -> KunaResult<()> {
         match &self.kind {
@@ -2983,26 +2983,23 @@ impl SleighSymbol {
                 Ok(())
             }
             SymbolKind::Value(v) => {
-                let pw: &dyn PatternExpressionContext = &*walker;
-                let val = v.patval()?.get_value(pw)?;
+                let val = v.patval()?.get_value(walker)?;
                 push_hex_intb(s, val);
                 Ok(())
             }
             SymbolKind::ValueMap(v) => {
-                let pw: &dyn PatternExpressionContext = &*walker;
                 // C++ `(uint4)patval->getValue(walker)`: intb -> uint4
                 // truncation; ind already checked by the resolve routine
                 // (C++ indexes unchecked: panic on violation)
-                let ind = v.value.patval()?.get_value(pw)? as u32;
+                let ind = v.value.patval()?.get_value(walker)? as u32;
                 let val = v.valuetable[ind as usize];
                 push_hex_intb(s, val);
                 Ok(())
             }
             SymbolKind::Name(v) => {
-                let pw: &dyn PatternExpressionContext = &*walker;
                 // C++ `(uint4)patval->getValue(walker)`: intb -> uint4
                 // truncation; ind already checked by the resolve routine
-                let ind = v.value.patval()?.get_value(pw)? as u32;
+                let ind = v.value.patval()?.get_value(walker)? as u32;
                 s.push_str(&String::from_utf8_lossy(&v.nametable[ind as usize]));
                 Ok(())
             }
@@ -3013,15 +3010,13 @@ impl SleighSymbol {
             }
             SymbolKind::Context(v) => {
                 // ContextSymbol inherits ValueSymbol::print
-                let pw: &dyn PatternExpressionContext = &*walker;
-                let val = v.value.patval()?.get_value(pw)?;
+                let val = v.value.patval()?.get_value(walker)?;
                 push_hex_intb(s, val);
                 Ok(())
             }
             SymbolKind::VarnodeList(v) => {
-                let pw: &dyn PatternExpressionContext = &*walker;
                 // C++ `(uint4)patval->getValue(walker)`: intb -> uint4
-                let ind = v.value.patval()?.get_value(pw)? as u32;
+                let ind = v.value.patval()?.get_value(walker)? as u32;
                 // C++ `if (ind >= varnode_table.size())`: uint4 vs size_t
                 // (ind zero-extends)
                 if u64::from(ind) >= v.varnode_table.len() as u64 {

@@ -53,7 +53,7 @@ fd030091285968f800013fd6000c0011fd7bc1a8c0035fd6
 <com>quit</com>
 </script>
 <stringmatch name="CALLTARGETTYPE-A64 #1: on types a float call float (*)(float)" min="1" max="1">float \(\*v1\)\(float\); // pc \| x8</stringmatch>
-<stringmatch name="CALLTARGETTYPE-A64 #2: the float call itself prints as it did" min="2" max="2">return \(float\)\(\*v1\)\(a0 \+ a0\) \+ 1\.0;</stringmatch>
+<stringmatch name="CALLTARGETTYPE-A64 #2: the float call itself prints as it did" min="2" max="2">return \(float\)\(\*v1\)\(a0 \+ a0\) \+ 1\.0f?;</stringmatch>
 <stringmatch name="CALLTARGETTYPE-A64 #3: on types an integer call" min="1" max="1">int \(\*v1\)\(unsigned int,unsigned int\); // pc \| x8</stringmatch>
 <stringmatch name="CALLTARGETTYPE-A64 #4: a float held as an integer in s0 keeps the call untyped" min="2" max="2">unsigned int v2; // s0</stringmatch>
 <stringmatch name="CALLTARGETTYPE-A64 #5: that call prints as it did" min="2" max="2">\*a1 = \(\*v1\)\(v2\);</stringmatch>

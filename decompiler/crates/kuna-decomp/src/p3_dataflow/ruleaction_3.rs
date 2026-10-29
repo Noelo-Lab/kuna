@@ -642,6 +642,15 @@ impl Rule for RuleIndirectCollapse {
                 if o.is_indirect_creation() || o.no_indirect_collapse() {
                     return 0;
                 }
+                let output = data.vbank().get(op_out(data, op).expect("indirect output"))
+                    .expect("live indirect output");
+                if data.get_call_specs_index(indop).is_some_and(|index| {
+                    crate::kuna_calleeprotostack::declared_pointer_reaches(
+                        data, data.get_call_specs(index), output.get_addr(), output.get_size(),
+                    )
+                }) {
+                    return 0;
+                }
             } else if data.obank().get(indop).expect("RuleIndirectCollapse: stale indop").uses_spacebase_ptr()
             {
                 if op_code(data, indop) == OpCode::CPUI_STORE {
@@ -1804,7 +1813,12 @@ impl Rule for RulePropagateCopy {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if data.obank().get(op).expect("RulePropagateCopy: stale op").is_return_copy() {
+        let (return_copy, machine_read) = {
+            let operation = data.obank().get(op).expect("RulePropagateCopy: stale op");
+            (operation.is_return_copy(), operation.get_addlflags() & crate::op::pcodeop_addlflags::kuna_stack_read != 0)
+        };
+        if machine_read { crate::p3_dataflow::kuna_stackreadscope::record_current_read(data, op); }
+        if return_copy {
             return 0;
         }
         let n = op_num_input(data, op);
@@ -1820,6 +1834,19 @@ impl Rule for RulePropagateCopy {
             let invn = op_in(data, copyop, 0).expect("RulePropagateCopy: copyop in0");
             if !vn_is_heritage_known(data, invn) {
                 continue; // Don't propagate free's away from their first use
+            }
+            // Preserve explicit pointer declarations across integer storage so
+            // address recovery also sees dynamically computed pointers.
+            if data.vbank().get(vn).is_some_and(|value| {
+                value.is_type_lock()
+                    && value.get_type().get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                    && data.get_scope_local().is_some_and(|scope| {
+                        scope.has_isolated_symbols()
+                            && scope.query_container_for_link(value.get_addr(), &data.vn_use_point(vn))
+                                .is_some_and(|entry| entry.is_isolated)
+                    })
+            }) {
+                continue;
             }
             // (kuna) a store of a value used as an address into a global keeps
             // its COPY; see [`crate::p3_dataflow::kuna_pointeestorekeep`].
@@ -1842,9 +1869,17 @@ impl Rule for RulePropagateCopy {
                 continue;
             }
             let is_marker = data.obank().get(op).expect("RulePropagateCopy: stale op").is_marker();
+            if is_marker && crate::p3_dataflow::kuna_globalfieldstore::keeps_store(data, vn, invn) {
+                continue;
+            }
             if !is_marker
                 && (crate::p3_dataflow::kuna_indexaliasguard::keeps_store_before_load(data, op, vn)
                     || crate::p3_dataflow::kuna_indexaliasguard::keeps_forced_self_copy(data, op, vn))
+            {
+                continue;
+            }
+            if is_marker && (crate::kuna_localstackviews::publication(data, vn)
+                || crate::kuna_localstackviews::native_store(data, vn))
             {
                 continue;
             }
@@ -1907,6 +1942,7 @@ impl Rule for RulePropagateCopy {
                     }
                 }
             }
+            crate::p3_dataflow::kuna_stackreadscope::record_propagated_read(data, copyop, invn);
             data.kuna_inherit_storage(invn, vn);
             data.op_set_input(op, invn, i).expect("RulePropagateCopy: opSetInput"); // propagate just a single copy
             return 1;
@@ -2362,8 +2398,14 @@ mod tests {
     }
 
     fn build_fd() -> Fd {
+        build_fd_with_global_fields(false)
+    }
+
+    fn build_fd_with_global_fields(enabled: bool) -> Fd {
         let manage = build_manager();
-        let glb = Rc::new(ArchContext::new(manage));
+        let mut glb = ArchContext::new(manage);
+        glb.global_field_store = enabled;
+        let glb = Rc::new(glb);
         let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
         let addr = Address::new(ram, 0x1000);
         let mut fd = Funcdata::new("func", "func", glb, addr, 0x10000000, 0x40).unwrap();
@@ -2427,6 +2469,7 @@ mod tests {
             | OpCode::CPUI_SUBPIECE => binary,
             OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT => unary,
             OpCode::CPUI_MULTIEQUAL => marker,
+            OpCode::CPUI_INDIRECT => marker | special | nocollapse,
             other => panic!("test_opflags: add an entry for {other:?}"),
         }
     }
@@ -3160,6 +3203,82 @@ mod tests {
         assert!(fd.kuna_storage_sources(addout).is_empty());
         assert!(fd.kuna_storage_sources(a).is_empty());
         assert!(fd.kuna_storage_sources(b).is_empty());
+    }
+
+    #[test]
+    fn propagate_copy_preserves_partial_global_store_for_markers() {
+        use crate::dtype::{type_metatype, Datatype};
+        use crate::varnode::varnode_flags;
+        for (persistent, meta, marker, expected) in [
+            (true, type_metatype::TYPE_PARTIALSTRUCT, true, 0),
+            (true, type_metatype::TYPE_ARRAY, true, 0),
+            (false, type_metatype::TYPE_PARTIALSTRUCT, true, 1),
+            (true, type_metatype::TYPE_UINT, true, 1),
+            (true, type_metatype::TYPE_STRUCT, true, 1),
+            (true, type_metatype::TYPE_PARTIALSTRUCT, false, 1),
+        ] {
+            let mut fd = build_fd_with_global_fields(true);
+            let input = make_input(&mut fd, 0x100, 8);
+            let (_, stored) = def_op(&mut fd, OpCode::CPUI_COPY, &[input], 8);
+            let v = fd.vbank_mut().get_mut(stored).unwrap();
+            if persistent { v.set_flags_pub(varnode_flags::persist); }
+            v.update_type_locked(Rc::new(Datatype::new(8, meta)), true, true);
+            let consumer = if marker {
+                let iop = fd.new_constant(8, 0);
+                let (op, _) = def_op(&mut fd, OpCode::CPUI_INDIRECT, &[stored, iop], 8);
+                op
+            } else {
+                let zero = fd.new_constant(8, 0);
+                let (op, _) = def_op(&mut fd, OpCode::CPUI_INT_ADD, &[stored, zero], 8);
+                op
+            };
+            assert_eq!(RulePropagateCopy.apply_op(consumer, &mut fd), expected);
+            assert_eq!(op_in(&fd, consumer, 0), Some(if expected == 0 { stored } else { input }));
+        }
+    }
+
+    #[test]
+    fn propagate_copy_releases_aggregate_store_when_option_is_off() {
+        use crate::dtype::{type_metatype, Datatype};
+        use crate::varnode::varnode_flags;
+        let mut fd = build_fd_with_global_fields(false);
+        let input = make_input(&mut fd, 0x100, 8);
+        let (_, stored) = def_op(&mut fd, OpCode::CPUI_COPY, &[input], 8);
+        let v = fd.vbank_mut().get_mut(stored).unwrap();
+        v.set_flags_pub(varnode_flags::persist);
+        v.update_type_locked(Rc::new(Datatype::new(8, type_metatype::TYPE_ARRAY)), true, true);
+        let iop = fd.new_constant(8, 0);
+        let (marker, _) = def_op(&mut fd, OpCode::CPUI_INDIRECT, &[stored, iop], 8);
+        assert_eq!(RulePropagateCopy.apply_op(marker, &mut fd), 1);
+        assert_eq!(op_in(&fd, marker, 0), Some(input));
+    }
+
+    #[test]
+    fn aggregate_load_store_needs_global_alias_ordering() {
+        use crate::dtype::{type_metatype, Datatype};
+        use crate::varnode::varnode_flags;
+        for (level, expected) in [(crate::kuna_indexaliasguard::LEVEL_OFF, false),
+            (crate::kuna_indexaliasguard::LEVEL_LOAD, false),
+            (crate::kuna_indexaliasguard::LEVEL_FULL, false),
+            (crate::kuna_indexaliasguard::LEVEL_GLOBAL, true)] {
+            let manage = build_manager();
+            let mut glb = ArchContext::new(manage);
+            glb.global_field_store = true;
+            glb.index_alias_guard = level;
+            let glb = Rc::new(glb);
+            let memory = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+            let mut data = Funcdata::new("f", "f", glb, Address::new(memory.clone(),0x1000), 0x10000000, 0x40).unwrap();
+            let load = data.new_op(2, Address::new(memory.clone(),0x1000));
+            data.op_set_opcode_code(load, OpCode::CPUI_LOAD);
+            let source = data.new_unique_out(8, load).unwrap();
+            let copy = data.new_op(1, Address::new(memory.clone(),0x1004));
+            data.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+            let output = data.new_varnode_out(8, &Address::new(memory,0x2000), copy).unwrap();
+            let v = data.vbank_mut().get_mut(output).unwrap();
+            v.set_flags_pub(varnode_flags::persist);
+            v.update_type_locked(Rc::new(Datatype::new(8,type_metatype::TYPE_PARTIALSTRUCT)),true,true);
+            assert_eq!(crate::p3_dataflow::kuna_globalfieldstore::keeps_store(&data,output,source),expected);
+        }
     }
 
     // --- registration ordering -------------------------------------------

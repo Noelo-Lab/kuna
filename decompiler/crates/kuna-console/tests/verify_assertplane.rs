@@ -430,6 +430,7 @@ fn output_only_prototype_pieces_do_not_abort_the_drive() {
         addr,
         0,
         &kuna_console::decompile_step::DecompileSeed {
+            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
             mapped_symbols: &[],
             usepoint_symbols: &[],
             dynamic_symbols: &[],
@@ -976,4 +977,83 @@ fn callable_types_keep_distinct_explicit_input_and_output_storage() {
     let proto = code.get_code_prototype().unwrap();
     assert_eq!(proto.get_output().get_address(), output.addr);
     assert!(proto.is_output_locked());
+}
+
+fn check_callable_return_lock(declaration: &str, unknown_first: bool) {
+    use kuna_console::grammar::{parse_protopieces, DataOrg};
+    use std::rc::Rc;
+
+    let prog = load();
+    let arch = prog.arch();
+    let (addr_size, word_size) = arch.data_org();
+    let known = parse_protopieces(
+        declaration,
+        arch.types(),
+        DataOrg {
+            addr_size,
+            word_size,
+        },
+    )
+    .unwrap();
+    let mut unknown = known.clone();
+    unknown.outtype = None;
+    let model = arch.get_model("MSABI").cloned().unwrap();
+    let intern = |pieces| {
+        arch.types_impl()
+            .get_type_code_proto_model(pieces, Rc::clone(&model))
+            .unwrap()
+    };
+    let (first, second) = if unknown_first {
+        (intern(&unknown), intern(&known))
+    } else {
+        (intern(&known), intern(&unknown))
+    };
+    assert!(
+        !Rc::ptr_eq(&first, &second),
+        "return types collapsed: {declaration}"
+    );
+    let (unknown_code, known_code) = if unknown_first {
+        (&first, &second)
+    } else {
+        (&second, &first)
+    };
+    assert!(!unknown_code
+        .get_code_prototype()
+        .unwrap()
+        .is_output_locked());
+    assert!(known_code.get_code_prototype().unwrap().is_output_locked());
+    assert!(unknown_code.get_code_prototype().unwrap().is_input_locked());
+    assert!(known_code.get_code_prototype().unwrap().is_input_locked());
+    for _ in 0..3 {
+        assert!(Rc::ptr_eq(unknown_code, &intern(&unknown)));
+        assert!(Rc::ptr_eq(known_code, &intern(&known)));
+    }
+    let dependency = first.compare_dependency(&second).unwrap();
+    assert_ne!(dependency, 0);
+    assert_eq!(dependency, -second.compare_dependency(&first).unwrap());
+    for depth in [0, 10] {
+        let structural = first.compare(&second, depth).unwrap();
+        assert_ne!(structural, 0);
+        assert_eq!(structural, -second.compare(&first, depth).unwrap());
+    }
+}
+
+#[test]
+fn callable_return_lock_void_first() {
+    check_callable_return_lock("void handler(int4 input);", false);
+}
+
+#[test]
+fn callable_return_lock_unknown_first() {
+    check_callable_return_lock("void handler(int4 input);", true);
+}
+
+#[test]
+fn callable_return_lock_void_first_without_parameters() {
+    check_callable_return_lock("void handler(void);", false);
+}
+
+#[test]
+fn callable_return_lock_unknown_first_without_parameters() {
+    check_callable_return_lock("void handler(void);", true);
 }

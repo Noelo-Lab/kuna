@@ -162,3 +162,16 @@ fn addresses_split_into_base_index_scale_and_offset() {
     let twice = build(&mut fd, anchor, CPUI_INT_ADD, 8, &[plain, idx]);
     assert_eq!(check(&fd, twice), None);
 }
+
+#[test]
+fn lane_coverage_rejects_large_strides_and_incomplete_tiles() {
+    assert!(lanes_tile(&[0, 1, 2, 3], 4, 1));
+    assert!(lanes_tile(&[0, 2, 4, 6], 4, 2));
+    assert!(!lanes_tile(&[0, 1, 2, 3], 1 << 24, 1));
+    assert!(!lanes_tile(&[0, 1, 2, 3], 1 << 59, 1));
+    assert!(!lanes_tile(&[0, 1, 2, 3], 2, 1));
+    assert!(!lanes_tile(&[0, 1, 1, 3], 4, 1));
+    assert!(!lanes_tile(&[0, 1, 2, 4], 4, 1));
+    assert!(!lanes_tile(&[-1, 0, 1, 2], 4, 1));
+    assert!(!lanes_tile(&[0, i64::MAX, -2], 3, i64::MAX));
+}

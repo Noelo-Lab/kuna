@@ -4,3 +4,4 @@
 # NOT the vendored shim's own vendor/browser_wasi_shim/dist/ (that IS committed).
 /dist/
 node_modules/
+/dist-run/

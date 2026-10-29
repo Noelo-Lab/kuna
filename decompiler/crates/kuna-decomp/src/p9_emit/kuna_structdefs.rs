@@ -135,6 +135,25 @@ pub fn referenced_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
     order
 }
 
+/// Type roots needed only by project call-target declarations.
+pub fn referenced_call_types(fd: &Funcdata) -> Vec<Rc<Datatype>> {
+    let mut order = Vec::new();
+    let mut seen = HashSet::new();
+    for index in 0..fd.num_calls() {
+        let proto = fd.get_call_specs(index).proto();
+        if !proto.has_store() || !proto.is_input_locked() || !proto.is_output_locked() {
+            continue;
+        }
+        if let Some(ty) = proto.get_output_type() { visit(ty, &mut seen, &mut order); }
+        for index in 0..proto.num_params() {
+            if let Some(ty) = proto.get_param(index).and_then(|p| p.get_type()) {
+                visit(ty, &mut seen, &mut order);
+            }
+        }
+    }
+    order
+}
+
 /// Postorder DFS over one type's dependency cone (C++
 /// `TypeFactory::orderRecurse`, type.cc, restricted to a root set): the typedef
 /// base and every component sub-type first, then the type itself if it is one

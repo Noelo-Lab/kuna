@@ -2135,7 +2135,13 @@ impl Rule for RuleFloatCast {
 
         if opc2 == OpCode::CPUI_FLOAT_FLOAT2FLOAT && opc1 == OpCode::CPUI_FLOAT_FLOAT2FLOAT {
             if insize1 > outsize {
-                // op is superfluous
+                if insize2 > insize1 {
+                    return 0;
+                }
+                if outsize == insize2 && !super::kuna_floatquiet::can_elide(data, vn2) {
+                    return 0;
+                }
+                // The remaining conversion, if any, still performs NaN quieting.
                 data.op_set_input(op, vn2, 0).expect("floatcast: superfluous in0");
                 if outsize == insize2 {
                     data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY)); // identity
@@ -2155,7 +2161,9 @@ impl Rule for RuleFloatCast {
             data.op_set_opcode(op, typeop_for(OpCode::CPUI_FLOAT_INT2FLOAT));
             return 1;
         } else if opc2 == OpCode::CPUI_FLOAT_FLOAT2FLOAT && opc1 == OpCode::CPUI_FLOAT_TRUNC {
-            // Convert float straight into final integer
+            if insize1 < insize2 {
+                return 0;
+            }
             data.op_set_input(op, vn2, 0).expect("floatcast: trunc in0");
             return 1;
         }

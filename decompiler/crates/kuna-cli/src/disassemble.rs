@@ -618,6 +618,8 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
         prog.global_data_symbols().into_iter().find(|(n, _, _)| n == spec)
     {
         (addr, Some(n), false)
+    } else if let Some(addr) = prog.lookup_data_alias(spec) {
+        (addr, Some(spec.to_string()), false)
     } else if let Ok(addr) = u64::from_str_radix(spec, 16) {
         (addr, name_at(prog, addr), false)
     } else {

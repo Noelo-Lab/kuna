@@ -5,6 +5,14 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/p9_emit
 ```
 
+Typed byte-copy stores explicitly convert a pointer initializer to its declared
+pointer type when the rendered operand is not already a pointer that type accepts
+implicitly. The operand may carry the pointer bits through an unsigned integer
+cast, be a raw constant, or point to an unrelated type; a pointer compound literal
+cannot accept those expressions implicitly. The conversion preserves the bits
+before `__builtin_memcpy` copies the object. An operand of the same pointer type,
+or a `void *` on either side, is printed without the extra conversion.
+
 C declarators preserve explicit type qualification. Qualifiers on a base or a
 named typedef precede its name; qualifiers on a pointer follow its own `*`.
 The declarator walk keeps those layers through arrays and function pointers,
@@ -16,6 +24,23 @@ When an access needs a cast for its width, the cast retains the pointee's
 qualification. Value conversions ignore qualifiers (`cast.rs (cast_standard)`),
 so a store through `volatile float *p` prints `*p = x;` with no cast; only a
 pointer conversion that drops a `volatile` pointee still needs one.
+
+A volatile annotation that covers only part of its mapped symbol renders the
+covered member. An element of an array of scalars prints as `name[index]`;
+every other partial cover (a struct field, an element of a multidimensional
+array, a field inside an array element) uses the partial-symbol walk, including
+through typedefs. A four-byte read at offset 20 in `volatile int cursor[3][2]` prints
+`cursor[2][1]`, and one at offset 4 in `volatile struct S s` (`int a; int b;`)
+prints `s.b`, not the bare symbol name. Each annotation still represents one
+access of the original width.
+
+A scalar access covering an entire array or aggregate still descends to the
+covered element or field; a one-element array does not decay to its address.
+The scalar-array shortcut requires the operation width to equal the element
+width. Other widths retain their byte range through the partial-symbol walk.
+With `partialaccess` enabled, pointer views of volatile annotations retain a
+volatile pointee, including sixteen-byte views, so changing the spelling does
+not change the access width or permit the C compiler to merge the accesses.
 
 This phase renders the finished decompilation: it inserts the explicit
 cast/field-access operations a C compiler would need to *see* the recovered
@@ -58,6 +83,11 @@ first piece is declared at the piece's type, as a directly accessed piece
 already is. This corrects the declaration without extending `castobject`'s
 permission to retype escaped locals.
 
+A local mapped or declared as a struct or union keeps that whole record type
+when its storage representative is an array member. The array-declaration
+fallback must not replace the record with its first member: later field accesses
+still require the complete object, including fields after that array.
+
 With `stackviews`, a physical stack declaration can contain the scalar being
 cast rather than itself being that scalar. Bit-transfer classification descends
 through an exact member at the symbol offset and access width; a declared
@@ -71,6 +101,8 @@ to that member's pointee, even when an object name introduces a union backing.
 The whole backing type cannot replace that pointer type: doing so would turn a
 native `head->next` dereference into an unresolved `PTRSUB(head,0)` expression.
 
+An isolated pointer declaration may name the value copied into an integer member of a declared frame array or record. C emission checks the type that the destination actually prints, rather than treating the pointer type carried by the COPY as the member's declaration. When a pointer is copied to a same-width integer member, it emits an explicit cast to that member's integer type. This preserves the native address value and produces valid C without changing numeric conversions or other output languages (`kuna_pointerstorecast.rs`). The same holds for any integer variable or member that a pointer-valued statement assigns: a plain copy, and a pointer addition or member address (`frame[0] = (unsigned long)&value[1];`). A copied variable that is itself declared as a same-width integer takes no cast, since only its storage was typed as a pointer; a source declared as a record, union or array keeps the cast, because it prints as the pointer member it reads (`x = (long)w.p;`), and a null pointer constant copied into integer storage prints as `0` rather than a cast `NULL`.
+
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackversions.rs` separates memory
 SSA bookkeeping from writes under `stackviews`. Generated-backing definitions
 without the native stack-store mark describe reconstructed memory versions, not
@@ -83,6 +115,12 @@ cycles do not make a snapshot live. Unused temporaries cannot determine the type
 of a live register value with which they were previously coalesced. In particular,
 initializing four bytes must not read and rewrite an uninitialized eight-byte word.
 
+When a changed-byte assignment replays a safe LOAD through a floating pointer,
+it reinterprets the loaded float or double as an equal-width unsigned word before
+constructing the byte-copy source or extracting subranges. Initializing an integer
+compound literal directly from that LOAD would numerically convert its value.
+The storage reinterpretation evaluates the LOAD once and preserves its bit pattern.
+
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_stackmarkers.rs` distinguishes a
 non-creating INDIRECT version over physical frame bytes from a C assignment.
 With `stackviews`, cast insertion, statement emission and body counting
@@ -92,6 +130,60 @@ retain their assignments. The native owner still executes and the memory version
 remains in the IR for reaching definitions and alias effects; the printer neither
 restores the preceding value nor copies bytes out of a constant's fictitious
 fields. Register effects and creation markers keep their existing handling.
+
+A `SUBPIECE` that extracts a four-byte float from an eight-byte scalar preserves
+the selected bits (`kuna_floatslice.rs`). C shifts an unsigned representation,
+narrows it to four bytes, and reinterprets it through an anonymous union; Rust
+uses the corresponding unsigned shift and `f32::from_bits`. A floating source
+first contributes its bit representation, without a numeric conversion. The
+byte offset is a significance offset in either byte order. Partial-structure
+intermediates use the stripped scalar type that their declarations expose.
+The printer checks
+the scalar widths, rejects out-of-range offsets, and evaluates the source once.
+An implied source whose type is still undefined, such as an untyped load read
+only by the extraction, takes the same path; one that traces back to an untyped
+call result keeps its existing rendering, by the rule `kuna_bitcast.rs` applies
+to same-width casts, because the slice does not infer a callee's return
+prototype. Explicit floating conversion opcodes retain their numeric
+conversion, and structured member extraction retains priority.
+
+(kuna) Under `option nanignore none`, a retained widening `FLOAT_FLOAT2FLOAT`
+whose input may be a signaling NaN and whose result reaches a conversion back
+to the source format materializes its C result in a volatile compound literal
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::op_float_quiet_ir)`,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_floatquiet.rs (feeds_round_trip)`):
+`(float)(*&(volatile double){ (double)x })`. A C compiler erases a plain
+`(float)(double)x` pair even with strict rounding flags. The literal evaluates
+its input once and forces the wider format to exist in storage. The read goes
+through `*&` because GCC drops a bare volatile literal assigned to a variable
+(`v = (volatile double){ (double)x };`), which is how a widening shared by
+several readers prints. Widenings that
+feed arithmetic, comparisons, calls or stores, and every narrowing, keep
+ordinary casts, because the compiler must perform those conversions. Already
+quiet inputs also keep ordinary casts, and the default `nanignore compare`
+never produces the literal. This applies to C emission; other output languages
+retain their cast syntax.
+
+A `SUBPIECE` whose destination is typed as a byte array, such as a temporary that
+carries one word of a double into a declared `unsigned char` member, cannot cast
+to that array type, and the functional `SUBnm` form names no declared function
+(`kuna_bytearrayslice.rs`). The printer instead narrows the source's bits to an
+unsigned word of the destination width, shifting by the byte offset as a
+significance offset. A `float` or `double` source contributes its representation
+through the same union reinterpretation, and a pointer is first widened to an
+unsigned word of its own width. Integer sources shift directly, since the selected
+bits lie inside the source. Sources of any other type, and destinations wider than
+four bytes, keep the existing rendering.
+
+Finite 32-bit floating constants in C carry an `f` suffix when the target
+uses 32-bit `float`. Unsuffixed literals have type `double`: printing `0.1`
+for a float constant changes both comparisons at `0.1f` and arithmetic
+precision. A value `double` holds exactly is suffixed too, since the literal's
+type still decides the type of the arithmetic around it: `(int)(x + 11.0)`
+adds in `double` and truncates `x = 0.99999994f` to 11, where the binary's
+float add rounds to 12. Double constants retain their ordinary unsuffixed spelling. This
+does not change the pseudo-C `NAN`, `INFINITY`, or unknown-format tokens,
+or the literal spelling of other output languages.
 
 A same-width `CAST` between an integer and a 32- or 64-bit float is a bit
 reinterpretation, not a numeric conversion (`kuna_bitcast.rs`). For this
@@ -109,7 +201,8 @@ anonymous union compound literal,
 `x` once; a signed result names the signed word (`int`, `long long`) as the
 member instead of adding a cast. Rust
 emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
-u32`/`as u64` unless its declared type already is that word, or `to_bits()`. A
+u32`/`as u64` unless its declared type already is that word, or `to_bits()`;
+a literal operand is narrowed to the transfer's width first. A
 floating constant read as an integer prints its stored bits, preserving NaN
 payloads. An untyped call result does not establish an integer return contract
 and keeps its existing conversion, unless the callee declares what it returns
@@ -137,7 +230,90 @@ sub_80043b8(unsigned int a0)`, a conversion of the bits, and now reinterpret
 them. These operations stay visible under cosmetic
 cast suppression. `FLOAT_INT2FLOAT`, `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` keep
 their numeric conversion behavior. The representation uses the target's
-ordinary 32-/64-bit integer and IEEE float storage widths.
+ordinary 32-/64-bit integer and IEEE float storage widths. A same-width storage
+`CAST` between a float and a native byte-addressed pointer also preserves bits.
+C first reinterprets a float as the unsigned word before casting that word to
+the requested pointer type; the reverse direction casts the pointer to the
+unsigned word before reinterpreting it as a float. These pointer casts remain
+visible with cosmetic cast suppression. Rust uses the corresponding unsigned
+word casts with `from_bits` or `to_bits`. Other pointer widths and addressable
+unit sizes do not enter this path.
+
+The x87 integer conversions (`x87_float_to_int16/32/64`, chapter 02) produce
+signed integer bits of their own width (`coreaction_infertypes.rs
+(output_type_local)`), even when the memory they store to is later read as a
+float. Without that type an unknown output adopted the float reader's type and
+the store printed as an implicit numeric conversion: `*(float *)&storage[4] =
+x87_float_to_int32(..)` wrote the float `1.0f` where `FISTP` writes the word
+`1`. When such a result lands in a same-width float output, `cast_output`
+routes it through an integer temporary (`coreaction_casts.rs
+(Funcdata::cast_narrowed_call)`) so the move prints as the union
+reinterpretation above. A byte-array global's merged high type can be an
+unresolved aggregate while the store prints a scalar float view; for a
+float-typed `CAST` output, `storage_transfer` then judges by the output's own
+type instead of that aggregate, keeping the reinterpretation.
+
+A `COPY` can join a float and an integer without any `CAST`: into or out of a
+scalar member of a declared aggregate, where the merged varnode keeps the type
+of the value it carries while the C prints the member's declared type; through
+a varnode whose own type is an unresolved partial struct or union; or between
+plain scalar variables whose C declarations differ, such as a float stored into
+a variable declared as an equal-width word. A `COPY` moves bits, so whenever
+the two sides print as a float and an integer (or native pointer) of the same
+width it takes the same bit transfer (`kuna_bitcast.rs (storage_transfer)`).
+A scalar global whose recovered type is unknown does not qualify, so a float
+stored to it keeps its value spelling. Each side's kind is the type the C prints it with: a side whose bytes
+no member names, printed by partial access as `*(T *)&storage[k]`, has that
+`T` (`printc.rs (PrintC::partial_piece_type)`), so a word moved between two
+such pieces stays a plain copy rather than reading the unsigned word into a
+float. A side printed through a named member path, with or without partial
+access, has the scalar type of the member or truncating cast that path ends in
+when it is the side's width, the same walk that prints it, so a float stored to
+`store.real[2]` keeps its bits even when another incarnation merged into that
+global supplies an unsigned word type. That printed type decides the side before
+the unresolved-aggregate rules above and below, for a `CAST` as for a `COPY`.
+The walk is operation-facing, so it resolves the union member the access
+actually prints even when the variable's declared member agrees with the
+varnode: an indexed word `items.integer[index]` copied into `items.real[16]`
+reinterprets its bits. A named member of a stack-frame variable gives its
+printed type only under `stackviews`; with that option off the frame side is
+judged by its declared member type. A partial struct or union is never taken as a side's C type;
+the value's own type stands in for it, except for a side that is a variable of
+its own, not part of a struct or union symbol, whose declared type is that
+partial aggregate: the declaration prints it as `undefinedN`, so the side is an
+integer whatever union field its value resolves to, and a union word carried
+through such a variable keeps its bits on the way in and out. A side that
+prints as a whole scalar global (the global symbol covering it starts at its
+address with its size and is not an aggregate or array) takes that global's declared
+type ahead of the merged value's type, so a union `int` word copied into an
+`int` global stays `g = k;`. A float an x87 `fstps` writes into a union record
+therefore stores `((union { float from; int to; }){ .from = .. }).to` into
+`record.first.tag`, a float `memcpy`'d into an `int` member stores its bits
+rather than `r.tag = x;`, and a member holding a float's bits that is copied out
+reads them back rather than converting the integer. A `COPY` whose two sides
+print the same kind is unchanged.
+
+The same `undefinedN` rule decides each side of a same-width storage `CAST`,
+ahead of the scalar piece a frame-backed declaration would resolve to. When a
+register holds both a union word and such a variable, the variable is still an
+integer, so a float-typed `CAST` between it and an integer prints as a plain
+integer conversion. Treating it as a float would convert the integer's value
+rather than keep its bits.
+
+A low-end integer `SUBPIECE` of a named 32- or 64-bit float similarly reads
+storage bits before narrowing (`kuna_bitcast.rs (truncated_float_storage)`).
+The selected storage view or declared scalar member type governs this decision,
+even when a merged member's own type is integer: casting that float directly to a short performs a numeric conversion
+and loses an integer result transported through FPU storage. C first reads the
+same-width unsigned member of a union compound literal, then casts that word to
+the truncated integer type; Rust applies `to_bits()` before the narrowing cast.
+A float-facing input uses the same lowering instead of an opaque `SUB42`
+intrinsic. Each input is evaluated once. Nonzero-offset extraction, integer
+storage and numeric `FLOAT_TRUNC` operations keep their existing handling.
+The canonical union members must match the target widths (`float`/`unsigned
+int` at four bytes, or `double`/`unsigned long long` at eight); enums and
+nonmatching data organizations keep their existing handling.
+This is a storage-semantics repair without an inference option.
 
 **Floating comparison negation.** `printc.rs (PrintC::check_print_negation)`
 uses the shared opcode complement table, which excludes ordered float
@@ -150,19 +326,25 @@ complementary tokens. `tests/stages/kuna-minss-nan.xml` pins MINSS selection
 with defaults and `nanignore none`; the CLI regression compiles the printed C
 and checks its NaN payloads, signed zeros, finite values and infinities against
 the authored instructions.
-With `stackviews`, a cached integer snapshot can also need a float
-reinterpretation at its consuming `FLOAT_*` edge. P9 requires an explicit
-integer C declaration and the P6 marker recording its conversion from generated
-frame-union storage into a detached scalar snapshot. Raw partial-union types and
-register-only high instances cannot recover this role reliably after conversion.
-It emits the same single-evaluation union transfer for C or `from_bits` for Rust
-at that use only. Integer operations
-such as the sign-bit XOR keep the snapshot as integer, and values already
-declared as floats keep their ordinary expression. Unnamed expressions,
-unmarked values and declarations that are not integers keep ordinary emission.
-`FLOAT_INT2FLOAT` remains a numeric conversion; `FLOAT_TRUNC` and
-`FLOAT_FLOAT2FLOAT` still perform their numeric conversions after any required
-input reinterpretation.
+With `stackviews`, a variable whose C declaration is a 32- or 64-bit integer
+word can carry a float's bits: a cached integer snapshot of generated
+frame-union storage, or a variable the user retyped to a word. Every edge
+between that word and floating arithmetic moves bits rather than converting
+the value (`kuna_bitcast.rs (stack_float_input, word_result)`). A native
+`FLOAT_*` op that consumes the variable, and a `RETURN` of it from a function
+whose prototype returns a float of the same width, read it through the
+single-evaluation union transfer for C or `from_bits` for Rust at that use only.
+In C, a float result assigned to it, from a native floating op of that width
+or from a call whose prototype returns a float or double, is stored through
+the reverse union: `v1 = ((union { float from; unsigned int to; }){ .from =
+adjust_value(first) }).to;`. The call is judged by its prototype's logical
+result width, not the ABI register (an x87 `ST0` result is wider than the
+`float` it holds). Integer operations such as the sign-bit XOR keep the word
+as integer, and values already declared as floats keep their ordinary
+expression. Unnamed expressions and declarations that are not integer words
+keep ordinary emission. `FLOAT_INT2FLOAT` remains a numeric conversion of its
+input; `FLOAT_TRUNC` and `FLOAT_FLOAT2FLOAT` still perform their numeric
+conversions after any required input reinterpretation.
 
 **Condition form (P9/`condition-form`, `option truthycond`).** In boolean
 contexts — an if/while/for/ternary condition, or an operand of `&&`/`||`/`!`
@@ -261,6 +443,22 @@ warnstyle banner` restores upstream Ghidra's full
 
 ## 9.1 Casts
 
+An equal-width `CAST` involving a complete struct or union transfers its object
+representation in C (`kuna_aggregatecast.rs`). Emission uses a union compound
+literal with the actual declared source and destination types, evaluating the
+source once. Both types and both varnodes must have the same positive size;
+field accesses use their field type. Numeric floating-point conversion opcodes,
+incomplete records, arrays, and unequal widths are excluded. Recursive layout
+checks exclude padding, bitfields, and unions with shorter members; aggregate-typed
+constant inputs are also excluded.
+The operation's input-facing or definition-facing type must itself be an
+aggregate; a scalar access backed by an aggregate stack declaration does not
+establish a whole-object transfer. The destination is the type the printed
+destination has: the declared variable or field type when the CAST's output is an
+explicit variable, else the definition-facing type of the implied value. When an
+explicit scalar variable receives a scalar source the transfer is not an aggregate
+one and the scalar bit-transfer rules apply instead.
+
 **The pass.** `ActionSetCasts` (registry row P9/`cast-policy`, group `casts`)
 is scheduled near the very end of the pass tree — after `ActionNameVars` and
 before `ActionFinalStructure`
@@ -351,7 +549,99 @@ and a pointer-to-struct being read as pointer-to-its-first-field inserts a
 `PTRSUB(ptr, #0)` — rendered as `&ptr->field` / `ptr->field` — instead of a
 cast (`coreaction_casts.rs (test_struct_offset0)`). Only when all of that
 fails is a real `CPUI_CAST` op inserted before the reader, with an implied
-unique output carrying the required type.
+unique output carrying the required type. The new CAST inherits the union
+field the reader had selected at that slot, both for a high whose own type
+needs resolution and for the high's declared storage symbol when that symbol
+is a union but the high's preferred type is scalar. The operand then prints as
+`storage.integer` rather than a cast of the whole `storage` union, which C
+rejects. Only an existing selection is copied; no field is chosen anew.
+
+**A signed read of an unsigned-printing expression (kuna).** The `U` suffix
+`mark_explicit_unsigned` gives a constant makes its whole C expression
+unsigned (`a0 - 1U`), and so does an operand declared `unsigned` or
+`undefinedN` at the expression's own width or wider, but the Varnode the
+expression computes keeps the signed type the rest of the function gave it.
+A reader that treats its input as signed -- `INT_SEXT`, `INT_SRIGHT`'s value,
+`INT_SLESS`/`INT_SLESSEQUAL`, `INT_SDIV`/`INT_SREM`, `FLOAT_INT2FLOAT` -- checks
+that signed type, finds nothing to cast, and the printed C applied unsigned
+semantics where the machine applies signed ones: glibc's `__sigismember`
+indexed its set by `(unsigned long)(long)(a1 - 1U) >> 6`, a zero extension
+of `sig - 1`, and `v34 - 0x18U >> 6` shifted logically where the binary shifts
+arithmetically. When the input of such a reader is an implied expression of
+an operation that takes the sign of its operands, and one operand prints
+unsigned at least as wide as the expression (a `U` literal is an
+`unsigned int` unless its value needs eight bytes, so `0x80U - (long)s` stays
+a signed `long`), `get_input_cast` asks for the signed integer of the input's
+size (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_signedread.rs (cast)`),
+and the read prints `(unsigned long)(int)(a1 - 1U) >> 6`. The suffix stays: an
+unsigned reader of the same expression (`4 < a4 + 2U`) still needs it. This is
+a correctness fix with no option.
+
+**An unsigned read of an expression C evaluates as signed (kuna).** The
+mirror case: C promotes an operand narrower than `int` to `int`, so
+`(*a1 ^ 0x80) - 0x80` over an `unsigned short *a1` is an `int` in C, and so
+is `(int)a0 + 1`, while `arithmeticOutputStandard` types the 32-bit Varnode
+they compute `unsigned int` (it takes the most ordered operand type and
+knows no promotion). A reader that treats its input as unsigned --
+`INT_ZEXT`, `INT_RIGHT`'s value, `INT_LESS`/`INT_LESSEQUAL`,
+`INT_DIV`/`INT_REM` -- found nothing to cast, and the C read the value as
+signed: `(unsigned long)((*a1 ^ 0x80) - 0x80)` sign-extended where the
+32-bit operation zero-extends, and `>> 3` shifted in copies of the sign bit.
+When such a reader's input is an implied expression at least as wide as
+`int`, typed unsigned, whose C type is a signed `int` or `long`, the read
+makes it unsigned (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_unsignedread.rs
+(cast)`): a plain non-negative constant operand of the expression's top
+operation gets the `U` suffix when that operation's result bits do not depend
+on its sign (`+`, `-`, `*`, `&`, `|`, `^`, negation; never a division,
+remainder or shift, whose meaning the suffix would change),
+or `UL` at eight bytes, so `(int)a0 + 1` prints `(int)a0 + 1U`; otherwise
+`get_input_cast` asks for the unsigned integer of the input's size, and the
+read prints `(unsigned long)(unsigned int)((*a1 ^ 0x80) - 0x80)`. The C
+type is worked out bottom-up from what the text states: a literal from its
+suffix and magnitude, a variable, a cast or a load from its type, an
+extension the cast strategy hides from its input, and arithmetic by C's usual
+conversions over promoted operands; anything else leaves the read alone. Neither
+happens when the input's nonzero-bit mask clears the top bit (the
+value is never negative, so both readings agree), or when the other operand
+of a compare, divide or remainder is unsigned at least as wide (C then
+converts this one itself). Expressions narrower than `int` are left to the
+upstream integer-promotion checks (`checkIntPromotionForCompare`,
+`checkIntPromotionForExtension`). This is a correctness fix with no option.
+
+**A switch on an expression narrower than `int` (kuna).** A `BRANCHIND`
+selector of one or two bytes is computed at its own width, so a byte
+`a0 + 1` is 0x80 when `a0` is 0x7f, but C adds the promoted operands as
+`int`: `switch(a0 + '\x01')` switched on 128 and missed the `case -0x80:`
+the binary takes. The upstream promotion checks cast such an expression where
+an extension or a comparison reads it, and nothing reads it at a switch. The
+printer now casts an implied selector narrower than `int` to its own type,
+`switch((char)(a0 + '\x01'))`, unless `intPromotionType` says its promoted
+value already extends the way that type does
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_narrowselector.rs (cast)`). The
+case labels already follow the selector's type. Only output languages with C's
+integer promotion get the cast. This is a correctness fix with no option.
+
+**A narrow equality of mixed sign (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
+of operands narrower than `int` compares their bytes, but C promotes each side
+to `int` by the sign of its own type before it compares. The upstream rule casts
+both sides to the more ordered of the two types only where an operand's
+promotion is unknown (an implied sum, a product); an operand that prints as its
+own type (a load, a call, a declared variable, a constant) keeps it. So a byte
+sum cast to `unsigned char` met a constant that kept the `char` type of the
+loaded byte, and `(unsigned char)(a1 + *a0) == '\x80'` was never true, since C
+compares 0..255 with -128; a `char` load beside an `unsigned char` variable
+differed the same way whenever the top bit was set. `coreaction_casts.rs
+(get_input_cast_equal)` now also casts an operand whose integer type has the
+other sign than the compared type, unless the nonzero-bit mask of either side
+says its top bit is clear (a constant like `0x7f`, a value masked to seven
+bits): such a side promotes the same either way, and the comparison then holds
+exactly when the bytes do (`promotes_with_other_sign`). The constant
+above is retyped and prints `0x80`, and a variable prints `(unsigned char)v`.
+The more ordered type can also be `bool`, and casting an integer to `bool`
+turns every nonzero value into 1: `(bool)*a0 == (a1 != 0)` held for a byte of 2
+where the binary's byte compare does not. An integer operand beside a `bool`
+of its size is the compared type instead (`integer_beside_bool`), and the
+comparison prints `*a0 == (a1 != 0)`. This is a correctness fix with no option.
 
 **Integer equality on float bits (kuna).** An `INT_EQUAL` or `INT_NOTEQUAL`
 compares bits, but when the more ordered operand type is a 4- or 8-byte float
@@ -369,12 +659,12 @@ hex (`((union { float from; unsigned int to; }){ .from = a0 }).to !=
 where, under the default (non-flushing) floating-point environment, it decides
 exactly what the bit test does (`float_compare_is_exact`; with DAZ/FTZ set a
 denormal's `ABS` compares equal to `0.0`): against a constant that is a normal number or an
-infinity whose printed literal, read by C as a `double`, is its value
+infinity whose shortest digits, read back as a `double`, are its value
 (`kuna_floatbits.rs (compares_as_a_float)`, chapter 05), so the bits of `1.0f`
-still print `a0 == 1.0`; and against `+0.0` when the other side is a
+still print `a0 == 1.0f`; and against `+0.0` when the other side is a
 `FLOAT_ABS`, which is never `-0.0` and as a NaN equals neither, so
-`ABS(a0) == 0.0` stays. A literal whose shortest spelling is another double
-(`a0 == -7.4544637e-06`, `!= 1.4013e-45`) prints its bits instead.
+`ABS(a0) == 0.0f` stays. A constant whose shortest digits spell another double
+(`-7.4544637e-06`, `1.4013e-45`) prints its bits instead.
 `FLOAT_EQUAL`/`FLOAT_NOTEQUAL` are other opcodes and still print `a == b`.
 
 **Narrowed call arguments (kuna).** Dead-code analysis counts only the
@@ -441,6 +731,29 @@ cast is redundant, though never wrong. Only an output language whose
 `sink(a0 * 3)` with a `u16` `a0` already carries the truncation there. The rule
 has no option because it only restores a conversion the binary performed.
 Pinned by `tests/stages/kuna-truncarg.xml`.
+
+**An `int`-wide trimmed argument.** The same trim cuts an 8-byte register the
+binary zero-extended a 32-bit value into (`mov %edi,%edi`, any 32-bit write on
+x86-64, `uxtw` or a `w` register on AArch64) back to the 4-byte value. C then
+converts that `int`-wide argument to the callee's parameter by its own sign: a
+signed `int` whose top bit is set reaches a `long` parameter sign-extended, the
+opposite of what the binary passed, though promotion itself changes nothing at
+this width. `narrowed_arg_cast` therefore also takes a recorded input exactly
+`sizeof(int)` wide (`kuna_truncarg.rs (int_arg_cast)`), but only where the
+callee is known to read the register wider: `decompile-all`'s callee-first
+`protoorder` statement for the callee gives the parameter in the same storage
+more bytes than the argument (`kuna_truncarg.rs (callee_reads_wider)`). Without
+that statement the parameter may be exactly the argument's width, and C
+converts to it exactly. Under it, an argument whose C type is signed
+(`kuna_unsignedread.rs (c_int)`, else its read-facing type) and whose
+nonzero-bit mask leaves the top bit possibly set is cast to the unsigned
+integer of its width: `sinkl((unsigned int)v1)`. A declared prototype that
+locks the slot again gets no cast. The signedness walk counts the same reader
+as an unsigned demand (`kuna_truncarg.rs (zext_trimmed_arg)`), so a variable
+it would otherwise re-declare `int` for a signed comparison stays `unsigned
+int` there, and `sul(v2)` keeps zero-extending. A value the binary
+sign-extended (`movsxd`, `sxtw`) leaves no record and keeps `sinkl((long)v)`.
+Pinned by `tests/cli/zero-extended-int-argument-keeps-its-extension.json`.
 
 The default arm has one more fallback, for the target of an indirect call. A
 pointer to the prototype-less `code`, or to `void`, needs no cast under
@@ -1008,6 +1321,14 @@ prints byte-for-byte what the build without it prints.
 model a PTRADD/PTRSUB was built on; the driver demotes them back to raw
 arithmetic (`cast_fixup_ptradd` undoes the scaling; `cast_fixup_ptrsub`
 becomes COPY or INT_ADD) rather than print a field access into the wrong type.
+The fit test for a PTRSUB off a spacebase
+(`decompiler/crates/kuna-decomp/src/p6_variables/funcdata_spacebase.rs
+(Funcdata::is_ptrsub_matching_scope)`, shared with `RulePtrsubUndo`) looks the
+offset up in the scope the spacebase selects, as upstream `TypeSpacebase::getSubType`
+does: the global symbol table for a global reference, the function's frame map
+for the stack. A reference into a mapped global therefore keeps its symbol and
+field (`mapped_samples[i & 3].imag`, `&g_recs[0x30]`) instead of falling back
+to the absolute address, which recompiled C would read from the wrong place.
 The upstream LOAD/STORE pointer diagnostics (`checkPointerIssues`) are
 warnings-only in C++, and in kuna the hook `coreaction_casts.rs
 (Funcdata::cast_check_pointer_issues)` is a faithful no-op — a missing
@@ -1018,6 +1339,28 @@ one —
 the computation is unchanged, and the upstream console knob
 `option nocastprinting` suppresses every cast token at print time without
 touching the inserted ops.
+
+Indirect ABI parameters retain their source value type in C (option
+`indirectargs`, default on). A parameter marked as indirect storage — one the
+locked prototype declares by value but a cspec `convert_to_ptr` or `pointermax`
+rule passes through a hidden pointer — represents a value carried by a
+pointer, unlike an ordinary pointer parameter. Direct and indirect calls render
+a dereferenced argument, using the existing member/array notation when
+possible, so `&v` collapses to `v`. Function pointer declarators and callee
+parameters use the pointee value type. In the callee, the ABI input pointer
+stands for the address of that C parameter: a bare read prints `&v`, while a
+field access, load or store through it prints the value itself (`v.f`, `v`)
+rather than `(&v)->f`. If that input belongs to a mutable pointer variable, a
+distinct pointer local is initialized to the parameter address and subsequent
+pointer updates use it. This changes no register, stack, copy-extent, or
+memory-effect recovery. Rendering follows the locked source prototype:
+required by-value storage is a callee-owned copy. A caller that deliberately
+passes aliased storage is still shown passing a copy, so callee writes through
+that ABI pointer are not reflected in the caller's C. Ordinary pointer
+parameters retain aliasing. Array parameter types keep their ABI pointer view;
+C adjusts array parameters to pointers, so they do not denote by-value objects.
+`option indirectargs off` prints the ABI pointer everywhere (parameter `T *v`,
+argument `&local`, function pointer `(T *)`), as upstream Ghidra does.
 
 ## 9.2 PrintC
 
@@ -1118,7 +1461,12 @@ because they can print as direct reads. Implied values are accepted only when
 their definitions recursively use the listed pure operations; an explicit
 written value can be reused by name after its defining statement has materialized
 it, including a call or load result. Other architectures, constant shifts, and
-non-repeatable ARM inputs keep their existing output. The 12-byte reproduction
+non-repeatable ARM inputs keep their existing output. Under `regnarrow` (chapter
+[03](03-ssa-and-simplification.md)) a count that is the implied zero extension of
+an unsigned narrow value prints as that value, since the guard already casts it
+and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4 :
+0u` where a narrowed counter printed `(unsigned int)(unsigned int)v4`;
+`unsigned_extension_source`). The 12-byte reproduction
 and emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml`; signed
 comparison and ASR consumers are in
 `tests/stages/kuna-arm-register-shift-signed.xml`.
@@ -1309,6 +1657,21 @@ shifts a member of an array. What this does **not** fix is that container type
 itself. Recovering it needs either a scalar wide-integer type or a mid-end fold
 of the `CONCAT88(0,x) << 64` idiom; neither is done here.
 
+For C output with `partialaccess` enabled on a 64-bit target, an inferred
+sixteen-byte register temporary used only for bit extraction, copying, merging,
+or bitwise operations is declared `unsigned __int128` instead of `char[16]`
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_widelocal.rs`). This keeps a
+whole-width scalar load and its local assignment consistent. The rule requires
+unmapped, unlocked, non-address-tied values whose type is an inferred array of
+unknown bytes. A value loaded through a pointer, or copied out of another array
+variable, keeps its array declaration: its right-hand side prints as an array
+(`*(char (*)[16])p`), which C would convert to a pointer and assign to the
+integer as an address instead of rejecting the statement. It does not retype
+explicit arrays, parameters, globals, or addressable storage, and does not
+change the IR or the volatile access count. GCC/Clang's wide-integer extension
+is the same one used by the existing sixteen-byte pointer views. Other
+wide-container cases retain their existing rendering.
+
 **Standard C for mapped byte arrays.** `bytearrayc` (default **off**,
 `decompiler/crates/kuna-decomp/src/p9_emit/kuna_bytearrayc.rs`) provides a C11
 rendering choice for direct integer accesses of two, four or eight bytes within
@@ -1492,6 +1855,17 @@ the merged variable's type representative), which prints
 render before; on `main` one `tar` O0 function printed it
 (`a0->field_0x8 = PTRSUB(dat_9f6a8,0);`).
 
+With `stackviews`, a structure or union member's operation-facing pointer type
+can differ from its base variable's C declaration. A detached address snapshot
+may be an integer, or a temporary may hold both a node address and the address
+of a pointer slot. `decompiler/crates/kuna-decomp/src/p9_emit/kuna_memberbase.rs
+(needs_cast)` compares that declaration with the pointer used to select the
+field. Differing same-width integer or pointer representations receive an
+explicit pointer cast before `->`. The member offset follows the selected
+pointee; snapshot declarations and byte arithmetic keep their existing
+representations. Matching types, implied expressions, relative pointers and
+explicit `nocasts` retain their ordinary rendering.
+
 **Precedence without an AST.** Operators and leaves are not buffered into a
 tree; they stream through a reverse-polish stack. `printc.rs (PrintC::push_op)`
 pushes an operator's static token — the singleton table `printc.rs (tokens)`
@@ -1652,6 +2026,15 @@ is not a residual unknown and never enters the relabel, so the opaque
 `void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
 (`map convert`, `force datatype`) override the global format at the same
 point ([docs/options.md](../options.md)).
+
+Signed integer constants are normalized to their declared byte width before
+choosing their sign, magnitude, and numeric base
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (resolve_integer_format)`).
+A four-byte `0xfffffffffffffffc` carrier therefore prints as `-4`, just like
+`0xfffffffc`; upper carrier bits also cannot turn a positive narrow value
+negative. Forced numeric radices retain this width interpretation. Character
+overrides, unsigned rendering, and unsized constant handling retain their
+existing paths.
 
 Anonymous function types with a stored prototype participate in the C declarator
 walk alongside pointers and arrays. The function contributes a parameter suffix,
@@ -1826,7 +2209,20 @@ past the object and drops the sign extension. The option `declhightype`
 p-code moves. It applies only to a high the symbol table does not describe — a
 mapped local keeps the declaration representative's type, because kuna does not
 always type-lock the storage a symbol claims and the most specialized member of
-a mapped local can be a transient the symbol never described. The declaration
+a mapped local can be a transient the symbol never described. A whole mapped
+local whose Symbol is type-locked (a DWARF or `--assert type` declaration) with
+a boolean, integer, float or pointer type as wide as the declaration
+representative, and that is not a parameter, declares that Symbol type instead
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(locked_scalar_local_type)`), whatever this option says: merging can leave the
+representative at a weaker type, such as `void *` for a gcc `-O0` DWARF
+function-pointer local, which makes the indirect call through it invalid C.
+`declared_variable_type` reports the same type, so the storage-transfer casts
+agree with the declaration. A local that coalescing left with the Symbol's type
+but no Symbol binding keeps that type only when one of its members is
+type-locked to exactly that type and none is an input, persistent, global or
+`&symbol` reference view; a recovered type with no locked member never imposes
+a declaration. The declaration
 representative still supplies the array adornment and the
 composite mapped-symbol override, all of which outrank this. `option
 declhightype off` restores the declaration representative's type.
@@ -2750,6 +3146,13 @@ drives these same renders and changes no byte any of them produces, but the
 project folder it assembles from them has a layout of its own — the single
 documented exception, described at the end of this section.
 
+After writing the artifacts, a serial project export reports every rejected
+assertion on stderr. Ordinary rejections leave the export successful unless
+`--assert-strict` requests a nonzero exit. A directive accepted and later refused
+by the pipeline always makes the export fail. These checks include declarations
+for callees outside the selected bodies and unresolved local directives; accepted
+directives keep their final applied outcomes.
+
 **Type definitions — the `docTypeDefinitions` port.** `printc.rs
 (PrintC::doc_type_definitions)` is the previously-unported C++
 `PrintC::docTypeDefinitions` surface — the console `print C types` command
@@ -2865,6 +3268,11 @@ ReadmeLayout, render_readme_streaming)`), the first describing the
 streamed `.c`/`.asm` and the two extra files, the second adding a banner
 and a status table while the export runs; the `Standard` layout is
 byte-identical to what the single renderer emitted before it was split.
+A third layout, `Progress`, is only ever rendered while a run is going: a
+`--progress` export writes the `Standard` artifacts at the end, so
+its running README inventories those, adds the feed form of `index.jsonl` and
+`.streaming`, and says the `.c`/`.h`/`.asm` do not exist until the export
+completes; the completed export writes the `Standard` README itself.
 
 **The graph document.** `kuna decompile-graph`
 (`decompiler/crates/kuna-cli/src/decompile_graph.rs`) is another additive reader
@@ -3165,8 +3573,92 @@ for this purpose: it decays to a pointer, so a scalar compare against it
 compiles to something else. `project.rs (names_any_type)` reads the
 declarations too, so a `struct_N` that only a global names is still redone by
 the `structsynth` convergence sweep and kept by the header's type pruning.
-The directly read `dat_<addr>` names are still not declared on their own
-account; only an address some function takes is.
+A `dat_<addr>` the functions only read and write directly, with no function
+taking its address or indexing it, is declared too, by the same rules: the one
+type the direct accesses agree on, or nothing and a comment when they disagree.
+Without that declaration an otherwise complete exported function using an
+ordinary scalar global did not compile. Such a name is left undeclared, with a
+comment naming the other global, when its bytes overlap another address the
+functions name (an 8-byte store `dat_4020` and a 4-byte read `dat_4024` of its
+upper half, as gcc merges adjacent field stores): two declarations would make
+one storage two objects, so a store through one would never reach the other.
+An address some function takes keeps its declaration either way.
+
+Named global references retain whole mapped declarations through
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_namedglobals.rs`. The C printer
+records the actual emitted name only when a mapped data object is referenced,
+including field and array accesses. Storage base, extent, and whole symbol type
+must agree with the mapping; split or uncertain mappings are not guessed. The
+per-function collection resets at each print and excludes substituted literals,
+stack objects, and function symbols. Project extraction includes these facts even
+when synthetic address naming is disabled. Whole symbol types describe the
+object declaration, rather than the scalar type of a partial access.
+
+An integer `INT_ADD` of a constant and a non-pointer offset can still compute a
+pointer: a declared pointer member stores it, or a CAST or COPY consumes it at a
+pointer type. When types are printed (a project export or `structdefs`), the
+pointer is the target's width with byte-sized words, the constant addresses a
+complete named data object, and the other operand is an index the binary scaled,
+widened or masked (a multiply or left shift by a constant, a sign or zero
+extension, an AND with a constant below 0x10000 such as the `index & 0x3c` a
+compiler folds `((index >> 2) & 0xf) * 4` into, a sum of those, through CASTs
+and COPYs that are not from a pointer),
+`printc.rs (op_named_pointer_add_ir)` relocates
+the constant through `kuna_namedglobals.rs (object_address)` and keeps the
+addition at pointer width, `(float *)((unsigned long long)((unsigned char
+*)&arena + 0x40) + index * 4LL)`, so the byte offset is not scaled again and
+the recompiled pointer lands inside the generated object rather than at the
+original binary's address. A consuming CAST already spells the pointer type,
+so the printer adds the pointer cast only when nothing else does. Any other
+operand (a parameter, a load, a value cast from a pointer) may itself be an
+address, making the constant a byte offset that merely falls inside a global
+(`heap + 0x4060` beside a `gbuf` at 0x4040); relocating it would move the
+pointer into the global, so it keeps the raw constant. Integer results,
+unmapped constants, and other output languages print as before.
+
+A scalar named object is not simply declared at its symbol's type, because the
+body reads it at the type the printer gave each varnode, and an image symbol
+is usually an undefined type the prelude spells unsigned (`undefined4` is
+`unsigned int`): declared so, `if (count <= -1)` becomes an unsigned compare
+that is always true, `total >> 2` a logical shift, and `scale * k` integer
+arithmetic converted to a double, all without a diagnostic. The printer
+therefore records each whole-width read and write, whether it prints the
+global's own varnode, a register copy merged into its variable, or the value a
+dereferenced `&name` loads or stores. A read whose uses keep its bits under any
+integer of its width (a copy, a return, a call argument, a store, a
+truncation, a same-width cast, an equality at `int` width or wider or with
+zero, wrapping arithmetic whose result is assigned, or an assignment of the
+value a dereferenced `&name` loads to a variable of its own) accepts the
+symbol's type. The global's own varnode, or a register merged into its
+variable, is judged by its uses however it was defined: after `g = *p`, the
+reads of `g` print as `g`, so a load defining it says nothing about them.
+A read that an ordering, a division, a
+remainder, a right shift or an extension reads, directly or through
+arithmetic printed inline, needs the signed or unsigned integer of its width,
+and a float operation needs the float. A pointer or float varnode names its
+own type, and a use outside these makes the read a conflict. A store of an
+integer or pointer keeps its bits under any integer declaration, so stored
+types count only where a float is involved or nothing reads the object. A
+function whose reads all accept any integer declares the symbol's type as a
+placeholder that yields to the integer type the other functions agree on;
+disagreeing types, or a placeholder against a pointer or float, are reported
+as read at two types and left undeclared, the existing rule for `dat_<addr>`.
+
+The header exporter diagnoses one name at multiple addresses and multiple names
+sharing one address instead of silently combining or splitting their storage.
+Whole named objects also retain the independent-storage overlap guard; overlapping
+views require shared storage instead of separate declarations. With `globalref`
+on, a native `void *` constant into a complete mapped object is rendered relative
+to its base, including interior field addresses. Requesting type definitions
+(`structdefs on` or the shared header of a C project export) extends this to
+typed object pointers. An explicit cast retains
+the requested pointee type, even when a byte array owns the storage. Function
+pointers keep their separate rendering. Loader metadata remains numeric: only
+addresses in the loader’s program-data ranges can name relocated objects. This
+preserves relocation of
+the object when the generated C is linked. Split mappings, uncertain extents,
+non-byte-addressed spaces, shadowed names and names requiring scope or identifier
+rewriting keep the existing rendering.
 
 **An indexed table is an array (`elemptr`).** With `elemptr` on (05-types
 §5.2), a constant address that is the base of a `PTRADD` indexed by a computed
@@ -3240,7 +3732,10 @@ pointer uses `__builtin_memcpy` and a typed C compound literal. Casting a word
 pointer over an integer local does not establish C aliasing: both GCC and clang
 can otherwise optimize a later integer read to its old initializer. The copy
 preserves the bytes and evaluates the pointer and value once. This fallback is
-C-only and bounded to scalar accesses of 2, 4 or 8 bytes.
+C-only and bounded to scalar accesses of 2, 4 or 8 bytes. With `stackviews` off,
+a function that recovered narrow-parameter backing copies only accesses that
+resolve inside that backing; other reinterpreted pointers keep their ordinary
+dereference.
 
 Bounded indexed accesses into a recovered backing object also copy their bytes,
 including one-byte loads and stores. The byte pointer starts at the whole backing
@@ -3256,7 +3751,30 @@ is retained. Stores copy bytes from a scalar compound literal at the original
 displacement instead of assigning a pointer to a struct or imposing the declared
 field's numeric type on a later incarnation. COPY and same-width CAST retain the
 source representation; computed stores use the opcode's result type, including
-floating arithmetic and numeric conversions. Integer bit patterns are printed as
+floating arithmetic and numeric conversions. A recovered standalone byte-array
+local that receives a same-width floating representation uses a byte-copy store
+from the scalar expression, including any preceding numeric conversion. One-byte
+SUBPIECE reads defined by that floating transfer use byte subscripts at the target's memory offset,
+rather than passing an array to an integer helper. Opaque vector lanes retain
+their separate option-controlled rendering.
+A scalar write into a declared
+byte-array member takes this byte-copy path even when the call's record layout
+agrees with the local layout: the member has no scalar C assignment type, and
+copying a float must retain its representation instead of casting it to an array.
+An explicit register or unique definition bound to a local frame Symbol follows
+that Symbol's unique stack mapping and member displacement for a byte-array
+member store whose value would otherwise render through a byte-array CAST.
+Other register or unique definitions, including stores into scalar members,
+retain their existing rendering. Ambiguous storage mappings and bindings
+outside the local scope do not qualify. Implied same-width CASTs to the byte-array view are peeled before selecting the
+scalar representation; numeric conversion opcodes remain part of the expression.
+A byte-array member receiving an implied nonvolatile memory read retains the
+source pointer and read context, even through same-width COPY/CAST wrappers or
+when the LOAD itself defines the mapped member.
+Numeric conversions and computed expressions remain scalar transfers. For
+byte-addressed source storage with matching endianness, `__builtin_memmove`
+retains the original load-before-store behavior when addresses may overlap.
+Integer bit patterns are printed as
 unsigned constants, while named pointer constants retain their address provenance.
 Equal-width signed, unsigned and unknown integer views remain compatible and
 keep ordinary scalar assignments; the fallback targets incompatible layouts or
@@ -3276,6 +3794,20 @@ bound to the same backing symbol; an incoming formal at the same stack
 address is a separate value. Full-width integer bits assigned to an aggregate
 view use the same byte path. Unsupported expressions retain ordinary emission;
 the provenance walk is bounded to eight-byte values and 32 levels.
+
+The byte walk carries source storage identity, projected offset, and original
+read operation separately from a merged HighVariable. A projected global read
+therefore renders from its physical data-space address instead of using the
+merged stackview name. Mutable LOADs and implicit global reads can be moved to a
+store only within the same block and across no write, call, STORE, INDIRECT or
+CALLOTHER effect; readonly non-volatile sources do not need that timing proof.
+Volatile reads and pointer values or pointer-origin constants stay on typed
+emission paths. Any other source printed by name must be a declared variable
+(a named local or a linked symbol), never bare register storage. The pointer
+test reads a def-facing type only for a written Varnode; an input or constant
+is classified by its own type. A complete scalar range uses one typed compound-literal
+evaluation for `__builtin_memcpy`; partial ranges use byte literals only when
+their source reads are safe to reproduce at the store.
 
 Explicit zero-offset PTRSUB field selections keep their union write-edge
 resolution through cast fixup. Their output token is the selected member's
@@ -3316,3 +3848,119 @@ noninteger types, enums, widths above eight bytes and concatenations of unrelate
 halves keep their existing rendering. The option defaults on for C output; off
 restores the upstream CONCAT helper, and other output languages keep their own
 rendering.
+
+For scalar CAST storage transfers through a global array symbol, such as an
+asserted byte array, the printed member access determines the scalar
+representation. An exact scalar array piece retains its type. Any other piece
+takes the type partial access prints it with (`kuna_partialaccess.rs`): the
+value's own scalar type of that width, such as a float stored in half of a
+`double` element, else the width-matched unknown scalar for a four- or
+eight-byte access crossing byte elements or covering the whole array. Floating
+transfers to and from that storage reinterpret bits rather than numerically
+converting the value or attempting an array cast. This lookup uses the exact
+global container and offset. When the type this lookup or the merged variable
+declares for a transfer's input is unknown or a partial aggregate, as for a
+value merged into a byte-array backing, it does not say whether the bits are a
+pointer or a float; a pointer or float read-facing type of the input decides
+instead (`kuna_bitcast.rs (storage_transfer)`). A pointer stored through
+`*(void **)&storage[8]` and moved into a `double` therefore passes through the
+unsigned word of its width and is reinterpreted, rather than printing the
+invalid `(double)` conversion of a pointer. A `FLOAT_FLOAT2FLOAT` that writes such storage
+directly keeps its numeric precision conversion, cast to the float of its output
+width rather than to the unknown type of the storage, because partial access
+prints that destination as a float.
+
+Project C results retain declarations of named direct-call targets whose input
+and output prototypes are both locked. The declarations use the ordinary C
+declarator builder, including nested pointer types and variadic parameters.
+Call-only type dependencies join the referenced type roots. Headers deduplicate
+these declarations after type definitions and keep typedef collisions diagnostic.
+A target that is itself one of the exported functions keeps only its own
+prototype, so a whole-binary export declares each function once. Two differing
+declarations of one target become a comment rather than conflicting externs.
+A target whose return type is an array or function type is not declared,
+because C cannot spell it (a 16-byte integer the type system holds as
+`char[16]`). Unknown or partially inferred targets do not acquire invented
+signatures.
+The declarations survive worker serialization and streamed body removal, and
+remain roots when pruning synthesized types. Capture is implemented in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_callprototypes.rs`.
+
+With a live `callwide` verdict, a proved eight-byte result also needs a
+declaration when its producer was not selected for export. The declaration
+uses the actual call operands and finalized four-byte argument storage under
+the same model, including calls whose recovered prototype store is empty. It
+neither recovers nor regroups inputs. Canonical unknown eight-byte results use
+the C speller's existing unsigned representation; ignored results obtain only
+their proved width and physical pair. Unsupported storage, types or arity
+withhold that function's C with an export error. Private typed contracts survive
+workers and streamed body removal. A selected producer's exact definition may
+resolve signed versus unsigned four-byte input words, preserving their ABI
+bits; its output representation and arity must agree. External-only conflicts
+remain errors. Streams may retain conflicting records, in order and within
+fixed bounds, only for an exact producer in the complete preknown selection,
+then validate against its actual definition. An absent or incompatible
+definition fails the export. A conflicting definition or type-name collision
+cannot silently remove a required wide declaration. Ordinary locked-declaration
+conflicts retain the diagnostic behavior above. Capture remains after temporary
+C rendering and before publication. The proof and bounded contract checks belong to
+`decompiler/crates/kuna-decomp/src/p4_calls/kuna_callwide.rs`.
+
+Format-specific call arities are not declarations of the callee. When a call
+has format-derived arguments, project declarations restore its parked formal
+variadic signature. Call-only type roots are gathered only for project headers;
+ordinary per-function type inventories retain their original scope.
+
+Automatically admitted `localstackviews` backings use the same physical-version,
+byte-projection and mutable-read timing checks as explicit `stackviews`.
+Native write preservation is established before mapping; emission does not
+resurrect hidden arithmetic or mark reconstructed COPYs as physical stores.
+A surviving native persistent publication supplies its exact locked pointer
+contract to the existing typed-member address binding, so a shared union address
+is published as the declared pointee address at the original operation.
+
+Project C exports use the exact global-scope function symbol's display name
+for a successful definition and its header prototype when both spellings are
+plain C identifiers (`decompiler/crates/kuna-console/src/kuna_projectfunctionnames.rs`).
+This aligns definitions with calls when debug information names a function
+differently from its linker symbol. Analysis, selector aliases, and standalone
+output retain their existing names. The original display is restored after
+rendering. Namespaced and nonidentifier spellings are not guessed. A separate
+optional emitted C name travels through worker records and survives stream
+compaction, so the header checks every successful prototype record, including
+streamed bodies whose text was released. Multiple entries claiming one C name
+(duplicate static functions from separate translation units, or a PLT stub
+beside the definition it reaches), or a function conflicting with a data or
+typedef declaration, are listed in address-only header comments. They are not
+fatal: the export still writes every artifact and keeps its exit status, and a
+typedef collision keeps the commented-out prototype so the header itself still
+parses. Source selection names and alias metadata retain their existing meaning.
+
+Project C emission reserves global function names before rendering local symbols.
+A colliding parameter or local receives a unique local spelling; parameter storage,
+types, and lock flags are preserved, and the prototype and body use the same name.
+This prevents a source-level parameter name from shadowing a function's emitted
+linkage identifier. The change is local to the rendered function.
+
+A statement LOAD rendered through a byte-copy helper copies directly into the
+printed destination member’s scalar type when its width matches the access.
+The helper must preserve the representation instead of numerically converting
+an integer temporary into a float member (`printc.rs (op_load_ir)`).
+An `iteregion` assignment diamond whose arm is such a LOAD, with the destination
+member and the helper's type disagreeing on float-ness, keeps its `if`/`else`
+form so each arm stays a statement LOAD copying into the member's type
+(`printc.rs (converts_storage_load)`); a `?:` arm would convert numerically.
+A STORE helper likewise initializes its compound literal with the rendered
+source member’s same-width scalar type (`printc.rs (op_store_ir)`), preserving
+its bytes when propagated IR types disagree.
+
+A same-width integer representation assigned to a declared pointer member needs
+an explicit pointer cast in C. CAST statements are checked using the type their
+result expression prints, rather than the input type, so a pointer-to-integer
+cast cannot leave an integer expression assigned to a pointer field, and a
+pointer-typed CAST assigned to an integer variable receives the integer cast
+(`len = (long)(char *)&len[1];`) instead of a bare pointer. When the
+variable's Symbol is a structure, array or union, that whole Symbol supplies the
+member type, since the declaration representative covers only the field. A
+scalar local or global keeps the type its declaration prints, which can differ
+from its Symbol's scalar type (`kuna_pointerstorecast.rs (target)`).

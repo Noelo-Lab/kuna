@@ -76,6 +76,9 @@ pub(crate) fn resolve_plt_imports(file: &object::File, bytes: &[u8]) -> Vec<PltS
 /// intact — which is every image that ever reached this code before.
 fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
     let arch = file.architecture();
+    if arch == Architecture::PowerPc {
+        return super::kuna_ppc32_imports::resolve(file);
+    }
 
     // MIPS has no regular `.plt` code section and emits NO `R_MIPS_JUMP_SLOT`
     // relocations for its lazy imports: the stub→name correspondence is carried by
@@ -774,10 +777,7 @@ fn decode_riscv(
 /// avoids relying on a `.TOC.` symbol being present.  If there is no `.got`
 /// section the binary has no TOC-relative imports and we resolve nothing.
 ///
-/// PPC32 (`Architecture::PowerPc`, big-endian) uses a different secure-PLT stub
-/// shape that this routine does not model, so it no-ops there — left as a hook
-/// (`decode_ppc_text` reads words honoring endianness, so a future PPC32 arm can
-/// slot in here).
+/// PPC32 uses the separate relocation-validated `kuna_ppc32_imports` resolver.
 fn decode_ppc_text(
     file: &object::File,
     arch: Architecture,

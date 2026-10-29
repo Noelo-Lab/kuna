@@ -739,3 +739,30 @@ fn valuesetsolver_topological_order_with_cycle() {
     // node 0 is outside the loop.
     assert!(solver.part_head_of(n0).is_none());
 }
+
+#[test]
+fn zero_extension_constraints_preserve_both_branch_domains() {
+    let mut empty = CircleRange::new_empty();
+    empty.set_mask(0xff);
+    for narrow in [
+        CircleRange::new(0x80, 6, 1, 1),
+        CircleRange::new(0, 6, 1, 1),
+        CircleRange::new(0, 0, 1, 1),
+        empty,
+    ] {
+        let wide = ValueSetSolver::zext_constraint(&narrow, 1, 2).unwrap();
+        assert_eq!(wide.get_mask(), 0xffff);
+        let mut narrow_false = narrow.clone();
+        let mut wide_false = wide.clone();
+        narrow_false.invert();
+        wide_false.invert();
+        for value in 0..=0xff {
+            assert_eq!(wide.contains_val(value), narrow.contains_val(value), "true edge {value:x}");
+            assert_eq!(
+                wide_false.contains_val(value), narrow_false.contains_val(value), "false edge {value:x}"
+            );
+        }
+    }
+    let strided = CircleRange::new(0x80, 6, 1, 2);
+    assert!(ValueSetSolver::zext_constraint(&strided, 1, 2).is_none());
+}

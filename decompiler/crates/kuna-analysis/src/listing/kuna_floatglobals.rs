@@ -110,6 +110,7 @@ pub fn scan(arch: &Architecture, input: &FloatScan) -> FloatGlobals {
         floats: &floats,
         ptr,
         clobbered,
+        preserved: kuna_switchtable::preserved_registers(arch),
         sp,
         extrapop,
         thumb_bit: family[0] == "ARM",
@@ -301,6 +302,7 @@ struct Ctx<'a> {
     floats: &'a FloatRegisters,
     ptr: u32,
     clobbered: Vec<(u64, u64)>,
+    preserved: Vec<(u64, u64)>,
     sp: Option<(u64, u32)>,
     extrapop: Option<i64>,
     thumb_bit: bool,
@@ -489,9 +491,13 @@ fn switch_targets(
         branch,
         pool,
         &ctx.image.exec,
-        max_entries,
+        &super::kuna_switchtable::Reach {
+            max_entries,
+            preserved: if ctx.arch.analysis_switchreach { &ctx.preserved } else { &[] },
+            far: ctx.arch.analysis_switchreach,
+        },
     )
-    .0
+    .cases
 }
 
 /// The case bodies of a computed jump through a table: `tbb [pc, r3]`,
@@ -668,7 +674,7 @@ fn entry_state(ctx: &Ctx<'_>, entry: u64) -> State {
             state.set_reg(loc.offset, loc.size, Some(Val::Const(val)));
         }
     };
-    let tracked = ctx.arch.with_context_db_mut(|db| db.get_tracked_set(&at).clone());
+    let tracked = ctx.arch.with_context_db(|db| db.get_tracked_set(&at).clone());
     for t in &tracked {
         seed(&t.loc, t.val);
     }

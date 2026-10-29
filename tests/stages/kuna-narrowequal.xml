@@ -1,0 +1,45 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A narrow equality whose printed sides C would not compare byte for byte.
+        sum_is_80:    mov eax,esi; or eax,edx; add al,[rdi]; cmp al,0x80
+                      sete al; movzx eax,al; ret
+        byte_is_flag: movzx eax,byte [rdi]; test esi,esi; setne cl; cmp al,cl
+                      sete al; movzx eax,al; ret
+    The p-code compares two bytes.  In sum_is_80 the sum is cast to `unsigned
+    char`, the type the two sides compare as, but the constant kept the `char`
+    type of the loaded byte and printed as '\x80': C promotes `(unsigned
+    char)x` to 0..255 and '\x80' to -128, so the printed test was never true.
+    In byte_is_flag the compared type was `bool`, and `(bool)*a0` turns any
+    nonzero byte into 1, so a byte of 2 compared equal to a true flag.  Each
+    side of a narrow `==`/`!=` whose type promotes with the other sign than the
+    compared type now takes that type too, and an integer beside a `bool`
+    compares as the integer.
+
+    Stage: P9 emission (ActionSetCasts, INT_EQUAL input casts).  A strict
+    fix with no option: #1 and #3 are the corrected comparisons, #2 and #4 the
+    old ones.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+89f009d002073c800f94c00fb6c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x401020" readonly="true">
+0fb60785f60f95c138c80f94c00fb6c0c3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x401000 sum_is_80</com>
+  <com>map function r0x401020 byte_is_flag</com>
+  <com>lo fu sum_is_80</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu byte_is_flag</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NARROWEQUAL #1: both sides of the byte compare are unsigned" min="1" max="1">return \(uint1\)\(\(a1 \| a2\) \+ \*a0\) == 0x80;</stringmatch>
+<stringmatch name="NARROWEQUAL #2: no signed char constant beside an unsigned byte" min="0" max="0">'\\x80'</stringmatch>
+<stringmatch name="NARROWEQUAL #3: a byte compares with a flag as a byte" min="1" max="1">return \*a0 == \(a1 != 0\);</stringmatch>
+<stringmatch name="NARROWEQUAL #4: no bool cast of the byte" min="0" max="0">\(bool\)\*a0</stringmatch>
+</decompilertest>

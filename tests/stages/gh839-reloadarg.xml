@@ -183,7 +183,7 @@ c7e85a01000048894424084c89f74c89fe4c89ea4889d94989e84c8b7424104d
 <stringmatch name="GH839 #5: sp6 keeps the parameter it reloads from its frame into r8" min="2" max="2">return q6\(a_00,a,b,c,d,e\) \+ v1 \+ f;</stringmatch>
 <stringmatch name="GH839 #6: a6 keeps the slot init wrote through its pointer" min="2" max="2">return pr\("%d %ld",\(uint8\)v1,v3\);</stringmatch>
 <stringmatch name="GH839 #7: fa1 and fa4 pass the saved frame pointer" min="4" max="4">  use\(v1\); // tail-call</stringmatch>
-<stringmatch name="GH839 #8: fa2 prints the saved frame pointer" min="2" max="2">__printf_chk\(1,"%d %p\\n",a0 &amp; 0xffffffff,v1\);</stringmatch>
+<stringmatch name="GH839 #8: fa2 prints the saved frame pointer" min="2" max="2">__printf_chk\(1,"%d %p\\n",a0,v1\);</stringmatch>
 <stringmatch name="GH839 #9: fa3 passes both frame addresses and the return address" min="2" max="2">use3\(&amp;Stackfffffffffffffff8,v1,v2\);</stringmatch>
 <stringmatch name="GH839 #10: f1 and f4 keep the junk rdx below the real rcx" min="4" max="4">q\([^;]*,a1,v1,10\)</stringmatch>
 </decompilertest>

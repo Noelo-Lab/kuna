@@ -312,9 +312,11 @@ pub struct AnalysisOutput {
     /// The commit boundary rejects any [`Self::entries`] VMA strictly inside one of
     /// these — a discovered entry in the middle of a body is a landing pad /
     /// gap-walk artifact, not a function. Produced by
-    /// [`crate::entry::kuna_fdeinterior`] (`.eh_frame` FDEs) and
-    /// [`crate::entry::kuna_pdatainterior`] (`.pdata` records), so the list is
-    /// empty whenever their gates are off and the suppression is a no-op.
+    /// [`crate::entry::kuna_fdeinterior`] (`.eh_frame` FDEs),
+    /// [`crate::entry::kuna_pdatainterior`] (`.pdata` records) and
+    /// [`crate::pclntab`] (a Go binary's `functab`, the linker's own extent for
+    /// every function), so the list is empty whenever their gates are off and the
+    /// suppression is a no-op.
     pub fde_bodies: Vec<(u64, u64)>,
     /// (kuna) Function entries strictly inside an FDE body that the image itself
     /// enters from outside it — the extra entry points of a multi-entry `.cold`
@@ -378,6 +380,12 @@ pub struct AnalysisOutput {
     pub externref: Vec<(u64, u64)>,
     /// Detected NUL-terminated string literals (a typed `char[N]` per address).
     pub strings: Vec<StringFact>,
+    /// (kuna `fatstr`) Length-BOUNDED string literals recovered from static
+    /// `(ptr, len)` records (`strings::kuna_strrecords`): `len` is the exact
+    /// byte count, there is NO terminator, and the commit arm plants these
+    /// BEFORE [`Self::strings`] so a glued NUL-run row at the same address is
+    /// retired by the occupied-address guard.
+    pub bounded_strings: Vec<StringFact>,
     /// (kuna `widestrings`) Detected NUL-terminated UTF-16LE string literals — the
     /// `StringsAnalyzer` `allCharWidths` width kuna did not carry. Kept apart from
     /// [`Self::strings`] because the commit boundary types them differently (a
@@ -407,6 +415,12 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// Library prototypes declaring a `float` or `double` that an ARM image
+    /// holds back, by name (`None`) or by entry address: whether the image
+    /// returns a `double` whole depends on `armfloatreturn`, which is set after
+    /// load. The commit stashes them on the architecture
+    /// (`Architecture::arm_float_library_prototypes`).
+    pub arm_float_prototypes: Vec<(Option<u64>, kuna_decomp::fspec::PrototypePieces)>,
     /// The C runtime declaration `elfmain` has for an executable's own
     /// symbol-named `main`, keyed by entry address (an ARM Thumb symbol's mode
     /// bit cleared). The commit keeps it OFF the symbol; the drive applies it
@@ -507,6 +521,9 @@ pub struct AnalysisOutput {
     /// Carried for the same late consumer as [`Self::libctypes_glibc`], which
     /// must then answer from the width-stable `void *` tables too.
     pub libctypes_refused: bool,
+    /// (kuna `armframes`) What whole-image frame recovery decided, for a
+    /// `--jobs` worker to replay.
+    pub arm_frames: Option<crate::aif::kuna_framereplay::ArmFrameReplay>,
 }
 
 impl AnalysisOutput {
@@ -536,14 +553,23 @@ impl AnalysisOutput {
             fix(&mut p.name);
             p.innames.iter_mut().for_each(fix);
         };
-        self.symbols.iter_mut().for_each(|s| fix(&mut s.name));
-        self.data_objects.iter_mut().for_each(|d| fix(&mut d.name));
-        self.typed_data.iter_mut().for_each(|d| fix(&mut d.name));
+        // Data identifiers are allocated together at commit, before folding can
+        // collapse distinct spellings such as counter.3 and counter_3.
+        let data_mode = if mode == NameChars::Ident { NameChars::Safe } else { mode };
+        let fix_data = |s: &mut String| {
+            if let std::borrow::Cow::Owned(v) = sanitize_symbol_name(s, data_mode) { *s = v; }
+        };
+        self.symbols.iter_mut().for_each(|s| {
+            if s.kind == SymKind::Data { fix_data(&mut s.name); } else { fix(&mut s.name); }
+        });
+        self.data_objects.iter_mut().for_each(|d| fix_data(&mut d.name));
+        self.typed_data.iter_mut().for_each(|d| fix_data(&mut d.name));
         self.entry_names.iter_mut().for_each(|(_, n)| fix(n));
         self.locals.iter_mut().for_each(|l| fix(&mut l.name));
         self.fid_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
+        self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.main_decl_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.cpp_dwarf.symbols.iter_mut().for_each(|s| fix(&mut s.name));
         self.cpp_dwarf.locals.iter_mut().for_each(|l| fix(&mut l.name));
@@ -638,10 +664,12 @@ impl AnalysisOutput {
         self.readonly.extend(other.readonly);
         self.externref.extend(other.externref);
         self.strings.extend(other.strings);
+        self.bounded_strings.extend(other.bounded_strings);
         self.wide_strings.extend(other.wide_strings);
         self.wide_strings32.extend(other.wide_strings32);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
+        self.arm_float_prototypes.extend(other.arm_float_prototypes);
         self.main_decl_at.extend(other.main_decl_at);
         self.c_runtime_imports.extend(other.c_runtime_imports);
         self.context_paints.extend(other.context_paints);
@@ -663,6 +691,9 @@ impl AnalysisOutput {
         self.format_sites.extend(other.format_sites);
         self.libctypes_glibc |= other.libctypes_glibc;
         self.libctypes_refused |= other.libctypes_refused;
+        if other.arm_frames.is_some() {
+            self.arm_frames = other.arm_frames;
+        }
     }
 }
 

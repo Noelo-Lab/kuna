@@ -73,7 +73,7 @@ pub struct DynRelocs {
 
 /// The `RELATIVE` / `GLOB_DAT` / `JUMP_SLOT` `r_type` triple for `machine`, or
 /// `None` if kuna does not handle this architecture's dynamic relocations.
-fn reloc_triple(arch: object::Architecture) -> Option<(u32, u32, u32)> {
+pub(crate) fn reloc_triple(arch: object::Architecture) -> Option<(u32, u32, u32)> {
     use object::elf;
     match arch {
         object::Architecture::X86_64 => Some((

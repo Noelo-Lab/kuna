@@ -40,6 +40,7 @@ pub mod elf_plt;
 pub mod kuna_globalref;
 pub mod elfv1;
 mod elfv1_imports;
+mod kuna_ppc32_imports;
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;
@@ -82,6 +83,8 @@ pub(crate) mod kuna_peordinal;
 pub mod macho_fat;
 pub mod macho_stubs;
 pub mod mips_markers;
+// (kuna) Go toolchain version off the build-info blob (goreg shell layouts).
+pub mod gobuildinfo;
 pub mod noreturn;
 pub mod pe_iat;
 // (kuna) `armfloatreturn`: does an ARM ELF state the VFP procedure-call standard?

@@ -8,6 +8,7 @@ import { highlight, highlightC, highlightRust, scan, escapeHtml } from '../asset
 import {
   normalizeInspect, tokenLines, fallbackLines, lineSegments, buildIndex, renderC,
   changedLines, diffLines, localDecls, storageLabel, bandOf, preambleLength, preambleTypes,
+  frameBase, rebaseStack, rebaseStackComments,
 } from '../decompile/render-c.js';
 import { addrHex, signedHex } from '../decompile/addr.js';
 import { normalizePrefs, cycle, hintsOn, DEFAULT_PREFS, loadPrefs, savePrefs } from '../decompile/prefs.js';
@@ -83,6 +84,46 @@ assert.deepEqual(noted.notes.get(1).map((t) => t.tag), ['return-dupe'], 'and are
 assert.equal(noted.tokens.length, 0);
 assert.equal(noted.proto, 'int f(void)');
 checks.push('normalizeInspect (inspect + decompile)');
+
+// ── stack comments against the frame base ─────────────────────────────────
+const RBP = { register: 'rbp', offset: -8 };
+const RSP = { register: 'rsp', offset: -0x68 };
+assert.equal(frameBase({ frame_pointer: RBP, stack_pointer: RSP, base: 'frame_pointer' }), RBP, 'the register the code reads its stack through');
+assert.equal(frameBase({ frame_pointer: RBP, stack_pointer: RSP, base: 'stack_pointer' }), RSP, 'clang\'s ARM frames keep a frame pointer but read sp');
+assert.equal(frameBase({ frame_pointer: null, stack_pointer: RSP, base: 'stack_pointer' }), RSP);
+assert.equal(frameBase({ frame_pointer: null, stack_pointer: null, base: null }), null);
+assert.equal(frameBase(undefined), null);
+assert.deepEqual([rebaseStack(-0x58, RBP), rebaseStack(-0x58, RSP), rebaseStack(0x10, RBP), rebaseStack(-8, RBP)],
+  ['rbp - 0x50', 'rsp + 0x10', 'rbp + 0x18', 'rbp + 0x0']);
+const declCode = 'int main(void)\n{\n  char buf [64]; // stack - 0x58\n  int v2; // stack - 0x60 | w8\n  long v3; // rax\n  \n  v2 = 0; // stack - 0x8\n}';
+const declTokens = [
+  { line: 3, col: 2, len: 4, text: 'char', kind: 'type' }, { line: 3, col: 7, len: 3, text: 'buf', kind: 'variable' },
+  { line: 3, col: 11, len: 1, text: '[', kind: 'syntax' }, { line: 3, col: 12, len: 2, text: '64', kind: 'value' },
+  { line: 3, col: 14, len: 1, text: ']', kind: 'syntax' }, { line: 3, col: 15, len: 1, text: ';', kind: 'syntax' },
+  { line: 3, col: 17, len: 15, text: '// stack - 0x58', kind: 'comment' },
+  { line: 4, col: 2, len: 3, text: 'int', kind: 'type' }, { line: 4, col: 6, len: 2, text: 'v2', kind: 'variable' },
+  { line: 4, col: 8, len: 1, text: ';', kind: 'syntax' }, { line: 4, col: 10, len: 20, text: '// stack - 0x60 | w8', kind: 'comment' },
+  { line: 7, col: 10, len: 14, text: '// stack - 0x8', kind: 'comment' },
+];
+const rebased = rebaseStackComments(declCode, declTokens, RBP);
+assert.deepEqual(rebased.code.split('\n').slice(2, 7), ['  char buf [64]; // rbp - 0x50', '  int v2; // rbp - 0x58 | w8', '  long v3; // rax', '  ', '  v2 = 0; // stack - 0x8'],
+  'every stack piece of a declaration\'s storage comment is rebased; registers and comments past the declarations are left alone');
+assert.deepEqual(rebased.tokens.filter((t) => t.kind === 'comment').map((t) => [t.line, t.col, t.len, t.text]),
+  [[3, 17, 13, '// rbp - 0x50'], [4, 10, 18, '// rbp - 0x58 | w8'], [7, 10, 14, '// stack - 0x8']]);
+assert.ok(tokenLines(rebased.code, rebased.tokens).slice(2, 4).every(Boolean), 'the rebased tokens still rebuild their lines');
+assert.equal(rebaseStackComments(declCode, declTokens, null).code, declCode, 'no frame base, no change');
+assert.equal(rebaseStackComments('void f(void)\n{\n  opts v2; // ram 0xb220 | rax | stack - 0x18 | xmm0_qa\n  \n}', [], RSP).code,
+  'void f(void)\n{\n  opts v2; // ram 0xb220 | rax | rsp + 0x50 | xmm0_qa\n  \n}', 'a comment that also names memory and registers');
+assert.equal(rebaseStackComments('void f(void)\n{\n  int v2; // stack - 0x18 see above\n  \n}', [], RSP).code,
+  'void f(void)\n{\n  int v2; // stack - 0x18 see above\n  \n}', 'a comment that is not a storage list is left alone');
+assert.equal(rebaseStackComments('fn f()\n{\n  let mut v1: i64; // stack - 0x14\n}', [], RSP).code, 'fn f()\n{\n  let mut v1: i64; // rsp + 0x54\n}', 'Rust declarations too');
+const sumToFx = normalizeInspect(fixture('inspect-sum_to.json'));
+const sumToRendered = renderC(sumToFx);
+assert.match(sumToRendered, /rbp - 0xc/);
+assert.doesNotMatch(sumToRendered, /stack - 0x/);
+assert.deepEqual(sumToFx.frame, { frame_pointer: RBP, stack_pointer: { register: 'rsp', offset: -8 }, base: 'frame_pointer' });
+assert.equal(normalizeInspect(fixture('inspect-add.json')).frame.frame_pointer.register, 'rbp', 'a leaf that pops RBP before RET still has its frame pointer');
+checks.push('stack comments rebased on the frame pointer, else the stack pointer');
 
 // ── token stream: round trip, per-line fallback, no-token path ─────────────
 /** A synthetic engine token stream for `code` (what the engine lane emits). */
@@ -161,7 +202,8 @@ assert.ok(sumIndex.symToAddrs.get('acc').has('0x116c'), 'variable addresses join
 checks.push('buildIndex');
 
 // ── declarations, storage, bands, diff, addresses, prefs ──────────────────
-assert.deepEqual(localDecls(sumTo.code).map((d) => [d.name, d.type, d.storage]), [['acc', 'long', 'stack - 0x10'], ['v1', 'int', 'stack - 0x14']]);
+assert.deepEqual(localDecls(sumTo.code).map((d) => [d.name, d.type, d.storage]), [['acc', 'long', 'rbp - 0x8'], ['v1', 'int', 'rbp - 0xc']],
+  'stack comments count from RBP, as [RBP + -0x8] does in the assembly');
 assert.deepEqual(localDecls('void f(void)\n{\n  char v2 [16]; // stack - 0x18\n  \n}').map((d) => d.type), ['char [16]']);
 assert.deepEqual(localDecls('void f(void)\n{\n  x = y; // note\n  g(x); // y\n}'), [], 'a body with no declarations has none (no blank line needed)');
 assert.deepEqual(
@@ -183,6 +225,29 @@ assert.deepEqual([1, 2, 3, 4].map(diffLines('a\nb\nc\nd', 'a\nnote\nb\nc\nd').li
 assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'a\nB\nc').lineOf), [1, 2, 3], 'a changed line moves with the kept line above it');
 assert.deepEqual([1, 2, 3].map(diffLines('t1\nt2\nf\nx', 'f\nx').lineOf), [1, 1, 1], 'lines above a removed block stay with what follows');
 assert.equal(diffLines('', 'x').lineOf, null);
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'a').lineOf), [1, 1, 1], 'deleted trailing lines anchor to a surviving row');
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', 'x').lineOf), [1, 1, 1], 'a complete replacement still has a valid anchor');
+assert.deepEqual([1, 2, 3].map(diffLines('a\nb\nc', '').lineOf), [1, 1, 1], 'an empty document retains its one empty row');
+assert.deepEqual([1, 2, 3, 4].map(diffLines('a\na\na\nb', 'a\nb\na').lineOf), [1, 2, 2, 2], 'deleted rows cannot move past the next surviving anchor');
+const lineSequences = [['a'], ['b']];
+for (let size = 2; size <= 4; size++) {
+  for (const prefix of lineSequences.filter((s) => s.length === size - 1)) {
+    for (const line of ['a', 'b']) lineSequences.push([...prefix, line]);
+  }
+}
+for (const before of lineSequences) for (const after of lineSequences) {
+  const { changed, lineOf } = diffLines(before.join('\n'), after.join('\n'));
+  const mapped = before.map((_, i) => lineOf(i + 1));
+  assert.ok(mapped.every((n, i) => n >= 1 && n <= after.length && (!i || n >= mapped[i - 1])), 'every anchor is ordered and points to an existing row');
+  const kept = after.filter((_, i) => !changed.has(i + 1));
+  let cursor = 0;
+  for (const line of before) if (line === kept[cursor]) cursor++;
+  assert.equal(cursor, kept.length, 'unchanged rows form a subsequence of the old document');
+  if (before.join('\n') === after.join('\n')) {
+    assert.equal(changed.size, 0);
+    assert.deepEqual(mapped, before.map((_, i) => i + 1));
+  }
+}
 assert.equal(addrHex(4504), '0x1198');
 assert.equal(addrHex('0X11AB'), '0x11ab');
 assert.equal(addrHex('0xffffffff81000000'), '0xffffffff81000000');

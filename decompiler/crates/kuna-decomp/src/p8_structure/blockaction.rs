@@ -3397,6 +3397,7 @@ impl ConditionalJoin {
 
     /// \brief Look for additional Varnode pairs in an exit block that need to be
     /// merged (C++ `ConditionalJoin::checkExitBlock`, `blockaction.cc:1954`).
+    /// Inspect every phi: stack analysis can rewrite an earlier phi into an add.
     fn check_exit_block(&mut self, exit: BlockId, in1: int4, in2: int4, data: &Funcdata) {
         let mut iter = first_op_of(data, exit);
         while let Some(op) = iter {
@@ -3409,8 +3410,6 @@ impl ConditionalJoin {
                 if vn1 != vn2 {
                     self.merge_need_get_or_insert(MergePair { side1: vn1, side2: vn2 }, data);
                 }
-            } else if code != OpCode::CPUI_COPY {
-                break;
             }
             iter = next;
         }
@@ -3464,6 +3463,7 @@ impl ConditionalJoin {
 
     /// Substitute the new joined Varnode in the given exit block
     /// (C++ `ConditionalJoin::cutDownMultiequals`, `blockaction.cc:1981`).
+    /// As in discovery, update phis after ordinary operations as well.
     fn cut_down_multiequals(&mut self, exit: BlockId, in1: int4, in2: int4, data: &mut Funcdata) {
         let (lo, hi) = if in1 > in2 { (in2, in1) } else { (in1, in2) };
         let mut iter = first_op_of(data, exit);
@@ -3489,8 +3489,6 @@ impl ConditionalJoin {
                     data.op_set_opcode(op, crate::typeop::type_op_for(OpCode::CPUI_COPY));
                     data.op_insert_begin(op, exit);
                 }
-            } else if code != OpCode::CPUI_COPY {
-                break;
             }
             iter = next;
         }
@@ -3762,7 +3760,7 @@ impl Action for ActionBlockStructure {
         }
         Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
             crate::p8_structure::kuna_condstmts::record_hits(data);
@@ -3784,7 +3782,7 @@ impl Action for ActionBlockStructure {
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
         if data.get_arch().region_structure {
-            match crate::p8_structure::region_structurer::run_region_structurer(data) {
+            match crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline) {
                 Ok((true, flips)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same
@@ -3799,6 +3797,9 @@ impl Action for ActionBlockStructure {
                     return 0;
                 }
                 Ok((false, _)) | Err(_) => {
+                    if ctx.deadline_expired() {
+                        return 0;
+                    }
                     // Could not converge: discard the partially-structured sblocks
                     // and re-seed a clean BlockCopy mirror for the CollapseStructure
                     // fallback (never abort — honest-partial parity).

@@ -1,0 +1,63 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    regnarrow controls on x86-64 (clang -Os and gcc -O2 of generated functions).
+        f0000 at 0x40203d: a 32-bit value kept zero-extended in r12 is passed to
+               `sinkl(long)` (`mov edi,r12d; call sinkl`) and also read as
+               `(long)(int)v >> 3`.  Narrowing its web to four bytes handed the
+               call the 32-bit value, and the signed read declared it `int`, so
+               the C sign-extended the argument where the binary zero-extends
+               it.  A web of `int` width read by a wider parameter is left at the
+               register's width (#1, #2).
+        f0017 at 0x403080: a product's high half lives in the upper half of
+               rcx, a register piece no register name covers.  Once the narrowed
+               byte web no longer merged it with esi, it printed as an undeclared
+               `dat_c`; it is a local (`// register 0xc`) like any other register
+               value (#3, #4).
+
+    Stage: P3 simplification quiescence (regnarrow) and P6 variable naming.
+    P0 assertion: option regnarrow on|off.  Pass 1 (default on) proves the
+    fixes; pass 2 (off) is the register-wide baseline f0000 always had (#1).
+-->
+<bytechunk space="ram" offset="0x402000" readonly="true">
+69c7b179379ec1e807c369c7b179379ec1e805c38d04fd0000000029f8c1ff0329f8c369c7379e
+0000c1ef0931f8c34889f848c1e80248c1ef3f31f8c355415741564155415453504189d64189f7
+4889fb81fe000100007204807304b24489f083e00f4401f831ed4589fcb9000000004439f87623
+4489fa89c631c989d783e71f0fb67c1f10480faffa4801f948ffc24839d675e74189c466310b44
+89e7448b6b044531e544896b048b430889442404e87affffff4400e88843044489fac1ea03b8ff
+00000021c24421f08d4a010fb6c939c1741c83e21f0fb6541a1089ee01d601d5ffc589ca81fecf
+07000072dceb0289c141c1fc038b4424044431e04129ce4131c6448973084131cf44317b044883
+c4085b415c415d415e415f5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x403000" readonly="true">
+f30f1efa69c7b179379ec1e807c36690f30f1efa400fbec769c0b179379ec1e805c366662e0f1f
+8400000000000f1f00f30f1efa8d04fd0000000029f8c1ff0329f8c366662e0f1f840000000000
+6690f30f1efa69c7379e0000c1ef0931f8c3f30f1efa4889f848c1ef3f48c1f80231f8c366662e
+0f1f8400000000000f1f00f30f1efa4989f889d789f189f083e707741f83ef01498d70104d8d4c
+381166900fb63e4883c6018d04f829f84939f175efc1e90301c00fb6d2410040090fb6c931c0eb
+0e0f1f400083c0013dcf070000771789ce83c10383e61f0fb6c9410fb674301001f039d175df41
+3140044863f9baabaaaaaa89c9480fafcae860ffffff4133400848c1e92141894008c1e81031c1
+664189480ac3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x40202f sinkl</com>
+  <com>map function r0x40203d f0000</com>
+  <com>map function r0x403080 f0017</com>
+  <com>lo fu f0000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f0017</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regnarrow off</com>
+  <com>lo fu f0000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="REGNARROW-ARGS #1: a value passed to a wider parameter keeps its register" min="2" max="2">^  uint8 v\d+; // r12 \| rdx \| rsi$</stringmatch>
+<stringmatch name="REGNARROW-ARGS #2: no int-wide argument declared from r12d" min="0" max="0">^  int4 v\d+; // .*r12d</stringmatch>
+<stringmatch name="REGNARROW-ARGS #3: the rcx high half is a declared local" min="1" max="1">^  uint4 v\d+; // register 0xc$</stringmatch>
+<stringmatch name="REGNARROW-ARGS #4: no global-looking register name" min="0" max="0">dat_c</stringmatch>
+</decompilertest>

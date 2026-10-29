@@ -13,8 +13,7 @@
 ;   0x401110 pad0    void Take3(int,Arr)   no padding                                    -> size (4)
 ;   0x401130 pad8    void Take3(int,Arr)   8 bytes of sub-esp padding above the args     -> decline
 ;   0x401150 ebploc8 MakeStack             8-byte ebp locals released by the cleanup     -> decline
-;   0x401190 take4   void Take4(int,Pair)  correct, but the cdecl model misaligns the    -> decline (documented)
-;                                          8-byte class after a 4-byte slot
+;   0x401190 take4   void Take4(int,Pair)  8-byte class right after a 4-byte slot        -> size (8)
 ;   0x4011e0 shift8  frameless MakeStack   8 bytes of dead push-ecx locals above args    -> decline
 ;   0x401210 podfold void Take(Pod,int)    frameless push-ecx local whose address goes to
 ;                                          Fill, released by the cleanup                 -> decline

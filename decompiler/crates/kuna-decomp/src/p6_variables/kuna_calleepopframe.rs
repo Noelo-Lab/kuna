@@ -33,9 +33,11 @@
 //!   (when that write is the next call's return-address push, the lowering
 //!   folded into it, less the push; a push of an argument is no
 //!   re-reservation);
-//! * every pointer-sized slot of `[esp, esp + n)` at the call instruction is
-//!   stored to between the previous call in the block (or its start) and this
-//!   one, so the `n` bytes are the arguments the caller just wrote.
+//! * every pointer-sized slot of `[esp, esp + n)` at the call instruction has
+//!   at least one byte stored to it between the previous call in the block (or
+//!   its start) and this one, so the `n` bytes are the arguments the caller just
+//!   wrote. A by-value aggregate narrower than its slot leaves the padding
+//!   unwritten, so one written byte is enough.
 //!
 //! The caller's frame is the evidence, not the callee's identity, so this also
 //! covers a call through a register the target was spilled to and reloaded
@@ -94,10 +96,8 @@ pub fn guess_extra_pop(
         return None;
     }
     let (base, delta) = decompose(data, spacebase, call_sp)?;
-    let stored = stored_offsets(data, spacebase, call, base, step);
-    let first = delta + step;
-    let staged = (0..n / step).all(|i| stored.contains(&(first + i * step)));
-    staged.then_some(RETURN_ADDRESS_ONLY + n)
+    let first = delta.checked_add(step)?;
+    stores_cover(data, spacebase, call, base, first, n, step).then_some(RETURN_ADDRESS_ONLY + n)
 }
 
 /// `n` when the first stack-pointer write after `call` in its block is
@@ -128,9 +128,9 @@ fn rereserved(
             (a, Some(b)) if b == call_out => a,
             _ => return None,
         };
-        let lowered = -const_signed(data, other)?;
+        let lowered = const_signed(data, other)?.checked_neg()?;
         return match instruction_kind(data, cur) {
-            Instruction::Call => Some(lowered - step),
+            Instruction::Call => lowered.checked_sub(step),
             Instruction::Push => None,
             Instruction::Other => Some(lowered),
         };
@@ -169,16 +169,19 @@ fn instruction_kind(data: &Funcdata, op: OpId) -> Instruction {
     }
 }
 
-/// The offsets from `base` of the pointer-sized stack slots stored to between
-/// the previous call in `call`'s block (or the block start) and `call`.
-fn stored_offsets(
+/// Whether stores since the previous call write at least one byte of every
+/// `step`-sized slot of the bounded argument range. A narrow store fills a
+/// whole slot: an aggregate smaller than a slot leaves its padding unwritten.
+fn stores_cover(
     data: &Funcdata,
     spacebase: &Address,
     call: OpId,
     base: VarnodeId,
+    first: int4,
+    size: int4,
     step: int4,
-) -> Vec<int4> {
-    let mut offsets = Vec::new();
+) -> bool {
+    let mut covered = [false; MAX_ARG_BYTES as usize];
     let mut cur = call;
     while let Some(prev) = data.obank().get(cur).and_then(|o| o.basic_neighbours().0) {
         cur = prev;
@@ -190,12 +193,16 @@ fn stored_offsets(
             continue;
         }
         let at = o.get_in(1).and_then(|a| offset_from(data, spacebase, base, a));
-        let size = o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
-        if let (Some(at), Some(size)) = (at, size) {
-            offsets.extend((0..size.max(1)).step_by(step as usize).map(|k| at + k));
+        let width = o.get_in(2).and_then(|v| data.vbank().get(v)).map(|v| v.get_size());
+        if let (Some(at), Some(width)) = (at, width) {
+            let start = i64::from(at) - i64::from(first);
+            let end = start + i64::from(width.max(0));
+            let lo = start.clamp(0, i64::from(size)) as usize;
+            let hi = end.clamp(0, i64::from(size)) as usize;
+            covered[lo..hi].fill(true);
         }
     }
-    offsets
+    covered[..size as usize].chunks(step as usize).all(|slot| slot.contains(&true))
 }
 
 /// The offset from `base` of the address `addr`: a stack-pointer reference at
@@ -213,7 +220,7 @@ fn offset_from(data: &Funcdata, spacebase: &Address, base: VarnodeId, addr: Varn
         (a, Some(b)) if at_address(data, Some(b), spacebase) => (b, const_signed(data, a)?),
         _ => return None,
     };
-    Some(sp_offset(data, spacebase, base, sp)? + k)
+    sp_offset(data, spacebase, base, sp)?.checked_add(k)
 }
 
 fn sp_offset(data: &Funcdata, spacebase: &Address, base: VarnodeId, sp: VarnodeId) -> Option<int4> {

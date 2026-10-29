@@ -115,7 +115,7 @@ fn usage() {
          this CLI well, embedded in the binary, no network -- for Claude Code, Codex and OpenCode\n\
          (`--dir DIR` for other agents).  `kuna install-skill --print` shows it without installing.\n\
          \n\
-         kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--max-fn-memory MiB] [--raw-image --target T --base VMA]\n\
+         kuna decompile <binary> [--isa auto|arm|thumb] <func> [--addr] [--json] [--slice ARCH] [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] [--option NAME VALUE]... [--kassert ARGS]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--max-fn-seconds N] [--max-fn-memory MiB] [--raw-image --target T --base VMA]\n\
          kuna decompile-all <binary> [--isa auto|arm|thumb] [--json] [--functions a,b,..] [--addr 0xVMA]... [--no-vars] [--language auto|c|rust] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna decompile-project <binary> [--isa auto|arm|thumb] [-o DIR] [--functions a,b,..] [--addr 0xVMA]... [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]... [--assert DIRECTIVE|@FILE]... [--raw-image --target T --base VMA (--entry|--addr VMA)...]\n\
          kuna decompile-graph <binary> [--isa auto|arm|thumb] [-o FILE] [--label TEXT] [--max-fn-seconds N] [--max-fn-memory MiB] [--mode auto|reliable|aggressive|fast] [--option N V]... [--define-function S[-E][=N]|@FILE]...\n\
@@ -304,11 +304,17 @@ fn cmd_catalog(argv: &[String]) -> Result<i32, String> {
 fn usage_catalog() {
     eprintln!(
         "usage: kuna catalog [--json|--markdown|--check] [--option NAME] \\\n\
-         \x20                   [--tier transform|analysis|core] [--sleighpath D]\n\
+         \x20                   [--tier transform|analysis|core] [--decomp-dbg P] \\\n\
+         \x20                   [--sleighpath D] [--engine cpp|rust]\n\
          \n\
          List the settable phase-model assertions -- the decisions `--option NAME VALUE`\n\
          flips on every decompiling surface.  Each row carries its phase, tier, values,\n\
          default, the symptoms it addresses and when to flip it.\n\
+         By default the catalog comes from this binary, without a console or specs.\n\
+         --decomp-dbg P or a non-empty KUNA_DECOMP_DBG selects an external console\n\
+         instead (the flag wins); a missing selected console is an error.\n\
+         --sleighpath and --engine remain accepted but do not select that route.\n\
+         --markdown always renders this binary's catalog.\n\
          \n\
          --json is the machine-readable form an agent selects options from: an\n\
          ARRAY, one object per option, [{{option,values,default,phase,subphase,tier,\n\
@@ -316,8 +322,8 @@ fn usage_catalog() {
          `kuna docs --json` are the two array-rooted documents; every other --json\n\
          is an object.\n\
          --markdown regenerates docs/options.md (tier-grouped, symptom-indexed).\n\
-         --check cross-checks the catalog against the engine's registered option\n\
-         names and exits nonzero on drift; this is the CI gate.\n\
+         --check cross-checks the selected catalog against this binary's registered\n\
+         option names and exits nonzero on drift; this is the CI gate.\n\
          --option NAME reports one row; --tier keeps one tier, in the table and\n\
          in --json.\n\
          \n\

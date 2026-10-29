@@ -9,6 +9,9 @@ pub(crate) struct ArmFrames {
     bodies: BTreeMap<u64, Option<Vec<(u64, u32)>>>,
     prefixes: Option<PrefixScan>,
     instructions: Rc<BTreeMap<u64, Rc<ProbedInsn>>>,
+    /// The decodes shared across the inventory's frame recovery. No reference
+    /// walk replays those frames, so their decodes keep no p-code.
+    memo: Option<Rc<crate::listing::kuna_decodememo::DecodeMemo>>,
 }
 
 struct PrefixScan {
@@ -20,6 +23,11 @@ struct PrefixScan {
 }
 
 impl ArmFrames {
+    /// Frames whose recovery shares every decode through `memo`.
+    pub(super) fn sharing(memo: &Rc<crate::listing::kuna_decodememo::DecodeMemo>) -> Self {
+        ArmFrames { memo: Some(Rc::clone(memo)), ..ArmFrames::default() }
+    }
+
     pub(crate) fn replay(
         &self,
         at: u64,
@@ -116,8 +124,7 @@ impl ArmFrames {
         decoder: &mut GapDecoder,
         roots: &BTreeSet<u64>,
         focused: &[u64],
-        strict: bool,
-        corroborate: bool,
+        policy: GapWalk<'_>,
     ) -> BTreeMap<u64, u64> {
         let histogram: BTreeMap<_, _> = build_fingerprint_histogram(corpus, decoder)
             .into_iter()
@@ -125,7 +132,7 @@ impl ArmFrames {
             .map(|(fp, count)| {
                 (
                     fp,
-                    if corroborate && count >= kuna_aifcorroborate::UNCORROBORATED_THRESHOLD {
+                    if policy.corroborate && count >= kuna_aifcorroborate::UNCORROBORATED_THRESHOLD {
                         kuna_aifcorroborate::UNCORROBORATED_THRESHOLD
                     } else {
                         FINGERPRINT_THRESHOLD
@@ -140,7 +147,9 @@ impl ArmFrames {
             return BTreeMap::new();
         }
         decoder.frame_instructions = Some(Rc::clone(&self.instructions));
+        decoder.memo.clone_from(&self.memo);
         decoder.full_capture.get_or_insert_with(Default::default);
+        decoder.keep_ops = self.memo.is_none();
         decoder.cache.clear();
         decoder.linear_run = None;
         decoder.linear_events.clear();
@@ -152,23 +161,24 @@ impl ArmFrames {
             let mut claimed = BTreeMap::new();
             let mut validated = BTreeSet::new();
             for &root in roots {
-                let body = self.bodies.entry(root).or_insert_with(|| {
+                if !self.bodies.contains_key(&root) {
                     let gap_hi = listing
                         .next_instruction_start_after(root)
                         .unwrap_or(u64::MAX);
-                    check_valid_subroutine_strict(decoder, listing, root, root, gap_hi).map(
-                        |body| {
-                            body.into_iter()
-                                .map(|at| (at, decoder.probe(at).unwrap().len))
-                                .collect()
-                        },
-                    )
-                });
-                if let Some(body) = body {
+                    if let Some(body) = check_valid_subroutine_strict(decoder, listing, root, root, gap_hi) {
+                        let spans = body.into_iter()
+                            .map(|at| (at, decoder.probe(at).unwrap().len)).collect();
+                        self.validated(root, spans, decoder);
+                    } else {
+                        self.bodies.insert(root, None);
+                    }
+                }
+                if let Some(body) = &self.bodies[&root] {
                     validated.insert(root);
                     claimed.extend(body.iter().copied());
                 }
             }
+            decoder.frame_instructions = Some(Rc::clone(&self.instructions));
             let mut probed = BTreeMap::new();
             let replacements = reconcile_frame_prefixes(
                 listing,
@@ -176,8 +186,7 @@ impl ArmFrames {
                 decoder,
                 &validated,
                 claimed,
-                strict,
-                corroborate,
+                policy,
                 &mut probed,
             );
             let mut instructions = BTreeMap::new();

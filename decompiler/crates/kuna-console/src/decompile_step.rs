@@ -61,6 +61,9 @@ pub struct DecompileSeed<'a> {
     pub flow_overrides: &'a [(Address, uint4)],
     /// `map param <i> <addr> <decl>` storage locks (console only).
     pub mapped_params: &'a [(int4, String, ParameterPieces)],
+    /// Which surface this drive serves. Only `SingleFunction` may bootstrap its
+    /// direct callees' stated parameter types.
+    pub purpose: kuna_decomp::decompile_drive::DrivePurpose,
 }
 
 impl DecompileSeed<'_> {
@@ -70,6 +73,7 @@ impl DecompileSeed<'_> {
         flow_overrides: &'a [(Address, uint4)],
     ) -> DecompileSeed<'a> {
         DecompileSeed {
+            purpose: kuna_decomp::decompile_drive::DrivePurpose::Batch,
             object_assertions: &[],
             mapped_symbols,
             usepoint_symbols: &[],
@@ -134,6 +138,47 @@ pub fn decompile_one(
 /// new per-call-site prototype overrides, which are consumed AT FLOW TIME, so
 /// that second pass always re-follows.
 pub fn decompile_one_prefollowed(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+    seed: &DecompileSeed<'_>,
+    proto_overrides: &[(Address, PrototypePieces)],
+    prefollowed: Option<Funcdata>,
+) -> DecompileStep {
+    let mut first = decompile_one_prefollowed_once(
+        arch,
+        name,
+        entry.clone(),
+        size,
+        seed,
+        proto_overrides,
+        prefollowed,
+    );
+    // (kuna `lazyfuncs`) Materialize the targets this lift read and re-run; each round
+    // creates at least one `Function`, so the finite entry set bounds the loop.  The
+    // previous `Funcdata` is dropped first so the extra pass does not double the peak.
+    if arch.analysis_lazyfuncs {
+        for _ in 0..4 {
+            if crate::kuna_lazyfuncs::materialize_callees(arch, &first.result) == 0 {
+                break;
+            }
+            drop(first);
+            first = decompile_one_prefollowed_once(
+                arch,
+                name,
+                entry.clone(),
+                size,
+                seed,
+                proto_overrides,
+                None,
+            );
+        }
+    }
+    first
+}
+
+fn decompile_one_prefollowed_once(
     arch: &mut Architecture,
     name: &str,
     entry: Address,
@@ -262,6 +307,7 @@ pub fn decompile_one_prefollowed(
         seed.mapped_params,
         prefollowed,
         seed.object_assertions,
+        seed.purpose,
     );
     // (kuna `floatglobals`) A float vote asked about a global before the
     // whole-program scan ran: take it once for the run, and drive again. One
@@ -289,6 +335,7 @@ pub fn decompile_one_prefollowed(
                     &flow_overrides,
                     proto_overrides,
                     seed.mapped_params,
+                    seed.purpose,
                 );
             }
         }
@@ -344,6 +391,7 @@ pub fn decompile_one_prefollowed(
             seed.mapped_params,
             None,
             seed.object_assertions,
+            seed.purpose,
         );
     }
     // (kuna `callrettype`) A callee's stated return type that the finished
@@ -369,6 +417,7 @@ pub fn decompile_one_prefollowed(
             seed.mapped_params,
             None,
             seed.object_assertions,
+            seed.purpose,
         );
     }
     // (kuna `callerreads`) A `void` function decompiled alone whose callers read
@@ -392,6 +441,7 @@ pub fn decompile_one_prefollowed(
             &flow_overrides,
             &last_overrides,
             seed.mapped_params,
+            seed.purpose,
         );
         kuna_decomp::kuna_callerreads::release(arch, &redo_entry);
         if redo.as_ref().is_ok_and(kuna_decomp::kuna_callerreads::returns_value) {

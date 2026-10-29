@@ -149,6 +149,9 @@ enum PatchType {
     PushPatch,
     /// Zero extend logical value into FLOAT_INT2FLOAT operator.
     Int2FloatPatch,
+    /// (kuna `regnarrow`) Read the zero extension of the logical value in one
+    /// input slot of an op that needs the container's full width.
+    ZextUsePatch,
 }
 
 /// Operation with a new logical value as (part of) input, but output Varnode is
@@ -239,6 +242,25 @@ pub struct SubvariableFlow {
     /// (kuna `zextreturn`) RETURNs `try_return_pull` trims whose dropped bits
     /// are known zero, where the convention extends the narrow value by its sign.
     zext_returns: Vec<OpId>,
+    /// (kuna `regnarrow`) Every container this flow reaches whose bits above the
+    /// logical value are known zero may be read at full width: such a read takes
+    /// the zero extension of the logical value instead of failing the trace.
+    zext_uses: bool,
+    /// (kuna `regnarrow`) Containers the flow reads through their own low
+    /// bytes (a SUBPIECE after their definition) instead of tracing them: they
+    /// keep their width and every reader outside the flow.
+    leaves: Vec<RvId>,
+}
+
+/// (kuna `regnarrow`) How a zero-extended flow crosses one reading op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ZextRoute {
+    /// Trace through the op as upstream does.
+    Trace,
+    /// The op reads the zero extension of the logical value.
+    Extend,
+    /// The flow cannot cross the op.
+    Abort,
 }
 
 impl SubvariableFlow {
@@ -313,7 +335,11 @@ impl SubvariableFlow {
         data: &mut Funcdata,
         vn: VarnodeId,
         mask: uintb,
+        leaf_ok: bool,
     ) -> (Option<RvId>, bool) {
+        if mask == 0 {
+            return (None, false);
+        }
         // Already seen before
         if data.vbank().get(vn).expect("set_replacement: stale vn").is_mark() {
             let res = *self.varmap.get(&vn).expect("marked vn must be in varmap");
@@ -365,11 +391,17 @@ impl SubvariableFlow {
                 }
             }
         } else {
+            if self.zext_uses && v.is_input() {
+                return (None, false);
+            }
             if self.bitsize >= 8 {
                 // Not a flag
                 // If the logical variable is not a flag, don't consider the case where multiple variables
                 // are packed into a single location, i.e. always consider it a single variable
-                if (!self.aggressive) && ((v.get_consume() & !mask) != 0) {
+                if (!self.aggressive) && ((v.get_consume() & !mask) != 0) && !self.zero_above(v, mask) {
+                    if leaf_ok && self.can_be_leaf(v, mask) {
+                        return (Some(self.add_leaf(data, vn, mask)), false);
+                    }
                     // If there is any use of value outside of the logical variable
                     return (None, false); // This probably means the whole thing is a variable, i.e. quit
                 }
@@ -611,7 +643,7 @@ impl SubvariableFlow {
                     Some(v) => v,
                     None => continue,
                 };
-                let (rep, inworklist) = self.set_replacement(data, retvn, rmask);
+                let (rep, inworklist) = self.set_replacement(data, retvn, rmask, false);
                 let rep = match rep {
                     Some(r) => r,
                     None => return Ok(false),
@@ -738,6 +770,204 @@ impl SubvariableFlow {
         ))
     }
 
+    /// (kuna `regnarrow`) Are the bits of `v` above the logical value known
+    /// zero, so that a full-width read of `v` can take the zero extension of the
+    /// logical value in its place?
+    fn zero_above(&self, v: &crate::varnode::Varnode, mask: uintb) -> bool {
+        self.zext_uses && (mask & 1) != 0 && (v.get_nz_mask() & !mask) == 0
+    }
+
+    /// (kuna `regnarrow`) Can the flow read `v`'s logical value as a SUBPIECE
+    /// of it: a written container whose logical value is its low bytes?
+    fn can_be_leaf(&self, v: &crate::varnode::Varnode, mask: uintb) -> bool {
+        self.zext_uses && v.is_written() && mask == calc_mask(self.flowsize)
+            && v.get_size() > self.flowsize
+    }
+
+    /// (kuna `regnarrow`) Enter `vn` in the flow as a leaf.
+    fn add_leaf(&mut self, data: &mut Funcdata, vn: VarnodeId, mask: uintb) -> RvId {
+        let res = self.new_rv(ReplaceVarnode { vn: Some(vn), replacement: None, mask, val: 0, def: None });
+        self.varmap.insert(vn, res);
+        data.vbank_mut().get_mut(vn).expect("add_leaf: stale vn").set_mark();
+        self.leaves.push(res);
+        res
+    }
+
+    /// (kuna `regnarrow`) Does the zero-extended flow trace `rvn`'s definition
+    /// back through a narrower copy of it, rather than reading it as a leaf?
+    fn traceable_def(&self, data: &Funcdata, rvn: RvId) -> bool {
+        let Some(v) = self.rv(rvn).vn.and_then(|vn| data.vbank().get(vn)) else { return false };
+        let Some(o) = v.get_def().and_then(|d| data.obank().get(d)) else { return true };
+        let mask = self.rv(rvn).mask;
+        let constant = |k: int4| o.get_in(k).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant());
+        match o.code() {
+            OpCode::CPUI_COPY
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_ZEXT
+            | OpCode::CPUI_INT_SEXT => true,
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_MULT => (mask & 1) != 0,
+            OpCode::CPUI_INT_LEFT => constant(1),
+            OpCode::CPUI_SUBPIECE => o.get_in(1).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.get_offset() == 0),
+            _ => false,
+        }
+    }
+
+    /// (kuna `regnarrow`) How the zero-extended flow of `vn` crosses `op`, one
+    /// of its readers. An op whose result is a narrower copy of the value, or
+    /// whose result is read only in the logical bits, carries the flow on; an
+    /// op that must see the whole container reads the zero extension instead.
+    /// A returned value, read by the RETURN or by the copy in front of it, is
+    /// left to return recovery, which splits a RETURN of a phi into one return
+    /// per path; a user-op's register operand (a syscall number) keeps the
+    /// register's width.
+    fn zext_route(&self, data: &Funcdata, op: OpId, vn: VarnodeId, mask: uintb) -> ZextRoute {
+        let Some(o) = data.obank().get(op) else { return ZextRoute::Abort };
+        let read_low = |x: Option<VarnodeId>| {
+            x.and_then(|x| data.vbank().get(x)).is_some_and(|x| (x.get_consume() & !mask) == 0)
+        };
+        let plain_out = o.get_out().and_then(|x| data.vbank().get(x)).is_none_or(|x| {
+            !x.is_addr_tied() && !x.is_persist() && !x.is_addr_force()
+        });
+        if !plain_out {
+            return match o.code() {
+                OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => ZextRoute::Abort,
+                _ => ZextRoute::Extend,
+            };
+        }
+        let constant = |k: int4| o.get_in(k).and_then(|c| data.vbank().get(c)).filter(|c| c.is_constant());
+        match o.code() {
+            OpCode::CPUI_MULTIEQUAL => ZextRoute::Trace,
+            OpCode::CPUI_SUBPIECE => {
+                if constant(1).is_some_and(|c| c.get_offset() == 0) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_INDIRECT | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => ZextRoute::Abort,
+            OpCode::CPUI_COPY if Self::returned(data, o.get_out()) => ZextRoute::Abort,
+            OpCode::CPUI_COPY => ZextRoute::Trace,
+            OpCode::CPUI_INT_AND if constant(1).is_some() => {
+                if constant(1).is_some_and(|c| c.get_offset() & mask != 0) && read_low(o.get_out()) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_INT_OR if constant(1).is_some_and(|c| mask & !c.get_offset() == 0) => ZextRoute::Extend,
+            OpCode::CPUI_INT_AND
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_ADD => {
+                if (mask & 1) != 0 && read_low(o.get_out()) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                if read_low(Some(vn)) && self.narrow_param(data, op, vn) {
+                    ZextRoute::Trace
+                } else if self.flowsize >= 4 {
+                    ZextRoute::Abort
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            _ => ZextRoute::Extend,
+        }
+    }
+
+    /// (kuna `regnarrow`) Is the parameter the call `op` passes `vn` in no
+    /// wider than the logical value? A wider one needs the zero extension, which
+    /// the argument trimming would drop again; below `int` the trimmed argument
+    /// keeps its extension as a cast (`kuna_truncarg`), but an `int`-wide one
+    /// would be converted by C from whatever sign it is declared with, so such
+    /// a web is not narrowed.
+    fn narrow_param(&self, data: &Funcdata, op: OpId, vn: VarnodeId) -> bool {
+        let Some(slot) = data.obank().get(op).map(|o| o.get_slot(vn)).filter(|&s| s >= 1) else { return false };
+        let Some(idx) = data.get_call_specs_index(op) else { return false };
+        data.get_call_specs(idx).proto().get_param(slot - 1).is_some_and(|p| p.get_size() <= self.flowsize)
+    }
+
+    /// (kuna `regsigned`) How the sign-extended flow of `vn` crosses `op`, one
+    /// of its readers: [`Self::zext_route`] for a web whose container holds the
+    /// sign extension of the logical value. A copy, a phi, a wider sign
+    /// extension, a bitwise op, a constant arithmetic right shift and a proper
+    /// truncation keep a sign-extended value and carry the flow on (the upstream
+    /// sign-extended trace); a call argument does when its parameter is no
+    /// wider; every other reader takes the sign extension of the narrow value.
+    fn sext_route(&self, data: &Funcdata, op: OpId, vn: VarnodeId) -> ZextRoute {
+        let Some(o) = data.obank().get(op) else { return ZextRoute::Abort };
+        let plain_out = o.get_out().and_then(|x| data.vbank().get(x)).is_none_or(|x| {
+            !x.is_addr_tied() && !x.is_persist() && !x.is_addr_force()
+        });
+        if !plain_out {
+            return match o.code() {
+                OpCode::CPUI_INDIRECT | OpCode::CPUI_MULTIEQUAL => ZextRoute::Abort,
+                _ => ZextRoute::Extend,
+            };
+        }
+        let constant = |k: int4| o.get_in(k).and_then(|c| data.vbank().get(c)).filter(|c| c.is_constant());
+        match o.code() {
+            OpCode::CPUI_INDIRECT | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER | OpCode::CPUI_BRANCHIND => {
+                ZextRoute::Abort
+            }
+            OpCode::CPUI_COPY if Self::returned(data, o.get_out()) => ZextRoute::Abort,
+            OpCode::CPUI_COPY
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_SEXT
+            | OpCode::CPUI_INT_NEGATE
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_OR
+            | OpCode::CPUI_INT_AND => ZextRoute::Trace,
+            OpCode::CPUI_INT_SRIGHT if constant(1).is_some() && o.get_in(0) == Some(vn) => ZextRoute::Trace,
+            OpCode::CPUI_SUBPIECE => {
+                let out = o.get_out().and_then(|x| data.vbank().get(x)).map(|x| x.get_size());
+                if constant(1).is_some_and(|c| c.get_offset() == 0) && out.is_some_and(|n| n <= self.flowsize) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                if self.narrow_param(data, op, vn) {
+                    ZextRoute::Trace
+                } else {
+                    ZextRoute::Extend
+                }
+            }
+            _ => ZextRoute::Extend,
+        }
+    }
+
+    /// (kuna `regnarrow`) Does a RETURN read `vn`, the copy heritage places
+    /// in front of a returned value?
+    fn returned(data: &Funcdata, vn: Option<VarnodeId>) -> bool {
+        vn.and_then(|vn| data.vbank().get(vn)).is_some_and(|v| {
+            v.descend_iter()
+                .any(|op| data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_RETURN))
+        })
+    }
+
+    /// (kuna `regnarrow`) The first input slot of `op` holding `vn` that no
+    /// zero-extension patch has claimed yet.
+    fn unpatched_slot(&self, data: &Funcdata, op: OpId, vn: VarnodeId) -> Option<int4> {
+        let o = data.obank().get(op)?;
+        (0..o.num_input()).find(|&k| {
+            o.get_in(k) == Some(vn)
+                && !self
+                    .patchlist
+                    .iter()
+                    .any(|p| p.typ == PatchType::ZextUsePatch && p.patch_op == op && p.slot == k)
+        })
+    }
+
     // -------------------------------------------------------------------------
     // traceForward (subflow.cc:373-659)
     // -------------------------------------------------------------------------
@@ -762,6 +992,28 @@ impl SubvariableFlow {
             dcount += 1; // Count this descendant
             let mut slot = data.obank().get(op).expect("stale op").get_slot(rvn_vn);
             let code = data.obank().get(op).expect("stale op").code();
+            if self.zext_uses {
+                let mask = self.rv(rvn).mask;
+                match self.zext_route(data, op, rvn_vn, mask) {
+                    ZextRoute::Trace => {}
+                    ZextRoute::Abort => return Ok(false),
+                    ZextRoute::Extend => {
+                        if !self.zero_above(data.vbank().get(rvn_vn).expect("vn"), mask) {
+                            return Ok(false);
+                        }
+                        let Some(k) = self.unpatched_slot(data, op, rvn_vn) else { return Ok(false) };
+                        self.patchlist.push(PatchRecord {
+                            typ: PatchType::ZextUsePatch,
+                            patch_op: op,
+                            in1: rvn,
+                            in2: None,
+                            slot: k,
+                        });
+                        hcount += 1;
+                        continue;
+                    }
+                }
+            }
             match code {
                 OpCode::CPUI_COPY
                 | OpCode::CPUI_MULTIEQUAL
@@ -831,7 +1083,8 @@ impl SubvariableFlow {
                     let other = data.obank().get(op).expect("stale op").get_in(1 - slot).expect("in");
                     let mut sa = leastsigbit_set(data.vbank().get(other).expect("vn").get_nz_mask());
                     sa &= !7; // Should be nearest multiple of 8
-                    if self.bitsize + sa > 8 * data.vbank().get(rvn_vn).expect("vn").get_size() {
+                    if sa < 0 || self.bitsize + sa > uintb::BITS as int4
+                        || self.bitsize + sa > 8 * data.vbank().get(rvn_vn).expect("vn").get_size() {
                         return Ok(false);
                     }
                     let rop = self.create_op_down(OpCode::CPUI_INT_MULT, 2, op, rvn, slot);
@@ -892,10 +1145,11 @@ impl SubvariableFlow {
                     if !data.vbank().get(in1).expect("vn").is_constant() {
                         return Ok(false); // Dynamic shift
                     }
-                    let sa = data.vbank().get(in1).expect("vn").get_offset() as int4;
-                    if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                        return Ok(false); // Beyond precision of mask
+                    let sa = data.vbank().get(in1).expect("vn").get_offset();
+                    if sa >= uintb::BITS as uintb {
+                        return Ok(false);
                     }
+                    let sa = sa as int4;
                     let ov = outvn.expect("outvn");
                     let outsize = data.vbank().get(ov).expect("vn").get_size();
                     let mask = self.rv(rvn).mask;
@@ -939,13 +1193,13 @@ impl SubvariableFlow {
                     if !data.vbank().get(in1).expect("vn").is_constant() {
                         return Ok(false);
                     }
-                    let sa = data.vbank().get(in1).expect("vn").get_offset() as int4;
+                    let sa = data.vbank().get(in1).expect("vn").get_offset();
+                    if sa >= uintb::BITS as uintb {
+                        return Ok(false);
+                    }
+                    let sa = sa as int4;
                     let mask = self.rv(rvn).mask;
-                    let newmask = if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                        0
-                    } else {
-                        mask >> sa
-                    };
+                    let newmask = mask >> sa;
                     if newmask == 0 {
                         if code == OpCode::CPUI_INT_RIGHT {
                             continue; // subvar does not pass thru, truncate flow
@@ -982,10 +1236,11 @@ impl SubvariableFlow {
                 }
                 OpCode::CPUI_SUBPIECE => {
                     let in1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
-                    let sa = (data.vbank().get(in1).expect("vn").get_offset() as int4) * 8;
-                    if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                        continue;
+                    let byte_offset = data.vbank().get(in1).expect("vn").get_offset();
+                    if byte_offset >= (uintb::BITS / 8) as uintb {
+                        return Ok(false);
                     }
+                    let sa = byte_offset as int4 * 8;
                     let ov = outvn.expect("outvn");
                     let outsize = data.vbank().get(ov).expect("vn").get_size();
                     let mask = self.rv(rvn).mask;
@@ -1020,7 +1275,14 @@ impl SubvariableFlow {
                     let newmask = if rvn_vn == i0 {
                         let i1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
                         let i1size = data.vbank().get(i1).expect("vn").get_size();
-                        mask << (8 * i1size)
+                        if !(1..8).contains(&i1size) {
+                            return Ok(false);
+                        }
+                        let shifted = mask << (8 * i1size);
+                        if (shifted >> (8 * i1size)) != mask {
+                            return Ok(false);
+                        }
+                        shifted
                     } else {
                         mask
                     };
@@ -1284,12 +1546,12 @@ impl SubvariableFlow {
                 if !data.vbank().get(i1).expect("vn").is_constant() {
                     return Ok(false); // break -- Dynamic shift
                 }
-                let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-                let newmask = if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                    0
-                } else {
-                    mask >> sa // What mask looks like before shift
-                };
+                let sa = data.vbank().get(i1).expect("vn").get_offset();
+                if sa >= uintb::BITS as uintb {
+                    return Ok(false);
+                }
+                let sa = sa as int4;
+                let newmask = mask >> sa;
                 if newmask == 0 {
                     // Subvariable filled with shifted zero
                     let rop = self.create_op(data, OpCode::CPUI_COPY, 1, rvn);
@@ -1321,10 +1583,11 @@ impl SubvariableFlow {
                 if !data.vbank().get(i1).expect("vn").is_constant() {
                     return Ok(false); // break -- Dynamic shift
                 }
-                let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-                if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                    return Ok(false); // break -- Beyond precision of mask
+                let sa = data.vbank().get(i1).expect("vn").get_offset();
+                if sa >= uintb::BITS as uintb {
+                    return Ok(false);
                 }
+                let sa = sa as int4;
                 let i0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 let i0size = data.vbank().get(i0).expect("vn").get_size();
                 let newmask = (mask << sa) & calc_mask(i0size);
@@ -1348,10 +1611,11 @@ impl SubvariableFlow {
                 if !data.vbank().get(i1).expect("vn").is_constant() {
                     return Ok(false); // break -- Dynamic shift
                 }
-                let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-                if sa as u64 >= (std::mem::size_of::<uintb>() as u64) * 8 {
-                    return Ok(false); // break -- Beyond precision of mask
+                let sa = data.vbank().get(i1).expect("vn").get_offset();
+                if sa >= uintb::BITS as uintb {
+                    return Ok(false);
                 }
+                let sa = sa as int4;
                 let i0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 let i0size = data.vbank().get(i0).expect("vn").get_size();
                 let newmask = (mask << sa) & calc_mask(i0size);
@@ -1424,8 +1688,15 @@ impl SubvariableFlow {
             }
             OpCode::CPUI_SUBPIECE => {
                 let i1 = data.obank().get(op).expect("stale op").get_in(1).expect("in1");
-                let sa = (data.vbank().get(i1).expect("vn").get_offset() as int4) * 8;
+                let byte_offset = data.vbank().get(i1).expect("vn").get_offset();
+                if byte_offset >= (uintb::BITS / 8) as uintb {
+                    return Ok(false);
+                }
+                let sa = byte_offset as int4 * 8;
                 let newmask = mask << sa;
+                if (newmask >> sa) != mask {
+                    return Ok(false);
+                }
                 let rop = self.create_op(data, OpCode::CPUI_COPY, 1, rvn);
                 let i0 = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 if !self.create_link(data, rop, newmask, 0, i0)? {
@@ -1442,6 +1713,9 @@ impl SubvariableFlow {
                         return Ok(false);
                     }
                     return Ok(true);
+                }
+                if !(1..8).contains(&i1size) {
+                    return Ok(false);
                 }
                 let sa = i1size * 8;
                 let newmask = mask >> sa;
@@ -1516,6 +1790,24 @@ impl SubvariableFlow {
             let mut slot = data.obank().get(op).expect("stale op").get_slot(rvn_vn);
             let code = data.obank().get(op).expect("stale op").code();
             let mask = self.rv(rvn).mask;
+            if self.zext_uses {
+                match self.sext_route(data, op, rvn_vn) {
+                    ZextRoute::Trace => {}
+                    ZextRoute::Abort => return Ok(false),
+                    ZextRoute::Extend => {
+                        let Some(k) = self.unpatched_slot(data, op, rvn_vn) else { return Ok(false) };
+                        self.patchlist.push(PatchRecord {
+                            typ: PatchType::ZextUsePatch,
+                            patch_op: op,
+                            in1: rvn,
+                            in2: None,
+                            slot: k,
+                        });
+                        hcount += 1;
+                        continue;
+                    }
+                }
+            }
             match code {
                 OpCode::CPUI_COPY
                 | OpCode::CPUI_MULTIEQUAL
@@ -1687,7 +1979,7 @@ impl SubvariableFlow {
                 Ok(true)
             }
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                if self.try_call_return_push(data, op, rvn)? {
+                if !self.zext_uses && self.try_call_return_push(data, op, rvn)? {
                     return Ok(true);
                 }
                 Ok(false) // break
@@ -1710,7 +2002,7 @@ impl SubvariableFlow {
         slot: int4,
         vn: VarnodeId,
     ) -> KunaResult<bool> {
-        let (rep, inworklist) = self.set_replacement(data, vn, mask);
+        let (rep, inworklist) = self.set_replacement(data, vn, mask, slot >= 0);
         let rep = match rep {
             Some(r) => r,
             None => return Ok(false),
@@ -1739,7 +2031,7 @@ impl SubvariableFlow {
     /// The constructor's `createLink((ReplaceOp *)0, mask, 0, root)` — the only
     /// call with a null `rop` (C++ `SubvariableFlow::createLink` with `rop==0`).
     fn create_link_root(&mut self, data: &mut Funcdata, mask: uintb, vn: VarnodeId) -> KunaResult<bool> {
-        let (rep, inworklist) = self.set_replacement(data, vn, mask);
+        let (rep, inworklist) = self.set_replacement(data, vn, mask, false);
         let rep = match rep {
             Some(r) => r,
             None => return Ok(false),
@@ -1762,7 +2054,7 @@ impl SubvariableFlow {
         othervn: VarnodeId,
     ) -> KunaResult<bool> {
         let mask = self.rv(inrvn).mask;
-        let (rep, inworklist) = self.set_replacement(data, othervn, mask);
+        let (rep, inworklist) = self.set_replacement(data, othervn, mask, true);
         let rep = match rep {
             Some(r) => r,
             None => return Ok(false),
@@ -2073,6 +2365,15 @@ impl SubvariableFlow {
             }
             return self.trace_forward_sext(data, rvn);
         }
+        if self.zext_uses && self.rv(rvn).def.is_none() && !self.traceable_def(data, rvn) {
+            let vn = self.rv(rvn).vn.expect("process_next_work: rvn vn");
+            let v = data.vbank().get(vn).expect("process_next_work: stale vn");
+            if !self.can_be_leaf(v, self.rv(rvn).mask) {
+                return Ok(false);
+            }
+            self.leaves.push(rvn);
+            return Ok(true);
+        }
         if !self.trace_backward(data, rvn)? {
             return Ok(false);
         }
@@ -2094,6 +2395,19 @@ impl SubvariableFlow {
         sext: bool,
         big: bool,
     ) -> KunaResult<SubvariableFlow> {
+        Self::new_with(data, root, mask, aggr, sext, big, false)
+    }
+
+    /// [`Self::new`], with the (kuna `regnarrow`) zero-extended-use mode.
+    fn new_with(
+        data: &mut Funcdata,
+        root: VarnodeId,
+        mask: uintb,
+        aggr: bool,
+        sext: bool,
+        big: bool,
+        zext_uses: bool,
+    ) -> KunaResult<SubvariableFlow> {
         let mut sf = SubvariableFlow {
             flowsize: 0,
             bitsize: 0,
@@ -2109,6 +2423,8 @@ impl SubvariableFlow {
             pullcount: 0,
             zext_pulls: Vec::new(),
             zext_returns: Vec::new(),
+            zext_uses,
+            leaves: Vec::new(),
         };
         if mask == 0u64 {
             // fd = 0; return;  -- invalid engine
@@ -2190,10 +2506,24 @@ impl SubvariableFlow {
         if !retval {
             return Ok(false);
         }
-        if self.pullcount == 0 {
+        if self.pullcount == 0 && !self.zext_uses {
+            return Ok(false);
+        }
+        if self.zext_uses && !self.complete() {
             return Ok(false);
         }
         Ok(true)
+    }
+
+    /// (kuna `regnarrow`) Does every placeholder op have its output and all of
+    /// its inputs, so that [`Self::do_replacement`] cannot stop half way?
+    fn complete(&self) -> bool {
+        self.oplist.iter().all(|rop| {
+            rop.output.is_some()
+                && rop.op.is_some()
+                && rop.input.len() as int4 == rop.numparams
+                && rop.input.iter().all(|i| i.is_some())
+        })
     }
 
     /// Perform the discovered transform, making logical values explicit
@@ -2232,6 +2562,27 @@ impl SubvariableFlow {
             data.op_set_output(new_zext, old_vn)?;
             data.op_insert_after(new_zext, push_op);
             piter += 1;
+        }
+
+        // (kuna `regnarrow`) Read each leaf through a SUBPIECE after its definition.
+        for i in 0..self.leaves.len() {
+            let rvn = self.leaves[i];
+            if self.rv(rvn).def.is_some() {
+                continue;
+            }
+            let wide = self.rv(rvn).vn.expect("do_replacement: leaf vn");
+            let def = data.vbank().get(wide).and_then(|v| v.get_def()).expect("do_replacement: leaf def");
+            let lsb = (leastsigbit_set(self.rv(rvn).mask) / 8) as uintb;
+            let narrow = data.new_unique(self.flowsize, None);
+            self.rv_mut(rvn).replacement = Some(narrow);
+            let addr = data.obank().get(def).expect("do_replacement: stale leaf def").get_addr().clone();
+            let sub = data.new_op(2, addr);
+            data.op_set_opcode_code(sub, OpCode::CPUI_SUBPIECE);
+            data.op_set_output(sub, narrow)?;
+            data.op_set_input(sub, wide, 0)?;
+            let off = data.new_constant(4, lsb);
+            data.op_set_input(sub, off, 1)?;
+            data.op_insert_after(sub, def);
         }
 
         // Define all the outputs first
@@ -2291,6 +2642,10 @@ impl SubvariableFlow {
                 PatchType::ParameterPatch => {
                     let in1 = self.patchlist[piter].in1;
                     let slot = self.patchlist[piter].slot;
+                    if let Some(before) = data.obank().get(pullop).and_then(|o| o.get_in(slot)) {
+                        let mask = self.rv(in1).mask;
+                        crate::kuna_narrowret::note_trim(data, pullop, before, mask);
+                    }
                     let v = self.get_replace_varnode(data, in1)?;
                     data.op_set_input(pullop, v, slot)?;
                     let zext = self.zext_pulls.contains(&(pullop, slot));
@@ -2354,6 +2709,23 @@ impl SubvariableFlow {
                 }
                 PatchType::PushPatch => {
                     // Shouldn't see these here, handled earlier
+                }
+                PatchType::ZextUsePatch => {
+                    let slot = self.patchlist[piter].slot;
+                    let in1 = self.patchlist[piter].in1;
+                    let narrow = self.get_replace_varnode(data, in1)?;
+                    let (wide, pull_addr) = {
+                        let o = data.obank().get(pullop).expect("do_replacement: stale pullop");
+                        (o.get_in(slot).expect("zext_use_patch: empty slot"), o.get_addr().clone())
+                    };
+                    let size = data.vbank().get(wide).expect("do_replacement: stale wide vn").get_size();
+                    let zext_op = data.new_op(1, pull_addr);
+                    let ext = if self.sextrestrictions { OpCode::CPUI_INT_SEXT } else { OpCode::CPUI_INT_ZEXT };
+                    data.op_set_opcode_code(zext_op, ext);
+                    let zout = data.new_unique_out(size, zext_op)?;
+                    data.op_set_input(zext_op, narrow, 0)?;
+                    data.op_insert_before(zext_op, pullop);
+                    data.op_set_input(pullop, zout, slot)?;
                 }
                 PatchType::Int2FloatPatch => {
                     let pull_addr = data
@@ -2493,8 +2865,8 @@ impl Rule for RuleSubvarSubpiece {
         let outvn = o.get_out().expect("out");
         let flowsize = data.vbank().get(outvn).expect("vn").get_size();
         let i1 = o.get_in(1).expect("in1");
-        let sa = data.vbank().get(i1).expect("vn").get_offset() as int4;
-        if (flowsize + sa) as u64 > std::mem::size_of::<uintb>() as u64 {
+        let sa = data.vbank().get(i1).expect("vn").get_offset();
+        if sa >= 8 || !(1..=8).contains(&flowsize) || flowsize as uintb + sa > 8 {
             // Mask must fit in precision
             return 0;
         }
@@ -2641,7 +3013,10 @@ impl Rule for RuleSubvarShift {
         if !data.vbank().get(in1).expect("vn").is_constant() {
             return 0;
         }
-        let sa = data.vbank().get(in1).expect("vn").get_offset() as int4;
+        let sa = data.vbank().get(in1).expect("vn").get_offset();
+        if sa >= uintb::BITS as uintb {
+            return 0;
+        }
         let mut mask = data.vbank().get(vn).expect("vn").get_nz_mask();
         if (mask >> sa) != 1u64 {
             return 0; // Pulling out a single bit
@@ -2823,6 +3198,37 @@ fn run_subflow(
     big: bool,
 ) -> int4 {
     run_subflow_returning(data, root, mask, aggr, sext, big).0
+}
+
+/// (kuna `regnarrow`) Narrow the flow of the logical value `mask` of `root`,
+/// letting every reader that needs a container's full width take the zero
+/// extension of the logical value when the container's other bits are known
+/// zero. The original Varnodes the flow rebuilt, when the function changed.
+pub fn run_zext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
+    run_ext_uses(data, root, mask, false)
+}
+
+/// (kuna `regsigned`) [`run_zext_uses`] for a web whose containers hold the
+/// sign extension of the logical value: a reader that needs the container's
+/// width reads the `INT_SEXT` of the narrow value.
+pub fn run_sext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
+    run_ext_uses(data, root, mask, true)
+}
+
+fn run_ext_uses(data: &mut Funcdata, root: VarnodeId, mask: uintb, sext: bool) -> Option<(Vec<VarnodeId>, Vec<VarnodeId>)> {
+    let mut subflow = SubvariableFlow::new_with(data, root, mask, false, sext, false, true).ok()?;
+    if !matches!(subflow.do_trace(data), Ok(true)) {
+        return None;
+    }
+    subflow.do_replacement(data).ok()?;
+    let narrow = subflow
+        .rvarena
+        .iter()
+        .filter(|r| r.vn.is_some())
+        .filter_map(|r| r.replacement)
+        .filter(|&r| data.vbank().get(r).is_some_and(|v| !v.is_constant()))
+        .collect();
+    Some((subflow.varmap.keys().copied().collect(), narrow))
 }
 
 /// [`run_subflow`], also answering whether the applied transform narrowed the
@@ -5266,6 +5672,13 @@ impl SubfloatFlow {
             OpCode::CPUI_FLOAT_FLOAT2FLOAT => {
                 let invn = data.obank().get(op).expect("stale op").get_in(0).expect("in0");
                 let iv = data.vbank().get(invn).expect("stale invn");
+                let original_size = data.vbank().get(origvn).expect("stale origvn").get_size();
+                if iv.get_size() == self.precision && !super::kuna_floatquiet::can_elide(data, invn) {
+                    return Ok(false);
+                }
+                if iv.get_size() > original_size && self.precision < original_size {
+                    return Ok(false);
+                }
                 let newvar: TVarRef;
                 let opc: OpCode;
                 if iv.is_constant() {
@@ -6361,6 +6774,130 @@ mod tests {
                     assert_eq!(sources[0].size, 2);
                     assert_eq!(sources[0].address.get_offset(), if big_endian { 0x84 } else { 0x82 });
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn subvariable_accepts_shifts_at_the_mask_boundary() {
+        for (code, offset, mask) in [
+            (OpCode::CPUI_SUBPIECE, 7, 0xff),
+            (OpCode::CPUI_INT_LEFT, 63, 1u64 << 63),
+            (OpCode::CPUI_INT_RIGHT, 63, 1),
+            (OpCode::CPUI_INT_SRIGHT, 63, 1),
+        ] {
+            let mut fd = build_fd();
+            let seed = mk_input(&mut fd, 0x20, 8);
+            let copy = mk_op(&mut fd, 0xff0, 1, OpCode::CPUI_COPY);
+            wire_in(&mut fd, copy, seed, 0);
+            let input = mk_reg(&mut fd, 0x40, 8);
+            let input = wire_out(&mut fd, copy, input);
+            let amount = fd.new_constant(8, offset);
+            let op = mk_op(&mut fd, 0x1000, 2, code);
+            wire_in(&mut fd, op, input, 0);
+            wire_in(&mut fd, op, amount, 1);
+            let output = mk_reg(&mut fd, 0x80, if code == OpCode::CPUI_SUBPIECE { 1 } else { 8 });
+            let output = wire_out(&mut fd, op, output);
+            let mut flow = SubvariableFlow::new(&mut fd, output, mask, true, false, false).unwrap();
+            let root = flow.varmap[&output];
+            assert!(flow.trace_backward(&mut fd, root).unwrap(), "{code:?}");
+        }
+    }
+
+    #[test]
+    fn subvariable_rejects_oversized_subpiece_offsets_before_scaling() {
+        for offset in [8, 9, 0x1000_0000, 1u64 << 32, u64::MAX] {
+            let mut fd = build_fd();
+            let input = mk_input(&mut fd, 0x40, 16);
+            let op = mk_op(&mut fd, 0x1000, 2, OpCode::CPUI_SUBPIECE);
+            let amount = fd.new_constant(8, offset);
+            wire_in(&mut fd, op, input, 0);
+            wire_in(&mut fd, op, amount, 1);
+            let output = mk_reg(&mut fd, 0x80, 1);
+            let output = wire_out(&mut fd, op, output);
+            let mut flow = SubvariableFlow::new(&mut fd, output, 0xff, true, false, false).unwrap();
+            assert!(flow.valid);
+            let root = flow.varmap[&output];
+            assert!(!flow.trace_backward(&mut fd, root).unwrap(), "offset {offset:#x}");
+        }
+    }
+
+    #[test]
+    fn subvariable_rejects_oversized_bit_shifts_in_both_directions() {
+        for code in [OpCode::CPUI_INT_LEFT, OpCode::CPUI_INT_RIGHT, OpCode::CPUI_INT_SRIGHT] {
+            for offset in [64, 65, 0x8000_0000, 1u64 << 32, u64::MAX] {
+                for forward in [false, true] {
+                    let mut fd = build_fd();
+                    let input = mk_input(&mut fd, 0x40, 8);
+                    let amount = fd.new_constant(8, offset);
+                    let op = mk_op(&mut fd, 0x1000, 2, code);
+                    wire_in(&mut fd, op, input, 0);
+                    wire_in(&mut fd, op, amount, 1);
+                    let output = mk_reg(&mut fd, 0x80, 8);
+                    let output = wire_out(&mut fd, op, output);
+                    let vn = if forward { input } else { output };
+                    let mut flow = SubvariableFlow::new(&mut fd, vn, 0xff, true, false, false).unwrap();
+                    assert!(flow.valid);
+                    let root = flow.varmap[&vn];
+                    let result = if forward { flow.trace_forward(&mut fd, root) }
+                        else { flow.trace_backward(&mut fd, root) };
+                    assert!(!result.unwrap(), "{code:?} {offset:#x}, forward={forward}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn subvariable_piece_rejects_a_high_half_beyond_mask_precision() {
+        for low_size in [8, 9, 16] {
+            let mut fd = build_fd();
+            let high = mk_input(&mut fd, 0x40, 4);
+            let low = mk_input(&mut fd, 0x60, low_size);
+            let op = mk_op(&mut fd, 0x1000, 2, OpCode::CPUI_PIECE);
+            wire_in(&mut fd, op, high, 0);
+            wire_in(&mut fd, op, low, 1);
+            let output = mk_reg(&mut fd, 0x80, low_size + 4);
+            wire_out(&mut fd, op, output);
+            let mut flow = SubvariableFlow::new(&mut fd, high, 0xff, true, false, false).unwrap();
+            let root = flow.varmap[&high];
+            assert!(!flow.trace_forward(&mut fd, root).unwrap(), "low size {low_size}");
+        }
+    }
+
+    #[test]
+    fn subvariable_refuses_masks_that_would_be_shifted_out_of_precision() {
+        let mut fd = build_fd();
+        let input = mk_input(&mut fd, 0x40, 16);
+        let amount = fd.new_constant(4, 1);
+        let op = mk_op(&mut fd, 0x1000, 2, OpCode::CPUI_SUBPIECE);
+        wire_in(&mut fd, op, input, 0);
+        wire_in(&mut fd, op, amount, 1);
+        let output = mk_reg(&mut fd, 0x80, 8);
+        let output = wire_out(&mut fd, op, output);
+        let mut flow = SubvariableFlow::new(&mut fd, output, 1u64 << 63, true, false, false).unwrap();
+        let root = flow.varmap[&output];
+        assert!(!flow.trace_backward(&mut fd, root).unwrap());
+        let zero_mask = flow.set_replacement(&mut fd, input, 0, true);
+        assert!(zero_mask.0.is_none());
+    }
+
+    #[test]
+    fn subvariable_trigger_rules_reject_oversized_offsets() {
+        for code in [OpCode::CPUI_SUBPIECE, OpCode::CPUI_INT_RIGHT] {
+            for offset in [64, 65, 0x1000_0000, 1u64 << 32, u64::MAX] {
+                let mut fd = build_fd();
+                let input = mk_input(&mut fd, 0x40, 1);
+                let amount = fd.new_constant(8, offset);
+                let op = mk_op(&mut fd, 0x1000, 2, code);
+                wire_in(&mut fd, op, input, 0);
+                wire_in(&mut fd, op, amount, 1);
+                let output = mk_reg(&mut fd, 0x80, 1);
+                wire_out(&mut fd, op, output);
+                let count = if code == OpCode::CPUI_SUBPIECE {
+                    RuleSubvarSubpiece::new("base").apply_op(op, &mut fd)
+                } else { RuleSubvarShift::new("base").apply_op(op, &mut fd) };
+                assert_eq!(count, 0, "{code:?} {offset:#x}");
+                assert_eq!(fd.obank().get(op).unwrap().code(), code);
             }
         }
     }

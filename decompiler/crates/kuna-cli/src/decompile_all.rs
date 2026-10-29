@@ -672,7 +672,10 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
     let inventory = dir.join(jobs::INVENTORY_FILE);
     if !args.jobs_full_load && inventory.is_file() {
         seed_worker_inventory(&mut prog, &inventory.to_string_lossy())?;
+    } else if !args.jobs_full_load {
+        prog.callwide_unavailable("worker did not receive a complete function inventory");
     }
+    kuna_console::kuna_callwide::prepare(&mut prog);
     faults.after_load(dir);
     arm_fn_budgets(&mut prog, args);
     // (kuna `structsynth`) A recording worker reports every ledger lookup and
@@ -859,7 +862,11 @@ fn seed_worker_inventory(prog: &mut ConsoleProgram, path: &str) -> Result<(), St
         .map(std::rc::Rc::clone)
         .ok_or("no default code space")?;
     let manage = prog.arch().manage();
-    let entries: Vec<(String, Address)> = jobs::read_spec(path)?
+    let inventory = jobs::read_spec(path)?;
+    let callwide_inventory = prog.arch().call_wide.then(|| inventory.iter().map(|entry| kuna_console::kuna_callwide::InventoryEntry {
+        address: entry.addr, size: entry.size, name: entry.name.clone(), aliases: entry.aliases.clone(),
+    }).collect());
+    let entries: Vec<(String, Address)> = inventory
         .into_iter()
         .map(|t| {
             let space = manage
@@ -870,8 +877,11 @@ fn seed_worker_inventory(prog: &mut ConsoleProgram, path: &str) -> Result<(), St
         })
         .collect();
     prog.seed_function_inventory(&entries)
-        .map(|_| ())
-        .map_err(|e| format!("seeding the worker function inventory failed: {}", e.explain()))
+        .map_err(|e| format!("seeding the worker function inventory failed: {}", e.explain()))?;
+    if let Some(inventory) = callwide_inventory {
+        kuna_console::kuna_callwide::replay_inventory(prog, inventory);
+    }
+    Ok(())
 }
 
 /// The parent side of `--jobs N`: flatten the resolved targets (an `Address`
@@ -892,6 +902,8 @@ pub(crate) fn decompile_targets_pooled(
     load_seconds: f64,
     synth_base: Option<shard::Replay>,
     serial_callee_first: bool,
+    arm_frames: Option<String>,
+    watch: Option<&dyn jobs::PoolWatch>,
 ) -> Result<jobs::PoolOutput, String> {
     let specs = flatten_targets(targets);
     let inventory = flatten_targets(inventory);
@@ -905,11 +917,36 @@ pub(crate) fn decompile_targets_pooled(
     );
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
+    cfg.arm_frames = arm_frames;
+    cfg.watch = watch;
     cfg.elem_objects = targets.len() <= 1;
     cfg.want_pointer_arguments = true;
     let mut pooled = jobs::run_pool(&cfg, &specs, &inventory)?;
     kuna_console::project::reconcile_pointer_arguments(&mut pooled.results);
     Ok(pooled)
+}
+
+/// (kuna `armframes`) The parent's frame-recovery record, encoded for the pool.
+pub(crate) fn worker_arm_frames(prog: &ConsoleProgram) -> Option<String> {
+    prog.arm_frames().map(|record| record.encode())
+}
+
+/// (kuna `armframes`) Replay the parent's frame recovery in a worker that skips
+/// discovery, so its Listing is the parent's without the search.
+fn replay_worker_arm_frames(prog: &mut ConsoleProgram, args: &Args) -> Result<(), String> {
+    let Some(scratch) = args.jobs_worker.as_deref().filter(|_| !args.jobs_full_load) else {
+        return Ok(());
+    };
+    let path = std::path::Path::new(scratch).join(jobs::ARM_FRAMES_FILE);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("cannot read the worker frame record {}: {e}", path.display()))?;
+    let record = kuna_analysis::aif::kuna_framereplay::ArmFrameReplay::decode(&text)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    prog.replay_arm_frames(record);
+    Ok(())
 }
 
 /// (kuna `structsynth`) The ledger a sharded run replays its workers' lookups
@@ -973,6 +1010,8 @@ pub(crate) fn pool_config<'a>(
         synth_base: None,
         serial_callee_first: false,
         elem_objects: false,
+        arm_frames: None,
+        watch: None,
     }
 }
 
@@ -1240,6 +1279,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
         let inventory = prog.function_entries_canonical();
         let assertions = prog.assertion_outcomes();
         let synth = synth_base(&prog);
+        let arm_frames = worker_arm_frames(&prog);
         drop(prog);
         let pooled = decompile_targets_pooled(
             args,
@@ -1251,6 +1291,8 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             load_seconds,
             synth,
             callee_first,
+            arm_frames,
+            None,
         )?;
         return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
     }
@@ -1650,6 +1692,7 @@ pub(crate) fn load_program(
         prog.set_assertions(args.assertions.clone());
         kuna_console::assertions::apply_image_scoped(&mut prog);
     }
+    replay_worker_arm_frames(&mut prog, args)?;
     prog.commit_pending_analysis()
         .map_err(|e| format!("read symbols (analysis commit) failed: {}", e.explain()))?;
     // AFTER the commit: a caller-declared boundary is an assertion that outranks
@@ -1663,6 +1706,9 @@ pub(crate) fn load_program(
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
     crate::kuna_allocrelease::after_analysis();
+    if args.jobs_worker.is_none() {
+        kuna_console::kuna_callwide::prepare(&mut prog);
+    }
     Ok(prog)
 }
 
@@ -1767,10 +1813,24 @@ fn resolve_targets_with_policy(
 /// Returns `None` when the file is not a Rust binary or cannot be parsed, which
 /// leaves the C default in place: this can only ever ADD a language, never take
 /// one away.
-pub fn detected_output_language(binary: &str) -> Option<&'static str> {
-    let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
-    let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
-    match kuna_analysis::sourcelang::detect_compiler(&file, &bytes) {
+pub fn detected_output_language(
+    binary: &str,
+    options: &[(String, String)],
+) -> Option<&'static str> {
+    // A per-run `--option sourcelang` force wins over the image: this policy
+    // runs in the parent process, before the loadtime environment is bound
+    // onto the engine (sub)process, so the options list is consulted directly.
+    let compiler = match crate::loadtime::last_option_value(options, "sourcelang")
+        .and_then(kuna_decomp::kuna_sourcelang::SourceLang::parse_forced)
+    {
+        Some(lang) => kuna_analysis::sourcelang::Compiler::from_forced_lang(lang),
+        None => {
+            let bytes = kuna_analysis::loader::elf_shdr::read_image(binary).ok()?;
+            let file = kuna_analysis::loadimage_object::parse_object(&bytes).ok()?;
+            kuna_analysis::sourcelang::effective_compiler(&file, &bytes)
+        }
+    };
+    match compiler {
         kuna_analysis::sourcelang::Compiler::Rustc => Some("rust-language"),
         _ => None,
     }
@@ -2278,7 +2338,7 @@ fn var_json(v: &VarInfo) -> Json {
         ("type".into(), Json::Str(v.type_name.clone())),
         (
             "kind".into(),
-            Json::Str(if v.is_param { "arg" } else { "stack" }.into()),
+            Json::Str(v.kind().into()),
         ),
         (
             "arg_index".into(),
@@ -2325,6 +2385,9 @@ mod provenance_json_tests {
             code: Some("int f(int x)\n{\n  return x;\n}".into()),
             error: None,
             proto: None,
+            emitted_c_name: None,
+            call_declarations: Vec::new(),
+            callwide_prototypes: Vec::new(),
             variables: vec![VarInfo {
                 name: "x".into(),
                 type_name: "int".into(),
@@ -2334,6 +2397,7 @@ mod provenance_json_tests {
                 arg_index: Some(0),
                 line_numbers: vec![3],
                 addresses: vec![0x401004],
+                split_piece: false,
             }],
             types: vec![TypeInfo {
                 name: "mystruct".into(),
@@ -2693,7 +2757,7 @@ pub(crate) fn parse_args_with_filters(
         && cmd != "decompile-graph"
         && !options.iter().any(|(n, _)| n == "setlanguage")
     {
-        if let Some(lang) = detected_output_language(&binary) {
+        if let Some(lang) = detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
         }
     }

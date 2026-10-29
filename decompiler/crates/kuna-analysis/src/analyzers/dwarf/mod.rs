@@ -20,7 +20,7 @@
 //!     architecture's [`TypeFactory`].
 //!   * **subtask 3 (named, typed stack locals)** — each defined subprogram's
 //!     direct `DW_TAG_variable`/`DW_TAG_formal_parameter` children that carry a
-//!     single `DW_OP_fbreg` (frame-base-relative) stack location emit a
+//!     fixed `DW_OP_fbreg` (frame-base-relative) stack location emit a
 //!     [`crate::pass::LocalFact`] at stack offset `call_frame_cfa + fbreg`, typed
 //!     by the same DIE→[`Datatype`] mapper. The commit re-seeds each into the
 //!     function's `ScopeLocal` (the `map addr`/`seed_mapped_symbols` path) so the
@@ -64,8 +64,9 @@
 //!   constant ([`call_frame_cfa`], faithful to Ghidra's per-language `.dwarf`
 //!   `<call_frame_cfa>`). LOSS: only **direct** children (a lexical-block- or
 //!   inlined-subroutine-nested local is skipped, the same listing-cosmetic scope as
-//!   the labels/call-sites below), and only the **single-`DW_OP_fbreg`** location
-//!   form (a composite/register/multi-op location is left to the engine).
+//!   the labels/call-sites below), and only fixed frame-relative locations.
+//!   Unsigned constant displacements are supported; register, piece, value, and
+//!   dereference expressions are left outside the fixed-local mapping path.
 //! - We skip `DW_TAG_label`, `DW_TAG_call_site`, inlined-subroutine, lexical-block
 //!   comments, and source-info/plate comments — all listing cosmetics with zero
 //!   decompiler-output payoff (the same scope as the strings/demangle losses).
@@ -117,8 +118,15 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase, SymFact, Sym
 
 mod lines;
 pub use lines::DwarfLinesPass;
+mod callwide;
+pub use callwide::declarations as callwide_declarations;
 
 mod kuna_cppproto;
+mod kuna_dwarfbounds;
+mod kuna_dwarfbyref;
+mod kuna_dwarflocation;
+pub(crate) mod kuna_dwarfcomplex;
+mod kuna_dwarflinkage;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -126,6 +134,7 @@ use kuna_typedepth::TypeWalk;
 mod kuna_dwarfstructs;
 
 mod kuna_dwarfvariants;
+mod kuna_variantnames;
 
 /// gimli's section reader: a byte slice tagged with the run-time endianness.
 type Reader<'a> = gimli::EndianSlice<'a, gimli::RunTimeEndian>;
@@ -201,6 +210,8 @@ struct DieSnap {
     tag: gimli::DwTag,
     /// `DW_AT_name`, resolved through `.debug_str`/`.debug_line_str` (may be empty).
     name: String,
+    linkage_name: String,
+    external: Option<bool>,
     /// `DW_AT_low_pc` resolved to a VMA, if present (marks a *defined* function).
     low_pc: Option<u64>,
     /// `DW_AT_type` reference (the offset of the referenced type DIE in this unit).
@@ -232,6 +243,8 @@ struct DieSnap {
     discr_value: Option<i64>,
     /// `DW_AT_encoding` (`DW_ATE_*`) for `DW_TAG_base_type`.
     encoding: Option<gimli::DwAte>,
+    /// Widest `DW_ATE_complex_float` given the pair layout (0 = none on this ABI).
+    complex_max_size: i32,
     /// `DW_AT_count`/`DW_AT_upper_bound` (array subrange length).
     array_count: Option<u64>,
     /// `DW_AT_const_value` of a `DW_TAG_enumerator` — the enum member's value.
@@ -247,10 +260,12 @@ struct DieSnap {
     has_location: bool,
     /// `DW_OP_addr` operand of a simple `DW_AT_location`, if that is its form.
     addr_location: Option<u64>,
-    /// The signed `DW_OP_fbreg <off>` operand of a single-op `DW_AT_location`, if
-    /// that is its form (a frame-base-relative stack local — subtask 3). `None`
-    /// for any other location form (`DW_OP_addr`, register, multi-op).
+    /// The resolved signed frame offset of `DW_OP_fbreg` with optional unsigned
+    /// constant displacements. Other location forms do not describe fixed locals
+    /// through this field.
     fbreg_location: Option<i64>,
+    indirect_parameter: bool,
+    register_indirect_parameter: Option<kuna_dwarfbyref::HiddenValues>,
     /// Depth in the DIE tree (root unit DIE = 0).
     depth: isize,
     /// Offsets of this DIE's direct children, in order.
@@ -276,6 +291,8 @@ impl DieSnap {
         DieSnap {
             tag,
             name: String::new(),
+            linkage_name: String::new(),
+            external: None,
             low_pc: None,
             type_ref: None,
             byte_size: None,
@@ -287,6 +304,7 @@ impl DieSnap {
             discr_ref: None,
             discr_value: None,
             encoding: None,
+            complex_max_size: 0,
             array_count: None,
             const_value: None,
             declaration: false,
@@ -294,6 +312,8 @@ impl DieSnap {
             has_location: false,
             addr_location: None,
             fbreg_location: None,
+            indirect_parameter: false,
+            register_indirect_parameter: None,
             depth,
             children: Vec::new(),
             origin_ref: None,
@@ -306,18 +326,33 @@ impl DieSnap {
 /// Snapshot every DIE in `unit` into an offset-keyed map (plus the ordered
 /// top-level offsets). Mirrors building Ghidra's `DebugInfoEntry` tree before
 /// `DWARFFunctionImporter.importFunctions()` walks it.
+#[cfg(test)]
 fn snapshot_unit(
     dwarf: &gimli::Dwarf<Reader<'_>>,
     unit: &gimli::Unit<Reader<'_>>,
 ) -> BTreeMap<usize, DieSnap> {
+    snapshot_unit_for_abi(dwarf, unit, kuna_dwarfbyref::ArgumentAbi::default())
+}
+
+fn snapshot_unit_for_abi(
+    dwarf: &gimli::Dwarf<Reader<'_>>,
+    unit: &gimli::Unit<Reader<'_>>,
+    abi: kuna_dwarfbyref::ArgumentAbi,
+) -> BTreeMap<usize, DieSnap> {
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
     let mut stack: Vec<(usize, isize)> = Vec::new();
-
+    let mut language = None;
     let mut cursor = unit.entries();
     while let Ok(Some(entry)) = cursor.next_dfs() {
         let off = entry.offset().0;
         let depth = entry.depth();
+        if depth == 0 {
+            language = match entry.attr_value(gimli::DW_AT_language) {
+                Some(gimli::AttributeValue::Language(value)) => Some(value),
+                _ => None,
+            };
+        }
 
         // Pop the parent stack back to this DIE's parent level.
         while let Some(&(_, d)) = stack.last() {
@@ -333,7 +368,6 @@ fn snapshot_unit(
                 p.children.push(off);
             }
         }
-
         let mut snap = DieSnap::new(entry.tag(), depth);
         snap.parent = parent_off;
         // (kuna `cppproto`) The one-hop definition->declaration link. gcc/clang put
@@ -355,6 +389,16 @@ fn snapshot_unit(
             if let Ok(s) = dwarf.attr_string(unit, val) {
                 if let Ok(s) = std::str::from_utf8(s.slice()) {
                     snap.name = s.to_string();
+                }
+            }
+        }
+        if let Some(gimli::AttributeValue::Flag(value)) = entry.attr_value(gimli::DW_AT_external) {
+            snap.external = Some(value);
+        }
+        if let Some(val) = entry.attr_value(gimli::DW_AT_linkage_name) {
+            if let Ok(s) = dwarf.attr_string(unit, val) {
+                if let Ok(s) = std::str::from_utf8(s.slice()) {
+                    snap.linkage_name = s.to_string();
                 }
             }
         }
@@ -402,15 +446,12 @@ fn snapshot_unit(
         if let Some(gimli::AttributeValue::Encoding(e)) = entry.attr_value(gimli::DW_AT_encoding) {
             snap.encoding = Some(e);
         }
-        // Array length: prefer DW_AT_count; else DW_AT_upper_bound + 1. The
-        // subrange child of a DW_TAG_array_type carries it.
-        if let Some(c) = entry.attr_value(gimli::DW_AT_count).and_then(|v| v.udata_value()) {
-            snap.array_count = Some(c);
-        } else if let Some(ub) =
-            entry.attr_value(gimli::DW_AT_upper_bound).and_then(|v| v.udata_value())
-        {
-            snap.array_count = Some(ub + 1);
-        }
+        snap.array_count = kuna_dwarfbounds::array_count(
+            entry.attr_value(gimli::DW_AT_count),
+            entry.attr_value(gimli::DW_AT_lower_bound),
+            entry.attr_value(gimli::DW_AT_upper_bound),
+            language,
+        );
         // Enumerator member value. gcc/clang emit it as `sdata` for a signed
         // underlying type and `data<N>`/`udata` otherwise, so try signed first and
         // fall back to unsigned (`udata_value` covers the `data<N>` forms gimli
@@ -429,6 +470,22 @@ fn snapshot_unit(
             snap.has_location = true;
             snap.addr_location = simple_addr_location(&loc);
             snap.fbreg_location = simple_fbreg_location(&loc);
+            if snap.tag == gimli::DW_TAG_formal_parameter && kuna_dwarfbyref::is_fortran(language) {
+                let entry = parent_off
+                    .and_then(|parent| map.get(&parent))
+                    .and_then(|parent| parent.low_pc);
+                if let Some(expression) = kuna_dwarfbyref::location_at_entry(dwarf, unit, &loc, entry) {
+                    snap.indirect_parameter = kuna_dwarfbyref::indirect_location(
+                        &gimli::AttributeValue::Exprloc(expression.clone()),
+                    );
+                    snap.register_indirect_parameter = kuna_dwarfbyref::memory_argument_register(
+                        &expression,
+                        unit.encoding(),
+                        abi.registers,
+                    )
+                    .then_some(abi.hidden);
+                }
+            }
         }
 
         map.insert(off, snap);
@@ -466,32 +523,16 @@ fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<u64> 
     }
 }
 
-/// Decode a `DW_AT_location` that is a single `DW_OP_fbreg <sleb128>` expression
-/// (the frame-base-relative stack-local form — subtask 3), returning the SIGNED
-/// frame-base offset. Anything else (`DW_OP_addr`, register, multi-op) returns
-/// `None`. The whole expression must be exactly the one opcode + its SLEB128
-/// operand (we deliberately do NOT handle composite/piece locations — a single
-/// `DW_OP_fbreg` is what `-O0`/`-g` emits for a plain stack slot, and is what
-/// Ghidra's `DWARFExpressionEvaluator` resolves to a stack varnode via the frame
-/// base set to the CFA, `DWARFExpressionEvaluator.java:403`).
+/// Resolve a frame-base-relative location with optional unsigned constant
+/// displacements. Dereferences, pieces, values, and other dynamic expressions
+/// remain outside this fixed-stack-object path.
 fn simple_fbreg_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<i64> {
-    let expr = match loc {
-        gimli::AttributeValue::Exprloc(e) => e.clone(),
-        gimli::AttributeValue::Block(b) => gimli::Expression(b.clone()),
+    let bytes = match loc {
+        gimli::AttributeValue::Exprloc(expression) => expression.0.slice(),
+        gimli::AttributeValue::Block(block) => block.slice(),
         _ => return None,
     };
-    let bytes = expr.0.slice();
-    // DW_OP_fbreg == 0x91, followed by a single SLEB128 operand.
-    if bytes.first() != Some(&0x91) {
-        return None;
-    }
-    let (off, consumed) = read_sleb128(&bytes[1..])?;
-    // Reject any trailing opcodes (a composite/multi-op location is not a plain
-    // stack slot — leave it to the engine, faithful to the single-op case only).
-    if 1 + consumed != bytes.len() {
-        return None;
-    }
-    Some(off)
+    kuna_dwarflocation::frame_offset(bytes)
 }
 
 /// Decode a little-endian SLEB128 (DWARF signed LEB128) from `buf`, returning the
@@ -585,6 +626,9 @@ fn build_datatype_at(
                     char_datatype(types, size, &die.name, encoding_signed(die.encoding))
                 }
                 Some(gimli::DW_ATE_boolean) => types.get_base(size, type_metatype::TYPE_BOOL).ok(),
+                Some(gimli::DW_ATE_complex_float) if size <= die.complex_max_size => {
+                    kuna_dwarfcomplex::complex_type(types, size)
+                }
                 Some(gimli::DW_ATE_float) => types.get_base(size, type_metatype::TYPE_FLOAT).ok(),
                 enc if encoding_signed(enc) == Some(false) => {
                     types.get_base(size, type_metatype::TYPE_UINT).ok()
@@ -618,16 +662,19 @@ fn build_datatype_at(
         }
         gimli::DW_TAG_array_type => {
             let elem = build_datatype(die.type_ref, dies, types, word_size, walk, cpp)?;
-            // The length lives on a DW_TAG_subrange_type child (DW_AT_count or
-            // upper_bound+1); fall back to 1 for a flexible/unknown array.
+            // Flattened extent: the product of every known subrange length (`kuna_dwarfbounds`).
             let count = die
                 .children
                 .iter()
                 .filter_map(|c| dies.get(c))
-                .find(|c| c.tag == gimli::DW_TAG_subrange_type)
-                .and_then(|c| c.array_count)
+                .filter(|c| c.tag == gimli::DW_TAG_subrange_type)
+                .filter_map(|c| c.array_count)
+                .try_fold(None, |product: Option<u64>, count| {
+                    product.unwrap_or(1).checked_mul(count).map(Some)
+                })?
                 .or(die.array_count)
-                .unwrap_or(1) as i32;
+                .unwrap_or(1);
+            let count = i32::try_from(count).ok()?;
             types.get_type_array(count.max(1), elem).ok()
         }
         // A `DW_TAG_class_type` is a structure with a default access specifier —
@@ -959,6 +1006,7 @@ fn build_pieces(
         match child.tag {
             gimli::DW_TAG_formal_parameter => {
                 let ty = build_datatype(child.type_ref, dies, types, word_size, &mut walk, false)?;
+                let ty = kuna_dwarfbyref::parameter_type(child, ty, types, word_size)?;
                 intypes.push(ty);
                 innames.push(child.name.clone());
             }
@@ -978,6 +1026,7 @@ fn build_pieces(
         first_var_arg_slot,
         output_storage: None,
         input_storage: Vec::new(),
+        kuna_library_names: None,
     })
 }
 
@@ -1085,11 +1134,24 @@ impl AnalysisPass for DwarfPass {
         // `None` => this target's CFA is not in kuna's table; skip fbreg locals
         // (additive — the names+types from subtasks 1+2 still apply).
         let cfa = call_frame_cfa(ctx.file.architecture());
+        let complex_max =
+            kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
+        let linkage_imports = kuna_dwarflinkage::imports(ctx);
+        let linkage_definitions = kuna_dwarflinkage::definitions(ctx, &linkage_imports);
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
-            let dies = snapshot_unit(&dwarf, &unit);
+            let mut dies = snapshot_unit_for_abi(
+                &dwarf,
+                &unit,
+                kuna_dwarfbyref::argument_abi(ctx.file.format(), ctx.file.architecture()),
+            );
+            if complex_max > 0 {
+                for die in dies.values_mut() {
+                    die.complex_max_size = complex_max;
+                }
+            }
 
             for snap in dies.values() {
                 match snap.tag {
@@ -1111,6 +1173,7 @@ impl AnalysisPass for DwarfPass {
                             if let Some(pieces) =
                                 build_pieces(&snap.name, snap, &dies, types, word_size)
                             {
+                                kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.prototypes_at);
                                 out.prototypes.push(pieces);
                             }
                             // subtask 3: named, typed stack LOCALS. Each direct
@@ -1147,6 +1210,7 @@ impl AnalysisPass for DwarfPass {
                         if let Some(pieces) =
                             kuna_cppproto::build_pieces(&res, &dies, types, word_size)
                         {
+                            kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.cpp_dwarf.prototypes);
                             out.cpp_dwarf.prototypes.push((low_pc, pieces));
                         }
                         if res.chased {
@@ -1598,5 +1662,33 @@ mod tests {
         assert_eq!(by_name.get("binary"), Some(&(-40, -32)), "binary fbreg/offset");
         assert_eq!(by_name.get("file"), Some(&(-32, -24)), "file fbreg/offset");
         assert_eq!(by_name.get("elf_header"), Some(&(-24, -16)), "elf_header fbreg/offset");
+    }
+
+    #[test]
+    fn array_storage_includes_every_dimension_and_checks_overflow() {
+        for (dimensions, expected_bytes) in [
+            (vec![3, 7], Some(84)),
+            (vec![2, 3, 4], Some(96)),
+            (vec![u64::MAX, 2], None),
+        ] {
+            let types = factory();
+            let mut dies = BTreeMap::new();
+            let mut base = DieSnap::new(gimli::DW_TAG_base_type, 1);
+            base.byte_size = Some(4);
+            base.encoding = Some(gimli::DW_ATE_float);
+            dies.insert(1, base);
+            let mut array = DieSnap::new(gimli::DW_TAG_array_type, 1);
+            array.type_ref = Some(1);
+            for (index, count) in dimensions.into_iter().enumerate() {
+                let key = 3 + index;
+                let mut range = DieSnap::new(gimli::DW_TAG_subrange_type, 2);
+                range.array_count = Some(count);
+                dies.insert(key, range);
+                array.children.push(key);
+            }
+            dies.insert(2, array);
+            let built = build_datatype(Some(2), &dies, &types, 1, &mut TypeWalk::new(), false);
+            assert_eq!(built.map(|ty| ty.get_size()), expected_bytes);
+        }
     }
 }

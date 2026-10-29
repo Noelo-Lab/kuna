@@ -329,6 +329,31 @@ fn copy_pair_writes(
 }
 
 impl MergeContext for Funcdata {
+    fn fpu_trunc_views_enabled(&self) -> bool {
+        self.get_arch().fpu_trunc_views && !self.kuna_fpu_trunc_views.is_empty()
+    }
+    fn fpu_trunc_view_highs(&self, a: HighVariableId, b: HighVariableId) -> bool {
+        self.kuna_fpu_trunc_views.iter().any(|id| {
+            let Some(op) = self.obank().get(*id) else { return false; };
+            if op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy == 0 { return false; }
+            let out = op.get_out().and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high());
+            let input = op.get_in(0).and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high());
+            (out == Some(a) && input == Some(b)) || (out == Some(b) && input == Some(a))
+        })
+    }
+    fn fpu_trunc_root_high(&self, high: HighVariableId) -> bool {
+        self.kuna_fpu_trunc_views.iter().any(|id| {
+            self.obank().get(*id).is_some_and(|op| {
+                op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy != 0
+                    && op.get_in(0).and_then(|vn| self.vbank().get(vn)).and_then(|vn| vn.get_high()) == Some(high)
+            })
+        })
+    }
+    fn op_is_fpu_trunc_view(&self, op: OpId) -> bool {
+        self.obank().get(op).is_some_and(|op| {
+            op.get_addlflags() & crate::op::pcodeop_addlflags::kuna_fpu_view_copy != 0
+        })
+    }
     // --- HighVariable flag/type reads -------------------------------------
     fn high_is_type_lock(&mut self, high: HighVariableId) -> bool {
         self.with_high_split(|hb, ctx| hb.get_mut(high).map(|h| h.is_type_lock(ctx, None)).unwrap_or(false))
@@ -915,6 +940,12 @@ impl MergeContext for Funcdata {
     fn kuna_tied_phi_trim(&self) -> bool {
         self.get_arch().tied_phi_trim
     }
+    fn kuna_same_prior_variable(&self, a: HighVariableId, b: HighVariableId) -> Option<bool> {
+        crate::kuna_stablenames::same_variable(self, a, b)
+    }
+    fn kuna_prior_variable_groups(&self, highs: &[HighVariableId]) -> Vec<Vec<HighVariableId>> {
+        crate::kuna_stablenames::variable_groups(self, highs)
+    }
     fn vn_loads_across_write(&self, vn: VarnodeId) -> bool {
         crate::p6_variables::kuna_pointeevalue::load_crosses_write(self, vn)
     }
@@ -1000,7 +1031,12 @@ impl MergeContext for Funcdata {
         };
         (in_vn, pc, is_multiequal)
     }
-    fn snip_reads_insert_point(&self, vn: VarnodeId) -> (BlockId, Address, Option<OpId>) {
+    fn snip_reads_insert_point(&self, vn: VarnodeId, reads: &[OpId]) -> (BlockId, Address, Option<OpId>) {
+        if let Some(block) = crate::p6_variables::kuna_guardedreadtrim::guarded_block(self, vn, reads) {
+            let pc = self.bblocks_block_start(block);
+            let pc = if pc.is_invalid() { self.do_snip_reads_insert_point(vn).1 } else { pc };
+            return (block, pc, None);
+        }
         self.do_snip_reads_insert_point(vn)
     }
     fn indirect_inherit_union(&mut self, _outvn: VarnodeId, _newop: OpId, _indop: OpId) {

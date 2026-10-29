@@ -1,0 +1,2881 @@
+{
+  "slug": "x86listingswitch",
+  "opportunity": "issue-299::i386-discovery-switch-coverage",
+  "test_name": "x86listingswitch-four-cases-and-adjacent-callback",
+  "binary": "decompiler/crates/kuna-analysis/tests/fixtures/x86listingswitch_i386",
+  "selector": "sub_100400",
+  "func_addr": "0x100400",
+  "option": "x86listingswitch",
+  "flag": "analysis_x86listingswitch",
+  "element_id": null,
+  "phase": "P1",
+  "tier": "analysis",
+  "change_kind": "new-analysis",
+  "source_decompiler": "kuna",
+  "inspiration": "Existing bounded switch reader and a demonstrated Listing/xrefs coverage difference",
+  "issue": 299,
+  "proposal": false,
+  "implementation_status": "ready-for-publication",
+  "human_approval": "approved",
+  "default_on": false,
+  "ablation_changed": 0,
+  "parity": "PARITY OK",
+  "speed": {
+    "method": "Interleaved immutable trios; eight physical cores selected before data; blocking waits; full input/spec/trio/manifest hashes; child CPU and wall ranges",
+    "quiet": false,
+    "default_on_budget_certification": false,
+    "repetitions": 5,
+    "warmup_each_arm": 1,
+    "primary_reason": "Predeclared Wine discovery headline; every row retained. External campaigns and one allowed offline verifier prevent a tight global overhead bound."
+  },
+  "base_commit": "dd4f9fde48446722724a530d3770a05ac5498cbe",
+  "base_tree": "824698eb82fbe797aa6d175d410667d8d27bf6d7",
+  "spec_chapter": "docs/spec/01-program-prep.md",
+  "measurements": {
+    "historical_unresolved_jump_associations": {
+      "wine": 466,
+      "mingw": 49,
+      "note": "Association in the preserved older audit, not a predicted or newly measured improvement"
+    },
+    "historical_before_only": {
+      "kind": "before-only-native-api-and-cli",
+      "engine_base_commit": "5fe62be4073e713d049425742bbc7c721efe04cf",
+      "engine_note": "Both witnesses re-run on the actual base using an own release build of its exact d5fb1cb source tree",
+      "listing_instructions": 11,
+      "xrefs_instructions": 19,
+      "listing_table_cases_decoded": 0,
+      "xrefs_table_cases_reached": 4,
+      "adjacent_callback_false_fifth_edge": "0x100009 -> 0x100042",
+      "measured_aif_improvement": null
+    },
+    "implementation": {
+      "base_commit": "6d7ab7fff8092b6f154f5aed3cdf2a98701d5d6a",
+      "binary_sha256": "804262970b981f41cadc18051cf62ee812312e60cd78d936a806ec0883f9e74e",
+      "fixture_entries_off": 31,
+      "fixture_entries_on": 28,
+      "false_case_entries_removed": [
+        "0x100440",
+        "0x100460",
+        "0x1004b0",
+        "0x1004d0"
+      ],
+      "real_callee_added": "0x100510",
+      "independent_entry_retained": "0x100480",
+      "gap_undefined": "0x100490",
+      "corpus_images": 141,
+      "changed_images": 21,
+      "lost_entries": 399,
+      "lost_exact_starts": 7,
+      "gained_entries": 44,
+      "gained_exact_starts": 30,
+      "unchanged_non_x86_64_images": 107,
+      "unchanged_cmsis_twin": true,
+      "default_on_eligible": false,
+      "reason": "Seven real epilogue-tailcall targets are decoded by ordinary successor walking before AIF can recognize their entries; no new tail-call policy is included.",
+      "tailcallentry_compatibility": {
+        "architecture": "i386",
+        "option": "tailcallentry on",
+        "images": [
+          "jscript",
+          "gdi32",
+          "msi",
+          "user32"
+        ],
+        "entry_sets_identical": true,
+        "lost_starts_recovered": 0,
+        "note": "Existing ARM entry option does not repair these i386 tail targets."
+      }
+    },
+    "abace_validation": {
+      "base_commit": "abace009d9e1fe3435839021bb7a92f579362c40",
+      "base_tree": "fb043f51220a0c20ba2be46160ba6e5fa56fa267",
+      "runtime_source_tree": "c62b54fb8b4032e5ccbe1ee6a3c035f655b2b537",
+      "candidate_cli_sha256": "02bcc9b458315ffa13351233c0ccb765c5909a2d407fd87fa7100821e9cede83",
+      "baseline_cli_sha256": "dd767aef1e5f0f3b66fdb0f187a18a78755885f1903f229dfc9c089781ef889a",
+      "catalog_rows": 324,
+      "xml_files": 578,
+      "stage_files": 495,
+      "datatest_assertions": 675,
+      "stage_assertions": 3145,
+      "on_ablation_changed": 0,
+      "on_ablation_activated": true,
+      "workspace_tests_passed": 9197,
+      "workspace_tests_failed": 0,
+      "workspace_tests_ignored": 38,
+      "focused_x86_tests": 27,
+      "native_console_tests": 9,
+      "independent_elf_controls": 20,
+      "independent_pe_controls": 6,
+      "independent_resume_permutations": 16,
+      "independent_emitted_runs": 44,
+      "independent_native_fixture_runs": 20,
+      "entry_images": 141,
+      "entry_query_errors": 0,
+      "changed_images": 21,
+      "removed_entries": 399,
+      "gained_entries": 44,
+      "lost_true_starts": 7,
+      "entry_sets_equal_initial_sweep": true,
+      "whole_c_images": 21,
+      "whole_c_review_complete": true,
+      "metadata_policy": "Every raw function field except code,error,address,address_hex; all changed code and metadata hunks retained and manually classified.",
+      "unsafe_opt_in_examples": [
+        {
+          "image": "crypt32.dll",
+          "address": "0x6e8ee740",
+          "effect": "New entry0x6e8eea21 truncates memcpy branches for selector5/8."
+        },
+        {
+          "image": "crypt32.dll",
+          "address": "0x6e904a20",
+          "effect": "Case5 loses conditional0x2000003 path and becomes unconditional0xa000003 path."
+        },
+        {
+          "image": "crypt32.dll",
+          "address": "0x6e8fedaf",
+          "effect": "Explicit removed-fragment request loses tail-return to0x6e8fd540 although natural parent recovers call."
+        },
+        {
+          "image": "kernelbase.dll",
+          "address": "0x7b05af90",
+          "effect": "GetComputerNameExW uses scalar in place of520-byte buffer and accesses beyond emitted object."
+        },
+        {
+          "image": "gdi32.dll",
+          "address": "0x6ca62180",
+          "effect": "Six-argument int wrapper becomes void/noargs with uninitialized forwarding temporaries."
+        },
+        {
+          "image": "user32.dll",
+          "address": "0x6ed38460",
+          "effect": "One-argument IsWindow call gains undefined extra argument; conditional notification logging disappears at new boundary."
+        },
+        {
+          "image": "user32.dll",
+          "address": "0x6ed50680",
+          "effect": "28-byte buffer shrinks to12 emitted bytes while GetObjectW still requests24."
+        },
+        {
+          "image": "oleaut32.dll",
+          "address": "0x64ed2920",
+          "effect": "Recovered path reads uninitialized height scalar beside preexisting undersized GetObjectW output aggregate."
+        }
+      ],
+      "correctness_scope": "Native agreement is demonstrated for targeted controls and the causal fixture, not the whole Wine/MinGW corpus. Local proof does not guarantee improved whole-function C.",
+      "default_off_all_modes": true,
+      "closes_issue_299": false,
+      "whole_c_no_regressions": false,
+      "whole_c_address_comparisons": 41275,
+      "whole_c_changed_comparisons": 726,
+      "whole_c_changed_code_comparisons": 288,
+      "whole_c_changed_metadata_comparisons": 720,
+      "whole_c_reviewed_hunks": 1482,
+      "whole_c_code_hunks": 762,
+      "whole_c_metadata_hunks": 720,
+      "whole_c_removed_covered": 399,
+      "whole_c_true_losses_covered": 7,
+      "whole_c_baseline_natural_records": 41231,
+      "whole_c_baseline_supplements": 44,
+      "whole_c_candidate_natural_records": 40876,
+      "whole_c_candidate_supplements": 399,
+      "whole_c_function_error_addresses": 17,
+      "whole_c_both_arms_error": 17,
+      "whole_c_success_to_error": 0,
+      "whole_c_error_to_success": 0,
+      "whole_c_raw_error_labels": {
+        "preexisting-identical": 4,
+        "new-error": 13
+      },
+      "whole_c_error_note": "All seventeen addresses exceed the same 120-second budget in both arms; thirteen raw new-error labels mean the reported stop-action string changes, not a new failure. No errors or hunks were filtered.",
+      "whole_c_reviewed_summary_sha256": "4e903a77d0db358e598e5d289a78a2c99fc7276b4a4af8b81a5bb962e1f3538c",
+      "whole_c_review_seal_sha256": "d5990f2f62e2802c3bcd11ca4939859d54439d7b2c6d09aa7eac9789d2454cf7",
+      "independent_acceptance_sha256": "01c7193f69ce3509a47f8be0a6b95ad3ee90554805772c10bb02095d35a86f8e",
+      "speed_evidence": {
+        "quiet": false,
+        "default_on_budget_certification": false,
+        "primary_v2": {
+          "driver_sha256": "2c7f467717110715a3f9e0bfa1d2bc9efc8c52cce55129c5d3d0cbb25429c8d8",
+          "summary_sha256": "c321d01930b8a8df0298c021a81f5908e47cc7ac0d9d7408b6d3ad3fc58237e9",
+          "samples_per_arm": 5,
+          "warmup_each_arm": 1,
+          "rows": [
+            {
+              "case": "causal-i386",
+              "cpu_median_ms": {
+                "before": 127.96400000000008,
+                "off": 128.53800000000004,
+                "on": 127.27000000000021
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "6260507154836cf4b4c6641deddf3546c5662d2446bda7d42da603ae16c7107e",
+                "off": "6260507154836cf4b4c6641deddf3546c5662d2446bda7d42da603ae16c7107e",
+                "on": "79442e8bd8487b0aa3dac9d5f8f97ee79a316923836379622906973fd4936071"
+              },
+              "median_ms": {
+                "before": 128.75430891290307,
+                "off": 129.24851081334054,
+                "on": 128.0161989852786
+              },
+              "off_cpu_overhead_pct": 0.4485636585289221,
+              "off_overhead_pct": 0.38383329040412306,
+              "on_cpu_delta_pct": -0.9864787066858227,
+              "on_delta_pct": -0.953443734327919,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    126.37899999999979,
+                    139.92000000000016
+                  ],
+                  "excess_selected_busy_ms": [
+                    -6.553000000000019,
+                    272.0359999999999
+                  ],
+                  "milliseconds": [
+                    127.0561299752444,
+                    140.62253409065306
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    124.73100000000015,
+                    176.3459999999999
+                  ],
+                  "excess_selected_busy_ms": [
+                    5.268999999999849,
+                    1073.6540000000002
+                  ],
+                  "milliseconds": [
+                    125.47099287621677,
+                    180.93820591457188
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    125.429,
+                    132.8529999999999
+                  ],
+                  "excess_selected_busy_ms": [
+                    17.147000000000112,
+                    244.571
+                  ],
+                  "milliseconds": [
+                    126.07252388261259,
+                    133.50452110171318
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "discovery"
+            },
+            {
+              "case": "causal-i386",
+              "cpu_median_ms": {
+                "before": 679.0999999999992,
+                "off": 687.7590000000002,
+                "on": 698.5300000000008
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "9c9dce9624801f991107948495f7011d952a616fa74d701c365c7f6e5370a0c0",
+                "off": "9c9dce9624801f991107948495f7011d952a616fa74d701c365c7f6e5370a0c0",
+                "on": "6ab17ab08c8d109e52f5576dafdbf4eb4cf478d577e65b249a1cd6de67b03605"
+              },
+              "median_ms": {
+                "before": 302.4728170130402,
+                "off": 328.4216590691358,
+                "on": 343.2256148662418
+              },
+              "off_cpu_overhead_pct": 1.2750699455162717,
+              "off_overhead_pct": 8.578900514877308,
+              "on_cpu_delta_pct": 1.566100916164026,
+              "on_delta_pct": 4.507606422507493,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    614.3499999999999,
+                    775.1620000000004
+                  ],
+                  "excess_selected_busy_ms": [
+                    22.173999999999353,
+                    1094.8379999999995
+                  ],
+                  "milliseconds": [
+                    271.85185602866113,
+                    394.2784301470965
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    637.3459999999995,
+                    707.4880000000006
+                  ],
+                  "excess_selected_busy_ms": [
+                    12.511999999999375,
+                    704.9700000000001
+                  ],
+                  "milliseconds": [
+                    284.41958501935005,
+                    348.0164101347327
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    627.7409999999985,
+                    796.4710000000003
+                  ],
+                  "excess_selected_busy_ms": [
+                    101.29899999999984,
+                    1046.9819999999993
+                  ],
+                  "milliseconds": [
+                    273.5845730639994,
+                    1232.6399041339755
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "whole-c"
+            },
+            {
+              "case": "mingw-i386",
+              "cpu_median_ms": {
+                "before": 228.86299999999957,
+                "off": 228.56699999999907,
+                "on": 226.34700000000055
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "44ace053ed78317f2eca1f4a2fa3979c15bf5ada905a757a158e1425d63d393e",
+                "off": "44ace053ed78317f2eca1f4a2fa3979c15bf5ada905a757a158e1425d63d393e",
+                "on": "fc093b221fffd99c6debc6b8e8195bc5dac875d80edd26d121260783ba779ead"
+              },
+              "median_ms": {
+                "before": 229.65465299785137,
+                "off": 229.2349871713668,
+                "on": 226.99630307033658
+              },
+              "off_cpu_overhead_pct": -0.12933501701913874,
+              "off_overhead_pct": -0.1827377851945755,
+              "on_cpu_delta_pct": -0.9712688183327156,
+              "on_delta_pct": -0.976589188524124,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    178.5879999999995,
+                    252.7880000000007
+                  ],
+                  "excess_selected_busy_ms": [
+                    591.4120000000005,
+                    1128.5489999999993
+                  ],
+                  "milliseconds": [
+                    179.23041409812868,
+                    254.15830500423908
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    169.90700000000024,
+                    230.55699999999922
+                  ],
+                  "excess_selected_busy_ms": [
+                    659.4430000000008,
+                    1141.433000000001
+                  ],
+                  "milliseconds": [
+                    170.61785305850208,
+                    231.22385004535317
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    176.75899999999967,
+                    390.95300000000054
+                  ],
+                  "excess_selected_busy_ms": [
+                    213.24100000000033,
+                    1849.0469999999993
+                  ],
+                  "milliseconds": [
+                    177.2377009037882,
+                    391.6174410842359
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "discovery"
+            },
+            {
+              "case": "mingw-i386",
+              "cpu_median_ms": {
+                "before": 4788.0250000000015,
+                "off": 4439.661000000003,
+                "on": 3852.0750000000066
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "431510a045d5ec9f1a8c0021556b13ea91c48d989bf98ea7861e14a45c157bb5",
+                "off": "431510a045d5ec9f1a8c0021556b13ea91c48d989bf98ea7861e14a45c157bb5",
+                "on": "e91a1921f5b9df4e9cf64cfea0c1fa440c5e26da8267eb6fe2d349421037b231"
+              },
+              "median_ms": {
+                "before": 1711.113204015419,
+                "off": 1635.5515418108553,
+                "on": 1344.5179439149797
+              },
+              "off_cpu_overhead_pct": -7.275734775820897,
+              "off_overhead_pct": -4.415935896423761,
+              "on_cpu_delta_pct": -13.234929423665365,
+              "on_delta_pct": -17.794217452398232,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    4566.757000000001,
+                    8016.335000000005
+                  ],
+                  "excess_selected_busy_ms": [
+                    2323.2429999999986,
+                    11603.664999999995
+                  ],
+                  "milliseconds": [
+                    1423.6611798405647,
+                    2743.097713915631
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    3751.3229999999908,
+                    6091.438000000007
+                  ],
+                  "excess_selected_busy_ms": [
+                    438.67700000000934,
+                    10208.561999999994
+                  ],
+                  "milliseconds": [
+                    1284.5937190577388,
+                    2403.4245191141963
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    3734.9440000000022,
+                    5600.2080000000005
+                  ],
+                  "excess_selected_busy_ms": [
+                    647.9249999999934,
+                    5449.7919999999995
+                  ],
+                  "milliseconds": [
+                    1267.069071996957,
+                    1668.0224100127816
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "whole-c"
+            },
+            {
+              "case": "wine-i386",
+              "cpu_median_ms": {
+                "before": 348.8909999999965,
+                "off": 351.11399999999725,
+                "on": 434.24200000000826
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "8c140b268deb692b36ff6d38e47ef466f235756f17ac79dfae40a05298dce85b",
+                "off": "8c140b268deb692b36ff6d38e47ef466f235756f17ac79dfae40a05298dce85b",
+                "on": "7989d4d56be3f79dd6d8b0a9f2b6633ceef1d858ba03e388fcd83342bb374124"
+              },
+              "median_ms": {
+                "before": 349.56912812776864,
+                "off": 351.74970515072346,
+                "on": 434.8700640257448
+              },
+              "off_cpu_overhead_pct": 0.6371617496584214,
+              "off_overhead_pct": 0.6237899309454509,
+              "on_cpu_delta_pct": 23.675501404105702,
+              "on_delta_pct": 23.63054116545871,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    328.81600000001043,
+                    401.9769999999898
+                  ],
+                  "excess_selected_busy_ms": [
+                    1.1839999999895667,
+                    1578.0230000000101
+                  ],
+                  "milliseconds": [
+                    329.49325698427856,
+                    405.64586594700813
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    337.46499999998923,
+                    402.7460000000041
+                  ],
+                  "excess_selected_busy_ms": [
+                    12.535000000010754,
+                    1107.253999999996
+                  ],
+                  "milliseconds": [
+                    338.04715401493013,
+                    403.45710003748536
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    354.59600000000256,
+                    509.43400000000236
+                  ],
+                  "excess_selected_busy_ms": [
+                    -6.866999999993837,
+                    1645.7579999999916
+                  ],
+                  "milliseconds": [
+                    355.2486361004412,
+                    510.1549890823662
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "discovery"
+            },
+            {
+              "case": "wine-i386",
+              "cpu_median_ms": {
+                "before": 7780.906999999996,
+                "off": 7146.126000000013,
+                "on": 7830.091999999993
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "422cdf6cffdafb759f501f3ea03818b037f292770f386886516d012fa55c40fe",
+                "off": "422cdf6cffdafb759f501f3ea03818b037f292770f386886516d012fa55c40fe",
+                "on": "2fb92b54e17b853cae9ede0a71838e8f8e363704ab04d7caaa56ff738caf049b"
+              },
+              "median_ms": {
+                "before": 2380.3791881073266,
+                "off": 2217.398776905611,
+                "on": 2391.140670981258
+              },
+              "off_cpu_overhead_pct": -8.158187727985734,
+              "off_overhead_pct": -6.846825582074745,
+              "on_cpu_delta_pct": 9.57114386172282,
+              "on_delta_pct": 7.835392347338832,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    6912.196000000019,
+                    22866.463999999996
+                  ],
+                  "excess_selected_busy_ms": [
+                    57.803999999980874,
+                    48083.536
+                  ],
+                  "milliseconds": [
+                    2130.8183460496366,
+                    8905.658518895507
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    6736.380000000005,
+                    14866.20400000001
+                  ],
+                  "excess_selected_busy_ms": [
+                    23.206999999989307,
+                    31343.79599999999
+                  ],
+                  "milliseconds": [
+                    2091.6010621003807,
+                    5786.669238936156
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    6732.112000000004,
+                    15084.280999999994
+                  ],
+                  "excess_selected_busy_ms": [
+                    17.88799999999594,
+                    29765.71900000001
+                  ],
+                  "milliseconds": [
+                    2075.096765998751,
+                    6136.8307049851865
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "whole-c"
+            },
+            {
+              "case": "arm-control",
+              "cpu_median_ms": {
+                "before": 72.09500000000801,
+                "off": 74.92599999999783,
+                "on": 74.77900000000659
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+                "off": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+                "on": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8"
+              },
+              "median_ms": {
+                "before": 72.60968605987728,
+                "off": 77.28509488515556,
+                "on": 75.4025171045214
+              },
+              "off_cpu_overhead_pct": 3.926763298411129,
+              "off_overhead_pct": 6.439097975747643,
+              "on_cpu_delta_pct": -0.1961935776516044,
+              "on_delta_pct": -2.4358872605793502,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    70.17800000001984,
+                    76.77200000000184
+                  ],
+                  "excess_selected_busy_ms": [
+                    63.22799999999816,
+                    223.74300000003728
+                  ],
+                  "milliseconds": [
+                    70.9176710806787,
+                    77.27610715664923
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    73.60499999999703,
+                    91.38800000001268
+                  ],
+                  "excess_selected_busy_ms": [
+                    1.3510000000226796,
+                    245.24599999996937
+                  ],
+                  "milliseconds": [
+                    74.27328592166305,
+                    92.08396798931062
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    72.88200000001765,
+                    123.65599999998622
+                  ],
+                  "excess_selected_busy_ms": [
+                    25.22099999999341,
+                    606.3440000000138
+                  ],
+                  "milliseconds": [
+                    73.41310800984502,
+                    124.60585311055183
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "discovery"
+            },
+            {
+              "case": "arm-control",
+              "cpu_median_ms": {
+                "before": 275.02299999996893,
+                "off": 314.7999999999769,
+                "on": 298.76600000000053
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+                "off": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+                "on": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75"
+              },
+              "median_ms": {
+                "before": 211.90169593319297,
+                "off": 237.20243014395237,
+                "on": 228.96651993505657
+              },
+              "off_cpu_overhead_pct": 14.463153990761658,
+              "off_overhead_pct": 11.939845077377797,
+              "on_cpu_delta_pct": -5.093392630234284,
+              "on_delta_pct": -3.472101952706652,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    259.1969999999684,
+                    297.88799999998616
+                  ],
+                  "excess_selected_busy_ms": [
+                    240.80300000003163,
+                    951.0830000000144
+                  ],
+                  "milliseconds": [
+                    197.05744995735586,
+                    235.76059099286795
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    247.3669999999899,
+                    345.3799999999916
+                  ],
+                  "excess_selected_busy_ms": [
+                    252.6330000000101,
+                    1099.3769999999936
+                  ],
+                  "milliseconds": [
+                    187.46874993667006,
+                    262.1846420224756
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    284.40000000003,
+                    371.8460000000334
+                  ],
+                  "excess_selected_busy_ms": [
+                    548.1539999999666,
+                    961.2339999999995
+                  ],
+                  "milliseconds": [
+                    218.58742111362517,
+                    286.3926461432129
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "whole-c"
+            },
+            {
+              "case": "x64-control",
+              "cpu_median_ms": {
+                "before": 145.5080000000173,
+                "off": 148.841000000008,
+                "on": 140.6829999999495
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632",
+                "off": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632",
+                "on": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632"
+              },
+              "median_ms": {
+                "before": 146.34499792009592,
+                "off": 149.33707797899842,
+                "on": 141.45090617239475
+              },
+              "off_cpu_overhead_pct": 2.290595706071352,
+              "off_overhead_pct": 2.044538659624129,
+              "on_cpu_delta_pct": -5.4810166553960755,
+              "on_delta_pct": -5.280786200807219,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    126.46599999997576,
+                    233.2239999999821
+                  ],
+                  "excess_selected_busy_ms": [
+                    133.53400000002424,
+                    1281.3539999999998
+                  ],
+                  "milliseconds": [
+                    127.02872906811535,
+                    233.96210907958448
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    120.30099999996935,
+                    184.47599999996456
+                  ],
+                  "excess_selected_busy_ms": [
+                    362.229999999949,
+                    1005.5240000000355
+                  ],
+                  "milliseconds": [
+                    120.98624696955085,
+                    191.17719889618456
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    118.01199999995404,
+                    206.88399999999163
+                  ],
+                  "excess_selected_busy_ms": [
+                    121.98800000004596,
+                    1267.7330000000045
+                  ],
+                  "milliseconds": [
+                    118.79654508084059,
+                    212.81686914153397
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "discovery"
+            },
+            {
+              "case": "x64-control",
+              "cpu_median_ms": {
+                "before": 658.1640000000419,
+                "off": 710.2529999999945,
+                "on": 747.2720000000024
+              },
+              "default_on_budget_certification": false,
+              "function_model_sha256": {
+                "before": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+                "off": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+                "on": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600"
+              },
+              "median_ms": {
+                "before": 308.7888997979462,
+                "off": 307.52771394327283,
+                "on": 358.5983859375119
+              },
+              "off_cpu_overhead_pct": 7.914288839855899,
+              "off_overhead_pct": -0.4084297898980904,
+              "on_cpu_delta_pct": 5.2120863973835085,
+              "on_delta_pct": 16.606851896170795,
+              "quiet": false,
+              "ranges": {
+                "before": {
+                  "cpu_ms": [
+                    641.7390000000225,
+                    798.3849999999926
+                  ],
+                  "excess_selected_busy_ms": [
+                    28.260999999977514,
+                    751.6150000000074
+                  ],
+                  "milliseconds": [
+                    271.6894440818578,
+                    383.0145199317485
+                  ]
+                },
+                "off": {
+                  "cpu_ms": [
+                    645.8040000000267,
+                    881.7030000000017
+                  ],
+                  "excess_selected_busy_ms": [
+                    4.19599999997331,
+                    1598.2969999999982
+                  ],
+                  "milliseconds": [
+                    276.74648887477815,
+                    463.69106881320477
+                  ]
+                },
+                "on": {
+                  "cpu_ms": [
+                    639.134000000027,
+                    1260.0189999999857
+                  ],
+                  "excess_selected_busy_ms": [
+                    120.86599999997304,
+                    5369.981000000014
+                  ],
+                  "milliseconds": [
+                    300.35189003683627,
+                    864.8599148727953
+                  ]
+                }
+              },
+              "samples_per_arm": 5,
+              "surface": "whole-c"
+            }
+          ]
+        },
+        "targeted_followups": [
+          {
+            "reason": "Initial ARM discovery and x64 whole-C default-off timing outliers",
+            "driver_sha256": "683eb06f609749e9a50bd6e08b5f08f382c8481724c9da49a3e4f14ccb77435a",
+            "summary_sha256": "72476e8c4f8ba263d53890c07285a1da585e6f2fde626c2b4b1afc578b381635",
+            "samples_per_arm": 15,
+            "warmup_each_arm": 1,
+            "rows": [
+              {
+                "case": "arm-control",
+                "cpu_median_ms": {
+                  "before": 88.10899999999997,
+                  "off": 77.41700000000007,
+                  "on": 86.20899999999976
+                },
+                "default_on_budget_certification": false,
+                "function_model_sha256": {
+                  "before": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+                  "off": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+                  "on": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8"
+                },
+                "median_ms": {
+                  "before": 88.73777184635401,
+                  "off": 77.80326600186527,
+                  "on": 86.72550902701914
+                },
+                "off_cpu_overhead_pct": -12.13496918589463,
+                "off_overhead_pct": -12.322267752475701,
+                "on_cpu_delta_pct": 11.356678765645366,
+                "on_delta_pct": 11.467697287849044,
+                "quiet": false,
+                "ranges": {
+                  "before": {
+                    "cpu_ms": [
+                      66.85499999999989,
+                      137.55700000000004
+                    ],
+                    "excess_selected_busy_ms": [
+                      -8.10899999999997,
+                      1402.443
+                    ],
+                    "milliseconds": [
+                      67.4286859575659,
+                      193.3703499380499
+                    ]
+                  },
+                  "off": {
+                    "cpu_ms": [
+                      68.33499999999981,
+                      138.47000000000008
+                    ],
+                    "excess_selected_busy_ms": [
+                      0.9600000000002318,
+                      1361.53
+                    ],
+                    "milliseconds": [
+                      69.06670005992055,
+                      193.3017480187118
+                    ]
+                  },
+                  "on": {
+                    "cpu_ms": [
+                      67.11199999999984,
+                      134.98699999999997
+                    ],
+                    "excess_selected_busy_ms": [
+                      2.888000000000165,
+                      1491.8170000000002
+                    ],
+                    "milliseconds": [
+                      67.67007010057569,
+                      200.64155291765928
+                    ]
+                  }
+                },
+                "samples_per_arm": 15,
+                "surface": "discovery"
+              },
+              {
+                "case": "x64-control",
+                "cpu_median_ms": {
+                  "before": 858.2299999999989,
+                  "off": 855.9300000000007,
+                  "on": 857.7069999999995
+                },
+                "default_on_budget_certification": false,
+                "function_model_sha256": {
+                  "before": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+                  "off": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+                  "on": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600"
+                },
+                "median_ms": {
+                  "before": 382.67259602434933,
+                  "off": 381.89761410467327,
+                  "on": 383.1187980249524
+                },
+                "off_cpu_overhead_pct": -0.2679934283348451,
+                "off_overhead_pct": -0.2025182695932437,
+                "on_cpu_delta_pct": 0.20761043543267022,
+                "on_delta_pct": 0.31976736045919996,
+                "quiet": false,
+                "ranges": {
+                  "before": {
+                    "cpu_ms": [
+                      837.9070000000013,
+                      973.2979999999998
+                    ],
+                    "excess_selected_busy_ms": [
+                      -10.746000000002482,
+                      1236.7020000000002
+                    ],
+                    "milliseconds": [
+                      352.9638119507581,
+                      429.5587439555675
+                    ]
+                  },
+                  "off": {
+                    "cpu_ms": [
+                      822.144999999999,
+                      1175.4640000000034
+                    ],
+                    "excess_selected_busy_ms": [
+                      -11.528000000000077,
+                      1814.5359999999964
+                    ],
+                    "milliseconds": [
+                      360.277856932953,
+                      506.331963930279
+                    ]
+                  },
+                  "on": {
+                    "cpu_ms": [
+                      811.1739999999994,
+                      1290.248
+                    ],
+                    "excess_selected_busy_ms": [
+                      -12.565999999999292,
+                      2689.752
+                    ],
+                    "milliseconds": [
+                      356.37402907013893,
+                      573.7948098685592
+                    ]
+                  }
+                },
+                "samples_per_arm": 15,
+                "surface": "whole-c"
+              }
+            ]
+          },
+          {
+            "reason": "Initial ARM whole-C default-off timing outlier",
+            "driver_sha256": "72119f60eedb3a64c855443e46e7e9f5d41d6d69346fd3edc7f4e9930940bc63",
+            "summary_sha256": "fa4983b7d3f4e8352eed96d724fd5291d4cd83aa4004d1f9bed3e7c264e14f6c",
+            "samples_per_arm": 15,
+            "warmup_each_arm": 1,
+            "rows": [
+              {
+                "case": "arm-control",
+                "cpu_median_ms": {
+                  "before": 305.6810000000003,
+                  "off": 291.61400000000003,
+                  "on": 305.76299999999935
+                },
+                "default_on_budget_certification": false,
+                "function_model_sha256": {
+                  "before": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+                  "off": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+                  "on": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75"
+                },
+                "median_ms": {
+                  "before": 227.79576387256384,
+                  "off": 223.66597200743854,
+                  "on": 229.22133607789874
+                },
+                "off_cpu_overhead_pct": -4.601856183406971,
+                "off_overhead_pct": -1.812936199917936,
+                "on_cpu_delta_pct": 4.851961839966301,
+                "on_delta_pct": 2.48377704511773,
+                "quiet": false,
+                "ranges": {
+                  "before": {
+                    "cpu_ms": [
+                      239.1260000000006,
+                      401.77900000000034
+                    ],
+                    "excess_selected_busy_ms": [
+                      -17.31100000000032,
+                      828.2209999999997
+                    ],
+                    "milliseconds": [
+                      180.71632203646004,
+                      286.8743890430778
+                    ]
+                  },
+                  "off": {
+                    "cpu_ms": [
+                      237.10299999999938,
+                      363.4300000000001
+                    ],
+                    "excess_selected_busy_ms": [
+                      -8.543000000001086,
+                      896.5699999999998
+                    ],
+                    "milliseconds": [
+                      179.78568701073527,
+                      333.9354519266635
+                    ]
+                  },
+                  "on": {
+                    "cpu_ms": [
+                      239.87900000000016,
+                      436.5549999999994
+                    ],
+                    "excess_selected_busy_ms": [
+                      -17.88299999999991,
+                      887.7500000000002
+                    ],
+                    "milliseconds": [
+                      181.67905299924314,
+                      334.4200181309134
+                    ]
+                  }
+                },
+                "samples_per_arm": 15,
+                "surface": "whole-c"
+              }
+            ]
+          }
+        ],
+        "interpretation": "Retain every sample and run separately. The targeted controls did not reproduce initial positive default-off CPU outliers. Causal whole-C V2 wall overhead remains +8.58% with +1.28% CPU. Shared-host contention and overlapping ranges prevent a tight global default-off bound; enabled Wine discovery exceeds 5%."
+      }
+    },
+    "abace_speed": {
+      "base_commit": "abace009d9e1fe3435839021bb7a92f579362c40",
+      "speed": {
+        "method": "interleaved paired immutable trios, eight pinned physical cores, blocking wait, wall and child CPU time",
+        "quiet": false,
+        "default_on_budget_certification": false,
+        "repetitions": 5,
+        "warmup_each_arm": 1,
+        "surfaces": [
+          "discovery",
+          "whole-c"
+        ],
+        "primary_reason": "Conservative enabled Wine discovery result; all ten rows and separate targeted follow-ups are retained. Shared-host contention does not certify a global overhead bound."
+      },
+      "speed_off_ms": 351.75,
+      "speed_on_ms": 434.87,
+      "speed_delta_pct": 23.631,
+      "speed_samples": 5,
+      "speed_budget_pct": 5,
+      "speed_within_budget": false,
+      "speed_forced_off": true,
+      "speed_primary_binary": "cached Wine i386 advapi32.dll",
+      "speed_primary_binary_sha256": "bdfbf3a57d1f0470eae25fea7c9247935b154b7cc7c40a123e5e7b466049b1fd",
+      "speed_primary_surface": "functions --mode auto --json",
+      "speed_primary_options": [
+        "x86listingswitch off",
+        "x86listingswitch on"
+      ]
+    },
+    "validation_7f69": {
+      "base_commit": "7f69beccf3aed5506993f4a2088affb0e8bc08a8",
+      "base_tree": "f573331813e95dea215465ffe80ebc1378ae2108",
+      "runtime_source_tree": "70326c6974cb2c30b75593c97a9e5612d112e9c8",
+      "candidate_cli_sha256": "fc51cc133172bd4a2e6b7b7a789dd8418cf17efef1b8c98ae125a8e6799b7e25",
+      "baseline_cli_sha256": "067f722d3c2c5dc6508c7fa443a67cfab56fc973f11802633b71e457d86d272d",
+      "production_25_sha256_equal_c62": true,
+      "catalog_rows": 324,
+      "catalog_tiers": [
+        118,
+        125,
+        81
+      ],
+      "xml_files": 578,
+      "stage_files": 495,
+      "datatest_assertions": 675,
+      "stage_assertions": 3145,
+      "on_ablation_changed": 0,
+      "on_ablation_activated": true,
+      "workspace_tests_passed": 9202,
+      "workspace_tests_failed": 0,
+      "workspace_tests_ignored": 38,
+      "workspace_executables": 66,
+      "focused_x86_tests": 27,
+      "native_console_tests": 9,
+      "project_export_modes": [
+        "serial",
+        "parallel",
+        "stream"
+      ],
+      "project_native_executables": 6,
+      "project_native_inputs_per_executable": 7,
+      "project_untouched_generated_c": true,
+      "project_smoke_sha256": "82a7acfb4b0fb31ae44f98aab87064e51006b0b110cb630224cdb622e5fcb88d",
+      "fresh_control_images": 20,
+      "fresh_control_cli_queries": 120,
+      "fresh_control_full_function_records_equal_abace": true,
+      "fresh_control_report_sha256": "ad0ecb81879f65d824cef96b13f5d7b96b9146bd5c110f367a1688c6ed99f44f",
+      "entry_images": 141,
+      "entry_query_errors": 0,
+      "entry_arm_inventory_comparisons": 744,
+      "entry_inventories_and_classifications_equal_abace": true,
+      "entry_invariance_sha256": "7981b87f44a28a8a17deeaac9152adc717d24b5df154ce4122e3c31df6f41f20",
+      "changed_images": 21,
+      "removed_entries": 399,
+      "gained_entries": 44,
+      "lost_true_starts": 7,
+      "whole_c_newbase_panel_images": 3,
+      "whole_c_newbase_panel_arms": 3,
+      "whole_c_newbase_panel_entire_json_documents": 9,
+      "whole_c_newbase_panel_entire_json_equal_abace": true,
+      "whole_c_newbase_panel_function_records": 5101,
+      "whole_c_newbase_panel_sha256": "982ceebfa9912b5e2d7b1f6f75776e0c82b14fd56bc0f6a2e8e898f2055bd1d9",
+      "unchanged_json_writer_sha256": "75571d6bbab12079cddd1bfa80c808985a47cc4bc8ce632707ac73c3936b5c6a",
+      "whole_c_reuse_scope": "The complete 21-image manual audit remains in measurements.abace_validation. Fresh 3-image full-document, 20-control, 141-entry and project-mode checks plus static project-only #1178 name guards establish the approved rebase scope. No new full 21-image query or native equivalence is claimed.",
+      "whole_c_manual_audit_base_commit": "abace009d9e1fe3435839021bb7a92f579362c40",
+      "whole_c_review_complete": true,
+      "whole_c_manual_changed_comparisons": 726,
+      "whole_c_manual_reviewed_hunks": 1482,
+      "whole_c_manual_required_removed_covered": 399,
+      "whole_c_manual_true_losses_covered": 7,
+      "whole_c_manual_function_error_addresses": 17,
+      "whole_c_manual_error_note": "All 17 addresses exceed the 120-second watchdog in both arms; raw labels retain 13 changed stop-action strings as new-error and 4 identical errors. Zero success-to-failure or repair transitions.",
+      "whole_c_no_regressions": false,
+      "correctness_scope": "Targeted native agreement and exact rebase comparisons do not prove whole-corpus native C correctness; observed unsafe opt-in C and seven lost true starts remain.",
+      "default_off_all_modes": true,
+      "closes_issue_299": false,
+      "speed_evidence": {
+        "quiet": false,
+        "default_on_budget_certification": false,
+        "driver_sha256": "46bedc9dcc7aae6f924230793b43d61e88326d937e815ef57bc59f81d5733208",
+        "summary_sha256": "db5426515dc8661b7e964c72a49c8c26123ec37636ad04b984942bf3fc4b2277",
+        "samples_per_arm": 5,
+        "warmup_each_arm": 1,
+        "rows": [
+          {
+            "case": "causal-i386",
+            "cpu_median_ms": {
+              "before": 175.4730000000001,
+              "off": 171.03099999999995,
+              "on": 115.15999999999993
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "6260507154836cf4b4c6641deddf3546c5662d2446bda7d42da603ae16c7107e",
+              "off": "6260507154836cf4b4c6641deddf3546c5662d2446bda7d42da603ae16c7107e",
+              "on": "79442e8bd8487b0aa3dac9d5f8f97ee79a316923836379622906973fd4936071"
+            },
+            "median_ms": {
+              "before": 177.66049900092185,
+              "off": 174.46986911818385,
+              "on": 115.73919886723161
+            },
+            "off_cpu_overhead_pct": -2.531443583913273,
+            "off_overhead_pct": -1.7959140611900626,
+            "on_cpu_delta_pct": -32.66717729534414,
+            "on_delta_pct": -33.66235702920645,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  103.32600000000025,
+                  183.24399999999994
+                ],
+                "excess_selected_busy_ms": [
+                  184.5269999999999,
+                  576.178
+                ],
+                "milliseconds": [
+                  104.12261006422341,
+                  183.9827010408044
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  103.77999999999999,
+                  188.84699999999987
+                ],
+                "excess_selected_busy_ms": [
+                  158.96900000000005,
+                  583.8019999999999
+                ],
+                "milliseconds": [
+                  104.46353000588715,
+                  191.44659209996462
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  104.79200000000006,
+                  184.56200000000013
+                ],
+                "excess_selected_busy_ms": [
+                  245.20799999999997,
+                  395.4379999999999
+                ],
+                "milliseconds": [
+                  105.52089614793658,
+                  187.22596811130643
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "causal-i386",
+            "cpu_median_ms": {
+              "before": 702.7649999999999,
+              "off": 720.6450000000002,
+              "on": 666.9650000000007
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "9c9dce9624801f991107948495f7011d952a616fa74d701c365c7f6e5370a0c0",
+              "off": "9c9dce9624801f991107948495f7011d952a616fa74d701c365c7f6e5370a0c0",
+              "on": "6ab17ab08c8d109e52f5576dafdbf4eb4cf478d577e65b249a1cd6de67b03605"
+            },
+            "median_ms": {
+              "before": 371.66861491277814,
+              "off": 334.421280073002,
+              "on": 369.6505478583276
+            },
+            "off_cpu_overhead_pct": 2.544235982156251,
+            "off_overhead_pct": -10.021651908519969,
+            "on_cpu_delta_pct": -7.448882598227902,
+            "on_delta_pct": 10.534397744556001,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  554.3039999999996,
+                  844.5589999999993
+                ],
+                "excess_selected_busy_ms": [
+                  75.69600000000034,
+                  2185.4410000000007
+                ],
+                "milliseconds": [
+                  242.32400488108397,
+                  447.1646030433476
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  568.8449999999996,
+                  923.1930000000021
+                ],
+                "excess_selected_busy_ms": [
+                  111.1550000000004,
+                  1476.8069999999977
+                ],
+                "milliseconds": [
+                  252.586588030681,
+                  434.1801190748811
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  569.2560000000002,
+                  810.2450000000001
+                ],
+                "excess_selected_busy_ms": [
+                  240.7439999999998,
+                  1364.0539999999999
+                ],
+                "milliseconds": [
+                  268.6140830628574,
+                  469.9816140346229
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "mingw-i386",
+            "cpu_median_ms": {
+              "before": 192.83500000000055,
+              "off": 193.93499999999884,
+              "on": 189.89000000000013
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "44ace053ed78317f2eca1f4a2fa3979c15bf5ada905a757a158e1425d63d393e",
+              "off": "44ace053ed78317f2eca1f4a2fa3979c15bf5ada905a757a158e1425d63d393e",
+              "on": "fc093b221fffd99c6debc6b8e8195bc5dac875d80edd26d121260783ba779ead"
+            },
+            "median_ms": {
+              "before": 193.56731697916985,
+              "off": 194.53064701519907,
+              "on": 190.3474940918386
+            },
+            "off_cpu_overhead_pct": 0.5704358648576768,
+            "off_overhead_pct": 0.4976718441227712,
+            "on_cpu_delta_pct": -2.0857503802814037,
+            "on_delta_pct": -2.1503824654598658,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  179.58500000000035,
+                  330.1480000000003
+                ],
+                "excess_selected_busy_ms": [
+                  207.16499999999945,
+                  1329.8519999999996
+                ],
+                "milliseconds": [
+                  180.24852685630322,
+                  333.0852631479502
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  188.55500000000092,
+                  210.85899999999924
+                ],
+                "excess_selected_busy_ms": [
+                  200.49300000000014,
+                  749.1410000000008
+                ],
+                "milliseconds": [
+                  188.94405313767493,
+                  212.2436158824712
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  180.13800000000037,
+                  249.28900000000186
+                ],
+                "excess_selected_busy_ms": [
+                  260.71099999999814,
+                  840.1099999999999
+                ],
+                "milliseconds": [
+                  180.74208707548678,
+                  250.6431001238525
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "mingw-i386",
+            "cpu_median_ms": {
+              "before": 3731.6980000000012,
+              "off": 3677.977999999998,
+              "on": 3613.035999999998
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "431510a045d5ec9f1a8c0021556b13ea91c48d989bf98ea7861e14a45c157bb5",
+              "off": "431510a045d5ec9f1a8c0021556b13ea91c48d989bf98ea7861e14a45c157bb5",
+              "on": "e91a1921f5b9df4e9cf64cfea0c1fa440c5e26da8267eb6fe2d349421037b231"
+            },
+            "median_ms": {
+              "before": 1290.3976168017834,
+              "off": 1294.4361169356853,
+              "on": 1287.0599299203604
+            },
+            "off_cpu_overhead_pct": -1.4395591497490812,
+            "off_overhead_pct": 0.31296556048445723,
+            "on_cpu_delta_pct": -1.7656984353903171,
+            "on_delta_pct": -0.5698378559450656,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  3628.327000000004,
+                  4241.838000000003
+                ],
+                "excess_selected_busy_ms": [
+                  35.337000000000074,
+                  1241.6729999999961
+                ],
+                "milliseconds": [
+                  1239.5378379151225,
+                  1643.265332095325
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  3602.3089999999966,
+                  4213.1640000000025
+                ],
+                "excess_selected_busy_ms": [
+                  74.22400000000835,
+                  2066.8359999999975
+                ],
+                "milliseconds": [
+                  1237.7728030551225,
+                  1391.120761167258
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  3451.249000000004,
+                  4250.841999999997
+                ],
+                "excess_selected_busy_ms": [
+                  342.1860000000002,
+                  1799.158000000003
+                ],
+                "milliseconds": [
+                  1206.0191589407623,
+                  1676.1872270144522
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "wine-i386",
+            "cpu_median_ms": {
+              "before": 473.1480000000019,
+              "off": 469.545000000009,
+              "on": 507.4000000000076
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "8c140b268deb692b36ff6d38e47ef466f235756f17ac79dfae40a05298dce85b",
+              "off": "8c140b268deb692b36ff6d38e47ef466f235756f17ac79dfae40a05298dce85b",
+              "on": "7989d4d56be3f79dd6d8b0a9f2b6633ceef1d858ba03e388fcd83342bb374124"
+            },
+            "median_ms": {
+              "before": 473.81379501894116,
+              "off": 470.35017097368836,
+              "on": 508.12769890762866
+            },
+            "off_cpu_overhead_pct": -0.7614953460635787,
+            "off_overhead_pct": -0.731009540385863,
+            "on_cpu_delta_pct": 8.06206007943815,
+            "on_delta_pct": 8.031787860464835,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  367.9040000000065,
+                  478.0929999999941
+                ],
+                "excess_selected_busy_ms": [
+                  66.8519999999981,
+                  1370.7169999999937
+                ],
+                "milliseconds": [
+                  368.5069992206991,
+                  478.7474030163139
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  362.6960000000032,
+                  474.5649999999895
+                ],
+                "excess_selected_busy_ms": [
+                  60.45499999999102,
+                  1177.1549999999932
+                ],
+                "milliseconds": [
+                  363.3281928487122,
+                  475.15342594124377
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  395.5670000000069,
+                  510.4160000000082
+                ],
+                "excess_selected_busy_ms": [
+                  137.50800000000515,
+                  1174.432999999993
+                ],
+                "milliseconds": [
+                  396.1715428158641,
+                  511.11127785407007
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "wine-i386",
+            "cpu_median_ms": {
+              "before": 7810.152999999999,
+              "off": 8103.837999999979,
+              "on": 7725.992999999989
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "422cdf6cffdafb759f501f3ea03818b037f292770f386886516d012fa55c40fe",
+              "off": "422cdf6cffdafb759f501f3ea03818b037f292770f386886516d012fa55c40fe",
+              "on": "2fb92b54e17b853cae9ede0a71838e8f8e363704ab04d7caaa56ff738caf049b"
+            },
+            "median_ms": {
+              "before": 2394.8063731659204,
+              "off": 2480.6178249418736,
+              "on": 2341.1104700062424
+            },
+            "off_cpu_overhead_pct": 3.760297653579636,
+            "off_overhead_pct": 3.5832313099497526,
+            "on_cpu_delta_pct": -4.662543846508171,
+            "on_delta_pct": -5.623895528481904,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  7359.349000000005,
+                  8182.029999999998
+                ],
+                "excess_selected_busy_ms": [
+                  1900.6509999999948,
+                  6115.502000000005
+                ],
+                "milliseconds": [
+                  2293.043163139373,
+                  2459.575698012486
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  6828.743999999982,
+                  8214.092999999984
+                ],
+                "excess_selected_busy_ms": [
+                  781.2560000000176,
+                  7497.215999999996
+                ],
+                "milliseconds": [
+                  2129.7257361002266,
+                  2503.6263421643525
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  6713.405999999988,
+                  8573.206999999997
+                ],
+                "excess_selected_busy_ms": [
+                  -3.4059999999882393,
+                  6613.874000000001
+                ],
+                "milliseconds": [
+                  2084.275393979624,
+                  2590.053491992876
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "arm-control",
+            "cpu_median_ms": {
+              "before": 78.55699999999288,
+              "off": 79.19099999999091,
+              "on": 77.56300000001559
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+              "off": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+              "on": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8"
+            },
+            "median_ms": {
+              "before": 79.3497390113771,
+              "off": 79.7278790269047,
+              "on": 82.57677778601646
+            },
+            "off_cpu_overhead_pct": 0.8070572959737232,
+            "off_overhead_pct": 0.47654853089484916,
+            "on_cpu_delta_pct": -2.0557891679300666,
+            "on_delta_pct": 3.5732779974623208,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  72.66099999998588,
+                  91.57000000001503
+                ],
+                "excess_selected_busy_ms": [
+                  171.54100000000128,
+                  298.42999999998494
+                ],
+                "milliseconds": [
+                  73.2898220885545,
+                  92.20921504311264
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  77.01900000002126,
+                  99.15400000000574
+                ],
+                "excess_selected_busy_ms": [
+                  52.980999999978735,
+                  430.84599999999426
+                ],
+                "milliseconds": [
+                  77.6793819386512,
+                  101.42430593259633
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  75.46800000000431,
+                  95.66999999998771
+                ],
+                "excess_selected_busy_ms": [
+                  74.53199999999569,
+                  332.43699999998444
+                ],
+                "milliseconds": [
+                  77.77219801209867,
+                  96.80074686184525
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "arm-control",
+            "cpu_median_ms": {
+              "before": 303.44199999998267,
+              "off": 301.6799999999797,
+              "on": 276.65300000000315
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+              "off": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+              "on": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75"
+            },
+            "median_ms": {
+              "before": 232.10130911320448,
+              "off": 229.0917590726167,
+              "on": 203.97254405543208
+            },
+            "off_cpu_overhead_pct": -0.5806711002442122,
+            "off_overhead_pct": -1.296653625990496,
+            "on_cpu_delta_pct": -8.29587642534415,
+            "on_delta_pct": -10.964696032222799,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  266.25700000000666,
+                  306.4289999999836
+                ],
+                "excess_selected_busy_ms": [
+                  213.69099999999563,
+                  924.2640000000005
+                ],
+                "milliseconds": [
+                  199.6603151783347,
+                  235.97611882723868
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  262.124999999994,
+                  352.6290000000181
+                ],
+                "excess_selected_busy_ms": [
+                  218.32000000002026,
+                  977.3709999999819
+                ],
+                "milliseconds": [
+                  193.62969510257244,
+                  262.0642438996583
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  271.99699999999183,
+                  291.14300000000526
+                ],
+                "excess_selected_busy_ms": [
+                  190.5510000000166,
+                  843.3469999999968
+                ],
+                "milliseconds": [
+                  199.68009204603732,
+                  228.22746401652694
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "x64-control",
+            "cpu_median_ms": {
+              "before": 160.34200000001775,
+              "off": 157.3529999999863,
+              "on": 145.73999999998222
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632",
+              "off": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632",
+              "on": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632"
+            },
+            "median_ms": {
+              "before": 165.19108694046736,
+              "off": 158.0960601568222,
+              "on": 147.4805260077119
+            },
+            "off_cpu_overhead_pct": -1.8641403999146267,
+            "off_overhead_pct": -4.295042132752657,
+            "on_cpu_delta_pct": -7.3802215401073346,
+            "on_delta_pct": -6.714610179773183,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  121.40099999999521,
+                  185.56799999999285
+                ],
+                "excess_selected_busy_ms": [
+                  364.4320000000072,
+                  629.6579999999823
+                ],
+                "milliseconds": [
+                  121.92380800843239,
+                  186.02789705619216
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  138.0040000000058,
+                  170.71200000000175
+                ],
+                "excess_selected_busy_ms": [
+                  421.9959999999942,
+                  849.2879999999982
+                ],
+                "milliseconds": [
+                  138.8265141285956,
+                  171.27885716035962
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  132.62300000000593,
+                  164.3140000000045
+                ],
+                "excess_selected_busy_ms": [
+                  215.6859999999955,
+                  754.2600000000177
+                ],
+                "milliseconds": [
+                  133.25367285870016,
+                  166.19337210431695
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "x64-control",
+            "cpu_median_ms": {
+              "before": 1152.1040000000155,
+              "off": 1259.0100000000177,
+              "on": 1249.6790000000146
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+              "off": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+              "on": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600"
+            },
+            "median_ms": {
+              "before": 547.0784690696746,
+              "off": 600.7963439915329,
+              "on": 631.0216910205781
+            },
+            "off_cpu_overhead_pct": 9.279197016936047,
+            "off_overhead_pct": 9.819043877418054,
+            "on_cpu_delta_pct": -0.7411378781743583,
+            "on_delta_pct": 5.030880652208358,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  1063.118999999972,
+                  1288.746000000007
+                ],
+                "excess_selected_busy_ms": [
+                  1089.102999999991,
+                  2599.6600000000053
+                ],
+                "milliseconds": [
+                  445.31171792186797,
+                  649.4497559033334
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  1174.5229999999865,
+                  1330.9110000000005
+                ],
+                "excess_selected_busy_ms": [
+                  1650.9899999999823,
+                  2820.0809999999983
+                ],
+                "milliseconds": [
+                  536.3364380318671,
+                  614.5950830541551
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  1022.0479999999945,
+                  1444.0160000000014
+                ],
+                "excess_selected_busy_ms": [
+                  1927.9520000000052,
+                  3777.0540000000065
+                ],
+                "milliseconds": [
+                  531.2846559099853,
+                  736.6708968766034
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          }
+        ],
+        "note": "All actual7f69 measurements are separate from the preserved abace V2/followups; no pooled or substituted samples.",
+        "targeted_followups": [
+          {
+            "reason": "Initial new-base x64 whole-C default-off CPU+9.28% outlier",
+            "driver_sha256": "da74f32adb103ab7e31fdbbbf2535dba39862f4b8167e2ae922e3587554b0ebd",
+            "summary_sha256": "aee46f8a790d21fe188dd9286e0fd00b77c614c76ba8e595ad37918a1e0ead6a",
+            "samples_per_arm": 15,
+            "rows": [
+              {
+                "case": "x64-control",
+                "cpu_median_ms": {
+                  "before": 990.3820000000039,
+                  "off": 1013.4620000000006,
+                  "on": 1144.280000000002
+                },
+                "default_on_budget_certification": false,
+                "function_model_sha256": {
+                  "before": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+                  "off": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+                  "on": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600"
+                },
+                "median_ms": {
+                  "before": 468.24443293735385,
+                  "off": 493.1435910984874,
+                  "on": 574.0829701535404
+                },
+                "off_cpu_overhead_pct": 2.330413921092722,
+                "off_overhead_pct": 5.317555620456194,
+                "on_cpu_delta_pct": 12.908032072243603,
+                "on_delta_pct": 16.412943515043743,
+                "quiet": false,
+                "ranges": {
+                  "before": {
+                    "cpu_ms": [
+                      753.3520000000032,
+                      1209.9319999999984
+                    ],
+                    "excess_selected_busy_ms": [
+                      884.6079999999977,
+                      4390.068000000001
+                    ],
+                    "milliseconds": [
+                      325.9849769528955,
+                      714.9419118650258
+                    ]
+                  },
+                  "off": {
+                    "cpu_ms": [
+                      715.902999999999,
+                      1346.1809999999987
+                    ],
+                    "excess_selected_busy_ms": [
+                      654.097000000001,
+                      8792.149999999998
+                    ],
+                    "milliseconds": [
+                      315.555355977267,
+                      1265.2800369542092
+                    ]
+                  },
+                  "on": {
+                    "cpu_ms": [
+                      742.8100000000022,
+                      1671.848999999999
+                    ],
+                    "excess_selected_busy_ms": [
+                      599.5819999999994,
+                      9318.151000000002
+                    ],
+                    "milliseconds": [
+                      309.27546811290085,
+                      1380.495386198163
+                    ]
+                  }
+                },
+                "samples_per_arm": 15,
+                "surface": "whole-c"
+              }
+            ],
+            "all_samples_separate_from_primary": true
+          }
+        ]
+      }
+    },
+    "speed_7f69": {
+      "base_commit": "7f69beccf3aed5506993f4a2088affb0e8bc08a8",
+      "speed": {
+        "method": "Interleaved immutable trios, eight preselected physical cores, blocking wait, complete input/spec/trio hash checks, child CPU and wall time",
+        "quiet": false,
+        "default_on_budget_certification": false,
+        "repetitions": 5,
+        "warmup_each_arm": 1,
+        "primary_reason": "Wine discovery is the predeclared conservative headline; every row is retained, and contention prevents a tight global bound."
+      },
+      "speed_off_ms": 470.35,
+      "speed_on_ms": 508.128,
+      "speed_delta_pct": 8.032,
+      "speed_samples": 5,
+      "speed_budget_pct": 5,
+      "speed_within_budget": false,
+      "speed_forced_off": true,
+      "speed_primary_binary": "cached Wine i386 advapi32.dll",
+      "speed_primary_binary_sha256": "bdfbf3a57d1f0470eae25fea7c9247935b154b7cc7c40a123e5e7b466049b1fd",
+      "speed_primary_surface": "functions --mode auto --json",
+      "speed_primary_options": [
+        "x86listingswitch off",
+        "x86listingswitch on"
+      ]
+    },
+    "final_validation": {
+      "base_commit": "dd4f9fde48446722724a530d3770a05ac5498cbe",
+      "base_tree": "824698eb82fbe797aa6d175d410667d8d27bf6d7",
+      "runtime_source_tree": "df260df3c252eb0b1241fa711f36eeefc76f1687",
+      "status": "passed-default-off",
+      "recognition_four_identical_to_reviewed_c62": true,
+      "datatest_assertions": 675,
+      "stage_assertions": 3151,
+      "workspace": {
+        "passed": 9243,
+        "failed": 0,
+        "ignored": 38,
+        "groups": 66,
+        "running_targets": 56,
+        "log_sha256": "de799569346508b6ffb63d274d4e6533d0eee3db35eeb0bbb204ed5a8819096a"
+      },
+      "focused_tests": 27,
+      "console_tests": 9,
+      "native_project_i386_runs": 6,
+      "entry_images": 141,
+      "entry_models": 744,
+      "entry_scope": {
+        "gained": 44,
+        "images": 21,
+        "removed": 399,
+        "true_tail_losses": 7
+      },
+      "entry_and_classification_differences": [],
+      "catalog": {
+        "rows": 325,
+        "tiers": [
+          118,
+          126,
+          81
+        ],
+        "full_plus_six_queries": 331,
+        "all_xml_files": 579,
+        "stage_files": 496
+      },
+      "whole_c_predecessor_base_commit": "e265bf2331a59c56756d49a28bf3b1bf0407476a",
+      "whole_c_predecessor_review_complete": true,
+      "whole_c_counts": {
+        "addresses": 41275,
+        "changed": 726,
+        "code_changed": 286,
+        "error_new-error": 11,
+        "error_none": 41258,
+        "error_preexisting-identical": 6,
+        "hunks": 1480,
+        "metadata_changed": 720,
+        "required_removed": 399,
+        "true_losses": 7
+      },
+      "whole_c_hunk_kinds": {
+        "code": 760,
+        "metadata": 720
+      },
+      "whole_c_same_failed_addresses": 17,
+      "whole_c_failure_transitions": {
+        "both_arms_error": 17,
+        "error_to_success": 0,
+        "success_to_error": 0
+      },
+      "whole_c_raw_label_counts": {
+        "new-error": 11,
+        "preexisting-identical": 6
+      },
+      "whole_c_new_manual_functions": 18,
+      "whole_c_new_manual_hunks": 27,
+      "current_full21_c_requery_claimed": false,
+      "current_composition": {
+        "separate_controls": 20,
+        "control_queries": 120,
+        "known_bad_anchors": 13,
+        "anchor_queries": 24,
+        "anchor_records": 78,
+        "all_complete_models_exact_to_predecessor": true,
+        "zero_novel_deltas_on_tested_panels": true,
+        "limits": "Current DD4 C coverage is these bounded panels plus native fixture/project checks. Full21 C evidence remains labeled e265; no whole-corpus native equivalence is claimed."
+      },
+      "speed": {
+        "quiet": false,
+        "rows": [
+          {
+            "case": "causal-i386",
+            "cpu_median_ms": {
+              "before": 108.07900000000004,
+              "off": 107.38099999999994,
+              "on": 124.24600000000008
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "6260507154836cf4b4c6641deddf3546c5662d2446bda7d42da603ae16c7107e",
+              "off": "6260507154836cf4b4c6641deddf3546c5662d2446bda7d42da603ae16c7107e",
+              "on": "79442e8bd8487b0aa3dac9d5f8f97ee79a316923836379622906973fd4936071"
+            },
+            "median_ms": {
+              "before": 109.0702551882714,
+              "off": 107.90257505141199,
+              "on": 125.60321297496557
+            },
+            "off_cpu_overhead_pct": -0.6458238880819533,
+            "off_overhead_pct": -1.0705761482301734,
+            "on_cpu_delta_pct": 15.705758001881298,
+            "on_delta_pct": 16.404277576433945,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  104.50799999999994,
+                  123.72799999999984
+                ],
+                "excess_selected_busy_ms": [
+                  12.41399999999998,
+                  246.27200000000016
+                ],
+                "milliseconds": [
+                  105.20681599155068,
+                  124.3247059173882
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  102.88300000000005,
+                  125.34699999999998
+                ],
+                "excess_selected_busy_ms": [
+                  87.11699999999995,
+                  474.653
+                ],
+                "milliseconds": [
+                  103.6021658219397,
+                  125.96531002782285
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  101.76300000000005,
+                  206.26500000000004
+                ],
+                "excess_selected_busy_ms": [
+                  218.23699999999997,
+                  653.735
+                ],
+                "milliseconds": [
+                  102.5249210651964,
+                  206.86460193246603
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "causal-i386",
+            "cpu_median_ms": {
+              "before": 682.3499999999996,
+              "off": 659.4460000000017,
+              "on": 682.169
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "9c9dce9624801f991107948495f7011d952a616fa74d701c365c7f6e5370a0c0",
+              "off": "9c9dce9624801f991107948495f7011d952a616fa74d701c365c7f6e5370a0c0",
+              "on": "6ab17ab08c8d109e52f5576dafdbf4eb4cf478d577e65b249a1cd6de67b03605"
+            },
+            "median_ms": {
+              "before": 315.4433169402182,
+              "off": 310.6234981678426,
+              "on": 311.462668934837
+            },
+            "off_cpu_overhead_pct": -3.3566351579098486,
+            "off_overhead_pct": -1.5279508277834308,
+            "on_cpu_delta_pct": 3.445771147296095,
+            "on_delta_pct": 0.2701568850856706,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  670.1580000000007,
+                  683.9959999999987
+                ],
+                "excess_selected_busy_ms": [
+                  67.65000000000043,
+                  647.5550000000003
+                ],
+                "milliseconds": [
+                  304.3251221533865,
+                  323.86241806671023
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  635.0920000000002,
+                  689.1930000000004
+                ],
+                "excess_selected_busy_ms": [
+                  10.553999999998268,
+                  516.9910000000009
+                ],
+                "milliseconds": [
+                  284.1220849659294,
+                  363.06587513536215
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  634.8370000000001,
+                  716.597000000001
+                ],
+                "excess_selected_busy_ms": [
+                  133.402999999999,
+                  399.15599999999995
+                ],
+                "milliseconds": [
+                  272.45437586680055,
+                  317.383092129603
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "mingw-i386",
+            "cpu_median_ms": {
+              "before": 224.84600000000032,
+              "off": 225.54800000000074,
+              "on": 169.8600000000008
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "44ace053ed78317f2eca1f4a2fa3979c15bf5ada905a757a158e1425d63d393e",
+              "off": "44ace053ed78317f2eca1f4a2fa3979c15bf5ada905a757a158e1425d63d393e",
+              "on": "fc093b221fffd99c6debc6b8e8195bc5dac875d80edd26d121260783ba779ead"
+            },
+            "median_ms": {
+              "before": 225.76066595502198,
+              "off": 226.45778488367796,
+              "on": 171.00058682262897
+            },
+            "off_cpu_overhead_pct": 0.31221369292779855,
+            "off_overhead_pct": 0.3087867081304818,
+            "on_cpu_delta_pct": -24.690088140883425,
+            "on_delta_pct": -24.488978415793948,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  172.1390000000005,
+                  226.74599999999947
+                ],
+                "excess_selected_busy_ms": [
+                  -11.042000000000577,
+                  75.15399999999968
+                ],
+                "milliseconds": [
+                  172.8371491190046,
+                  227.4882469791919
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  170.07399999999961,
+                  227.91199999999986
+                ],
+                "excess_selected_busy_ms": [
+                  -11.38099999999934,
+                  252.8309999999992
+                ],
+                "milliseconds": [
+                  170.84353417158127,
+                  228.4781001508236
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  169.4849999999999,
+                  173.92999999999947
+                ],
+                "excess_selected_busy_ms": [
+                  -9.860000000000802,
+                  180.16600000000017
+                ],
+                "milliseconds": [
+                  170.1580190565437,
+                  174.65370218269527
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "mingw-i386",
+            "cpu_median_ms": {
+              "before": 3806.840000000003,
+              "off": 3958.886000000003,
+              "on": 3815.206
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "431510a045d5ec9f1a8c0021556b13ea91c48d989bf98ea7861e14a45c157bb5",
+              "off": "431510a045d5ec9f1a8c0021556b13ea91c48d989bf98ea7861e14a45c157bb5",
+              "on": "e91a1921f5b9df4e9cf64cfea0c1fa440c5e26da8267eb6fe2d349421037b231"
+            },
+            "median_ms": {
+              "before": 1270.592622924596,
+              "off": 1256.5132440067828,
+              "on": 1317.1181702055037
+            },
+            "off_cpu_overhead_pct": 3.9940212879973958,
+            "off_overhead_pct": -1.1080954401738952,
+            "on_cpu_delta_pct": -3.629303799099115,
+            "on_delta_pct": 4.823262029890207,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  3741.298000000004,
+                  3870.5390000000025
+                ],
+                "excess_selected_busy_ms": [
+                  35.72599999999642,
+                  1559.4609999999975
+                ],
+                "milliseconds": [
+                  1223.702416056767,
+                  1551.9551688339561
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  3672.139000000003,
+                  4029.636000000002
+                ],
+                "excess_selected_busy_ms": [
+                  -39.636000000001616,
+                  1521.1139999999968
+                ],
+                "milliseconds": [
+                  1207.1972901467234,
+                  1584.3716121744365
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  3709.0959999999986,
+                  4168.847000000005
+                ],
+                "excess_selected_busy_ms": [
+                  -8.99499999999503,
+                  1621.1529999999952
+                ],
+                "milliseconds": [
+                  1226.0440988466144,
+                  1577.5023740716279
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "wine-i386",
+            "cpu_median_ms": {
+              "before": 466.69600000001134,
+              "off": 468.4730000000119,
+              "on": 502.0839999999929
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "8c140b268deb692b36ff6d38e47ef466f235756f17ac79dfae40a05298dce85b",
+              "off": "8c140b268deb692b36ff6d38e47ef466f235756f17ac79dfae40a05298dce85b",
+              "on": "7989d4d56be3f79dd6d8b0a9f2b6633ceef1d858ba03e388fcd83342bb374124"
+            },
+            "median_ms": {
+              "before": 467.4919249955565,
+              "off": 469.1398770082742,
+              "on": 502.7975628618151
+            },
+            "off_cpu_overhead_pct": 0.3807617806881769,
+            "off_overhead_pct": 0.35250919312315165,
+            "on_cpu_delta_pct": 7.174586368900693,
+            "on_delta_pct": 7.17433914767116,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  346.74600000000135,
+                  480.084999999999
+                ],
+                "excess_selected_busy_ms": [
+                  43.303999999988676,
+                  703.2539999999987
+                ],
+                "milliseconds": [
+                  347.715653013438,
+                  481.0791180934757
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  331.707999999999,
+                  469.3359999999913
+                ],
+                "excess_selected_busy_ms": [
+                  -1.7079999999990036,
+                  530.6640000000086
+                ],
+                "milliseconds": [
+                  332.7096551656723,
+                  470.22661892697215
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  501.37200000000524,
+                  502.81700000000205
+                ],
+                "excess_selected_busy_ms": [
+                  -2.0839999999928693,
+                  567.182999999998
+                ],
+                "milliseconds": [
+                  502.1550450474024,
+                  503.4577730111778
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "wine-i386",
+            "cpu_median_ms": {
+              "before": 7378.659999999975,
+              "off": 7114.4979999999905,
+              "on": 7159.02499999999
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "422cdf6cffdafb759f501f3ea03818b037f292770f386886516d012fa55c40fe",
+              "off": "422cdf6cffdafb759f501f3ea03818b037f292770f386886516d012fa55c40fe",
+              "on": "2fb92b54e17b853cae9ede0a71838e8f8e363704ab04d7caaa56ff738caf049b"
+            },
+            "median_ms": {
+              "before": 2208.090334897861,
+              "off": 2171.9999408815056,
+              "on": 2228.2900540158153
+            },
+            "off_cpu_overhead_pct": -3.5800809361047348,
+            "off_overhead_pct": -1.6344618445161885,
+            "on_cpu_delta_pct": 0.6258628507590958,
+            "on_delta_pct": 2.591625905453032,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  6807.754000000006,
+                  9001.015
+                ],
+                "excess_selected_busy_ms": [
+                  18.706999999996412,
+                  5298.985000000001
+                ],
+                "milliseconds": [
+                  2099.9378010164946,
+                  2743.000740883872
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  6856.311999999985,
+                  8956.717000000002
+                ],
+                "excess_selected_busy_ms": [
+                  -8.670999999988794,
+                  5945.147999999997
+                ],
+                "milliseconds": [
+                  2132.8223620075732,
+                  2709.4179310370237
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  6760.069999999989,
+                  10031.72000000001
+                ],
+                "excess_selected_busy_ms": [
+                  9.93000000001166,
+                  11558.27999999999
+                ],
+                "milliseconds": [
+                  2078.040328109637,
+                  2945.4419119283557
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "arm-control",
+            "cpu_median_ms": {
+              "before": 71.72000000000622,
+              "off": 74.18199999999686,
+              "on": 74.37600000001865
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+              "off": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8",
+              "on": "9c4cfd55f81d4722901da681ec0e5dd650a05e6ab64f2184da002b7b9f695ca8"
+            },
+            "median_ms": {
+              "before": 72.33757385984063,
+              "off": 74.82011895626783,
+              "on": 75.43128402903676
+            },
+            "off_cpu_overhead_pct": 3.4327941996520117,
+            "off_overhead_pct": 3.4318888012989213,
+            "on_cpu_delta_pct": 0.26151896689465826,
+            "on_delta_pct": 0.8168458982618754,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  70.4829999999852,
+                  72.88699999998727
+                ],
+                "excess_selected_busy_ms": [
+                  -0.4829999999851964,
+                  218.27999999999378
+                ],
+                "milliseconds": [
+                  71.19013601914048,
+                  74.67752997763455
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  67.95399999998608,
+                  91.29499999999169
+                ],
+                "excess_selected_busy_ms": [
+                  0.26999999999702595,
+                  265.81800000000317
+                ],
+                "milliseconds": [
+                  68.47624806687236,
+                  92.00183302164078
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  70.1719999999959,
+                  91.57800000000549
+                ],
+                "excess_selected_busy_ms": [
+                  -10.171999999995904,
+                  227.1600000000184
+                ],
+                "milliseconds": [
+                  70.8615961484611,
+                  92.1484800055623
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "arm-control",
+            "cpu_median_ms": {
+              "before": 298.1400000000001,
+              "off": 301.1889999999866,
+              "on": 302.2770000000108
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+              "off": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75",
+              "on": "28b26e286e1bc15b59f98df56e8dc4bce14ab801aa6cf2772045b421353f8c75"
+            },
+            "median_ms": {
+              "before": 222.6191251538694,
+              "off": 224.8275049496442,
+              "on": 223.9444290753454
+            },
+            "off_cpu_overhead_pct": 1.0226739115806405,
+            "off_overhead_pct": 0.9919991349568225,
+            "on_cpu_delta_pct": 0.3612349720687691,
+            "on_delta_pct": -0.392779288502354,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  288.68599999999844,
+                  304.76499999999976
+                ],
+                "excess_selected_busy_ms": [
+                  61.314000000001556,
+                  475.23500000000024
+                ],
+                "milliseconds": [
+                  219.59448303095996,
+                  228.56147098354995
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  296.3289999999894,
+                  303.60100000001114
+                ],
+                "excess_selected_busy_ms": [
+                  116.39899999998889,
+                  471.2690000000035
+                ],
+                "milliseconds": [
+                  223.66836899891496,
+                  228.33129996433854
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  291.5080000000003,
+                  303.52299999999843
+                ],
+                "excess_selected_busy_ms": [
+                  -3.522999999998433,
+                  477.7229999999892
+                ],
+                "milliseconds": [
+                  219.80234095826745,
+                  229.08415691927075
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          },
+          {
+            "case": "x64-control",
+            "cpu_median_ms": {
+              "before": 141.8500000000016,
+              "off": 140.5699999999932,
+              "on": 142.64899999998093
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632",
+              "off": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632",
+              "on": "2c66eb1a176032722cb0d060fc3d5bc97b0d9d7483b9a3e29ad152685c102632"
+            },
+            "median_ms": {
+              "before": 144.53170401975513,
+              "off": 141.0870891995728,
+              "on": 143.77305191010237
+            },
+            "off_cpu_overhead_pct": -0.9023616496357967,
+            "off_overhead_pct": -2.3832935780730202,
+            "on_cpu_delta_pct": 1.4789784448942411,
+            "on_delta_pct": 1.9037622264147513,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  138.93200000001826,
+                  142.97500000001406
+                ],
+                "excess_selected_busy_ms": [
+                  17.44999999999294,
+                  327.02499999998594
+                ],
+                "milliseconds": [
+                  141.3539049681276,
+                  147.17275882139802
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  120.88300000000629,
+                  143.4770000000043
+                ],
+                "excess_selected_busy_ms": [
+                  -3.4770000000042955,
+                  297.62800000000186
+                ],
+                "milliseconds": [
+                  121.7787149362266,
+                  144.0755759831518
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  117.16400000000249,
+                  143.66799999999458
+                ],
+                "excess_selected_busy_ms": [
+                  6.332000000005422,
+                  147.35899999999177
+                ],
+                "milliseconds": [
+                  119.12158108316362,
+                  144.7013698052615
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "discovery"
+          },
+          {
+            "case": "x64-control",
+            "cpu_median_ms": {
+              "before": 703.5919999999969,
+              "off": 729.4109999999847,
+              "on": 670.0710000000001
+            },
+            "default_on_budget_certification": false,
+            "function_model_sha256": {
+              "before": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+              "off": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600",
+              "on": "d274edb7fcd8c83b17f5332ee6b8c10b4614cd8e5e8266c637ca44a01fc05600"
+            },
+            "median_ms": {
+              "before": 370.8201569970697,
+              "off": 352.2776388563216,
+              "on": 370.4210198484361
+            },
+            "off_cpu_overhead_pct": 3.6695982899163093,
+            "off_overhead_pct": -5.000407283926222,
+            "on_cpu_delta_pct": -8.135331109619381,
+            "on_delta_pct": 5.150307311874092,
+            "quiet": false,
+            "ranges": {
+              "before": {
+                "cpu_ms": [
+                  667.2969999999942,
+                  932.8089999999988
+                ],
+                "excess_selected_busy_ms": [
+                  310.53499999999445,
+                  1629.1900000000162
+                ],
+                "milliseconds": [
+                  313.67419892922044,
+                  436.86341284774244
+                ]
+              },
+              "off": {
+                "cpu_ms": [
+                  631.4199999999985,
+                  873.2469999999921
+                ],
+                "excess_selected_busy_ms": [
+                  268.58000000000146,
+                  1456.753000000008
+                ],
+                "milliseconds": [
+                  267.2438151203096,
+                  428.60814090818167
+                ]
+              },
+              "on": {
+                "cpu_ms": [
+                  660.067000000005,
+                  769.3980000000096
+                ],
+                "excess_selected_busy_ms": [
+                  289.93299999999493,
+                  1271.3069999999882
+                ],
+                "milliseconds": [
+                  303.18348901346326,
+                  467.8424990270287
+                ]
+              }
+            },
+            "samples_per_arm": 5,
+            "surface": "whole-c"
+          }
+        ],
+        "all_samples_retained": true,
+        "summary_sha256": "ac9552b3b0a00a920d632eae098b4c1a23d8dd95e0e150de3cade63ff40227cf"
+      },
+      "receipts_sha256": {
+        "/tmp/kuna-299-audit/final-dd4/runtime-off-2/manifest.json": "12c3b3cc7dbf6c42b1ee6a7989daf8d52bf4a6098a1b7f8fba98f235f05a7b95",
+        "/tmp/kuna-299-audit/final-e265/compact-review-seal.json": "78be66585c88f15904937b8b8a9e5148d2ce1f0cff0066665ab0251c3f9f02f8",
+        "/tmp/kuna-299-audit/final-e265/raw-error-matrix.json": "7a86866ae9dcd5be145c5cd0bf30df7c89a186d2b5b19c825ab8bc3b5583ae75",
+        "/tmp/kuna-299-audit/final-e265/carry-review/carry-manifest.json": "35979c85d440686ac4109cfa5c7d8c4130d4fb15e337130a5af966d88dd5f8c5",
+        "/tmp/kuna-299-audit/final-e265/carry-review/applied-combined-review.json": "ab0f7e22104e639f74966d450129d3278c547ea5af76027bd38a6c835b6d72f1",
+        "/tmp/kuna-299-audit/final-dd4/fixture-project-report.json": "a386001b240e94d3a5b752f0b3f6838aed1bf919db781d210d7deea32688eeb0",
+        "/tmp/kuna-299-audit/final-dd4/entry-scope.json": "ebfa9318d76b86e5703e45166fff03f75d015902af83480b5561be5b9c04ced9",
+        "/tmp/kuna-299-audit/final-dd4/speed-pinned-1/summary.json": "ac9552b3b0a00a920d632eae098b4c1a23d8dd95e0e150de3cade63ff40227cf",
+        "/tmp/kuna-299-audit/final-dd4/speed-pinned-1/identity.json": "746f06636435f36a2c912b10cadd0d39b82d85d1835311ab85a6d38026577e8f",
+        "/tmp/kuna-approved-implementation-20261019/pr1210-dd4-independent/acceptance.json": "1f54723e60633463dd0bb60571378e53cb135357a416e9243e869db3e1f326d6",
+        "/home/mahaloz/kwt/issues1019/scratch/x86listingswitch-composition-dd4/run-1/acceptance.json": "7a51051b591ad5fdf8de1bdf81144824e8a5c35a354a7d13c53779cf70f29103"
+      }
+    }
+  },
+  "original_issue_acceptance": {
+    "original_private_pe_available": false,
+    "exact_crackme_and_twin_available": false,
+    "closure_claim": false
+  },
+  "decisions": [
+    "One i386 absolute-table discovery feature; no ARM conditional-return or x86-64 delta-table expansion.",
+    "Reject an unbounded cases=None integration: a four-case table followed by a callback word already produces a false fifth xrefs edge.",
+    "Require the range proof to constrain the actual table index at its machine width, prevent guard bypass, clobbers and unproved wrap, and preserve established function entries.",
+    "Instruction membership never becomes a min/max case span: preserve independent entries and undefined gaps between case blocks.",
+    "Resolve missing predecessor evidence deterministically across serial, parallel, and resumed walks.",
+    "Default-off development; any default-on recommendation requires fresh recall, parity, and speed evidence.",
+    "This feature is a partial discovery improvement; the original #299 private PE/crackme acceptance remains unverified and no closure is claimed.",
+    "Default stays off: newly decoded cases can absorb unknown tail-call targets before gap entry discovery; seven real function starts were lost in the measured corpus.",
+    "The preserved abace audit reviewed 726 changed comparisons/1482 code and all-semantic-metadata hunks. The fresh e265 recapture strictly verifies 726 comparisons/1480 hunks with exact annotation reuse and 18 manually reread contexts/27 hunks. All 17 failed addresses persist in both arms; unsafe opt-in C effects remain. Current DD4 bounded composition is explicit, not a new 21-image capture."
+  ],
+  "ablation_base_commit": "b580cb2f48a17503934000f26016f05f32abd465",
+  "ablation_note": "A real default-on trio rebuild on the explicitly labeled b580 predecessor changed 0/675 assertions and activated 28 fixture functions. Current DD4 checks default-off 675 and positive explicit-on fixture/stages; no new global-default-on DD4 rebuild is claimed.",
+  "speed_off_ms": 469.14,
+  "speed_on_ms": 502.798,
+  "speed_delta_pct": 7.174,
+  "speed_samples": 5,
+  "speed_budget_pct": 5,
+  "speed_within_budget": false,
+  "speed_forced_off": true,
+  "speed_primary_binary": "cached Wine i386 advapi32.dll",
+  "speed_primary_binary_sha256": "bdfbf3a57d1f0470eae25fea7c9247935b154b7cc7c40a123e5e7b466049b1fd",
+  "speed_primary_surface": "functions --mode auto --json"
+}

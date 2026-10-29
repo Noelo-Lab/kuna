@@ -116,6 +116,11 @@ the normal copy chain). A whole-cover test walks both block maps in order and
 reports the strongest per-block verdict (`cover.rs (Cover::intersect)`,
 `(Cover::intersect_list)` at level 2 for the candidate blocks).
 
+Cover points cache numeric operation positions. When inserting an operation
+exhausts an order gap and renumbers its block, the covers of that block's input
+and output Varnodes, and their owning HighVariables, must be marked dirty.
+The next merge comparison rebuilds those ranges using the new positions.
+
 A Cover is keyed by block index; its walk over the CFG resolves an index to its
 block through a table built once per walk, the first block in list order with
 that index (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
@@ -282,7 +287,27 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
    fills the slot (upstream `merge.cc:461` "snip must come after OP CAUSING
    EFFECT"; kuna GH-181, where `freecon` then frees the pre-call NULL).
    `Merge::trim_op_output` applies the same INDIRECT rule to its own
-   insert-after point. Windows spanning several addresses become
+   insert-after point. For a call-written stack value whose affected reads
+   are all dominated by one single-predecessor successor of the call block,
+   the original stack-LOAD ledger must contain positive evidence tied to the
+   call, with no overlapping lowered read anywhere in the call block and no removed or
+   invalid original read blocks. Reloads after a later write do not feed
+   these affected reads and do not prevent the repair. With that positive
+   evidence, the trim COPY is placed at the successor's start, before its
+   other accesses. It therefore does not
+   run on paths through the other successor. Phi inputs are reads on their
+   incoming edges. Calls, STOREs, CALLOTHERs and overlapping storage writes
+   after the defining call prevent this delay. Missing positive call-bound
+   provenance or stale original read blocks,
+   pre-branch machine reads, and wrapping frame ranges also keep the existing
+   placement. Other shapes retain the defining-op
+   placement; the repair does not reschedule through further nested guards.
+   The default-on `guardedreadtrim` option applies this scope-aware placement
+   to ordinary and volatile locals; off restores legacy insertion. Reliable
+   and aggressive inherit the same default. Ordinary scalar captures may
+   produce equivalent C values, whereas an extra volatile read is observable.
+   The option also disables provenance collection when off. Windows spanning
+   several addresses become
    VariableGroup pieces (`bank_group_with`). *(kuna divergence, documented at
    `merge.rs (Merge::merge_addr_tied)`)*: a forced merge that still intersects
    — a heavily-reused stack slot from compiler stack-coloring — is *skipped*,
@@ -469,7 +494,7 @@ that write:
 `dat_e10 = a0[3]; dat_e1c = a0[0xf]; dat_e10 = dat_e10 * 0.017453292;` where
 the binary loads `a0[3]` into a register and stores `dat_e10` once, after
 `dat_e1c`; kept apart it prints `v1 = a0[3]; dat_e1c = a0[0xf];
-dat_e10 = v1 * 0.017453292;`.
+dat_e10 = v1 * 0.017453292f;`.
 
 A computed value stored to a guarded global keeps a separate HighVariable
 when joining them would move its write ahead of an observation or onto another
@@ -734,6 +759,76 @@ well as the scope (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 ... sequence. Two highs that denote one object are unaffected: they share a
 name through their shared Symbol, never through a recommendation.
 
+**A library call names the locals it meets (`libcnames`, default off, on
+under `--mode aggressive`).** A prototype a built-in libc table parks carries
+the library's names for its parameters and result (chapter 01), which the
+recommendation above never sees: they are not `innames` and lock nothing. The
+library name is a second name for a numbered local, never a replacement for
+its number. `decompiler/crates/kuna-decomp/src/p6_variables/kuna_libcnames.rs
+(candidates)` reads the evidence before the naming walk, the walk numbers
+every local exactly as it does with the option off and records that numbering
+for a directive replay, and only then does `kuna_libcnames.rs (apply)` give a
+candidate still printed under its number the library's name, recording the
+pair on the function (`Funcdata::kuna_library_aliases`). So `v4` is the same
+variable whether or not the option is on, and the locals after a named one do
+not renumber. The evidence, strongest first: the value a library call returns
+(`fd = open(a0,0);`), counted only when every library result the local holds
+has the same name; a library argument the local is passed whole as, when the
+name says what the value is (`read(fd,...)` names `fd`, `write(a0,a1,n)` names
+`n`); and the same for a name that only says which side of one call a value is
+on (`dest`/`src`, `s1`/`s2`, `haystack`/`needle`, ...), which counts only when
+every such name the local receives is the same one, so a pointer that is one
+`strcmp`'s `s2` and the next one's `s1` keeps its `vN`. Within a kind the
+earliest call decides, then the lowest slot, and a name equal to a type the
+printed code can mention (`tm`, `FILE`, a DWARF typedef: anything the type
+factory knows by that name) or to a C or Rust keyword is passed over for the
+next evidence. Evidence follows a value through the implied copies and casts
+the printer folds into the statement (`x = (T)call()`, `call((T)x)`) and
+through nothing else, so a value used inside an expression (`malloc(len + 1)`)
+names nothing. The local must be one the walk numbered: not an input, a
+global, a constant or a structure piece, and not a speculative merge of
+several classes. A clash takes `_2`, `_3`, ... in the order of the evidence
+(`fd`, `fd_2` for two `open`s), and no spelling repeats a name any variable of
+the function prints, any global the program names (`GlobalQuery::has_symbol_name`,
+whether or not the function reads it), the scope holds, a callee or the
+function itself has.
+
+A directive reaches such a local by either name.
+`decompiler/crates/kuna-console/src/kuna_hightarget.rs (library_number)`
+reads a library name as the number it stands for, and the printed-local lookup
+answers a number for the local printed under its library name, so a replay
+record and the stable numbering above only ever see numbers, and a directive
+the web page recorded in one mode reaches the same local after a switch to
+another: `name fd src` and `name v1 src` both rename the descriptor, with the
+option on or off (off, the library names are still decided, for this lookup
+only, whenever a directive may name a local). The one exception is a library
+name an earlier directive of the batch gave to another local: that rename took
+the name, so it names that local. A name a rename gave or a name-locked
+Symbol holds is the caller's or the binary's even when it is shaped like a
+number, and no library name is printed over it (`name fd v9` prints `v9`).
+Under a carried naming record (`PriorNames::aliases`, by the number the
+local's instances had) a local keeps the spelling it printed, also when a
+rename took its number; a
+spelling a rename took or vacated (`PriorNames::vacated_names`), or that
+another local printed, goes to no one else, and a local whose spelling a
+rename took prints its number. After `name fd src` the second descriptor is
+still `fd_2` and no local becomes `fd`; after `name v5 n`, read's result prints
+`v3` and `name v3 got` reaches it.
+
+**A register piece no register name covers is a local.** The `vN` allocator
+routes a high with no covering Symbol to `dat_<addr>` when its storage is global
+data, and kuna's proxy for global data was "an `IPTR_PROCESSOR` address with no
+register name". The register space is `IPTR_PROCESSOR` too, so a high living
+only in an unnamed register piece printed as an undeclared global and the C did
+not compile: a function returning the 64-bit `rax` after a call that wrote only
+`eax` printed `return CONCAT44(dat_4,v1);`, and the upper half of `rcx` a
+64-bit product leaves there printed `dat_c`. `coreaction_cleanup.rs
+(name_local_highs_angr)` now excludes the register space from that test, so
+such a high is a `vN` local declared with its storage (`// register 0x4`). The
+local is read but never assigned, as the binary reads the register's
+undefined upper half. Only register pieces change; real globals keep
+`dat_<addr>` (`tests/stages/kuna-regpiece.xml`).
+
 **A default name skips one a caller locked.** The `vN` allocator (and the
 `<prefix>Var<N>` arm under Ghidra names) used to hand out `v<base++>` without
 looking at the scope, so after `name v3 v1` the untouched local that came first
@@ -823,9 +918,161 @@ its naming pass `kuna_stablenames.rs (rename_targets)` gives the new name to the
 local holding most of the renamed variable's instances, through the same paths
 a callee's parameter name takes (a Symbol the analysis rebuilt takes it in place
 of a number, `varmap.rs (ScopeLocal::default_symbol_name)`), and its number
-stays unused. A `type` directive still maps a locked Symbol and may split or
-merge, as a retype legitimately changes the analysis. Renaming only names, so
-this is unconditional.
+stays unused. Renaming only names, so this is unconditional.
+
+**A retype that keeps the width types the whole variable.** A `type` directive
+mapped the same type-locked, isolated Symbol, so it split a merged variable the
+same way, and the lock's type spread through copies into other locals. In the
+same fixture `type v5 unsigned long` turned `long v5; // r9 | rax | rdi | rsi`
+into `unsigned long v5; // r9 | rdi | rsi` plus a new `unsigned long v14; //
+rax`, and `type v8 unsigned long` retyped `v2` as well and moved `v5`'s `rax`
+into it. A retype that keeps the printed variable's width and kind
+(`kuna_stablenames.rs (retypes_as_unit)`: an integer, `bool` or enumeration to
+another of the same width, a float to a float, a pointer to a pointer) now types
+the variable as one unit, whether it is a register local or a stack local's
+Symbol. `kuna-console/src/kuna_hightarget.rs (apply_local)` records the type on
+the batch's directive, which is carried as a name rather than a Symbol,
+`kuna_stablenames.rs (carry)` hands the type on under the name the first
+decompile printed, and the next decompile's naming pass gives it to
+the local holding most of the variable's instances (`retype_targets`), locking
+it on every instance after the merge and before the casts are placed
+(`coreaction_cleanup.rs (retype_whole_variable)`). Only a local as wide as the
+new type can take it: a stack local read whole and by halves is several locals
+under one Symbol, all printed by one declaration, and the declaration is the
+whole one's. A half that tied with it took the type before, and the variable
+kept its old one. For most such retypes
+nothing else reaches the analysis, so the merge is the first decompile's, and
+only the declaration and the casts at the variable's uses change: `v7 < v5`
+becomes `v7 < (long)v5`.
+
+A type that prints the constants the variable meets in its own way (an
+enumeration names them, `bool` spells them, a character type quotes them,
+`kuna_stablenames.rs (prints_literals)`) gives its type to those constants too:
+applied to the instances alone, `type v1 state` on an `int` holding `enum
+state` printed `v1 = 3` where the Symbol had printed `v1 = RUN`.
+`retype_whole_variable` types each constant copied into the variable, tested
+for equality with it or combined with it bit by bit (`v1 |= F_R`;
+`kuna_stablenames.rs (met_constants)`), which is where type inference would
+have taken the type, and nothing further away: inference would also carry it
+into the variable's copies, into arithmetic (`a0[7] + E_ONE`) and across the
+frame, which this does not. An ordered comparison keeps its constant a number,
+as before.
+
+A local the function only ever passes by address (`read(0,&c,1)`) has no
+instance at all, so nothing could carry its type; `kuna_hightarget.rs
+(apply_local)` retypes its stack Symbol instead, as before, since the storage
+is the variable's whole identity and nothing can split.
+
+A pointer whose pointee the analysis reads through (a structure, union, array
+or function, or a relative pointer, `kuna_stablenames.rs (reads_through)`) is
+the one unit retype that still reaches type inference (`reaches_inference`),
+which turns the offsets read through it into fields, elements and calls.
+`kuna_stablenames.rs (lock_retyped)` locks it, at the start of every type
+inference (`p5_types/coreaction_infertypes.rs (run_infer_types)`), on each
+varnode whose defining operation (instruction and creation time) defined an
+instance of the retyped variable in the first decompile. The shape and place
+keys are not used here: before the analysis settles they also fit other
+varnodes, which the lock would type too (in iproute2 `rtnl_nexthopdump_req` it
+reached the loop's other pointer and re-laid the stack frame around it). Every
+part of the variable is read through the type, and the parts agree when the
+merge compares their types, where a Symbol over the representative typed one
+part and left the rest to inference (a part defined by `malloc`'s `void *`
+return kept its own type and split off).
+
+The type also changes which operations the analysis builds, so the first
+decompile's keys can miss the retyped variable's instances, and the naming pass
+falls back to the lock: an instance no key matches but that carries the locked
+type counts for the retyped variable (`kuna_stablenames.rs (matched_name)`), so
+the variable keeps its number and the name a directive gave it. It also stays
+explicit (`holds_retype`, asked by `coreaction_cleanup.rs (base_explicit)`): it
+was printed, and an expression the new type reshapes could otherwise inline it
+and leave its name on nothing. The merge follows the first decompile's
+variables wherever the keys still identify them: `kuna_stablenames.rs
+(same_variable)`, asked by `merge.rs (merge_test_adjacent)` and
+`merge_adjacent`, refuses to join highs whose instances belonged to different
+locals and lets highs that belonged to one local join whatever their types,
+and `kuna_stablenames.rs (variable_groups)` hands `merge_by_datatype` the parts
+of each local that its grouping by type kept apart. What does not hold: a high
+no key identifies merges by the usual rules, and inference carries the type
+into the variable's copies, as it carries any type, which can change their
+declarations and the signature, reshape their expressions, absorb a stack slot
+into a re-laid frame, or split a copy whose definitions no longer agree. A
+retype that changes the width or the kind still maps the locked, isolated
+Symbol and may split or merge, since it changes what the analysis reads. A run
+without a `type` directive is unchanged, as are the datatests and the stages,
+and this corrects what a directive reaches, so it is unconditional.
+
+**A directive that does not reach the output says so.** A `name` or `type`
+used to report `applied` once it bound, whatever the next decompile printed: a
+retype of a local only passed by address was carried by instances it did not
+have and dropped. `kuna-console/src/assertions.rs (expected_locals)` records,
+per local a batch touched, the name it must be declared under and the type the
+last `type` gave it, and `assertions.rs (check_printed)` finds each in the C the
+replay printed by the declaration the printer emitted for it
+(`p9_emit/printc.rs (declared_locals)`): the declaration of the HighVariable
+the replay gave the directive to (`kuna_stablenames.rs (directive_targets)`),
+else one the naming pass gave the expected name and no other directive took; a
+parameter is read from the signature. A replay records a local printed under
+its library name (`libcnames`, above) by its number, so a declaration under
+that library name counts for the number as well: `type fd unsigned int` and
+`type v1 unsigned int` both find `unsigned int fd;`. A local declared under a suffixed name
+(`score_1`, because the program already has a function `score`) took the
+directive: it reports `applied`, with a note saying what it was printed as. A
+local not declared at all, or declared with another type than the directive
+gave, reports each directive that touched it refused, with the reason
+(`verify_printed` on the in-process path; the console prints `Rejected
+<command>: <reason>` at the next `print C`), and `kuna decompile` says the C was
+produced without it. The check also showed the console dropping every rename
+of a DWARF local: `kuna-console/src/ifacedecomp.rs (IfcDecompile)` re-seeded the
+function's DWARF locals after the Symbols it carried, at the same storage, and
+the DWARF name won; it now re-seeds only the DWARF locals the previous decompile
+did not map.
+
+**A local is edited by the name it shows.** The printer suffixes a name
+another identifier already holds
+(`p9_emit/kuna_dedupvardecls.rs (DeclNameUniquifier)`): `name v7 score` prints `score_1` beside a function
+`score`, a rename to a parameter's name prints `a0_1`, and of two locals given
+one name the later in declaration order prints `dup_1`. No local carries such a
+name, so a directive naming it answered `No symbol named: score_1` (and the
+shared one `More than one symbol named: dup (2)`), although the output and the
+"applied as" note offered exactly that edit. When an identifier resolves to no
+local, or to more than one, `kuna-console/src/kuna_hightarget.rs (resolve_shown)` prints the
+function with a printer of its own (`printc.rs (declarations_of)`), after
+giving each local the batch has renamed so far its new name, so it reads the
+names the next decompile shows, and takes the one local declared under the
+identifier: a local the batch renamed through the Symbol the earlier directive
+recorded, any other as the last decompile printed it. Where that print
+declares two locals the batch renamed under one line -- two locals given one
+name whose storage overlaps, `eax` within `rax`, which the print collapses
+while the next decompile declares them apart -- it cannot say which one is
+shown unsuffixed, and the directive is rejected as before rather than applied
+to either. A local whose name
+another local shares is carried under the suffixed name it was reached by
+(`kuna_stablenames.rs (relabel)`), so the next decompile tells the two apart.
+An identifier that resolves is read as before, a library name (`fd_2`) still
+through its number first; a name the batch start printed for one local and an
+earlier directive gave another is still rejected as ambiguous; and the extra
+print runs only for an identifier that did not resolve.
+
+**A stack local's scalar retype keeps its width.** A register local's
+retype to another width is rejected before it applies (`Storage is 4 bytes,
+the stated type is 8`), but a stack local's Symbol took any width: a narrower
+scalar shrank the local and its remainder came back as another (`type v24
+unsigned char` on `char v24 [20]` printed `char v62 [19]` and no `v24`), a
+wider one swallowed its neighbours and was then reported refused, and a type
+running past the end of the stack left the Symbol unmapped.
+`kuna_hightarget.rs (check_stack_width)` refuses these before anything
+changes, with the same reason, so the C is the one the caller had. A
+structure, union or array states the extent of the object at that address, so
+it still applies at any width that stays on the stack: it grows a buffer the
+analysis saw only the start of (`type v1 char[16]` over `char v1 [8]`) or
+narrows one to its declared extent (`unsigned int[10]` over a 48-byte slot), as
+a type of the same width (`unsigned char[20]`, `int[5]`) retypes it.
+
+**A new name must be one the declaration can print.**
+`kuna-console/src/kuna_hightarget.rs (check_local_name)` rejects a `name`, or
+the name a `type` states, that is a C keyword or a type the program knows by
+that name (`uint4`, an asserted `typedef`): `name v6 int` printed `int int;`.
 
 Two recommendation paths share a name on purpose. A name recommendation
 recorded for a storage location names every high at that storage alike, as the
@@ -843,6 +1090,34 @@ take(x);` declares `pt` and `pt_00` instead of storing `y`'s fields into `x`.
 This is a correctness fix and is unconditional: two distinct variables under
 one identifier make the emitted C read and write the wrong object, and make a
 `name` assertion ambiguous.
+
+The `fputruncviews` option (on by default; flipping it moves none of the 675
+datatest assertions) separates a numerical `FLOAT_TRUNC` result from an
+inferred floating storage view of the same-width bits. After address-tied
+recovery, an unlocked, unmapped conversion result that meets a floating view
+keeps an explicit integer local. A marked bit-preserving COPY carries the
+floating view through required marker merges. COPY and speculative merges keep
+the view separate from the logical integer, including when prior variable names
+would otherwise reunite them. Speculative merges also never join the logical
+integer to another variable: a speculative partner sharing its register would
+otherwise take the conversion's signed type. The conversion is evaluated once;
+writes to observable storage, intervening clobbers and later genuine floating
+operations keep their existing order and storage views. Locked types,
+locked names and partial-width storage relationships are not rewritten. Existing
+integer signedness is retained, and no synthetic type lock is introduced. Turning
+the option off restores existing mixed-variable recovery. This recovery is
+independent of the unconditional bit-preserving integer extraction repair in P9.
+Marker classification considers the output and other incoming values; eligible
+numerical truncations count as integers regardless of traversal order. Actual
+call and return prototypes determine floating ABI views. Where the prototype
+is unknown, an existing inferred floating view is preserved only for an
+argument or return value the model passes in a float-class register
+(`kuna_floatreg.rs (passed_in_a_float_register)`); an argument the call takes
+in an integer register reads the logical integer, since copy propagation
+leaves `vmov r0,s18; bl sinki` reading the floating register. This does not
+recover missing ABI information. A mapped or name-locked root is deliberately
+left unchanged, so renaming that root can disable this split. Functions with no
+inserted bridge bypass the additional speculative-merge scans.
 
 ## 6.2 The stack frame
 
@@ -864,7 +1139,14 @@ affine by `ActionStackPtrFlow` (§6.5). Everything below consumes the
 in `mainloop`). Stack storage that belongs to someone else is marked
 *not-mapped* before layout ever runs: the stack homes of locked parameters of
 every sub-call (they are the callee's), and saved-register COPYs of unaffected
-registers (calling-convention bookkeeping, not a variable). The same
+registers (calling-convention bookkeeping, not a variable). The exclusion
+covers the slot for the whole function, so it is skipped when the unaffected
+register overlaps one of the function's own declared parameters, directly or
+as a piece of joined storage: that COPY is a parameter spill, and the slot may
+have its address taken or later hold another value, and an excluded slot loses
+both its declaration and its stores. The cost is that a function which
+also pushes such a register to save it, and whose frame escapes, can keep the
+push slot as a dead local assignment of the parameter. The same
 mechanism (`decompiler/crates/kuna-decomp/src/p6_variables/varmap.rs
 (ScopeLocal::mark_not_mapped)`) later excludes an unaliased return-value
 staging slot (`funcdata_spacebase.rs (Funcdata::check_unaliased_return)`).
@@ -1011,6 +1293,187 @@ only when it names the variable's base. Name plus containment prevents a
 fragment from a neighbouring frame object from acquiring the array's lines while
 preserving aggregate and element uses.
 
+**Reporting the declarations outside the frame (`option reglocals`).** The
+sections above report the parameters and the stack frame. At -O0 that is every
+local, but in an optimized function most of the locals the C declares live in a
+register, in a temporary, or in no storage at all (`int v1; // eax`), and none of
+them had a row: a consumer could not read their types, and decbench's
+`type_match`, which pairs a ground-truth variable with a reported row by argument
+index, then stack offset, then instruction-address overlap, scored every
+register-resident DWARF local as a miss. Under `option reglocals` (default ON)
+`extract_variables` appends a fourth section,
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_reglocals.rs
+(register_locals)`: the declarations the printer emitted for the function
+(`printc.rs (DeclaredLocal)`), in declaration order, minus every declaration whose
+printed name a parameter or frame row already carries and every one that is
+stack storage. That is a HighVariable bound to a stack Symbol, with stack
+storage only, with only the address constants of a frame object, or with a
+stack instance inside a reported frame row; and a declaration whose storage
+comment lists only stack homes (`kuna_varsources.rs (high_homes)`, over the
+declared high and every high declared through it), such as a temporary the
+printer declares as the copy of a frame slot (`unsigned long *v3; // stack -
+0x18` beside the frame row `local_18`). A declaration whose storage merges a
+register with a stack piece no frame row covers (a callee-saved spill, the
+return-address slot) is reported here rather than nowhere, while one whose
+storage is only stack slots no frame row reports stays unreported rather than
+being called a register, so `register` never labels stack storage. Each row has
+`kind: "register"`, a null `stack_offset` and `arg_index`, the printed name, so
+a consumer joins the row to its declaration line, and as its type the datatype
+the declarator spells (`DeclaredLocal::ty`) through the same
+`kuna_bytehonest.rs (exported_type_name)` the parameter and stack rows use. For
+a scalar that is the printed declarator (an uncommitted byte is spelled
+`undefined1`); for an array it is the array type, `char[16]` as for a frame
+row, where the declaration line splits it around the name (`char v1 [16]`).
+`size` is that datatype's size. Because the rows are
+read off the printer, they exist only when `extract_variables` follows the
+`print_c` of the same function: the printer stamps its declarations with the
+function's entry (`PrintC::declared_entry`), each declaration keeps the
+HighVariable it declares and the name the naming pass gave that high, and a
+mismatch on either yields no row rather than one from another function.
+
+The evidence is the same markup provenance the other rows carry, resolved
+through the declaration instead of through storage or name:
+`kuna_reglocals.rs (DeclarationHighs)` collects the declared HighVariable and
+every HighVariable the printer declared through it (`PrintC::declared_through`:
+collapsed pieces, Symbol duplicates and group members that print under the same
+name), and the row's `line_numbers` and `addresses` are those of the lines that
+reference any of their instances. Restricting `addresses` to the ops that define
+or read the instances was measured as the alternative and scored slightly worse
+(7 fewer perfect functions over the 444 slices below), so a register row's
+addresses mean exactly what a stack row's do.
+
+`kind` is not a stored field: a row is `arg` when it is a parameter, `stack` when
+it has a frame offset, and `register` otherwise (`decompile_drive.rs
+(VarInfo::kind)`), so the batch workers' wire format carries it unchanged. The
+option moves no p-code and no emitted C, and the two consumers that read
+`variables[]` as the frame keep their output: `decompile-project`'s `.asm`
+variable comments list parameters and frame rows only, and the callee-first
+redo check (`same_arity`) compares frame rows, so a redo that moves only the
+register declarations is accepted or refused exactly as before. Over the
+campaign's 444 x86-64 decbench slices (10,748 scored functions) the option moves
+4,344 register-resident ground-truth locals from missed to correctly typed and
+2,988 to matched with a different type, and 268 stack-located and 5 argument
+ground-truth variables that were missed are now matched correctly by address
+overlap. 53 previously correct matches are lost to a new row; 205 functions
+reach a perfect score, none leave it, 2,207 improve and 10 get worse.
+
+**Typing a frame slot as the local the C declares in it (`option
+slotreport`).** A `framelayout` filler row (the third section) is a slot an
+earlier restructure pass recovered and the final one no longer binds to a
+stack Symbol, so it is spelled by width: `local_c undefined4`. At -O0 the value
+in such a slot is usually a printed local that merged a register with its
+spill, declared `char *v1; // r0 | stack - 0xc`. Under `option slotreport`
+(default ON) the filler row keeps its frame name, offset and size and takes the
+type the C declares there, from
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotreport.rs
+(covering_type)`. The candidates are the printer's declarations for the
+function (the same `DeclaredLocal` list and naming check `reglocals` uses)
+whose declared type is as wide as the slot and one of whose storage homes
+starts at the slot's offset with that width. The homes are exactly those the
+declaration's storage comment lists (`kuna_varsources.rs (high_homes)`, through
+`high_stack_homes`, which keeps each stack home's width), over the declared
+high and every high declared through it, so a row never takes a type for
+storage the C does not show the local in; `DeclaredSlots` indexes them once per
+function. One candidate types the slot. Several type it only when they all
+spell the same type, which is one source value the recovery split into
+several declarations (`int v1; // eax | stack - 0x38` beside `int v2; // eax |
+edx | ram 0x404040 | stack - 0x34 | stack - 0x38`); when they spell different types the slot
+keeps `undefinedN`. A declaration that lists the slot at another width is not a
+candidate: it neither types the slot nor stops a same-width one from typing
+it, since refusing the slot whenever such a declaration also lists it was
+measured and lost more matches than it saved. The type is spelled by
+`kuna_bytehonest.rs (exported_type_name)`, so an uncommitted byte the printer
+renders `char` is still `undefined1`, and a slot whose candidate is a one-byte
+integer or `bool` keeps `undefined1` too (`byte_scalar`): the type system's
+byte types are its default for any byte it computes with, and the program may
+hold the same byte as `_Bool`, `char` or `uint8_t`, which is the reason
+`bytehonest` reports a byte by width. A slot typed this way is not re-spelled
+by `slotptr`: the declared type takes precedence over the pointer type
+`slotptr` reads off the stores into the slot. The rows stay the frame's:
+`reglocals` still reports the declaration as its own `register` row when it
+did before, and no row is added or removed, so a consumer matching the frame by
+offset and the declarations by name sees the same rows as before with one type
+filled in. Folding the slot into the declaration's row instead (one row under
+the printed name, with the slot's offset) was measured as the alternative and
+lost the register row's own matches. The second section follows the same rule
+for a frame Symbol whose own type the recovery left uncommitted
+(`kuna_slotreport.rs (declared_type)`): when the C declares it under its own
+name at a type of its width other than a one-byte integer or `bool`, at the
+Symbol's offset, the row reports that type, whatever it is. That includes
+`undefinedN` when the C prints the Symbol so: a row that spelled the Symbol's
+own uncommitted type as `unsigned int` reads `undefined4`, as its declaration
+does. The option changes no p-code and no emitted C. The rows it types reach
+the `variables` array of `--json` (`decompile-all` and `decompile`) and the
+browser decompiler, and the `; stack:` header lines of `decompile-project`'s
+`.asm`; the `.c` and `.h` files are unchanged. The index is built for every
+function `decompile-all` decompiles, text mode included, unless `--no-vars`
+skips the variables. It costs a few tenths of a percent at most: against
+main, -0.08% CPU with `--json` and +0.33% in text mode, where an identical
+build of main measured +0.10% and -0.03%. Over the four decbench sets of the type campaign (ARM
+firmware, opt96, opt96b and the 444 x86-64 slices) it turns a net 468
+stack-local matches from wrong to right, most of them a `float` or a pointer
+that `undefinedN` cannot match by width; 10 functions reach a perfect score and
+2 leave it, 327 improve and 13 get worse, each of the worse a slot the C
+declares a pointer where the source has an integer.
+
+**Splitting a frame row at the locals the C declares inside it (`option
+slotsplit`).** `framelayout` reports a slot at the width an early pass saw,
+and a span that layout merged (several spills side by side, or a buffer and
+what follows it) reaches the rows as one `undefinedN`: `local_18 undefined12`
+although the C declares `double v1; // stack - 0x18 | ...` at its start. Under
+`option slotsplit` (default ON) such a row is cut at the homes of the printed
+declarations lying wholly inside it, from
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_slotsplit.rs
+(split_rows)`. The homes are the `DeclaredSlots` index `slotreport` builds
+(`kuna_slotreport.rs (homes_within)`): a declaration's stack homes at its
+declared width, over its high and the highs declared through it. Each declared
+piece takes the type its declarations spell (`kuna_slotreport.rs
+(piece_type)`): their common type, `undefined1` for one-byte integers or
+`bool` (the `bytehonest` reasoning), `undefinedN` when they disagree. Each gap
+between pieces stays `undefinedK` at its own offset and width; the piece at
+the row's start keeps the row's name, the others take the frame's name for
+their offset. A row of a scalar's width (1, 2, 4 or 8 bytes) may be one value
+the type system narrowed, an `int` spilled whole and printed as `unsigned
+short`, so it splits only at a pointer or floating-point declaration; a row of
+any other width is never one scalar's slot and splits at every declaration
+inside. Splitting the scalar-width rows at their narrower integers too was
+measured: it turned 159 more matches right and 119 that were right wrong, the
+width-only row having matched a source `int` or `long` the C narrowed. A row
+is left whole when two of its pieces would overlap. The rows are cut in order,
+and the offsets every row starts at, and every piece already cut, are taken: no
+piece or gap starts at a taken offset, and a gap ends at the first taken
+offset inside it, so two overlapping width-only rows never both report a piece
+at one offset and a gap never runs over a row that starts inside it (it can
+still run over one that starts before it, such as a `struct stat` Symbol
+spanning the filler row). When a gap stops at a taken offset, the bytes past
+the row that starts there are no longer reported: dexter -O2 `_entryPoint`
+reports 172 bytes of its frame instead of 196. Only rows still
+width-only are split: a row `slotreport` or `slotptr` typed keeps its type.
+The pieces are ordinary frame rows, so the use evidence of the storage they
+now name (`CodeProvenance::apply_to_variables`) attaches to them as it does to
+any stack row. Every piece after a row's first is marked `split_piece`. The
+callee-vote redo check keeps a redo only when its frame rows match the first
+decompile's by count
+(`decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs (same_arity)`),
+and it counts rows without the mark, so the split, which follows the declared
+types a redo may change, never decides which C is kept. The option changes no
+p-code and no emitted C; the rows reach the same surfaces as `slotreport`'s
+(`--json`, the browser decompiler, the `; stack:` lines of
+`decompile-project`'s `.asm`). Over the four decbench sets of the type
+campaign it turns a net 738 stack-local matches from wrong to right: 503 to a
+typed piece and 240 to a width-only gap the metric credits by width, against
+5 it turns wrong. 125 functions reach a perfect score and none leave it, 711
+improve and 4 get worse. In two of those (`sshsk_load_resident` in ssh and
+ssh-add) the matcher pairs a source `long` with an `int *` piece that comes
+from a printed declaration's stack home, a claim already wrong without the
+split; in u-boot `ubi_resize_volume` it pairs a 4-byte `int` with an 8-byte
+width-only gap; in u-boot `fdt_setprop` it pairs a register local, matched
+right before, with an `unsigned int *` piece by address overlap. The fifth
+wrong match (u-boot `erase_worker`, again an `int` paired with an 8-byte gap)
+is in a function that improves overall. Against main, it costs +0.86% CPU and +0.47%
+wall time with `--json` and -0.28% wall time in text mode, where a separately
+built copy of main measured +1.01%, -0.93% and -1.21%.
+
 **Which offsets are frame (`option protoranges`, default on).** The local
 scope's window is the prototype's local range plus its parameter range, and
 `MapState` then clears the parameter range back out, so only the local range
@@ -1065,7 +1528,14 @@ sentinel `endpoint` hint bounds the walk (`varmap.rs (MapState::initialize)`).
 Then a single sweep unions intersecting hints (`varmap.rs (RangeHint::merge)`)
 under a fixed conflict policy: can the two types *line up* (one is a
 component of the other at the right alignment —
-`varmap.rs (RangeHint::reconcile)`)? If yes, prefer the type-locked, then the
+`varmap.rs (RangeHint::reconcile)`)? The walk descends the larger type's
+single component path until the align size no longer exceeds the smaller
+hint's, and the types line up when the two align sizes then match. A union
+has no single component path, so it lines up when any member whose extent
+covers the smaller hint does, with the member's array/structure components
+followed down to a boundary that starts exactly at the hint's offset (a
+float at either element of a union's `float[2]` member lines up; one at a
+misaligned interior offset does not). If yes, prefer the type-locked, then the
 fixed-over-open, then the larger-fixed, then the more specific type
 (`varmap.rs (RangeHint::preferred)`). If no, and neither is locked, the merged
 range *concedes*: it becomes a fixed unknown-typed blob of the union size (or
@@ -1088,6 +1558,34 @@ later passes and the final sync enable it. After `fullloop` exits,
 failure mode is tolerance, not an abort — the layout keeps the conceded
 unknowns (upstream additionally emits a "Could not reconcile some variable
 overlaps" warning header; kuna stubs that diagnostic).
+
+**Mixed-width indexed integer storage.** A fixed integer read can name only
+part of an indexed element: a loop may write six eight-byte cells and then
+read the two four-byte halves of the last cell. `RangeHint::can_join_piece`
+keeps such a hint in the open array when both types are unlocked plain
+integers or unknowns, the complete read lies inside the array's existing
+minimum byte extent, and it does not cross an element boundary. The same
+check in `reconcile` handles a partial read inside the first element instead
+of conceding the indexed storage to a scalar blob. Pointers, floating types,
+aggregates, locked types, and reads beyond that extent do not gain this
+compatibility.
+
+When an overlapping hint selects a different integer element width at the
+same base, `RangeHint::absorb` carries the old index bound through bytes:
+the new minimum count is
+`ceil((old_highind + 1) * old_align / selected_align)`. It never reduces an
+existing larger bound. Otherwise selecting four-byte elements for an
+eight-byte indexed store can silently halve the covered storage and detach
+the tail reads into never-assigned locals.
+
+This preserves a minimum footprint, not the original source declaration's
+capacity. The existing frame-window and next-object boundaries still close
+the array; padding may remain part of its inferred capacity. Dynamic stack
+allocation and source VLA reconstruction are not added by this rule.
+`decompiler/crates/kuna-cli/tests/indexed_stack_stores.rs` exercises tail
+halves, a narrower prefix view, an interior first-cell read, and an
+already-wide predicate control against authored native machine code and
+independent arithmetic at both compiler optimization levels.
 
 **Call-escaped integer storage (kuna `callarrayextent`, default `off`).**
 A plain frame address passed to a declared integer-pointer parameter can
@@ -1322,6 +1820,114 @@ field, so on by default the pass over-extends a correctly-sized `char name[N]`
 to `[N+1]` in ordinary gcc/clang/MSVC output. It is therefore an opt-in tool:
 flip it on for a string-heavy target whose stack buffers are known to be
 NUL-terminated strings. Off, the layout is upstream's split.
+
+**An escaped buffer's length (kuna `arraysize`, default `on`).** An open range
+that `attempt_join` does not extend ends where the next hint starts, and
+`adjust_fit` trims it to the mapped range. For a buffer whose address escapes to
+a call that gap is the buffer plus the alignment padding after it: a compiler
+aligns a buffer of 16 bytes or more to 16, so `char buf[8192]` directly below
+the stack-protector guard slot (which the stack-guard strip leaves unmapped, so
+no array covers it) prints as `char buf[8200]`, `char buf[1001]` as
+`char buf[1016]`, and `char buf[21]` between two other buffers as `char
+buf[32]`. The source size is anywhere in the last 16 bytes of the gap, and the
+frame alone cannot say where. The call that receives the buffer often can.
+
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_arraysize.rs (gather)`
+runs in `restructure_varnode` after the open hints are gathered. For every call
+it reads the argument a library buffer function takes the buffer in and the
+byte count it states for it (`kuna_arraysize.rs (LENGTH_CALLS)`), and what that
+count says (`kuna_arraysize.rs (Says)`): a length the callee may fill up to
+(`fgets`, `snprintf`, `read`, `readlink`, `strftime`, `getcwd`, `strncpy`,
+`getnameinfo`, the product of `fread`'s size and count), a length the callee
+writes exactly (`memset`, a `memcpy` or `memmove` destination) or only reads (a
+`memcpy` source, `memcmp`, `write`, `fwrite`), or the destination object size a
+`_FORTIFY_SOURCE` call (`__snprintf_chk`, `__memcpy_chk`, `__read_chk`, ...)
+passes. A count is read only when the argument is a constant (or the
+`PTRSUB(#0, #c)` pointer constant the type pass makes of an integer that happens
+to be a mapped address), and it is filed under the escaped base (an
+alias-checker base with no index) the buffer argument may hold, through copies,
+casts, indirect effects and loop phis (`kuna_arraysize.rs (start_of)`): a
+program that passes a call that many bytes at the base on any path needs them
+there. A phi input that is no frame address (a callee-saved register's incoming
+value) does not stop the walk, but an argument that may hold two different bases
+files nothing, and neither does a walk past 64 Varnodes. When the call is one
+whose result is the number of bytes it stored (`read`, `readlink`, `recv`,
+`fread` with a size of 1, ...) and the function writes exactly one byte through
+the buffer's address plus that result (`n = readlink(p, buf, 4096); buf[n] =
+0;`: an indexed alias-checker base at the same start whose index is the call's
+output on every path through copies, extensions, truncations and phis,
+`kuna_arraysize.rs (carries)`, and whose only uses are one-byte loads and
+stores, `kuna_arraysize.rs (byte_access_only)`), the count is one more, since
+that index reaches the length itself; a result capped on some path
+(`if (n == 64) n = 63;`) is not the output on every path. At `calls` every
+constant argument of a call outside that table is filed the same way under the
+base another of its arguments holds.
+
+`gather` also follows every escaped base (`kuna_arraysize.rs (trace)`) through
+copies, casts, indirect effects, phis and constant pointer arithmetic to the
+loads, stores and library calls it reaches, and records where they land
+(`kuna_arraysize.rs (Reach)`): the bytes a constant-offset access or a library
+call with a constant length touches, and whether some access may land anywhere
+above or below the base. A pointer that reaches a phi again at another offset
+(a loop that advances or walks back through the buffer), a non-constant amount
+added or subtracted (other than a one-byte terminator at a byte-count result),
+and a library call that takes the address with a length that is neither a
+constant nor a byte-count result of a call on the same buffer, all count as
+unbounded. Indexed alias-checker bases whose index is not such a terminator are
+recorded by offset.
+
+In `ScopeLocal::restructure`, once `adjust_fit` has fixed the gap of an open
+range, `kuna_arraysize.rs (fit)` takes the largest count filed under its start
+that may decide its size: a fill length, an object size or a `calls` constant;
+an exact-write or read-only length only says the buffer is at least that long.
+The range keeps its gap when any count, of any kind, comes within one byte of
+the gap (a call that states the whole gap proves it; `memset(buf, 0, 16);
+fgets(buf, sizeof buf, f)` into `char buf[24]` keeps 24), when the deciding
+count is under 16 bytes, not a whole number of elements, more than 15 bytes
+short of the gap, or shorter than another count, a hint the range absorbed or
+the elements its index bound reaches, when an unproven index base starts
+between 16 bytes below the start (a negative constant folded into the base,
+`buf[n - 1]`) and the gap's end, when an unbounded access may land in the range
+from a base at most 16 bytes below it or a backward walk from a base at most 16
+bytes past the gap's end, or when a constant-offset access touches a byte
+between the count and the gap's end. A fill length one byte short of a multiple
+of 16 that fits the gap and is not already a terminated count
+(`readlink(p, buf, sizeof buf - 1)` into `char buf[4096]`) counts as that
+multiple; an object size is exact and never moves. The bump applies to every
+fill length, also to a function that writes its own terminator within the
+length (`fgets`, `snprintf`, `gethostname`), because `sizeof buf - 1` is common
+there too (`fgets(line, sizeof line - 1, fp)` into `char line[5120]`,
+`gethostname(name, 255)` into `char name[256]`); a full-size fill into a buffer
+one short of a multiple of 16 (`char line[255]; fgets(line, sizeof line, f)`)
+is therefore declared one byte longer. Limiting the bump to raw-byte writers
+(`read`, `readlink`, `recv`, `fread`) breaks those two real buffers and fixes
+none on the measured sets. Otherwise the range ends at the count and the bytes
+past it keep no symbol, like any alignment padding.
+
+What this guarantees is that every access the function makes through the
+buffer's own address at an offset the IR can bound (a constant offset, a
+library call with a constant or byte-count length, a terminator at a
+byte-count result) lies inside the declared array; an index or pointer walk the
+IR cannot bound keeps the whole gap. What the IR does not follow is not bounded
+by the frame, as for any array: what a call outside the length tables does with
+the address, including library writers that take no length the table reads
+(`strcat`, `strcpy`, `sprintf`, `sscanf` with a `%63s` field), `strlen` and the
+binary's own functions or a function pointer; an address stored to memory and
+loaded back; and a pointer into the buffer that a callee sets (`strtol`'s end
+pointer). So `fgets(buf, 0x38, f); strcat(buf, "!!!!!");` declares 56 bytes. The count is still a guess about the source in three known
+ways: a function that passes a shorter length than its buffer (`fgets(buf, 20,
+f)` into `char buf[24]`) gets the shorter array, since the frame cannot tell it
+from `char buf[20]`; at `_FORTIFY_SOURCE=2` the `str*`, `printf`, `fgets`,
+`getcwd` and `readlink` families pass `__builtin_object_size` mode 1, the size
+of the closest enclosing member, so a stack structure whose first member is a
+`char` array filled by them (`struct { char login[32]; unsigned uid, gid; } u;
+fill(&u); snprintf(u.login, ..)`) is declared as that member, and a plain
+library length into such a member does the same; and a terminator written after
+the result was capped by a comparison (`if (n >= sizeof buf) return -1; buf[n]
+= 0;`) still adds the byte. An exact-write length never decides, so `int a[9];
+memset(a, 0, 34)` keeps its gap, but a fill length into a buffer the range
+types as `char` is taken as is (`long a[6]; read(fd, a, 44)` is `char[44]`).
+`off` keeps upstream's gap.
 **A pointer walk's buffer and its end bound (kuna `endptrbound`, default on).**
 A loop that walks a stack buffer with a pointer stops on the address one past
 the buffer's last element, and nothing in the hint sources above says that
@@ -1736,8 +2342,12 @@ first-pass aliases are unreliable because the pointer forms haven't
 simplified yet), the sorted alias list drives
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
 (Database::mark_unaliased)`: every stack Symbol *not* crossed by an alias
-(walked in lock-step with the mapped ranges; an alias more than `0xffff`
-bytes back is ignored, and aliases don't propagate through unmapped gaps)
+(walked in lock-step with the mapped ranges; symbols are visited by increasing
+end offset because overlapping entries can appear in a different record-list
+order; an alias inside a symbol's mapped range keeps that symbol aliased even
+when an overlapping type-locked entry stopped propagation, and an alias more
+than `0xffff` bytes back is ignored while aliases do not propagate through
+unmapped gaps)
 gets the `nolocalalias` flag. That flag is what lets `RuleIndirectCollapse`
 delete the per-call INDIRECT effects heritage placed on the local — without
 it every call kills every local's value. This is exactly where **`option
@@ -1957,6 +2567,13 @@ otherwise have the call text sunk past it, handing it the pre-call value;
 marker ops are skipped since a later call's own INDIRECTs chain the earlier
 call's versions without any textual evaluation point). Anything else stays
 explicit: false negatives over reordering bugs.
+
+Both order checks walk the basic block's intrusive operation links from the call
+to the relevant endpoint, without first copying the entire block or searching
+for endpoint indices. The first check excludes the consuming operation; the print-point check includes
+its endpoint and keeps its existing expression-chain exemptions. Encountering
+a barrier or failing to reach the endpoint declines the fold. No operation-order
+cache is retained, so IR edits and order renumbering are observed immediately.
 
 A barrier set stated in opcodes is not the whole of "writes something the callee
 can read". Heritage promotes a write to a fixed global address into a plain
@@ -2185,7 +2802,7 @@ fewer single-def/single-use temporaries. Over those and 24 more stripped binarie
 (11,279 functions) the `--json` `variables[]` surface decbench scores keeps the
 same (kind, type, stack offset, size, argument index) multiset in every function,
 with only `vN` names and line spans moving; every declaration this removes is a
-register local, which `variables[]` never carried. Each hunk is a fold, one of
+register local, which `variables[]` had no row for until `option reglocals`. Each hunk is a fold, one of
 those operand hoists, a renumbering, or the declaration that went with them. A
 folded call is never moved past a call, a load, a store through a pointer, a
 global write or a branch, and never into an operand of `&&` or `||`. The most it crosses is an assignment to a local whose
@@ -2675,11 +3292,17 @@ locked source declarations and incoming values remain authoritative.
 a register value from merging into shared frame storage when that would publish
 its bytes before the native store. For an original stack-store COPY into a
 generated backing, the defining value must be in the same block and have no
-intervening memory access, call or frame store. Otherwise the merge is refused;
-required markers use their normal trim copies instead. The real store remains
-explicit on its original branch. This matters when a helper lets another input
-alias the frame: reading an object pointer must not overwrite the object before
-its kind or key is examined. The guard runs only with `stackviews`.
+intervening memory access, call or frame store. A reachable later call's
+write-effect INDIRECT is also a barrier when it overlaps the same generated
+backing and the original COPY writes at most two bytes, shorter than the stack
+pointer width. This prevents a callee from observing an omitted byte/word store;
+pointer-width writes retain the prior merge policy. Either applicable barrier
+refuses the merge, while a bounded reachability scan also keeps the store if it
+exhausts its search budget. Required markers use their normal trim copies. The
+real store remains explicit on its original branch. This matters when a helper
+lets another input alias the frame: reading an object pointer must not overwrite
+the object before its kind or key is examined. The guard runs only with
+`stackviews`.
 
 `decompiler/crates/kuna-decomp/src/p6_variables/kuna_stackloadcover.rs` keeps a load
 explicit when its live cover spans a physical frame write. Such writes can be
@@ -2687,6 +3310,80 @@ COPY or arithmetic operations after lifting, so the ordinary STORE-only alias
 check is insufficient. Known frame ranges use byte overlap; unresolved pointers
 may observe locally aliased storage, while literal global addresses cannot name
 this frame. Marker versions are not writes. The check is enabled by stackviews.
+
+`localstackviews` is the default-on bounded local policy in
+`decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews.rs`.
+Full `stackviews` takes precedence: the bounded local policy records no evidence
+and supplies no preservation, publication or mapping facts while that broader
+option is enabled. Its existing view collection remains authoritative.
+Combining independently admitted scalar footprints with the full policy could
+otherwise seed an unproved union and retype a merged loop counter.
+Original lifted persistent COPY and STORE identities are recorded before
+optimization. Only a captured STORE may contribute its full physical extent
+at `RuleStoreVarnode`; a reconstructed same-address COPY is not native evidence.
+The state resets with function analysis. Provenance and operation scans are
+limited to 4096 records, footprints and their distinct views to 32; exceeding
+any limit invalidates the local candidate rather than admitting a prefix.
+
+A positive footprint has a fixed byte-addressed architectural stack address,
+full pointer width, a nonwrapping extent of 1..256 bytes in the prototype's
+local range, and no overlap with incoming formals. Its declared evidence is
+unavailable when the function has no attached parameter store, so that case
+declines local evidence before querying formal storage. Its positive trigger is
+one locked persistent pointer receiver, or at least two distinct complete
+nominal struct/union pointee contracts of the same size at the same start.
+Native writes must intersect that footprint. Pointer declarations imply neither
+read-only behavior nor noescape. Relevant fixed-frame aggregate contracts must
+have stable ASCII C identifier names. A qualified or otherwise unrepresentable
+nominal name declines the entire early collection, preserving the prior layout
+rather than introducing mismatched shared-view member names. Admission is decided in the first local native
+STORE-lowering heritage window, before preservation can change allocation. Every
+live STORE or LOAD must have a contained or disjoint bounded frame extent,
+using the stored input width or the actual LOAD output width. A declared
+four-byte pointee does not bound a native eight-byte read. Reads only supply
+negative admission evidence; they create no native-write identity or backing
+extent. A raw saved
+receiver read may supply a constant byte displacement only when the original
+publication reaches that read in the same basic block without an intervening
+call, overlapping receiver write or unresolved STORE. A possible receiver use can
+refuse crossing, but cannot alone prove containment. Crossing, unavailable early
+evidence and overlapping locked layouts refuse the entire footprint, including
+nominal aggregate candidates. Refusal persists for the analysis; later P6 facts
+cannot reopen it. The chosen physical component must contain every overlapping
+validated declared candidate extent, even when that other candidate was itself
+refused; preserving a nested or shifted fragment cannot split the larger
+declared object's storage. Candidate contracts are collected once in that window, so a
+later scan cannot withdraw preservation after it has changed the IR. Original
+STORE extents only grow within the bounded captured-native identity set;
+duplicate records do not consume capacity. Live publication queries continue to
+revalidate their exact operation and receiver contracts. Jump-table partials use
+a fresh function state, and ordinary reflow clears this state before relifting.
+
+The existing byte/observer-aware alias policy retains overlapping native writes
+in positive ranges. A captured native publication is kept at its original
+operation, including through INDIRECT and MULTIEQUAL readers, only while its
+live COPY, receiver storage and width, locked pointee contract and fixed input
+still match the record. This prevents memory-SSA merges from replacing the
+publication with assignments on other paths or after observers. Unrelated
+pointer copies and synthesized operations receive no publication privilege.
+A native raw STORE to a literal, full-width default-data-space destination can
+record the same locked receiver contract before STORE lowering. The original
+operation, storage width and source point must match, and the resulting COPY is
+revalidated against that record. A known frame-address publication without an
+exact native receiver and complete locked contract refuses early admission;
+aggregate views cannot bypass this missing correspondence.
+
+An exact component with two equal-size nominal contracts can receive automatic
+shared backing. A published scalar can instead use the existing scalar/byte
+mapping for an exact extent or one captured full physical STORE of 1, 2, 4 or 8
+bytes containing its declared subrange. Adjacent writes are not coalesced into
+that scalar component; wider native writes or crossing/uncertain hazards refuse
+it. Existing full-coverage, locked-layout, unresolved-index and view-count gates
+remain required. A native scalar publication contained in an admitted aggregate
+retains its exact receiver contract even when the smaller standalone footprint
+was refused. Existing object-family recovery and typed address binding consume
+the same backing, preserving saved and simultaneous aliases. Narrow-formal
+eligibility is unchanged.
 
 `stackviews on` collects distinct complete, declared pointee types before
 spatial stack hints are reconciled. Direct calls, typed indirect calls and
@@ -2706,7 +3403,8 @@ integer member; address-valued writes select a pointer member. They must not be 
 aggregate just because a later call views those same bytes as a struct.
 
 With `stackviews` disabled, type-facing queries skip view lookup and the extra
-varnode, operation and input-slot queries it needs.
+varnode, operation and input-slot queries it needs, unless the function
+recovered the narrow-parameter backing described below.
 
 The backing object preserves physical address identity: passing the address as
 two types never creates two independent addresses. An earlier escaped pointer
@@ -2728,6 +3426,23 @@ and logical naming assertions select that local without falling back to the
 smaller parameter entry. Escaped addresses, partial or unknown pointee uses,
 incoming bytes and multiple surviving value identities decline this shortcut.
 
+With `stackviews off`, a declared boolean or integer stack parameter that has a
+wider physical write of two or four bytes also receives shared backing at that
+slot. The formal parameter retains its incoming type and initializes the matching backing member;
+later writes and escaped addresses use the same wider object. This is storage
+reconstruction, not the closed scalar shortcut: unknown pointer aliases do not
+disable it. Other frame components require either the bounded local policy above or explicit full-view recovery.
+
+The physical store extent is recorded when a native STORE becomes a stack COPY,
+before early removal can discard a register-carried value. Only writes intersecting
+that recorded parameter extent receive the existing alias-preservation policy;
+unrelated frame stores retain their ordinary policy. A store crossing another
+incoming parameter is excluded. A larger native store overlapping the candidate
+four-byte extent excludes the slot from default recovery, including mixed narrow
+and vector writes. The optional full-view policy retains its existing coverage.
+The evidence resets with function analysis and still observes proved non-aliasing
+and overwrite checks.
+
 Aggregate, floating-point and pointer views in the parameter area instead use
 the same union backing as ordinary frame objects. Scalar views also need this
 backing when an address escapes or has observers outside the closed full-width
@@ -2742,12 +3457,11 @@ frame alias even when its value has an integer type. The bounded pointer helper
 only recovers byte extents for byte-addressed stack spaces, so word-addressed
 pointers cannot justify removing an overlapping save.
 
-When a generated frame-union value becomes a detached integer snapshot,
-`kuna_stackvaluecopies.rs` records that role on its high before emission. The
-register/unique instances can retain partial-union types after the declaration
-has become an integer; tracing their storage addresses would also miss copied
-or phi-joined values. P9 uses the recorded role and the actual integer C
-declaration to preserve bits at native floating uses. Integer bit operations and
+When a generated frame-union value becomes a detached scalar snapshot,
+`kuna_stackvaluecopies.rs` retypes its instances to the scalar type of their
+source bytes, else the unsigned word of their width, before emission. P9 reads
+the resulting integer C declaration like any other word variable and preserves
+bits at native floating uses and floating stores. Integer bit operations and
 explicit numeric conversion opcodes retain their original interpretation.
 
 An early layout or required-merge query can precede prototype-store attachment.
@@ -2964,8 +3678,18 @@ read back from a different one.
 (guess_extra_pop)` guesses `4 + n` when the first write to the stack pointer
 after the call in its block is the call's result lowered by `n` (positive, at
 most 256, a multiple of the pointer size) and every pointer-sized slot of
-`[esp, esp + n)` at the call instruction is stored to between the previous call
-in the block, or the block start, and this one. When nothing reads the stack
+`[esp, esp + n)` at the call instruction has at least one byte stored to it
+between the previous call in the block, or the block start, and this one. The
+stores are tracked byte by byte over the bounded argument window, so a store
+may start anywhere in a slot, span several slots, or reach the window from
+below. One written byte is enough for its slot: GCC and Clang write a by-value
+aggregate narrower than its slot (`struct { char c; }`, a three-byte or
+six-byte struct) with byte and halfword stores and leave the padding
+unwritten, and requiring every byte would drop the guess for those callees and
+shift the rest of the frame by the popped bytes. A slot with no written byte
+leaves the guess unknown. A lowering whose negation or less-the-push
+adjustment does not fit the offset width declines instead of overflowing.
+When nothing reads the stack
 pointer between the `sub` and the next call, the additive normalization folds
 the lowering into that call's return-address push, so a first write that is a
 call's own push is read less the push; a first write that is a push of the next

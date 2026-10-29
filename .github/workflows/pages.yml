@@ -1,11 +1,13 @@
 name: Deploy web demo to GitHub Pages
 
 # Builds the in-browser (WebAssembly) decompiler demo — integrations/web —
-# and publishes it to GitHub Pages. The engine runs entirely client-side; the
-# deployed site is a static bundle (page + glue + WASI shim + wasm + the full
-# runtime SLEIGH tree, lazily fetched), so nothing talks to a backend and it
-# decompiles whatever the CLI supports (ELF/PE/Mach-O, all arches). See
-# docs/web-integration.md.
+# and publishes it as two GitHub Pages sites: the decompiler at decompile.run
+# (pushed to Noelo-Lab/decompile.run, whose Pages serves its main branch) and
+# the landing page and /dev-viz/ at kuna.noelo.org (this repo's Pages). The
+# engine runs entirely client-side; the deployed decompiler is a static bundle
+# (page + glue + WASI shim + wasm + the full runtime SLEIGH tree, lazily
+# fetched), so nothing talks to a backend and it decompiles whatever the CLI
+# supports (ELF/PE/Mach-O, all arches). See docs/web-integration.md.
 
 on:
   # Redeploy when the demo, the engine, or the vendored specs change.
@@ -94,6 +96,29 @@ jobs:
       # Serve every file verbatim (belt-and-suspenders; the artifact path skips Jekyll).
       - name: Disable Jekyll
         run: touch integrations/web/dist/.nojekyll
+
+      # dist/ -> kuna.noelo.org (its /decompile/ forwards); dist-run/ -> decompile.run.
+      - name: Split into the two sites
+        run: bash integrations/web/split-sites.sh
+
+      # DECOMPILE_RUN_DEPLOY_KEY is the private half of a write deploy key on
+      # Noelo-Lab/decompile.run. Each deploy replaces that branch with one commit.
+      - name: Publish decompile.run
+        env:
+          DEPLOY_KEY: ${{ secrets.DECOMPILE_RUN_DEPLOY_KEY }}
+        run: |
+          [ -n "$DEPLOY_KEY" ] || { echo "::error::DECOMPILE_RUN_DEPLOY_KEY is not set"; exit 1; }
+          key="$RUNNER_TEMP/decompile_run_key"
+          printf '%s\n' "$DEPLOY_KEY" > "$key"
+          chmod 600 "$key"
+          cd integrations/web/dist-run
+          git init -q -b main
+          git add -A
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "Deploy Noelo-Lab/kuna@${GITHUB_SHA}"
+          GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+            git push -q -f git@github.com:Noelo-Lab/decompile.run.git main
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

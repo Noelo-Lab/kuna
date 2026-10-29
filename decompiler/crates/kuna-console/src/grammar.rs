@@ -372,10 +372,7 @@ impl GrammarLexer {
     fn new(maxbuffer: int4) -> GrammarLexer {
         GrammarLexer {
             buffersize: maxbuffer,
-            // One extra slot for the EOF "simulate a space" write, which the C++
-            // performs at buffer[bufend++] after the `bufend >= buffersize`
-            // "Line too long" guard already bounded bufend to <= buffersize.
-            buffer: vec![0u8; (maxbuffer.max(0) as usize) + 1],
+            buffer: Vec::new(),
             bufstart: 0,
             bufend: 0,
             curlineno: 0,
@@ -426,6 +423,8 @@ impl GrammarLexer {
         self.filename = filename.to_string();
         self.has_file = true;
         self.input = content;
+        // A line cannot exceed the input; keep one extra slot for the EOF space.
+        self.buffer.resize(self.input.len().min(self.buffersize.max(0) as usize) + 1, 0);
         self.input_pos = 0;
         self.endoffile = false;
     }
@@ -456,6 +455,10 @@ impl GrammarLexer {
             if lookahead == 9 || lookahead == 11 || lookahead == 12 || lookahead == 13 {
                 lookahead = b' ';
             } else if lookahead == b'\n' {
+                if matches!(self.state, LexState::Doublequote | LexState::Singlequote | LexState::Singlebackslash) {
+                    self.set_error("Incomplete token");
+                    return tok::BADTOKEN;
+                }
                 newline = true;
                 lookahead = b' ';
             } else {
@@ -614,7 +617,7 @@ impl GrammarLexer {
             self.set_error("Syntax error");
             return tok::BADTOKEN;
         }
-        if newline {
+        if newline && res == 0 {
             self.bump_line();
         }
         res
@@ -682,12 +685,13 @@ impl GrammarLexer {
             self.buffer[self.bufend as usize] = b' '; // Simulate a space
             self.bufend += 1;
             tok_kind = self.move_state(b' '); // to let the final token resolve
-            if tok_kind == 0
-                && self.state != LexState::Start
-                && self.state != LexState::EndoflineComment
-            {
-                self.set_error("Incomplete token");
-                tok_kind = tok::BADTOKEN;
+            if tok_kind == 0 {
+                if matches!(self.state, LexState::Start | LexState::EndoflineComment) {
+                    tok_kind = tok::ENDOFFILE;
+                } else {
+                    self.set_error("Incomplete token");
+                    tok_kind = tok::BADTOKEN;
+                }
             }
         }
 
@@ -1271,6 +1275,11 @@ pub struct CParse<'a> {
     lastdecls: Option<Vec<TypeDeclarator>>,
     /// One-token lookahead buffer (the parser pulls tokens via [`CParse::next`]).
     pushed: Option<PToken>,
+    /// Source-scoped identities keep anonymous records distinct and reproducible
+    /// when the same declarations are parsed in a different worker order.
+    anonymous_key: u128,
+    anonymous_serial: u64,
+    anonymous_names: Vec<String>,
 }
 
 impl<'a> CParse<'a> {
@@ -1306,6 +1315,9 @@ impl<'a> CParse<'a> {
             lasterror: String::new(),
             lastdecls: None,
             pushed: None,
+            anonymous_key: 0,
+            anonymous_serial: 0,
+            anonymous_names: Vec::new(),
         }
     }
 
@@ -1344,6 +1356,9 @@ impl<'a> CParse<'a> {
         self.lastdecls = None;
         self.lexer.clear();
         self.pushed = None;
+        self.anonymous_key = 0;
+        self.anonymous_serial = 0;
+        self.anonymous_names.clear();
     }
 
     /// C++ `CParse::setError(const string &msg)` (`grammar.cc:1318-1328`).
@@ -2463,10 +2478,11 @@ impl<'a> CParse<'a> {
     /// valid when a subsequent declaration supplies a correct definition; an
     /// anonymous record is built fresh and destroyed on failure, as upstream.
     fn new_struct(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        let res = if ident.is_empty() {
-            self.factory.get_type_struct(ident)?
+        let (anonymous, res) = if ident.is_empty() {
+            let (name, record) = self.new_anonymous_record(false)?;
+            (Some(name), record)
         } else {
-            self.old_struct(ident)?
+            (None, self.old_struct(ident)?)
         };
         let is_big_endian = self.factory.is_big_endian();
         let mut sublist: Vec<TypeField> = Vec::new();
@@ -2492,12 +2508,56 @@ impl<'a> CParse<'a> {
         // Preserve the incomplete shell on errors: prior pointers already own
         // it, and a later successful definition must complete that same shell.
         match self.factory.assign_raw_fields_struct(&res, sublist, bitlist) {
-            Ok(completed) => Ok(completed),
+            Ok(completed) => match anonymous {
+                Some(name) => self.finish_anonymous_record(completed, name),
+                None => Ok(completed),
+            },
             Err(err) => {
                 self.set_error(err.explain());
                 self.abandon_record(ident, &res)
             }
         }
+    }
+
+    /// Assign the identity before interning the shell: anonymous records of
+    /// equal layout must not share the empty name's type id.
+    fn new_anonymous_record(&mut self, union: bool) -> KunaResult<(String, Rc<Datatype>)> {
+        self.anonymous_serial += 1;
+        let name = format!("__kuna_anon_{:032x}_{}", self.anonymous_key, self.anonymous_serial);
+        let shell = if self.factory.find_by_name(&name)?.is_some() {
+            format!("{name}__candidate")
+        } else {
+            name.clone()
+        };
+        let record = if union {
+            self.factory.get_type_union(&shell)?
+        } else {
+            self.factory.get_type_struct(&shell)?
+        };
+        Ok((name, record))
+    }
+
+    /// Repeated parsing of the same declaration can reuse its existing type,
+    /// after checking the new layout. Candidate shells never escape the parser.
+    fn finish_anonymous_record(&mut self, record: Rc<Datatype>, name: String) -> KunaResult<Rc<Datatype>> {
+        let named = if record.get_name() != name {
+            let existing = self.factory.find_by_name(&name)?.ok_or_else(|| KunaError::parse("Missing anonymous record identity"))?;
+            let mut candidate = (*record).clone();
+            candidate.name = name.clone();
+            candidate.display_name = name.clone();
+            candidate.id = existing.id;
+            let equal = candidate.compare(&existing, 10)? == 0;
+            self.factory.destroy_type(&record)?;
+            if !equal {
+                self.set_error("Anonymous record identity conflicts with an existing type");
+                return Err(KunaError::parse(self.lasterror.clone()));
+            }
+            existing
+        } else {
+            record
+        };
+        self.anonymous_names.push(name);
+        Ok(named)
     }
 
     /// The parse error for a record body that failed: an anonymous record's
@@ -2524,10 +2584,11 @@ impl<'a> CParse<'a> {
 
     /// C++ `CParse::newUnion` (`grammar.cc:1096-1121`).
     fn new_union(&mut self, ident: &str, declist: Vec<TypeDeclarator>) -> KunaResult<Rc<Datatype>> {
-        let res = if ident.is_empty() {
-            self.factory.get_type_union(ident)?
+        let (anonymous, res) = if ident.is_empty() {
+            let (name, record) = self.new_anonymous_record(true)?;
+            (Some(name), record)
         } else {
-            self.old_union(ident)?
+            (None, self.old_union(ident)?)
         };
         let mut sublist: Vec<TypeField> = Vec::new();
         for (i, decl) in declist.iter().enumerate() {
@@ -2539,7 +2600,10 @@ impl<'a> CParse<'a> {
             sublist.push(TypeField::new(i as int4, 0, decl.get_identifier(), field_type));
         }
         match self.factory.assign_raw_fields_union(&res, sublist) {
-            Ok(completed) => Ok(completed),
+            Ok(completed) => match anonymous {
+                Some(name) => self.finish_anonymous_record(completed, name),
+                None => Ok(completed),
+            },
             Err(err) => {
                 self.set_error(err.explain());
                 self.abandon_record(ident, &res)
@@ -2639,6 +2703,11 @@ impl<'a> CParse<'a> {
     /// `lasterror`: parse failures set it, thrown exceptions do not.
     fn parse_stream(&mut self, content: Vec<u8>, doctype: DocType) -> KunaResult<bool> {
         self.clear();
+        let mut key = 0x6c62272e07bb014262b821756295c58du128;
+        for byte in &content {
+            key = (key ^ u128::from(*byte)).wrapping_mul(0x0000000001000000000000000000013bu128);
+        }
+        self.anonymous_key = key ^ ((self.org.addr_size as u128) << 64) ^ u128::from(self.org.word_size);
         self.lexer.push_file("stream", content);
         match self.parse_document(doctype) {
             Ok(()) => Ok(true),
@@ -2680,7 +2749,7 @@ pub fn parse_type(
 /// few hundred fields does not fit in that.
 const LINE_BUFFER: int4 = 65536;
 
-/// Parse a mapped object's type while retaining its outer volatile qualifier.
+/// Parse a mapped object's effective volatility, including typedefs and array elements.
 pub fn parse_type_with_volatile(
     input: &str,
     factory: &dyn TypeFactory,
@@ -2703,14 +2772,17 @@ pub fn parse_type_with_volatile(
     }
     let name = decl.get_identifier().to_string();
     let ty = decl.build_type(factory, &org)?;
-    let qualifiers = decl.mods.iter()
-        .find_map(|m| match m {
-            TypeModifier::Pointer { flags } => Some(*flags),
-            TypeModifier::Function { .. } => Some(0),
-            TypeModifier::Array { .. } => None,
-        })
-        .unwrap_or(decl.flags);
-    Ok((ty, name, qualifiers & flags::F_VOLATILE != 0))
+    let mut object = Rc::clone(&ty);
+    let volatile = loop {
+        if kuna_decomp::kuna_typequal::is_volatile(&object) {
+            break true;
+        }
+        let Some(element) = object.get_array_base() else {
+            break false;
+        };
+        object = element;
+    };
+    Ok((ty, name, volatile))
 }
 
 /// C++ `parse_protopieces(PrototypePieces &pieces,istream &s,Architecture *glb)`
@@ -2795,8 +2867,9 @@ pub fn parse_c(
         if decl.get_identifier().is_empty() {
             return Err(KunaError::parse("Missing identifier for typedef"));
         }
-        if ct.get_metatype() == type_metatype::TYPE_STRUCT
-            && (ct.get_name().is_empty() || ct.get_name() == decl.get_identifier())
+        if matches!(ct.get_metatype(), type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION)
+            && (ct.get_name().is_empty() || ct.get_name() == decl.get_identifier()
+                || parser.anonymous_names.iter().any(|name| name == ct.get_name()))
         {
             factory.set_name(&ct, decl.get_identifier())?;
         } else {

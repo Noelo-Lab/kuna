@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES07";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES11";
 
 /// Result-stream frame kind.  One kind today; the envelope is what lets a
 /// truncated tail be dropped rather than guessed.
@@ -265,6 +265,7 @@ impl ResultWriter {
         put_opt_str(&mut body, r.code.as_deref());
         put_opt_str(&mut body, r.error.as_deref());
         put_opt_str(&mut body, r.proto.as_deref());
+        put_opt_str(&mut body, r.emitted_c_name.as_deref());
         put_object_location(&mut body, r.object_location.as_ref());
         put_u32(&mut body, r.aliases.len() as u32);
         for a in &r.aliases {
@@ -279,7 +280,7 @@ impl ResultWriter {
         for v in &r.variables {
             put_str(&mut body, &v.name);
             put_str(&mut body, &v.type_name);
-            body.push(u8::from(v.is_param));
+            body.push(u8::from(v.is_param) | (u8::from(v.split_piece) << 1));
             match v.arg_index {
                 Some(i) => {
                     body.push(1);
@@ -332,7 +333,13 @@ impl ResultWriter {
             put_str(&mut body, &g.name);
             put_str(&mut body, &g.declaration);
             body.extend_from_slice(&g.size.to_le_bytes());
-            body.push(u8::from(g.unknown) | u8::from(g.direct) << 1 | u8::from(g.aggregate) << 2 | u8::from(g.elem) << 3);
+            body.push(
+                u8::from(g.unknown)
+                    | u8::from(g.direct) << 1
+                    | u8::from(g.aggregate) << 2
+                    | u8::from(g.elem) << 3
+                    | u8::from(g.integer) << 4,
+            );
         }
         // (kuna `calltargettype`) The calls through synthesized fields, for the
         // project header the parent writes.
@@ -357,6 +364,17 @@ impl ResultWriter {
             None => body.push(0),
         }
         put_pointerargs(&mut body, r.pointerargs.as_ref());
+        put_u32(&mut body, r.call_declarations.len() as u32);
+        for declaration in &r.call_declarations { put_str(&mut body, declaration); }
+        put_u32(&mut body, r.callwide_prototypes.len() as u32);
+        for contract in &r.callwide_prototypes {
+            put_str(&mut body, &contract.name);
+            put_u64(&mut body, contract.entry);
+            body.push(u8::from(contract.signed));
+            put_u32(&mut body, contract.inputs.len() as u32);
+            for signed in &contract.inputs { body.push(u8::from(*signed)); }
+            body.push(u8::from(contract.definition));
+        }
         self.frame(FRAME_RESULT, &body)
     }
 
@@ -401,6 +419,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     let code = r.opt_string()?;
     let error = r.opt_string()?;
     let proto = r.opt_string()?;
+    let emitted_c_name = r.opt_string()?;
     let object_location = r.object_location()?;
     let na = r.u32()? as usize;
     let mut aliases = r.sized(na);
@@ -420,7 +439,8 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
     for _ in 0..nv {
         let vname = r.string()?;
         let type_name = r.string()?;
-        let is_param = r.u8()? != 0;
+        let flags = r.u8()?;
+        let (is_param, split_piece) = (flags & 1 != 0, flags & 2 != 0);
         let arg_index = match r.u8()? {
             0 => None,
             1 => Some(r.u64()? as usize),
@@ -447,6 +467,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             arg_index,
             line_numbers,
             addresses,
+            split_piece,
         });
     }
     let nt = r.u32()? as usize;
@@ -499,6 +520,7 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
             direct: bits & 2 != 0,
             aggregate: bits & 4 != 0,
             elem: bits & 8 != 0,
+            integer: bits & 16 != 0,
         });
     }
     let nf = r.u32()? as usize;
@@ -524,6 +546,27 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         _ => return None,
     };
     let pointerargs = read_pointerargs(&mut r)?;
+    let count = r.u32()? as usize;
+    let mut call_declarations = r.sized(count);
+    for _ in 0..count { call_declarations.push(r.string()?); }
+    let count = r.u32()? as usize;
+    if count > 16_384 { return None; }
+    let mut callwide_prototypes = r.sized(count);
+    for _ in 0..count {
+        let name = r.string()?;
+        let entry = r.u64()?;
+        let signed = match r.u8()? { 0 => false, 1 => true, _ => return None };
+        let inputs = r.u32()? as usize;
+        if inputs > 32 { return None; }
+        let mut words = r.sized(inputs);
+        for _ in 0..inputs {
+            words.push(match r.u8()? { 0 => false, 1 => true, _ => return None });
+        }
+        let definition = match r.u8()? { 0 => false, 1 => true, _ => return None };
+        callwide_prototypes.push(kuna_decomp::kuna_callwide::ExportPrototype {
+            name, entry, signed, inputs: words, definition,
+        });
+    }
     if r.pos != body.len() { return None; }
     Some(FuncResult {
         name,
@@ -533,6 +576,9 @@ fn decode_one(body: &[u8]) -> Option<FuncResult> {
         code,
         error,
         proto,
+        emitted_c_name,
+        call_declarations,
+        callwide_prototypes,
         variables,
         stack_objects,
         types,

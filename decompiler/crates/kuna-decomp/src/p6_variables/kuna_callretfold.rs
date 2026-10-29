@@ -159,24 +159,17 @@ pub fn call_output_foldable(data: &Funcdata, vn: VarnodeId) -> bool {
         return false; // cross-block move crosses edges / conditional execution
     }
 
-    let ops = data.bb_ops(def_blk); // block op order (seqnum)
-    let def_idx = match ops.iter().position(|&o| o == def) {
-        Some(i) => i,
-        None => return false,
-    };
-    let use_idx = match ops.iter().position(|&o| o == use_op) {
-        Some(i) => i,
-        None => return false,
-    };
-    if use_idx <= def_idx {
-        return false; // use must come strictly after the call in this block
+    let mut current = data.bb_op_next(def);
+    while let Some(mid) = current {
+        if mid == use_op {
+            return true;
+        }
+        if op_is_barrier(data, mid) || op_reads_indirect_output_of(data, mid, def) {
+            return false;
+        }
+        current = data.bb_op_next(mid);
     }
-
-    // (3) no barrier strictly between the call and its use, and nothing there
-    // reading a value this call indirectly writes.
-    !ops[def_idx + 1..use_idx]
-        .iter()
-        .any(|&mid| op_is_barrier(data, mid) || op_reads_indirect_output_of(data, mid, def))
+    false
 }
 
 /// Does a derived value's printable implied expression contain a foldable call?
@@ -345,31 +338,28 @@ fn print_point_is_order_safe(data: &Funcdata, call: OpId, use_op: OpId) -> bool 
     if op_parent(data, point) != Some(blk) {
         return false;
     }
-    let ops = data.bb_ops(blk);
-    let (Some(ci), Some(pi)) = (
-        ops.iter().position(|&o| o == call),
-        ops.iter().position(|&o| o == point),
-    ) else {
-        return false;
-    };
-    if pi <= ci {
-        return false;
-    }
     let syscall = crate::kuna_x64syscall::is_memory_call(data, call)
         || crate::kuna_syscallregs::is_memory_call(data, call);
-    !ops[ci + 1..=pi]
-        .iter()
-        .any(|&mid| {
-            if syscall {
-                op_reads_indirect_output_of(data, mid, call)
-                    || (!chain.contains(&mid) && op_is_barrier(data, mid))
-            } else {
-                !chain.contains(&mid)
-                    && (op_is_write_barrier(data, mid)
-                        || (op_is_statement(data, mid)
-                            && statement_reads_indirect_output_of(data, mid, call)))
-            }
-        })
+    let mut current = data.bb_op_next(call);
+    while let Some(mid) = current {
+        let barrier = if syscall {
+            op_reads_indirect_output_of(data, mid, call)
+                || (!chain.contains(&mid) && op_is_barrier(data, mid))
+        } else {
+            !chain.contains(&mid)
+                && (op_is_write_barrier(data, mid)
+                    || (op_is_statement(data, mid)
+                        && statement_reads_indirect_output_of(data, mid, call)))
+        };
+        if barrier {
+            return false;
+        }
+        if mid == point {
+            return true;
+        }
+        current = data.bb_op_next(mid);
+    }
+    false
 }
 
 /// Follow only expressions evaluated inside this statement, declining on exhaustion.

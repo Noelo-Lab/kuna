@@ -44,6 +44,7 @@ import { frameModel, renderFrame, slotIndex } from './stack-frame.js';
 import { commentStart } from './tags.js';
 import { renderXrefs, renderLocalCalls, localCallees, renderRefsDialog, useKind } from './xrefs-view.js';
 import { renderStringList, stringRefsModel } from './strings-view.js';
+import { dataModel, renderData as dataRowsHtml, usesOf, useWords, sectionWords, declType, placeOf, rowOf, dataSections, sizeWords } from './data-view.js';
 import { helpHtml } from './help.js';
 import { decodeBase64, pastedName } from './base64.js';
 
@@ -64,7 +65,7 @@ const els = {
   back: $('backbtn'), fwd: $('fwdbtn'), fnRename: $('fnrenamebtn'), proto: $('protobtn'),
   tabbar: $('tabbar'), tabs: $('tabs'), split: $('splitbtn'), viewBtn: $('viewbtn'), viewMenu: $('viewmenu'),
   panes: $('panes'), ccode: $('ccode'), asmcode: $('asmcode'), bytesbar: $('bytesbar'),
-  hexdump: $('hexdump'), stackframe: $('stackframe'), hint: $('hint'),
+  hexdump: $('hexdump'), stackframe: $('stackframe'), hint: $('hint'), dataBar: $('databar'), dataList: $('datalist'),
   rail: $('rail'), railBody: $('railbody'), railBtn: $('railbtn'),
   card: $('d2card'), pop: $('d2pop'), toasts: $('d2toasts'), helpDialog: $('help'), xrefsDialog: $('xrefs'),
 };
@@ -101,6 +102,8 @@ const state = {
   strSel: null,
   wrapCols: 0,
   charWidth: 0,
+  data: null,
+  codeView: 'c',
 };
 const CACHE_MAX = 32;
 
@@ -308,7 +311,10 @@ function persist() {
 // ── startup ────────────────────────────────────────────────────────────────
 
 try {
-  state.kuna = new KunaWorkerClient({ wasmUrl: '../kuna_wasm.wasm', specRoot: '../specs' });
+  state.kuna = new KunaWorkerClient({
+    wasmUrl: new URL('../kuna_wasm.wasm', import.meta.url).href,
+    specRoot: new URL('../specs', import.meta.url).href,
+  });
   await state.kuna.ready();
   setStatus('Ready. Open a program', 'ok');
   els.pick.removeAttribute('aria-disabled');
@@ -498,6 +504,8 @@ async function indexBinary(source, { keep = null, shared = null } = {}) {
   state.inventory = null;
   state.current = null;
   state.cache.clear();
+  state.data = null;
+  if (state.view === 'data') setView(state.codeView);
   let bytes;
   let inventory;
   let globals = NO_DIRECTIVES;
@@ -697,10 +705,10 @@ function renderStrings() {
 /** Open the function holding the instruction at `atHex` with that instruction selected, its line of code in view. */
 function goToUse(fnHex, atHex) {
   if (!state.inventory) return;
-  if (!['c', 'asm', 'split'].includes(state.view)) setView('c');
+  if (!['c', 'asm', 'split'].includes(state.view)) setView(['c', 'asm', 'split'].includes(state.codeView) ? state.codeView : 'c');
   const fn = state.byAddr.get(fnHex) || containingFunction(atHex);
   if (!fn) {
-    showDataAt(atHex);
+    showData(atHex);
   } else if (state.current?.fn === fn && !state.opening) {
     selectTarget({ addr: atHex }, null);
   } else {
@@ -783,7 +791,7 @@ els.strList.addEventListener('click', (e) => {
     markString(row);
     const first = row.querySelector('a.xt[data-sites]');
     if (first) goToUse(first.dataset.fn, first.dataset.sites.split(' ')[0]);
-    else showDataAt(row.dataset.addr);
+    else showData(row.dataset.addr);
   } else {
     return;
   }
@@ -957,13 +965,15 @@ function cacheSet(addrHex, data, key = cacheKey(addrHex)) {
   while (state.cache.size > CACHE_MAX) state.cache.delete(state.cache.keys().next().value);
 }
 
-function pushHistory(addrHex, replace) {
+/** A history entry for the function `addrHex`; `extra` says which view (and which data) it shows. */
+function pushHistory(addrHex, replace, extra = {}) {
+  const url = addrHex ? '#' + addrHex : location.pathname + location.search;
   if (replace) {
-    history.replaceState({ d2: state.hist.index, addr: addrHex }, '', '#' + addrHex);
+    history.replaceState({ d2: state.hist.index, addr: addrHex, ...extra }, '', url);
   } else {
     state.hist.index++;
     state.hist.max = state.hist.index;
-    history.pushState({ d2: state.hist.index, addr: addrHex }, '', '#' + addrHex);
+    history.pushState({ d2: state.hist.index, addr: addrHex, ...extra }, '', url);
   }
   syncHistoryButtons();
 }
@@ -976,11 +986,18 @@ function syncHistoryButtons() {
 }
 
 window.addEventListener('popstate', (e) => {
-  const addr = e.state?.addr || (location.hash || '').slice(1).toLowerCase();
-  if (Number.isInteger(e.state?.d2)) state.hist.index = e.state.d2;
+  const st = e.state || {};
+  const addr = st.addr || (location.hash || '').slice(1).toLowerCase();
+  if (Number.isInteger(st.d2)) state.hist.index = st.d2;
   syncHistoryButtons();
   const fn = state.byAddr.get(addr);
-  if (fn && fn.address_hex !== state.current?.fn.address_hex) openFunction(fn, { push: false });
+  if (fn && fn.address_hex !== (state.opening || state.current?.fn)?.address_hex) openFunction(fn, { push: false });
+  if (st.data) {
+    showData(st.data, { push: false });
+    return;
+  }
+  const back = st.view && st.view !== 'data' ? st.view : state.codeView;
+  if (state.view !== back && (state.view === 'data' || st.view)) setView(back);
 });
 els.back.addEventListener('click', () => history.back());
 els.fwd.addEventListener('click', () => history.forward());
@@ -1068,6 +1085,7 @@ function showFunction(fn, data, { focusAddr = null, keep = false, key = null } =
     codeLines,
     rust: /rust/i.test(data.language || ''),
     hints: idioms(data.instructions, arch.family || 'x86', { nameAt: (hex) => state.byAddr.get(hex)?.name || null }),
+    ...globalMaps(data),
   };
   state.rendered.clear();
   if (!keep) state.sel = null;
@@ -1087,6 +1105,41 @@ function showFunction(fn, data, { focusAddr = null, keep = false, key = null } =
   collab?.whereChanged();
 }
 
+/**
+ * The globals a function's code names: `globalOf` (name → address) and
+ * `globalAt` (address → name), from the tokens that carry a global's address
+ * and the `globals` the engine lists.
+ */
+function globalMaps(data) {
+  const globalOf = new Map();
+  const globalAt = new Map();
+  const add = (name, hex) => {
+    const a = hex ? '0x' + BigInt(hex).toString(16) : null;
+    if (!name || !a) return;
+    if (!globalOf.has(name)) globalOf.set(name, a);
+    if (!globalAt.has(a)) globalAt.set(a, name);
+  };
+  for (const t of data.tokens || []) if (t.kind === 'variable' && (t.global_hex || t.global != null)) add(t.text, t.global_hex ?? t.global);
+  for (const g of data.globals || []) add(g.name, g.address_hex);
+  return { globalOf, globalAt };
+}
+
+/** The section holding `hex`, from the inventory, or null. */
+function sectionAt(hex) {
+  const a = BigInt(hex);
+  return sections().find((s) => {
+    const start = BigInt(s.address_hex ?? s.address);
+    return a >= start && a < start + BigInt(s.size);
+  }) || null;
+}
+
+/** For the assembly's links: the name of the data at `hex` ('' when it has none), or null when `hex` is not data. */
+function dataAt(hex) {
+  const sec = sectionAt(hex);
+  if (!sec || sec.executable) return null;
+  return state.current?.globalAt?.get(hex) ?? '';
+}
+
 const DEFAULT_HINT = 'Tip: hover a line to see its assembly';
 
 /** The status bar's right side: what is selected and which keys act on it. */
@@ -1100,7 +1153,7 @@ els.tipBtn.addEventListener('click', () => {
 });
 
 function paneFor(tab) {
-  return { c: 'pane-c', asm: 'pane-asm', bytes: 'pane-bytes', stack: 'pane-stack' }[tab];
+  return { c: 'pane-c', asm: 'pane-asm', bytes: 'pane-bytes', stack: 'pane-stack', data: 'pane-data' }[tab];
 }
 
 const narrowView = window.matchMedia('(max-width: 899px)');
@@ -1167,6 +1220,9 @@ const RENDER = {
     }
     els.stackframe.innerHTML = renderFrame(frame, { selectedSym: state.sel?.sym || null });
     sync.refresh('stack');
+  },
+  data() {
+    renderDataPane();
   },
 };
 
@@ -1269,6 +1325,7 @@ function asmContext(data) {
     patched: patchedInsns(data),
     slotOf: cur.frame?.supported ? (reg, disp) => cur.frame.slotOf(reg, disp) : null,
     inferred: cur.inferred,
+    dataAt,
   };
 }
 
@@ -1409,10 +1466,16 @@ function typeWords(type) {
   return type || '';
 }
 
-/** Where a value lives, in words: `register RAX`, `the stack, 20 bytes below the return address`. */
+/** Where a value lives, in words: `register RAX`, `the stack, 80 bytes below RBP`, `the stack, 20 bytes below the return address`. */
 function whereWords(storage, stackOffset) {
   const reg = /^([a-z][a-z0-9]*)$/i.exec((storage || '').trim());
   if (reg) return `register ${reg[1].toUpperCase()}`;
+  const based = /^(?!stack\b)([a-z][a-z0-9]*)\s*([-+])\s*(0x[0-9a-f]+)$/i.exec((storage || '').trim());
+  if (based) {
+    const n = Number(based[3]);
+    return n ? `the stack, ${n} byte${n === 1 ? '' : 's'} ${based[2] === '-' ? 'below' : 'above'} ${based[1].toUpperCase()}`
+      : `the stack, where ${based[1].toUpperCase()} points`;
+  }
   const st = /^stack\s*([-+])\s*(0x[0-9a-f]+|\d+)$/i.exec((storage || '').trim());
   const off = st ? (st[1] === '-' ? -1 : 1) * Number(st[2]) : stackOffset;
   if (Number.isInteger(off)) {
@@ -1429,14 +1492,17 @@ function describeVar(name) {
   const stack = vars.find((v) => Number.isInteger(v.stack_offset) && v.kind !== 'arg');
   const sigIndex = shownSignature()?.params.findIndex((p) => p.name === name) ?? -1;
   const isParam = !!param || sigIndex >= 0;
-  const global = !isParam && !decl && !stack && /^dat_|^g_/.test(name);
-  const kind = isParam ? 'parameter' : global ? 'global' : 'local variable';
+  const gaddr = isParam || decl || stack ? null : state.current.globalOf?.get(name) || null;
+  const global = !isParam && !decl && !stack && (!!gaddr || /^dat_|^g_/.test(name));
+  const kind = isParam ? 'parameter' : global ? 'global variable' : 'local variable';
   const type = decl?.type || param?.type || stack?.type || shownSignature()?.params[sigIndex]?.type || '';
   const index = param?.arg_index ?? (sigIndex >= 0 ? sigIndex : null);
   const input = isParam && Number.isInteger(index) ? index + 1 : null;
-  const where = decl?.storage ? whereWords(decl.storage) : stack ? whereWords('', stack.stack_offset) : '';
-  const raw = decl?.storage ? decl.storage : stack ? entryOffset(stack.stack_offset) : '';
-  return { name, kind, type, input, where, raw };
+  const sec = gaddr ? sectionAt(gaddr) : null;
+  const where = decl?.storage ? whereWords(decl.storage) : stack ? whereWords('', stack.stack_offset)
+    : gaddr ? `memory at ${bare(gaddr)}${sec?.name ? `, in ${sec.name}` : ''}` : '';
+  const raw = decl?.storage ? decl.storage : stack ? entryOffset(stack.stack_offset) : gaddr || '';
+  return { name, kind, type, input, where, raw, gaddr };
 }
 
 const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
@@ -1526,6 +1592,7 @@ function lineCard(n, varTok) {
   }
   html += tagNotes(n, 'cx');
   if (varTok) html += `<div class="cx"><b>${escapeHtml(varSummary(varTok.textContent))}</b></div>`;
+  if (varTok?.dataset.gaddr) html += '<div class="cf">Double-click to see its data</div>';
   return html;
 }
 
@@ -1582,14 +1649,20 @@ function targetCard(hex) {
   if (index.addrToInsn.has(hex)) {
     return `<div class="ch">${escapeHtml(bare(hex))}</div><div class="cm">Further on in ${escapeHtml(displayName(state.current.fn))} (${escapeHtml(formatAddr(hex, data.address_hex, 'rel'))}). Click to jump there.</div>`;
   }
+  const name = state.byAddr.has(hex) ? null : dataAt(hex);
+  if (name !== null) {
+    const sec = sectionAt(hex);
+    return `<div class="ch">${escapeHtml(name || bare(hex))}</div><div class="cm">Data at ${escapeHtml(bare(hex))}${sec?.name ? ` in ${escapeHtml(sec.name)}` : ''}</div><div class="cf">Click to see it in the Data tab</div>`;
+  }
   return calleeCard(hex);
 }
 
-/** What a stack slot holds, in words. */
+/** What a stack slot holds, in words, and its location as the code's comments write it. */
 function slotWords(off) {
-  const hit = state.current.frame?.slots.find((s) => off >= s.offset && off < s.offset + s.size);
+  const { frame } = state.current;
+  const hit = frame?.slots.find((s) => off >= s.offset && off < s.offset + s.size);
   const pos = off < 0 ? `${-off} bytes below the return address` : off === 0 ? 'the return address itself' : `${off} bytes above the return address`;
-  return { hit, pos };
+  return { hit, pos, where: frame?.where ? frame.where(off) : entryOffset(off) };
 }
 
 function slotCard(so) {
@@ -1621,7 +1694,9 @@ function varSelectedCard(name) {
     (lines.length ? `<dt>Used on lines</dt><dd class="x-lines">${lines.map(lineLink).join(', ')}</dd>` : '') +
     '</dl>';
   if (INVENTED.test(name)) html += `<p class="x-note d2-teach">${escapeHtml(name)} is a name the decompiler made up; rename it to what it means.</p>`;
-  html += '<div class="x-acts"><button class="d2-btn small" data-act="sel-rename">Rename</button>' +
+  html += '<div class="x-acts">' +
+    (v.gaddr ? `<button class="d2-btn small" data-act="sel-data" data-to="${escapeHtml(v.gaddr)}" title="Double-click it in the code to do the same">See its data</button>` : '') +
+    '<button class="d2-btn small" data-act="sel-rename">Rename</button>' +
     `<button class="d2-btn small" data-act="sel-retype"${canRetype ? '' : ' disabled title="Changing a type needs the C view: set Show code as to C"'}>Change type</button></div></div>`;
   return html;
 }
@@ -1684,19 +1759,21 @@ function lineSelectedCard(n) {
 }
 
 function slotSelectedCard(off) {
-  const { hit, pos } = slotWords(off);
+  const { hit, pos, where } = slotWords(off);
   let html = '<div class="x-card">';
   if (hit) {
-    html += `<div><span class="x-name">${escapeHtml(hit.kind === 'pad' ? 'unused space' : hit.name)}</span></div><dl class="x-dl">` +
+    html += `<div><span class="x-name">${escapeHtml(hit.name)}</span></div><dl class="x-dl">` +
       (hit.type && hit.kind !== 'pad' ? `<dt>Type</dt><dd><code>${escapeHtml(hit.type)}</code></dd>` : '') +
-      `<dt>Size</dt><dd>${hit.size} bytes</dd><dt>Where</dt><dd title="${escapeHtml(entryOffset(off))}">${escapeHtml(pos)}</dd></dl>`;
-    if (hit.alias) html += `<p class="x-note">The decompiler also calls this ${escapeHtml(hit.alias)}.</p>`;
-    if (hit.dim) html += '<p class="x-note">Only the debug info mentions it; the C code never uses it.</p>';
+      `<dt>Size</dt><dd>${hit.size} bytes</dd><dt>Where</dt><dd><code>${escapeHtml(where)}</code>, ${escapeHtml(pos)}</dd></dl>`;
+    if (hit.alias) html += `<p class="x-note">The code also calls this ${escapeHtml(hit.alias)}.</p>`;
   } else {
     html += `<p class="x-note">${escapeHtml(pos[0].toUpperCase() + pos.slice(1))}.</p>`;
   }
   const fp = state.current.frame?.fp;
-  if (fp !== null && fp !== undefined) html += `<p class="x-note d2-teach">The frame pointer RBP points ${-fp} bytes below the return address, so <code>[RBP - d]</code> is d bytes further down.</p>`;
+  if (fp) {
+    const reg = fp.register.toUpperCase();
+    html += `<p class="x-note d2-teach">The frame pointer ${escapeHtml(reg)} points ${-fp.offset} bytes below the return address, so <code>[${escapeHtml(reg)} - d]</code> is d bytes further down.</p>`;
+  }
   return html + '</div>';
 }
 
@@ -1792,7 +1869,7 @@ function gotoAddr(hex) {
   }
   const fn = state.byAddr.get(hex) || containingFunction(hex);
   if (fn) openFunction(fn, { focusAddr: fn.address_hex === hex ? null : hex });
-  else showDataAt(hex);
+  else showData(hex);
 }
 
 function containingFunction(hex) {
@@ -1831,6 +1908,10 @@ els.ccode.addEventListener('dblclick', (e) => {
   if (target?.kind === 'callee') {
     e.preventDefault();
     openCallee(tok);
+  } else if (target?.kind === 'global') {
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    showData(target.addr);
   } else if (target) {
     e.preventDefault();
     window.getSelection()?.removeAllRanges();
@@ -1928,20 +2009,26 @@ function paneKey(e) {
 function setView(view) {
   const before = visibleTabs();
   state.view = view;
-  updatePrefs({ view });
+  if (view !== 'data') {
+    state.codeView = view;
+    updatePrefs({ view });
+  }
   const shown = visibleTabs();
   for (const btn of els.tabs.querySelectorAll('[role=tab]')) {
     const on = btn.dataset.tab === view;
     btn.setAttribute('aria-selected', String(on));
     btn.tabIndex = on ? 0 : -1;
   }
-  for (const t of ['c', 'asm', 'bytes', 'stack']) $(paneFor(t)).hidden = !shown.includes(t);
+  revealTab();
+  if (state.current) rail.setSelected(view === 'data' ? '' : selectedCard());
+  for (const t of ['c', 'asm', 'bytes', 'stack', 'data']) $(paneFor(t)).hidden = !shown.includes(t);
   els.panes.classList.toggle('split', shown.length > 1);
   els.narrow.hidden = !(view === 'split' && shown.length === 1);
   if (state.asmRendered && state.asmRendered !== (inSplit() ? 'split' : 'asm')) state.rendered.delete('asm');
   applyPaneClasses();
   renderVisible();
-  if (state.current) {
+  if (view === 'data' && !state.current) renderDataPane();
+  if (state.current && view !== 'data') {
     const place = followTarget();
     for (const tab of shown) if (!before.includes(tab) && (tab !== 'c' || place?.addr)) sync.show(tab, place);
   }
@@ -1961,6 +2048,17 @@ function followTarget() {
   return row ? { line: Number(row.dataset.line) } : sel;
 }
 const setTab = setView;
+
+/** Keep the selected view's tab in sight when the tabs scroll (a narrow window). */
+function revealTab() {
+  const btn = els.tabs.querySelector('[aria-selected=true]');
+  if (!btn || els.tabs.scrollWidth <= els.tabs.clientWidth) return;
+  const r = btn.getBoundingClientRect();
+  const box = els.tabs.getBoundingClientRect();
+  if (r.right > box.right) els.tabs.scrollLeft += r.right - box.right + 4;
+  else if (r.left < box.left) els.tabs.scrollLeft -= box.left - r.left + 4;
+}
+new ResizeObserver(revealTab).observe(els.tabs);
 
 els.tabs.addEventListener('click', (e) => {
   const btn = e.target.closest('[role=tab]');
@@ -2219,7 +2317,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (!state.current && e.key !== '/') return;
-  if (hexKey(e)) {
+  if (hexKey(e) || dataKey(e)) {
     e.preventDefault();
     return;
   }
@@ -2240,8 +2338,8 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       setView(state.view === 'asm' ? 'c' : 'asm');
       break;
-    case '1': case '2': case '3': case '4':
-      setView(['c', 'asm', 'bytes', 'stack'][Number(e.key) - 1]);
+    case '1': case '2': case '3': case '4': case '5':
+      setView(['c', 'asm', 'bytes', 'stack', 'data'][Number(e.key) - 1]);
       break;
     case 's':
       toggleSplit();
@@ -2371,6 +2469,10 @@ function needsC(what) {
 }
 
 function editKeysHint(name) {
+  if (state.current?.globalOf?.has(name) && !isParam(name) && !state.current.decls.some((d) => d.name === name)) {
+    return state.current.rust ? 'double-click to see its data, <kbd>N</kbd> to rename'
+      : 'double-click to see its data, <kbd>N</kbd> to rename, <kbd>Y</kbd> to change type';
+  }
   if (!state.current?.rust) return 'press <kbd>N</kbd> to rename, <kbd>Y</kbd> to change type';
   return isParam(name) ? 'inputs can be changed in the C view' : 'press <kbd>N</kbd> to rename';
 }
@@ -2498,18 +2600,23 @@ async function protoDialog(addr, anchorEl) {
   return applyEdit(() => session.setProto(addr, decl), { label: 'signature', done: `Changed the signature of ${displayName(fn)}` });
 }
 
+/**
+ * Name a global and say its type (one `data` directive). `target`: `{addr,
+ * name, el}`, and from the Data tab the item's `declaration`; `typeFirst`
+ * puts the type field first.
+ */
 async function dataDialog(target) {
   if (needsC('Typing a global')) return;
-  const g = state.current.data.globals.find((x) => x.address_hex === target.addr || x.name === target.name);
+  const g = (state.current?.data.globals || []).find((x) => x.address_hex === target.addr || x.name === target.name);
   const rec = session.records.get(`data:${target.addr}`);
-  const declType = g?.declaration ? g.declaration.replace(new RegExp(`\\b${target.name}\\b`), '').replace(/;\s*$/, '').trim() : '';
+  const declaration = target.declaration || g?.declaration || '';
+  const known = declaration ? declType(declaration, g && !target.declaration ? g.name : target.name) : '';
+  const name = { name: 'name', label: 'Name', value: rec?.name || target.name, validate: validateIdent };
+  const type = { name: 'type', label: 'Type (in C)', value: rec?.type || known || 'int', list: typeOptions(), validate: validateCType };
   const res = await dialogs.openPopover({
     anchorEl: target.el, title: `The global variable at ${bare(target.addr)}`,
     note: 'Name it and say what type it has; every function that uses it will show the change.',
-    fields: [
-      { name: 'name', label: 'Name', value: rec?.name || target.name, validate: validateIdent },
-      { name: 'type', label: 'Type (in C)', value: rec?.type || declType || 'undefined4', list: typeOptions(), validate: validateCType },
-    ],
+    fields: target.typeFirst ? [type, name] : [name, type],
     submitLabel: 'Save',
   });
   if (!res) return;
@@ -2563,6 +2670,11 @@ async function goToDialog() {
 function sessionChanged() {
   collab?.localChanged();
   persist();
+  if (state.data?.model) {
+    state.data.model = buildDataModel(state.data.doc);
+    if (state.view === 'data') renderDataPane();
+    queueMicrotask(() => whenIdle(reloadData));
+  }
   bytesState.version++;
   syncPatchButton();
   refreshRowNames();
@@ -2685,6 +2797,7 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
     if (!isCurrent(op)) return false;
     const data = normalizeInspect(doc);
     const wasApplied = new Set([...session.outcomes].filter(([, o]) => o.status === 'applied').map(([k]) => k));
+    const wasFatal = new Set([...session.outcomes].filter(([, o]) => o.fatal).map(([k]) => k));
     session.recordOutcomes(data.assertions, req);
     if (snap && !collab?.shared) session.pushUndo(snap);
     persist();
@@ -2725,8 +2838,10 @@ async function reinspect({ snap = null, edit = !!snap, fresh = [], label = 'edit
         detail: `${row.directive}: ${row.detail || 'the code changed under it'}. Edit or remove it under ${collab?.shared ? 'Changes' : 'Your changes'}.`,
       });
     }
-    if (data.assertions.some((r) => r.fatal)) {
-      toast('The code shown was made without one of your changes.', { kind: 'err', detail: data.assertions.find((r) => r.fatal).detail || '' });
+    const newlyFatal = data.assertions.find((r) => r.fatal && !fresh.includes(r.directive) && !broke.includes(r) &&
+      !session.keysOf(r.directive, req).some((k) => wasFatal.has(k)));
+    if (newlyFatal) {
+      toast('The code shown was made without one of your changes.', { kind: 'err', detail: newlyFatal.detail || '' });
     }
     const dt = Math.round(performance.now() - t0);
     const bad = mine.some((r) => r.status === 'rejected');
@@ -3003,6 +3118,7 @@ const rail = createRail({
         break;
       }
       case 'sel-insn': gotoAddr(data.el.dataset.addr); break;
+      case 'sel-data': showData(data.el.dataset.to); break;
       case 'refs-load': state.refsOpen = true; loadRefs(); break;
       case 'edit-remove': applyEdit(() => session.remove(data.key), { label: 'removal', done: 'Removed the change' }); break;
       case 'edit-edit': editEntry(data.key); break;
@@ -3164,6 +3280,402 @@ document.addEventListener('click', (e) => {
     renderVisible();
   }
 });
+
+// ── data: the Data tab ─────────────────────────────────────────────────────
+
+/** Operations a data request may stop: reads and lists the page asks for again. */
+const SUPERSEDABLE = new Set(['data', 'uses', 'strings', 'read', 'xrefs']);
+
+/** The program-wide directives a data window is read with (renames, retypes and patches of globals). */
+function dataRequest() {
+  return state.caps.assert ? session.prepare({ func: null }) : NO_DIRECTIVES;
+}
+
+const dataKeyOf = (req) => req.texts.join('\n');
+const hexOf = (a) => '0x' + BigInt(a).toString(16);
+
+/** The page's name for the function whose entry is `hex`, or null. */
+const fnNameAt = (hex) => (state.byAddr.has(hex) ? displayName(state.byAddr.get(hex)) : null);
+
+/** The globals the decompiler declared in the functions the page has open or cached, the open one first. */
+function knownGlobals() {
+  const out = new Map();
+  const add = (g) => {
+    const a = (g.address_hex || '').toLowerCase();
+    if (a && !out.has(a)) out.set(a, g);
+  };
+  for (const g of state.current?.data.globals || []) add(g);
+  for (const data of state.cache.values()) for (const g of data.globals || []) add(g);
+  return [...out.values()];
+}
+
+function buildDataModel(doc) {
+  const { bits, llp64 } = sizeModel();
+  return dataModel(doc, {
+    known: knownGlobals(),
+    fnAt: fnNameAt,
+    longSize: llp64 || bits === 32 ? 4 : 8,
+    knownTypes: new Map((state.inventory?.known_types || []).map((t) => [t.name, t.size])),
+  });
+}
+
+/** Record where the student is in the current history entry, so Back comes back to it. */
+function stampHistory() {
+  const st = history.state || {};
+  const d = state.data;
+  const at = d?.model && d.sel ? rowOf(d.model, d.sel)?.hex : null;
+  history.replaceState({ ...st, view: state.view, data: state.view === 'data' ? at || d?.hex || null : null }, '');
+}
+
+/** The function the page is on, for history entries. */
+const pageFn = () => state.current?.fn.address_hex || state.opening?.address_hex || (location.hash || '').slice(1).toLowerCase() || null;
+
+/**
+ * Go to the data at `hex` in the Data tab: within the window on screen when it
+ * holds it, else a new window read from the engine. `push` adds a history entry.
+ */
+function showData(hex, { push = true } = {}) {
+  if (!state.inventory) return;
+  const target = hexOf(hex);
+  if (!state.caps.inspect) {
+    toast(`${bare(target)} is not inside a function, and this version of the decompiler cannot show data.`, { kind: 'warn' });
+    return;
+  }
+  if (push) {
+    stampHistory();
+    pushHistory(pageFn(), false, { view: 'data', data: target });
+  }
+  const d = state.data;
+  const a = BigInt(target);
+  if (d?.model && !d.loading && d.key === dataKeyOf(dataRequest()) && a >= d.model.start && a < d.model.end) {
+    selectDataAt(a);
+    openDataView({ reveal: true });
+    return;
+  }
+  loadData(target);
+}
+
+/** Read the window around `target` (or `[target, target+len)`), keeping what is open when it is the same window again. */
+function loadData(target, { len = null, reveal = true } = {}) {
+  const prev = state.data;
+  const req = dataRequest();
+  const key = dataKeyOf(req);
+  state.data = { ...(prev || { model: null, open: new Set() }), hex: target, focus: BigInt(target), key, loading: true, error: null };
+  openDataView();
+  const run = async () => {
+    if (state.data?.hex !== target || !state.data.loading || !state.binary) return;
+    const op = beginOperation('data');
+    op.onCancel = () => {
+      if (state.data?.hex !== target) return;
+      if (op.explicit) {
+        state.data.loading = false;
+        state.data.error = state.data.model ? null : 'Stopped.';
+        renderDataPane();
+      } else {
+        queueMicrotask(() => whenIdle(run));
+      }
+    };
+    setStatus(`Reading the data at ${bare(target)}…`);
+    try {
+      const doc = await withDirectives((list) => state.kuna.data(target, len, { assertions: list }), req);
+      if (!isCurrent(op)) return;
+      session.recordOutcomes(doc.assertions, req);
+      state.data = {
+        hex: target, focus: BigInt(target), key, doc, model: buildDataModel(doc), loading: false, error: null,
+        open: state.data?.open || new Set(), sel: null, uses: null,
+      };
+      selectDataAt(BigInt(target), { render: false });
+      setStatus(`Showing the data at ${bare(target)}`, 'ok');
+    } catch (e) {
+      if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
+      state.data = { ...state.data, loading: false, error: `Could not read the data at ${bare(target)}: ${errorLine(e)}` };
+      setStatus(`Could not read the data at ${bare(target)}`, 'err', e.message);
+    } finally {
+      finishOperation(op);
+    }
+    if (state.view === 'data') renderDataPane({ reveal });
+  };
+  if (active && !SUPERSEDABLE.has(active.kind)) whenIdle(run);
+  else run();
+}
+
+/** Read the open window again (after an edit changed what it depends on), keeping the selection. */
+function reloadData() {
+  const d = state.data;
+  if (!d?.model || d.loading || d.key === dataKeyOf(dataRequest())) return;
+  const at = d.sel ? rowOf(d.model, d.sel)?.hex : null;
+  loadData(at || d.hex, { reveal: false });
+}
+
+/** Select the row holding `addr`, opening the arrays and structs it is inside. */
+function selectDataAt(addr, { render = true } = {}) {
+  const d = state.data;
+  if (!d?.model) return;
+  const place = placeOf(d.model, addr);
+  d.sel = place?.key || null;
+  for (const k of place?.open || []) d.open.add(k);
+  if (render) renderDataPane({ reveal: true });
+}
+
+function openDataView({ reveal = false } = {}) {
+  showEmpty(false);
+  if (state.view !== 'data') setView('data');
+  else renderDataPane({ reveal });
+}
+
+/** The selected row of the Data tab and the top-level item it belongs to. */
+function dataSelection() {
+  const d = state.data;
+  if (!d?.model || !d.sel) return null;
+  const row = rowOf(d.model, d.sel);
+  const top = rowOf(d.model, d.sel.split('/')[0]);
+  return row ? { row, top } : null;
+}
+
+function dataEmptyHtml() {
+  const globals = state.current?.data.globals || [];
+  let html = '<div class="d2note dv-empty"><p>Double-click a global variable in the code to see its data here: its value, its type and the code that uses it.</p>';
+  if (globals.length) {
+    html += `<p>Data ${escapeHtml(displayName(state.current.fn))} uses:</p><ul class="dv-glist">` +
+      globals.slice(0, 40).map((g) => `<li><a href="#" class="dv-link" data-act="dv-go" data-to="${escapeHtml(g.address_hex)}">${escapeHtml(g.name)}</a> <span class="d2muted">${escapeHtml(bare(g.address_hex))}</span></li>`).join('') + '</ul>';
+  }
+  const secs = dataSections(sections());
+  if (secs.length) {
+    html += '<p>Or look through a section of the program:</p><ul class="dv-glist dv-slist">' +
+      secs.map((s) => `<li><a href="#" class="dv-link" data-act="dv-go" data-to="${escapeHtml(s.address_hex)}">${escapeHtml(s.name || bare(s.address_hex))}</a> ` +
+        `<span class="d2muted">${escapeHtml(`${sectionWords(s)} · ${sizeWords(s.size)}`)}</span></li>`).join('') + '</ul>';
+  }
+  return html + '</div>';
+}
+
+const sectionEnd = (sec) => (sec ? BigInt(sec.address_hex ?? sec.address) + BigInt(sec.size) : null);
+
+/** The data sections just before and after `sec` in the program (none of them code), or nulls. */
+function neighbourSections(sec) {
+  if (!sec) return [null, null];
+  const data = dataSections(sections());
+  const at = data.findIndex((s) => s.address_hex === (sec.address_hex ?? hexOf(sec.address)));
+  return at < 0 ? [null, null] : [data[at - 1] || null, data[at + 1] || null];
+}
+
+function renderDataPane({ reveal = false } = {}) {
+  const d = state.data;
+  if (!d?.model) {
+    els.dataBar.innerHTML = '';
+    els.dataList.innerHTML = d?.loading ? `<div class="d2note">Reading the data at ${escapeHtml(bare(d.hex))}…</div>`
+      : d?.error ? `<div class="d2note">${escapeHtml(d.error)}</div>` : dataEmptyHtml();
+    return;
+  }
+  const { model } = d;
+  const sec = model.section;
+  const keep = els.dataList.scrollTop;
+  const [prev, next] = neighbourSections(sec);
+  const more = (to, label) => `<button class="d2-link dv-more" data-act="dv-more" data-to="${to}">${escapeHtml(label)}</button>`;
+  const before = sec && model.start > BigInt(sec.address_hex ?? sec.address)
+    ? more(hexOf(model.start - 1n), `Show the data before ${bare(hexOf(model.start))}`)
+    : prev ? more(hexOf(sectionEnd(prev) - 1n), `Previous section: ${prev.name || bare(prev.address_hex)}`) : '';
+  const after = sec && model.end < sectionEnd(sec)
+    ? more(hexOf(model.end), `Show the data after ${bare(hexOf(model.end - 1n))}`)
+    : next ? more(next.address_hex, `Next section: ${next.name || bare(next.address_hex)}`) : '';
+  els.dataList.innerHTML = before + dataRowsHtml(model, { selected: d.sel, open: d.open, sections: dataSections(sections()) }) + after;
+  els.dataList.classList.toggle('dv-busy', !!d.loading);
+  renderDataBar();
+  const sel = d.sel ? els.dataList.querySelector(`.dv-row[data-key="${CSS.escape(d.sel)}"]`) : null;
+  if (reveal && sel) bring(sel, { arriving: true });
+  else els.dataList.scrollTop = keep;
+  if (state.view === 'data') loadUses();
+}
+
+/** The bar above the rows: what is selected, who uses it, and what can be done with it. */
+function renderDataBar() {
+  const d = state.data;
+  const pick = dataSelection();
+  if (!d?.model) { els.dataBar.innerHTML = ''; return; }
+  const sec = d.model.section;
+  const where = sec ? ` in ${sec.name || 'a section'}` : '';
+  if (!pick) {
+    els.dataBar.innerHTML = `<span class="dv-what">${escapeHtml(sec?.name || 'Memory')}: ${escapeHtml(sectionWords(sec))}</span>`;
+    return;
+  }
+  const { row, top } = pick;
+  const base = top.name || bare(top.hex);
+  const name = row === top ? row.name
+    : row.name ? `${base}${row.name.startsWith('[') ? '' : '.'}${row.name}` : `${base} + ${hexOf(row.addr - top.addr)}`;
+  const size = `${row.size} byte${row.size === 1 ? '' : 's'}`;
+  const typed = row.type && !/ bytes?$/.test(row.type) && row.type !== 'text' && row.type !== 'pointer';
+  let html = `<span class="dv-what">${name ? `<b>${escapeHtml(name)}</b> ` : ''}${typed ? `<code>${escapeHtml(row.type)}</code> · ` : ''}` +
+    `${escapeHtml(size)} at ${escapeHtml(bare(row.hex))}${escapeHtml(where)}</span>`;
+  html += `<span class="dv-used">${usedByHtml(row)}</span>`;
+  const canName = top.kind === 'item' || top.kind === 'text' || top.kind === 'bytes' || top.kind === 'pointer' || top.kind === 'uninit' || top.kind === 'zeros';
+  html += '<span class="d2-grow"></span><span class="dv-acts">' +
+    (canName ? `<button class="d2-btn small" data-act="dv-rename" title="Give it a name (N)">Rename</button><button class="d2-btn small" data-act="dv-retype" title="Say what type it is (Y)">Change type</button>` : '') +
+    `<button class="d2-btn small" data-act="dv-bytes" title="See and change its bytes">Show bytes</button></span>`;
+  els.dataBar.innerHTML = html;
+}
+
+const nameOfUser = (fnHex, name) => (state.byAddr.has(fnHex) ? displayName(state.byAddr.get(fnHex)) : name || bare(fnHex));
+
+function usedByHtml(row) {
+  const u = state.data?.uses;
+  if (!u || u.loading) return '<span class="d2muted">Finding the code that uses it…</span>';
+  if (u.error) return `<span class="d2muted">Could not find the code that uses it.</span> <button class="d2-link" data-act="dv-uses-retry">Try again</button>`;
+  if (u.stopped) return '<button class="d2-link" data-act="dv-uses-retry">Find the code that uses it</button>';
+  const groups = usesOf(u.list, row.addr, row.size, nameOfUser);
+  if (!groups.length) return '<span class="d2muted">No code uses it directly</span>';
+  return 'Used by ' + groups.map((g) => `<a href="#" class="dv-link" data-act="dv-use" data-fn="${escapeHtml(g.fn)}" data-sites="${escapeHtml(g.sites.join(' '))}" ` +
+    `title="${escapeHtml(`${g.name} ${useWords(g.kinds)}${g.via ? ` through the pointer ${g.via}` : ''}. Click to see where`)}">${escapeHtml(g.name)}</a>` +
+    `${g.sites.length > 1 ? ` <span class="d2muted">×${g.sites.length}</span>` : ''}`).join(', ');
+}
+
+/** Ask the engine who uses the window's data, once per window, while the Data tab is on screen. */
+function loadUses() {
+  const d = state.data;
+  if (!d?.model || d.uses || d.loading || state.view !== 'data') return;
+  d.uses = { loading: true };
+  const start = hexOf(d.model.start);
+  const len = Number(d.model.end - d.model.start);
+  const req = dataRequest();
+  whenIdle(async () => {
+    if (state.data !== d || !d.uses?.loading) return;
+    if (state.view !== 'data') { d.uses = null; return; }
+    const op = beginOperation('uses');
+    op.onCancel = () => {
+      if (state.data !== d) return;
+      d.uses = op.explicit ? { stopped: true } : null;
+      if (op.explicit) renderDataBar();
+    };
+    try {
+      const doc = await withDirectives((list) => state.kuna.uses(start, len, { assertions: list }), req);
+      if (!isCurrent(op)) return;
+      d.uses = { list: doc.uses || [] };
+    } catch (e) {
+      if (!isCurrent(op) || e instanceof KunaWorkerCancelledError) return;
+      d.uses = { error: errorLine(e) };
+    } finally {
+      finishOperation(op);
+    }
+    if (state.data === d && state.view === 'data') renderDataBar();
+  });
+}
+
+/** Follow a pointer: a function opens, data moves within the Data tab. */
+function followData(link) {
+  const to = link.dataset.to;
+  if (link.dataset.kind === 'fn') {
+    const fn = state.byAddr.get(to) || containingFunction(to);
+    if (!fn) return;
+    stampHistory();
+    setView(state.codeView === 'data' ? 'c' : state.codeView);
+    openFunction(fn, { focusAddr: fn.address_hex === to ? null : to });
+    return;
+  }
+  showData(to);
+}
+
+/** Go from the Data tab to the code that uses the data: the function, at the using instruction. */
+function goToDataUse(link) {
+  const fnHex = link.dataset.fn;
+  const sites = link.dataset.sites.split(' ');
+  stampHistory();
+  if (state.current?.fn.address_hex === fnHex) pushHistory(fnHex, false, { view: state.codeView });
+  setView(['c', 'asm', 'split'].includes(state.codeView) ? state.codeView : 'c');
+  goToUse(fnHex, sites[0]);
+}
+
+/** Name or type the selected data: its item, or the unlabelled bytes it starts. */
+function dataEdit(focusType = false) {
+  const pick = dataSelection();
+  if (!pick || needsC('Naming data')) return;
+  const { top } = pick;
+  const el = els.dataBar.querySelector(focusType ? '[data-act=dv-retype]' : '[data-act=dv-rename]') || els.dataList;
+  if (top.kind === 'item') {
+    return dataDialog({ addr: top.hex, name: top.name, declaration: top.item?.declaration, unknownSize: top.layout?.kind === 'unknown' ? top.size : 0, el, typeFirst: focusType });
+  }
+  const guess = top.kind === 'text' ? `char[${top.size}]` : top.kind === 'pointer' ? 'void *' : top.size === 1 ? 'char' : `unsigned char[${top.size}]`;
+  return dataDialog({ addr: top.hex, name: `dat_${bare(top.hex)}`, declaration: `${guess} dat_${bare(top.hex)}`, el, typeFirst: focusType });
+}
+
+els.dataList.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]');
+  if (act?.dataset.act === 'dv-more') { loadData(act.dataset.to); return; }
+  if (act?.dataset.act === 'dv-go') { e.preventDefault(); showData(act.dataset.to); return; }
+  const rowEl = e.target.closest('.dv-row[data-key]');
+  const d = state.data;
+  if (!rowEl || !d?.model) return;
+  if (act?.dataset.act === 'dv-follow') { e.preventDefault(); followData(act); return; }
+  const key = rowEl.dataset.key;
+  if (act?.dataset.act === 'dv-toggle') {
+    if (d.open.has(key)) d.open.delete(key); else d.open.add(key);
+  }
+  d.sel = key;
+  renderDataPane();
+  els.dataList.focus({ preventScroll: true });
+});
+
+els.dataList.addEventListener('change', (e) => {
+  if (e.target.matches?.('.dv-pick')) showData(e.target.value);
+});
+
+els.dataList.addEventListener('dblclick', (e) => {
+  const rowEl = e.target.closest('.dv-row[data-key]');
+  const d = state.data;
+  if (!rowEl || !d?.model || e.target.closest('[data-act]')) return;
+  const link = rowEl.querySelector('[data-act=dv-follow]');
+  if (link) { followData(link); return; }
+  const row = rowOf(d.model, rowEl.dataset.key);
+  if (row?.count) {
+    if (d.open.has(rowEl.dataset.key)) d.open.delete(rowEl.dataset.key); else d.open.add(rowEl.dataset.key);
+    renderDataPane();
+  }
+});
+
+els.dataBar.addEventListener('click', (e) => {
+  const act = e.target.closest('[data-act]');
+  if (!act) return;
+  e.preventDefault();
+  const pick = dataSelection();
+  switch (act.dataset.act) {
+    case 'dv-use': goToDataUse(act); break;
+    case 'dv-rename': dataEdit(false); break;
+    case 'dv-retype': dataEdit(true); break;
+    case 'dv-bytes': if (pick) { stampHistory(); showDataAt(pick.row.hex); } break;
+    case 'dv-uses-retry': if (state.data) { state.data.uses = null; loadUses(); renderDataBar(); } break;
+    default: break;
+  }
+});
+
+/** Keys in the Data tab: ↑↓ move, → opens and ← folds, Enter follows a pointer, N renames and Y retypes. */
+function dataKey(e) {
+  const at0 = document.activeElement;
+  if (state.view !== 'data' || !(at0 === document.body || $('pane-data').contains(at0))) return false;
+  const d = state.data;
+  if (!d?.model) return false;
+  const rows = [...els.dataList.querySelectorAll('.dv-row[data-key]')];
+  const at = rows.findIndex((r) => r.dataset.key === d.sel);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const next = rows[Math.min(Math.max(at + (e.key === 'ArrowDown' ? 1 : -1), 0), rows.length - 1)];
+    if (next) { d.sel = next.dataset.key; renderDataPane(); els.dataList.querySelector(`.dv-row[data-key="${CSS.escape(d.sel)}"]`)?.scrollIntoView({ block: 'nearest' }); }
+    return true;
+  }
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && d.sel) {
+    const row = rowOf(d.model, d.sel);
+    if (row?.count && (e.key === 'ArrowRight') !== d.open.has(d.sel)) {
+      if (e.key === 'ArrowRight') d.open.add(d.sel); else d.open.delete(d.sel);
+      renderDataPane();
+    }
+    return true;
+  }
+  if (e.key === 'Enter' && at >= 0 && (at0 === els.dataList || at0 === document.body)) {
+    const link = rows[at].querySelector('[data-act=dv-follow]');
+    if (link) followData(link);
+    return true;
+  }
+  if (e.key === 'n' || e.key === 'y') {
+    dataEdit(e.key === 'y');
+    return true;
+  }
+  return false;
+}
 
 function patchButtons(insn) {
   if (!insn || !state.current?.data.hasInstructions) return '';

@@ -72,8 +72,9 @@ e5ebfe
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="zeroloopfield #1: nl stores req2's type after the loop that zeroes req2" min="1" max="1">^    v\d+\._6_2_ = 0x301;$
-^    v\d+\._4_2_ = \(int2\)v\d+;$</stringmatch>
-<stringmatch name="zeroloopfield #2: no request field is copied out of another request" min="0" max="0">\._4_2_ = v\d+\._4_2_;</stringmatch>
-<stringmatch name="zeroloopfield #3: off stores both types from the temporary loaded before the loops, as main does" min="1" max="1">^  v\d+\._4_2_ = v\d+; // branch-flip$</stringmatch>
+<!-- Indexed storage recovery may map a zeroed request as an array; its fields then print through element 0. -->
+<stringmatch name="zeroloopfield #1: nl stores req2's type after the loop that zeroes req2" min="1" max="1">^    v\d+(\[0\])?\._6_2_ = 0x301;$
+^    v\d+(\[0\])?\._4_2_ = \(int2\)v\d+;$</stringmatch>
+<stringmatch name="zeroloopfield #2: no request field is copied out of another request" min="0" max="0">\._4_2_ = v\d+(\[0\])?\._4_2_;</stringmatch>
+<stringmatch name="zeroloopfield #3: off stores both types from the temporary loaded before the loops, as main does" min="1" max="1">^  v\d+(\[0\])?\._4_2_ = v\d+; // branch-flip$</stringmatch>
 </decompilertest>

@@ -120,6 +120,29 @@ const RUST_SIGNATURES: [&[u8]; 3] = [b"RUST_BACKTRACE", b"RUST_MIN_STACK", b"/ru
 /// `__go_buildinfo` (segment-qualified names collapse to the bare section name).
 const GO_SECTIONS: [&str; 3] = [".go.buildinfo", ".note.go.buildid", "__go_buildinfo"];
 
+/// Section-name prefixes of the Swift 5 reflection metadata, across formats:
+/// `__swift5_types`/`__swift5_proto`/… inside `__TEXT` on Mach-O, the same
+/// names without the segment underscores (`swift5_typeref`, `swift5_fieldmd`,
+/// …) on ELF, and the abbreviated `.sw5…` spellings (`.sw5tymd`, `.sw5prt`,
+/// `.sw5tyrf`, …) the Windows toolchain emits in a PE. Any section opening
+/// with one of these prefixes is Swift metadata the compiler emitted — no
+/// other toolchain uses the namespace — so a prefix test is exact.
+const SWIFT_SECTION_PREFIXES: [&str; 3] = ["__swift5_", "swift5_", ".sw5"];
+
+/// Swift runtime entry points a Swift binary calls (or exports, for the
+/// runtime library itself) even when fully stripped of its own symbols: the
+/// ARC and metadata hooks every nontrivial Swift function emits. Matched
+/// exactly against the symbol tables (dynamic imports included), the same
+/// role `RUST_SIGNATURES` plays for a `.comment`-less rustc image.
+const SWIFT_RUNTIME_SYMBOLS: [&str; 6] = [
+    "swift_retain",
+    "swift_release",
+    "swift_beginAccess",
+    "swift_endAccess",
+    "swift_allocObject",
+    "swift_getTypeByMangledNameInContext",
+];
+
 /// The MSVC `Rich` header end marker. MSVC's linker stamps an obfuscated block
 /// between the DOS stub and the PE header listing every tool (`@comp.id`) that
 /// contributed object code; the block ends with the literal `"Rich"` tag
@@ -161,6 +184,10 @@ pub enum Compiler {
     Rustc,
     /// Go (faithful — `.go.buildinfo` / `.note.go.buildid` present).
     Go,
+    /// Swift (kuna — `swift5` reflection metadata sections, Swift-mangled
+    /// symbols, or the Swift runtime import set; Ghidra has no Swift
+    /// `SourceLanguage` extension point to port).
+    Swift,
     /// No recognized toolchain signal.
     #[default]
     Unknown,
@@ -176,6 +203,56 @@ impl Compiler {
     /// `true` for [`Compiler::Go`].
     pub fn is_golang(self) -> bool {
         matches!(self, Compiler::Go)
+    }
+
+    /// `true` for [`Compiler::Swift`].
+    pub fn is_swift(self) -> bool {
+        matches!(self, Compiler::Swift)
+    }
+
+    /// The engine-plane [`SourceLang`] this verdict records on the
+    /// `Architecture` (toolchain conveniences collapse to `C`).
+    pub fn to_source_lang(self) -> kuna_decomp::kuna_sourcelang::SourceLang {
+        use kuna_decomp::kuna_sourcelang::SourceLang;
+        match self {
+            Compiler::Gcc | Compiler::Clang => SourceLang::C,
+            Compiler::Rustc => SourceLang::Rust,
+            Compiler::Go => SourceLang::Go,
+            Compiler::Swift => SourceLang::Swift,
+            Compiler::Unknown => SourceLang::Unknown,
+        }
+    }
+
+    /// The detection verdict a forced [`SourceLang`] stands in for — the
+    /// inverse of [`Compiler::to_source_lang`] up to the toolchain
+    /// conveniences (`c` forces the generic C arm, reported as `Gcc`).
+    pub fn from_forced_lang(lang: kuna_decomp::kuna_sourcelang::SourceLang) -> Compiler {
+        use kuna_decomp::kuna_sourcelang::SourceLang;
+        match lang {
+            SourceLang::C => Compiler::Gcc,
+            SourceLang::Rust => Compiler::Rustc,
+            SourceLang::Go => Compiler::Go,
+            SourceLang::Swift => Compiler::Swift,
+            SourceLang::Unknown => Compiler::Unknown,
+        }
+    }
+}
+
+/// The compiler verdict every consumer should act on: the `KUNA_SOURCELANG`
+/// override when the environment carries one (`option sourcelang`, set by the
+/// CLI before `load file` so it reaches pass selection), else detection.
+pub fn effective_compiler(file: &object::File, bytes: &[u8]) -> Compiler {
+    match kuna_decomp::kuna_sourcelang::forced_from_env() {
+        Some(lang) => Compiler::from_forced_lang(lang),
+        None => detect_compiler(file, bytes),
+    }
+}
+
+/// [`effective_compiler`] over raw image bytes (the `load file` entry point).
+pub fn effective_compiler_bytes(bytes: &[u8]) -> Compiler {
+    match kuna_decomp::kuna_sourcelang::forced_from_env() {
+        Some(lang) => Compiler::from_forced_lang(lang),
+        None => detect_compiler_bytes(bytes),
     }
 }
 
@@ -239,6 +316,12 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
         return Compiler::Rustc;
     }
 
+    // Swift — before the toolchain conveniences: a Swift ELF links clang/gcc
+    // runtime objects, so its `.comment` carries their records too.
+    if swift_indicated(file) {
+        return Compiler::Swift;
+    }
+
     // C/C++ conveniences (kuna additions; not faithful Ghidra SourceLanguage IDs).
     if comment_contains(&comment, b"clang version ") {
         return Compiler::Clang;
@@ -285,6 +368,9 @@ pub fn detect_compiler_pe(file: &object::File, bytes: &[u8]) -> Compiler {
     if comment_indicates_rust(&toolchain) || symbols_indicate_rust(file) {
         return Compiler::Rustc;
     }
+    if swift_indicated(file) {
+        return Compiler::Swift;
+    }
     if comment_contains(&toolchain, b"clang version ") {
         return Compiler::Clang;
     }
@@ -329,6 +415,11 @@ pub fn detect_compiler_macho(file: &object::File, bytes: &[u8]) -> Compiler {
     if comment_indicates_rust(&toolchain) || symbols_indicate_rust(file) {
         return Compiler::Rustc;
     }
+    // Swift — before the Apple-platform fallback: every Swift Mach-O carries
+    // `LC_BUILD_VERSION`, so the clang arm would otherwise claim it.
+    if swift_indicated(file) {
+        return Compiler::Swift;
+    }
     if comment_contains(&toolchain, b"clang version ") {
         return Compiler::Clang;
     }
@@ -354,6 +445,9 @@ fn detect_compiler_generic(file: &object::File) -> Compiler {
     }
     if symbols_indicate_rust(file) {
         return Compiler::Rustc;
+    }
+    if swift_indicated(file) {
+        return Compiler::Swift;
     }
     Compiler::Unknown
 }
@@ -488,6 +582,56 @@ fn rodata_indicates_rust(file: &object::File) -> bool {
 pub fn golang_section_present<'a>(names: impl Iterator<Item = &'a str>) -> bool {
     let mut names = names;
     names.any(|n| GO_SECTIONS.contains(&n))
+}
+
+/// `true` if any section name opens a Swift 5 reflection-metadata namespace
+/// ([`SWIFT_SECTION_PREFIXES`]). Factored over a `&str` iterator like
+/// [`golang_section_present`] so it is unit-testable without a Swift fixture.
+pub fn swift_section_present<'a>(names: impl Iterator<Item = &'a str>) -> bool {
+    let mut names = names;
+    names.any(|n| SWIFT_SECTION_PREFIXES.iter().any(|p| n.starts_with(p)))
+}
+
+/// `true` if `name` is a Swift-mangled symbol: the Swift 5 `$s`/`$S` scheme or
+/// the Swift 4 `_T0` scheme, each with an optional platform leading underscore
+/// (Mach-O spells them `_$s…`/`__T0…`).
+///
+/// The prefix is held to the scheme's own next token — an identifier length, a
+/// known-type shortcut, or the stdlib module contraction — so an assembler
+/// local like `$LN3` or a C `_T0mumble` cannot claim the image. No other
+/// toolchain emits `$s`-namespace symbols, which keeps a one-symbol test as
+/// safe as the Rust v0 grammar parse.
+pub fn is_swift_mangled(name: &str) -> bool {
+    let bare = name.strip_prefix('_').unwrap_or(name);
+    if let Some(rest) = bare.strip_prefix("$s").or_else(|| bare.strip_prefix("$S")) {
+        return rest
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase() || b == b's');
+    }
+    if let Some(rest) = bare.strip_prefix("_T0").or_else(|| name.strip_prefix("_T0")) {
+        return rest.bytes().next().is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase());
+    }
+    false
+}
+
+/// `true` if the image carries a Swift signal: a Swift-mangled text symbol, or
+/// one of the Swift runtime entry points ([`SWIFT_RUNTIME_SYMBOLS`]) in either
+/// symbol table — the dynamic table included, so a stripped Swift binary that
+/// imports `libswiftCore` is still recognized.
+fn symbols_indicate_swift(file: &object::File) -> bool {
+    file.symbols().chain(file.dynamic_symbols()).any(|s| {
+        let Ok(name) = s.name() else { return false };
+        (s.kind() == SymbolKind::Text && is_swift_mangled(name))
+            || SWIFT_RUNTIME_SYMBOLS.contains(&name.strip_prefix('_').unwrap_or(name))
+    })
+}
+
+/// The shared Swift arm every format uses: metadata sections first (cheapest,
+/// emitted by the compiler itself), then the symbol scan.
+fn swift_indicated(file: &object::File) -> bool {
+    swift_section_present(file.sections().filter_map(|s| s.name().ok()))
+        || symbols_indicate_swift(file)
 }
 
 /// Simple substring search (`haystack.contains(needle)` over bytes).
@@ -781,6 +925,90 @@ mod tests {
         for f in [BinaryFormat::Elf, BinaryFormat::Pe, BinaryFormat::MachO] {
             assert!(is_rust_mangled_in(legacy, f));
         }
+    }
+
+    #[test]
+    fn swift_section_predicate() {
+        // Mach-O, ELF and PE spellings of the Swift 5 metadata namespace.
+        for name in ["__swift5_types", "__swift5_proto", "swift5_typeref", "swift5_fieldmd", ".sw5tymd", ".sw5prt"] {
+            assert!(swift_section_present([".text", name].iter().copied()), "{name}");
+        }
+        assert!(!swift_section_present([".text", ".comment", ".go.buildinfo"].iter().copied()));
+        assert!(!swift_section_present(std::iter::empty()));
+        // A name merely containing (not opening) the namespace is not a marker.
+        assert!(!swift_section_present([".debug_swift5_typeref"].iter().copied()));
+    }
+
+    #[test]
+    fn swift_mangled_name_recognition() {
+        // Swift 5 scheme, ELF/PE (`$s…`) and Mach-O (`_$s…`) spellings, with a
+        // module-name length, a known-type shortcut, and the stdlib contraction.
+        for name in [
+            "$s4main5helloyyF",
+            "_$s4main5helloyyF",
+            "$ss5printyypd_tF",
+            "$sSS7cStringSSSPys4Int8VG_tcfC",
+            "_$S4main5helloyyF",
+            // Swift 4 scheme.
+            "_T04main5helloyyF",
+            "__T04main5helloyyF",
+        ] {
+            assert!(is_swift_mangled(name), "{name} is Swift-mangled");
+        }
+        // Assembler locals, plain C names, and `$`/`_T0` with no mangling body.
+        for name in ["$LN3", "_$LN3", "main", "_Runtime", "$", "_T0", "_T0mumble", "_RNvCs1234_4core5panic"] {
+            assert!(!is_swift_mangled(name), "{name} is not Swift-mangled");
+        }
+    }
+
+    /// A synthetic ELF carrying one `swift5_` metadata section detects as Swift,
+    /// and the same image without it stays Unknown — the hermetic analog of the
+    /// fixture-backed Rust/Go tests (no Swift toolchain exists on this host).
+    #[test]
+    fn detects_swift_on_synthetic_elf_metadata_section() {
+        use object::write::Object as WObject;
+        let build = |with_swift: bool| -> Vec<u8> {
+            let mut obj = WObject::new(
+                object::BinaryFormat::Elf,
+                object::Architecture::X86_64,
+                object::Endianness::Little,
+            );
+            let text = obj.add_section(vec![], b".text".to_vec(), object::SectionKind::Text);
+            obj.append_section_data(text, &[0xc3], 1);
+            if with_swift {
+                let s =
+                    obj.add_section(vec![], b"swift5_typeref".to_vec(), object::SectionKind::ReadOnlyData);
+                obj.append_section_data(s, b"\x00", 1);
+            }
+            obj.write().expect("write synthetic ELF")
+        };
+        let swift = build(true);
+        let file = object::File::parse(swift.as_slice()).expect("parse");
+        assert_eq!(detect_compiler(&file, &swift), Compiler::Swift);
+        assert!(detect_compiler(&file, &swift).is_swift());
+        let plain = build(false);
+        let file = object::File::parse(plain.as_slice()).expect("parse");
+        assert_eq!(detect_compiler(&file, &plain), Compiler::Unknown);
+    }
+
+    /// The forced-language mapping both ways: what `KUNA_SOURCELANG` forces and
+    /// what the engine fact records (the env read itself is covered end-to-end
+    /// by the `tests/cli` probes — no process-global mutation here).
+    #[test]
+    fn forced_language_round_trips_to_compiler_and_source_lang() {
+        use kuna_decomp::kuna_sourcelang::SourceLang;
+        for (lang, compiler) in [
+            (SourceLang::C, Compiler::Gcc),
+            (SourceLang::Rust, Compiler::Rustc),
+            (SourceLang::Go, Compiler::Go),
+            (SourceLang::Swift, Compiler::Swift),
+        ] {
+            assert_eq!(Compiler::from_forced_lang(lang), compiler);
+            assert_eq!(compiler.to_source_lang(), lang);
+        }
+        // The toolchain conveniences collapse onto C; Unknown stays itself.
+        assert_eq!(Compiler::Clang.to_source_lang(), SourceLang::C);
+        assert_eq!(Compiler::Unknown.to_source_lang(), SourceLang::Unknown);
     }
 
     #[test]

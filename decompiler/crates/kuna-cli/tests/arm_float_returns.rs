@@ -289,7 +289,7 @@ fn narrowing_returns_the_final_float_without_stale_double_bytes() {
             assert!(code.contains("float narrow(double a0)"), "{code}");
             assert!(code.contains("return (float)(a0 + a0);"), "{code}");
             assert!(code.contains("float narrow_paths(double a0)"), "{code}");
-            assert!(code.contains("return (float)a0 + 1.0;"), "{code}");
+            assert!(code.contains("return (float)a0 + 1.0f;"), "{code}");
             assert!(code.contains("double widen(float a0)"), "{code}");
             assert!(code.contains("return (double)(a0 + a0);"), "{code}");
             assert!(code.contains("double keep_double(double a0)"), "{code}");
@@ -398,7 +398,7 @@ fn mixed_paths_preserve_float_constants_loads_and_copied_inputs() {
             assert!(code.contains(&format!("float {name}(")), "{option}: {code}");
         }
         assert!(!code.contains("CONCAT44"), "{option}: {code}");
-        assert!(code.contains("return 1.0;"), "{option}: {code}");
+        assert!(code.contains("return 1.0f;"), "{option}: {code}");
         if option == "on" {
             for signature in [
                 "float mixed_constant(double a0)",
@@ -609,7 +609,7 @@ fn a_later_call_keeps_the_argument_computed_in_the_same_register() {
         ]);
         assert_eq!(rc, 0, "{err}");
         assert!(code.contains("float twocallsf(float a0)"), "{option}: {code}");
-        assert!(code.contains("return scalef(a0 * 3.0) + 1.0;"), "{option}: {code}");
+        assert!(code.contains("return scalef(a0 * 3.0f) + 1.0f;"), "{option}: {code}");
         if option == "on" {
             assert!(code.contains("double twocalls(double a0)"), "{code}");
             assert!(code.contains("  scale(a0);\n"), "{code}");
@@ -620,10 +620,14 @@ fn a_later_call_keeps_the_argument_computed_in_the_same_register() {
 
 /// A double a call left in d0 does not displace the int computed in r0, an
 /// unused d0 below a used d1 is one double, and two floats read as the halves
-/// of d0 are not one 8-byte parameter.
+/// of d0 are not one 8-byte parameter. `armfloatargs`, which the preset turns
+/// on beside it, then takes those halves as the two float parameters.
 #[test]
 fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
     let fixture = common::fixture("armfloatreturn_armhf.o");
+    let (code, err, rc) = common::run_kuna(&["decompile-all", &fixture, "--mode", "aggressive"]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(code.contains("double w2(float a0,float a1)"), "{code}");
     for option in ["off", "on"] {
         let (code, err, rc) = common::run_kuna(&[
             "decompile-all",
@@ -633,6 +637,9 @@ fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
             "--option",
             "armfloatreturn",
             option,
+            "--option",
+            "armfloatargs",
+            "off",
         ]);
         assert_eq!(rc, 0, "{err}");
         assert!(!code.contains("w2(unsigned long long"), "{option}: {code}");
@@ -646,6 +653,21 @@ fn an_int_return_beats_a_double_left_in_d0_by_a_call() {
             assert!(code.contains("return a0 + 1;"), "{code}");
         }
     }
+}
+
+/// `armfloat_preset_hard.o`: `wrap` is `b inner`, a tail call that forwards its
+/// two floats, and `inner` hands its first parameter back on one path, so it
+/// states no return a tail call could take. `use_wrap` reads the result, so
+/// `wrap` returns `inner`'s float instead of nothing beside a caller that
+/// reads it.
+#[test]
+fn a_float_tail_wrapper_returns_its_callees_float() {
+    let fixture = common::fixture("armfloat_preset_hard.o");
+    let (code, err, rc) = common::run_kuna(&["decompile-all", &fixture]);
+    assert_eq!(rc, 0, "{err}");
+    assert!(code.contains("float wrap(float a0,float a1)"), "{code}");
+    assert!(code.contains("v1 = wrap(a0 + 1.0f,a1);"), "{code}");
+    assert!(!code.contains("void wrap("), "{code}");
 }
 
 /// A double one path takes from a call and another computes is returned on both.

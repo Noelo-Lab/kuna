@@ -346,6 +346,10 @@ fn header_syntax_checks_when_a_type_shares_a_name_with_a_function() {
             text.contains("prototype omitted: int stat("),
             "libctypes {arm}: the `stat` prototype should be suppressed, not declared:\n{text}"
         );
+        assert!(
+            text.contains("conflicts with a data or type declaration */") && !text.contains("#error"),
+            "libctypes {arm}: the collision is reported in a comment, not a hard error:\n{text}"
+        );
         let stub = dir.join("hcheck.c");
         std::fs::write(
             &stub,
@@ -1059,6 +1063,196 @@ fn streamed_artifacts_match_the_non_stream_export() {
     for dir in [stream, serial, pooled] {
         let _ = std::fs::remove_dir_all(dir);
     }
+}
+
+/// Run a `--progress` export into a fresh temp directory.
+fn progress_project(fixture_name: &str, tag: &str, extra: &[&str]) -> PathBuf {
+    let bin = fixture(fixture_name);
+    let dir = out_dir(tag);
+    let specs = specs();
+    let mut args: Vec<&str> = vec![
+        "decompile-project",
+        &bin,
+        "-o",
+        dir.to_str().unwrap(),
+        "--progress",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        &specs,
+    ];
+    args.extend_from_slice(extra);
+    let (_stdout, stderr, ok) = run_kuna(&args);
+    if !ok {
+        panic!("--progress project export failed on {fixture_name}: {stderr}");
+    }
+    dir
+}
+
+/// The final `index.jsonl` of a `--progress` export, checked against its
+/// `.c`: contiguous `seq`, ascending addresses, and offsets that slice each block.
+fn assert_final_index(dir: &std::path::Path, file_name: &str) -> String {
+    let c = std::fs::read_to_string(dir.join(format!("{file_name}.c"))).unwrap();
+    let index = std::fs::read_to_string(dir.join("index.jsonl")).unwrap();
+    let mut end = format!("#include \"{file_name}.h\"\n\n").len();
+    let mut last_addr = None;
+    for (seq, line) in index.lines().enumerate() {
+        assert_eq!(json_field(line, "seq"), seq.to_string(), "{line}");
+        let offset: usize = json_field(line, "c_offset").parse().unwrap();
+        let len: usize = json_field(line, "c_len").parse().unwrap();
+        assert_eq!(offset, end, "the index skips or overlaps a .c block: {line}");
+        end = offset + len;
+        let name: String = serde_json::from_str(json_field(line, "name")).unwrap();
+        let addr: String = serde_json::from_str(json_field(line, "addr")).unwrap();
+        assert!(c[offset..end].starts_with(&format!("// Function: {name} @ {addr}")), "{line}");
+        let value = u64::from_str_radix(addr.trim_start_matches("0x"), 16).unwrap();
+        assert!(last_addr.is_none_or(|last| last <= value), "the index is not address-ordered");
+        last_addr = Some(value);
+    }
+    assert_eq!(end, c.len(), "the index does not cover the whole .c");
+    index
+}
+
+/// `--progress` is the non-stream export plus `index.jsonl`: the four artifacts
+/// are byte-identical to it, and so is the whole folder from one job count to
+/// the next.
+#[test]
+fn a_progress_export_is_the_non_stream_export_plus_its_index() {
+    let name = "dwarfstructs_x86_64";
+    let plain = out_dir("progress_plain");
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-project",
+        &fixture(name),
+        "-o",
+        plain.to_str().unwrap(),
+        "--jobs",
+        "3",
+        "--jobs-chunk",
+        "1",
+        "--max-fn-seconds",
+        "0",
+        "--sleighpath",
+        &specs(),
+    ]);
+    assert!(ok, "the reference project export failed: {stderr}");
+    assert!(!plain.join("index.jsonl").exists());
+
+    let runs = [
+        progress_project(name, "progress_j3", &["--jobs", "3", "--jobs-chunk", "1"]),
+        progress_project(name, "progress_j2", &["--jobs", "2"]),
+        progress_project(name, "progress_j1", &["--option", "protoorder", "off"]),
+    ];
+    let mut indexes = Vec::new();
+    for dir in &runs {
+        assert!(!dir.join(".streaming").exists(), ".streaming outlived a successful export");
+        for artifact in [format!("{name}.c"), format!("{name}.h"), format!("{name}.asm"), "README.md".into()] {
+            assert_eq!(
+                std::fs::read(dir.join(&artifact)).unwrap(),
+                std::fs::read(plain.join(&artifact)).unwrap(),
+                "{artifact} in {} is not the non-stream export's",
+                dir.display()
+            );
+        }
+        indexes.push(assert_final_index(dir, name));
+    }
+    assert!(indexes.windows(2).all(|w| w[0] == w[1]), "index.jsonl depends on the job count");
+    for dir in runs.iter().chain([&plain]) {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// While a `--progress` export runs, `.streaming` counts, `index.jsonl`
+/// grows one feed line per finished function with no `.c` span yet, and the
+/// previous export's `.c` is gone rather than passing for this run's.  A stalled
+/// worker holds the run open long enough to look: the smallest function is the
+/// last chunk of the plan, so the worker that draws it is already warm and the
+/// watchdog kills it after four one-second budgets.
+#[test]
+fn a_progress_export_reports_progress_before_it_writes_the_export() {
+    let name = "dwarfstructs_x86_64";
+    let dir = progress_project(name, "progress_live", &[]);
+    let index = std::fs::read_to_string(dir.join("index.jsonl")).unwrap();
+    let total = index.lines().count();
+    let smallest = index
+        .lines()
+        .min_by_key(|l| (json_field(l, "size").parse::<u64>().unwrap(), std::cmp::Reverse(json_field(l, "seq").parse::<usize>().unwrap())))
+        .map(|l| serde_json::from_str::<String>(json_field(l, "addr")).unwrap())
+        .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile-project",
+            &fixture(name),
+            "-o",
+            dir.to_str().unwrap(),
+            "--progress",
+            "--jobs",
+            "2",
+            "--jobs-chunk",
+            "1",
+            "--max-fn-seconds",
+            "1",
+            "--sleighpath",
+            &specs(),
+        ])
+        .env("KUNA_JOBS_FAULT", format!("stall:{smallest}"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn the kuna binary");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    let mut seen = None;
+    while std::time::Instant::now() < deadline && child.try_wait().unwrap().is_none() {
+        let status = std::fs::read_to_string(dir.join(".streaming")).unwrap_or_default();
+        if status.contains("\"phase\":\"decompiling\"")
+            && json_field(&status, "functions_done") != "0"
+        {
+            let feed = std::fs::read_to_string(dir.join("index.jsonl")).unwrap();
+            let c_exists = dir.join(format!("{name}.c")).exists();
+            let readme = std::fs::read_to_string(dir.join("README.md")).unwrap();
+            seen = Some((status, feed, c_exists, readme));
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let out = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "the stalled export failed: {stderr}");
+    let (status, feed, c_exists, readme) =
+        seen.unwrap_or_else(|| panic!("never saw the export mid-run: {stderr}"));
+
+    assert_eq!(json_field(&status, "functions_total"), total.to_string(), "{status}");
+    assert_eq!(json_field(&status, "c_bytes"), "0", "{status}");
+    assert!(!c_exists, "the previous export's .c survived into a running export");
+    assert!(readme.contains("**This export is still streaming**"), "{readme}");
+    assert!(readme.contains("do not exist yet"), "{readme}");
+    let complete: Vec<&str> = feed.split_inclusive('\n').filter(|l| l.ends_with('\n')).collect();
+    assert!(!complete.is_empty(), "functions_done moved before the feed did: {status}");
+    for line in &complete {
+        assert_eq!(json_field(line, "c_offset"), "null", "{line}");
+        assert_eq!(json_field(line, "c_len"), "null", "{line}");
+    }
+
+    assert!(!dir.join(".streaming").exists());
+    let index = assert_final_index(&dir, name);
+    assert_eq!(index.lines().count(), total);
+    let stalled = index
+        .lines()
+        .find(|l| json_field(l, "addr") == format!("\"{smallest}\""))
+        .unwrap();
+    assert_ne!(json_field(stalled, "error"), "null", "the stalled function has a body: {stalled}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `--stream` already reports progress, so with both flags the export is the
+/// streamed one: decompile-ordered, with the streamed README.
+#[test]
+fn stream_wins_over_progress() {
+    let dir = stream_project("dwarfstructs_x86_64", "stream_and_progress", &["--progress"]);
+    let readme = std::fs::read_to_string(dir.join("README.md")).unwrap();
+    assert!(readme.contains("Generated by `kuna decompile-project --stream`."), "{readme}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Streamed project selection reads the same discovered inventory as

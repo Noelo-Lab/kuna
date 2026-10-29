@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: a signed read of an expression that prints as unsigned.
+
+    The constant of `a0 - 1` is marked `1U` (markExplicitUnsigned) when its
+    type is unsigned and a0 is not, which makes the C expression unsigned while
+    the value keeps the signed type a sign extension, an arithmetic right
+    shift, a signed compare or a signed divide reads it as.  Those readers
+    added no cast, so the printed C read the value as unsigned: bitmask
+    printed `(unsigned long)(long)(a0 - 1U) >> 6`, a zero extension, and
+    bitmask(0) returned 0x8000000003ffffff where the binary returns
+    0x83ffffffffffffff.  A signed reader of such an expression now casts it to
+    the signed integer of its size.
+
+    Source (gcc 11 -O2 x86-64, .text bytes verbatim):
+        UL bitmask(int s) { int t = s - 1; return ((UL)(L)t >> 6) | (1UL << (t & 63)); }
+        int sigmember(const UL *set, int sig)          (control: no `U`)
+        L sshift(int s) { int i = s - 1; return (L)(i >> 3) + (L)(U)(i & 63); }
+        L sless(int s) { int i = s - 1; return (L)(i < 5) + (L)(U)(i & 63); }
+        L sdiv(int s) { int i = s - 7; return (L)(i / 3) + (L)(U)(i & 63); }
+        L ucmp(U a) { U t = a + 2; return (4 < t) + (L)(int)t; }
+    ucmp is the control for the unsigned reader: its compare keeps `a0 + 2U`.
+
+    Stage: P9 cast placement (ActionSetCasts; p9_emit/kuna_signedread.rs).
+    Correctness fix, no option: #1-#5 fail on the unpatched engine, #6 holds
+    before and after.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+f30f1efa83ef014863c748c1e806480fabf8c366662e0f1f8400000000006690
+f30f1efa8d4eff4863c148c1e806488b04c748d3e883e001c30f1f8000000000
+f30f1efa83ef0189f883e73fc1f80348984801f8c366662e0f1f840000000000
+f30f1efa83ef0131c083ff040f9ec083e73f4801f8c3662e0f1f840000000000
+f30f1efa83ef074863c789fa83e73f4869c056555555c1fa1f48c1e82029d048
+984801f8c366662e0f1f840000000000f30f1efa83c70231c083ff044863ff0f
+97c04801f8c3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>map function r0x401000 bitmask</com>
+  <com>map function r0x401020 sigmember</com>
+  <com>map function r0x401040 sshift</com>
+  <com>map function r0x401060 sless</com>
+  <com>map function r0x401080 sdiv</com>
+  <com>map function r0x4010b0 ucmp</com>
+  <com>lo fu bitmask</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sigmember</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sshift</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sless</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sdiv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ucmp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SIGNEDREAD #1: a sign extension of a0 - 1U goes through int" min="1" max="1">return \(uint8\)\(int4\)\(a0 - 1U\) &gt;&gt; 6</stringmatch>
+<stringmatch name="SIGNEDREAD #2: an arithmetic shift of a0 - 1U shifts the int" min="1" max="1">\(int4\)\(a0 - 1U\) &gt;&gt; 3</stringmatch>
+<stringmatch name="SIGNEDREAD #3: a signed compare of a0 - 1U compares the int" min="1" max="1">\(int4\)\(a0 - 1U\) &lt;= 4</stringmatch>
+<stringmatch name="SIGNEDREAD #4: a signed divide of a0 - 7U divides the int" min="1" max="1">\(int4\)\(a0 - 7U\) / 3</stringmatch>
+<stringmatch name="SIGNEDREAD #5: no unsigned expression is widened or shifted as if signed" min="0" max="0">\(int8\)\(a0 - 1U\)|\(int8\)\(a0 - 1U &gt;&gt; 3\)|\(a0 - 1U &lt;= 4\)|\(int8\)\(\(a0 - 7U\) / 3\)</stringmatch>
+<stringmatch name="SIGNEDREAD #6: the unsigned compare keeps its unsigned operand" min="1" max="1">4 &lt; a0 \+ 2U</stringmatch>
+</decompilertest>

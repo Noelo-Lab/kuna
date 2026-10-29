@@ -14,7 +14,7 @@
 //! including nested `inst_next2` and delay-slot decodes.
 
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 
@@ -33,6 +33,7 @@ use crate::semantics::{ConstructTpl, OpTpl, PcodeBuilder, VField, VarnodeTpl};
 use crate::sleighbase::{exact_register_name_from_xref, register_name_from_xref, SleighBase};
 use crate::slghpatexpress::{PatternExpression, PatternExpressionContext};
 use crate::slghpattern::DisjointPattern;
+use crate::slghsymbol::kuna_operandplan::{OperandPlan, OperandPlans};
 use crate::slghsymbol::{
     ConstructorRef, OperandSymbol, SymbolKind, SymbolTable, SymbolType, SymbolWalker,
     SymbolWalkerChange,
@@ -70,8 +71,8 @@ struct ConstructState {
     ct: Option<ConstructorRef>,
     /// Resolved Varnode associated with the constructor (C++ `hand`).
     hand: FixedHandle,
-    /// Child node indices (C++ `ConstructState **resolve`; `None` = null).
-    resolve: Vec<Option<usize>>,
+    /// Linked child node indices in operand order.
+    resolve: Vec<usize>,
     /// Parent node index (C++ `parent`).
     parent: Option<usize>,
     /// Length of this instantiation (C++ `length`).
@@ -89,7 +90,7 @@ impl ConstructState {
         ConstructState {
             ct: None,
             hand: FixedHandle::default(),
-            resolve: vec![None; num_operands],
+            resolve: Vec::with_capacity(num_operands),
             parent: None,
             length: 0,
             offset: 0,
@@ -100,7 +101,7 @@ impl ConstructState {
     fn reset(&mut self) {
         self.ct = None;
         self.hand = FixedHandle::default();
-        self.resolve.fill(None);
+        self.resolve.clear();
         self.parent = None;
         self.length = 0;
         self.offset = 0;
@@ -292,22 +293,6 @@ impl ParserContext {
         self.context[idx] = (self.context[idx] & !mask) | (mask & val);
     }
 
-    /// Read one instruction byte, treating anything past the buffer as 0.
-    ///
-    /// Both `getInstructionBytes` and `getInstructionBits` guard only the *start*
-    /// byte against `MAX_INSTRUCTION_LEN` and then read a fixed-width run from
-    /// it, so a read can legitimately extend past the end of `buf`: C++
-    /// `PatternBlock::isInstructionMatch` walks a pattern in `sizeof(uintm)`
-    /// chunks whatever its real width, so matching a 15-byte instruction (the
-    /// x86 maximum — e.g. clang's `66 66 66 66 66 66 2e 0f 1f 84 00 00 00 00 00`
-    /// alignment NOP) reads a 4-byte chunk at offset 13. The tail bytes are
-    /// always masked off by the caller, so C++ gets away with reading adjacent
-    /// struct memory (UB); zero is the deterministic equivalent. Erroring here
-    /// instead aborts the decode of a perfectly valid instruction (GH-271).
-    fn read_buf(&self, idx: usize) -> u8 {
-        self.buf.get(idx).copied().unwrap_or(0)
-    }
-
     /// C++ `getInstructionBytes(int4 bytestart,int4 size,uint4 off)`.
     fn get_instruction_bytes(&self, bytestart: i32, size: i32, off: u32) -> KunaResult<u32> {
         // off += bytestart
@@ -318,13 +303,7 @@ impl ParserContext {
                 "Instruction is using more than {MAX_INSTRUCTION_LEN} bytes"
             )));
         }
-        let base = off as usize;
-        let mut res: u32 = 0;
-        for i in 0..size {
-            res <<= 8; // uintm << 8
-            res |= u32::from(self.read_buf(base + i as usize));
-        }
-        Ok(res)
+        Ok(crate::kuna_instructionbytes::read_bytes(&self.buf, off as usize, size))
     }
 
     /// C++ `getInstructionBits(int4 startbit,int4 size,uint4 off)`.
@@ -336,23 +315,9 @@ impl ParserContext {
                 "Instruction is using more than {MAX_INSTRUCTION_LEN} bytes"
             )));
         }
-        let base = off as usize;
-        let startbit = startbit % 8;
-        let bytesize = (startbit + size - 1) / 8 + 1;
-        let mut res: u32 = 0;
-        for i in 0..bytesize {
-            res <<= 8;
-            res |= u32::from(self.read_buf(base + i as usize));
-        }
-        // res <<= 8*(sizeof(uintm)-bytesize)+startbit
-        // res >>= 8*sizeof(uintm)-size
-        // sizeof(uintm)==4.  Out-of-range shifts are C++ UB and resolve
-        // x86-masked (mod 32) via wrapping_shl/shr (ADR 0003).
-        let lshift = (8 * (4 - bytesize) + startbit) as u32;
-        let rshift = (8 * 4 - size) as u32;
-        res = res.wrapping_shl(lshift);
-        res = res.wrapping_shr(rshift);
-        Ok(res)
+        Ok(crate::kuna_instructionbytes::read_bits(
+            &self.buf, off as usize, startbit % 8, size,
+        ))
     }
 
     /// C++ `getContextBytes(int4 bytestart,int4 size)`.
@@ -424,9 +389,7 @@ impl ParserContext {
                 node.parent = Some(p + amount);
             }
             for child in &mut node.resolve {
-                if let Some(c) = *child {
-                    *child = Some(c + amount);
-                }
+                *child += amount;
             }
         }
         self.base_state += amount;
@@ -500,7 +463,7 @@ impl<'a> ParserWalker<'a> {
         cur.depth += 1;
         let point = cur.point.expect("ParserWalker: point is null (C++ UB)");
         let node = &self.ctx.state[point];
-        cur.point = node.resolve[i as usize];
+        cur.point = node.resolve.get(i as usize).copied();
         cur.breadcrumb[cur.depth as usize] = 0;
         Ok(())
     }
@@ -522,10 +485,14 @@ impl<'a> ParserWalker<'a> {
 
     /// C++ `getFixedHandle(int4 i)`: handle of child operand `i`.
     fn get_fixed_handle_inner(&self, i: i32) -> KunaResult<FixedHandle> {
+        self.borrow_fixed_handle_inner(i).cloned()
+    }
+
+    fn borrow_fixed_handle_inner(&self, i: i32) -> KunaResult<&FixedHandle> {
         let pt = &self.ctx.state[self.point()];
-        let child = pt.resolve[i as usize]
+        let child = pt.resolve.get(i as usize).copied()
             .ok_or_else(|| KunaError::sleigh("ParserWalker: operand not resolved"))?;
-        Ok(self.ctx.state[child].hand.clone())
+        Ok(&self.ctx.state[child].hand)
     }
 
     /// The active context for the address-fetching accessors (C++ uses the
@@ -538,6 +505,12 @@ impl<'a> ParserWalker<'a> {
     /// `index` is evaluated in.  When `ct` is not on the current walk the
     /// current node's offset stands in and no resolved operands are known.
     fn out_of_band(&self, ct: ConstructorRef, index: i32, op: &OperandSymbol) -> KunaResult<OobState> {
+        self.out_of_band_offset(ct, index, op.get_offset_base(), op.get_relative_offset())
+    }
+
+    fn out_of_band_offset(
+        &self, ct: ConstructorRef, index: i32, offset_base: i32, relative_offset: u32,
+    ) -> KunaResult<OobState> {
         let mut pt = self.point();
         let mut curdepth = self.cur.depth;
         while self.ctx.state[pt].ct != Some(ct) {
@@ -549,7 +522,9 @@ impl<'a> ParserWalker<'a> {
                 .parent
                 .ok_or_else(|| KunaError::sleigh("out-of-band: null parent"))?;
         }
-        let offset = operand_offset(self.ctx, self.ctx.state[pt].offset, Some(pt), op, index)?;
+        let offset = operand_offset(
+            self.ctx, self.ctx.state[pt].offset, Some(pt), offset_base, relative_offset, index,
+        )?;
         Ok(OobState { ct, offset, node: Some(pt) })
     }
 }
@@ -598,14 +573,15 @@ fn operand_offset(
     ctx: &ParserContext,
     base: u32,
     node: Option<usize>,
-    op: &OperandSymbol,
+    offset_base: i32,
+    relative_offset: u32,
     index: i32,
 ) -> KunaResult<u32> {
-    if op.get_offset_base() < 0 {
-        return Ok(base.wrapping_add(op.get_relative_offset()));
+    if offset_base < 0 {
+        return Ok(base.wrapping_add(relative_offset));
     }
     node.and_then(|n| ctx.state.get(n))
-        .and_then(|n| n.resolve.get(index as usize).copied().flatten())
+        .and_then(|n| n.resolve.get(index as usize).copied())
         .and_then(|child| ctx.state.get(child))
         .map(|child| child.offset)
         .ok_or_else(|| KunaError::sleigh("out-of-band: operand not resolved"))
@@ -630,6 +606,13 @@ impl PatternExpressionContext for ParserWalker<'_> {
     }
     fn operand_value(&self, index: i32, table_id: u32, ct_id: u32) -> KunaResult<i64> {
         let ct = ConstructorRef { table_id, ct_id };
+        if let Some(plan) = self.engine.primitive_operand(self.table, ct, index) {
+            let state = self.out_of_band_offset(ct, index, -1, plan.relative_offset)?;
+            return plan.get_value(&OobWalker {
+                ctx: self.ctx, cross: self.cross, engine: self.engine,
+                table: self.table, state, depth: 1,
+            });
+        }
         let op = operand_symbol(self.table, ct, index)?;
         let Some(patexp) = operand_expression(self.table, op)? else { return Ok(0) };
         let state = self.out_of_band(ct, index, op)?;
@@ -657,6 +640,9 @@ impl SymbolWalker for ParserWalker<'_> {
     }
     fn get_fixed_handle(&self, i: i32) -> KunaResult<FixedHandle> {
         self.get_fixed_handle_inner(i)
+    }
+    fn borrow_fixed_handle(&self, i: i32) -> KunaResult<Cow<'_, FixedHandle>> {
+        self.borrow_fixed_handle_inner(i).map(Cow::Borrowed)
     }
     fn get_const_space(&self) -> Rc<AddrSpace> {
         self.ctx.get_const_space()
@@ -742,7 +728,7 @@ impl<'a> ParserWalkerChange<'a> {
         if i < 0 {
             pt.offset
         } else {
-            let op_idx = pt.resolve[i as usize].expect("operand resolved (C++ deref)");
+            let op_idx = pt.resolve.get(i as usize).copied().expect("operand resolved (C++ deref)");
             let op = &self.ctx.state[op_idx];
             op.offset.wrapping_add(op.length as u32)
         }
@@ -778,7 +764,7 @@ impl<'a> ParserWalkerChange<'a> {
             return Err(KunaError::lowlevel("SLEIGH exceeded maximum parse depth"));
         }
         let parent = self.point(); // point->resolve[i] read with the OLD point
-        let child = self.ctx.state[parent].resolve[i as usize];
+        let child = self.ctx.state[parent].resolve.get(i as usize).copied();
         self.cur.breadcrumb[self.cur.depth as usize] = i + 1;
         self.cur.depth += 1;
         self.cur.point = child;
@@ -820,7 +806,8 @@ impl<'a> ParserWalkerChange<'a> {
         let parent = self.point();
         self.ctx.state[opstate].reset();
         self.ctx.state[opstate].parent = Some(parent);
-        self.ctx.state[parent].resolve[i as usize] = Some(opstate);
+        debug_assert_eq!(self.ctx.state[parent].resolve.len(), i as usize);
+        self.ctx.state[parent].resolve.push(opstate);
         if self.cur.depth > MAX_DEPTH - 2 {
             return Err(KunaError::lowlevel("SLEIGH exceeded maximum parse depth"));
         }
@@ -836,7 +823,7 @@ impl<'a> ParserWalkerChange<'a> {
         let p = self.point();
         let mut length = length + self.ctx.state[p].offset as i32; // C++ length += point->offset
         for i in 0..numopers {
-            let sub = self.ctx.state[p].resolve[i as usize].expect("operand resolved");
+            let sub = self.ctx.state[p].resolve.get(i as usize).copied().expect("operand resolved");
             let sublength = self.ctx.state[sub].length + self.ctx.state[sub].offset as i32;
             if sublength > length {
                 length = sublength;
@@ -885,12 +872,26 @@ impl PatternExpressionContext for OobWalker<'_> {
             return Err(KunaError::sleigh("SLEIGH exceeded maximum operand expression depth"));
         }
         let ct = ConstructorRef { table_id, ct_id };
+        if let Some(plan) = self.engine.primitive_operand(self.table, ct, index) {
+            if ct != self.state.ct {
+                return Err(KunaError::sleigh("out-of-band: operand constructor outside current context"));
+            }
+            return plan.get_value(&OobWalker {
+                state: OobState {
+                    offset: self.state.offset.wrapping_add(plan.relative_offset), ..self.state
+                },
+                depth: self.depth + 1, ..*self
+            });
+        }
         let op = operand_symbol(self.table, ct, index)?;
         let Some(patexp) = operand_expression(self.table, op)? else { return Ok(0) };
         if ct != self.state.ct {
             return Err(KunaError::sleigh("out-of-band: operand constructor outside current context"));
         }
-        let offset = operand_offset(self.ctx, self.state.offset, self.state.node, op, index)?;
+        let offset = operand_offset(
+            self.ctx, self.state.offset, self.state.node,
+            op.get_offset_base(), op.get_relative_offset(), index,
+        )?;
         patexp.get_value(&OobWalker {
             state: OobState { offset, ..self.state },
             depth: self.depth + 1,
@@ -1022,21 +1023,21 @@ impl PcodeCacher {
 }
 
 struct ParserContextGuard {
-    context: Option<ParserContext>,
-    pool: Rc<RefCell<Vec<ParserContext>>>,
+    context: Option<Box<ParserContext>>,
+    pool: Rc<RefCell<Vec<Box<ParserContext>>>>,
 }
 
 impl Deref for ParserContextGuard {
     type Target = ParserContext;
 
     fn deref(&self) -> &ParserContext {
-        self.context.as_ref().expect("parser context guard is live")
+        self.context.as_deref().expect("parser context guard is live")
     }
 }
 
 impl DerefMut for ParserContextGuard {
     fn deref_mut(&mut self) -> &mut ParserContext {
-        self.context.as_mut().expect("parser context guard is live")
+        self.context.as_deref_mut().expect("parser context guard is live")
     }
 }
 
@@ -1141,7 +1142,7 @@ impl<'a> SleighBuilder<'a> {
         vn: &mut VarnodeData,
     ) -> KunaResult<Rc<AddrSpace>> {
         let walker = self.walker();
-        let hand = walker.get_fixed_handle(vntpl.get_offset().get_handle_index())?;
+        let hand = walker.borrow_fixed_handle(vntpl.get_offset().get_handle_index())?;
         let space = hand
             .offset_space
             .clone()
@@ -1155,7 +1156,8 @@ impl<'a> SleighBuilder<'a> {
             vn.offset = space.wrap_offset(hand.offset_offset);
         }
         vn.space = Some(space);
-        hand.space.ok_or_else(|| KunaError::sleigh("generatePointer: null pointed-to space"))
+        crate::kuna_handleview::export_space(hand)
+            .ok_or_else(|| KunaError::sleigh("generatePointer: null pointed-to space"))
     }
 
     /// C++ `SleighBuilder::generatePointerAdd`.
@@ -1228,7 +1230,7 @@ impl<'a> SleighBuilder<'a> {
             return Err(KunaError::lowlevel("SLEIGH exceeded maximum parse depth"));
         }
         let parent = self.cur.point.expect("push: null point");
-        let child = self.contexts[self.cur_ctx].ctx.state[parent].resolve[i as usize];
+        let child = self.contexts[self.cur_ctx].ctx.state[parent].resolve.get(i as usize).copied();
         self.cur.breadcrumb[self.cur.depth as usize] = i + 1;
         self.cur.depth += 1;
         self.cur.point = child;
@@ -1518,7 +1520,7 @@ pub struct Sleigh {
     cache: RefCell<ContextCache>,
     /// Reusable parser arenas. Checked-out contexts are removed from the pool,
     /// so nested `inst_next2` and delay-slot decodes receive distinct storage.
-    parser_contexts: Rc<RefCell<Vec<ParserContext>>>,
+    parser_contexts: Rc<RefCell<Vec<Box<ParserContext>>>>,
     /// Reusable p-code arena, moved out during decoding so nested calls can
     /// use a separate arena.
     pcode_cacher: RefCell<PcodeCacher>,
@@ -1529,6 +1531,7 @@ pub struct Sleigh {
     ctx_vec: RefCell<Vec<ResolvedCtx>>,
     assembly_buffers: RefCell<(String, String)>,
     constructor_matches: RefCell<Vec<ConstructorMatch>>,
+    primitive_operands: OnceCell<OperandPlans>,
     /// The context commits of the most recent `one_instruction`.
     last_commits: RefCell<Vec<ContextCommitRecord>>,
     context_queries: std::cell::Cell<u64>,
@@ -1606,6 +1609,7 @@ impl Sleigh {
             ctx_vec: RefCell::new(Vec::new()),
             assembly_buffers: RefCell::new((String::new(), String::new())),
             constructor_matches: RefCell::new(Vec::new()),
+            primitive_operands: OnceCell::new(),
             last_commits: RefCell::new(Vec::new()),
             context_queries: std::cell::Cell::new(0),
         }
@@ -1629,7 +1633,24 @@ impl Sleigh {
     /// `restoreFromSpec`, LOSS-132).
     pub fn base_mut(&mut self) -> &mut SleighBase {
         self.constructor_matches.get_mut().clear();
+        self.primitive_operands.take();
         &mut self.base
+    }
+
+    fn primitive_operand(&self, table: &SymbolTable, ct: ConstructorRef, index: i32) -> Option<&OperandPlan> {
+        if !std::ptr::eq(table, &self.base.symtab) {
+            return None;
+        }
+        let plans = match self.primitive_operands.get() {
+            Some(plans) => plans,
+            None => self.prepare_primitive_operands(table),
+        };
+        plans.get(table, ct, index)
+    }
+
+    #[cold]
+    fn prepare_primitive_operands(&self, table: &SymbolTable) -> &OperandPlans {
+        self.primitive_operands.get_or_init(|| OperandPlans::new(table))
     }
 
     /// Share the single address-space manager (LOSS-132): the `Rc` the lift
@@ -1723,6 +1744,7 @@ impl Sleigh {
     /// compressed file contents).
     pub fn initialize_from_sla(&mut self, sla_bytes: &[u8]) -> KunaResult<()> {
         self.constructor_matches.get_mut().clear();
+        self.primitive_operands.take();
         if !self.base.is_initialized() {
             // The C++ `FormatDecode decoder(this)` aliases the
             // `AddrSpaceManager` that `SleighBase::decode` simultaneously
@@ -1785,7 +1807,7 @@ impl Sleigh {
         let mut pos = pooled.unwrap_or_else(|| {
             let mut pos = ParserContext::new(contextsize);
             pos.initialize(Rc::clone(&const_space), INITIAL_STATE_NUM);
-            pos
+            Box::new(pos)
         });
         pos.reset(contextsize, const_space, addr.clone());
         ParserContextGuard {
@@ -2055,7 +2077,7 @@ impl Sleigh {
                     return Err(KunaError::sleigh("applyCommits: not operand"));
                 };
                 let i = op.get_index();
-                let child = pos.state[set.point].resolve[i as usize]
+                let child = pos.state[set.point].resolve.get(i as usize).copied()
                     .ok_or_else(|| KunaError::sleigh("applyCommits: operand not resolved"))?;
                 let h = &pos.state[child].hand;
                 Address::new(
@@ -2175,10 +2197,12 @@ fn resolve_triple(
     let sym = table
         .find_symbol_by_id(id)
         .ok_or_else(|| KunaError::sleigh("triple symbol undefined"))?;
-    if reuse_matches {
-        if let SymbolKind::Subtable(subtable) = sym.kind() {
-            return walker.engine.resolve_cached(subtable, id, walker).map(Some);
-        }
+    if let SymbolKind::Subtable(subtable) = sym.kind() {
+        return if reuse_matches {
+            walker.engine.resolve_cached(subtable, id, walker).map(Some)
+        } else {
+            subtable.resolve(walker).map(Some)
+        };
     }
     sym.resolve(walker)
 }
@@ -2237,10 +2261,13 @@ impl SymbolWalker for ParserWalkerChange<'_> {
         ParserWalkerChange::get_constructor(self)
     }
     fn get_fixed_handle(&self, i: i32) -> KunaResult<FixedHandle> {
+        self.borrow_fixed_handle(i).map(Cow::into_owned)
+    }
+    fn borrow_fixed_handle(&self, i: i32) -> KunaResult<Cow<'_, FixedHandle>> {
         let pt = &self.ctx.state[self.point()];
-        let child = pt.resolve[i as usize]
+        let child = pt.resolve.get(i as usize).copied()
             .ok_or_else(|| KunaError::sleigh("getFixedHandle: operand not resolved"))?;
-        Ok(self.ctx.state[child].hand.clone())
+        Ok(Cow::Borrowed(&self.ctx.state[child].hand))
     }
     fn get_const_space(&self) -> Rc<AddrSpace> {
         self.ctx.get_const_space()
@@ -2344,7 +2371,7 @@ impl Sleigh {
 
                 // Use the child span when resolved; otherwise approximate from
                 // the operand's constructor-relative offset and minimum length.
-                let child_idx = node.resolve.get(oper as usize).copied().flatten();
+                let child_idx = node.resolve.get(oper as usize).copied();
                 let (span_off, span_len) = match child_idx {
                     Some(ci) => {
                         let c = &pos.state[ci];
@@ -2372,7 +2399,7 @@ impl Sleigh {
                 operands.push(OperandView { value_mask, objects });
             }
 
-            for child in node.resolve.iter().flatten() {
+            for child in &node.resolve {
                 stack.push(*child);
             }
         }

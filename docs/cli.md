@@ -95,9 +95,11 @@ differential is described in `docs/history.md`.
 ## Where kuna finds the engine and the specs
 
 `kuna` runs two programs besides itself — the decompiler console `decomp_dbg`
-(behind `decompile` and `catalog`) and the SLEIGH compiler `slacomp` (behind
-`kuna specs`) — and both are built into it: `kuna decomp_dbg` and `kuna slacomp`
-are those programs, and `kuna` launches itself that way. It also needs a compiled
+(behind `decompile`) and the SLEIGH compiler `slacomp` (behind `kuna specs`) —
+and both are built into it: `kuna decomp_dbg` and `kuna slacomp` are those
+programs, and `kuna` launches itself that way. `catalog` reads the option table
+in-process and needs neither the console nor specs, unless `--decomp-dbg` or
+`KUNA_DECOMP_DBG` selects a separate console. The engine also needs a compiled
 SLEIGH tree, found in this order when nothing pins it:
 
 - **built in**: a release `kuna` (cargo feature `embed-specs`) carries the tree and
@@ -115,7 +117,7 @@ tree could not be unpacked.
 | Variable | What it pins |
 |---|---|
 | `KUNA_SPECS` | The SLEIGH tree passed as `-sleighpath` (`SLEIGHHOME` is the engine's own name for the same thing). Wins over a built-in tree. |
-| `KUNA_DECOMP_DBG` | A separate `decomp_dbg` binary to run instead of the built-in console. `kuna decompile --decomp-dbg PATH` does the same for one run. |
+| `KUNA_DECOMP_DBG` | A separate `decomp_dbg` binary to run instead of the built-in console; a non-empty value also makes `catalog` query that build. `--decomp-dbg PATH` does the same for one `decompile` or `catalog` run, and wins over the variable. |
 | `KUNA_DECOMP_TEST` | The `decomp_test_dbg` datatest harness (`kuna test --binary PATH`). It is not built in; it is looked for beside `kuna`, then in the checkout's `decompiler/target/<profile>/`, under its bare and `.exe` names. |
 | `KUNA_SLACOMP` | A separate `slacomp` binary for `kuna specs` to run instead of the built-in compiler. |
 | `KUNA_ROOT` | The repo root, when the binaries are not in-tree: `specs/`, `tests/datatests/` and `decompiler/target/<profile>/` are all read from it. |
@@ -190,10 +192,21 @@ Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`,
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+For an AArch64 target (any compiler spec with `<prefersplit>`), a single-function
+decompile also bootstraps its direct callees' recovered parameter types — at most
+32, no recursion, types only — so a split-register argument takes the callee's
+type; `--option protoorder off` disables it. Batch, `--jobs`, and
+`decompile-project` keep their own documented schedules.
 `--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
 resident and the function has added 64 MiB (see *Per-function memory limit*
 under `decompile-all`, including its cgroup default) and reports `per-function
-memory limit exceeded` instead of being killed.
+memory limit exceeded` instead of being killed. `--max-fn-seconds N` is the
+wall-clock half (default 120, the same as `--json`; `0` disables): `decomp_dbg`
+arms it as the drive's cooperative deadline (see *Per-function watchdog* under
+`decompile-all`), and separately for the flow follow of its `load function`
+step, and a function still running at N seconds in either fails with
+`per-function decompile budget exceeded (N s) in <pass>`, a note naming the
+flag, and exit 1 instead of spinning on.
 
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been
@@ -496,14 +509,36 @@ decimal unless it carries a `0x`, and `<addr> <size>` is accepted wherever
 `<addr>+<size>` is. A C type may be anything the console's `parse line` accepts,
 including a `typedef` you asserted earlier in the same run.
 
+A `data` declaration replaces inferred strings that overlap its byte range,
+including one that runs past either end. Interior named data and previous
+explicit declarations retain their mappings.
+
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
 behind it; naming one used to answer `No symbol named: v6` no matter how it was
-spelled. It now resolves. A `type` maps a locked symbol over that variable's
-storage at its use point, and the second pass types it there. A `name` alone
-changes nothing but the name: the second pass finds the variable by its
-instances and names all of it, so a merged register local is never split, re-
-merged with a neighbour or retyped by being renamed.
+spelled. It now resolves. A `name` alone changes nothing but the name: the second pass
+finds the variable by its instances and names all of it, so a merged register
+local is never split, re-merged with a neighbour or retyped by being renamed.
+A `type` that keeps the variable's width and kind (an integer to an integer, a
+float to a float, a pointer to a pointer) types the whole variable the same
+way: only its declaration, the casts at its uses and, for an enumeration,
+`bool` or a character type, the constants it is assigned or compared with
+change. A pointer to a structure, union, array or function also reaches type
+inference, on every part of the variable, so its fields print; the variable
+keeps its name and number, but its type can reach its copies and the signature
+and reshape their expressions. A `type` that changes the
+width maps a locked symbol over the variable's storage at its use point, and
+can split or merge the variable. A new name that is a C keyword or a type's
+name (`name v6 int`, `name v6 uint4`) is `rejected`. A `name` or `type` whose
+local the output does not then declare under that name, or with that type, is
+reported refused (`fatal`), with the reason, never `applied`: the C came back
+without it. A local the printer had to suffix, because the name already belongs
+to another identifier (`name v7 score` prints `score_1` when the program has a
+function `score`), is `applied`, with a detail saying what it was printed as,
+and later directives reach it by that name (`name score_1 total`). A `type`
+that gives a stack local a scalar of another width is `rejected` before it
+applies (`Storage is 32 bytes, the stated type is 8`); a structure, union or
+array may grow or narrow it, within the stack. Two independently retyped whole-frame locals may not cover the same stack bytes: that would emit separate C objects and lose their alias. Declare one aggregate or union covering the shared storage instead. A whole scalar local keeps its explicitly stated type even when a merged storage instance retains a weaker recovered type. If coalescing drops the direct Symbol binding, a matching type-locked member must still confirm the carried declaration type.
 
 ```bash
 kuna decompile ./graphy sub_1005350 --json --assert 'type v6 unsigned long *'
@@ -979,9 +1014,14 @@ preset it selects; an explicit `--mode reliable` keeps the catalog's
 explicit `--option` wins over the resolved preset.
 Address-selected single-function decompilation suppresses a preset-provided
 `fast_funcdisc` whole-image walk because the requested entry is already known.
-Name selection keeps it enabled so generated `sub_<addr>` names can resolve;
-explicitly spelling `--option fast_funcdisc on` opts an address run back into
-that analysis.
+Name selection suppresses it too on the first attempt, because a name the
+loader or the remaining discovery already carries needs no whole-image walk to
+resolve; that attempt then renders what `--addr` on the same entry renders. A
+name that misses retries with the preset's walk restored, so a miss reports
+what it reported before, and a placeholder spelling (`sub_<hex>`, `FUN_<hex>`,
+`func_0x<hex>`) keeps the walk from the start, since its entry may exist only
+because the walk found it. Explicitly spelling `--option fast_funcdisc on|off`
+always wins. Only the text surface defers it; `--json` keeps the preset.
 
 `--target <SLEIGH-language-id>` selects the decoder while a recognized object
 container continues to own its section mappings and image base. `--target default`
@@ -1557,6 +1597,13 @@ translation; it is `0` on every C render, and a non-zero one is also spoken as a
 `note:` on stderr. It does not change the run's verdict — a record with a
 `null` `error` and a non-zero `unstructured_gotos` is usable output with named
 lossy sites, which is what makes it worth filtering or re-running on.
+A variable's `kind` is `arg` for a parameter, `stack` for a local with a frame
+offset, and `register` for a local the C declares outside the stack frame (a register,
+a temporary, or a value with no storage of its own). A `register` row carries the
+declaration's own name, so it joins to its declaration line in `code`, and its type
+spelled as the other rows spell theirs (`char[16]` for `char v1 [16];`); its
+`stack_offset` and `arg_index` are `null`. `--option reglocals off` drops those rows
+and leaves the parameters and the frame.
 `line_mappings` maps 1-based
 lines in `code` to sorted, unique machine-instruction VMAs. Variable `line_numbers`
 come from the printer's `varref` tokens; variable `addresses` are the union of the
@@ -1565,7 +1612,7 @@ emitted. The references are captured from Kuna's markup emitter and resolved aga
 the live p-code IR, rather than inferred from the rendered text. The ordinary
 plain-text renderer still produces `code`, so its bytes are unchanged.
 Reported variables are joined to native varrefs by ABI or stack storage and recovered
-high-variable identity. Multiple high-variable fragments are combined only when they
+high-variable identity; a `register` row by the high-variables its declaration covers. Multiple high-variable fragments are combined only when they
 share the reported name and their stack storage lies inside the reported variable's byte
 range, or when a stack-address constant names its base. This lets element uses contribute
 to an array's evidence without crediting a same-named fragment from another frame object;
@@ -1732,15 +1779,24 @@ Behaviors specific to `decompile-all`:
   preset defaults to 10 seconds per function. On native, selected-function runs
   and the other presets retain 120 seconds; an explicit value always wins. WASM
   arms only the fast whole-binary 10-second policy and leaves its other commands
-  unbudgeted. A function whose decompile drive exceeds the budget is cut off
-  cooperatively (deadline probes at the action/rule-pool/heritage loop
-  boundaries, including each range heritage guards) and recorded as that
-  function's `error` (`"per-function decompile budget exceeded (N s)"`), the
-  batch continuing. This is not a hard process timer: it does not bound
+  unbudgeted. `kuna decompile` takes the same flag (default 120). A function
+  whose decompile drive exceeds the budget is cut off cooperatively (deadline
+  probes at the action/rule-pool/heritage loop boundaries, including each range
+  heritage guards, each region-structuring round, and before, between and after
+  the models of each flow-time jump-table recovery) and recorded as that
+  function's `error`
+  (`"per-function decompile budget exceeded (N s) in <pass>"`), the batch
+  continuing. `<pass>` is the first probe that saw the deadline pass, the
+  innermost loop that was running: an action (a rule pool adds its busiest rule
+  this function), `heritage`, `region structuring`, or a jump-table step, and
+  anything inside a flow-time table recovery adds `during jump-table recovery at
+  <indirect-jump address>`, e.g. `in action oppool1 (busiest rule earlyremoval)`
+  or `in jump-table recovery at 0x1820e009b`. This is not a hard process timer: it does not bound
   discovery, unprobed decoder work, C/variable rendering, artifact
   construction, total export time, or memory. Driver policy, not a stage-model
   settable — zero output change for a function whose drive completes before
-  expiry; the console / `decomp_dbg` parity path never arms it.
+  expiry; the console / `decomp_dbg` parity path arms it only when given
+  `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes.
 
 - **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
   `decompile-all`, `decompile-project`, `decompile-graph` and `kuna decompile`.
@@ -1816,7 +1872,8 @@ Behaviors specific to `decompile-all`:
     concrete `--mode`, every resolved `--option` and the watchdog budget are
     settled once by the parent and passed to every worker.
     `decompile-project --stream` is the one surface where the schedule *is*
-    observable, and only in the order of the `.c`: a streamed export writes each
+    observable, and only in the order of the `.c` (`--progress` reports on a
+    non-stream export instead). A streamed export writes each
     function as it finishes, so under `--jobs N` the interleaving is worker
     completion order and is not reproducible run to run. The set of functions,
     the prototypes and the disassembly are what the same selection produces
@@ -2889,6 +2946,7 @@ kuna decompile-project ./a.out                         # writes ./a.out.kuna/
 kuna decompile-project ./a.out -o proj --functions main,parse
 kuna decompile-project ./a.out --jobs 12               # 12 processes, protoorder-off artifacts
 kuna decompile-project ./a.out --stream --jobs 12      # readable while it fills
+kuna decompile-project ./a.out --progress --jobs 12    # progress, artifacts at the end
 ```
 
 The project-export face of the same in-process core
@@ -2897,7 +2955,7 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--option`/
-`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`; no `--json`. Omitted mode is the same
+`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`. Omitted mode is the same
 size-based `auto` policy as the other file front-ends. In particular, a project input
 at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
 scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -2917,7 +2975,10 @@ remain comments/prototype tombstones and count in the final README. A mixed expo
 at least one body exits `0`; a non-empty selection that produces zero bodies exits `1`
 with the completed-file summary on stdout and a run-level diagnostic on stderr. The
 verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`,
-`index.jsonl` have been finalized.
+`index.jsonl` have been finalized. `--assert` directives follow the same rules as on
+`decompile-all`: every rejection is printed on stderr, `--assert-strict` makes one exit
+`1`, and a directive the pipeline refused exits `1` on its own, again only after the
+artifacts are written.
 
 Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the
@@ -3221,6 +3282,72 @@ static longest-first plan a non-stream `--jobs N` run uses is close to the best
 makespan available and entry-point-first order is not. At this size that is under a
 minute of tail for twenty minutes of head start.
 
+### `--progress` — progress reporting over an ordinary export
+
+```bash
+kuna decompile-project ./ssh -o ssh.kuna --progress --jobs 4
+```
+
+Two things are bundled in `--stream`: progress reporting (`.streaming` and the
+`index.jsonl` feed) and incremental artifacts (a `.c` readable while it fills). The
+second is what costs reproducibility — an append-only `.c` can only hold functions in
+the order they finish. `--progress` is the first without the second, for a caller that
+only needs to know how far the export has got, such as a pipeline that stores the
+folder content-addressed.
+
+| | progress feed | artifacts written | reproducible under `--jobs N` |
+|---|---|---|---|
+| neither flag | no | at the end | yes |
+| `--progress` | yes | at the end | yes |
+| `--stream` | yes | as the run goes, decompile order | no |
+
+`--stream` already reports progress, so with both flags the export is the streamed one.
+
+`--progress` runs the non-stream export unchanged — the same serial or pooled
+decompile, the static longest-first plan, the structure-naming replay, the positional
+merge — and reports on it while it runs. When it succeeds, `<name>.c`, `<name>.h`,
+`<name>.asm` and `README.md` are byte-identical to `kuna decompile-project` with the
+same arguments minus `--progress`, and `index.jsonl` is the address-ordered index of
+that `.c`, the same file whatever the job count. So the folder is as reproducible as
+the non-stream export: under `--jobs N` it does not depend on `N` and is the `--jobs 1
+--option protoorder off` answer (the `--jobs` bullets above give the exceptions, which
+apply here unchanged). Measured on `/usr/bin/ssh` (1,090 functions): `--progress` runs
+at `--jobs 4` and `--jobs 2` and a plain `--jobs 4` run leave identical folders apart
+from `index.jsonl`, and the CPU time of the two `--jobs 4` arms is within run-to-run
+noise (158–170 s user each).
+
+**What appears when.** The load is reported as under `--stream`: `README.md` and
+`.streaming` (phase `loading`) are written first and a previous export is untouched.
+Once the program is loaded and the target set is non-empty, the previous export's
+`<name>.c`, `<name>.h` and `<name>.asm` are removed, so a reader never takes them for this
+run's, and `index.jsonl` is truncated. `.streaming` moves to `decompiling` with
+`functions_total`, and from there:
+
+- `index.jsonl` is the **feed**: a line is appended as each function's first decompile
+  lands, in completion order, with `c_offset` and `c_len` `null` because there is no
+  `.c` to point into yet. Under `--jobs N` lines land a pool chunk at a time
+  (`--jobs-chunk K` bounds that); serially, one function at a time. The `error` field is
+  that first decompile's. A structure-naming or convergence pass that decides a function
+  again later is not fed.
+- `.streaming` counts the feed (`functions_done`, `functions_failed`,
+  `seconds_since_last_result`) on its own 500 ms clock, with `jobs` the workers the pool
+  actually started. `seeds` is `0` and `c_bytes` stays `0` until the `.c` exists; `asm`
+  is `pending` until the artifacts are built.
+- Once every function is in, `phase` is `finalizing` while the pool finishes naming
+  structures and the artifacts are built (`asm` then reads `sweeping`). The README stops
+  being rewritten at that point.
+- At the end the four artifacts are written, `index.jsonl` is **replaced** (one atomic
+  rename) by the final index, and `.streaming` is removed.
+
+So `index.jsonl` changes meaning once: while `.streaming` exists it is the feed; once
+`.streaming` is gone it is the final index, sorted by address, `seq` its line number,
+and every `c_offset`/`c_len` slicing the `.c` to exactly that function's block. A
+reader tailing the feed by byte offset should stop when `phase` reads `finalizing`.
+A failed append to the feed warns once on stderr and ends the feed; the run goes on
+and still writes the final index, which is the artifact. Failure reporting and the
+refusal to export into a folder a live run is writing are `--stream`'s. Unlike
+`--stream`, `--progress` accepts `--assert`, with the non-stream export's rules.
+
 ## `kuna decompile-graph` — the whole program as one JSON graph
 
 ```bash
@@ -3390,9 +3517,11 @@ kuna catalog --check             # fail on catalog/registration drift (CI)
 kuna catalog --tier transform    # filter to the transform-tier control surface
 ```
 
-Parses the decompiler's `phase catalog` JSON (single source of truth: `settableTable`,
-generated from `decompiler/crates/kuna-decomp/phases.toml`) into the documented, flippable
-assertion list. `--json` emits a JSON **array** with one object per option —
+By default, reads the static catalog directly from the linked engine library, without
+starting `decomp_dbg` or loading SLEIGH specs. The single source of truth is
+`settableTable`, generated from `decompiler/crates/kuna-decomp/phases.toml`; the console's
+`phase catalog` command uses the same emitter. `--json` emits a JSON **array** with one
+object per option —
 `[{option,values,default,destructive_as_default,phase,subphase,strength,rewind,issue,summary,
 use_when,example,source_decompiler,inspiration,change_kind,tier,symptoms}]` — and `--option
 NAME` keeps that shape with one element, so a consumer reads both the same way. `--tier`
@@ -3400,7 +3529,17 @@ filters the array exactly as it filters the table. It and
 `kuna docs --json` (`[{topic,title,summary,bytes}]`) are the two array-rooted documents;
 every other subcommand's `--json` is an object (`{binary,...}`, `{modes:[...]}`), and each
 `--help` names its root. `--markdown` output is tier-grouped and symptom-indexed; `--check`
-cross-checks the catalog against `kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
+cross-checks the selected catalog against this `kuna` build's
+`kuna_decomp::options::KUNA_OPTION_NAMES` in-process.
+
+`--decomp-dbg PATH`, or a non-empty `KUNA_DECOMP_DBG` when that flag is absent, opts
+text, JSON and check modes into the existing external console query. The flag takes
+precedence over the environment; a missing explicitly selected binary is an error,
+not a fallback to the local catalog. Build-identity warnings stay on stderr.
+`--sleighpath` and `--engine` remain accepted for compatibility; neither selects an
+external query on its own, and only that route uses their engine/specs configuration.
+`--markdown` always describes this `kuna` build, even with an external override.
+
 The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
 `docs/spec/`; the defaults are recorded in `docs/history.md`.
 

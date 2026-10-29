@@ -134,12 +134,12 @@ impl Funcdata {
     }
 
     /// C++ `TypePointer::isPtrsubMatching` (`type.cc:1260-1312`), with the
-    /// `TYPE_SPACEBASE` arm resolved through this function's local symbol scope.
+    /// `TYPE_SPACEBASE` arm resolved through its selected global or local scope.
     ///
     /// A pure `Datatype::is_ptrsub_matching` cannot reach the symbol table that
     /// `TypeSpacebase::getSubType` needs (the C++ `TypeSpacebase` carries `glb`);
     /// for a pointer-to-spacebase we therefore resolve the sub-type here through
-    /// [`ScopeLocal::spacebase_get_sub_type`] and otherwise delegate to the pure
+    /// [`Self::spacebase_get_sub_type`] and otherwise delegate to the pure
     /// method.  Callers are `ActionSetCasts::castFixupPtrsub`
     /// (`coreaction.cc:2837`) and `RulePtrsubUndo::applyOp` (`ruleaction.cc:7169`),
     /// which must NOT undo a valid stack-frame `PTRSUB(sp, off)`.
@@ -156,17 +156,14 @@ impl Funcdata {
             if let Some(ptrto) = ptrtype.get_ptr_to() {
                 if ptrto.get_metatype() == type_metatype::TYPE_SPACEBASE {
                     let word_size = ptrtype.get_word_size().unwrap_or(1);
-                    let (lm, types) =
-                        match (self.get_scope_local(), self.get_arch().types_rc()) {
-                            (Some(lm), Some(t)) => (lm, t),
-                            _ => return false,
-                        };
                     let new_off =
                         kuna_base::space::AddrSpace::address_to_byte_int(off, word_size);
+                    // Select the symbol scope from the spacebase itself. Global
+                    // references must not be checked against the local stack map.
                     let (sub_type, new_off2) =
-                        match lm.spacebase_get_sub_type(new_off, types.as_ref()) {
-                            Ok(r) => r,
-                            Err(_) => return false,
+                        match self.spacebase_get_sub_type(&ptrto, new_off) {
+                            Some(r) => r,
+                            None => return false,
                         };
                     // subType is always Some here (TypeSpacebase::getSubType never
                     // returns null), so only newoff must be zero.
@@ -366,7 +363,9 @@ impl Funcdata {
     ///    Varnode that is `isUnaffected`, every `CPUI_COPY` descendant whose output
     ///    lands in this scope's stack space (`isUnaffectedStorage`) is the slot the
     ///    saved value is stashed in — unmap it so it is not promoted to a spurious
-    ///    `undefined8 v//rsp` local.
+    ///    `undefined8 v//rsp` local.  (kuna) Skipped when the register overlaps a
+    ///    declared parameter of this function (directly or as a join piece): that
+    ///    copy is a parameter spill whose slot may escape or be reused.
     ///
     /// Transcribes the two C++ loops (no name/register/offset
     /// special-casing; the spacebase/join classification and the unaffected/COPY
@@ -459,6 +458,31 @@ impl Funcdata {
             .collect();
 
         for (sz, addr) in saved {
+            let overlaps_input = |input: &Address, size: int4| {
+                input.overlap(0, &addr, sz) >= 0 || addr.overlap(0, input, size) >= 0
+            };
+            let formal_input = self.get_func_proto().has_store()
+                && (0..self.get_func_proto().num_params()).any(|index| {
+                    let Some(parameter) = self.get_func_proto().get_param(index) else {
+                        return false;
+                    };
+                    let input = parameter.get_address();
+                    if input.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_JOIN) {
+                        let Ok(join) = self.get_arch().manage().find_join(input.get_offset()) else {
+                            return false;
+                        };
+                        return (0..join.num_pieces()).any(|piece| {
+                            let piece = join.get_piece(piece);
+                            piece.space.as_ref().is_some_and(|space| {
+                                overlaps_input(&Address::new(Rc::clone(space), piece.offset), piece.size as int4)
+                            })
+                        });
+                    }
+                    overlaps_input(&input, parameter.get_size())
+                });
+            if formal_input {
+                continue;
+            }
             let vn = match self.find_varnode_input(sz, &addr) {
                 Some(v) => v,
                 None => continue,
@@ -594,6 +618,7 @@ impl Funcdata {
         crate::p6_variables::kuna_arrayextent::extend_unbounded(self, &mut state, &space, &unbounded);
 
         super::kuna_callarrayextent::coalesce(self, &mut state, &space);
+        super::kuna_arraysize::gather(self, &mut state, &space);
 
         let reach_checks = match self.get_arch().types_rc() {
             Some(t) => crate::p6_variables::kuna_storereach::prepare_hints(self, &mut state, &space, t.as_ref()),

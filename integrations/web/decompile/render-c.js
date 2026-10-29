@@ -58,7 +58,10 @@ export function normalizeInspect(result) {
   const fn = fromInspect ? result.function : (result?.functions || [])[0];
   if (!fn) throw new Error('the engine returned no function');
   const address_hex = addrHex(fn.address_hex ?? fn.address);
-  const { code, tokens, notes } = splitNotes(fn.code ?? '', Array.isArray(fn.tokens) ? fn.tokens : []);
+  const split = splitNotes(fn.code ?? '', Array.isArray(fn.tokens) ? fn.tokens : []);
+  const frame = fn.frame || null;
+  const { code, tokens } = rebaseStackComments(split.code, split.tokens, frameBase(frame));
+  const notes = split.notes;
   return {
     source: fromInspect ? 'inspect' : 'decompile',
     name: fn.name,
@@ -84,7 +87,76 @@ export function normalizeInspect(result) {
     hasInstructions: Array.isArray(fn.instructions),
     instructions: (fn.instructions || []).map((insn) => normalizeInsn(insn, address_hex)),
     instructions_truncated: !!fn.instructions_truncated,
+    frame,
     assertions: result.assertions || [],
+  };
+}
+
+/**
+ * The register a function's stack locations count from, `{register, offset}`:
+ * the one `inspect`'s `frame.base` says the code reads its stack through (on
+ * x86 the frame pointer whenever there is one, else the stack pointer once the
+ * prologue has run); null when neither is known.
+ */
+export function frameBase(frame) {
+  return (frame?.base ? frame[frame.base] : frame?.frame_pointer || frame?.stack_pointer) || null;
+}
+
+/** An offset from the stack pointer at entry as `base` sees it: entry − 0x58 with RBP at entry − 8 is `rbp - 0x50`. */
+export function rebaseStack(entryOffset, base) {
+  const d = entryOffset - base.offset;
+  return `${base.register} ${d < 0 ? '-' : '+'} 0x${Math.abs(d).toString(16)}`;
+}
+
+const ENTRY_BASE = { register: 'stack', offset: 0 };
+
+/** An offset from the stack pointer at entry as the declarations' comments write it: `rbp - 0x50`, or the engine's own `stack - 0x58` without a frame base. */
+export function stackLocation(entryOffset, frame) {
+  return rebaseStack(entryOffset, frameBase(frame) || ENTRY_BASE);
+}
+
+/** The entry offsets a declaration's storage comment places it at (`rax | rbp - 0x50` with RBP at entry − 8 → [-0x58]). */
+export function stackPieces(storage, frame) {
+  const base = frameBase(frame) || ENTRY_BASE;
+  const out = [];
+  for (const piece of (storage || '').split(' | ')) {
+    const m = /^(\w+) ([-+]) 0x([0-9a-f]+)$/.exec(piece.trim());
+    if (m && m[1] === base.register) out.push(base.offset + (m[2] === '-' ? -1 : 1) * parseInt(m[3], 16));
+  }
+  return out;
+}
+
+const STORAGE_PIECE = String.raw`(?:[\w:]+|[\w.]+ 0x[0-9a-f]+|stack [-+] 0x[0-9a-f]+)`;
+const STORAGE_COMMENT = new RegExp(`^// ${STORAGE_PIECE}(?: \\| ${STORAGE_PIECE})*$`);
+const STACK_PIECE = /\bstack ([-+]) 0x([0-9a-f]+)\b/g;
+
+/**
+ * The declarations' storage comments with each `stack - 0x58` (from the stack
+ * pointer at entry) rewritten against `base` (`rbp - 0x50`), so they read like
+ * the assembly's operands; the comment tokens follow.
+ */
+export function rebaseStackComments(code, tokens, base) {
+  if (!base) return { code, tokens };
+  const lines = code.split('\n');
+  const edits = new Map();
+  for (const { line } of localDecls(code)) {
+    const text = lines[line - 1];
+    const at = text.indexOf('//');
+    const comment = at < 0 ? '' : text.slice(at).trimEnd();
+    if (!STORAGE_COMMENT.test(comment)) continue;
+    const next = comment.replace(STACK_PIECE, (_, sign, hex) => rebaseStack((sign === '-' ? -1 : 1) * parseInt(hex, 16), base));
+    if (next === comment) continue;
+    lines[line - 1] = text.slice(0, at) + next + text.slice(at + comment.length);
+    edits.set(line, { at, next, delta: next.length - comment.length });
+  }
+  if (!edits.size) return { code, tokens };
+  return {
+    code: lines.join('\n'),
+    tokens: tokens.map((t) => {
+      const e = edits.get(t.line);
+      if (!e || !Number.isInteger(t.col) || t.col < e.at) return t;
+      return t.col === e.at ? { ...t, text: e.next, len: e.next.length } : { ...t, col: t.col + e.delta };
+    }),
   };
 }
 
@@ -388,8 +460,8 @@ function tokenHtml(t, ctx) {
   let callee = addrHex(t.callee_hex ?? t.callee);
   if (!callee && t.kind === 'funcname') callee = ctx.fnByName?.get(t.text)?.address_hex || null;
   let gaddr = null;
-  if (t.kind === 'variable') {
-    gaddr = ctx.globalsByName?.get(t.text) || null;
+  if (t.kind === 'variable' && !Number.isInteger(t.var) && !t.decl) {
+    gaddr = addrHex(t.global_hex ?? t.global) || ctx.globalsByName?.get(t.text) || null;
     if (!gaddr) {
       const m = /^dat_([0-9a-f]+)$/i.exec(t.text);
       if (m) gaddr = addrHex('0x' + m[1]);
@@ -506,6 +578,7 @@ export function diffLines(oldCode, newCode) {
   const changed = new Set();
   if (!oldCode) return { changed, lineOf: null };
   if (a.length * b.length > 4e6) return { changed, lineOf: null };
+  if (oldCode === newCode) return { changed, lineOf: (n) => n };
   const w = b.length + 1;
   const dp = new Uint32Array((a.length + 1) * w);
   for (let i = a.length - 1; i >= 0; i--) {
@@ -525,7 +598,12 @@ export function diffLines(oldCode, newCode) {
     else { changed.add(j + 1); j++; }
   }
   while (i < a.length) delta[i++] = last ?? 0;
-  return { changed, lineOf: (n) => (n >= 1 && n <= a.length ? Math.max(1, n + delta[n - 1]) : n) };
+  let next = b.length;
+  for (let k = a.length - 1; k >= 0; k--) {
+    next = Math.min(next, Math.max(1, k + 1 + delta[k]));
+    delta[k] = next;
+  }
+  return { changed, lineOf: (n) => (n >= 1 && n <= a.length ? delta[n - 1] : n) };
 }
 
 /** The 1-based lines of `newCode` an edit changed (`diffLines`). */

@@ -20,8 +20,17 @@ mod instruction_mask;
 #[path = "macro_symbol.rs"]
 mod macro_symbol;
 
+#[path = "ppc_lwarx_reservation.rs"]
+mod ppc_lwarx_reservation;
+
+#[path = "ppc_ldx_ldarx_encoding.rs"]
+mod ppc_ldx_ldarx_encoding;
+
 #[path = "ppc_nested_operands.rs"]
 mod ppc_nested_operands;
+
+#[path = "sparc_delay_slot_condition.rs"]
+mod sparc_delay_slot_condition;
 
 #[path = "sparc_float_to_integer.rs"]
 mod sparc_float_to_integer;
@@ -70,3 +79,9 @@ mod x86_maxlen_nop_regression;
 
 #[path = "x86_rdtsc_zero_extend.rs"]
 mod x86_rdtsc_zero_extend;
+
+#[path = "x87_integer_rounding.rs"]
+mod x87_integer_rounding;
+
+#[path = "x86_bound.rs"]
+mod x86_bound;

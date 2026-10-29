@@ -166,7 +166,7 @@ fn arm_thumb_seed_decodes_in_thumb_mode_in_listing() {
     // (2) The painted decode DIFFERS from the un-painted A32 control — the paint
     //     (not some incidental default) is what flips the ISA.
     assert!(
-        seed.len != a32_len || seed.mnemonic != a32_mnem,
+        seed.len != a32_len || seed.mnemonic.as_str() != a32_mnem.as_str(),
         "the painted Thumb decode must differ from the un-painted A32 control \
          (thumb len={}/mnem=`{}` vs a32 len={}/mnem=`{}`)",
         seed.len, seed.mnemonic, a32_len, a32_mnem
@@ -248,7 +248,7 @@ fn mips16_seed_decodes_in_mips16_mode_in_listing() {
     match m32 {
         None => { /* MIPS32 can't decode these bytes at all — decisive. */ }
         Some((m32_len, m32_mnem)) => assert!(
-            seed.len != m32_len || seed.mnemonic != m32_mnem,
+            seed.len != m32_len || seed.mnemonic.as_str() != m32_mnem.as_str(),
             "the painted MIPS16 decode must differ from the un-painted MIPS32 control \
              (mips16 len={}/mnem=`{}` vs mips32 len={}/mnem=`{}`)",
             seed.len, seed.mnemonic, m32_len, m32_mnem

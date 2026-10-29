@@ -178,6 +178,44 @@ fn fillin_instance_constant_big_endian() {
     assert_eq!(vn_get_offset(&fd, hi), 0x1122_3344);
 }
 
+#[test]
+fn split_128_bit_constant_keeps_the_high_half_zero() {
+    for big in [false, true] {
+        let mut fd = build_fd(big);
+        let constant = fd.new_constant(16, 0x1122_3344_5566_7788);
+        let mut inst = SplitInstance::new(Some(constant), 8);
+        PreferSplitManager::fillin_instance(&mut fd, &mut inst, big, true, true);
+        assert_eq!(vn_get_offset(&fd, inst.lo.unwrap()), 0x1122_3344_5566_7788);
+        assert_eq!(vn_get_offset(&fd, inst.hi.unwrap()), 0);
+    }
+}
+
+#[test]
+fn split_zero_extension_to_128_bits_keeps_the_high_half_zero() {
+    for big in [false, true] {
+        let mut fd = build_fd(big);
+        let block = mk_block(&mut fd);
+        let op = mk_op(&mut fd, 1, 0x10, OpCode::CPUI_INT_ZEXT);
+        let constant = fd.new_constant(8, 0x1122_3344_5566_7788);
+        fd.op_set_input(op, constant, 0).unwrap();
+        let whole = mk_vn(&mut fd, 0x100, 16);
+        fd.op_set_output(op, whole).unwrap();
+        fd.op_insert_end(op, block);
+        let mut mgr = PreferSplitManager::default();
+        mgr.init(&[rec(ram(&fd), 0x100, 16, 8)]);
+        mgr.split(&mut fd);
+        let copies: Vec<_> = fd.bb_ops(block).iter().copied()
+            .filter(|&op| !op_is_dead(&fd, op)).collect();
+        assert_eq!(copies.len(), 2);
+        for copy in copies {
+            let output = op_get_out(&fd, copy).unwrap();
+            let value = vn_get_offset(&fd, op_get_in(&fd, copy, 0));
+            let high = vn_get_offset(&fd, output) == if big { 0x100 } else { 0x108 };
+            assert_eq!(value, if high { 0 } else { 0x1122_3344_5566_7788 });
+        }
+    }
+}
+
 // --- end-to-end split over a defining COPY of a constant ----------------------
 
 #[test]
@@ -217,6 +255,39 @@ fn split_defining_copy_of_constant() {
         assert_eq!(vn_get_size(&fd, out), 4);
     }
     // The original COPY is dead.
+    assert!(op_is_dead(&fd, copy));
+}
+
+/// A free (not yet input) whole register read by a COPY into another listed
+/// register must split.  The reading branch consults `find_record` while the
+/// walk runs, so the record table has to stay visible for the whole `split`.
+#[test]
+fn split_reading_copy_of_free_storage() {
+    let mut fd = build_fd(false);
+    let r = ram(&fd);
+    let bl = mk_block(&mut fd);
+
+    let copy = mk_op(&mut fd, 1, 0x10, OpCode::CPUI_COPY);
+    let src = mk_vn(&mut fd, 0x100, 8);
+    fd.op_set_input(copy, src, 0).unwrap();
+    let dst = mk_vn(&mut fd, 0x200, 8);
+    fd.op_set_output(copy, dst).unwrap();
+    fd.op_insert_end(copy, bl);
+
+    let mut recs = vec![rec(Rc::clone(&r), 0x100, 8, 4), rec(r, 0x200, 8, 4)];
+    PreferSplitManager::initialize(&mut recs);
+    let mut mgr = PreferSplitManager::default();
+    mgr.init(&recs);
+
+    mgr.split(&mut fd);
+
+    let copies: Vec<OpId> = fd
+        .bb_ops(bl)
+        .iter()
+        .copied()
+        .filter(|&o| op_code(&fd, o) == OpCode::CPUI_COPY && !op_is_dead(&fd, o))
+        .collect();
+    assert_eq!(copies.len(), 2, "a free 8-byte read through a listed storage splits");
     assert!(op_is_dead(&fd, copy));
 }
 

@@ -24,6 +24,7 @@ pub mod engine;
 pub mod decompile_step;
 pub mod project;
 pub mod inspect;
+pub mod kuna_framebase;
 pub mod disasm;
 pub mod litpool;
 pub mod project_stream;
@@ -33,13 +34,21 @@ pub mod codedata;
 pub mod kuna_retcallchain;
 pub mod kuna_console;
 pub mod kuna_hightarget;
+pub mod kuna_callwide;
+pub mod kuna_lazyfuncs;
 mod kuna_paramasserts;
+mod kuna_dwarfstack;
 pub mod kuna_buildstamp;
 pub mod consolemain;
 #[cfg(test)]
 mod kuna_buildstamp_fingerprint;
 pub mod assertions;
+mod kuna_qualifiedstorage;
 pub mod assertsyntax;
 pub mod grammar;
 pub mod rulecompile;
 pub mod unify;
+
+mod kuna_projectfunctionnames;
+
+mod kuna_dataidentifiers;

@@ -180,7 +180,7 @@ impl Action for ActionPrototypeTypes {
         // init).  The locked-input/output and truncated-space branches stay stubbed
         // (no locked proto / no truncated stack space on the recovery path).
 
-        let evalfp = data.get_arch().eval_fp_current().cloned();
+        let evalfp = crate::kuna_callmechanisms::evaluation_model(data);
         if let Some(evalfp) = evalfp {
             if !data.get_func_proto().is_model_locked()
                 && !data.get_func_proto().has_matching_model(&evalfp)
@@ -524,7 +524,13 @@ impl Action for ActionDefaultParams {
                             // present (Phase 3); a declaration that names none
                             // follows the image's float convention.
                             let seed_model = callee_model
+                                .or_else(|| {
+                                    crate::kuna_armfloatreturn::declared_helper_model(&arch, &pieces.name).or_else(|| {
+                                        crate::kuna_armfloatreturn::declared_helper_model(&arch, data.get_call_specs(i).get_name())
+                                    })
+                                })
                                 .or_else(|| crate::kuna_typedcallabi::undeclared_model(&arch, &pieces))
+                                .or_else(|| crate::kuna_armfloatreturn::helper_model(&arch, &pieces.name))
                                 .unwrap_or(dfp);
                             match fp.seed_locked_from_pieces(
                                 &pieces,
@@ -554,17 +560,21 @@ impl Action for ActionDefaultParams {
                 };
                 match callee_proto {
                     Some(calleeproto) => {
+                        let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().copy(&calleeproto);
                         let fc = data.get_call_specs(i);
-                        if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&evalfp) {
-                            data.get_call_specs_mut(i).proto_mut().set_model(Some(evalfp.clone()));
+                        if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&model) {
+                            data.get_call_specs_mut(i).proto_mut().set_model(Some(model));
                         }
                     }
                     None => {
                         // No source-declared callee prototype (a symbol with no
                         // Funcdata): set the default-model internal proto.  The
                         // register-parameter datatests resolve here.
-                        data.get_call_specs_mut(i).proto_mut().set_internal(evalfp.clone(), void_ty.clone());
+                        let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .unwrap_or_else(|| evalfp.clone());
+                        data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
                         // model-driven input recovery just established, but lock the
                         // custom return storage on top (the C++ `map return` locks
@@ -580,10 +590,16 @@ impl Action for ActionDefaultParams {
                         }
                     }
                 }
+            } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
+                crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
+                    arch.callee_proto_stack,
+                    data.get_call_specs_mut(i).proto_mut(),
+                );
             }
-            // fc->insertPcode(data): inject any uponreturn p-code.  STUB(W4
-            // pcodeinjectlib): the default models on the datatest path declare no
-            // uponreturn injection, so this is a no-op here.
+            if let Err(error) = crate::kuna_callmechanisms::apply_return(data, i) {
+                data.kuna_call_mechanisms.failure = Some(error.to_string());
+                return 0;
+            }
         }
         // (kuna) `msvcbyval`: size an MSVC `__cdecl` import's by-value class at
         // each call, now that every call's pop is known.  See
@@ -1187,12 +1203,68 @@ impl Action for ActionParamDouble {
 /// as parameters, then resolves the model and builds the input map.
 pub struct ActionActiveParam {
     base: ActionBase,
+    /// (kuna callee-contract) The direct callees this pass has already paused for,
+    /// so one call site does not request the same bootstrap twice.
+    contract_requested: crate::kuna_fasthash::FxHashSet<(int4, uintb)>,
+    ready_calls: Option<Vec<int4>>,
 }
 
 impl ActionActiveParam {
     /// Construct in group `g` (C++ `ActionActiveParam::ActionActiveParam`).
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
-        Box::new(ActionActiveParam { base: ActionBase::new(0, "activeparam", g) })
+        Box::new(ActionActiveParam {
+            base: ActionBase::new(0, "activeparam", g),
+            contract_requested: Default::default(),
+            ready_calls: None,
+        })
+    }
+    fn check_call_trials(
+        &mut self,
+        data: &mut Funcdata,
+        aliascheck: &mut Option<crate::varmap::AliasChecker>,
+        idx: int4,
+    ) -> bool {
+        use crate::funcdata_callsite::check_input_trial_use;
+        if !data.get_call_specs(idx).is_input_active() {
+            return false;
+        }
+        let op = data.get_call_specs(idx).get_op();
+        // A CALL op destroyed by block/deadcode removal (or whose slot was
+        // reused by a non-CALL op) leaves a dangling call spec until
+        // `deleteCallSpecs` prunes it; guard against touching it.
+        let op_ok = data
+            .obank()
+            .get(op)
+            .map(|o| {
+                !o.is_dead()
+                    && matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+            })
+            .unwrap_or(false);
+        if !op_ok {
+            return false;
+        }
+        // trimmable = numPasses>0 || op->code() != CPUI_CALLIND.
+        let is_callind =
+            data.obank().get(op).map(|o| o.code() == OpCode::CPUI_CALLIND).unwrap_or(false);
+        let trimmable =
+            data.get_call_specs_mut(idx).get_active_input().get_num_passes() > 0 || !is_callind;
+
+        if !data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
+            if let Some(ac) = aliascheck.as_mut() {
+                check_input_trial_use(idx, data, ac);
+            }
+        }
+        data.get_call_specs_mut(idx).get_active_input().finish_pass();
+        let (passes, maxpass) = {
+            let ai = data.get_call_specs_mut(idx).get_active_input();
+            (ai.get_num_passes(), ai.get_max_pass())
+        };
+        if passes > maxpass {
+            data.get_call_specs_mut(idx).get_active_input().mark_fully_checked();
+        } else {
+            self.base.count += 1; // still have work to do
+        }
+        trimmable && data.get_call_specs_mut(idx).get_active_input().is_fully_checked()
     }
 }
 
@@ -1207,14 +1279,23 @@ impl Action for ActionActiveParam {
         if !grouplist.contains(self.get_group()) {
             return None;
         }
-        Some(Box::new(ActionActiveParam { base: self.base.clone() }))
+        Some(Box::new(ActionActiveParam {
+            base: self.base.clone(),
+            contract_requested: Default::default(),
+            ready_calls: None,
+        }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    /// C++ has no per-function state beyond the base; the callee-contract pause
+    /// bookkeeping is kuna's, and a fresh drive must not inherit it.
+    fn reset(&mut self, _data: &mut Funcdata) {
+        self.base.reset_base();
+        self.contract_requested.clear();
+        self.ready_calls = None;
+    }
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:1769 — ActionActiveParam::apply: per sub-function, run
         // input-parameter recovery over its active trials.
-        use crate::funcdata_callsite::{
-            build_input_from_trials, check_input_trial_use, final_input_check,
-        };
+        use crate::funcdata_callsite::{build_input_from_trials, final_input_check};
         // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
@@ -1250,47 +1331,48 @@ impl Action for ActionActiveParam {
         // ops.  The take/restore is used ONLY for the finalize tail
         // (`final_input_check`/`build_input_from_trials`), which performs no
         // cross-call lookup and needs a single `&mut FuncCallSpecs`.
-        for idx in 0..data.num_calls() {
-            if !data.get_call_specs(idx).is_input_active() {
-                continue;
-            }
-            let op = data.get_call_specs(idx).get_op();
-            // A CALL op destroyed by block/deadcode removal (or whose slot was
-            // reused by a non-CALL op) leaves a dangling call spec until
-            // `deleteCallSpecs` prunes it; guard against touching it.
-            let op_ok = data
-                .obank()
-                .get(op)
-                .map(|o| {
-                    !o.is_dead()
-                        && matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
-                })
-                .unwrap_or(false);
-            if !op_ok {
-                continue;
-            }
-            // trimmable = numPasses>0 || op->code() != CPUI_CALLIND.
-            let is_callind =
-                data.obank().get(op).map(|o| o.code() == OpCode::CPUI_CALLIND).unwrap_or(false);
-            let trimmable =
-                data.get_call_specs_mut(idx).get_active_input().get_num_passes() > 0 || !is_callind;
-
-            if !data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
-                if let Some(ac) = aliascheck.as_mut() {
-                    check_input_trial_use(idx, data, ac);
-                }
-            }
-            data.get_call_specs_mut(idx).get_active_input().finish_pass();
-            let (passes, maxpass) = {
-                let ai = data.get_call_specs_mut(idx).get_active_input();
-                (ai.get_num_passes(), ai.get_max_pass())
-            };
-            if passes > maxpass {
-                data.get_call_specs_mut(idx).get_active_input().mark_fully_checked();
+        let bootstrap = data.kuna_callee_contract_armed();
+        let ready_calls = if bootstrap {
+            if let Some(ready) = self.ready_calls.take() {
+                ready
             } else {
-                self.base.count += 1; // still have work to do
+                let mut ready = Vec::new();
+                let mut pause = false;
+                for idx in 0..data.num_calls() {
+                    if !self.check_call_trials(data, &mut aliascheck, idx) {
+                        continue;
+                    }
+                    ready.push(idx);
+                    if !ctx.deadline_expired() {
+                        if let Some(entry) =
+                            crate::p4_calls::kuna_calleetrial::split_trial_callee(data, idx)
+                        {
+                            if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(&entry) {
+                                if self.contract_requested.insert(key) {
+                                    data.kuna_queue_callee_split_call(entry);
+                                    pause = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                if pause {
+                    self.ready_calls = Some(ready);
+                    return -1;
+                }
+                ready
             }
-            if trimmable && data.get_call_specs_mut(idx).get_active_input().is_fully_checked() {
+        } else {
+            Vec::new()
+        };
+        let count = if bootstrap { ready_calls.len() } else { data.num_calls() as usize };
+        let mut ready = ready_calls.into_iter();
+        for position in 0..count {
+            let idx = if bootstrap { ready.next().expect("checked call") } else { position as int4 };
+            if !bootstrap && !self.check_call_trials(data, &mut aliascheck, idx) {
+                continue;
+            }
+            {
                 // Finalize: single-spec take/restore (no cross-call lookup needed).
                 // Splice this spec out so `final_input_check`/`build_input_from_trials`
                 // can hold `&mut FuncCallSpecs` and `&mut Funcdata` at once, then
@@ -1404,6 +1486,7 @@ impl Action for ActionActiveReturn {
         use crate::funcdata_callsite::{build_output_from_trials, check_output_trial_use};
         let manager_rc = data.get_arch().manage.clone();
         let mut qlst = data.take_call_specs();
+        let callees = crate::kuna_narrowret::callee_keys(&qlst);
         for fc in qlst.iter_mut() {
             if !fc.is_output_active() {
                 continue;
@@ -1424,6 +1507,7 @@ impl Action for ActionActiveReturn {
             let trialvn = check_output_trial_use(fc, data);
             let _ = fc.derive_output_map_self(&manager_rc);
             build_output_from_trials(fc, data, &trialvn);
+            crate::kuna_narrowret::narrow_call_output(data, fc, &callees);
             fc.clear_active_output();
             self.base.count += 1;
         }
@@ -1731,7 +1815,9 @@ impl Action for ActionReturnRecovery {
             crate::p4_calls::kuna_zerofillreturn::drop_zero_fill(data, &mut active, &return_ops);
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
             let manager_rc = data.get_arch().manage.clone();
             let _ = data.get_func_proto().derive_output_map(&mut active, &manager_rc);
             crate::p4_calls::kuna_voidret::whole_or_none(data, &mut active);
@@ -1751,6 +1837,7 @@ impl Action for ActionReturnRecovery {
             }
             crate::p4_calls::kuna_voidret::void_unless_returned(data);
             crate::kuna_armfloatreturn::type_returns(data, &active);
+            crate::kuna_x87return::type_returns(data, &active);
             data.clear_active_output();
             self.base.count += 1;
         } else {
@@ -1883,6 +1970,8 @@ impl Action for ActionInputPrototype {
                 };
                 if data.get_func_proto().possible_input_param(&addr, size)
                     && !crate::kuna_armfloatreturn::split_double_input(data, vn)
+                    && !crate::kuna_armfloatreturn::bank_saved_input(data, vn)
+                    && !crate::kuna_armfloatargs::stray_vector_input(data, vn)
                 {
                     let slot = active.get_num_trials();
                     active.register_trial(&addr, size);

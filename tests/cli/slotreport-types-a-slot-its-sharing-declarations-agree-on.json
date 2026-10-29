@@ -1,0 +1,39 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-f3834f0e91a1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/globalloadguard_gcc_O0_x86_64",
+    "binary_sha256": "814e74510d6d9b8b13ddd6521e7aba113ac057507ba0bff1e5a69cd3ffd44c03",
+    "binary_size": 16720,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/globalloadguard_gcc_O0_x86_64",
+    "selector": "main",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "\"name\": \"main\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_38\",\\s*\"type\": \"int\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -56,"
+    ],
+    "stdout_absent": [
+      "\"name\": \"main\",(?:(?!\"variables\":)[\\s\\S])*\"variables\": \\[(?:(?!\"code\":)[\\s\\S])*?\"name\": \"local_38\",\\s*\"type\": \"undefined4\",\\s*\"kind\": \"stack\",\\s*\"arg_index\": null,\\s*\"stack_offset\": -56,"
+    ]
+  },
+  "notes": "ON: gcc -O0 main spills int r to stack - 0x38, and the C splits it into two declarations that both list the slot: int v1; // eax | stack - 0x38 and int v2; // eax | edx | ram 0x404040 | stack - 0x34 | stack - 0x38. Both are 4-byte int, so the frame row local_38 at -56 is reported as int instead of undefined4."
+}

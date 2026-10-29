@@ -104,6 +104,14 @@ pub struct Typed {
     /// A pointer to a pointer that is the address of one of the caller's own
     /// frame objects (`&v4`), or, for a statement, passed so by some caller.
     pub frame: bool,
+    /// The argument is the constant zero, a null pointer to any pointer type.
+    pub null: bool,
+    /// (`callerptr`) The caller holds the argument as an address for a reason of
+    /// its own ([`crate::kuna_callerptr::provably_a_pointer`]).
+    pub proven: bool,
+    /// (`callerptr`) A statement that says the value is a pointer because every
+    /// caller passes one ([`crate::kuna_callerptr::pointer_vote`]).
+    pub by_class: bool,
 }
 
 /// One direct call: the caller, the call instruction, and what each argument
@@ -119,6 +127,10 @@ pub struct CallSite {
 #[derive(Debug)]
 pub struct CallerTypes {
     pub inputs: Vec<Typed>,
+    /// (`callerptr`) The statement holds [`crate::kuna_callerptr::pointer_vote`]'s
+    /// votes and nothing else new: every committed type in it repeats the
+    /// function's own type or the statement it already had.
+    pub pointers_only: bool,
 }
 
 impl CallerTypes {
@@ -199,6 +211,12 @@ impl Ledger {
 }
 
 impl Ledger {
+    /// (`callerptr`) Is the statement about the function at `key` made of
+    /// pointer-class votes alone?
+    pub fn pointers_only(&self, key: (int4, uintb)) -> bool {
+        self.stated.get(&key).is_some_and(|s| s.pointers_only)
+    }
+
     /// [`forget_statements_naming`] over the ledger.
     pub fn forget_naming(&mut self, names: &[String]) {
         if names.is_empty() {
@@ -207,8 +225,9 @@ impl Ledger {
         let names_one = |t: &Typed| crate::kuna_protoorder::names_type(&t.ct, names);
         for stated in self.stated.values_mut() {
             if stated.inputs.iter().any(names_one) {
-                let inputs = stated.inputs.iter().filter(|t| !names_one(t)).cloned().collect();
-                *stated = Rc::new(CallerTypes { inputs });
+                let inputs: Vec<Typed> = stated.inputs.iter().filter(|t| !names_one(t)).cloned().collect();
+                let pointers_only = stated.pointers_only && inputs.iter().any(|t| t.by_class);
+                *stated = Rc::new(CallerTypes { inputs, pointers_only });
             }
         }
         self.stated.retain(|_, stated| !stated.inputs.is_empty());
@@ -324,6 +343,7 @@ pub fn took_stated_type(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
 /// ones the last redo left untyped.
 pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
     let Some(me) = key_of(entry) else { return };
+    let prove = arch.caller_ptr;
     let own = if arch.kuna_calleevote.own.contains_key(&me) { None } else { own_params(arch, entry, fd) };
     let mut calls: Vec<(Address, CallSite)> = Vec::new();
     for i in 0..fd.num_calls() {
@@ -347,9 +367,13 @@ pub fn record(arch: &mut Architecture, entry: &Address, fd: &mut Funcdata) {
                 continue;
             };
             let ct = fd.high_get_type(vn).or_else(|| fd.vbank().get(vn).map(|v| Rc::clone(v.get_type())));
+            let null = fd.vbank().get(vn).is_some_and(|v| v.is_constant() && v.get_offset() == 0);
             args.push(ct.map(|ct| {
                 let frame = points_at_a_pointer(&ct) && crate::kuna_protoorder::addresses_a_frame_object(fd, vn);
-                Typed { addr, size, ct, frame }
+                let proven = prove
+                    && ct.get_metatype() == type_metatype::TYPE_PTR
+                    && crate::kuna_callerptr::provably_a_pointer(fd, vn);
+                Typed { addr, size, ct, frame, null, proven, by_class: false }
             }));
         }
         calls.push((callee, CallSite { caller: me.1, at, args }));
@@ -390,7 +414,7 @@ fn own_params(arch: &Architecture, entry: &Address, fd: &Funcdata) -> Option<Vec
         if addr.is_invalid() || p.get_size() <= 0 {
             return None;
         }
-        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false });
+        out.push(Typed { addr, size: p.get_size(), ct: Rc::clone(p.get_type()?), frame: false, null: false, proven: false, by_class: false });
     }
     Some(out)
 }
@@ -411,7 +435,8 @@ pub fn decide(
 ) -> Vec<(int4, uintb)> {
     let ptr_size = arch.types().get_size_of_pointer();
     let headless = arch.struct_headless.fires();
-    let decided = decide_ledger_under(&arch.kuna_calleevote, ptr_size, headless, expected);
+    let pointers = crate::kuna_callerptr::void_pointer(arch);
+    let decided = decide_ledger_with(&arch.kuna_calleevote, ptr_size, headless, pointers.as_ref(), expected);
     let changed = decided.iter().map(|(k, _)| *k).collect();
     for (key, stated) in decided {
         arch.kuna_calleevote.stated.insert(key, Rc::new(stated));
@@ -434,6 +459,19 @@ pub fn decide_ledger_under(
     ledger: &Ledger,
     ptr_size: int4,
     headless: bool,
+    expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
+) -> Vec<((int4, uintb), CallerTypes)> {
+    decide_ledger_with(ledger, ptr_size, headless, None, expected)
+}
+
+/// [`decide_ledger_under`], and with `pointers` (`callerptr`, the target's
+/// `void *`) a pointer-width integer parameter every caller passes some pointer
+/// or a null takes a pointer ([`crate::kuna_callerptr::pointer_vote`]).
+pub fn decide_ledger_with(
+    ledger: &Ledger,
+    ptr_size: int4,
+    headless: bool,
+    pointers: Option<&Rc<Datatype>>,
     expected: &dyn Fn((int4, uintb)) -> Option<Vec<uintb>>,
 ) -> Vec<((int4, uintb), CallerTypes)> {
     let mut decided: Vec<((int4, uintb), CallerTypes)> = Vec::new();
@@ -496,7 +534,15 @@ pub fn decide_ledger_under(
             if trace {
                 let seen: Vec<String> = sites.iter().map(|s| match s.args.get(j) {
                     Some(Some(a)) => {
-                        format!("{}@{:x}:{}{}", spell(&a.ct), a.addr.get_offset(), a.size, if a.frame { " frame" } else { "" })
+                        format!(
+                            "{}@{:x}:{}{}{}{}",
+                            spell(&a.ct),
+                            a.addr.get_offset(),
+                            a.size,
+                            if a.frame { " frame" } else { "" },
+                            if a.null { " null" } else { "" },
+                            if a.proven { " proven" } else { "" }
+                        )
                     }
                     Some(None) => "unread".into(),
                     None => "absent".into(),
@@ -505,7 +551,11 @@ pub fn decide_ledger_under(
             }
             if let (true, Some(ct)) = (all, agreed) {
                 if uncommitted(&p.ct, ptr_size) || crate::kuna_structheadless::gives_a_pointee(&ct) {
-                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame });
+                    inputs.push(Typed { addr: p.addr.clone(), size: p.size, ct, frame, null: false, proven: false, by_class: false });
+                }
+            } else if let Some(void_ptr) = pointers {
+                if let Some(t) = crate::kuna_callerptr::pointer_vote(&sites, j, p, void_ptr) {
+                    inputs.push(t);
                 }
             }
         }
@@ -525,7 +575,13 @@ pub fn decide_ledger_under(
                 })
         });
         if !unchanged {
-            decided.push((*key, CallerTypes { inputs }));
+            let pointers_only = inputs.iter().any(|t| t.by_class) && inputs.iter().filter(|t| !t.by_class).all(|t| {
+                own.iter().any(|p| p.addr == t.addr && p.size == t.size && same_type(&p.ct, &t.ct))
+                    || ledger.stated.get(key).is_some_and(|old| {
+                        old.inputs.iter().any(|o| o.addr == t.addr && o.frame == t.frame && same_type(&o.ct, &t.ct))
+                    })
+            });
+            decided.push((*key, CallerTypes { inputs, pointers_only }));
         }
     }
     decided
@@ -594,13 +650,159 @@ pub fn input_vote(data: &Funcdata, vn: VarnodeId, ct: &Rc<Datatype>) -> Option<R
     let open = uncommitted(ct, ptr_size)
         || (uncommitted_under(ct, ptr_size, data.get_arch().struct_headless.fires())
             && crate::kuna_structheadless::gives_a_pointee(&want.ct));
-    if !open || crate::kuna_protoorder::input_refuses(data, vn, &want.ct) {
+    let refuses = if want.by_class {
+        crate::kuna_callerptr::refuses(data, vn, &want.ct)
+    } else {
+        crate::kuna_protoorder::input_refuses(data, vn, &want.ct)
+    };
+    if !open || refuses || prints_a_table_as_a_literal(data, vn, &want.ct) {
         return None;
     }
     if want.frame && crate::kuna_protoorder::reaches_past_the_pointee(data, vn, &want.ct) {
         return None;
     }
     Some(Rc::clone(&want.ct))
+}
+
+/// How many varnodes [`prints_a_table_as_a_literal`] visits among the
+/// addresses a function derives from its input before it gives up and refuses
+/// the character pointer: the walk only runs for a `char *` vote, and a value
+/// that reaches this many derived values is not one to commit.
+const DERIVED_BUDGET: usize = 2048;
+
+/// Would a character pointer `ct` on the function input `vn` print an address
+/// constant the function holds as a string literal that is not the object
+/// there? The constant takes the `char *` from the value it meets, and the
+/// printer renders the readonly bytes up to the first zero as a literal: a
+/// table with a zero inside comes out cut short (`return a0 == "\x01\x02";`
+/// for a 16-byte table), and the literal is a new object either way. So a
+/// character pointer is refused for a value the function merges with a
+/// non-zero constant (`if (!s) s = table;`), and for one that it -- or an
+/// address it derives from it by adds, pointer arithmetic, copies, casts or
+/// merges (`p + i == (long)table`) -- compares with, adds to or subtracts from
+/// a constant in read-only memory that is not a string literal kuna recovered
+/// (`kuna_charptr::constant_is_string`), or adds the negation of one to
+/// (`p - (long)table`). A walk that runs out of [`DERIVED_BUDGET`] refuses too.
+pub(crate) fn prints_a_table_as_a_literal(data: &Funcdata, vn: VarnodeId, ct: &Datatype) -> bool {
+    if !ct.get_ptr_to().is_some_and(|p| p.get_size() == 1 && p.is_char_print()) {
+        return false;
+    }
+    let family = crate::kuna_protoorder::value_family(data, vn);
+    merged_with_a_constant(data, &family) || meets_an_address_constant(data, &family)
+}
+
+/// Does some member of `family` take a non-zero constant: copied from one, or
+/// the engine's `PTRSUB` off the constant zero?
+fn merged_with_a_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let nonzero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() != 0);
+    let zero = |v: Option<VarnodeId>| v.and_then(|v| data.vbank().get(v)).is_some_and(|c| c.is_constant() && c.get_offset() == 0);
+    family.iter().any(|&v| {
+        let Some(def) = data.vbank().get(v).and_then(|n| n.get_def()).and_then(|d| data.obank().get(d)) else {
+            return false;
+        };
+        match def.code() {
+            OpCode::CPUI_COPY | OpCode::CPUI_CAST => nonzero(def.get_in(0)),
+            OpCode::CPUI_PTRSUB => zero(def.get_in(0)) && nonzero(def.get_in(1)),
+            _ => false,
+        }
+    })
+}
+
+/// Is the constant `off` of `size` bytes, read at `op`, an address in
+/// read-only memory -- what the printer renders as a literal -- that is not a
+/// string literal kuna recovered?
+fn table_address(data: &Funcdata, op: crate::context::OpId, off: uintb, size: int4) -> bool {
+    let glb = data.get_arch();
+    let Some(spc) = glb.manage().get_default_data_space() else { return false };
+    if off < spc.get_pointer_lower_bound() || off > spc.get_pointer_upper_bound() {
+        return false;
+    }
+    if crate::p5_types::kuna_charptr::value_is_string(data, op, off, size) {
+        return false;
+    }
+    let Some(point) = data.obank().get(op).map(|o| o.get_addr().clone()) else { return false };
+    let mut full = 0;
+    glb.resolve_constant(spc, off, size, &point, &mut full).ok().filter(|a| !a.is_invalid()).is_some_and(|ram| {
+        glb.query_global_properties(&ram, 1, &Address::new_invalid()) & crate::varnode::varnode_flags::readonly != 0
+    })
+}
+
+/// Is a member of `family`, or an address derived from one, compared with,
+/// added to or subtracted from a [`table_address`] constant, directly or as
+/// the engine's `PTRSUB` off the constant zero, or added to the negation of
+/// one? A difference of two pointers is a number, so the walk does not follow
+/// one. Running out of [`DERIVED_BUDGET`] answers yes.
+fn meets_an_address_constant(data: &Funcdata, family: &[VarnodeId]) -> bool {
+    let constant_of = |other: Option<VarnodeId>| -> Option<(uintb, int4)> {
+        let node = other.and_then(|o| data.vbank().get(o))?;
+        let c = if node.is_constant() {
+            node
+        } else {
+            node.get_def()
+                .and_then(|d| data.obank().get(d))
+                .filter(|o| o.code() == OpCode::CPUI_PTRSUB)
+                .filter(|o| o.get_in(0).and_then(|b| data.vbank().get(b)).is_some_and(|b| b.is_constant() && b.get_offset() == 0))
+                .and_then(|o| o.get_in(1))
+                .and_then(|c| data.vbank().get(c))
+                .filter(|c| c.is_constant())?
+        };
+        Some((c.get_offset(), c.get_size()))
+    };
+    let mut seen: HashSet<VarnodeId> = family.iter().copied().collect();
+    let mut work: Vec<VarnodeId> = family.to_vec();
+    while let Some(v) = work.pop() {
+        if seen.len() > DERIVED_BUDGET {
+            return true;
+        }
+        let Some(node) = data.vbank().get(v) else { continue };
+        for r in node.descend_iter() {
+            let Some(o) = data.obank().get(r) else { continue };
+            let other = if o.get_in(0) == Some(v) { o.get_in(1) } else { o.get_in(0) };
+            let meets = |negated: bool| {
+                constant_of(other).is_some_and(|(off, size)| {
+                    table_address(data, r, off, size)
+                        || (negated && table_address(data, r, off.wrapping_neg() & kuna_base::address::calc_mask(size), size))
+                })
+            };
+            let carries = match o.code() {
+                OpCode::CPUI_INT_EQUAL
+                | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_INT_LESS
+                | OpCode::CPUI_INT_LESSEQUAL
+                | OpCode::CPUI_INT_SLESS
+                | OpCode::CPUI_INT_SLESSEQUAL => {
+                    if meets(false) {
+                        return true;
+                    }
+                    false
+                }
+                OpCode::CPUI_INT_ADD => {
+                    if meets(true) {
+                        return true;
+                    }
+                    true
+                }
+                OpCode::CPUI_INT_SUB => {
+                    if meets(false) {
+                        return true;
+                    }
+                    o.get_in(0) == Some(v) && other.and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant())
+                }
+                OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB | OpCode::CPUI_INDIRECT => o.get_in(0) == Some(v),
+                OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_MULTIEQUAL => true,
+                _ => false,
+            };
+            if !carries {
+                continue;
+            }
+            if let Some(out) = o.get_out() {
+                if seen.insert(out) {
+                    work.push(out);
+                }
+            }
+        }
+    }
+    false
 }
 
 #[cfg(test)]

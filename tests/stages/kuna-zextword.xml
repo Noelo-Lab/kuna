@@ -80,7 +80,7 @@
 <stringmatch name="ZEXTWORD #2: abi, a zero-extended word returns the register" min="1" max="1">uint8 z32m\(int4 a0\)</stringmatch>
 <stringmatch name="ZEXTWORD #3: abi, the zero-extension is printed" min="1" max="1">return \(uint4\)\(a0 \* 3\);</stringmatch>
 <stringmatch name="ZEXTWORD #4: off, a zero-extended argument returns unsigned int" min="1" max="1">unsigned int zu\(unsigned int a0\)</stringmatch>
-<stringmatch name="ZEXTWORD #5: abi, a zero-extended argument returns the register" min="1" max="1">return a0 &amp; 0xffffffff;</stringmatch>
+<stringmatch name="ZEXTWORD #5: abi, a zero-extended argument returns the register" min="1" max="1">uint8 zu\(uint4 a0\)</stringmatch>
 <stringmatch name="ZEXTWORD #6: off, the zero-extended constant reads as -16" min="1" max="1">return -0x10;</stringmatch>
 <stringmatch name="ZEXTWORD #7: abi, the zero-extended constant is returned whole" min="1" max="1">return 0xfffffff0;</stringmatch>
 <stringmatch name="ZEXTWORD #8: abi, both returns of zc return the register" min="1" max="1">uint8 zc\(uint8 a0,int4 a1\)</stringmatch>

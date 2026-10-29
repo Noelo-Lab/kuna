@@ -25,8 +25,9 @@
 //!
 //! 1. a direct `jmp rel32` / `jcc rel32` OUTSIDE `[b, e)` targets it — found by a
 //!    byte scan of the executable sections for the `E9` / `0F 8x` encodings, then
-//!    confirmed by decoding the candidate source and checking the decoded branch
-//!    names `t`;
+//!    confirmed by walking instruction lengths from a known FDE/function/image
+//!    entry in the same executable section, then checking that the instruction
+//!    containing the candidate opcode is a branch to `t`;
 //! 2. a linear decode of `[b, e)` from `b` lands on `t` as an instruction
 //!    boundary; and
 //! 3. the instruction before `t` has no fall-through (`ud2`, `jmp`, `ret`), so
@@ -40,16 +41,20 @@
 //! ## Scope
 //!
 //! x86 / x86-64 ELF only (the encodings and the FDE are both load-bearing), and
-//! inert on any image without `.eh_frame`. A byte-scan candidate is decoded only
-//! when the bytes before it end in a no-fall-through encoding, and a body only
-//! up to its last confirmed candidate, so the cost is one pass over the
-//! executable bytes plus short decodes of the fragments that qualify. The entries are reported on
-//! [`AnalysisOutput::fde_interior_entries`], which the commit adds after the
-//! `fdeinterior` suppression, since by construction every one is FDE-interior.
+//! inert on any image without `.eh_frame`. Targets are filtered for a preceding
+//! no-fall-through encoding before a body is decoded up to its last candidate.
+//! Source candidates are checked in address order, so each source range is walked
+//! once; unanchored sources supply no evidence, and a byte the decoder rejects is
+//! stepped over singly so one unsupported instruction does not hide the branches
+//! after it. Prefix bytes on a real branch remain part of its source instruction.
+//! The entries are reported on [`AnalysisOutput::fde_interior_entries`], which the
+//! commit adds after the `fdeinterior` suppression, since by construction every one
+//! is FDE-interior.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use kuna_base::address::Address;
 use kuna_base::space::AddrSpace;
 use kuna_sleigh::translate::Translate;
 use object::read::Object;
@@ -58,8 +63,8 @@ use crate::listing::classify::classify;
 use crate::listing::decode::decode_one;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
-use super::executable_sections;
-use super::kuna_fdeinterior::eligible_fde_bodies;
+use super::kuna_fdeinterior::{eligible_fde_bodies, scan_fde_bodies};
+use super::{executable_sections, existing_function_addrs};
 
 /// The longest FDE body this pass will linearly decode.
 const MAX_BODY: u64 = 0x4000;
@@ -90,21 +95,33 @@ impl AnalysisPass for ColdEntryPass {
             return AnalysisOutput::default();
         };
         let bodies = eligible_fde_bodies(file, ctx.bytes);
+        if bodies.is_empty() {
+            return AnalysisOutput::default();
+        }
         let execs = executable_sections(file);
+        let mut starts = existing_function_addrs(file, ctx.bytes);
+        starts.extend(scan_fde_bodies(file).into_iter().map(|(start, _)| start));
+        starts.push(file.entry());
+        starts.sort_unstable();
+        starts.dedup();
         AnalysisOutput {
-            fde_interior_entries: cold_entries(ctx.arch.translate(), code_space, &bodies, &execs),
+            fde_interior_entries: cold_entries(
+                ctx.arch.translate(), code_space, &bodies, &execs, &starts,
+            ),
             ..AnalysisOutput::default()
         }
     }
 }
 
 /// The FDE-interior addresses that are entered only by a jump from outside the
-/// FDE body. `bodies` must be sorted and disjoint.
+/// FDE body. `bodies` must be sorted and disjoint; `starts` holds sorted known
+/// instruction starts from FDEs, function symbols, and the image entry point.
 pub fn cold_entries(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     bodies: &[(u64, u64)],
     execs: &[(u64, u64, Vec<u8>)],
+    starts: &[u64],
 ) -> Vec<u64> {
     if bodies.is_empty() {
         return Vec::new();
@@ -123,18 +140,73 @@ pub fn cold_entries(
             by_body.entry(body).or_default().entry(target).or_default().push(src);
         }
     }
-    let mut out = Vec::new();
-    for ((start, _), targets) in by_body {
-        let confirmed: Vec<u64> = targets
-            .into_iter()
-            .filter(|(target, srcs)| {
-                srcs.iter().any(|&src| branches_to(translate, code_space, src, *target))
-            })
-            .map(|(target, _)| target)
-            .collect();
-        let Some(&last) = confirmed.last() else { continue };
+    by_body.retain(|&(start, _), targets| {
+        let Some(&last) = targets.keys().next_back() else { return false };
         let entered = after_terminator(translate, code_space, start, last);
-        out.extend(confirmed.into_iter().filter(|t| entered.contains(t)));
+        targets.retain(|target, _| entered.contains(target));
+        !targets.is_empty()
+    });
+    let candidates = by_body.values()
+        .flat_map(|targets| targets.values().flatten().copied()).collect();
+    let sources = source_instructions(translate, code_space, starts, execs, &candidates);
+    let mut out = Vec::new();
+    for ((start, end), targets) in by_body {
+        out.extend(targets.into_iter().filter_map(|(target, srcs)| {
+            srcs.iter().any(|src| {
+                sources.get(src).is_some_and(|&source| {
+                    !(start <= source && source < end)
+                        && branches_to(translate, code_space, source, target)
+                })
+            }).then_some(target)
+        }));
+    }
+    out
+}
+
+/// Map byte-scan candidates to instructions decoded from a metadata-backed start.
+/// Candidates are visited in address order, so each anchored prefix is walked once.
+/// An undecodable byte is stepped over singly, as a linear sweep does.
+fn source_instructions(
+    translate: &dyn Translate,
+    code_space: &Rc<AddrSpace>,
+    starts: &[u64],
+    execs: &[(u64, u64, Vec<u8>)],
+    candidates: &BTreeSet<u64>,
+) -> BTreeMap<u64, u64> {
+    let mut out = BTreeMap::new();
+    let mut anchor = None;
+    let mut pc = 0;
+    let mut next = 0;
+    let mut failed = false;
+    for &source in candidates {
+        let index = starts.partition_point(|&start| start <= source);
+        let Some(&start) = index.checked_sub(1).and_then(|i| starts.get(i)) else { continue };
+        let Some(&(lo, hi, _)) = execs.iter().find(|&&(lo, hi, _)| lo <= source && source < hi)
+        else { continue };
+        if start < lo {
+            continue;
+        }
+        if anchor != Some((start, hi)) {
+            anchor = Some((start, hi));
+            next = start;
+            failed = false;
+        }
+        while !failed && next <= source {
+            pc = next;
+            let address = Address::new(Rc::clone(code_space), pc);
+            let len = match translate.instruction_length(&address) {
+                Ok(len) if len > 0 => len as u64,
+                _ => 1,
+            };
+            let Some(end) = pc.checked_add(len).filter(|&end| end <= hi) else {
+                failed = true;
+                break;
+            };
+            next = end;
+        }
+        if !failed {
+            out.insert(source, pc);
+        }
     }
     out
 }

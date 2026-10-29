@@ -38,7 +38,15 @@ impl Fx {
         Self::with_return_address(Some((0, 8)))
     }
 
+    pub(crate) fn with_stack_views() -> Self {
+        Self::with_options(Some((0, 8)), true)
+    }
+
     fn with_return_address(return_address: Option<(u64, u32)>) -> Self {
+        Self::with_options(return_address, false)
+    }
+
+    fn with_options(return_address: Option<(u64, u32)>, stack_views: bool) -> Self {
         let original = build_fd();
         let mut manager = Rc::clone(&original.get_arch().manage);
         let entry = original.get_address().clone();
@@ -64,6 +72,7 @@ impl Fx {
         manager_mut.set_default_data_space(ram.get_index()).unwrap();
         let stack = Rc::clone(manager.get_stack_space().unwrap());
         let mut arch = ArchContext::new_shared(Rc::clone(&manager));
+        arch.stack_views = stack_views;
         arch.default_return_addr =
             return_address.map(|(offset, size)| kuna_num::pcoderaw::VarnodeData {
                 space: Some(Rc::clone(&stack)),

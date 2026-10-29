@@ -502,9 +502,16 @@ fn install_layout(
     };
     layout.union_type = uname;
 
+    // (kuna `variantnames`) The tag member takes a synthesized enum built from
+    // the variant part's own discriminant->name map, so a test of it renders
+    // the variant name; the DWARF-declared integer stays when the gate is off,
+    // the tag is already an enum, or no variant carries a usable (name, value).
+    let tag_field_type =
+        super::kuna_variantnames::synthesized_tag_enum(types, name, &tag_type, &layout.variants)
+            .unwrap_or_else(|| Rc::clone(&tag_type));
     let mut fields = vec![
         TypeField::new(payload_offset, payload_offset, "payload".to_string(), union),
-        TypeField::new(raw.tag_offset, raw.tag_offset, "tag".to_string(), tag_type),
+        TypeField::new(raw.tag_offset, raw.tag_offset, "tag".to_string(), tag_field_type),
     ];
     fields.sort_by_key(|f| f.offset);
     let align = aggregate_alignment(die, size, &fields, &[]);

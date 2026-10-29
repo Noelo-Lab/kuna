@@ -150,6 +150,11 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("regionedgeorder", "on"),
     ("returndup", "on"), // default-ON since DIV-54; kept so the preset owns it
     ("orchain", "on"),   // the returndup gate DIV-69 measured; must follow returndup
+    // (kuna) Decline the returndup split at the join of a one-block `if`, so
+    // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
+    // Shipped OFF because the decbench O2 sample moved aggregate GED by +60 (it is
+    // -163 and +56 GED-perfect at O0); preset membership delivers it to the page.
+    ("rettriangle", "on"),
     ("iteexpr", "on"), // angr-style ?: recovery over computed-expression arms (readability)
     // Recover the scalar loop for readability. Kept in aggressive mode because
     // this hides the compiler's vector stride and duplicated loop body.
@@ -210,6 +215,22 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     // the upstream `code *` spellings and applies no mode; preset membership is
     // what makes a call through a table entry or a local compile as C by default.
     ("calltargettype", "on"),
+    // (kuna) Name a local after the library call that returns it or takes it
+    // whole (`fd = open(...)`, `read(fd, ...)`). Shipped default OFF because six
+    // stage assertions of other features spell the `vN` it names; preset
+    // membership is what makes it the default rendering for the web page and for
+    // every binary `auto` decompiles under 500 KiB.
+    ("libcnames", "on"),
+    // (kuna) ARM hard-float scalar VFP contracts: a double returned whole in d0
+    // and float/double parameters in their s/d registers on both sides of a
+    // call. Shipped default OFF in the catalog; inert unless the ELF container
+    // states the VFP procedure-call standard, so soft-float, softfp and raw
+    // images print byte-identically. `armfloatargs` needs `armfloatreturn`.
+    // Measured over a 42-binary gcc/clang ABI corpus (hard, softfp and soft
+    // float; -O0/-O2/-Os) and 84 hard-float decbench firmware slices; see the
+    // options' catalog rows.
+    ("armfloatreturn", "on"),
+    ("armfloatargs", "on"),
     // analysis-tier default-off discovery/markup passes. `listing` is the master
     // gate that enables the Listing-consuming passes (fid/aif/discovered-noreturn).
     ("listing", "on"),
@@ -523,18 +544,14 @@ mod tests {
         /// serial `kuna decompile-all`. The other surfaces cannot act on it, so
         /// preset membership would change nothing.
         ///
-        /// `bejoin` joins a big-endian or AVR two-register value high word first
-        /// when its low word looks returned on purpose. The rule reads the
+        /// `bejoin on` joins a big-endian or AVR two-register value high word
+        /// first when its low word looks returned on purpose. The rule reads the
         /// instructions, not a type, and an `int` that works over the high half
         /// of a 64-bit temporary compiles to the `long long`'s registers, so with
         /// it on that correct `int` prints as a wrong `long long` (GH-904). In
         /// the preset it would be the default output under 500 KiB, which is
-        /// exactly what it is opt-in to avoid.
-        /// `armframes` expands ARM reference coverage with validated frame roots.
-        /// On a stripped 400,556-byte BusyBox it grows the reachable walk from
-        /// 2,271 instructions to about 74,000 and raises query time from 0.78 s
-        /// to 2.05 s. This cost keeps recovery opt-in in every mode.
-        ///
+        /// exactly what it is opt-in to avoid; every mode keeps the default,
+        /// `evidence`, which joins that way only on proof.
         /// `mixedtailret` returns a value a function tested beside a tail call,
         /// and a `void` guard that leaves the tested value in the return
         /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so
@@ -552,12 +569,33 @@ mod tests {
         /// `armconstshift` makes signed ARM constant shifts defined C at the
         /// cost of a cast pair on every sign-bit test (`x << 0x18 < 0`), which
         /// firmware uses for nearly every register flag check.
+        ///
+        /// `callmechanisms` installs every compiler-spec prototype boundary
+        /// payload, and the stock `ppc_64_le.cspec` one stores `r2Save` to the
+        /// ELFv1 TOC slot `0x28(r1)`, which is a live local in an ELFv2 frame.
+        /// `x86listingswitch` reaches valid cases but ordinary tail jumps from
+        /// them can hide independent function entries from the AIF gap walk;
+        /// the i386 corpus lost seven true starts, so it remains explicit.
+        ///
+        /// `regsigned` declares a sign-extended register local at its narrow
+        /// width. On decbench type_match it gained a few perfect functions on
+        /// ARM firmware and none on x86-64, and a narrowed value that a wider
+        /// reader takes back gains a cast (`(long)(int)v` on AArch64).
+        ///
+        /// `callwide` requires complete caller evidence and remains an explicit
+        /// opt-in until its default validation is complete.
         const EXCLUDED_ON_PURPOSE: &[&str] =
             &["v850indirectbranch", "dwarf_lines", "ifuncfpret",
               "aifcorroborate", "linuxsyscall", "nulterminator", "msvcstrappend",
-              "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin", "armframes",
+              "structdefs", "indirectonly", "protoorder", "stackalias", "stackviews", "bejoin",
               "mixedtailret", "varargsharedfloat", "callarrayextent",
-              "armconstshift"];
+              "armconstshift", "callmechanisms", "regsigned", "x86listingswitch", "callwide",
+              // `lazyfuncs` changes no output, but its saving is a single-function
+              // property: the whole-binary surfaces the presets drive (decompile-all,
+              // the web front-end, the benchmark) materialize every target they walk
+              // anyway, so preset membership would buy nothing there and has not been
+              // measured on them. Flip it into the preset with that measurement.
+              "lazyfuncs"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open
@@ -573,9 +611,6 @@ mod tests {
         /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
         /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
         const UNEVALUATED: &[&str] = &[
-            // Scalar VFP inference needs a broader ABI and aggregate corpus before preset promotion.
-            "armfloatreturn",
-            "armfloatargs",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",

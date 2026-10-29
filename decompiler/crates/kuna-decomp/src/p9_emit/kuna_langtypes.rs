@@ -56,6 +56,8 @@ pub struct SpellCtx {
     /// (kuna `ctypes`) The target's declared C scalar widths, which is what makes
     /// the spelling per-architecture rather than a guess.
     pub(crate) model: crate::kuna_ctypes::CDataModel,
+    /// (kuna `indirectargs`) Spell an indirectly passed parameter at its value type.
+    pub(crate) indirect_args: bool,
 }
 
 impl SpellCtx {
@@ -67,6 +69,7 @@ impl SpellCtx {
         long_is_8: true,
         ctypes: false,
         model: crate::kuna_ctypes::CDataModel::LP64,
+        indirect_args: false,
     };
 
     /// The speller for this context's output language.

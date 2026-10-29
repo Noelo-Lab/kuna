@@ -1158,6 +1158,54 @@ fn watchdog_stops_heritage_guard_placement() {
     assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop big");
 }
 
+/// A chain of conditional updates spends its budget inside the region structurer.
+#[test]
+fn watchdog_stops_region_structuring_and_the_batch_continues() {
+    let mut bytes = vec![0x89, 0xf8];
+    for i in 0..1000u32 {
+        bytes.push(0xa9);
+        bytes.extend_from_slice(&(1u32 << (i % 16)).to_le_bytes());
+        bytes.extend_from_slice(&[0x74, 0x0b, 0x69, 0xc0]);
+        bytes.extend_from_slice(&(3 + 2 * (i % 61)).to_le_bytes());
+        bytes.push(0x05);
+        bytes.extend_from_slice(&(i + 1).to_le_bytes());
+        bytes.push(0x35);
+        bytes.extend_from_slice(&(i + 1).to_le_bytes());
+    }
+    bytes.push(0xc3);
+    let after = format!("0x{:x}", 0x1000 + bytes.len());
+    bytes.extend_from_slice(&[0x8d, 0x47, 0x01, 0xc3]);
+    let path = common::scratch_file("region-watchdog", "bin");
+    std::fs::write(&path, bytes).unwrap();
+    let start = Instant::now();
+    let result = run_kuna_with_timeout(
+        &[
+            "decompile-all", path.to_str().unwrap(), "--raw-image",
+            "--target", "x86:LE:64:default", "--base", "0x1000",
+            "--entry", "0x1000", "--entry", &after,
+            "--define-function", &format!("0x1000-{after}=stress"),
+            "--define-function", &format!("{after}=after"),
+            "--json", "--jobs", "1", "--max-fn-seconds", "1",
+            "--max-fn-memory", "512", "--option", "regionstructure", "on",
+            "--sleighpath", &specs(),
+        ],
+        Duration::from_secs(15),
+    );
+    let elapsed = start.elapsed();
+    std::fs::remove_file(path).unwrap();
+    let (stdout, stderr, _) = result.expect("region structuring exceeded the 15s outer bound");
+    let doc: serde_json::Value = serde_json::from_str(&stdout).expect(&stderr);
+    let functions = doc["functions"].as_array().unwrap();
+    let stress = functions.iter().find(|f| f["name"] == "stress").unwrap();
+    let error = stress["error"].as_str().unwrap_or_default();
+    assert!(error.starts_with("per-function decompile budget exceeded (1 s) in "), "{stdout}");
+    assert!(stress["code"].is_null(), "{stdout}");
+    let after = functions.iter().find(|f| f["name"] == "after").unwrap();
+    assert!(after["error"].is_null(), "{stdout}");
+    assert!(after["code"].as_str().unwrap().contains("return"), "{stdout}");
+    assert!(elapsed < Duration::from_secs(10), "the 1 s watchdog took {elapsed:?} to stop stress");
+}
+
 /// `--max-fn-memory` stops `big` in `tests/hang-repro/escaped_locals` once its
 /// process passes the limit, records that as `big`'s error, and the batch goes
 /// on to decompile `after`: in process, through a worker pool, and on the
@@ -2440,11 +2488,60 @@ fn a_frame_records_char_pointer_pointer_is_not_its_type() {
         if !ok {
             panic!("kuna decompile-all --option calleevote {value} failed: {stderr}");
         }
-        assert!(got.contains("v2[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
+        assert!(got.contains("p[1] = 0x506070801020304;"), "{value}: the node's word store split:\n{got}");
         assert!(!got.contains("] = '\\x"), "{value}: a character store:\n{got}");
         assert!(!got.contains("drop(char **a0)"), "{value}: drop took the frame char **:\n{got}");
         assert!(got.contains("int advance(char **a0)"), "{value}: advance lost its char **:\n{got}");
         assert!(got.contains("int mkpipe(int *a0)"), "{value}: mkpipe lost pipe's int *:\n{got}");
+    }
+}
+
+/// (kuna `callerptr`) A parameter whose own body says nothing about it takes a
+/// pointer when every caller passes one: `push`'s callers pass a record, a
+/// `strdup` result and a null (`void *`), `remember`'s a literal, a `getenv`
+/// result and a null (`char *`). `slot_of` shifts the pointer it is handed,
+/// `align8` masks an address it derives from it, and `is_table`, `is_tab2`
+/// (behind the forwarder `via`, whose `char *` reaches it as an ordinary
+/// `calleevote` statement), `hits` (through `p + i`) and `far_cmp` (through a
+/// dozen adds and merges) compare it with the address of a table holding a
+/// zero byte, which a `char *` would print as a cut-off string literal, and
+/// `off_in` subtracts that address: all of them keep their integers, at -O2
+/// and -O0, and `off` keeps every integer.
+#[test]
+fn a_parameter_every_caller_passes_a_pointer_is_one() {
+    let sp = specs();
+    for stem in ["callerptr_x86_64", "callerptr_O0_x86_64"] {
+        let bin = repo_root()
+            .join("decompiler/crates/kuna-analysis/tests/fixtures")
+            .join(stem)
+            .to_str()
+            .unwrap()
+            .to_string();
+        for (value, push, remember) in [
+            ("on", "void push(void *a0)", "void remember(char *a0)"),
+            ("off", "void push(unsigned long a0)", "void remember(unsigned long a0)"),
+        ] {
+            let (got, stderr, ok) =
+                run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "callerptr", value]);
+            if !ok {
+                panic!("kuna decompile-all {stem} --option callerptr {value} failed: {stderr}");
+            }
+            assert!(got.contains(push), "{stem} {value}: `{push}` missing:\n{got}");
+            assert!(got.contains(remember), "{stem} {value}: `{remember}` missing:\n{got}");
+            for keeps in [
+                "unsigned long slot_of(unsigned long a0)",
+                "unsigned long align8(long a0)",
+                "bool is_table(long a0)",
+                "bool is_tab2(long a0)",
+                "int hits(long a0,int a1)",
+                "bool far_cmp(long a0)",
+                "long off_in(long a0)",
+            ] {
+                assert!(got.contains(keeps), "{stem} {value}: `{keeps}` missing:\n{got}");
+            }
+            assert!(!got.contains("== \""), "{stem} {value}: a table address printed as a literal:\n{got}");
+            assert!(!got.contains("[-0x"), "{stem} {value}: a table address subtracted as a char index:\n{got}");
+        }
     }
 }
 
@@ -2890,9 +2987,10 @@ fn a_reader_of_a_redone_wrapper_round_trips() {
 /// shape of crazyflie's `logf`. Before, `qnanf_` was `unsigned int` returning
 /// `0x7fc00000` and `logish` returned `(float)qnanf_()`, a value conversion of
 /// the NaN's bits that evaluates to 2143289344.0. `qp`, `sn` and `nn` return NaNs
-/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload) and keep
-/// their bits, and `third` returns a `double` in `d0` whose low half is not a
-/// float. `put` and `put2` store `core`'s float through an untyped pointer,
+/// `NAN` cannot spell (a payload, a signalling NaN, a negative payload); the
+/// hard-float contract of the default preset (`armfloatreturn`) returns them as
+/// floats reinterpreted from their exact bits, and `third` returns its `double`
+/// in `d0` whole. `put` and `put2` store `core`'s float through an untyped pointer,
 /// which printed `((unsigned int *)a1)[2] = core(a0)`, a conversion by value.
 /// The printed functions, compiled on the host, must compute what the source
 /// computes.
@@ -2906,15 +3004,16 @@ fn a_nan_returned_in_s0_round_trips() {
         "float qnanf_(void)",
         "return NAN;",
         "v1 = qnanf_();",
-        "unsigned int qp(void)",
-        "return 0x7fc00123;",
-        "return 0x7fa00000;",
-        "return 0xffc00005;",
-        "unsigned int third(void)",
+        "float qp(void)",
+        ".from = 0x7fc00123 }).to;",
+        ".from = 0x7fa00000 }).to;",
+        ".from = 0xffc00005 }).to;",
+        "double third(void)",
+        "return 0.3333333333333333;",
     ] {
         assert!(stdout.contains(want), "missing `{want}`:\n{stdout}");
     }
-    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "float qp", "float sn", "float nn", "(unsigned int *)"] {
+    for bad in ["0x7fc00000", "(float)qnanf_", "float third", "(unsigned int *)"] {
         assert!(!stdout.contains(bad), "`{bad}` printed:\n{stdout}");
     }
     assert!(stdout.contains("*(float *)(a1 + a2 * 4) = core(a0);"), "put stores core's float:\n{stdout}");
@@ -3223,7 +3322,8 @@ fn a_return_stated_in_another_register_is_not_reinterpreted() {
 /// integer, which now reinterprets the float at the call. The printed
 /// functions, compiled with gcc and clang and called with the source's floats,
 /// compute the fixture's bits; `fb_bump`, `fb_store` and `fb_mix` compute with,
-/// store or or an integer into the bits and keep their integer types.
+/// store or or an integer into the bits and keep their integer types, except
+/// that hard-float ARM's `fb_mix` returns the convention's float in `s0`.
 #[test]
 fn a_float_bit_helper_round_trips() {
     let sp = specs();
@@ -3241,11 +3341,15 @@ fn a_float_bit_helper_round_trips() {
             "float fb_copysignf(float a0,float a1)",
             "bool fb_isnanf(float a0)",
             "v1 = fb_fabsf(a0 - a1);",
-            "v3 = fb_copysignf(3.0,a0);",
+            "v3 = fb_copysignf(3.0f,a0);",
             "*a1 = ((union { float from; int to; }){ .from = fb_fabsf(a0) }).to + 1;",
             "int fb_bump(int a0)",
             "void fb_store(unsigned int a0,unsigned int *a1)",
-            "unsigned int fb_mix(unsigned int a0,unsigned int a1)",
+            if tag == "armhf" {
+                "float fb_mix(unsigned int a0,unsigned int a1)"
+            } else {
+                "unsigned int fb_mix(unsigned int a0,unsigned int a1)"
+            },
         ] {
             assert!(stdout.contains(want), "{tag}: missing `{want}`:\n{stdout}");
         }
@@ -3310,16 +3414,26 @@ fn a_float_bit_helper_round_trips() {
 /// without reading its result, and was printed before the withdrawal as
 /// `fbabs(((union { unsigned int from; float to; }){ .from = a0 }).to)`, a
 /// float handed to the final `unsigned int fbabs(unsigned int a0)`, which C
-/// converts by value. Every caller of the helper is now decompiled again.
+/// converts by value. Every caller of the helper is now decompiled again. The
+/// withdrawal is checked with `armfloatreturn` off: the hard-float contract of
+/// the default preset returns `s0` as the convention's float, so `fbabs` keeps
+/// its float on both sides and `abs_bits` reinterprets the result.
 #[test]
 fn a_withdrawn_float_bit_helper_is_called_with_its_final_prototype() {
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatbitswithdraw_armhf.o").to_str().unwrap().to_string();
     let sp = specs();
-    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--sleighpath", &sp]);
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
     assert!(ok, "kuna decompile-all failed: {stderr}");
     assert!(stdout.contains("unsigned int fbabs(unsigned int a0)"), "fbabs is no longer withdrawn; re-pick the case:\n{stdout}");
     assert!(stdout.contains("  fbabs(a0); // tail-call"), "from_bits does not call fbabs with its integer:\n{stdout}");
     assert!(!stdout.contains("float to; }){ .from = a0 }).to)"), "a float is handed to fbabs's integer parameter:\n{stdout}");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture, "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(stdout.contains("float fbabs(float a0)"), "the preset withdrew fbabs's float:\n{stdout}");
+    assert!(
+        stdout.contains("return ((union { float from; unsigned int to; }){ .from = fbabs("),
+        "abs_bits does not reinterpret fbabs's float:\n{stdout}"
+    );
 }
 
 /// `floatret_put_{cm4,a64}.o` (Cortex-M4F and AArch64, clang -O2): `putf2` moves
@@ -3666,13 +3780,16 @@ fn soft_float_imports_keep_their_core_register_values() {
 /// image printed `double sub_10224(..)` beside `rd`'s `unsigned long long v1 =
 /// sub_10224()`, which converts 2.25 to 2, where the rows' absence returns the
 /// right `CONCAT44(v2,v1)`; the hard image printed `unsigned int sub_101f0(..)`
-/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows.
+/// returning `SUB84(v1,0)`, the low half of `d0`. ARM gets none of the rows
+/// with `armfloatreturn` off. Under the default preset's hard-float contract
+/// the hard image takes `strtod`'s row, and `parse` and `clampd` return their
+/// doubles whole in `d0`.
 #[test]
 fn arm_images_get_no_double_libc_rows() {
     let sp = specs();
     for name in ["floatret_armrows_soft", "floatret_armrows_hard"] {
         let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
         assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
         for bad in ["double", "SUB84("] {
             assert!(!stdout.contains(bad), "{name}: `{bad}` from a libc row ARM does not return whole:\n{stdout}");
@@ -3683,7 +3800,34 @@ fn arm_images_get_no_double_libc_rows() {
                 "{name}: `clampd` no longer returns its r0:r1 bits:\n{stdout}"
             );
         }
+        let (preset, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all failed on {name}: {stderr}");
+        if name.ends_with("soft") {
+            assert_eq!(preset, stdout, "{name}: the hard-float contract changed a soft-float image");
+        } else {
+            for want in ["double strtod(char *a0,char **a1)", "double sub_101e0(char *a0)", "double sub_101f0(char *a0)", "v1 = strtod(a0,NULL);"] {
+                assert!(preset.contains(want), "{name}: missing `{want}`:\n{preset}");
+            }
+            assert!(!preset.contains("SUB84("), "{name}: a double return is cut to its low word:\n{preset}");
+        }
     }
+}
+
+/// `kuna decompile armfloat_libm_hard mant` builds one function: the held-back
+/// `frexp` and `sin` rows must be parked before that first `Funcdata` takes its
+/// callee-prototype snapshot, or `mant` reads `frexp()` with no arguments.
+#[test]
+fn arm_library_float_rows_reach_a_single_decompile() {
+    let sp = specs();
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/armfloat_libm_hard").to_str().unwrap().to_string();
+    for (func, want) in [("mant", "double mant(double a0,int *a1)"), ("mant", "v1 = frexp(a0,a1);"), ("wave", "v1 = sin(a0);")] {
+        let (stdout, stderr, ok) = run_kuna(&["decompile", &bin, func, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile {func} failed: {stderr}");
+        assert!(stdout.contains(want), "{func}: missing `{want}`:\n{stdout}");
+    }
+    let (off, stderr, ok) = run_kuna(&["decompile", &bin, "mant", "--option", "armfloatreturn", "off", "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile mant failed: {stderr}");
+    assert!(!off.contains("frexp(a0,a1)"), "armfloatreturn off still parked frexp:\n{off}");
 }
 
 /// `dsum`, `norm` and `use` read their argument as `double *`, `struct P *` and
@@ -4244,7 +4388,7 @@ fn jobs_leaves_no_scratch_directory_behind() {
     let pid = child.id();
     let status = child.wait().expect("wait on the kuna binary");
     assert!(status.success(), "pooled decompilation failed: {status}");
-    let mine = format!("kuna-jobs-{pid}-");
+    let mine = format!("kuna-jobs-v2-{pid}-");
     let left: Vec<String> = std::fs::read_dir(std::env::temp_dir())
         .into_iter()
         .flatten()
@@ -4253,6 +4397,41 @@ fn jobs_leaves_no_scratch_directory_behind() {
         .filter(|n| n.starts_with(&mine))
         .collect();
     assert!(left.is_empty(), "a finished --jobs run left {left:?} behind");
+}
+
+#[test]
+fn jobs_preserves_live_scratch_owners_and_reaps_released_locks() {
+    let base = tempfile::tempdir().unwrap();
+    let legacy = base.path().join("kuna-jobs-4294967295-live");
+    let held = base.path().join("kuna-jobs-v2-4294967295-live");
+    for dir in [&legacy, &held] {
+        std::fs::create_dir(dir).unwrap();
+        std::fs::write(dir.join("inventory.spec"), b"live inventory").unwrap();
+    }
+    let owner = std::fs::File::create(held.join("owner.lock")).unwrap();
+    owner.try_lock().unwrap();
+    let run = || {
+        process::required_output(
+            Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .env("TMPDIR", base.path())
+                .env("TMP", base.path())
+                .env("TEMP", base.path())
+                .args(["decompile-all", &fauxware(), "--json", "--jobs", "2", "--sleighpath", &specs()])
+                .args(SERIAL_ORDER_OFF),
+        )
+    };
+    let first = run();
+    let doc: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+    assert_eq!(doc["count"], 21);
+    assert!(doc["functions"].as_array().unwrap().iter().all(|f| f["error"].is_null()));
+    for dir in [&legacy, &held] {
+        assert_eq!(std::fs::read(dir.join("inventory.spec")).unwrap(), b"live inventory");
+    }
+    drop(owner);
+    let second = run();
+    assert!(!held.exists(), "the released owner must be swept");
+    assert!(legacy.is_dir(), "unprovable legacy ownership must stay untouched");
+    assert_eq!(first.stdout, second.stdout);
 }
 
 /// Killing the parent must take the pool with it.  `--jobs` is for hour-long
@@ -4278,7 +4457,7 @@ fn killing_the_parent_takes_the_workers_and_the_scratch_dir_with_it() {
             .collect()
     }
     fn scratch_of(pid: u32) -> Vec<PathBuf> {
-        let mine = format!("kuna-jobs-{pid}-");
+        let mine = format!("kuna-jobs-v2-{pid}-");
         std::fs::read_dir(std::env::temp_dir())
             .into_iter()
             .flatten()
@@ -5391,7 +5570,7 @@ int main(void) {
             "memmove((void *)a0->field_0x0,(void *)(a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
             "memmove(a0->field_0x0,(void *)((long)a0->field_0x0 + (a0->field_0x8 - a0->field_0x10)),a0->field_0x10);",
         ),
-        ("v2 = strlen((char *)a0->field_0x10);", "v2 = strlen(a0->field_0x10);"),
+        ("len = strlen((char *)a0->field_0x10);", "len = strlen(a0->field_0x10);"),
         ("    long field_0x10;\n    long field_0x18;", "    long *field_0x10;\n    long *field_0x18;"),
         ("a0->field_0x0 = a0->field_0x0 + 8;", "a0->field_0x0 = &a0->field_0x0[1];"),
         ("v1 = (*(long (*)(unsigned long))a0->field_0x8)(a0->field_0x10);", "v1 = (*a0->field_0x8)(a0->field_0x10);"),
@@ -6162,7 +6341,7 @@ int main(void) {
             FUNCS,
             MAIN,
             WANT,
-            &[("v1 = (unsigned long)a0[a2];", "v1 = a0[a2];")],
+            &[("len = (unsigned long)a0[a2];", "len = a0[a2];")],
             OLD,
         ),
     ];
@@ -7121,12 +7300,12 @@ fn a_call_in_a_short_circuit_operand_round_trips_through_the_printed_c() {
     let fixtures: [(&str, &[&str], &[&str]); 3] = [
         (
             "foldcallret_sc_gcc_O0_x86_64",
-            &["v1 = tick(a0);", "if (a0 <= 5 || v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
+            &["v1 = tick(a0);", "if (6 <= a0 && !v1)", "gflag = (unsigned int)(5 < a0 && !v1);"],
             &["|| tick(", "&& !tick("],
         ),
         (
             "foldcallret_sc_clang_O0_x86_64",
-            &["if (tick(a0) || a0 <= 5)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
+            &["if (!tick(a0) && 6 <= a0)", "gflag = (unsigned int)(!tick(a0) && 5 < a0);"],
             &[],
         ),
         (
@@ -7641,10 +7820,10 @@ int main(void) {
             WANT,
             &[
                 ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 (
-                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "    v1 = after_colon(a0);\n  else {\n    v1 = fallback_name();",
+                    "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "    s = after_colon(a0);\n  else {\n    s = fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -7668,11 +7847,11 @@ int main(void) {
             WANT,
             &[
                 ("v1 = (char *)skip_blanks(a0);", "v1 = skip_blanks(a0);"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (long)signed_delta(a0,a1) < 0;", "return signed_delta(a0,a1) < 0;"),
                 (
-                    "v1 = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
-                    "v1 = (a0) ? after_colon(a0) : fallback_name();",
+                    "s = (a0) ? (char *)after_colon(a0) : (char *)fallback_name();",
+                    "s = (a0) ? after_colon(a0) : fallback_name();",
                 ),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
@@ -7692,7 +7871,7 @@ int main(void) {
             &[
                 ("v1 = (char *)after_colon(a0);", "v1 = after_colon(a0);"),
                 ("v1 = (char *)fallback_name();", "v1 = fallback_name();"),
-                ("v1 = (FILE *)pick_stream(a0);", "v1 = pick_stream(a0);"),
+                ("stream = (FILE *)pick_stream(a0);", "stream = pick_stream(a0);"),
                 ("return (int)neg32(a0);", "return neg32(a0);"),
             ],
             &[
@@ -7959,7 +8138,15 @@ fn check_elemptr_round_trip(run_native: bool) {
                 let listed = header.lines().find_map(|l| {
                     let why = l.split_once(&format!("/* {n} is "))?.1;
                     let decls = why.split_once("so it is not declared: ")?.1.trim_end_matches(" */");
-                    decls.split(", ").find(|d| d.contains('*') || d.ends_with("[]")).map(str::to_string)
+                    let views: Vec<_> = decls.split(", ").collect();
+                    let byte_address = !bodies.contains(&format!("{n}["))
+                        && views.iter().any(|d| *d == format!("long {n}") || *d == format!("unsigned long {n}"));
+                    if byte_address {
+                        assert!(!header.lines().any(|line| line.starts_with("extern ") && line.contains(n)));
+                        Some(format!("long {n}"))
+                    } else {
+                        views.into_iter().find(|d| d.contains('*') || d.ends_with("[]")).map(str::to_string)
+                    }
                 });
                 // A name the header leaves out is main's integer global; one the
                 // bodies subscript is a pointer.
@@ -9004,8 +9191,11 @@ fn a_64_bit_comparison_keeps_its_int_result_in_the_first_register() {
 /// value: `sum_hi` and `sum64` on PowerPC -O2 (`addc 4,4,6; addze 3,3; add
 /// 3,3,5`), `mulhi` and `uwide_mul` on MIPS gcc -O0 (both halves of `multu`
 /// left in `$2:$3`). On, every one reads as the `long long`, so the `int`
-/// versions print the whole 64-bit value; off, the default, every one reads as
-/// the `int`, so the `long long` versions print with their halves swapped.
+/// versions print the whole 64-bit value; off, every one reads as the `int`,
+/// so the `long long` versions print with their halves swapped. The default,
+/// `evidence`, reads them as off does, except PowerPC `uwide_mul`, whose low
+/// word `mullw` makes apart from the `mulhwu` that leaves `mulhi`'s: it prints
+/// the whole product, and `mulhi` its `int`.
 /// gcc -O0 on MIPS moves `sum_hi`'s high word down with `srl $17,$2,0` for
 /// `>> 32`, which works it over, so there `sum_hi` reads as its `int` in both
 /// modes. `ltz` returns a flag and reads as its `int` either way. Each mode's
@@ -9024,13 +9214,18 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
             .to_str()
             .unwrap()
             .to_string();
-        for on in [true, false] {
+        for mode in ["on", "off", "evidence"] {
+            let on = mode == "on";
+            let proven = mode == "evidence" && !fixture.contains("mips");
+            let funcs: Vec<&str> =
+                if proven { funcs.iter().copied().chain(["uwide_mul", "mulhi"]).collect() } else { funcs.to_vec() };
+            let funcs = &funcs[..];
             let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-            if on {
-                args.extend(["--option", "bejoin", "on"]);
+            if mode != "evidence" {
+                args.extend(["--option", "bejoin", mode]);
             }
             let (stdout, stderr, ok) = run_kuna(&args);
-            assert!(ok, "kuna decompile-all {fixture} (bejoin {on}) failed: {stderr}");
+            assert!(ok, "kuna decompile-all {fixture} (bejoin {mode}) failed: {stderr}");
             let printed = callrettype_functions(&stdout, funcs);
             let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
             assert_eq!(sigs.len(), funcs.len(), "{fixture}: every function prints:\n{stdout}");
@@ -9052,7 +9247,7 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
                 (
                     "SW(V(ws[i], ws[j]) + V(ws[k], ws[j ^ 3]))",
                     "(u64)(u32)((V(ws[i], ws[j]) + V(ws[k], ws[j ^ 3])) >> 32)",
-                    "SW((u64)ws[i] * ws[j])",
+                    if proven { "(u64)ws[i] * ws[j]" } else { "SW((u64)ws[i] * ws[j])" },
                     "(u64)(u32)(((u64)ws[i] * ws[j]) >> 32)",
                 )
             };
@@ -9083,7 +9278,7 @@ fn bejoin_reads_an_ints_stale_low_half_as_the_long_long_it_matches() {
                  for (int i = 0; i < 8; i++)\n    for (int j = 0; j < 8; j++) {{\n{checks}    }}\n  \
                  printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
             );
-            bejoin_round_trip(&format!("{fixture}-{}", if on { "on" } else { "off" }), &src_text, &printed);
+            bejoin_round_trip(&format!("{fixture}-{mode}"), &src_text, &printed);
         }
     }
 }
@@ -9415,7 +9610,7 @@ fn a_shift_that_carries_into_the_first_register_keeps_the_int() {
 /// `$2`, the registers `zb`, which returns its second argument zero-extended,
 /// leaves on purpose. Joined in the ABI's order, `pick` returned the argument
 /// (`return a1;`). A function with an indirect jump flow could not follow
-/// keeps the first-register-low join, the default's, for a low word
+/// keeps the first-register-low join, off's, for a low word
 /// nothing visible reads and the jump's code can; `zb` keeps its fix and is
 /// compiled with gcc and clang at -O0 and -O2. (`pick`'s printed jump-as-call
 /// is not C a compiler takes.)
@@ -9427,9 +9622,7 @@ fn an_unrecovered_switch_keeps_a_pointers_register() {
     let mut listings = Vec::new();
     for on in [true, false] {
         let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
-        if on {
-            args.extend(["--option", "bejoin", "on"]);
-        }
+        args.extend(["--option", "bejoin", if on { "on" } else { "off" }]);
         let (stdout, stderr, ok) = run_kuna(&args);
         assert!(ok, "kuna decompile-all bejoin_jump_mips32_O2.o (bejoin {on}) failed: {stderr}");
         listings.push(stdout);
@@ -9453,6 +9646,137 @@ fn an_unrecovered_switch_keeps_a_pointers_register() {
          printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
     );
     bejoin_round_trip("bejoin_jump_mips32_O2.o", &src_text, &printed);
+}
+
+/// A call reads its callee's pair the way the callee's own RETURN joins it,
+/// whichever of the two is decompiled first and in whatever run. The default,
+/// `bejoin evidence`, decides both from the callee's instructions alone.
+/// `bejoin_order.c` places `D_mix` and `E_self` before `widen` and `self`,
+/// whose sign-extended `long long` they read both words of, and `self` reads
+/// its own pair back. Each caller is taken from a whole `decompile-all`, a run
+/// narrowed to it with `--functions`, a `--jobs 2` run and a single `kuna
+/// decompile`, compiled with gcc and clang at -O0 and -O2 beside its callee's
+/// printed C, and run against the source, callee included. On main the callee
+/// printed its halves swapped; an order-dependent join printed it right but
+/// let a caller decompiled first read its low word as the high one. (`E_self`
+/// is checked on MIPS alone: kuna drops `self`'s recursive argument on SPARC
+/// and its low word on PowerPC, as before.) The `-mlong-calls` build calls
+/// through a register the pipeline resolves to the callee only mid-pass, so
+/// the caller had no verdict to read.
+#[test]
+fn bejoin_evidence_reads_a_callee_pair_alike_in_every_run() {
+    let sp = specs();
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let cases: [(&str, &[&str]); 4] = [
+        ("bejoin_order_ppc32_O2.o", &["D_mix"]),
+        ("bejoin_order_sparc32_O2.o", &["D_mix"]),
+        ("bejoin_order_mips32_O2", &["D_mix", "E_self"]),
+        ("bejoin_order_mips32_O2_longcalls", &["D_mix", "E_self"]),
+    ];
+    for (fixture, callers) in cases {
+        let bin = fixtures.join(fixture).to_str().unwrap().to_string();
+        let (full, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+        assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
+        let (jobs, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--jobs", "2"]);
+        assert!(ok, "kuna decompile-all {fixture} --jobs 2 failed: {stderr}");
+        for &caller in callers {
+            let callee = if caller == "D_mix" { "widen" } else { "self" };
+            let (narrowed, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--functions", caller]);
+            assert!(ok, "kuna decompile-all {fixture} --functions {caller} failed: {stderr}");
+            let (single, stderr, ok) = run_kuna(&["decompile", &bin, caller, "--sleighpath", &sp]);
+            assert!(ok, "kuna decompile {fixture} {caller} failed: {stderr}");
+            let runs = [
+                ("all", callrettype_functions(&full, &[caller])),
+                ("functions", callrettype_functions(&narrowed, &[caller])),
+                ("jobs", callrettype_functions(&jobs, &[caller])),
+                ("single", format!("// Function: {caller}\n{single}")),
+            ];
+            let callee_text = callrettype_functions(&full, &[callee]);
+            assert!(!callee_text.is_empty(), "{fixture}: {callee} prints:\n{full}");
+            for (run, caller_text) in runs {
+                assert!(caller_text.contains(caller), "{fixture} ({run}): {caller} prints:\n{caller_text}");
+                let printed = format!("{callee_text}\n{caller_text}");
+                let sigs: String = printed
+                    .split("// Function: ")
+                    .skip(1)
+                    .filter_map(|part| part.lines().find(|l| l.contains('(')))
+                    .map(|sig| format!("{sig};\n"))
+                    .collect();
+                let (stub_decls, stub_defs) = bejoin_stubs(&printed);
+                let src_text = format!(
+                    "#include <stdio.h>\n\
+                     typedef long long i64;\n\
+                     #define CONCAT44(h, l) ((unsigned long long)(unsigned int)(h) << 32 | (unsigned int)(l))\n\
+                     {stub_decls}{sigs}{printed}\n{stub_defs}\
+                     static i64 src_self(int n) {{ int r = n * 9; if (n > 0 && n < 8) {{ i64 v = src_self(n - 1); r = (int)(v >> 32) * 3 + (int)v - n; }} return (i64)r; }}\n\
+                     static i64 src_widen(int x) {{ return x; }}\n\
+                     static int src_D_mix(int x) {{ i64 v = x; return (int)(v >> 32) * 3 + (int)v; }}\n\
+                     static int src_E_self(int n) {{ i64 v = src_self(n); return (int)(v >> 32) * 3 + (int)v; }}\n\
+                     int main(void) {{\n  static const int xs[10] = {{0, 1, -1, 7, -7, 3, 0x7fffffff, (int)0x80000000, 123456789, -5}};\n  \
+                     int bad = 0;\n  for (int i = 0; i < 10; i++)\n    bad += (int){caller}(xs[i]) != src_{caller}(xs[i])\n      || (i64){callee}(xs[i]) != src_{callee}(xs[i]);\n  \
+                     printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
+                );
+                bejoin_round_trip(&format!("order-{fixture}-{caller}-{run}"), &src_text, &printed);
+            }
+        }
+    }
+}
+
+/// gcc -Os on MIPS computes `chk`'s exit argument from `b + 1`, made in the
+/// delay slot of the branch to the RETURN (`beqz a0; addiu v1,a1,1`), so
+/// `return 0` finds `b + 1` in `$3` beside the zero in `$2`, the shape of a
+/// zero-extended `long long`. Only the path calling `exit` reads it, and a
+/// value any path reads proves nothing, so the default prints `chk` and
+/// `chk2` as `bejoin off` does; the evidence once read `chk` as returning `b +
+/// 1`. `zk`'s product, made in the same kind of delay slot beside an `abort`
+/// path that reads nothing of it, still joins in the ABI's order. The image is
+/// linked: an object file leaves `exit` unresolved. Each function is compiled
+/// with gcc and clang at -O0 and -O2 and run against the source, `exit` and
+/// `abort` recording their argument.
+#[test]
+fn a_value_only_a_no_return_path_reads_proves_nothing() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/bejoin_noreturn_mips32_Os")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let names = ["chk", "chk2", "zk"];
+    let run = |mode: &str| {
+        let (stdout, stderr, ok) =
+            run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--functions", "chk,chk2,zk", "--option", "bejoin", mode]);
+        assert!(ok, "kuna decompile-all bejoin_noreturn_mips32_Os ({mode}) failed: {stderr}");
+        stdout
+    };
+    let (evidence, off) = (run("evidence"), run("off"));
+    assert_eq!(
+        callrettype_functions(&evidence, &["chk", "chk2"]),
+        callrettype_functions(&off, &["chk", "chk2"]),
+        "a value only the exit path reads proves nothing:\n{evidence}"
+    );
+    let printed = callrettype_functions(&evidence, &names);
+    let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
+    assert_eq!(sigs.len(), names.len(), "every function prints:\n{evidence}");
+    let zk = callrettype_functions(&evidence, &["zk"]);
+    assert!(!zk.contains("CONCAT44"), "zk's product joins in the ABI's order:\n{zk}");
+    let decls: String = sigs.iter().map(|sig| format!("{sig};\n")).collect();
+    let src_text = format!(
+        "#include <stdio.h>\n\
+         #define CONCAT44(h, l) ((unsigned long long)(unsigned int)(h) << 32 | (unsigned int)(l))\n\
+         static int got;\n#define exit(v) (got = (v))\n#define abort() (got = -1)\n\
+         {decls}{printed}\n\
+         int main(void) {{\n  static const int xs[8] = {{0, 1, -1, 7, -7, 0x7fffffff, (int)0x80000000, 123456789}};\n  \
+         int bad = 0;\n  for (int i = 0; i < 8; i++)\n    for (int j = 0; j < 8; j++)\n      for (int k = 0; k < 8; k++) {{\n        \
+         int a = xs[i], b = xs[j], c = xs[k], r;\n        \
+         got = 0x5a5a; r = (int)chk(a, b, c);\n        \
+         bad += a ? got != ((c - b) ^ (a * (b + 1))) - c * (b + 1) : r != 0 || got != 0x5a5a;\n        \
+         got = 0x5a5a; r = (int)chk2(a, b, c);\n        \
+         bad += a == c ? got != (b + 1) * c : r != 0 || got != 0x5a5a;\n        \
+         got = 0x5a5a; unsigned long long w = (unsigned long long)zk(a, b, c);\n        \
+         bad += a ? got != -1 : w != (unsigned long long)(unsigned)b * (unsigned)c || got != 0x5a5a;\n      }}\n  \
+         printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
+    );
+    bejoin_round_trip("bejoin_noreturn_mips32_Os", &src_text, &printed);
 }
 
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low

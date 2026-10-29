@@ -30,6 +30,7 @@
 
 pub mod classify;
 mod kuna_compactrefs;
+mod kuna_insnindex;
 mod kuna_insnstore;
 pub mod context;
 pub mod decode;
@@ -53,6 +54,9 @@ mod kuna_poolref;
 mod kuna_ppclocalentry;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
+mod kuna_a32switch;
+mod kuna_x86listingswitch;
+pub(crate) mod kuna_decodememo;
 mod kuna_unmappedentry;
 pub mod model;
 pub mod walk;
@@ -74,7 +78,7 @@ use object::Object;
 use crate::loadimage_object::ObjectLoadImage;
 
 pub use model::{
-    CodeUnit, DiscoveredFunction, FlowKind, FlowType, Insn, RawOp, RefKind, Reference,
+    CodeUnit, DiscoveredFunction, FlowKind, FlowType, Insn, Mnemonic, RawOp, RefKind, Reference,
 };
 
 /// What a Listing build captures beyond the instruction partition.
@@ -82,9 +86,11 @@ pub use model::{
 /// The partition (which bytes are instructions, and which addresses are
 /// functions) is what the walk exists for; the disassembly TEXT and the
 /// cross-reference MODEL are each an extra, and each costs per instruction —
-/// the text a second full SLEIGH parse plus two heap `String`s, the references
-/// one collected edge and two sorted buffers for incoming/outgoing queries.
-/// Neither is free to build and discard on a large instruction partition.
+/// the text a second full SLEIGH parse, one owned operand `String` per
+/// instruction, and shared mnemonic storage per distinct spelling per decode
+/// lane; the references need one collected edge and two sorted buffers for
+/// incoming/outgoing queries. Neither is free to build and discard on a large
+/// instruction partition.
 ///
 /// Every consumer of either is gated on `--option listing on`, so a build that
 /// only wants the partition ([`ListingDetail::PARTITION_ONLY`]) is asking for
@@ -126,6 +132,8 @@ pub struct Listing {
     /// (kuna `armfuncmode`) The extents painted A32 from function-symbol
     /// evidence (see [`crate::loader::kuna_armfuncmode`]); empty otherwise.
     a32_extents: Vec<(u64, u64)>,
+    /// A resume must rebuild ordinary coverage after optional i386 expansion.
+    x86_switch_rebuild: bool,
 }
 
 impl Listing {
@@ -182,6 +190,7 @@ impl Listing {
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
+            x86_switch_rebuild: false,
         }
     }
 
@@ -247,7 +256,7 @@ impl Listing {
         plan: &WalkPlan,
     ) -> Listing {
         Self::build_tracking_frames(file, _image, arch, translate, seeds, funcsym_seeds,
-            seed_names, detail, plan, None)
+            seed_names, detail, plan, None, None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -262,9 +271,10 @@ impl Listing {
         detail: ListingDetail,
         plan: &WalkPlan,
         frames: Option<&mut kuna_framemode::FrameModes>,
+        memo: Option<&kuna_decodememo::DecodeMemo>,
     ) -> Listing {
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-            frames, None)
+            frames, None, memo)
     }
 
     /// (kuna `addrtakenentry`) Continue this Listing's walk with `seeds`, the old
@@ -272,6 +282,8 @@ impl Listing {
     /// are kept and moved, not copied, so the walk decodes only what the new
     /// seeds reach; the result is the Listing a fresh build from `seeds` makes,
     /// because a decode at an address does not depend on who reached it first.
+    /// An optionally expanded i386 Listing rebuilds ordinary coverage first:
+    /// new seeds can invalidate the proof behind previously decoded cases.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn resume(
         self,
@@ -284,6 +296,16 @@ impl Listing {
         detail: ListingDetail,
         plan: &WalkPlan,
     ) -> Listing {
+        if self.x86_switch_rebuild
+            || (arch.analysis_x86listingswitch
+                && file.architecture() == object::Architecture::I386
+                && arch.archid.starts_with("x86:LE:32:"))
+        {
+            return Self::build_resuming(
+                file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
+                None, None, None,
+            );
+        }
         let prior = walk::WalkState {
             insns: self.insns,
             refs: self.refs.into_edges(),
@@ -292,7 +314,7 @@ impl Listing {
             mode_runs: self.mode_runs,
         };
         Self::build_resuming(file, arch, translate, seeds, funcsym_seeds, seed_names, detail, plan,
-            None, Some(prior))
+            None, Some(prior), None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -307,6 +329,7 @@ impl Listing {
         plan: &WalkPlan,
         frames: Option<&mut kuna_framemode::FrameModes>,
         resumed: Option<walk::WalkState>,
+        memo: Option<&kuna_decodememo::DecodeMemo>,
     ) -> Listing {
         debug_assert!(
             plan.built_from(arch),
@@ -339,6 +362,7 @@ impl Listing {
                     stack_callback_refs: Vec::new(),
                     mode_runs: Vec::new(),
                     a32_extents: Vec::new(),
+                    x86_switch_rebuild: false,
                 };
             }
         };
@@ -391,6 +415,11 @@ impl Listing {
                 )
             })
             .flatten();
+        let a32_tables = kuna_a32switch::A32Tables::new(file, arch);
+        let x86_tables = arch
+            .analysis_x86listingswitch
+            .then(|| kuna_x86listingswitch::X86Tables::new(file, arch))
+            .flatten();
         let st = walk::walk(
             translate,
             arch,
@@ -408,6 +437,9 @@ impl Listing {
             frames,
             resumed,
             tables.as_ref(),
+            a32_tables.as_ref(),
+            x86_tables.as_ref(),
+            memo,
         );
 
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
@@ -426,6 +458,7 @@ impl Listing {
                 .collect(),
             mode_runs: st.mode_runs,
             a32_extents: painter.a32_extents().to_vec(),
+            x86_switch_rebuild: x86_tables.is_some(),
         }
     }
 
@@ -484,6 +517,9 @@ impl Listing {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         );
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
         Listing {
@@ -496,6 +532,7 @@ impl Listing {
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
+            x86_switch_rebuild: false,
         }
     }
 
@@ -515,6 +552,7 @@ impl Listing {
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
+            x86_switch_rebuild: false,
         }
     }
 
@@ -535,6 +573,7 @@ impl Listing {
             stack_callback_refs,
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
+            x86_switch_rebuild: false,
         }
     }
 
@@ -593,7 +632,7 @@ impl Listing {
         &self,
         start: u64,
         end: Option<u64>,
-    ) -> impl Iterator<Item = (&u64, &Insn)> {
+    ) -> impl DoubleEndedIterator<Item = (&u64, &Insn)> {
         let end = end.map(|end| end.max(start));
         self.insns.range((
             Bound::Included(start),
@@ -603,7 +642,15 @@ impl Listing {
 
     /// The last decoded instruction that starts strictly before `vma`.
     pub fn instruction_before(&self, vma: u64) -> Option<&Insn> {
-        self.insns.range(..vma).next_back().map(|(_, insn)| insn)
+        self.instruction_entry_before(vma).map(|(_, insn)| insn)
+    }
+
+    /// The address and instruction of the last decoded instruction strictly before `vma`.
+    pub(crate) fn instruction_entry_before(&self, vma: u64) -> Option<(u64, &Insn)> {
+        self.insns
+            .range(..vma)
+            .next_back()
+            .map(|(&address, insn)| (address, insn))
     }
 
     /// The VMA of the first decoded instruction that starts strictly after `vma`
@@ -834,7 +881,7 @@ mod tests {
             fall_through: addr.checked_add(1),
             flow: Default::default(),
             flows: Vec::new(),
-            mnemonic: String::new(),
+            mnemonic: "".into(),
             operands: String::new(),
             pcode: None,
         }
@@ -856,6 +903,7 @@ mod tests {
             stack_callback_refs: Vec::new(),
             mode_runs: Vec::new(),
             a32_extents: Vec::new(),
+            x86_switch_rebuild: false,
         };
         let addrs = |start, end| {
             listing
@@ -869,5 +917,63 @@ mod tests {
         assert_eq!(addrs(0x20, None), vec![0x20, u64::MAX]);
         assert!(addrs(0x20, Some(0x20)).is_empty());
         assert!(addrs(0x20, Some(0x10)).is_empty());
+    }
+
+    #[test]
+    fn x86_switch_resume_rebuilds_the_ordinary_partition_before_refusing_old_proofs() {
+        use kuna_sleigh::{globalcontext::ContextInternal, sleigh::Sleigh};
+        let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+        let path = root.join("decompiler/crates/kuna-analysis/tests/fixtures/x86listingswitch_i386");
+        let path = path.to_str().unwrap();
+        let bytes = std::fs::read(path).unwrap();
+        let file = object::File::parse(&*bytes).unwrap();
+        let sla = std::fs::read(root.join("specs/Ghidra/Processors/x86/data/languages/x86.sla")).unwrap();
+        for detail in [ListingDetail::FULL, ListingDetail::PARTITION_ONLY] {
+            for disable in [false, true] {
+                let loader = ObjectLoadImage::from_bytes_silent(path, &bytes).unwrap();
+                let mut engine = Sleigh::new(Box::new(loader), Box::new(ContextInternal::new()));
+                engine.initialize_from_sla(&sla).unwrap();
+                engine.base().manager().truncate_space("ram", 4).unwrap();
+                engine.set_context_default("addrsize", 1);
+                engine.set_context_default("opsize", 1);
+                let mut loader = ObjectLoadImage::from_bytes_silent(path, &bytes).unwrap();
+                loader.attach_to_space(Rc::clone(
+                    engine.base().manager().get_default_code_space().unwrap(),
+                ));
+                engine.set_loader(Box::new(loader));
+                let mut arch = Architecture::new("x86:LE:32:default:gcc", engine);
+                arch.analysis_x86listingswitch = true;
+                let image = ObjectLoadImage::from_bytes_silent(path, &bytes).unwrap();
+                let mut seeds = vec![0x100000, 0x1004f0];
+                let expanded = Listing::build_with_meta(
+                    &file, &image, &arch, arch.translate(), &seeds, &seeds, &[], detail,
+                );
+                assert!(expanded.is_instruction_start(0x100440));
+                assert!(expanded.function_at(0x100510).is_some());
+                if disable {
+                    arch.analysis_x86listingswitch = false;
+                } else {
+                    seeds.push(0x10040d);
+                }
+                let resumed = expanded.resume(
+                    &file, &arch, arch.translate(), &seeds, &seeds, &[], detail, &WalkPlan::serial(),
+                );
+                let fresh = Listing::build_with_meta(
+                    &file, &image, &arch, arch.translate(), &seeds, &seeds, &[], detail,
+                );
+                for case in [0x100440, 0x100460, 0x1004b0, 0x1004d0] {
+                    assert!(!resumed.is_instruction_start(case));
+                }
+                assert!(resumed.function_at(0x100510).is_none());
+                let partition = |listing: &Listing| {
+                    listing.instructions()
+                        .map(|(&at, insn)| (at, insn.len, insn.fall_through, insn.flow, insn.flows.clone()))
+                        .collect::<Vec<_>>()
+                };
+                assert_eq!(partition(&resumed), partition(&fresh));
+                assert_eq!(resumed.funcs, fresh.funcs);
+                assert_eq!(resumed.refs, fresh.refs);
+            }
+        }
     }
 }

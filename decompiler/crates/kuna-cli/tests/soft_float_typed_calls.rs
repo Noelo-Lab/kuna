@@ -353,7 +353,7 @@ fn soft_float_arm_passes_declared_floats_in_core_registers() {
         "read a VFP register the caller never set: {t1}"
     );
     let t2 = function(&text, "t2");
-    assert!(t2.contains("(*o->g)(1.5,k * 3)"), "{t2}");
+    assert!(t2.contains("(*o->g)(1.5f,k * 3)"), "{t2}");
     assert!(
         !t2.contains("// s0"),
         "read a VFP register the caller never set: {t2}"
@@ -364,7 +364,7 @@ fn soft_float_arm_passes_declared_floats_in_core_registers() {
 fn hard_float_arm_passes_declared_floats_in_vfp_registers() {
     let text = decompile(&arm_hard(), &["t1", "t2"]);
     assert!(function(&text, "t1").contains(")(2.5,k + 1)"), "{text}");
-    assert!(function(&text, "t2").contains(")(1.5,k * 3)"), "{text}");
+    assert!(function(&text, "t2").contains(")(1.5f,k * 3)"), "{text}");
 }
 
 #[test]
@@ -734,7 +734,11 @@ fn soft_float_arm_lays_declared_prototypes_out_in_core_registers() {
     let text = decompile_with(&arm_direct(false), &direct_prototypes());
     let s4 = function(&text, "s4");
     assert!(s4.contains("v1 = dmix(a,k << 1);"), "{s4}");
-    assert!(s4.contains("__aeabi_dmul(SUB84(v1,0),"), "{s4}");
+    assert!(
+        s4.contains("__aeabi_dmul((int)((union { double from; unsigned long long to; }){ .from = v1 }).to,"),
+        "{s4}"
+    );
+    assert!(!s4.contains("SUB84(v1,0)"), "{s4}");
     let s9 = function(&text, "s9");
     assert!(s9.contains("vsink(a,1.5,a);"), "{s9}");
     for register in ["// d0", "// d1", "// d2", "// s0", "// s1"] {
@@ -793,7 +797,7 @@ fn softfp_arm_keeps_the_declared_layout_where_a_static_function_may_use_vfp() {
         &["prototype sq float sq(float x)".to_string()],
     );
     let sq = function(&text, "sq");
-    assert!(sq.contains("return x * x + 1.0;"), "{sq}");
+    assert!(sq.contains("return x * x + 1.0f;"), "{sq}");
 }
 
 /// `double pick(_Bool b, double a, double c) { return b ? a : c; }`, clang -O2

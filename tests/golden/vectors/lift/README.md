@@ -20,6 +20,18 @@ consecutive captures agree, and a capture against the unpatched specs
 reproduces the previous fixture byte-for-byte. Only unique-space temporary
 offsets changed.
 
+`floatprint.txt` and `promotecompare.txt` retain the same instructions, operations,
+registers, constants, widths, and temporary aliasing after the BOUND lift gained
+operand loads. Thirteen lines change only unique-space offsets by `0xc00`.
+The refreshed runtime output uses the x86 specs independently matched against
+the pinned C++ compiler; both focused fixture replays pass.
+
+`gh6990-returnpair.txt` was refreshed for the SPARC delay-slot branch-condition
+correction. The SPARC specs it replays match the pinned C++ compiler's digests.
+The function contains no `cs`, `neg`, `vs` or register branch, so its
+instructions, operations and temporary aliasing are unchanged; 150 lines change
+only unique-space offsets by `0xc00`.
+
 ## Regeneration
 
 ```bash

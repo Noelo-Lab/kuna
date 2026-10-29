@@ -80,7 +80,12 @@ fn decompile_in(fixture: &str, funcs: &[&str], variants: bool) -> String {
 
     std::env::set_var(DWARFSTRUCTS_ENV, "on");
     std::env::set_var(DWARFVARIANTS_ENV, if variants { "on" } else { "off" });
+    // Pin the naming arm OFF so this file measures the variant-part import
+    // alone (the isolation `dwarfstructs` gets pinned ON for);
+    // `verify_variantnames` owns the naming assertions.
+    std::env::set_var(kuna_decomp::kuna_variantnames::VARIANTNAMES_ENV, "off");
     let prog = bootstrap_from_object(&path, "", &spec_roots);
+    std::env::remove_var(kuna_decomp::kuna_variantnames::VARIANTNAMES_ENV);
     std::env::remove_var(DWARFVARIANTS_ENV);
     std::env::remove_var(DWARFSTRUCTS_ENV);
     let mut prog = prog.expect("bootstrap fixture with built processor specs");

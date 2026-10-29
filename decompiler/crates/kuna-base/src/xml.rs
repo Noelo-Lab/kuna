@@ -2083,7 +2083,38 @@ mod tests {
         // and kuna-declorder / locals print in natural number order
         // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
         // declaration, as far as its own analysis recovers its parameters
-        assert_eq!(count, 542, "corpus file count drifted");
+        // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
+        // high word first on proof (GH-904)
+        // and kuna-strlenscan / an inline repnz scasb length prints as strlen
+        // and kuna-libcnames / a local takes the name of the library call it meets
+        // and kuna-register-pair-call-args / overwritten register-pair argument slots
+        // and kuna-rettriangle / a one-block if keeps one return
+        // and kuna-narrow-register-inputs / mixed-width reads do not span known inputs
+        // and kuna-indirect-value-arguments / declared aggregate value arguments
+        // and guarded/preloaded local read controls on SPARC and x86
+        // and kuna-global-aggregate-store / kuna-global-array-member-store
+        // and kuna-float-storage-truncation / integer extraction preserves float bits
+        // and kuna-fpu-trunc-views / separate logical integers from floating storage
+        // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
+        // and kuna-arraysize / an escaped stack buffer ends at its call's stated count
+        // and kuna-narrowret, -x86 / a single-function decompile states no narrow call result
+        // and kuna-bodyreads / a self-call keeps the register its own body reads
+        // and kuna-regsigned / a register local at the width its values are sign extended from
+        // and kuna-armfloat-preset / ARM hard-float VFP contracts in the aggressive preset
+        // and kuna-pointer-storage-literal / typed pointer byte-copy initializers
+        // and kuna-sparc-register-pair / an ldd-loaded SPARC register pair whose
+        // registers then hold two 32-bit values keeps them apart (option off = one
+        // 64-bit local updated with CONCAT44)
+        // and kuna-prefersplit / the compiler spec's split registers reach heritage pass 0
+        // and kuna-gomorestack / the Go stack-growth entry guard folds (option gomorestack)
+        // and kuna-fatstr / a read-only (ptr,len) constant pair prints as a bounded literal
+        // and kuna-gobool / a Go boolean return narrows out of its stale-high concatenation
+        // and kuna-variantnames / variant-part discriminants print as variant names
+        // and kuna-gowritebarrier / the Go GC write-barrier diamond folds (option gowritebarrier)
+        // and kuna-ppc-lwarx-reservation / PowerPC lwarx sets the reservation its stwcx. checks
+        // and kuna-ppc64-ldarx-encoding / generic PowerPC ldx and ldarx decode at their own opcodes
+        // and kuna-sparc-delay-condition / a flag-writing delay slot cannot change its branch
+        assert_eq!(count, 592, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

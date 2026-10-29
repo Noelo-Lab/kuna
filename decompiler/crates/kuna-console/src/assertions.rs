@@ -599,16 +599,22 @@ pub(crate) fn resolve_proto_target(
     prog: &ConsoleProgram,
     func: &str,
 ) -> Result<ProtoTarget, String> {
-    match prog.resolve_entry(&EntrySelector::Name(func.to_string())) {
-        Ok(entry) => return Ok(ProtoTarget::At(entry.addr, entry.name)),
-        // An unresolved name is deliberately legal: it parks in the pending
-        // store for a symbol that may be loaded later. Keep going because a
-        // hexadecimal operand can still be the address form below.
-        Err(EntryLookupError::NotFound { .. }) => {}
-        // In particular, do not turn two executable definitions with the same
-        // name into an arbitrary global-scope choice. The public selector
-        // reports every candidate, which lets an agent retry with an address.
-        Err(err) => return Err(err.to_string()),
+    // An explicit address operand that no symbol is spelled as cannot match by
+    // name; skip the whole-image name lookup and its unused spelling suggestion.
+    let address_only =
+        (func.starts_with("0x") || func.starts_with("0X")) && !prog.has_symbol_spelled(func);
+    if !address_only {
+        match prog.resolve_entry(&EntrySelector::Name(func.to_string())) {
+            Ok(entry) => return Ok(ProtoTarget::At(entry.addr, entry.name)),
+            // An unresolved name is deliberately legal: it parks in the pending
+            // store for a symbol that may be loaded later. Keep going because a
+            // hexadecimal operand can still be the address form below.
+            Err(EntryLookupError::NotFound { .. }) => {}
+            // In particular, do not turn two executable definitions with the same
+            // name into an arbitrary global-scope choice. The public selector
+            // reports every candidate, which lets an agent retry with an address.
+            Err(err) => return Err(err.to_string()),
+        }
     }
     let hex = func.strip_prefix("0x").or_else(|| func.strip_prefix("0X"));
     let explicit = hex.is_some();
@@ -699,6 +705,8 @@ fn apply_prototype(prog: &mut ConsoleProgram, func: &str, decl: &str) -> Result<
     let target = resolve_proto_target(prog, func)?;
     let model = declared_model(prog, &model);
     park_prototype(prog, &target, &mut pieces, model.as_ref());
+    crate::kuna_callwide::target_declaration(prog, &target, &pieces, model,
+        kuna_decomp::kuna_callwide::DeclarationSource::Assertion);
     prog.set_pending_prototype(target.name(), pieces);
     Ok(())
 }
@@ -788,8 +796,8 @@ pub(crate) fn lock_prototype_on_symbol(
 /// reaches a CALLER through (`ActionDefaultParams` rebuilds each call site's
 /// prototype from the pieces on the callee's `FunctionSymbol`), and it describes
 /// types only — so the explicit storage rides in `input_storage` /
-/// `output_storage`, which `FuncProto::set_pieces` re-applies after the
-/// model-driven assignment.  Parking it also covers the case where the named
+/// `output_storage`, which the model-driven assignment in
+/// `FuncProto::set_pieces` honors.  Parking it also covers the case where the named
 /// function IS the one under decompile: `function_seed` seeds `pending_proto`
 /// from the same store.
 fn apply_cross_function(
@@ -859,6 +867,7 @@ fn apply_cross_function(
         let model = prog.arch().function_prototype_model(target.name()).cloned();
         lock_prototype_on_symbol(prog, &target, &pieces, model.as_ref());
     }
+    prog.callwide_unavailable("partial storage assertions are not complete declaration provenance");
     prog.set_pending_prototype(target.name(), pieces);
     Ok(())
 }
@@ -1101,42 +1110,264 @@ pub fn apply_symbol_scoped(
     fd: &mut Funcdata,
     name: &str,
     single: bool,
-) -> bool {
+) -> Option<Vec<Expected>> {
     let directives = prog.assertions().to_vec();
     let mut applied_any = false;
+    let mut touched: Vec<(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)> = Vec::new();
     for (i, directive) in directives.iter().enumerate() {
         if !directive.body.is_symbol_scoped() || !binds_to(&directive.body, name, single) {
             continue;
         }
         let outcome = match apply_one_symbol_scoped(prog, fd, &directive.body) {
-            Ok(()) => {
+            Ok((symbol, retype)) => {
                 applied_any = true;
+                touched.extend(symbol.map(|symbol| (i, symbol, retype)));
                 directive.applied()
             }
             Err(detail) => directive.rejected(detail),
         };
         prog.set_assertion_outcome(i, outcome);
     }
-    applied_any
+    applied_any.then(|| expected_locals(fd, &touched))
 }
 
 fn apply_one_symbol_scoped(
     prog: &ConsoleProgram,
     fd: &mut Funcdata,
     body: &Body,
-) -> Result<(), String> {
+) -> Result<(Option<kuna_decomp::database::SymbolId>, Option<Rc<Datatype>>), String> {
     let maxduplicates = if prog.arch().dynamic_hash_maxdup_high { 16 } else { 8 };
     match body {
         Body::Name { symbol, newname, .. } => {
-            crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates)
+            Ok((crate::kuna_hightarget::apply_local(fd, symbol, newname, None, maxduplicates, Some(prog.arch()))?, None))
         }
         Body::Type { symbol, decl, .. } => {
             let (ct, newname) = crate::grammar::parse_type(decl, prog.arch().types(), data_org(prog))
                 .map_err(|e| e.explain().to_string())?;
-            crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct), maxduplicates)
+            let applied = crate::kuna_hightarget::apply_local(fd, symbol, &newname, Some(ct.clone()), maxduplicates, Some(prog.arch()))?;
+            Ok((applied, Some(ct)))
         }
         _ => Err("internal: not a symbol-scoped directive".into()),
     }
+}
+
+/// What a batch of `name`/`type` directives must leave in the next decompile:
+/// each touched local declared under its final name, with the last type a
+/// directive gave it, and the directives that answer for it.
+pub struct Expected {
+    directives: Vec<usize>,
+    printed: String,
+    name: String,
+    retype: Option<Rc<Datatype>>,
+    parameter: bool,
+}
+
+/// The [`Expected`] of each local the `touched` directives (index, Symbol,
+/// retype) left on `fd`'s scope.
+pub fn expected_locals(
+    fd: &Funcdata,
+    touched: &[(usize, kuna_decomp::database::SymbolId, Option<Rc<Datatype>>)],
+) -> Vec<Expected> {
+    let Some(lm) = fd.get_scope_local() else { return Vec::new() };
+    let mut out: Vec<(kuna_decomp::database::SymbolId, Expected)> = Vec::new();
+    for (index, symbol, retype) in touched {
+        let Some(directive) = fd.kuna_directive_symbols().iter().find(|d| d.symbol == *symbol) else {
+            continue;
+        };
+        let Some(record) = lm.database().try_symbol(*symbol) else { continue };
+        let name = if record.is_name_undefined() || record.name.is_empty() {
+            directive.printed.clone()
+        } else {
+            record.name.clone()
+        };
+        match out.iter_mut().find(|(sym, _)| sym == symbol) {
+            Some((_, expected)) => {
+                expected.directives.push(*index);
+                expected.name = name;
+                if retype.is_some() {
+                    expected.retype = retype.clone();
+                }
+            }
+            None => out.push((
+                *symbol,
+                Expected {
+                    directives: vec![*index],
+                    printed: directive.printed.clone(),
+                    name,
+                    retype: retype.clone(),
+                    parameter: lm.symbol_category(*symbol) == kuna_decomp::database::symbol_category::FUNCTION_PARAMETER,
+                },
+            )),
+        }
+    }
+    out.into_iter().map(|(_, expected)| expected).collect()
+}
+
+/// What the printed C shows for one directive: it did not reach the output, or
+/// it did under a suffixed name.
+pub enum Shown {
+    Refused(String),
+    AppliedAs(String),
+}
+
+/// Check the C a replayed batch printed against what it must show
+/// ([`Expected`]): a directive whose local is not declared, or not with its
+/// type, did not reach the output and is reported refused rather than
+/// applied; one declared under a suffixed name is applied, and says so.
+pub fn verify_printed(prog: &mut ConsoleProgram, fd: &Funcdata, code: &str, expected: &[Expected]) {
+    let directives = prog.assertions().to_vec();
+    for (i, shown) in check_printed(prog.arch(), fd, code, expected) {
+        let Some(directive) = directives.get(i) else { continue };
+        let outcome = match shown {
+            Shown::Refused(reason) => directive.refused(reason),
+            Shown::AppliedAs(note) => Outcome { detail: Some(note), ..directive.applied() },
+        };
+        prog.set_assertion_outcome(i, outcome);
+    }
+}
+
+/// The directives (by the index [`expected_locals`] was given) whose local
+/// the decompile `fd` printed as `code` does not show as expected. A local is
+/// found by the declaration the printer emitted for it
+/// (`PrintC::declared_locals`): the HighVariable the replay gave the directive
+/// to (`Funcdata::kuna_directive_targets`), else a declaration the naming pass
+/// gave the expected name; the printer may have suffixed that name where it
+/// collided with another identifier. A parameter is read from the signature.
+/// Only C is read; another output language reports nothing.
+pub fn check_printed(
+    arch: &kuna_decomp::architecture::Architecture,
+    fd: &Funcdata,
+    code: &str,
+    expected: &[Expected],
+) -> Vec<(usize, Shown)> {
+    if arch.print().out_lang() != kuna_decomp::kuna_lang::OutLang::C {
+        return Vec::new();
+    }
+    let print = arch.print();
+    let declared = print.declared_locals();
+    let mut taken: std::collections::HashSet<kuna_decomp::context::HighVariableId> = std::collections::HashSet::new();
+    let mut found: Vec<Option<(String, String)>> = vec![None; expected.len()];
+    // A local printed under its library name (`kuna_decomp::kuna_libcnames`)
+    // is declared under that name and answers to its number too.
+    let declares = |base: &str, name: &str| {
+        base == name || fd.kuna_library_aliases().iter().any(|a| a.shown && a.number == name && a.alias == base)
+    };
+    for (slot, local) in expected.iter().enumerate().filter(|(_, local)| !local.parameter) {
+        let target = fd.kuna_directive_targets().get(&local.printed).and_then(|&high| print.declared_local(high));
+        if let Some(decl) = target.filter(|decl| declares(&decl.base, &local.name) && taken.insert(decl.high)) {
+            found[slot] = Some((decl.name.clone(), decl.decl.clone()));
+        }
+    }
+    for (slot, local) in expected.iter().enumerate() {
+        if found[slot].is_some() {
+            continue;
+        }
+        found[slot] = if local.parameter {
+            signature_declaration(code, &local.name).map(|decl| (local.name.clone(), decl))
+        } else {
+            declared
+                .iter()
+                .find(|decl| declares(&decl.base, &local.name) && !taken.contains(&decl.high))
+                .map(|decl| {
+                    taken.insert(decl.high);
+                    (decl.name.clone(), decl.decl.clone())
+                })
+        };
+    }
+    let mut out = Vec::new();
+    for (local, found) in expected.iter().zip(found) {
+        let shown = match found {
+            None => Some(Shown::Refused(format!("nothing is declared as `{}` after it", local.name))),
+            Some((name, decl)) => {
+                let spelled = local.retype.as_ref().map(|ct| kuna_decomp::printc::type_to_c_string(arch, ct));
+                match spelled.filter(|spelled| squeeze(spelled) != squeeze(&decl)) {
+                    Some(spelled) => Some(Shown::Refused(format!(
+                        "`{name}` is declared as `{}`, not `{}`",
+                        decl.trim(),
+                        spelled.trim()
+                    ))),
+                    None => (name != local.name && !declares(&name, &local.name)).then(|| {
+                        Shown::AppliedAs(format!(
+                            "applied as `{name}`: `{}` is already another identifier here",
+                            local.name
+                        ))
+                    }),
+                }
+            }
+        };
+        if let Some(shown) = shown {
+            for &i in &local.directives {
+                out.push((
+                    i,
+                    match &shown {
+                        Shown::Refused(reason) => Shown::Refused(reason.clone()),
+                        Shown::AppliedAs(note) => Shown::AppliedAs(note.clone()),
+                    },
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// The type the signature printed in `code` declares the parameter `name`
+/// with, the name taken out (`char *` for `char *a0`).
+fn signature_declaration(code: &str, name: &str) -> Option<String> {
+    let lines: Vec<&str> = code.lines().collect();
+    let open = lines.iter().position(|line| line.trim_end() == "{")?;
+    let declares = |text: &str| -> Option<String> {
+        let text = text.trim();
+        let pointer = format!("(*{name})");
+        if text.contains(&pointer) {
+            return Some(text.replacen(&pointer, "(*)", 1));
+        }
+        let end = text.find(|c: char| c == '[').unwrap_or(text.len());
+        let (head, tail) = text.split_at(end);
+        let head = head.trim_end();
+        let before = head.strip_suffix(name)?;
+        if before.chars().last().is_some_and(|c| c.is_ascii_alphanumeric() || c == '_') || before.trim().is_empty() {
+            return None;
+        }
+        Some(format!("{}{tail}", before))
+    };
+    let signature = open.checked_sub(1).map_or("", |line| lines[line]);
+    let signature = signature.split("//").next().unwrap_or(signature);
+    let stop = signature.rfind(')')?;
+    let mut depth = 0;
+    let start = signature[..stop].char_indices().rev().find_map(|(i, c)| match c {
+        ')' => {
+            depth += 1;
+            None
+        }
+        '(' if depth == 0 => Some(i),
+        '(' => {
+            depth -= 1;
+            None
+        }
+        _ => None,
+    })?;
+    let mut depth = 0;
+    let mut piece = String::new();
+    for c in signature[start + 1..stop].chars() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ',' if depth == 0 => {
+                if let Some(found) = declares(&piece) {
+                    return Some(found);
+                }
+                piece.clear();
+                continue;
+            }
+            _ => {}
+        }
+        piece.push(c);
+    }
+    declares(&piece)
+}
+
+fn squeeze(text: &str) -> String {
+    text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// Does any directive assert a read-only range?
@@ -1194,16 +1425,17 @@ pub fn carried_dynamic_symbols(fd: &Funcdata) -> Vec<kuna_decomp::database::Dyna
     specs
 }
 
-/// The names a `name` directive gave without stating a type
-/// (`kuna_stablenames::is_name_only`). They travel to the next decompile as
-/// names (`kuna_stablenames::carry`), not as Symbols: a Symbol mapped over one
-/// definition of a merged variable split it on the next decompile, and a type
-/// lock retyped it.
+/// The Symbols of the directives carried as names (`kuna_stablenames::
+/// is_carried_as_name`): a `name` that states no type, and a `type` that keeps
+/// the printed variable's width and kind. They travel to the next decompile as
+/// names and types (`kuna_stablenames::carry`), not as Symbols: a Symbol mapped
+/// over one definition of a merged variable split it on the next decompile, and
+/// a type lock retyped what it did not cover.
 fn name_only_renames(fd: &Funcdata) -> Vec<String> {
     let Some(lm) = fd.get_scope_local() else { return Vec::new() };
     fd.kuna_directive_symbols()
         .iter()
-        .filter(|d| kuna_decomp::kuna_stablenames::is_name_only(fd, d.symbol))
+        .filter(|d| kuna_decomp::kuna_stablenames::is_carried_as_name(fd, d.symbol))
         .map(|d| lm.database().symbol(d.symbol).name.clone())
         .collect()
 }

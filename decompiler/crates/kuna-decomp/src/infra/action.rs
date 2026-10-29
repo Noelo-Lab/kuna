@@ -303,7 +303,7 @@ impl ActionBase {
 
     /// Reset for a new function (C++ `Action::reset`): status back to start and
     /// clear the warning-given latch.
-    fn reset_base(&mut self) {
+    pub(crate) fn reset_base(&mut self) {
         self.status = statusflags::status_start;
         self.flags &= !ruleflags::rule_warnings_given;
     }
@@ -472,6 +472,7 @@ pub trait Action {
     /// state.
     fn perform(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         loop {
+            if data.kuna_call_mechanisms.failure.is_some() { return -1; }
             // --- the status switch with C++ fall-through preserved ---------
             let st = self.base().status;
             if st == statusflags::status_start {
@@ -533,7 +534,7 @@ pub trait Action {
             // (kuna decompile-all watchdog) Cooperative deadline: a repeatapply
             // action that keeps finding changes must still yield once the
             // per-function budget expires (a no-op compare when no budget).
-            if ctx.deadline_expired() {
+            if ctx.deadline_expired_at(|| format!("action {}", self.get_name())) {
                 break;
             }
         }
@@ -562,6 +563,8 @@ pub trait Action {
 pub struct ActionContext {
     /// Where `issueWarning` / `warningHeader` text lands.
     pub warnings: WarningSink,
+    /// A recoverable pass failure that aborts the current function.
+    pub error: Option<KunaError>,
     /// Whether the restart loop ([`ActionRestartGroup`]) can re-follow flow after
     /// a `data.clear()` (C++ `ActionStart::startProcessing` → `followFlow`).
     ///
@@ -621,6 +624,17 @@ impl ActionContext {
     #[inline]
     pub fn deadline_expired(&self) -> bool {
         self.abandon || self.deadline.is_some_and(crate::decompile_drive::budget_spent)
+    }
+
+    /// [`deadline_expired`](Self::deadline_expired), naming `site` as where the
+    /// budget ran out ([`note_budget_site`](crate::decompile_drive::note_budget_site)).
+    #[inline]
+    pub fn deadline_expired_at(&self, site: impl FnOnce() -> String) -> bool {
+        let expired = self.deadline_expired();
+        if expired && !self.abandon {
+            crate::decompile_drive::note_budget_site(site);
+        }
+        expired
     }
 }
 
@@ -786,7 +800,10 @@ impl Action for ActionGroup {
             // budget expires and unwind with the current count (the outer driver
             // `run_pipeline` turns the expiry into a per-function `Err`).  A
             // no-op compare when no budget is set (every console/parity path).
-            if ctx.deadline_expired() {
+            if ctx.deadline_expired_at(|| match self.state.checked_sub(1) {
+                Some(prev) => format!("action {}", self.list[prev].get_name()),
+                None => format!("action {}", self.base.name),
+            }) {
                 return 0;
             }
             let res = self.list[self.state].perform(data, ctx);
@@ -795,10 +812,16 @@ impl Action for ActionGroup {
                 self.base.count += res;
                 if self.base.check_action_break() {
                     self.state += 1;
+                    self.base.status = statusflags::status_mid;
                     return -1;
                 }
             } else if res < 0 {
-                // Partial completion of member == partial completion of group
+                // Partial completion of a member is partial completion of the
+                // group (C++ `action.cc:516`).  Record it on the group itself so
+                // every caller resumes at `state`, whether it drives the group
+                // through `perform` (which sets the same flag) or calls `apply`
+                // directly (as `ActionRestartGroup` does).
+                self.base.status = statusflags::status_mid;
                 return -1;
             }
             self.state += 1;
@@ -890,7 +913,7 @@ impl Action for ActionRestartGroup {
             // past the per-function deadline — the observed non-convergence hang
             // cycles heritage/deadcode restarts forever.  Return with the current
             // state; `run_pipeline` converts the expiry into a per-function `Err`.
-            if ctx.deadline_expired() {
+            if ctx.deadline_expired_at(|| format!("action {}", self.group.base.name)) {
                 return 0;
             }
             if !data.has_restart_pending() {
@@ -1063,13 +1086,16 @@ impl RuleState {
 struct RuleEntry {
     state: RuleState,
     rule: Box<dyn Rule>,
+    /// `state.count_apply` at the last [`Action::reset`], so a budget site can
+    /// count this function's applications alone.
+    applied_at_reset: uint4,
 }
 
 impl RuleEntry {
     fn clone_filtered(&self, grouplist: &ActionGroupList) -> Option<RuleEntry> {
         self.rule
             .clone_rule(grouplist)
-            .map(|rule| RuleEntry { state: self.state.clone(), rule })
+            .map(|rule| RuleEntry { state: self.state.clone(), rule, applied_at_reset: 0 })
     }
 }
 
@@ -1194,7 +1220,7 @@ impl ActionPool {
     pub fn add_rule(&mut self, state: RuleState, rule: Box<dyn Rule>) {
         let idx = self.allrules.len();
         let oplist = rule.get_op_list();
-        self.allrules.push(RuleEntry { state, rule });
+        self.allrules.push(RuleEntry { state, rule, applied_at_reset: 0 });
         for opc in oplist {
             self.perop[opc as usize].push(idx);
         }
@@ -1217,6 +1243,19 @@ impl ActionPool {
         match self.perop.get(opc as usize) {
             Some(list) => list.iter().map(|&i| self.allrules[i].state.name.clone()).collect(),
             None => Vec::new(),
+        }
+    }
+
+    /// Where a budget that ran out inside this pool is reported: the pool and
+    /// the rule that applied the most since the function started, which is
+    /// where a rule that never converges shows.
+    fn budget_site(&self) -> String {
+        let applied = |r: &RuleEntry| r.state.count_apply.wrapping_sub(r.applied_at_reset);
+        match self.allrules.iter().max_by_key(|r| applied(r)) {
+            Some(r) if applied(r) > 0 => {
+                format!("action {} (busiest rule {})", self.base.name, r.state.name)
+            }
+            _ => format!("action {}", self.base.name),
         }
     }
 
@@ -1379,6 +1418,7 @@ impl Action for ActionPool {
         for entry in &mut self.allrules {
             entry.state.reset_state();
             entry.rule.reset(data);
+            entry.applied_at_reset = entry.state.count_apply;
         }
     }
 
@@ -1414,7 +1454,7 @@ impl Action for ActionPool {
             ops_since_deadline_probe += 1;
             if ops_since_deadline_probe >= POOL_DEADLINE_STRIDE {
                 ops_since_deadline_probe = 0;
-                if ctx.deadline_expired() {
+                if ctx.deadline_expired_at(|| self.budget_site()) {
                     self.next_op = None;
                     self.lookahead_epoch = None;
                     self.drain_into(ctx);
@@ -1563,6 +1603,18 @@ impl ActionDatabase {
     /// Get the current root Action (C++ `getCurrent`).
     pub fn get_current(&self) -> Option<&dyn Action> {
         self.actionmap.get(&self.currentactname).map(|b| b.as_ref())
+    }
+
+    /// Replace the current root Action, returning the previous one.
+    ///
+    /// (kuna) The P4 callee-contract bootstrap runs a callee's own pipeline while
+    /// the caller's action tree is paused mid-pass.  Sharing the cached root
+    /// would `reset` its state, so the drive swaps a fresh derived tree in for
+    /// the callee drives and swaps the paused one back afterwards.
+    pub fn swap_current_action(&mut self, replacement: Box<dyn Action>) -> Option<Box<dyn Action>> {
+        self.actionmap
+            .get_mut(&self.currentactname)
+            .map(|slot| std::mem::replace(slot, replacement))
     }
 
     /// Mutable access to the current root Action (so a driver can `perform` it).

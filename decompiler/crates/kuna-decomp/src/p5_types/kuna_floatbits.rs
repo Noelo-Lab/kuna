@@ -180,7 +180,7 @@ fn walk(data: &Funcdata, input: VarnodeId, candidates: &[VarnodeId]) -> Option<W
             return None;
         }
         let node = data.vbank().get(v)?;
-        if node.is_type_lock() || node.is_persist() || in_data_space(data, node) {
+        if (node.is_type_lock() && !crate::kuna_armfloatreturn::float_locked_return(data, v)) || node.is_persist() || in_data_space(data, node) {
             return None;
         }
         for r in node.descend_iter() {
@@ -340,7 +340,7 @@ const DOUBLE_FIELDS: [u64; 7] = [
 
 /// Does `c` keep its meaning when an `==` or `!=` with it prints as a float
 /// comparison?  Only for a constant that is a normal number or an infinity
-/// whose printed literal, which C reads as a `double`, is the constant's own
+/// whose shortest digits, read back as a `double`, are the constant's own
 /// value: a zero compares equal to the other zero, a NaN to nothing, a
 /// denormal to zero where the FPU flushes them, and `0.1`, the shortest
 /// spelling of `0.1f`, is another double, while the binary compares bits.
@@ -400,7 +400,7 @@ fn returned_beside_ok(data: &Funcdata, vn: VarnodeId, accepted: &[VarnodeId]) ->
         .all(|&w| {
             data.vbank().get(w).is_some_and(|n| {
                 n.get_size() == size
-                    && !n.is_type_lock()
+                    && (!n.is_type_lock() || crate::kuna_armfloatreturn::float_locked_return(data, w))
                     && if n.is_constant() { crate::kuna_floatreg::spells(data, w) } else { bits_of(data, w, accepted, true) }
             })
         })

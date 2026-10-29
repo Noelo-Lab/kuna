@@ -20,8 +20,9 @@
         triple_plus: v1 = (uint4)(v2 >> 0x20) reads r4 as the high word
 
     Stage: P4 calls and prototypes (output-prototype), option bejoin off|on.
-    Pass 1 (the default, off; GH-904) pins the old first-register-low join,
-    pass 2 (option bejoin on) the ABI's order.
+    Pass 1 (option bejoin off) pins the old first-register-low join, pass 2
+    (option bejoin on) the ABI's order.  The default, evidence, is in
+    kuna-bejoin-evidence.xml.
 
     Source (clang 14 -O2, powerpc-linux-gnu, bytes from bejoin_ppc32_be.o):
         long long wide_mul(int a, int b) { return (long long)a * b; }
@@ -46,7 +47,7 @@
 
     Asserts #1-#3: on joins each value high word (r3) first (wide_mul's
     product prints as the partialconcat masks of its two words).
-    Asserts #4-#5: the default (off) keeps the swapped joins, and only it.
+    Asserts #4-#5: off keeps the swapped joins, and only it.
     Asserts #6-#7: sum64 and sum_hi read the same either way.
     Assert #8: carry keeps the old join in both passes.
 -->
@@ -70,6 +71,7 @@
 <symbol space="ram" offset="0x10000044" name="triple"/>
 </binaryimage>
 <script>
+  <com>option bejoin off</com>
   <com>lo fu wide_mul</com>
   <com>decompile</com>
   <com>print C</com>

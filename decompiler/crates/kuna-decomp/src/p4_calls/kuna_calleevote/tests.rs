@@ -115,7 +115,7 @@ fn long8() -> Rc<Datatype> {
 }
 
 fn typed(space: &Rc<AddrSpace>, off: uintb, ct: &Rc<Datatype>) -> Typed {
-    Typed { addr: at(space, off), size: 8, ct: Rc::clone(ct), frame: false }
+    Typed { addr: at(space, off), size: 8, ct: Rc::clone(ct), frame: false, null: false, proven: false, by_class: false }
 }
 
 const CALLEE: (int4, uintb) = (1, 0x5c70);
@@ -278,7 +278,7 @@ fn a_declined_function_keeps_the_statement_its_kept_body_used() {
     l.keep(CALLEE);
     // A later round decides something else about it, and the budget is gone.
     let second = ptr_to(record("struct_9"));
-    l.stated.insert(CALLEE, Rc::new(CallerTypes { inputs: vec![typed(&reg(), 0x38, &second)] }));
+    l.stated.insert(CALLEE, Rc::new(CallerTypes { inputs: vec![typed(&reg(), 0x38, &second)], pointers_only: false }));
     l.decline(CALLEE);
     let kept = l.stated.get(&CALLEE).expect("the statement its body was printed with");
     assert!(Rc::ptr_eq(&kept.at(&at(&reg(), 0x38), 8).expect("stated").ct, &first));
@@ -345,7 +345,7 @@ fn only_the_input_naming_a_superseded_record_is_forgotten() {
     let mut l = Ledger::default();
     l.stated.insert(
         CALLEE,
-        Rc::new(CallerTypes { inputs: vec![typed(&r, 0x38, &rec), typed(&r, 0x30, &text)] }),
+        Rc::new(CallerTypes { inputs: vec![typed(&r, 0x38, &rec), typed(&r, 0x30, &text)], pointers_only: false }),
     );
     l.forget_naming(&["struct_2".to_string()]);
     let kept = l.stated.get(&CALLEE).expect("the character pointer is still stated");
@@ -453,4 +453,118 @@ fn callers_mixing_signed_and_unsigned_characters_state_nothing() {
     assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
     let l = ledger(&[(0x6600, ptr_to(uchar())), (0x6800, ptr_to(record("struct_2")))]);
     assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty());
+}
+
+/// (`callerptr`) One call's argument: a type, and whether it is a null or a
+/// value the caller holds as an address for a reason of its own.
+fn arg(ct: Rc<Datatype>, null: bool, proven: bool) -> Typed {
+    Typed { null, proven, ..typed(&reg(), 0x38, &ct) }
+}
+
+/// (`callerptr`) A ledger whose callee recovered an integer in `rdi`, called
+/// once from each caller with the argument `passed[i]`.
+fn integer_ledger(passed: Vec<Typed>) -> Ledger {
+    let r = reg();
+    let mut l = Ledger::default();
+    l.own.insert(CALLEE, vec![typed(&r, 0x38, &long8())]);
+    let sites = passed
+        .into_iter()
+        .enumerate()
+        .map(|(i, a)| CallSite { caller: 0x6600 + 0x200 * i as uintb, at: 0x6605 + 0x200 * i as uintb, args: vec![Some(a)] })
+        .collect();
+    l.sites.insert(CALLEE, sites);
+    l
+}
+
+fn caller_pointer_vote(l: &Ledger) -> Option<Typed> {
+    let got = decide_ledger_with(l, 8, false, Some(&ptr_to(voidt())), &all_calls(l));
+    got.into_iter().next().and_then(|(_, stated)| stated.at(&at(&reg(), 0x38), 8).cloned())
+}
+
+#[test]
+fn callers_passing_two_different_records_state_void_pointer() {
+    let l = integer_ledger(vec![
+        arg(ptr_to(record("struct_2")), false, true),
+        arg(ptr_to(record("struct_3")), false, true),
+    ]);
+    let t = caller_pointer_vote(&l).expect("a pointer is stated");
+    assert!(same_type(&t.ct, &ptr_to(voidt())) && t.by_class);
+    let got = decide_ledger_with(&l, 8, false, Some(&ptr_to(voidt())), &all_calls(&l));
+    assert!(got[0].1.pointers_only);
+    assert!(decide_ledger(&l, 8, &all_calls(&l)).is_empty(), "calleevote alone states nothing");
+}
+
+#[test]
+fn a_null_beside_one_committed_pointer_states_that_pointer() {
+    let l = integer_ledger(vec![arg(ptr_to(plain_char()), false, true), arg(long8(), true, false)]);
+    let t = caller_pointer_vote(&l).expect("a pointer is stated");
+    assert!(same_type(&t.ct, &ptr_to(plain_char())));
+}
+
+#[test]
+fn agreeing_on_a_pointer_at_nothing_in_particular_states_void_pointer() {
+    let l = integer_ledger(vec![arg(ptr_to(long8()), false, true), arg(ptr_to(long8()), false, true)]);
+    let t = caller_pointer_vote(&l).expect("a pointer is stated");
+    assert!(same_type(&t.ct, &ptr_to(voidt())));
+}
+
+#[test]
+fn an_unproven_pointer_an_integer_or_only_nulls_state_nothing() {
+    for passed in [
+        vec![arg(ptr_to(record("struct_2")), false, true), arg(ptr_to(record("struct_3")), false, false)],
+        vec![arg(ptr_to(record("struct_2")), false, true), arg(long8(), false, false)],
+        vec![arg(long8(), true, false), arg(long8(), true, false)],
+    ] {
+        assert!(caller_pointer_vote(&integer_ledger(passed)).is_none());
+    }
+}
+
+#[test]
+fn a_parameter_that_is_already_a_pointer_takes_no_pointer_class_vote() {
+    let mut l = integer_ledger(vec![
+        arg(ptr_to(record("struct_2")), false, true),
+        arg(ptr_to(record("struct_3")), false, true),
+    ]);
+    l.own.insert(CALLEE, vec![typed(&reg(), 0x38, &ptr_to(voidt()))]);
+    assert!(caller_pointer_vote(&l).is_none());
+}
+
+/// (`callerptr`) A statement whose committed part only repeats what the
+/// function already has is charged as the pointer vote it adds, not as a new
+/// committed type.
+#[test]
+fn a_committed_vote_repeating_the_own_type_beside_a_pointer_vote_is_pointers_only() {
+    let r = reg();
+    let text = ptr_to(lone("struct_9"));
+    let mut l = Ledger::default();
+    l.own.insert(CALLEE, vec![typed(&r, 0x38, &text), typed(&r, 0x30, &long8())]);
+    let site = |caller: uintb, rec: &str| CallSite {
+        caller,
+        at: caller + 5,
+        args: vec![
+            Some(Typed { proven: true, ..typed(&r, 0x38, &text) }),
+            Some(Typed { proven: true, ..typed(&r, 0x30, &ptr_to(record(rec))) }),
+        ],
+    };
+    l.sites.insert(CALLEE, vec![site(0x6600, "struct_2"), site(0x6800, "struct_3")]);
+    let got = decide_ledger_with(&l, 8, false, Some(&ptr_to(voidt())), &all_calls(&l));
+    assert_eq!(got.len(), 1);
+    assert!(got[0].1.at(&at(&r, 0x38), 8).is_some_and(|t| !t.by_class), "the repeated record is stated");
+    assert!(got[0].1.pointers_only);
+    let pointer = got[0].1.at(&at(&r, 0x30), 8).expect("stated for rsi");
+    assert!(pointer.by_class && same_type(&pointer.ct, &ptr_to(voidt())));
+}
+
+/// (`callerptr`) A statement with no pointer-class vote in it is never charged
+/// to the pointer budget, so with the option off the redo budget is
+/// `calleevote`'s alone.
+#[test]
+fn a_statement_without_a_pointer_vote_is_not_pointers_only() {
+    let rec = ptr_to(record("struct_2"));
+    let l = ledger(&[(0x6600, Rc::clone(&rec)), (0x6800, Rc::clone(&rec))]);
+    let got = decide_ledger_with(&l, 8, false, Some(&ptr_to(voidt())), &all_calls(&l));
+    assert_eq!(got.len(), 1);
+    assert!(!got[0].1.pointers_only);
+    let got = decide_ledger(&l, 8, &all_calls(&l));
+    assert!(!got[0].1.pointers_only);
 }
