@@ -97,6 +97,9 @@ impl MethodKind {
 pub struct VTableEntry {
     pub index: usize,
     pub kind: MethodKind,
+    /// `MethodDescriptorFlags::IsInstance`: `self` is an instance, not the
+    /// metatype.
+    pub instance: bool,
     pub addr: u64,
     pub impl_addr: Option<u64>,
 }
@@ -133,6 +136,13 @@ pub struct Context {
     pub name: Option<String>,
     pub accessor: Option<u64>,
     pub fields: Option<u64>,
+    /// A struct's or class's stored-property count and the offset (in
+    /// pointer-sized words from the metadata address point) of its field
+    /// offset vector; zero for an enum.
+    pub num_fields: u32,
+    pub field_offset_vector: u32,
+    /// A class's mangled superclass type name.
+    pub superclass_type: Option<u64>,
     pub vtable: Vec<VTableEntry>,
     pub overrides: Vec<OverrideEntry>,
     /// A protocol's requirement rows: `(descriptor address, default
@@ -392,6 +402,9 @@ impl<'a> Reader<'a> {
             name: None,
             accessor: None,
             fields: None,
+            num_fields: 0,
+            field_offset_vector: 0,
+            superclass_type: None,
             vtable: Vec::new(),
             overrides: Vec::new(),
             requirements: Vec::new(),
@@ -431,8 +444,18 @@ impl<'a> Reader<'a> {
                 ctx.name = self.rel(addr + 8).and_then(|p| self.cstr(p));
                 ctx.accessor = self.rel(addr + 12);
                 ctx.fields = self.rel(addr + 16);
-                if kind == ContextKind::Class {
-                    self.class_tables(&mut ctx)?;
+                match kind {
+                    ContextKind::Struct => {
+                        ctx.num_fields = self.img.read_u32(addr + 20)?;
+                        ctx.field_offset_vector = self.img.read_u32(addr + 24)?;
+                    }
+                    ContextKind::Class => {
+                        ctx.superclass_type = self.rel(addr + 20);
+                        ctx.num_fields = self.img.read_u32(addr + 36)?;
+                        ctx.field_offset_vector = self.img.read_u32(addr + 40)?;
+                        self.class_tables(&mut ctx)?;
+                    }
+                    _ => {}
                 }
             }
             _ => {}
@@ -489,6 +512,7 @@ impl<'a> Reader<'a> {
                 ctx.vtable.push(VTableEntry {
                     index,
                     kind: MethodKind::from_flags(mflags),
+                    instance: mflags & 0x10 != 0,
                     addr: at,
                     impl_addr,
                 });
@@ -605,10 +629,33 @@ impl<'a> Reader<'a> {
         })
     }
 
-    /// A mangled type name at `at`: the bytes up to the NUL, with symbolic
-    /// references (`\x01`–`\x17` + 4 bytes, `\x18`–`\x1f` + 8 bytes) kept
-    /// intact. Returned as the raw bytes re-encoded for the demangler:
-    /// `None` when a symbolic reference is present (not demangled yet).
+    /// A mangled type name at `at` as the demangler's byte parser takes
+    /// it: the bytes up to the NUL, a symbolic reference (`\x01`–`\x17` + 4
+    /// bytes, `\x18`–`\x1f` + 8 bytes) kept whole with its payload.
+    pub fn mangled_bytes(&self, at: u64) -> Option<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut p = at;
+        loop {
+            let b = *self.img.read(p, 1)?.first()?;
+            if b == 0 {
+                break;
+            }
+            if out.len() > 4096 {
+                return None;
+            }
+            let width = match b {
+                0x01..=0x17 => 4,
+                0x18..=0x1f => 8,
+                _ => 0,
+            };
+            out.push(b);
+            out.extend_from_slice(self.img.read(p + 1, width)?);
+            p += 1 + width as u64;
+        }
+        Some(out)
+    }
+
+    /// A mangled type name at `at` without symbolic references, as text.
     pub fn mangled_name(&self, at: u64) -> Option<String> {
         let mut s = String::new();
         let mut p = at;

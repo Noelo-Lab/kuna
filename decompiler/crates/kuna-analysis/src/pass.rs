@@ -202,6 +202,34 @@ pub struct TypedDataFact {
     pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
 }
 
+/// (kuna `swifttypes`) One register-pinned parameter of the function at
+/// `func_addr`: slot `index` is `name`, of `type_`, in register `reg`. The
+/// commit resolves the register through the language and seeds the
+/// function's decompile with it as a `map param` would, so the function is
+/// decompiled with that parameter locked and the rest recovered. For a
+/// convention no model describes (Swift's `self` in `x20` / `r13`).
+#[derive(Clone, Debug)]
+pub struct ParamLockFact {
+    pub func_addr: u64,
+    pub index: i32,
+    pub name: String,
+    pub reg: &'static str,
+    pub type_: std::rc::Rc<kuna_decomp::dtype::Datatype>,
+}
+
+/// (kuna `swifttypes`) The facts the Swift type-layout arm produces, kept
+/// apart so the commit can drop them whole under `option swifttypes off`:
+/// the typed metadata records, the accessor prototypes and the
+/// register-pinned `self` parameters. (The layouts themselves are interned
+/// in the type factory as the pass builds them; unreferenced, they change
+/// nothing.)
+#[derive(Default, Clone, Debug)]
+pub struct SwiftTypeFacts {
+    pub typed_data: Vec<TypedDataFact>,
+    pub prototypes: Vec<kuna_decomp::fspec::PrototypePieces>,
+    pub param_locks: Vec<ParamLockFact>,
+}
+
 /// A source-line annotation to attach to a decompiled instruction: at `addr`,
 /// the instruction came from source location `text` (e.g. `debug_symbol.c:122`).
 /// The commit boundary (`engine.rs::commit_analysis_output`) installs each into the
@@ -497,6 +525,8 @@ pub struct AnalysisOutput {
     /// (kuna `libctypes`) Data symbols the analysis tier types outright — the
     /// stdio stream slots. See [`TypedDataFact`].
     pub typed_data: Vec<TypedDataFact>,
+    /// (kuna `swifttypes`) The Swift type-layout facts. See [`SwiftTypeFacts`].
+    pub swift_types: SwiftTypeFacts,
     /// (kuna `formatstring static`) Per-call-site prototype overrides the
     /// LOAD-TIME format-string resolver recovered — a printf/scanf-family call
     /// whose format constant the image itself answers for. Committed onto
@@ -658,6 +688,9 @@ impl AnalysisOutput {
         self.symbols.extend(other.symbols);
         self.data_objects.extend(other.data_objects);
         self.typed_data.extend(other.typed_data);
+        self.swift_types.typed_data.extend(other.swift_types.typed_data);
+        self.swift_types.prototypes.extend(other.swift_types.prototypes);
+        self.swift_types.param_locks.extend(other.swift_types.param_locks);
         self.entries.extend(other.entries);
         self.fde_bodies.extend(other.fde_bodies);
         self.fde_interior_entries.extend(other.fde_interior_entries);

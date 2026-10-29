@@ -84,6 +84,19 @@ pub fn demangle_swift_tree(raw: &str) -> Option<NodeRef> {
     parse::Parser::new(body, old).parse_global()
 }
 
+/// Parse a mangled type name as the reflection metadata stores it (no
+/// prefix; symbolic references with binary payloads resolved by
+/// `resolver`) into its `Type` node, or `None` outside the coverage.
+pub fn demangle_swift_type(
+    mangled: &[u8],
+    resolver: &parse::SymbolicResolver<'_>,
+) -> Option<NodeRef> {
+    if mangled.is_empty() {
+        return None;
+    }
+    parse::Parser::with_resolver(mangled, false, Some(resolver)).parse_type()
+}
+
 /// The `swift-demangle` full form, or `None` outside the coverage.
 pub fn demangle_swift_full(raw: &str) -> Option<String> {
     let tree = demangle_swift_tree(raw)?;

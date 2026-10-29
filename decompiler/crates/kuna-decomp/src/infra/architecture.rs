@@ -2670,6 +2670,16 @@ pub struct Architecture {
     /// the `swift5_*` reflection sections. Default-off, output-changing; inert on
     /// an image without the sections.
     pub analysis_swiftmetadata: bool,
+    /// (kuna) Gate the Swift type-layout arm of the metadata pass
+    /// (`swifttypes`): struct and class layouts from static type metadata,
+    /// typed metadata records, accessor prototypes and the register-pinned
+    /// `self` of getters. Default-on; inert unless `swiftmetadata` is on.
+    pub analysis_swifttypes: bool,
+    /// (kuna `swifttypes`) Register-pinned parameters the analysis tier
+    /// declared, by function entry: `(slot, name, storage + type)`, the
+    /// shape of a console `map param`. The decompile drive seeds a
+    /// function's own decompile with them ahead of the console's.
+    pub loader_param_locks: std::collections::BTreeMap<Address, Vec<(int4, String, crate::fspec::ParameterPieces)>>,
     /// (kuna) Gate the PE PDB metadata recovery pass (`pdb`); default **off**. The
     /// kuna analog of Ghidra's `PdbUniversalAnalyzer` (the pure-Java PDB analyzer;
     /// the MS-DIA `PdbAnalyzer` is Windows-native and out of scope) — the
@@ -3478,6 +3488,8 @@ impl Architecture {
             analysis_gonoreturn: false,
             analysis_objc: false,
             analysis_swiftmetadata: false,
+            analysis_swifttypes: true,
+            loader_param_locks: std::collections::BTreeMap::new(),
             analysis_pdb: true,
             macho_arm64e: false,
 
@@ -3967,6 +3979,7 @@ impl Architecture {
         self.analysis_gonoreturn = true; // Go pclntab no-return list default-on (Go-only pass)
         self.analysis_objc = false; // Mach-O Objective-C metadata recovery default-off (Mach-O-only pass)
         self.analysis_swiftmetadata = false; // Swift runtime-metadata recovery default-off (inert without swift5_* sections)
+        self.analysis_swifttypes = true; // Swift type layouts default-on, inert unless swiftmetadata is on
         self.analysis_pdb = true; // (kuna) DIV-129 default-on: a PE whose CodeView record names a .pdb that is actually beside it decompiles with its real function names; the GUID/age fingerprint gate keeps a wrong or stale .pdb from ever being applied. PE-only, and the XML datatest path never runs an analysis pass (0/675)
         self.macho_arm64e = false; // arm64e Apple-Silicon spec selection default-off (opt-in)
     }

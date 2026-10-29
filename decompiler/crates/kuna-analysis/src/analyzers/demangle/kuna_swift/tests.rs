@@ -523,3 +523,61 @@ fn hostile_counts_and_nesting_are_refused() {
         None
     );
 }
+
+/// A reflection type name: symbolic references resolve through the
+/// caller's hook into the node the descriptor stands for, and the
+/// operators around them (optional, bound generic, tuple) apply as usual.
+#[test]
+fn symbolic_references_resolve_through_the_hook() {
+    use super::node::{Kind, Node};
+    use super::print::print_full;
+    let nominal = |kind: Kind, module: &str, name: &str| {
+        super::parse::mk_type(Node::with(
+            kind,
+            vec![
+                Node::text(Kind::Module, module),
+                Node::text(Kind::Identifier, name),
+            ],
+        ))
+    };
+    let resolve = move |kind: u8, at: usize, value: u64| match (kind, at, value as u32 as i32) {
+        (0x01, 1, 0x10) => Some(nominal(Kind::Structure, "metafix", "Point")),
+        (0x01, _, -0x20) => Some(nominal(Kind::Class, "metafix", "Animal")),
+        (0x02, _, _) => Some(nominal(Kind::Class, "__C", "NSObject")),
+        _ => None,
+    };
+    let full = |bytes: &[u8]| demangle_swift_type(bytes, &resolve).and_then(|t| print_full(&t));
+    assert_eq!(
+        full(b"\x01\x10\x00\x00\x00").as_deref(),
+        Some("metafix.Point")
+    );
+    assert_eq!(
+        full(b"\x01\x10\x00\x00\x00Sg").as_deref(),
+        Some("metafix.Point?")
+    );
+    assert_eq!(
+        full(b"Say\x01\xe0\xff\xff\xffG").as_deref(),
+        Some("[metafix.Animal]")
+    );
+    assert_eq!(
+        full(b"\x02\x00\x00\x00\x00").as_deref(),
+        Some("__C.NSObject")
+    );
+    assert_eq!(
+        full(b"SS_Si\x01\xe0\xff\xff\xfft").as_deref(),
+        Some("(Swift.String, Swift.Int, metafix.Animal)")
+    );
+    // A reference is a substitution candidate: `A` names it again.
+    assert_eq!(
+        full(b"\x01\x10\x00\x00\x00_AAt").as_deref(),
+        Some("(metafix.Point, metafix.Point)")
+    );
+    assert_eq!(full(b"SS").as_deref(), Some("Swift.String"));
+    assert_eq!(full(b"s5UInt8V").as_deref(), Some("Swift.UInt8"));
+    assert_eq!(full(b"s5UInt8VSg").as_deref(), Some("Swift.UInt8?"));
+    // Unresolvable (the hook says no), truncated, or not a single type: no output.
+    assert_eq!(full(b"\x03\x10\x00\x00\x00"), None);
+    assert_eq!(full(b"\x01\x10\x00"), None);
+    assert_eq!(full(b"SSSi"), None);
+    assert_eq!(full(b""), None);
+}

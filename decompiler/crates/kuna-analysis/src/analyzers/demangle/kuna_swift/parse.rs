@@ -14,6 +14,13 @@ const MAX_REPEAT: u64 = 2048;
 const MAX_WORDS: usize = 26;
 const MAX_NODES: usize = 1 << 16;
 
+/// Resolves a symbolic reference (`Mangling.rst`, "Symbolic references"):
+/// the kind byte (`\x01` a direct context descriptor, `\x02` an indirect
+/// one, …), the byte position of its payload within the mangled text and
+/// the payload value. Returns the node the reference stands for, or `None`
+/// for one it cannot name (which fails the whole parse).
+pub type SymbolicResolver<'r> = dyn Fn(u8, usize, u64) -> Option<NodeRef> + 'r;
+
 pub struct Parser<'a> {
     text: &'a [u8],
     pos: usize,
@@ -23,6 +30,7 @@ pub struct Parser<'a> {
     old_fn_types: bool,
     budget: usize,
     failed: bool,
+    resolver: Option<&'a SymbolicResolver<'a>>,
 }
 
 pub(super) fn swift_type(kind: Kind, name: &str) -> NodeRef {
@@ -35,7 +43,7 @@ pub(super) fn swift_type(kind: Kind, name: &str) -> NodeRef {
     ))
 }
 
-pub(super) fn mk_type(child: NodeRef) -> NodeRef {
+pub fn mk_type(child: NodeRef) -> NodeRef {
     Node::with(Kind::Type, vec![child])
 }
 
@@ -47,8 +55,19 @@ impl<'a> Parser<'a> {
     /// Parse `body` (the text after the mangling prefix). `old_fn_types` is
     /// the Swift 4.0 `_T0` convention (labels inside the function type).
     pub fn new(body: &'a str, old_fn_types: bool) -> Self {
+        Self::with_resolver(body.as_bytes(), old_fn_types, None)
+    }
+
+    /// A parser over raw bytes (a mangled type name from reflection
+    /// metadata, whose symbolic references carry binary payloads) with the
+    /// resolver that names those references.
+    pub fn with_resolver(
+        body: &'a [u8],
+        old_fn_types: bool,
+        resolver: Option<&'a SymbolicResolver<'a>>,
+    ) -> Self {
         Parser {
-            text: body.as_bytes(),
+            text: body,
             pos: 0,
             stack: Vec::new(),
             subs: Vec::new(),
@@ -56,6 +75,7 @@ impl<'a> Parser<'a> {
             old_fn_types,
             budget: MAX_NODES,
             failed: false,
+            resolver,
         }
     }
 
@@ -2621,6 +2641,7 @@ impl<'a> Parser<'a> {
                 self.pos = self.text.len();
                 Some(Node::text(Kind::Suffix, rest))
             }
+            0x01..=0x1f => self.symbolic_reference(c),
             b'$' => {
                 let negative = self.next_if(b'n');
                 let value = self.index()?;
@@ -2635,6 +2656,39 @@ impl<'a> Parser<'a> {
                 self.identifier()
             }
         }
+    }
+
+    /// `\x01`–`\x17` carry a 4-byte payload, `\x18`–`\x1f` an 8-byte one
+    /// (little-endian). A context reference (`\x01`, `\x02`) is a
+    /// substitution candidate like the type it stands for.
+    fn symbolic_reference(&mut self, kind: u8) -> Option<NodeRef> {
+        let resolver = self.resolver?;
+        let width = if kind <= 0x17 { 4 } else { 8 };
+        let at = self.pos;
+        let payload = self.text.get(at..at + width)?;
+        self.pos += width;
+        let mut value = 0u64;
+        for (i, &b) in payload.iter().enumerate() {
+            value |= (b as u64) << (8 * i);
+        }
+        let node = resolver(kind, at, value)?;
+        if kind == 0x01 || kind == 0x02 {
+            self.add_sub(&node);
+        }
+        Some(node)
+    }
+
+    /// Parse a mangled type (the text of a reflection record's type name,
+    /// no `$s` prefix): the operators must leave exactly one `Type` node.
+    pub fn parse_type(mut self) -> Option<NodeRef> {
+        while !self.at_end() {
+            let n = self.operator()?;
+            self.push(n);
+        }
+        if self.failed || self.stack.len() != 1 {
+            return None;
+        }
+        self.pop_kind(Kind::Type)
     }
 
     /// Parse the whole body into the `Global` node.

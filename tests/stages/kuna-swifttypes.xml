@@ -1,0 +1,78 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Swift type layouts from static metadata (`option swifttypes on|off`, the
+    type-layout arm of `swiftmetadata`).
+
+    Issue: `swiftmetadata` names a stripped Swift binary's functions but
+    knows nothing of its types, so a getter reads `*(long *)(v2 + 0x60)`
+    off an unnamed register and a metadata accessor returns a bare constant.
+    The static type metadata the accessors return holds every fixed-layout
+    struct's and class's size and field offsets, and the reflection field
+    descriptors hold the field names and types; on the Toyota iOS app they
+    lay out 4,585 structs and 3,205 classes (30,997 fields) and type the
+    `self` of 8,560 getters.
+
+    Stage / sub-stage: P1 external-refinement, the Swift metadata pass
+    (`kuna-analysis/src/analyzers/swift/kuna_swifttypes.rs`).
+
+    P0 assertion: `option swifttypes on|off` (default on; inert unless
+    `swiftmetadata` is on).
+
+    Both passes clear the harness architecture and load the real fixture
+    `swift_types_elf` (x86-64 ELF, swiftc 6.3, `llvm-strip` strip all) with
+    `swiftmetadata on`. Pass 1 (`option swifttypes off`) reproduces the BUG:
+    `typefix.Sprite.vtable#6.getter` takes no parameter and reads
+    `v2 + 0x60`, and `typefix.Point.type_metadata_accessor` returns
+    `ZEXT816(0x5318)`. Pass 2 (the default) is the FIX: the getter takes
+    `typefix.Sprite *self` and returns `self->count`, the origin getter
+    returns `self->origin` as a `typefix.Point`, the accessor returns
+    `&typefix.Point.type_metadata` as a `swift.type_metadata *`, and the
+    witness getter takes `typefix.Pixel *self` behind the type metadata and
+    witness table.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_types_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swifttypes off</com>
+  <com>read symbols</com>
+  <com>load addr 0x3e60</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4110</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_types_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x3e60</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3cb0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4110</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2ce0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swifttypes off: the getter takes no self and reads a raw offset" min="1" max="1">vtable#6\.getter\(void\)</stringmatch>
+<stringmatch name="swifttypes off: the field is an offset off an unnamed register" min="1" max="1">\(v2 \+ 0x60\)</stringmatch>
+<stringmatch name="swifttypes off: the accessor returns a bare constant" min="1" max="1">return ZEXT816\(0x5318\);</stringmatch>
+<stringmatch name="swifttypes on: the getter takes the class's self" min="1" max="1">typefix\.Sprite\.vtable#6\.getter\(typefix\.Sprite \*self\)</stringmatch>
+<stringmatch name="swifttypes on: the stored property is a field of the layout" min="1" max="1">return self-&gt;count;</stringmatch>
+<stringmatch name="swifttypes on: a struct-typed field returns as the nested struct" min="1" max="1">typefix\.Point typefix\.Sprite\.vtable#0\.getter\(typefix\.Sprite \*self\)</stringmatch>
+<stringmatch name="swifttypes on: the accessor returns the typed metadata record" min="1" max="1">return &amp;typefix\.Point\.type_metadata;</stringmatch>
+<stringmatch name="swifttypes on: the accessor prototype" min="1" max="1">swift\.type_metadata \* typefix\.Point\.type_metadata_accessor\(int8 request\)</stringmatch>
+<stringmatch name="swifttypes on: the witness getter takes the struct's self behind Self and the witness table" min="1" max="1">requirement#1\(swift\.type_metadata \*Self,void \*witness_table,typefix\.Pixel \*self\)</stringmatch>
+</decompilertest>

@@ -893,6 +893,9 @@ Three tiers:
 | swift binary functions render as sub_<addr> although swift5 metadata sections are present | [`swiftmetadata`](#swiftmetadata) |
 | type metadata accessors unnamed in a stripped swift mach-o | [`swiftmetadata`](#swiftmetadata) |
 | protocol witnesses and class methods of a stripped swift app have no names | [`swiftmetadata`](#swiftmetadata) |
+| swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes) |
+| swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes) |
+| type metadata accessors return undefined16 | [`swifttypes`](#swifttypes) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -3381,6 +3384,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; nothing is named and there is zero behavior change). Flip on for a stripped Swift binary: metadata accessors, class vtable implementations, overrides of imported methods and protocol witnesses render under their type's path instead of sub_<addr>, and the descriptor records are named.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftmetadata
 - **Example:** `option swiftmetadata on`
+
+### `swifttypes` -- on | off, default `on`
+
+- **Symptoms:** swift struct and class fields render as raw offsets off self; swift getters named by swiftmetadata take no self parameter; type metadata accessors return undefined16.
+- **What it does:** The type-layout arm of the Swift metadata pass (inert unless swiftmetadata is on): a non-generic type whose metadata needs no runtime initialization has it laid out statically, and its accessor is the one-line function that returns the address (adrp/add on arm64, lea on x86-64; a class with Objective-C heritage tail-calls the runtime with the same address). From that metadata the pass reads a struct's size and alignment (its value witness table, or the builtin table an import names) and its 32-bit field offset vector, a class's instance size and pointer-sized field offset vector; from the reflection field descriptor each stored property's name and mangled type, whose symbolic references the descriptor table resolves. The result is one kuna struct per type under its dotted name (Module.Point { long x; long y; }; a class as its object layout, a local superclass embedded as super, an imported one leaving the isa word) with field types mapped from the Swift type (Int/UInt/Double/Float/Bool and their sized forms, Swift.String as its two words, a class reference as a pointer to that class's struct, a nested struct inline, a collection as its storage word, a closure as its two words) and undefined<n> for any other (an enum, an imported value type, a generic instantiation) over the bytes up to the next field. Also typed: the metadata records (….type_metadata / ….class_metadata, ….value_witness_table), the accessors (swift.type_metadata *Module.Type.type_metadata_accessor(long request)), and the self of every class vtable getter and local-protocol witness getter, which Swift passes in the swiftself register (x20 / r13) that no calling-convention model describes - pinned on the function as a register-locked parameter, the rest of the signature recovered as usual. A type whose dotted path two descriptors share, whose field count disagrees with its descriptor, or whose offsets overlap is given no layout. Default-ON because it is inert unless swiftmetadata is on (default-off) and adds about 0.1 s and 3 MB on an 84 MB app.
+- **When to flip:** Off only to see a swiftmetadata-named binary without layouts: fields render as raw offsets, getters take no self, the accessors return undefined16. On (default) when swiftmetadata is on: self->field through the recovered struct, typed metadata records.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swifttypes
+- **Example:** `option swifttypes off`
 
 ### `pdb` -- on | off, default `on`
 
