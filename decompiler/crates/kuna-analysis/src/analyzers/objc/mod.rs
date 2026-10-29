@@ -127,8 +127,12 @@ impl AnalysisPass for ObjcMetadataPass {
                 classes.push((class, name));
             }
         }
+        // The layouts are built only under `objcivars` (its load-time half): off,
+        // no class struct is interned and no offset variable reported constant.
+        let objcivars = kuna_decomp::kuna_objcivars::objcivars_enabled();
         let layouts: HashMap<String, kuna_objcivars::Layout> = classes
             .iter()
+            .filter(|_| objcivars)
             .filter_map(|(class, name)| kuna_objcivars::layout(&img, class, name).map(|l| (name.clone(), l)))
             .collect();
         let structs = kuna_objcivars::Structs::build(&tctx, &layouts);
@@ -139,20 +143,20 @@ impl AnalysisPass for ObjcMetadataPass {
                 name: format!("_OBJC_CLASS_$_{name}"),
                 kind: SymKind::Data,
             });
-            let self_type = structs.self_type(&tctx, name);
+            let self_type = objcivars.then(|| structs.self_type(&tctx, name)).flatten();
             if let Some(list) = classt::base_methods(&img, class.ro) {
                 self.emit_methods(&img, &tctx, architecture, name, '-', list, self_type.as_ref(), &mut selectors, &mut out);
             }
             if let Some(list) = classt::metaclass_ro(&img, class.isa).and_then(|ro| classt::base_methods(&img, ro)) {
                 self.emit_methods(&img, &tctx, architecture, name, '+', list, None, &mut selectors, &mut out);
             }
-            if let Some(layout) = layouts.get(name) {
-                emit_ivars(layout, &mut out);
+            if let Some(ivar_list) = classt::base_ivars(&img, class.ro) {
+                emit_ivars(&classt::walk_ivar_list(&img, ivar_list), name, objcivars, &mut out);
             }
         }
 
         for cat in kuna_objccats::categories(&img, ctx.file) {
-            let self_type = cat.class.as_deref().and_then(|c| structs.self_type(&tctx, c));
+            let self_type = cat.class.as_deref().filter(|_| objcivars).and_then(|c| structs.self_type(&tctx, c));
             if let Some(list) = cat.instance_methods {
                 self.emit_methods(&img, &tctx, architecture, &cat.label, '-', list, self_type.as_ref(), &mut selectors, &mut out);
             }
@@ -184,7 +188,7 @@ impl AnalysisPass for ObjcMetadataPass {
                 gate: ConstGate::ObjcRefs,
             }));
         } else {
-            out.const_ranges.clear();
+            out.const_ranges.retain(|r| r.gate != ConstGate::ObjcRefs);
         }
         out
     }
@@ -260,14 +264,20 @@ impl ObjcMetadataPass {
 /// The `<Class>::<ivar>` data object on each ivar's offset variable, sized to
 /// the `u32` the method loads so the access binds the name, and the slot
 /// reported constant under `objcivars` so the load folds to the layout offset.
-fn emit_ivars(layout: &kuna_objcivars::Layout, out: &mut AnalysisOutput) {
-    for iv in &layout.ivars {
+fn emit_ivars(ivars: &[classt::Ivar], class: &str, objcivars: bool, out: &mut AnalysisOutput) {
+    for iv in ivars {
         out.data_objects.push(DataObjectFact {
             addr: iv.offset_va,
-            name: format!("{}::{}", layout.name, iv.name),
+            name: format!("{class}::{}", iv.name),
             size: 4,
         });
-        out.const_ranges.push(ConstRange { first: iv.offset_va, last_open: iv.offset_va + 4, gate: ConstGate::ObjcIvars });
+        if objcivars {
+            out.const_ranges.push(ConstRange {
+                first: iv.offset_va,
+                last_open: iv.offset_va.wrapping_add(4),
+                gate: ConstGate::ObjcIvars,
+            });
+        }
     }
 }
 

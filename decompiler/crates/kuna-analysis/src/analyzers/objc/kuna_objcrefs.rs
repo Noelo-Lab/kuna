@@ -50,6 +50,8 @@ const SEC_STUBS: &str = "__objc_stubs";
 
 /// The import symbol prefix of an Objective-C class (`_OBJC_CLASS_$_NSObject`).
 const CLASS_SYMBOL_PREFIX: &str = "_OBJC_CLASS_$_";
+/// The import symbol prefix of an Objective-C protocol (`_OBJC_PROTOCOL_$_P`).
+const PROTOCOL_SYMBOL_PREFIX: &str = "_OBJC_PROTOCOL_$_";
 
 /// What the method walk learned about this image's selectors, for the stubs.
 #[derive(Default)]
@@ -139,10 +141,18 @@ pub(super) fn emit(
     }
 
     for va in section_slots(file, SEC_PROTOREFS, ps) {
-        let Some(proto_va) = img.rebase_ptr(va) else { continue };
-        let Some(name) = super::kuna_objcprotos::protocol_name(img, proto_va) else { continue };
+        let name = match img.rebase_ptr(va) {
+            Some(proto_va) => {
+                let Some(name) = super::kuna_objcprotos::protocol_name(img, proto_va) else { continue };
+                push_slot(&mut const_slots, va, ps);
+                name
+            }
+            None => match img.bind_name(va).and_then(|n| n.strip_prefix(PROTOCOL_SYMBOL_PREFIX)) {
+                Some(name) => name.to_string(),
+                None => continue,
+            },
+        };
         out.data_objects.push(DataObjectFact { addr: va, name: format!("protoRef_{name}"), size: ps as u32 });
-        push_slot(&mut const_slots, va, ps);
     }
 
     if let Some(sec) = file.section_by_name(SEC_STUBS) {

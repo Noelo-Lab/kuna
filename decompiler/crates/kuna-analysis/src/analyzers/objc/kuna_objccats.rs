@@ -49,19 +49,19 @@ pub fn categories(img: &MachoImage, file: &object::File) -> Vec<Category> {
     for section in [SEC_CATLIST, SEC_NLCATLIST] {
         let Some(sec) = file.section_by_name(section) else { continue };
         for i in 0..sec.size() / ps {
-            let Some(cat) = img.rebase_ptr(sec.address() + i * ps) else { continue };
-            let Some(name) = img.rebase_ptr(cat + category_t::NAME).and_then(|p| img.read_cstr(p)) else {
+            let Some(cat) = img.rebase_ptr(sec.address().wrapping_add(i * ps)) else { continue };
+            let Some(name) = img.rebase_ptr(cat.wrapping_add(category_t::NAME)).and_then(|p| img.read_cstr(p)) else {
                 continue;
             };
             if name.is_empty() {
                 continue;
             }
-            let class = match img.rebase_ptr(cat + category_t::CLS) {
+            let class = match img.rebase_ptr(cat.wrapping_add(category_t::CLS)) {
                 Some(class_va) => {
                     classt::read_class_t(img, class_va).and_then(|c| classt::class_name(img, c.ro))
                 }
                 None => img
-                    .bind_name(cat + category_t::CLS)
+                    .bind_name(cat.wrapping_add(category_t::CLS))
                     .and_then(|n| n.strip_prefix(CLASS_SYMBOL_PREFIX))
                     .map(str::to_string),
             };
@@ -72,8 +72,8 @@ pub fn categories(img: &MachoImage, file: &object::File) -> Vec<Category> {
             out.push(Category {
                 label,
                 class,
-                instance_methods: img.rebase_ptr(cat + category_t::INSTANCE_METHODS),
-                class_methods: img.rebase_ptr(cat + category_t::CLASS_METHODS),
+                instance_methods: img.rebase_ptr(cat.wrapping_add(category_t::INSTANCE_METHODS)),
+                class_methods: img.rebase_ptr(cat.wrapping_add(category_t::CLASS_METHODS)),
             });
         }
     }

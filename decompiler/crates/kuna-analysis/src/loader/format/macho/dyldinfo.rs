@@ -32,6 +32,9 @@ const BIND_OPCODE_DO_BIND_ADD_ADDR_IMM_SCALED: u8 = 0xB0;
 const BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB: u8 = 0xC0;
 const BIND_OPCODE_THREADED: u8 = 0xD0;
 
+/// The most bind slots one image is followed for.
+const MAX_BINDS: usize = 1 << 20;
+
 /// `slot_vma → import symbol name` for every non-lazy bind of a classic
 /// `LC_DYLD_INFO` Mach-O. Empty for a chained-fixup image (which has no bind
 /// opcodes), a non-Mach-O, or an unparsable program.
@@ -87,6 +90,11 @@ fn replay(program: &[u8], segments: &[u64], ptr_size: u64, out: &mut HashMap<u64
         }
     };
     while let Some(&byte) = program.get(p) {
+        // A real image binds some tens of thousands of slots; a program that
+        // repeats past this is hostile and is not followed further.
+        if out.len() >= MAX_BINDS {
+            return;
+        }
         p += 1;
         let imm = byte & IMMEDIATE_MASK;
         match byte & OPCODE_MASK {
@@ -126,6 +134,9 @@ fn replay(program: &[u8], segments: &[u64], ptr_size: u64, out: &mut HashMap<u64
                 let Some(count) = uleb(program, &mut p) else { return };
                 let Some(skip) = uleb(program, &mut p) else { return };
                 for _ in 0..count.min(0x10000) {
+                    if out.len() >= MAX_BINDS {
+                        return;
+                    }
                     bind(&mut addr, &symbol, out);
                     addr = addr.map(|a| a.wrapping_add(skip));
                 }
@@ -217,5 +228,17 @@ mod tests {
                 assert!(binds.values().any(|n| n == "__objc_empty_cache"), "{name}: {binds:?}");
             }
         }
+    }
+
+    /// A program that repeats a bind past the budget is cut off there.
+    #[test]
+    fn a_repeating_program_is_bounded() {
+        let mut program = vec![BIND_OPCODE_SET_SYMBOL_TRAILING_FLAGS_IMM, b'_', b'a', 0, BIND_OPCODE_SET_SEGMENT_AND_OFFSET_ULEB, 0];
+        for _ in 0..40 {
+            program.extend_from_slice(&[BIND_OPCODE_DO_BIND_ULEB_TIMES_SKIPPING_ULEB, 0xff, 0xff, 0x03, 0]);
+        }
+        let mut out = HashMap::new();
+        replay(&program, &[0x1000], 8, &mut out);
+        assert_eq!(out.len(), MAX_BINDS);
     }
 }

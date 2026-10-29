@@ -4258,8 +4258,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`objc_msgSend(obj, selRef_init)`), the shape to read when the slot itself is
   the question. The fold is what the chained-fixup unpacking in §1.3 exists for
   here: a chained slot holds its packed chain word until `dynrelocs` unpacks it,
-  so on a chained image the pass reports no constant slot while `dynrelocs` is
-  off (the names stay). Like every analysis gate, `objcrefconst` is read at the
+  so on a chained image the pass reports no constant reference slot while
+  `dynrelocs` is off (the names stay; the ivar offset variables are plain words,
+  not fixups, and keep folding). Like every analysis gate, `objcrefconst` is read at the
   `read symbols` commit; flipping it afterwards does not re-paint.
 
   The class walk reaches only what `__objc_classlist` reaches. Three more
@@ -4313,11 +4314,18 @@ every other binary's pass list is byte-identical to before the pass existed):
     renders `self->ratio` and `objc_storeStrong((long)self + Foo::_name, x)`
     renders `objc_storeStrong(&self->_name, x)` (kcm: 5,207 field accesses, 0
     anonymous offset loads; Toyota's Swift classes expose their stored
-    properties the same way, `self->swiftRUMMonitor`). Off, `self` stays `id`,
-    the offset variable keeps its name and the load stays a load — the shape to
-    read when a superclass from another image may have grown since the link. A
-    class whose name already denotes a complete type (a DWARF struct, a user
-    typedef) keeps that type. Class (`+`) methods keep `objc_object *self`.
+    properties the same way, `self->swiftRUMMonitor`). A class that got no
+    layout — one of another image behind a category, or one with no field of
+    its own — still types `self` as a pointer to its declared record, so the
+    receiver is a `<Class> *` even when it is opaque. Off (the option is read
+    at load as `KUNA_OBJCIVARS` for the structs and at the commit for `self`
+    and the fold, so it is set before the `load file` it applies to), no class
+    struct is interned, `self` stays `id`, the offset variable keeps its name
+    and the load stays a load — the shape to read when a superclass from
+    another image may have grown since the link. A class whose name already
+    denotes a complete struct (DWARF) is that struct. Class (`+`) methods keep
+    `objc_object *self`. The number of classes given a layout is bounded
+    (32,768): every type the factory interns costs a linear name scan.
     Properties are not read: a property is a method pair plus an ivar, all
     already named.
 

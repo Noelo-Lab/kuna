@@ -39,11 +39,11 @@ pub fn protocols(img: &MachoImage, file: &object::File) -> Vec<Protocol> {
     let Some(sec) = file.section_by_name(SEC_PROTOLIST) else { return Vec::new() };
     let mut out = Vec::new();
     for i in 0..sec.size() / ps {
-        let Some(addr) = img.rebase_ptr(sec.address() + i * ps) else { continue };
+        let Some(addr) = img.rebase_ptr(sec.address().wrapping_add(i * ps)) else { continue };
         let Some(name) = protocol_name(img, addr) else { continue };
         let mut methods = Vec::new();
         for off in protocol_t::METHOD_LISTS {
-            if let Some(list) = img.rebase_ptr(addr + off) {
+            if let Some(list) = img.rebase_ptr(addr.wrapping_add(off)) {
                 methods.extend(methods::walk_method_list(img, list, file.architecture()));
             }
         }
@@ -54,7 +54,7 @@ pub fn protocols(img: &MachoImage, file: &object::File) -> Vec<Protocol> {
 
 /// The name of the `protocol_t` at `addr`, if readable and non-empty.
 pub fn protocol_name(img: &MachoImage, addr: u64) -> Option<String> {
-    img.rebase_ptr(addr + protocol_t::NAME).and_then(|p| img.read_cstr(p)).filter(|n| !n.is_empty())
+    img.rebase_ptr(addr.wrapping_add(protocol_t::NAME)).and_then(|p| img.read_cstr(p)).filter(|n| !n.is_empty())
 }
 
 #[cfg(test)]

@@ -114,17 +114,22 @@ impl<'a> TypeCtx<'a> {
         TypeCtx { types, ptr_size, word_size, opaque: RefCell::new(HashMap::new()) }
     }
 
-    /// A pointer to the named opaque struct (`objc_object*` for `id`, `objc_class*`
-    /// for `Class`, `objc_selector*` for `SEL`), the `dwarf` `get_type_struct`
-    /// posture; a plain `void*` if the named struct cannot be created.
-    fn opaque_ptr(&self, struct_name: &str) -> Option<Rc<Datatype>> {
+    /// A pointer to the named struct (`objc_object*` for `id`, `objc_class*` for
+    /// `Class`, `objc_selector*` for `SEL`, `Foo*` for `@"Foo"`): the struct of
+    /// that name when one exists, else a declared record so a pointer built
+    /// before the class's layout lands (`kuna_objcivars`) reads the completion
+    /// afterwards; a plain `void*` if the record cannot be created.
+    pub(super) fn opaque_ptr(&self, struct_name: &str) -> Option<Rc<Datatype>> {
         if let Some(t) = self.opaque.borrow().get(struct_name) {
             return Some(Rc::clone(t));
         }
         let pointee = self
             .types
-            .get_type_struct(struct_name)
+            .find_by_name(struct_name)
             .ok()
+            .flatten()
+            .filter(|t| t.get_metatype() == type_metatype::TYPE_STRUCT)
+            .or_else(|| self.types.kuna_declare_record(struct_name, false).ok())
             .or_else(|| self.types.get_type_void().ok())?;
         let ptr = self.types.get_type_pointer(self.ptr_size, pointee, self.word_size).ok()?;
         self.opaque.borrow_mut().insert(struct_name.to_string(), Rc::clone(&ptr));
@@ -137,11 +142,16 @@ impl<'a> TypeCtx<'a> {
 struct Parser<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// Pointer nesting (`^^^…`) entered so far; a hostile depth is refused.
+    depth: usize,
 }
+
+/// The deepest `^` nesting decoded; a real encoding is two or three deep.
+const MAX_POINTER_DEPTH: usize = 32;
 
 impl<'a> Parser<'a> {
     fn new(s: &'a str) -> Parser<'a> {
-        Parser { bytes: s.as_bytes(), pos: 0 }
+        Parser { bytes: s.as_bytes(), pos: 0, depth: 0 }
     }
 
     /// At (or past) the end of the encoding.
@@ -225,11 +235,20 @@ impl<'a> Parser<'a> {
                 types.get_type_pointer(ptr_size, ch, word_size).ok()?
             }
             // `@` = id (object pointer) → an opaque `objc_object*`; an ivar's
-            // `@"NSString"` names the class, so the pointee is that opaque type.
-            b'@' => match self.quoted_class_name() {
-                Some(class) => tctx.opaque_ptr(&class)?,
-                None => tctx.opaque_ptr("objc_object")?,
-            },
+            // `@"NSString"` names the class, so the pointee is that opaque type;
+            // `@?` is a block, modelled as `void*`.
+            b'@' => {
+                if self.peek() == Some(b'?') {
+                    self.pos += 1;
+                    let v = types.get_type_void().ok()?;
+                    types.get_type_pointer(ptr_size, v, word_size).ok()?
+                } else {
+                    match self.quoted_class_name() {
+                        Some(class) => tctx.opaque_ptr(&class)?,
+                        None => tctx.opaque_ptr("objc_object")?,
+                    }
+                }
+            }
             // `#` = Class → an opaque `objc_class*`.
             b'#' => tctx.opaque_ptr("objc_class")?,
             // `:` = SEL → an opaque `objc_selector*`.
@@ -237,9 +256,16 @@ impl<'a> Parser<'a> {
             // `^T` = pointer to T: decode the pointee (name-level), fall back to
             // void* on an opaque/unparseable pointee.
             b'^' => {
-                let pointee = self
-                    .next_type(tctx)
-                    .or_else(|| types.get_type_void().ok())?;
+                self.depth += 1;
+                if self.depth > MAX_POINTER_DEPTH {
+                    return None;
+                }
+                let pointee = self.next_type(tctx);
+                if self.depth > MAX_POINTER_DEPTH {
+                    return None;
+                }
+                self.depth -= 1;
+                let pointee = pointee.or_else(|| types.get_type_void().ok())?;
                 types.get_type_pointer(ptr_size, pointee, word_size).ok()?
             }
             // `{name=...}` struct, `(name=...)` union, `[N T]` array, `b<n>`
@@ -389,5 +415,17 @@ mod tests {
         assert_eq!(t.get_ptr_to().unwrap().get_name(), "NSString");
         let t = decode_ivar_type("@\"<Greeter>\"", &tctx).unwrap();
         assert_eq!(t.get_ptr_to().unwrap().get_name(), "objc_object");
+    }
+
+    /// A block (`@?`) is one pointer, and pointer nesting is bounded.
+    #[test]
+    fn blocks_are_one_type_and_nesting_is_bounded() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let p = decode_method("-[C a:]", "v24@0:8@?16", &tctx, None).unwrap();
+        assert_eq!(p.intypes.len(), 3, "the block is one argument, not `@` then `?`");
+        let deep = format!("{}i", "^".repeat(MAX_POINTER_DEPTH + 1));
+        assert!(decode_ivar_type(&deep, &tctx).is_none());
+        assert!(decode_ivar_type("^^i", &tctx).is_some());
     }
 }

@@ -55,19 +55,30 @@ pub struct Structs {
     built: HashMap<String, Rc<Datatype>>,
 }
 
+/// The most classes given a layout: a real image has thousands, and every
+/// type the factory interns costs a linear name scan, so a crafted image with
+/// hundreds of thousands is cut off here.
+const MAX_CLASSES: usize = 1 << 15;
+
 impl Structs {
     pub(super) fn build(tctx: &TypeCtx, layouts: &HashMap<String, Layout>) -> Structs {
         let mut structs = Structs { built: HashMap::new() };
-        for name in layouts.keys() {
+        let mut names: Vec<&String> = layouts.keys().collect();
+        names.sort();
+        for name in names.into_iter().take(MAX_CLASSES) {
             structs.build_one(tctx, layouts, name, 0);
         }
         structs
     }
 
-    /// `<Class> *`, the type of `self` in the class's methods, if the class got a struct.
+    /// `<Class> *`, the type of `self` in the class's methods: a pointer to the
+    /// class's struct, or to the declared (opaque) record of a class that got no
+    /// layout — one of another image, or one with no field of its own.
     pub(super) fn self_type(&self, tctx: &TypeCtx, class: &str) -> Option<Rc<Datatype>> {
-        let st = self.built.get(class)?;
-        tctx.types.get_type_pointer(tctx.ptr_size, Rc::clone(st), tctx.word_size).ok()
+        match self.built.get(class) {
+            Some(st) => tctx.types.get_type_pointer(tctx.ptr_size, Rc::clone(st), tctx.word_size).ok(),
+            None => tctx.opaque_ptr(class),
+        }
     }
 
     fn build_one(
@@ -88,11 +99,16 @@ impl Structs {
         let existing = types.find_by_name(name).ok().flatten();
         let shell = match existing {
             Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT && t.is_incomplete() => t,
+            // A complete struct of that name (DWARF, a user typedef) is the class.
+            Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT => {
+                self.built.insert(name.to_string(), Rc::clone(&t));
+                return Some(t);
+            }
             Some(_) => return None,
-            None => types.get_type_struct(name).ok()?,
+            None => types.kuna_declare_record(name, false).ok()?,
         };
         // Interned before the fields so a self-referential ivar (`Node *next`) can
-        // name it; an incomplete shell is still a usable pointee.
+        // name it; a declared record's pointers read the completion afterwards.
         self.built.insert(name.to_string(), Rc::clone(&shell));
 
         let mut fields: Vec<TypeField> = Vec::new();
@@ -101,7 +117,8 @@ impl Structs {
             .as_deref()
             .and_then(|s| self.build_one(tctx, layouts, s, depth + 1));
         if let Some(sup) = sup {
-            if sup.get_size() > 0 && sup.get_size() as u32 <= layout.instance_start.max(sup.get_size() as u32) {
+            let sup_size = sup.get_size();
+            if sup_size > 0 && sup_size as u32 <= layout.instance_start {
                 fields.push(TypeField::new(0, 0, "super".to_string(), sup));
             }
         }
@@ -117,7 +134,7 @@ impl Structs {
                 .as_deref()
                 .and_then(|e| encoding::decode_ivar_type(e, tctx))
                 .filter(|t| t.get_size() > 0 && t.get_metatype() != type_metatype::TYPE_VOID)
-                .or_else(|| types.get_base(iv.size.clamp(1, 8) as i32, type_metatype::TYPE_UNKNOWN).ok())?;
+                .or_else(|| unknown_of(tctx, iv.size))?;
             if iv.offset as u64 + ty.get_size() as u64 > layout.instance_size as u64 {
                 continue;
             }
@@ -125,8 +142,9 @@ impl Structs {
             fields.push(TypeField::new(iv.offset as i32, iv.offset as i32, iv.name.clone(), ty));
         }
         if fields.is_empty() {
-            self.built.remove(name);
-            return None;
+            // No field of its own and no local parent: the declared record stays,
+            // so `self` is still a `<Class> *`, just an opaque one.
+            return Some(shell);
         }
         let size = layout.instance_size as i32;
         let align = (tctx.ptr_size).min(size).max(1);
@@ -141,4 +159,17 @@ impl Structs {
             }
         }
     }
+}
+
+/// An `undefined<size>` for an ivar whose encoding does not decode: a base type
+/// up to pointer width, an `undefined1[size]` past it, so the field spans the
+/// ivar's whole extent.
+fn unknown_of(tctx: &TypeCtx, size: u32) -> Option<Rc<Datatype>> {
+    let types = tctx.types;
+    let size = size.clamp(1, 1 << 16) as i32;
+    if size <= tctx.ptr_size && (size as u32).is_power_of_two() {
+        return types.get_base(size, type_metatype::TYPE_UNKNOWN).ok();
+    }
+    let byte = types.get_base(1, type_metatype::TYPE_UNKNOWN).ok()?;
+    types.get_type_array(size, byte).ok()
 }
