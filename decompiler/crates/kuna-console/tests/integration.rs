@@ -320,6 +320,9 @@ mod verify_noreturn_propagate;
 #[path = "verify_objc.rs"]
 mod verify_objc;
 
+#[path = "verify_cfstring.rs"]
+mod verify_cfstring;
+
 #[path = "verify_object_formats.rs"]
 mod verify_object_formats;
 

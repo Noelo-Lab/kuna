@@ -889,6 +889,8 @@ Three tiers:
 | read symbols dominates a single-function run on an entry-dense image | [`lazyfuncs`](#lazyfuncs) |
 | objective-c methods render as sub_<addr> instead of -[Class sel] | [`objc`](#objc) |
 | __objc_ metadata present but classes and selectors unnamed in a mach-o | [`objc`](#objc) |
+| core-foundation / objc string constants render as dat_<addr> instead of their text | [`cfstrings`](#cfstrings) |
+| a CFSTR(...) argument shows an address in a mach-o | [`cfstrings`](#cfstrings) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -3369,6 +3371,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off (default; no IMP is renamed and there is zero behavior change). Flip on for a Mach-O Objective-C binary to recover method names — a stripped IMP renders -[Greeter greet:] instead of sub_<addr>, and the class/selector strings are named.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-objc
 - **Example:** `option objc on`
+
+### `cfstrings` -- on | off, default `off`
+
+- **Symptoms:** core-foundation / objc string constants render as dat_<addr> instead of their text; a CFSTR(...) argument shows an address in a mach-o.
+- **What it does:** Run the Mach-O Core Foundation constant-string recovery pass: when the binary is a Mach-O, read each __cfstring entry (the four-word CFString struct isa/flags/data-pointer/length), resolve its data pointer through the LC_DYLD_CHAINED_FIXUPS overlay on an arm64(e) image (a raw word on a classic LC_DYLD_INFO image), read the string (8-bit when the flags unicode bit 0x10 is clear, UTF-16 decoded to UTF-8 when set), and render a reference to the entry as the string literal. The commit seam types each entry a char[N] typelocked symbol and pre-seeds the StringManager at the entry address with the resolved bytes, so a CFSTR argument renders the literal instead of dat_<addr> -- the same route that renders a __cstring literal, carried across the CFString struct indirection the printer cannot follow on its own. The entry structs are marked read-only (a CFString constant is immutable), which the constant-string route requires on the historical writable __DATA,__cfstring layout (__DATA_CONST is already read-only). Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. DISABLED by default (output-changing: renders data as literals + adds char[N] symbols; real-binary-path only, so every parity gate is byte-identical).
+- **When to flip:** Off (default; a __cfstring reference renders dat_<addr> and there is zero behavior change). Flip on for a Mach-O (Core Foundation / Objective-C / Swift) binary to render its CFString constants -- a call that passed dat_<addr> renders its text such as "Setup New Coffee Kiosk".
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-cfstrings
+- **Example:** `option cfstrings on`
 
 ### `pdb` -- on | off, default `on`
 

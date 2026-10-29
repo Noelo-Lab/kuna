@@ -7945,6 +7945,25 @@ tier = "analysis"
 symptoms = "objective-c methods render as sub_<addr> instead of -[Class sel]|__objc_ metadata present but classes and selectors unnamed in a mach-o"
 
 [[settable]]
+option = "cfstrings"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-cfstrings"
+summary = "Run the Mach-O Core Foundation constant-string recovery pass: when the binary is a Mach-O, read each __cfstring entry (the four-word CFString struct isa/flags/data-pointer/length), resolve its data pointer through the LC_DYLD_CHAINED_FIXUPS overlay on an arm64(e) image (a raw word on a classic LC_DYLD_INFO image), read the string (8-bit when the flags unicode bit 0x10 is clear, UTF-16 decoded to UTF-8 when set), and render a reference to the entry as the string literal. The commit seam types each entry a char[N] typelocked symbol and pre-seeds the StringManager at the entry address with the resolved bytes, so a CFSTR argument renders the literal instead of dat_<addr> -- the same route that renders a __cstring literal, carried across the CFString struct indirection the printer cannot follow on its own. The entry structs are marked read-only (a CFString constant is immutable), which the constant-string route requires on the historical writable __DATA,__cfstring layout (__DATA_CONST is already read-only). Registered ONLY for a Mach-O binary, so it is a structural no-op on every non-Mach-O target. DISABLED by default (output-changing: renders data as literals + adds char[N] symbols; real-binary-path only, so every parity gate is byte-identical)."
+use_when = "Off (default; a __cfstring reference renders dat_<addr> and there is zero behavior change). Flip on for a Mach-O (Core Foundation / Objective-C / Swift) binary to render its CFString constants -- a call that passed dat_<addr> renders its text such as \"Setup New Coffee Kiosk\"."
+example = "option cfstrings on"
+source_decompiler = "kuna"
+inspiration = "Apple CoreFoundation CFString constant layout (__builtin_CFString / ___CFConstantStringClassReference, CFRuntimeBase); Ghidra MachO __cfstring markup"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "core-foundation / objc string constants render as dat_<addr> instead of their text|a CFSTR(...) argument shows an address in a mach-o"
+
+[[settable]]
 option = "pdb"
 values = "on|off"
 default = "on"

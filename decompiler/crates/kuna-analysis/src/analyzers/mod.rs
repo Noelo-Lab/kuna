@@ -15,6 +15,7 @@ pub mod fast_funcdisc;
 pub mod formatstring;
 pub mod noreturn_disc;
 pub mod noreturn_propagate;
+pub mod cfstring;
 pub mod objc;
 pub mod operand_refs;
 pub mod gotypes;

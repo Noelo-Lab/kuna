@@ -473,6 +473,17 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         passes.push(Box::new(crate::objc::ObjcMetadataPass));
     }
 
+    // S1 Mach-O Core Foundation constant strings (CFStringPass): when the binary
+    // is a Mach-O, read each `__cfstring` entry's resolved char pointer and emit
+    // the string so a `CFSTR("...")` reference renders the literal instead of
+    // `dat_<addr>`. Registered ONLY for a Mach-O target (structural no-op
+    // elsewhere). Default-OFF (`--option cfstrings`): the output is committed only
+    // when the gate is on (`engine.rs::analysis_pass_enabled`), so a default run is
+    // byte-identical.
+    if format == object::BinaryFormat::MachO {
+        passes.push(Box::new(crate::cfstring::CFStringPass));
+    }
+
     // S1 PE PDB metadata recovery (PdbPass): on a Windows PE, read the CodeView
     // fingerprint (`{guid, age, path}`), locate the external `.pdb` (tier-1: the
     // `kuna_pdb_path` env var, the fid `kuna_fid_db` precedent), fingerprint-gate

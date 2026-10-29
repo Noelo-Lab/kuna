@@ -3302,6 +3302,11 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // renames IMP functions + adds class/selector symbols). Registered here so it
         // is gated by `analysis_objc` rather than running by the fail-open default.
         "objc" => arch.analysis_objc,
+        // (kuna) Mach-O `__cfstring` constant-string recovery — default-off,
+        // output-changing (renders CFString constants as literals + adds `char[N]`
+        // symbols). Registered here so the fail-open `_ => true` never silently
+        // runs it by default; `off` renders `dat_<addr>` exactly as before.
+        "cfstrings" => arch.analysis_cfstrings,
         // (kuna) PE PDB metadata recovery — default-OFF (output-changing: renames
         // stripped functions to their real PDB names). PE-only + externally gated on
         // a fingerprint-matching `.pdb` (the `kuna_pdb_path` env var). Registered
@@ -5301,6 +5306,51 @@ fn commit_analysis_output(
         // char[N] type at the address; the printer renders the literal, not the
         // name). Placed in its namespace-resolved scope (global here).
         let name = format!("s_{:x}", fact.addr);
+        let arch = prog.arch_mut();
+        let (scope, base) =
+            arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;
+        let (sid, _) =
+            arch.symboltab.add_symbol_mapped(scope, &base, arr, &addr, &Address::new_invalid())?;
+        arch.symboltab.set_attribute(sid, kuna_decomp::varnode::varnode_flags::typelock);
+    }
+
+    // 4a'. (kuna `cfstrings`) Mach-O Core Foundation constant strings. Each
+    //     `__cfstring` entry is typed a `char[N]` typelocked symbol so a reference
+    //     to the entry is a char pointer, AND the StringManager is seeded at the
+    //     entry address with the string its char pointer resolved to — so the
+    //     printer's constant-string route renders the literal (`"launch-report"`)
+    //     instead of `dat_<addr>`, exactly as for a `__cstring` literal but across
+    //     the CFString struct indirection the printer cannot follow on its own.
+    //     The entry ranges were marked read-only by the pass (arm 1b), which the
+    //     route requires. Empty unless `--option cfstrings on` (gated above).
+    for fact in &out.cfstrings {
+        let addr = Address::new(Rc::clone(code_space), fact.addr);
+        let occupied = {
+            let arch = prog.arch();
+            match arch.symboltab.get_global_scope() {
+                Some(global) => {
+                    arch.symboltab.find_function(global, &addr).is_some()
+                        || arch.is_lazy_entry(addr.get_offset())
+                        || arch
+                            .symboltab
+                            .find_container(global, &addr, 1, &Address::new_invalid())
+                            .is_some()
+                }
+                None => false,
+            }
+        };
+        if occupied {
+            continue;
+        }
+        // char[len+1]: the element count carries a trailing NUL slot, matching the
+        // `char[N]` a NUL-terminated literal gets; the printer renders from the
+        // seeded bytes, not this length.
+        let ch = prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?;
+        let arr = prog.arch().types().get_type_array((fact.bytes.len() + 1) as i32, ch)?;
+        let name = format!("s_{:x}", fact.addr);
+        // Seed the StringManager BEFORE the symbol so the char pointer resolves to
+        // the real string (char width 1 — the `char[N]` element width above).
+        prog.arch().string_manager.borrow_mut().base.register_string_at(&addr, &fact.bytes, 1);
         let arch = prog.arch_mut();
         let (scope, base) =
             arch.symboltab.find_create_scope_from_symbol_name(&name, "::", None, num_spaces)?;

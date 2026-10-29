@@ -1383,6 +1383,7 @@ kuna_options! { self, p1;
         on_off!(analysis_gonoreturn, "Go pclntab no-return list pass")
     },
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
+    "cfstrings" => on_off!(analysis_cfstrings, "Mach-O __cfstring constant-string recovery pass"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;
