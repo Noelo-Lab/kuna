@@ -418,7 +418,9 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// Locate the pclntab header VMA. In precedence order (faithful to
 /// `GoPcHeader.getPcHeaderAddress` + `GoModuledata.getFirstModuledata`, plus a
 /// scan fallback for stripped binaries):
-/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`) section start;
+/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`, or the large
+///    read-only data split's `.lrodata_gopclntab` / Mach-O `__lrodata_gopcln`)
+///    section start;
 /// 2. the `runtime.pclntab` / `runtime.firstmoduledata`-adjacent symbol — kuna
 ///    resolves the `runtime.pclntab` symbol directly when present;
 /// 3. a byte scan of the read-only data sections for the validated header magic.
