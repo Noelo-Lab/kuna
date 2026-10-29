@@ -7,8 +7,9 @@
 //! `sub_<addr>` functions left after `objc`. Each record is parsed to its name,
 //! class (a rebase slot's `class_t`, or an imported class's bind name) and the
 //! two method lists; the caller renames the IMPs `-[Class(Category) sel]` through
-//! the same path as a class's own methods. The protocol and property lists are
-//! not read: nothing in the emitted C would show them.
+//! the same path as a class's own methods. The property lists type the
+//! getters and setters (`kuna_objcprops`); the protocol list is not read, since
+//! nothing in the emitted C would show it.
 
 use object::read::{Object, ObjectSection};
 
@@ -26,6 +27,8 @@ mod category_t {
     pub const CLS: u64 = 0x08;
     pub const INSTANCE_METHODS: u64 = 0x10;
     pub const CLASS_METHODS: u64 = 0x18;
+    pub const INSTANCE_PROPERTIES: u64 = 0x28;
+    pub const CLASS_PROPERTIES: u64 = 0x30;
 }
 
 /// One category: the label stem `Class(Category)` and its method lists.
@@ -40,6 +43,9 @@ pub struct Category {
     pub instance_methods: Option<u64>,
     /// `method_list_t*` of the class methods, `None` when absent.
     pub class_methods: Option<u64>,
+    /// `property_list_t*` of the instance and class properties, `None` when absent.
+    pub instance_properties: Option<u64>,
+    pub class_properties: Option<u64>,
 }
 
 /// Every category of `file`, in `__objc_catlist` then `__objc_nlcatlist` order.
@@ -74,6 +80,8 @@ pub fn categories(img: &MachoImage, file: &object::File) -> Vec<Category> {
                 class,
                 instance_methods: img.rebase_ptr(cat.wrapping_add(category_t::INSTANCE_METHODS)),
                 class_methods: img.rebase_ptr(cat.wrapping_add(category_t::CLASS_METHODS)),
+                instance_properties: img.rebase_ptr(cat.wrapping_add(category_t::INSTANCE_PROPERTIES)),
+                class_properties: img.rebase_ptr(cat.wrapping_add(category_t::CLASS_PROPERTIES)),
             });
         }
     }

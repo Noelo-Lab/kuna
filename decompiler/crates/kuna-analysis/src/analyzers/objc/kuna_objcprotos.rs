@@ -22,6 +22,7 @@ const SEC_PROTOLIST: &str = "__objc_protolist";
 mod protocol_t {
     pub const NAME: u64 = 0x08;
     pub const METHOD_LISTS: [u64; 4] = [0x18, 0x20, 0x28, 0x30];
+    pub const INSTANCE_PROPERTIES: u64 = 0x38;
 }
 
 /// One protocol: where it lives, what it is called, what it declares.
@@ -31,6 +32,8 @@ pub struct Protocol {
     pub name: String,
     /// Every declared method (required and optional, instance and class), IMP 0.
     pub methods: Vec<Method>,
+    /// The declared properties' getters and setters with their encodings.
+    pub properties: Vec<(String, String)>,
 }
 
 /// Every protocol of `file`, in `__objc_protolist` order.
@@ -47,7 +50,11 @@ pub fn protocols(img: &MachoImage, file: &object::File) -> Vec<Protocol> {
                 methods.extend(methods::walk_method_list(img, list, file.architecture()));
             }
         }
-        out.push(Protocol { addr, name, methods });
+        let properties = img
+            .rebase_ptr(addr + protocol_t::INSTANCE_PROPERTIES)
+            .map(|list| super::kuna_objcprops::declarations(img, list))
+            .unwrap_or_default();
+        out.push(Protocol { addr, name, methods, properties });
     }
     out
 }
