@@ -2382,7 +2382,7 @@ The control surface: each of these can make output worse on the wrong source sha
 
 - **Symptoms:** PPC32 PIC calls retain local linker stub names; a PPC32 PIC no-return call flows into padding; PPC32 PIC imports are missing from named cross-reference queries.
 - **What it does:** Name short and long PPC32 secure-PLT PIC stubs only when bounded caller control flow proves the same JMP_SLOT at every incoming direct transfer. Track actual r30 initialization, discard unknown or conflicting paths and clobbers, and retain returning calls. DT_PPC_GOT and .got2 never stand in for r30.
-- **When to flip:** Opt in to recover import names and known-function contracts from proven PPC32 callers. Off restores unresolved PIC stubs; BSS-PLT and absolute stubs are unchanged. This is a loader-time option: set it before load file in the console; the CLI handles that ordering.
+- **When to flip:** Opt in to recover import names and known-function contracts from proven PPC32 callers. Recovery is all-or-nothing per image: images linked with the standard C start files, or containing any caller the walk cannot certify, stay unresolved. Off restores unresolved PIC stubs; BSS-PLT and absolute stubs are unchanged. This is a loader-time option: set it before load file in the console; the CLI handles that ordering.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · PPC32 secure-PLT caller bases
 - **Example:** `option ppc32picimports on`
 
