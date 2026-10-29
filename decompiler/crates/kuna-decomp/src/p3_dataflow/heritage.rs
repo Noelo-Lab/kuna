@@ -2758,16 +2758,20 @@ impl Heritage {
         }
     }
 
-    /// Guard every model output contained by a wider heritaged range. A locked
-    /// register-pair call result can cover two separate output entries; keeping
-    /// only the biggest entry would silently discard the other return word.
+    /// Guard the biggest model output contained by a wider heritaged range. On a
+    /// model whose pair returns the high word first, also guard every other
+    /// contained output: a locked register-pair call result covers both words,
+    /// and [`crate::kuna_retcallhalf::whole_pair`] may need the second one.
     fn guard_returns_overlapping(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         addr: &Address,
         size: int4,
     ) {
-        self.guard_returns_in_range(fd, addr, size, addr, size, true);
+        let split = fd.get_func_proto().has_model()
+            && crate::kuna_bejoin::wide_pair(fd.get_func_proto().model(), fd.get_arch().manage())
+                .is_some();
+        self.guard_returns_in_range(fd, addr, size, addr, size, true, split);
     }
 
     fn guard_returns_in_range(
@@ -2778,6 +2782,7 @@ impl Heritage {
         range: &Address,
         range_size: int4,
         primary: bool,
+        split: bool,
     ) {
         use kuna_num::opcodes::OpCode;
         use kuna_num::pcoderaw::VarnodeData;
@@ -2798,8 +2803,8 @@ impl Heritage {
         if before > range_size || piece_size <= 0 || piece_size > range_size - before {
             return;
         }
-        if before > 0 {
-            self.guard_returns_in_range(fd, addr, size, range, before, false);
+        if split && before > 0 {
+            self.guard_returns_in_range(fd, addr, size, range, before, false, true);
         }
         let trunc_addr = Address::new(Rc::clone(&vspace), vdata.offset);
         if let Some(active) = fd.get_active_output_mut() {
@@ -2845,8 +2850,8 @@ impl Heritage {
             let _ = fd.op_insert_input(op, ret_val, n);
         }
         let after = range_size - before - piece_size;
-        if after > 0 {
-            self.guard_returns_in_range(fd, addr, size, &(&trunc_addr + piece_size as i64), after, false);
+        if split && after > 0 {
+            self.guard_returns_in_range(fd, addr, size, &(&trunc_addr + piece_size as i64), after, false, true);
         }
     }
 

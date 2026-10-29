@@ -2078,9 +2078,14 @@ if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
 A wider heritaged register range can contain several separate output entries.
+On a model whose register pair returns the high word first (`kuna_bejoin`'s
+`wide_pair`: SPARC, PowerPC, MIPS and ARM big-endian),
 `Heritage::guard_returns_overlapping` keeps the extra entries as inactive
 candidates instead of dropping their bytes or treating the range alone as
-evidence that the caller returns every word. With a declared wide callee,
+evidence that the caller returns every word. Every other model keeps
+upstream's single biggest contained entry: there `whole_pair` never applies,
+and an inactive leftover word would make `voidret`'s whole-or-none rule drop
+an ARM `d0` or `r0:r1` return the caller still reads. With a declared wide callee,
 return scoring lets frame slots materialized by spacebase simplification
 receive stack SSA before finalizing. A wide load alone is not proof, since it
 can reload unused incoming arguments.
