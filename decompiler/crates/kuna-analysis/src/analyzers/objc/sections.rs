@@ -13,6 +13,8 @@
 //! lookups). Pure & total: a non-Mach-O / no-`__objc_*` input yields an empty
 //! [`MachoImage::classlist`], so the pass is an additive no-op.
 
+use std::collections::HashMap;
+
 use object::read::{Object, ObjectSection};
 use object::{Endianness, SectionKind};
 
@@ -44,6 +46,10 @@ pub struct MachoImage<'a> {
     /// `LC_DYLD_INFO` Mach-O — `read_ptr` then reads raw section bytes exactly as
     /// before this resolver existed.
     fixups: ChainedFixups,
+    /// `slot_vma → import symbol` from a classic `LC_DYLD_INFO` bind program, the
+    /// pre-chained-fixup twin of [`ChainedFixups::bind_name`]. Empty on a chained
+    /// image.
+    binds: HashMap<u64, String>,
 }
 
 impl<'a> MachoImage<'a> {
@@ -79,7 +85,14 @@ impl<'a> MachoImage<'a> {
         }
         spans.sort_unstable_by_key(|&(lo, _, _)| lo);
         let ptr_size = if file.is_64() { 8 } else { 4 };
-        MachoImage { spans, endian: file.endianness(), ptr_size, fixups }
+        MachoImage { spans, endian: file.endianness(), ptr_size, fixups, binds: HashMap::new() }
+    }
+
+    /// Attach the classic `LC_DYLD_INFO` bind slots (`slot_vma → import`), so
+    /// [`Self::bind_name`] answers on an image without chained fixups.
+    pub fn with_binds(mut self, binds: HashMap<u64, String>) -> MachoImage<'a> {
+        self.binds = binds;
+        self
     }
 
     /// Pointer size in bytes for this image.
@@ -123,10 +136,11 @@ impl<'a> MachoImage<'a> {
         })
     }
 
-    /// The import symbol a chained-fixup **bind** slot at `va` names
-    /// (`_OBJC_CLASS_$_NSObject`), or `None` for any other slot.
+    /// The import symbol a **bind** slot at `va` names (`_OBJC_CLASS_$_NSObject`),
+    /// from the chained-fixup imports or the classic bind program; `None` for any
+    /// other slot.
     pub fn bind_name(&self, va: u64) -> Option<&str> {
-        self.fixups.bind_name(va)
+        self.fixups.bind_name(va).or_else(|| self.binds.get(&va).map(String::as_str))
     }
 
     /// Whether the image carries chained fixups (`LC_DYLD_CHAINED_FIXUPS`), a
