@@ -998,6 +998,25 @@ adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
 `kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
 no_link_references_the_return_address_it_leaves)`.
 
+## dyld shared cache (`dyld_cache_arm64e/`)
+
+`dyld_cache_arm64e/` (about 29 KB in three files) is a synthetic two-image arm64e
+dyld shared cache, split the way iOS 16 splits one: `dyld_shared_cache_arm64e`
+(header, image table, `__TEXT`/`__DATA`/`__LINKEDIT` mappings, v3 slide info),
+`.01` (a `__TEXT_STUBS` stub island), and `.symbols` (the local symbols).
+`/usr/lib/libcaller.dylib` calls `/usr/lib/libcallee.dylib`'s `callee_add`
+through the island at `0x180008800` and through a coalesced `__got` slot. That
+slot's v3 chain links a plain pointer to an authenticated one. Its `helper_local`
+is a `<redacted>` placeholder in its own symbol table, named only by `.symbols`.
+It drives the `kuna_dyldcache` unit tests and `tests/stages/kuna-dyldcrossrefs.xml`.
+No Apple toolchain is needed: `dyld_cache_arm64e.py` assembles the files from
+the public `dyld_cache_format.h` layouts and hand-encodes the A64 bodies.
+Regenerate with:
+
+```bash
+python3 dyld_cache_arm64e.py
+```
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design

@@ -31,6 +31,9 @@ pub mod kuna_rexthunk;
 pub mod kuna_sourcelang;
 // (kuna) Swift symbol demangling gate (load-time, env-bridged).
 pub mod kuna_swiftdemangle;
+// (kuna) dyld shared cache image selection + cross-image naming gates
+// (load-time, env-bridged).
+pub mod kuna_dyldcache;
 // (kuna) The Go runtime-type harvest gate (load-time, env-bridged).
 pub mod kuna_gotypes;
 // (kuna) golang cspec auto-selection + the .abi0 stack-ABI model binding

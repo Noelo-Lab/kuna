@@ -1218,6 +1218,24 @@ kuna_options! { self, p1;
             if val { "on" } else { "off" }
         ))
     },
+    "dyldimage" => {
+        let name = p1.trim();
+        if name.is_empty() || name == "none" {
+            std::env::remove_var(crate::kuna_dyldcache::DYLDIMAGE_ENV);
+            Ok("dyld shared cache image selection cleared".to_string())
+        } else {
+            crate::kuna_dyldcache::set_dyldimage_env(name);
+            Ok(format!("dyld shared cache image set to {name}"))
+        }
+    },
+    "dyldcrossrefs" => {
+        let val = on_or_off(p1)?;
+        crate::kuna_dyldcache::set_dyldcrossrefs_env(val);
+        Ok(format!(
+            "dyld shared cache cross-image reference naming turned {}",
+            if val { "on" } else { "off" }
+        ))
+    },
     "swiftdemangle" => {
         let val = on_or_off(p1)?;
         self.analysis_swiftdemangle = val;

@@ -156,9 +156,16 @@ fn engine_unavailable(entry: &str) -> IfaceError {
 pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static, str>> {
     // C++ returns "" for an unknown option (suppressing the current field).
     let on_off = |b: bool| if b { "on" } else { "off" };
-    // (kuna `symbolnamebound`) The one VALUED live reader whose value is not a
-    // fixed token, so it owns its string; every other arm borrows and the
-    // emitted catalog bytes are unchanged.
+    // (kuna `dyldimage`, `symbolnamebound`) The valued live readers whose value
+    // is not a fixed token own their string; every other arm borrows.
+    if option == "dyldimage" {
+        return Some(
+            std::env::var(kuna_decomp::kuna_dyldcache::DYLDIMAGE_ENV)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map_or(Cow::Borrowed("none"), Cow::Owned),
+        );
+    }
     if option == "symbolnamebound" {
         return Some(match conf.analysis_symbolnamebound {
             None => Cow::Borrowed("off"),
@@ -310,6 +317,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "peordinal" => on_off(conf.analysis_peordinal),
         "symbolnamerepair" => on_off(conf.analysis_symbolnamerepair),
         "swiftdemangle" => on_off(conf.analysis_swiftdemangle),
+        "dyldcrossrefs" => on_off(kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled()),
         // (kuna `symbolnamechars`) Three-valued, so it reports its own token.
         "symbolnamechars" => conf.analysis_symbolnamechars.as_str(),
         "msvcfpconst" => on_off(conf.analysis_msvcfpconst),

@@ -58,7 +58,10 @@ pub fn read_image_sliced_repaired(
     path: &str,
     pref: super::macho_fat::SlicePref,
 ) -> std::io::Result<(Vec<u8>, bool)> {
-    let bytes = std::fs::read(path)?;
+    let bytes = match super::kuna_dyldcache::read_selected_image(std::path::Path::new(path)) {
+        Some(image) => image.map_err(std::io::Error::other)?,
+        None => std::fs::read(path)?,
+    };
     let bytes = super::macho_fat::peel_fat_image(bytes, pref);
     let (bytes, shdr) = tolerate_unusable_section_table(bytes);
     let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);

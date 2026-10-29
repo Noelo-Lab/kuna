@@ -94,6 +94,9 @@ pub(crate) mod kuna_rexthunk;
 // (kuna) `peordinal`: name a PE import-by-ordinal from a built-in export table.
 pub(crate) mod kuna_peordinal;
 pub mod macho_fat;
+// (kuna) The dyld shared cache: one image rebuilt as a thin Mach-O, its
+// references into other images named (`dyldimage`, `dyldcrossrefs`).
+pub mod kuna_dyldcache;
 pub mod macho_stubs;
 pub(crate) mod macho_trie;
 pub mod mips_markers;

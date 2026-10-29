@@ -184,6 +184,19 @@ where
         }
     }
 
+    if kuna_decomp::kuna_dyldcache::dyldcrossrefs_enabled() {
+        for xref in super::kuna_dyldcache::xrefs::read_note(bytes) {
+            if xref.kind == super::kuna_dyldcache::xrefs::XrefKind::Slot {
+                out.import_slots.push((xref.addr, xref.addr + 8));
+            }
+            out.imports.push(ImportSym {
+                addr: xref.addr,
+                name: strip_leading_underscore(&xref.name),
+                kind: ImportSymKind::Import,
+            });
+        }
+    }
+
     let symtab = match symtab {
         Some(st) => st,
         None => return finish_with_exports(neutral, out),

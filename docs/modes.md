@@ -36,7 +36,9 @@ session changes only the options that second mode names. Discover them with
 
 The boundary comparisons are exact: a 500 KiB file is `reliable`, and a 2 MiB
 file is `fast`. “Standard mode” in the size policy means the existing
-`reliable` preset. The native CLI reads filesystem metadata; the browser/WASI
+`reliable` preset. The native CLI reads filesystem metadata; for a dyld shared
+cache it uses the summed file size of the selected image's segments instead,
+because the main cache file says nothing about the image. The browser/WASI
 front-end classifies the uploaded virtual file's byte length through the same
 Rust function. An explicit concrete `--mode` bypasses size selection, and a
 later explicit `--option` still overrides the selected preset.

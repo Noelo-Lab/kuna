@@ -2690,9 +2690,14 @@ fn mode_and_options_for_binary(
 ) -> Result<ResolvedMode, String> {
     let requested = mode.unwrap_or("auto");
     let size = if kuna_decomp::modes::mode_is_automatic(requested) {
-        std::fs::metadata(binary)
-            .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
-            .len()
+        match kuna_analysis::loader::kuna_dyldcache::selected_image_size(std::path::Path::new(binary))
+            .and_then(Result::ok)
+        {
+            Some(size) => size,
+            None => std::fs::metadata(binary)
+                .map_err(|e| format!("cannot read input binary metadata for mode auto: {binary}: {e}"))?
+                .len(),
+        }
     } else {
         0
     };
