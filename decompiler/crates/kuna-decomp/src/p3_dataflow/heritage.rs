@@ -2759,9 +2759,9 @@ impl Heritage {
     }
 
     /// Guard the biggest model output contained by a wider heritaged range. On a
-    /// model whose pair returns the high word first, also guard every other
-    /// contained output: a locked register-pair call result covers both words,
-    /// and [`crate::kuna_retcallhalf::whole_pair`] may need the second one.
+    /// model whose four-byte pair returns the high word first, also guard every
+    /// other contained output: a locked register-pair call result covers both
+    /// words, and [`crate::kuna_retcallhalf::whole_pair`] may need the second one.
     fn guard_returns_overlapping(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -2770,7 +2770,7 @@ impl Heritage {
     ) {
         let split = fd.get_func_proto().has_model()
             && crate::kuna_bejoin::wide_pair(fd.get_func_proto().model(), fd.get_arch().manage())
-                .is_some();
+                .is_some_and(|pair| pair.hi.1 == 4 && pair.lo.1 == 4);
         self.guard_returns_in_range(fd, addr, size, addr, size, true, split);
     }
 

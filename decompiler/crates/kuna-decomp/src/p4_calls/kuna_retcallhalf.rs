@@ -334,11 +334,79 @@ fn whole_words(
         _ => {}
     }
     match (call_word(data, hi, 4), call_word(data, lo, 0)) {
-        (Some(h), Some(l)) if h == l => Some(true),
+        (Some(h), Some(l)) if h == l && only_returned(data, h) => Some(true),
         (Some(_), None) if lo_literal => Some(false),
         (None, Some(_)) if hi_literal => Some(false),
         _ => None,
     }
+}
+
+/// Every reader of a call result, through moves, slices and phis, is a RETURN.
+/// A caller that stores, passes or tests the result consumed it, so the words
+/// left in the return registers are no evidence that it returns them.
+fn only_returned(data: &Funcdata, result: VarnodeId) -> bool {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut work = vec![result];
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > 64 {
+            return false;
+        }
+        let Some(v) = data.vbank().get(cur) else { return false };
+        if v.is_persist() {
+            return false;
+        }
+        for reader in v.descend_iter() {
+            let Some(op) = data.obank().get(reader) else { return false };
+            let moves = match op.code() {
+                OpCode::CPUI_RETURN => continue,
+                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
+                    if pending_argument(data, reader, op.get_slot(cur)) {
+                        continue;
+                    }
+                    false
+                }
+                OpCode::CPUI_COPY
+                | OpCode::CPUI_SUBPIECE
+                | OpCode::CPUI_PIECE
+                | OpCode::CPUI_MULTIEQUAL
+                | OpCode::CPUI_INT_ZEXT
+                | OpCode::CPUI_INT_SEXT => true,
+                OpCode::CPUI_INDIRECT => op.get_in(0) == Some(cur),
+                OpCode::CPUI_INT_OR if op.get_in(0) == op.get_in(1) => true,
+                OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => (0..2).any(|slot| {
+                    op.get_in(slot)
+                        .is_some_and(|other| other != cur && is_zero(data, other, ZERO_DEPTH))
+                }),
+                _ => false,
+            };
+            match op.get_out() {
+                Some(out) if moves => work.push(out),
+                _ => return false,
+            }
+        }
+    }
+    true
+}
+
+/// An input of a later call whose parameter recovery has not made it an
+/// argument, as upstream's `checkCallDoubleUse` treats it.
+fn pending_argument(data: &Funcdata, call: OpId, slot: i32) -> bool {
+    let Some(index) = data.get_call_specs_index(call) else { return false };
+    let spec = data.get_call_specs(index);
+    let placeholder = spec.get_stack_placeholder_slot();
+    if slot <= 0 || slot == placeholder || !spec.is_input_active() {
+        return false;
+    }
+    let active = spec.active_input();
+    let trial = slot - if placeholder < 0 || slot < placeholder { 1 } else { 2 };
+    if trial < 0 || trial >= active.get_num_trials() {
+        return false;
+    }
+    let trial = active.get_trial(trial);
+    !(trial.is_checked() && trial.is_active())
 }
 
 /// A word at its ABI position in one locked integer call result.

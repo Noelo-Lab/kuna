@@ -1,5 +1,6 @@
 //! Signed DI-mode call results survive stores and full-width caller returns
-//! under `libgccsigs`, which is off by default.
+//! under `libgccsigs`, which is off by default, and a caller that consumes a
+//! declared wide result does not return it.
 use crate::common;
 use object::{
     write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags, SymbolKind,
@@ -322,6 +323,52 @@ int main(void) {{
                     );
                 }
             }
+        }
+    }
+}
+
+#[test]
+fn a_consumed_wide_result_is_not_a_return() {
+    if Command::new("clang").arg("--version").output().is_err() {
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let fixture = root.path().join("consumed.c");
+    std::fs::write(
+        &fixture,
+        r#"
+long long f(long long a);
+long long g64;
+long long plain(long long a){return f(a);}
+void store(long long a,long long *p){*p=f(a);}
+void global(long long a){g64=f(a);}
+void twice(long long a,long long *p){p[0]=f(a);p[1]=f(a+1);}
+"#,
+    )
+    .unwrap();
+    for level in ["-O0", "-O2"] {
+        let image = root.path().join("consumed.o");
+        common::process::required_output(
+            Command::new("clang")
+                .args(["-target", "armeb-linux-gnueabi", "-fno-pic", level, "-c"])
+                .arg(&fixture)
+                .arg("-o")
+                .arg(&image),
+        );
+        for (function, signature) in [
+            ("plain", "long long plain("),
+            ("store", "void store("),
+            ("global", "void global("),
+            ("twice", "void twice("),
+        ] {
+            let (output, error, status) = common::run_kuna(&[
+                "decompile", image.to_str().unwrap(), function, "--json",
+                "--assert", "prototype f long long f(long long a)",
+            ]);
+            assert_eq!(status, 0, "{error}");
+            let document: serde_json::Value = serde_json::from_str(&output).unwrap();
+            let body = document["functions"][0]["code"].as_str().unwrap();
+            assert!(body.starts_with(signature), "{level} {function}: {body}");
         }
     }
 }

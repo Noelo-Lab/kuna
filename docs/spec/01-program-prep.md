@@ -1863,7 +1863,8 @@ moves.
   at load and committed only when the option is on. It ships off because the
   locked eight-byte result still costs a caller that returns arithmetic on the
   quotient: §4's whole-pair proof keeps both return words only when each is a
-  bare slice of the call result or a literal, so `return a / b + 1;`,
+  bare slice of the call result or a literal and nothing else reads the
+  quotient, so `return a / b + 1;`,
   `return -(a / b);` and `return f ? a / b : c;` keep only the high word or
   return nothing, where the off output returns every word.
 - **(kuna) Measured libc signatures** (`libcsigs`,

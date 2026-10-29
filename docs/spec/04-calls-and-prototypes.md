@@ -2078,8 +2078,8 @@ if no join can be built); more pieces chain PIECEs over contiguous trials.
 The (kuna) `returnpair` gate intercepts this join — §4.4.
 
 A wider heritaged register range can contain several separate output entries.
-On a model whose register pair returns the high word first (`kuna_bejoin`'s
-`wide_pair`: SPARC, PowerPC, MIPS and ARM big-endian),
+On a model whose four-byte register pair returns the high word first
+(`kuna_bejoin`'s `wide_pair`: 32-bit SPARC, PowerPC, MIPS and ARM big-endian),
 `Heritage::guard_returns_overlapping` keeps the extra entries as inactive
 candidates instead of dropping their bytes or treating the range alone as
 evidence that the caller returns every word. Every other model keeps
@@ -2104,8 +2104,12 @@ other word on every incoming edge. Other paths may replace either word with
 a literal, including constant-only expressions not yet folded by the
 simplification pool and the upper zero word of a zero-extension. A lower word
 inside an extension keeps its source provenance. Unrelated live values do not
-establish a pair, and at least one path must return a whole wide value. The
-ABI supplies the join order. Explicit
+establish a pair, and at least one path must return a whole wide value.
+Every reader of that call result, through moves, slices and phis, must be a
+RETURN or an input that a later call's parameter recovery has not made an
+argument: a caller that stores, passes or tests the result consumed it, so a
+void `*p = f(x);` or `G = f(x);` that leaves the words in the return
+registers is not a return. The ABI supplies the join order. Explicit
 caller outputs and competing output classes are unchanged. Provenance rejects
 single-word truncations that move a different word into the return storage,
 including the SPARC register-window controls in the regression.
