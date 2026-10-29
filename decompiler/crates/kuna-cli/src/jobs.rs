@@ -218,6 +218,18 @@ pub(crate) struct PoolConfig<'a> {
     /// (kuna `armframes`) The parent's frame-recovery record, which a worker
     /// replays instead of searching the image again.
     pub(crate) arm_frames: Option<String>,
+    /// Told about the first decompile of every target as its chunk lands — the
+    /// `decompile-project --progress` feed.
+    pub(crate) watch: Option<&'a dyn PoolWatch>,
+}
+
+/// What a [`run_pool`] reports while it runs, before its results are merged.
+pub(crate) trait PoolWatch: Sync {
+    /// The workers the memory trim left the first pass.
+    fn workers(&self, n: usize);
+    /// A chunk's first-pass records.  A structure-naming pass that decompiles
+    /// some of them again later is not reported.
+    fn landed(&self, results: &[FuncResult]);
 }
 
 /// How many decode lanes `--jobs` asks the discovery walk for.
@@ -314,6 +326,7 @@ pub(crate) fn run_pool(
     let first = Phase {
         synth: if cfg.synth_base.is_some() { SynthWorker::Record } else { SynthWorker::Off },
         table: None,
+        watch: cfg.watch,
     };
     // Dispatch order is NOT output order: work is planned longest-first into
     // equal-work chunks, and every result is filed by its slot index, so the
@@ -362,6 +375,9 @@ fn run_planned(
 ) -> Result<PlannedRun, String> {
     let total = targets.len();
     let workers = jobs.min(plan.len());
+    if let Some(watch) = phase.watch {
+        watch.workers(workers);
+    }
     let banner = banner(&plan, workers);
     let source = PlannedChunks { plan, cursor: AtomicUsize::new(0) };
     let slots: Mutex<Vec<Option<FuncResult>>> = Mutex::new((0..total).map(|_| None).collect());
@@ -373,6 +389,9 @@ fn run_planned(
         &source,
         &PoolReport { tag: JOBS_TAG, banner, workers, finish_delivered: false },
         &|indices: &[usize], produced: Vec<FuncResult>| {
+            if let Some(watch) = phase.watch {
+                watch.landed(&produced);
+            }
             let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
             for (&slot, r) in indices.iter().zip(produced) {
                 slots[slot] = Some(r);
@@ -393,6 +412,7 @@ fn run_planned(
 struct Phase<'t> {
     synth: SynthWorker,
     table: Option<&'t [u8]>,
+    watch: Option<&'t dyn PoolWatch>,
 }
 
 /// The `--stream` pool: the same workers over a caller-supplied dynamic
@@ -429,7 +449,7 @@ pub(crate) fn run_pool_streaming(
     let retries = run_pool_with(
         cfg,
         &session,
-        &Phase { synth: SynthWorker::Off, table: None },
+        &Phase { synth: SynthWorker::Off, table: None, watch: None },
         targets,
         source,
         &PoolReport { tag: STREAM_TAG, banner, workers, finish_delivered: true },
@@ -2758,6 +2778,7 @@ mod tests {
             serial_callee_first: false,
             elem_objects: false,
             arm_frames: None,
+            watch: None,
         }
     }
 

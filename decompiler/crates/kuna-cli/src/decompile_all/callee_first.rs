@@ -30,7 +30,7 @@ pub(super) fn decompile_entries_callee_first(
         want_tokens: false,
         want_pointer_arguments: true,
     };
-    decompile_callee_first(prog, args, targets, explicit, base)
+    decompile_callee_first(prog, args, targets, explicit, base, &mut |_| {})
 }
 
 /// (kuna `protoorder`) [`decompile_entries_callee_first`] for a driver that
@@ -43,6 +43,7 @@ pub(crate) fn decompile_callee_first(
     targets: Vec<FunctionEntry>,
     explicit: bool,
     base: kuna_console::project::DecompileOptions,
+    landed: &mut dyn FnMut(&FuncResult),
 ) -> Vec<FuncResult> {
     super::arm_fn_budgets(prog, args);
     let cycles = prog.arch().protoorder.states_in_cycles();
@@ -95,7 +96,9 @@ pub(crate) fn decompile_callee_first(
     prog.arch_mut().kuna_voidret = Default::default();
     let mut reads = VoidReads::default();
     for &(index, park) in &plan {
-        slots[index] = Some(decompile_planned(prog, &targets[index], park, &base));
+        let first = decompile_planned(prog, &targets[index], park, &base);
+        landed(&first);
+        slots[index] = Some(first);
         if let Some(k) = vote_key(&targets[index]) {
             reads.decompiled(k);
         }

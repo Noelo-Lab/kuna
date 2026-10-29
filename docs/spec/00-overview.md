@@ -2056,6 +2056,32 @@ the only trace. Progress writes are the exception in both directions: the status
 file and the running README report on the export rather than being it, so a
 failed rewrite of either warns and is retried on the next tick.
 
+(kuna) **Progress without streaming.** `decompile-project --progress`
+(`decompiler/crates/kuna-cli/src/project_stream/progress.rs`) keeps the half of
+the streamed contract a pipeline polls — `.streaming` and a per-function feed —
+and drops the incremental artifacts, which is what cost reproducibility. It does not
+schedule or write anything itself: it runs the non-stream export
+(`decompiler/crates/kuna-cli/src/decompile_project.rs (decompile_project,
+ExportWatch)`) with an observer attached, so the static plan, the
+structure-naming replay, the positional merge and the four artifacts are that
+export's, byte for byte, and the folder is exactly as independent of the job
+count as the non-stream export is. The observer is told about the load, the
+resolved target set, every target's *first* result — from the pool's planned
+first pass through `decompiler/crates/kuna-cli/src/jobs.rs (PoolWatch)`, a chunk
+at a time, or from the serial and callee-first loops one function at a time
+(`decompiler/crates/kuna-console/src/project.rs
+(decompile_export_targets_watched)`) — the start of finalization, and the
+written artifacts. Later decisions about a function (the structure-naming pass,
+the convergence sweeps) are not reported, because the feed is progress, not the
+answer: it is appended to `index.jsonl` in completion order with no `.c` span,
+and the file is replaced at the end by the address-ordered index computed from
+the final results, the one artifact this layout adds. One clock thread publishes
+`.streaming` throughout and the running README until every function is in; a
+lock shared with the move to `finalizing` keeps a late running README from
+landing on top of the export's own. The previous export's `.c`, `.h` and `.asm`
+are removed where `--stream` would truncate them, so the folder never
+pairs a new feed with an old body.
+
 (kuna) **Declared function boundaries.** Every function boundary the engine knows
 is derived: discovery supplies the entries, and the extent is the
 address-contiguous clip `[entry, next_entry)` over an unbounded flow follow

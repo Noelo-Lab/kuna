@@ -20,6 +20,9 @@ mod instruction_mask;
 #[path = "macro_symbol.rs"]
 mod macro_symbol;
 
+#[path = "ppc_lwarx_reservation.rs"]
+mod ppc_lwarx_reservation;
+
 #[path = "ppc_nested_operands.rs"]
 mod ppc_nested_operands;
 

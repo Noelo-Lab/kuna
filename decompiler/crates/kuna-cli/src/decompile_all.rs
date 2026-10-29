@@ -903,6 +903,7 @@ pub(crate) fn decompile_targets_pooled(
     synth_base: Option<shard::Replay>,
     serial_callee_first: bool,
     arm_frames: Option<String>,
+    watch: Option<&dyn jobs::PoolWatch>,
 ) -> Result<jobs::PoolOutput, String> {
     let specs = flatten_targets(targets);
     let inventory = flatten_targets(inventory);
@@ -917,6 +918,7 @@ pub(crate) fn decompile_targets_pooled(
     cfg.synth_base = synth_base;
     cfg.serial_callee_first = serial_callee_first;
     cfg.arm_frames = arm_frames;
+    cfg.watch = watch;
     cfg.elem_objects = targets.len() <= 1;
     cfg.want_pointer_arguments = true;
     let mut pooled = jobs::run_pool(&cfg, &specs, &inventory)?;
@@ -1009,6 +1011,7 @@ pub(crate) fn pool_config<'a>(
         serial_callee_first: false,
         elem_objects: false,
         arm_frames: None,
+        watch: None,
     }
 }
 
@@ -1289,6 +1292,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             synth,
             callee_first,
             arm_frames,
+            None,
         )?;
         return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior });
     }

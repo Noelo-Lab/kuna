@@ -3268,6 +3268,11 @@ ReadmeLayout, render_readme_streaming)`), the first describing the
 streamed `.c`/`.asm` and the two extra files, the second adding a banner
 and a status table while the export runs; the `Standard` layout is
 byte-identical to what the single renderer emitted before it was split.
+A third layout, `Progress`, is only ever rendered while a run is going: a
+`--progress` export writes the `Standard` artifacts at the end, so
+its running README inventories those, adds the feed form of `index.jsonl` and
+`.streaming`, and says the `.c`/`.h`/`.asm` do not exist until the export
+completes; the completed export writes the `Standard` README itself.
 
 **The graph document.** `kuna decompile-graph`
 (`decompiler/crates/kuna-cli/src/decompile_graph.rs`) is another additive reader
