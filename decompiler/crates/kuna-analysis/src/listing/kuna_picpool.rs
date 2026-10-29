@@ -92,6 +92,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use kuna_base::space::{spacetype, AddrSpace};
+use kuna_decomp::kuna_fasthash::FxBuildHasher;
 use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 
@@ -226,10 +227,10 @@ struct Pending {
 /// predecessor delivers the same one (a meet), before it answers any address.
 #[derive(Default)]
 pub(super) struct PicPool {
-    at: HashMap<u64, Vec<Pending>>,
+    at: HashMap<u64, Vec<Fact>, FxBuildHasher>,
     /// GOT bases, keyed by the instruction they reach like `at`, but carried
     /// along every edge with no hop bound.
-    bases_at: HashMap<u64, Vec<Pending>>,
+    bases_at: HashMap<u64, Vec<Pending>, FxBuildHasher>,
     nodes: Vec<Node>,
     /// `(from, to, kind)`.
     edges: Vec<(u64, u64, Edge)>,
@@ -237,7 +238,7 @@ pub(super) struct PicPool {
     live: bool,
     /// What the walk had queued at the first pool load: each was queued by an
     /// instruction that carried nothing, so nothing holds there.
-    dry: HashSet<u64>,
+    dry: HashSet<u64, FxBuildHasher>,
 }
 
 /// One decoded instruction, as [`PicPool::step`] reads it.
@@ -352,11 +353,11 @@ impl PicPool {
         if pending.is_empty() && bases.is_empty() && fresh.is_none() {
             return None;
         }
-        let ins: Vec<Fact> = bases
-            .iter()
-            .map(|&p| Fact { p, base: true })
-            .chain(pending.iter().map(|&p| Fact { p, base: false }))
-            .collect();
+        let ins: Vec<Fact> = if bases.is_empty() {
+            pending
+        } else {
+            bases.iter().map(|&p| Fact { p, base: true }).chain(pending).collect()
+        };
         let ev = evaluate(vma, ops, &ins, img);
         let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
         let kept = |f: &Fact| {
@@ -378,20 +379,19 @@ impl PicPool {
             }
         }
         if !leaves_the_run(ops) {
-            let mut carry: Vec<(Fact, u32)> = Vec::new();
-            for (i, f) in ins.iter().enumerate().filter(|(_, f)| !f.base) {
-                if kept(f) {
-                    carry.push((*f, 1 << i));
-                }
-            }
-            if let Some(p) = fresh.filter(|p| !calls || survives_calls(p, img.preserved)) {
-                carry.retain(|(o, _)| !overlaps(&o.p, &p));
-                carry.push((Fact { p, base: false }, 0));
-            }
+            let loaded = fresh.filter(|p| !calls || survives_calls(p, img.preserved));
+            let carry = ins
+                .iter()
+                .enumerate()
+                .filter(|(_, f)| !f.base && kept(f) && !loaded.is_some_and(|p| overlaps(&f.p, &p)))
+                .map(|(i, f)| (*f, 1u32 << i))
+                .chain(loaded.map(|p| (Fact { p, base: false }, 0)));
+            let mut tracked = 0;
             for (mut f, deps) in carry {
                 f.p.hops += 1;
-                if f.p.hops <= MAX_HOPS && outs.iter().filter(|(o, _)| !o.base).count() < MAX_TRACKED {
+                if f.p.hops <= MAX_HOPS && tracked < MAX_TRACKED {
                     outs.push((f, deps));
+                    tracked += 1;
                 }
             }
         }
@@ -425,14 +425,12 @@ impl PicPool {
             }
         }
 
-        let carried: Vec<Pending> = outs.iter().filter(|(f, _)| !f.base).map(|(f, _)| f.p).collect();
-        if let Some(next) = fall.filter(|_| !carried.is_empty()) {
-            self.at.entry(next).or_default().extend(carried);
+        if let Some(next) = fall.filter(|_| outs.iter().any(|(f, _)| !f.base)) {
+            self.at.entry(next).or_default().extend(outs.iter().filter(|(f, _)| !f.base).map(|(f, _)| *f));
         }
         if fall.is_none() {
-            let carried: Vec<Pending> = skip.iter().filter(|(f, _)| !f.base).map(|(f, _)| f.p).collect();
-            if !carried.is_empty() {
-                self.at.entry(next).or_default().extend(carried);
+            if skip.iter().any(|(f, _)| !f.base) {
+                self.at.entry(next).or_default().extend(skip.iter().filter(|(f, _)| !f.base).map(|(f, _)| *f));
             }
         }
         let based: Vec<Pending> =
@@ -443,8 +441,10 @@ impl PicPool {
             .chain(branch_targets.iter().copied().filter(|&to| !(skip_at.is_some() && to == next)))
             .map(|to| (to, &based))
             .chain(skip_at.map(|_| (next, &skipped)));
-        for (to, carry) in reach.collect::<Vec<_>>() {
-            self.reach(to, carry);
+        if !(based.is_empty() && skipped.is_empty()) {
+            for (to, carry) in reach {
+                self.reach(to, carry);
+            }
         }
 
         let seeded = fresh.and_then(|p| {
@@ -506,8 +506,9 @@ impl PicPool {
         if self.nodes.iter().all(|n| n.refs.is_empty()) {
             return verdict;
         }
-        let index: HashMap<u64, usize> = self.nodes.iter().enumerate().map(|(i, n)| (n.vma, i)).collect();
-        let mut preds: HashMap<u64, Vec<(u64, Edge)>> = HashMap::new();
+        let index: HashMap<u64, usize, FxBuildHasher> =
+            self.nodes.iter().enumerate().map(|(i, n)| (n.vma, i)).collect();
+        let mut preds: HashMap<u64, Vec<(u64, Edge)>, FxBuildHasher> = HashMap::default();
         for &(from, to, kind) in &self.edges {
             if index.contains_key(&to) {
                 preds.entry(to).or_default().push((from, kind));
@@ -578,6 +579,27 @@ struct Eval {
 /// in `.got`, or a plain copy of a base.
 fn evaluate(vma: u64, ops: &[FullOp], ins: &[Fact], img: &Image) -> Eval {
     let (mapped, data, got) = (img.mapped, img.data_space, img.got);
+    // Without a base among its inputs or its own PC among its constants, nothing
+    // this instruction computes is an address; only its writes matter.
+    let inert = !ins.iter().any(|f| f.base)
+        && !ops.iter().flat_map(|op| op.ins.iter()).any(|vn| is_constant(vn) && is_own_pc(vn.offset, vma));
+    if inert
+        || !ops.iter().flat_map(|op| op.ins.iter()).any(|vn| match key_of(vn, data) {
+            Some(Key::Reg(off, size)) => ins.iter().any(|f| spans_overlap(f.p.off, f.p.size, off, size)),
+            _ => false,
+        })
+    {
+        let written = ops
+            .iter()
+            .filter_map(|op| match op.out.as_ref().and_then(|o| key_of(o, data)) {
+                Some(Key::Reg(off, size)) if ins.iter().any(|f| spans_overlap(f.p.off, f.p.size, off, size)) => {
+                    Some((off, size))
+                }
+                _ => None,
+            })
+            .collect();
+        return Eval { found: Vec::new(), written, new_bases: Vec::new() };
+    }
     let mut vals: Vec<(Key, Known)> = ins
         .iter()
         .enumerate()
