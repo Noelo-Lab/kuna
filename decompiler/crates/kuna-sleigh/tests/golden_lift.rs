@@ -312,6 +312,7 @@ fixture_test!(golden_lift_boolless, "boolless.txt");
 fixture_test!(golden_lift_ccmp, "ccmp.txt");
 fixture_test!(golden_lift_condexesub, "condexesub.txt");
 fixture_test!(golden_lift_floatprint, "floatprint.txt");
+fixture_test!(golden_lift_gh6990_returnpair, "gh6990-returnpair.txt");
 fixture_test!(golden_lift_gh7139_x86_16, "gh7139-x86-16-disp16-signed.txt");
 fixture_test!(golden_lift_gh8817_v850, "gh8817-v850indbranch.txt");
 fixture_test!(golden_lift_gh8844_avr, "gh8844-avr-rjmpwrap.txt");

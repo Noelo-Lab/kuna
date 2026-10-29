@@ -26,10 +26,11 @@ operand loads. Thirteen lines change only unique-space offsets by `0xc00`.
 The refreshed runtime output uses the x86 specs independently matched against
 the pinned C++ compiler; both focused fixture replays pass.
 
-The SPARC `gh6990-returnpair.txt` capture remains bootstrap metadata for the
-decompiler tests, not a byte-layout expectation for the lifter. Integer branch
-condition snapshots change unique-space offsets; execution regressions now
-check incoming flags, delay-slot updates, branch destinations and annulment.
+`gh6990-returnpair.txt` was refreshed for the SPARC delay-slot branch-condition
+correction. The SPARC specs it replays match the pinned C++ compiler's digests.
+The function contains no `cs`, `neg`, `vs` or register branch, so its
+instructions, operations and temporary aliasing are unchanged; 150 lines change
+only unique-space offsets by `0xc00`.
 
 ## Regeneration
 

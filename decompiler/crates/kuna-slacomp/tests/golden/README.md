@@ -4,7 +4,7 @@
 stream produced by Ghidra's C++ `sleigh_opt` at revision
 `cef869af04c4740a71ad31a55704045b1b0d1644`. Compression bytes are excluded because
 flate2 and zlib can compress the same stream differently. The manifest covers
-representative specs, including both endiannesses, Toy variants, major processor families,
+48 specs, including both endiannesses, Toy variants, major processor families,
 Hexagon's named sections and crossbuilds, and inherited context assignments
 across nested `with` blocks. The named-bitrange fixtures exercise reads and
 writes of one-bit, nine-bit and byte-aligned aliases in both endiannesses.
@@ -15,10 +15,15 @@ The Rust test compiles the listed sources and compares directly with these
 digests. It needs no prebuilt `.sla` files, Ghidra installation or C++ toolchain.
 The other golden text files pin scanner, parser and macro-expansion traces.
 
-SPARC's corrected condition snapshots and floating-to-integer destinations are
-covered by instruction-execution and conversion regressions rather than a
-compiled-spec digest. Its temporary layout intentionally differs from the
-historical oracle.
+The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
+`fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
+compiler on the corrected sources, which reproduces the previous hashes on the
+unmodified sources; the `fqtox` correction was regenerated with `slacomp`,
+which reproduces those C++ digests. The current digests also cover the branch
+conditions sampled before a delay slot (`icc`/`xcc` `cs`, `neg` and `vs`, and
+the non-annulled register branches). They were regenerated with the recorded
+C++ compiler, which reproduces the previous SPARC digests on the previous
+sources; `slacomp` produces the same digests.
 
 The x86 entries include the width-specific x87 integer-conversion operations,
 the control-word writes of `FXRSTOR` and `XRSTOR`/`XRSTORS`, and the signed
