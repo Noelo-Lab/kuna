@@ -2,7 +2,7 @@
 need_id: arm-pic-got-xrefs
 title: ARM -fPIC callback read through the GOT has no reference
 track: tooling
-status: open
+status: closed
 severity: major
 probe_id: p-fd504c2f4ae3
 acceptance_id: a-336a275d03d0
@@ -12,14 +12,14 @@ instances: 2
 challenges: []
 rounds: []
 first_seen_round: null
-attempts: 0
+attempts: 1
 covered_by_option: null
 touches: [decompiler/crates/kuna-analysis/src/listing/kuna_picpool.rs, decompiler/crates/kuna-analysis/src/listing/xrefs.rs]
 scope: small
 regression_of: null
-pr: null
+pr: 1264
 closed_in_round: null
-closing_pr: null
+closing_pr: "1264"
 reject_reason: null
 ---
 
@@ -132,3 +132,4 @@ _not yet refuted_
 ## Decision log
 
 - filed by hand from one vendor binary and its synthetic reduction; prior art: `arm-pic-literal-pool` (#474)
+- closed: acceptance `a-336a275d03d0` passes with #1264 (promoted to `tests/cli/arm-pic-got-callback-xref.json`, with `arm-pic-mapped-displacement-string` and `arm-pic-displacement-not-a-pointer`); the reproduction still passes on the unpatched tree.

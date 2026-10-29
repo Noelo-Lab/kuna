@@ -6157,14 +6157,19 @@ holds there, which is exactly what the meet over every edge would answer. An
 instruction that a recovered frame's walk refused to enter is treated the same
 way, because the frame's edge into it is in no other body's record.
 
-Three shapes are not covered. A GOT base inherited from a caller (one the
+Five shapes are not covered. A GOT base inherited from a caller (one the
 function never forms itself) is not tracked: on ARM the register that holds it is
 only callee-saved, not reserved, so assuming it would need every caller to
 agree. A pool word does not cross a branch, so a slot load reached by a branch, as when
 GCC merges the tails of switch cases into one shared `ldr r3,[r6,r3]`, files
-nothing, even when every path brings the same offset. And code that a function walked
+nothing, even when every path brings the same offset. Code that a function walked
 later reaches by jumping into a body already walked is not part of that body's
-meet.
+meet. A pool word the PC meets only inside an address (`ldr r3,[pc,r3]`, the A32
+read of a TLS initial-exec slot) composes nothing a register holds, so the slot is
+not read, and a word that is itself a mapped address keeps its pointer edge from
+the load. And the Thumb-bit strip cannot tell a Thumb function from a datum at an
+odd address inside an executable section (a PIC image that links `.rodata` into
+`.text`): such a datum is filed one byte low.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
