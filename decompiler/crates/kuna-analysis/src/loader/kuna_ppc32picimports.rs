@@ -5,6 +5,7 @@
 use super::elf_plt::PltSym;
 use object::{Object, ObjectSection, ObjectSymbol, SectionFlags, SectionKind, SymbolKind};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum Value {
@@ -368,6 +369,7 @@ fn resolver_exit(file: &object::File<'_>, code: &[(u32, u32)]) -> BTreeSet<u32> 
     {
         return exits;
     }
+    let mut sources = None;
     for window in code.windows(14) {
         let start = window[0].0;
         if window[13].0 != start + 52 {
@@ -393,10 +395,19 @@ fn resolver_exit(file: &object::File<'_>, code: &[(u32, u32)]) -> BTreeSet<u32> 
             continue;
         }
         // An entry bypassing the load invalidates the dispatch certificate.
-        if code.iter().any(|&(pc, word)| {
-            branch(pc, word)
-                .is_some_and(|b| b.target > start && b.target <= start + 52 && pc != start + 8)
-        }) {
+        let sources = sources.get_or_insert_with(|| {
+            let mut sources: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+            for &(pc, word) in code {
+                if let Some(b) = branch(pc, word) {
+                    sources.entry(b.target).or_default().push(pc);
+                }
+            }
+            sources
+        });
+        if sources
+            .range(start + 1..=start + 52)
+            .any(|(_, pcs)| pcs.iter().any(|&pc| pc != start + 8))
+        {
             continue;
         }
         exits.insert(start + 52);
@@ -404,7 +415,67 @@ fn resolver_exit(file: &object::File<'_>, code: &[(u32, u32)]) -> BTreeSet<u32> 
     exits
 }
 
+/// [`prove`], remembered for the last few images: `format::resolve_imports` runs
+/// about twenty times per load. The proof reads only the image, so the key hashes
+/// every byte of it and its length.
 pub(super) fn resolve(
+    file: &object::File<'_>,
+    slots: &BTreeMap<u64, Vec<u8>>,
+    imports: &[PltSym],
+) -> Vec<PltSym> {
+    type Entry = ((usize, u64, u64), Vec<(u64, Vec<u8>)>);
+    static CACHE: Mutex<Vec<Entry>> = Mutex::new(Vec::new());
+    let object::File::Elf32(elf) = file else {
+        return prove(file, slots, imports);
+    };
+    let key = fingerprint(elf.data());
+    let unpack = |found: &[(u64, Vec<u8>)]| {
+        found
+            .iter()
+            .map(|(addr, name)| PltSym {
+                addr: *addr,
+                name: name.clone(),
+            })
+            .collect()
+    };
+    if let Some((_, hit)) = CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|e| e.0 == key)
+    {
+        return unpack(hit);
+    }
+    let found: Vec<_> = prove(file, slots, imports)
+        .into_iter()
+        .map(|s| (s.addr, s.name))
+        .collect();
+    let out = unpack(&found);
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() == 4 {
+        cache.remove(0);
+    }
+    cache.push((key, found));
+    out
+}
+
+fn fingerprint(data: &[u8]) -> (usize, u64, u64) {
+    const K: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mix = |h: u64, v: u64| (h ^ v).wrapping_mul(K).rotate_left(29);
+    let (mut a, mut b) = (0x243F_6A88_85A3_08D3u64, 0x1319_8A2E_0370_7344u64);
+    let mut chunks = data.chunks_exact(16);
+    for c in &mut chunks {
+        a = mix(a, u64::from_le_bytes(c[..8].try_into().unwrap()));
+        b = mix(b, u64::from_le_bytes(c[8..].try_into().unwrap()));
+    }
+    for &byte in chunks.remainder() {
+        a = mix(a, u64::from(byte));
+        b = mix(b, u64::from(byte).rotate_left(17));
+    }
+    (data.len(), a, b)
+}
+
+fn prove(
     file: &object::File<'_>,
     slots: &BTreeMap<u64, Vec<u8>>,
     imports: &[PltSym],
