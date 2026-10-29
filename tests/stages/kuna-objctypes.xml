@@ -49,10 +49,10 @@ c0035fd6
   <com>load addr 0x100000740</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option objcivars off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
   <com>option objc on</com>
-  <com>option objcivars off</com>
   <com>read symbols</com>
   <com>load addr 0x100000740</com>
   <com>decompile</com>
@@ -60,6 +60,7 @@ c0035fd6
   <com>load addr 0x100000798</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option objcivars on</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_objc_types_arm64</com>
   <com>option objc on</com>

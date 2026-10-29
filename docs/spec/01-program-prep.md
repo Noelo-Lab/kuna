@@ -4336,11 +4336,17 @@ every other binary's pass list is byte-identical to before the pass existed):
     (`@"Base"`) and a property's attribute string (`T@"Base",&,N,Vinner`, read
     from the `property_list_t` of every class, metaclass, category and
     protocol into a getter `<T>@:` and, unless `R`, a setter `v@:<T>`, with
-    `G`/`S` custom selectors honoured). The selector table keeps, of two
+    `G`/`S` custom selectors honoured; a protocol's class properties too when
+    its record is long enough to carry them). The selector table keeps, of two
     declarations that agree once frame offsets and class names are erased
     (`@16@0:8` and `@"Base"@:`), the one naming the class, so a synthesized
     getter is emitted as `Base * -[Holder inner](Holder *self, …)`, its setter
-    takes `Base *arg1`, and the `objc_msgSend$inner` stub returns `Base *`. The
+    takes `Base *arg1`, and the `objc_msgSend$inner` stub returns `Base *`. An
+    IMP is typed with its *own* class's property spelling first, so two
+    classes whose `view` return different classes each keep theirs; only a
+    stub, which belongs to no class, takes the first spelling seen. Every
+    declaration — class, category and protocol — is recorded before any IMP is
+    emitted. The
     decoder resolves `@"Base"` to the struct the layout built — a pointer built
     before the class's layout lands is to a *declared* record and reads the
     completion afterwards — so a field read through any of them renders:

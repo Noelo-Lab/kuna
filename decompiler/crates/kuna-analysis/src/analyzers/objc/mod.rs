@@ -145,9 +145,10 @@ impl AnalysisPass for ObjcMetadataPass {
         let categories = kuna_objccats::categories(&img, ctx.file);
 
         // Every declaration's encoding first — methods and properties of classes,
-        // metaclasses and categories — so a getter emitted below takes the
-        // class-naming spelling its property gives it whichever class comes first.
-        for (class, _) in &classes {
+        // metaclasses, categories and protocols — so a getter emitted below takes
+        // the class-naming spelling its own property gives it whichever class
+        // comes first.
+        for (class, name) in &classes {
             let meta_ro = classt::metaclass_ro(&img, class.isa);
             for ro in [Some(class.ro), meta_ro].into_iter().flatten() {
                 if let Some(list) = classt::base_methods(&img, ro) {
@@ -157,7 +158,7 @@ impl AnalysisPass for ObjcMetadataPass {
                 }
                 if let Some(list) = classt::base_properties(&img, ro) {
                     for (sel, enc) in kuna_objcprops::declarations(&img, list) {
-                        selectors.record(&sel, Some(&enc));
+                        selectors.record_for_class(name, &sel, &enc);
                     }
                 }
             }
@@ -170,8 +171,20 @@ impl AnalysisPass for ObjcMetadataPass {
             }
             for list in [cat.instance_properties, cat.class_properties].into_iter().flatten() {
                 for (sel, enc) in kuna_objcprops::declarations(&img, list) {
-                    selectors.record(&sel, Some(&enc));
+                    match &cat.class {
+                        Some(class) => selectors.record_for_class(class, &sel, &enc),
+                        None => selectors.record(&sel, Some(&enc)),
+                    }
                 }
+            }
+        }
+        let protocols = kuna_objcprotos::protocols(&img, ctx.file);
+        for proto in &protocols {
+            for m in &proto.methods {
+                selectors.record(&m.selector, m.types.as_deref());
+            }
+            for (sel, enc) in &proto.properties {
+                selectors.record(sel, Some(enc));
             }
         }
 
@@ -202,20 +215,16 @@ impl AnalysisPass for ObjcMetadataPass {
                 self.emit_methods(&img, &tctx, architecture, &cat.label, '+', list, None, &mut selectors, &mut out);
             }
         }
-        for proto in kuna_objcprotos::protocols(&img, ctx.file) {
+        for proto in &protocols {
             out.symbols.push(SymFact {
                 addr: proto.addr,
                 name: format!("_OBJC_PROTOCOL_$_{}", proto.name),
                 kind: SymKind::Data,
             });
             for m in &proto.methods {
-                selectors.record(&m.selector, m.types.as_deref());
                 if m.selector_va != 0 {
                     selectors.name(&mut out, m.selector_va, &m.selector);
                 }
-            }
-            for (sel, enc) in &proto.properties {
-                selectors.record(sel, Some(enc));
             }
         }
         let refs = kuna_objcrefs::emit(&img, ctx.file, ctx.arch, &tctx, &mut selectors, &mut out);
@@ -283,9 +292,11 @@ impl ObjcMetadataPass {
             // FunctionSymbol installed above with that same `-[Class sel]` name).
             // Best-effort — an unparseable / absent encoding leaves the IMP *named*
             // (above) but untyped, never a failure.
-            // The agreed spelling of the selector (a property's, naming the class)
-            // when there is one; the method's own otherwise.
-            let enc = selectors.encoding(&m.selector).map(str::to_string).or_else(|| m.types.clone());
+            // The spelling the class's own property gives the selector, else the
+            // agreed one (a property of another class naming the class), else the
+            // method's own.
+            let owner = class.split('(').next().unwrap_or(class);
+            let enc = selectors.encoding_for_class(owner, &m.selector).map(str::to_string).or_else(|| m.types.clone());
             if let Some(enc) = enc.as_deref() {
                 if let Some(pieces) = encoding::decode_method(&label, enc, tctx, None) {
                     out.prototypes.push(pieces);

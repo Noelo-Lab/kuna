@@ -62,6 +62,10 @@ pub struct Selectors {
     /// The SDK headers' declarations (`objcsdk`), consulted for a selector this
     /// image declares nowhere.
     sdk: HashMap<String, Option<String>>,
+    /// Per `(class, selector)`, the class-naming spelling that class's own
+    /// property gave the selector — what its IMP is typed with, so another
+    /// class's `view` returning a different class cannot reach it.
+    by_class: HashMap<(String, String), String>,
     /// Selector strings that already carry a `sel_` symbol.
     named: HashSet<u64>,
 }
@@ -91,6 +95,21 @@ impl Selectors {
                     self.encodings.insert(selector.to_string(), Some(new.to_string()));
                 }
             }
+        }
+    }
+
+    /// Record a property's spelling of `selector` for its own `class`.
+    pub fn record_for_class(&mut self, class: &str, selector: &str, types: &str) {
+        self.record(selector, Some(types));
+        self.by_class.insert((class.to_string(), selector.to_string()), types.to_string());
+    }
+
+    /// The spelling an IMP of `class` is typed with: the class's own property's
+    /// when it has one, else [`Self::encoding`].
+    pub fn encoding_for_class(&self, class: &str, selector: &str) -> Option<&str> {
+        match self.by_class.get(&(class.to_string(), selector.to_string())) {
+            Some(e) => Some(e.as_str()),
+            None => self.encoding(selector),
         }
     }
 
@@ -498,5 +517,11 @@ mod tests {
         assert_eq!(sel.encoding("inner"), Some("@\"Base\"@:"), "a plain spelling does not replace a classed one");
         sel.record("inner", Some("q16@0:8"));
         assert_eq!(sel.encoding("inner"), None, "a different shape drops the selector");
+
+        let mut sel = Selectors::default();
+        sel.record_for_class("A", "view", "@\"UIView\"@:");
+        sel.record_for_class("B", "view", "@\"NSView\"@:");
+        assert_eq!(sel.encoding_for_class("B", "view"), Some("@\"NSView\"@:"), "each class keeps its own class");
+        assert_eq!(sel.encoding_for_class("C", "view"), Some("@\"UIView\"@:"), "a class with no property takes the agreed spelling");
     }
 }
