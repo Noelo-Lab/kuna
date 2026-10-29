@@ -318,6 +318,7 @@ fn dwarf_function_pointer_local_keeps_its_declaration() {
     }
     let (body, err, status) = common::run_kuna(&["decompile", object.to_str().unwrap(), "apply"]);
     assert_eq!(status, 0, "{err}");
+    assert!(body.contains("int (*f)(int,int);"), "function-pointer type was lost:\n{body}");
     let generated = common::scratch_file("locked-function-pointer-generated", "c");
     std::fs::write(
         &generated,

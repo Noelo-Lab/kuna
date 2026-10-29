@@ -1602,6 +1602,7 @@ mod tests {
     #[test]
     fn test_xml_corpus_datatests_and_stage_tests() {
         let root = repo_root();
+        let mut count = 0usize;
         for dir in ["tests/datatests", "tests/stages"] {
             let mut paths: Vec<PathBuf> = std::fs::read_dir(root.join(dir))
                 .unwrap_or_else(|e| panic!("read_dir {dir}: {e}"))
@@ -1626,8 +1627,492 @@ mod tests {
                     "{}",
                     path.display()
                 );
+                count += 1;
             }
         }
+        // 83 datatests + 104 stage testcases (incl. ghangr-dd-argmatch-to-argument-noea / gotoreduce,
+        // ghangr-missing-function-call-1101b1, ghangr-tee-o2-tail-jumps-4a1f49 / tailcalljump,
+        // branchflip-negated-guard / branchflip,
+        // regionstructure-seq + regionstructure-loop + regionstructure-switch +
+        // regionstructure-shortcircuit / regionstructure,
+        // regionstructure-loop-refine / regionlooprefine,
+        // regionstructure-edgeorder / regionedgeorder (SAILR P2 H2/dominance edge-virtualization ordering),
+        // ghangr-ifelseflatten / ifelseflatten,
+        // switchsharedcase-b2sum / switchsharedcase,
+        // ghangr-who-condensing-opt-reversion-72e518 / crossjumprevert,
+        // ghangr-morton-my-message-callback-bfd2fa / taildup (return tail with a call),
+        // ghangr-true-1804-dedup-ite-tail-8a690c / dedupitetail (the INVERSE of taildup:
+        // merge a duplicated if/else leaf prefix/suffix),
+        // ghangr-setlocale-rettype / DIV-11,
+        // ghangr-noreturn_extern / noreturn_extern, angr test_tail_tail_bytes_ret_dup,
+        // ghangr-incorrect-duplication-chcon-a0e113 / noreturn_externmatch, DIV-13,
+        // and ghangr-switchmultipred-memmove / switchmultipred, angr
+        // test_decompiling_abnormal_switch_case_case3,
+        // and ghangr-optimized-memcpy-6301a9 / unrolledguard, angr
+        // test_decompiling_optimized_memcpy,
+        // and ghdec-whiledo-complex / decbench F3 whiledo isComplex parity,
+        // and ghangr-returndup / returndup (angr SAILR gotoless ReturnDuplicatorHigh:
+        // duplicate a shared bare-epilogue return into each predecessor so the classic
+        // guard shape structures as early returns; decbench F4),
+        // and ghangr-noreturn-error / noreturn_error, decbench F2 error(nonzero,...) wrappers,
+        // and ghangr-iteregion / iteregion, angr ITERegionConverter assignment-diamond
+        // -> `?:` ternary, decbench F5 O0-iproute2-ip-print_link_flags,
+        // and ghangr-switchreturn / switchreturn, the continuation of earlyreturn to the
+        // WIDE multi-way switch-phi return, O0-libedit-tty__getcharindex,
+        // and modes-aggressive / the `mode reliable|aggressive` preset axis
+        // (Architecture::apply_mode; returndup-only warning as the discriminator),
+        // and ghangr-iteexpr / the `iteexpr` computed-arm ?: extension of iteregion
+        // (angr ITERegionConverter over computed arms; ternary in the on-pass only),
+        // and the THREE `condfold` witnesses for the short-circuit fold across a
+        // COMPLEX sibling (angr Phoenix MultiStatementExpression relaxation),
+        // whose admission predicate is the UNION of two rules:
+        // ghangr-condfold / Rule A, the bounded prefix (crossing goto in the
+        // off-pass, comma-expression operand in the on-pass),
+        // ghangr-condfold-newbury / the guard-cascade shape, goto+label in the
+        // off-pass and neither at `wide` (it folds through Rule A), and
+        // ghangr-condfold-ruleb / Rule B ISOLATED, a guard whose two
+        // statement-root calls put it outside Rule A's call cap at every level,
+        // and kuna-cnorm-protogap / the DIV-34 brace-placement default flip
+        // (no blank line between a prototype and `{`; braceformat restores),
+        // and kuna-cnorm-nullprint / the DIV-35 NULL-token default flip
+        // (zero pointer constants render NULL; nullprinting off restores),
+        // and kuna-cnorm-compoundassign / the DIV-36 emitInplaceOp port
+        // (out = out OP y renders out OP= y; inplaceops off restores),
+        // and kuna-cnorm-truthycond / the DIV-37 truthy condition option
+        // (if (x != 0) renders if (x), if (p == 0) renders if (!p)),
+        // and kuna-cnorm-braceelide / the DIV-38 single-statement if-body
+        // brace elision (braceless indented statement; braceelide off restores),
+        // and kuna-cnorm-warnstyle / the DIV-39 terse end-of-line warning slugs
+        // (usage(1); // no-return; warnstyle banner restores the WARNING lines)
+        // and ghdec-fast-funcdisc / the bounded fast-project inventory
+        // (old fast omits a direct callee; default fast emits its real body),
+        // and ghdec-spacebase-unnamed / the symbol-less spacebase PTRSUB leaf
+        // (internal PTRSUB(ESP,8) p-code out, &Stack00000008 storage leaf in),
+        // and ghdec-opcode-seam / the total opcode -> TypeOp seam
+        // (a rule-produced INT_SRIGHT used to panic the whole function away),
+        // and ghdec-isamode-inject / the ARM jump-table callotherfixup drain
+        // (no setISAMode statement survives into the emitted C),
+        // and ghdec-realtypes-pointee / the realtypes unknown-pointee size
+        // (void *a3 alongside a3[1] out, unsigned long *a3 in),
+        // and ghdec-stalejumptable / a JumpTable outliving its swept BRANCHIND
+        // (loweredswitch stranded a real jump table and the model walk panicked),
+        // and ghdec-finalorder-entryfirst / BlockGraph::orderBlocks (the entry
+        // component printed after an unconditional goto, i.e. as dead code)
+        // and ghdec-callsitestackargs / stack-passed call argument recovery
+        // (option off truncates a call at the six SysV register arguments)
+        // and ghdec-inputtile-overlap / renaming over guardInput's leftover
+        // input pieces (gnulib rpl_fcntl at -O2 produced no body at all)
+        // and ghdec-iteboolean / short-circuit 0/1 select re-rolling
+        // (option off leaves the explicit `if (a && b) v = 1; else v = 0;` diamond)
+        // and ghdec-symbol-keyed-local-decls / one declaration per ScopeLocal
+        // Symbol (one stack slot declared twice under one name, two types)
+        // and ghdec-funcptralign / the cspec-declared function-pointer alignment
+        // (every ARM/Thumb indirect call carried an invented & 0xfffffffe)
+        // and ghdec-paramcopyhoist / the entry-block anchor for an unmodified
+        // parameter's trim COPY (option off sinks `v2 = a1;` below the first guard)
+        // and ghdec-subright / non-least-significant truncation lowering
+        // (the raw SUBnn p-code operator leaked into the C body)
+        // and ghdec-returncopysplit / the read-only output gate on a datatype
+        // copy split (a cloned heritage return-copy printed per-element stores
+        // into a .rodata string literal)
+        // and ghdec-itecondlist / the ITE condition-list tolerance (option off
+        // re-rolls only ceil(N/2) of a run of N identical assignment diamonds)
+        // and ghdec-peimportcall / PE import-call binding (option off leaves a
+        // `call [IAT slot]` as an unnamed `(*dat_...)()` with no no-return effect)
+        // and ghdec-undefname / no `$$undef` placeholder survives the naming pass
+        // (an identifier containing `$$`, and one stack Symbol split across two names)
+        // and ghdec-cspecprotos / the cspec's named prototype models are registered
+        // (`option defaultprototype __thiscall` recovers the ECX this-pointer)
+        // and gh271-x86-maxlen-nop / a 15-byte instruction decodes (the parser's
+        // masked-off tail read past the 16-byte buffer no longer aborts the decode)
+        // and funcboundflow / a fall-through into a known function entry is truncated
+        // instead of decoding the next function's body into the current one
+        // and ghdec-branchflip-armswap / a swapped `if` arm keeps its whole body
+        // (the else-if collapse hoisted the arm's tail statement out of the arm)
+        // and ghdec-guardarm / the ruleBlockIfNoExit arm tie-break resolves by layout
+        // and ghdec-loopcondhoist / the deferred ifNoExit scan passes over a loop head
+        // and ghdec-calloverlap / the two partial-range call-overlap guards
+        // (a whole-width PXOR write hides the SysV entry inside the XMM0 range)
+        // and ghdec-orchain / returndup must not split the operand chain of a
+        // short-circuit (option off = the guard cascade, on = the folded condition)
+        // and kuna-evalcurrentproto / the compiler spec's <eval_current_prototype>
+        // model recovers a __fastcall function's ECX/EDX arguments
+        // and kuna-msvcftol / the MSVC __ftol call-fixup recovers the x87 (ST0)
+        // argument an argument-less `__ftol()` call had dropped
+        // and kuna-ctypes / valid per-architecture C spelling of the core types
+        // (option off = the Ghidra vocabulary, on = the target's own C names)
+        // and gh180-implied-cover-scarry / overflow guards read the PRE-add
+        // operands (implied-marking dirties the operand Covers, so the
+        // pre-add/post-add merge is illegal and the guard keeps its own value)
+        // and gh181-snipreads-indirect / the snipReads INDIRECT carve-out plus
+        // the foldcallret indirect-read barrier (an out-parameter copy printed
+        // above the call that fills it, so freecon consumed the pre-call NULL)
+        // and gh182-loadguardrange / the ValueSet refinement of indexed-stack
+        // guards sizes a stack array by its real index bound (option off = the
+        // 4-element cap with split-off never-assigned tail scalars)
+        // and gh275-spillargtrial / caller-save spill tolerance in input-trial
+        // scoring (option off drops the first atan2 call's second argument to
+        // the `movapd [rsp+0x20],xmm1` spill, on recovers it)
+        // and oxidizer-securitycheck / rustc bounds-check panic-branch stripping
+        // (option off = the `if (idx >= len) panic_bounds_check()` guard, on = the
+        // guarded load alone)
+        // and oxidizer-cleanupcode / the Rust drop/deallocate call sites are
+        // deleted in the pre-SSA window, so the drop glue AND the argument setup
+        // that only fed it are both gone (option off = both calls plus both
+        // argument constants come back)
+        // and kuna-retinputhalf / a returned register half that is an input
+        // parameter the function moved there is kept, so the parameter stays in
+        // the signature (option off = the half AND the argument are dropped)
+        // and kuna-symbolnamerepair / C++ anonymous namespaces survive the
+        // name-only demangling (the load used to fail outright)
+        // and kuna-noreturn-discstrict / the discovered-no-return tally counts
+        // only positive evidence, so a decode gap can no longer forge a no-return
+        // verdict (wiring-only on the XML path -- the Listing is real-ELF only)
+        // and kuna-symbolnamechars / a symbol name's raw bytes no longer
+        // restructure the C document they are printed into (option off = a `*/`
+        // closes the header comment, a newline splits the declaration, and two
+        // non-UTF-8 names collapse onto one)
+        // and kuna-symbolnamebound / a 200-component qualified symbol name folds
+        // to the bounded scope path instead of nesting one ~1.5 KB Scope per
+        // component (GH-338), and still resolves by either spelling
+        // and kuna-arraysubfield / a partial access into an array symbol reports
+        // the size it touches, so an 8-byte write into a char[16] is `._0_8_`
+        // and a genuine one-byte element access keeps its `[3]` subscript
+        // and kuna-msvcfpconst / MSVC `__real@` FP-constant COMDATs are decoded
+        // from their mangled names (option off = every operand a dat_<addr>)
+        // and kuna-cortexmpriv / the Cortex-M `isCurrentModePrivileged()` guard
+        // around every MRS/MSR folds away (option off = the guard block survives)
+        // and kuna-unmappedentry / the Listing walk's function worklist refuses a
+        // CALL target its own instruction worklist would not decode (wiring-only
+        // on the XML path -- the Listing is real-object only, like
+        // kuna-listing-flag)
+        // and kuna-linuxsyscall / a 32-bit Linux `int 0x80` names the syscall the
+        // constant in EAX selects and takes the ABI registers as its arguments
+        // (option off = two `(*(code *)swi(0x80))()` indirect calls with every
+        // argument dead-coded away)
+        // and kuna-entrymainproto / the PE CRT startup's argc/argv/envp call site
+        // types the entry function it calls (wiring-only on the XML path -- the
+        // analyzer tier is real-object only)
+        // and kuna-switchselector / a lowered-switch cascade whose selector the
+        // install cannot re-read is declined, so the compiler's if/else-if chain
+        // over the real parameter survives (option off = `switch(0)`, every case
+        // unreachable and the parameter absent from the prototype)
+        // and gh403-funcboundflow-cfg / the funcboundflow truncation of a
+        // CONDITIONAL branch's fall-through starts its own basic block, so the
+        // branch no longer self-edges (invalid `} while ;`, or a collapsed single
+        // out-edge the two-way block readers index off the end of)
+        // and kuna-fastfailnoreturn / a Windows `int 0x29` (`__fastfail`) ends the
+        // flow instead of raising the stack pointer by 8 and degenerating the frame
+        // and kuna-arraycoverwidth / a sixteen-byte transfer through a `char[16]`
+        // VM register bank rendered `v2[0] = v3[0]`, a one-byte lvalue
+        // and kuna-msvcstackguard / the MSVC /GS frame-cookie shape the glibc
+        // stackguard matcher cannot see (GH-468)
+        // and kuna-pdb-sidecar / a Windows PE whose matching `.pdb` sits beside it
+        // is named from that sidecar with no option and no environment variable
+        // and kuna-calleearityscratch / a boundary register the caller only used
+        // as scratch bounds a cut callee-body argument run (repipe r9)
+        // and kuna-declaredlibcproto / a DECLARED function name is answered out of
+        // the built-in libc signature tables (repipe r10)
+        // and gh510-phiopflags / the phi's op-property triple carries `special`, so
+        // the raw-stack-pointer PTRSUB placeholder cannot land inside a leading phi
+        // run and strand a phi with more inputs than its block has in-edges
+        // and kuna-paramrefdecl / an address-taken parameter is not declared a
+        // second time as a body local (repipe r10)
+        // and kuna-calltrampoline / a call whose callee discards the pushed return
+        // address is flowed through instead of decoding a junk fall-through at the
+        // unreachable return address (repipe r11)
+        // and ghdec-zeroidiomuse / the x86 register-clearing idiom no longer
+        // vetoes a looped call's input trials (option off = watchdog() with an
+        // empty argument list) (repipe r12)
+        // and kuna-x64syscall / the x86-64 SYSCALL user-op carries the Linux ABI's
+        // register effects instead of reading and writing nothing (option off =
+        // syscall() with empty parens and a wrapper returning its own syscall
+        // number) (repipe r12)
+        // and kuna-splitstorekeep / a 31-byte stack-to-stack copy whose middle
+        // two 8-byte stores overlap keeps them (option off = the head store and
+        // the tail store with the fifteen bytes between them gone) (repipe r12)
+        // and kuna-entrythumbflow / bounded Thumb context from a TE entry
+        // and kuna-callretpair / a call whose cspec output rule asked for a
+        // register pair gets that pair (option off = a bare call statement and
+        // a tag local the function never assigns) (repipe r12)
+        // and kuna-msvcstackguard-return / an exact `/GS` checker restart keeps
+        // both caller return definitions across a shared epilogue (repipe r6)
+        // and kuna-short-utf16-window / caller data replaces an exact-address
+        // analysis mapping while adjacent wide and ASCII literals stay stable
+        // and kuna-entryretdispatch / an entry stack-directed RET chain is
+        // recovered while its ordinary-return control remains unchanged
+        // and kuna-declaring-double-score-return / a locked-void checker keeps
+        // only ABI floating return storage without deleting the call (repipe r5)
+        // and ghdec-unsigned-byte-vm-selector / lowered-switch labels retain the
+        // signedness proved by the comparison cascade across restart/install
+        // and kuna-cancelbytearithmetic / exact low-byte cancellation
+        // and kuna-pebnames / kuna-pebnames-x86 type the Windows TEB segment
+        // base on x86-64 (GS) and x86 (FS) (GH-468)
+        // and kuna-mappedflowboundary ends ELF x86 flow at the mapped image end
+        // and gh468-nulterminator / a stack char array keeps its adjacent NUL
+        // terminator element
+        // and kuna-endptrbound / a pointer walk's end bound names its own buffer
+        // and kuna-msvcstrappend / inlined MSVC std::string appends collapse to
+        // one call each (GH-468)
+        // and kuna-tiedphitrim / loop-head aliased-read trim
+        // and kuna-floatgrouping / float * and + keep their grouping
+        // and kuna-elfmain / the ELF libc-start main is named and declared
+        // and kuna-argclobber / kuna-argclobber-guards / kuna-argclobber-armreturn
+        // / kuna-argclobber-forward / a trailing clobber argument and the three
+        // clauses that keep a real one
+        // and kuna-libctypes / named libc/POSIX aggregate pointers in the
+        // built-in prototype tables
+        // and kuna-foldcallretphi / a call's own INDIRECT effect no longer
+        // blocks folding its single-use result
+        // and kuna-ptrfromuse / a dereferenced-only parameter becomes a pointer
+        // and kuna-structdefs / the definitions of the composites a function
+        // references, printed above it
+        // and kuna-indirectonly / inputs used only through INDIRECTs
+        // and kuna-indirectonly-escape / the counterexample that keeps
+        // `indirectonly` off by default
+        // and kuna-foldcallret-barrier / a call stays ahead of a write to the
+        // global it reads (GH-657)
+        // and kuna-structsynth-param-struct / kuna-structsynth-overlap-layout /
+        // kuna-structsynth-hole-member / a struct synthesized from the
+        // constant-offset dereferences of a pointer parameter, the interior
+        // access that is not a field, and the hole the body names anyway
+        // and kuna-hideshadow / a redundant copy of one value collapses
+        // and kuna-signedness / an integer local declared at the signedness its
+        // operations ask for, plus its int16 sibling pinning the promotion-width
+        // guard on a target whose own `int` is 2 bytes
+        // and kuna-boolbyte / a byte whose every read is a truth test is a bool
+        // and mulblob-wide-multiply-operands / a widened multiply operand is a
+        // value, not a 16-byte aggregate
+        // and kuna-truncarg / a narrowed call argument keeps its truncation
+        // and kuna-charbyte / a byte read through a char pointer stays char
+        // and kuna-foldcallretphi-join / an i386 eax output that may be the low
+        // half of edx:eax keeps its spill
+        // and kuna-foldcallret-shortcircuit / a call never folds into the
+        // right-hand operand of && or || (GH-684)
+        // and structsynth-shared-layout / two readers of one record share a name
+        // and structsynth-unclaimed-bytes / a shared layout keeps a load ahead
+        // of the store that overwrites it
+        // and kuna-aliasoverlap / a load stays ahead of a store into its bytes
+        // and kuna-formatstring-static / printf/scanf varargs typed from the
+        // format constant the LOAD-TIME resolver read out of the image
+        // and structsynth-locals / a record a call returned, and a text buffer
+        // that is not one, and calleevote, and structmerge / the union of two
+        // readers' claims, and structheadless / a record read past its start
+        // only in a closed function
+        // and kuna-libcwiden / a wrapper around an *at import stops spelling its
+        // path argument as an integer
+        // and kuna-callplaceholder / a call to a declared callee stops taking
+        // the return-address slot as a trailing argument
+        // and kuna-castsign / a stack index the body only compares signed is
+        // declared signed
+        // and kuna-pemain / a stripped PE names the function its CRT startup
+        // calls `main`
+        // and powerpc-isa-hint / a failed generic PowerPC64 isel decode
+        // suggests an explicit ISA target
+        // and cortus-aps3-constructors / inv with an immediate negates, extb.cc
+        // sign-extends, and an indirect call keeps its target
+        // and kuna-jumptablemax / a four-case switch is refused under
+        // `option jumptablemax 2`
+        // and kuna-callbacktype / a callback takes the prototype of the slot
+        // it is passed to
+        // and kuna-callrettype / a call returns the type its callee states
+        // (the single-function negative control)
+        // and kuna-castobject / an out-parameter local is declared at the type
+        // its callee declares when every reader agrees
+        // and kuna-castwiden / a 64-bit widening C performs by itself keeps no cast
+        // and kuna-elemptr / a pointer used only as an array is declared a
+        // pointer to its element
+        // and kuna-returnpiece / a value built in one return register keeps
+        // both halves and every argument that feeds it
+        // and kuna-narrowload / a narrow read is never printed as a wider read
+        // and kuna-condexeret / a return register written under a condition and
+        // tested on the same condition again keeps its return value (GH-747)
+        // and kuna-calleenamedlocals / two locals named after one callee
+        // parameter stay two variables
+        // and kuna-fieldtype / a synthesized field the program uses as a
+        // pointer is declared as that pointer
+        // and kuna-ppc-nested-operands + kuna-parisc-nested-operands /
+        // nested SLEIGH operand expressions evaluate
+        // and kuna-elfaliasnames / an ELF name sharing its address with an
+        // earlier symbol still selects that function
+        // and kuna-arm-volatile-loads / every read of a volatile LDM survives
+        // and kuna-arm-float-return / an ARM hard-float function returns its
+        // whole VFP result
+        // and kuna-address-only-local + kuna-address-split-local / an
+        // address-only local takes its object's type unless a split neighbour
+        // lies inside the address width
+        // and kuna-bit-reinterpret-declared / a float constant stored to a float
+        // global stays a float literal and a register move reinterprets once
+        // and kuna-labelstmt-arm + kuna-labelstmt-x64 / a label never ends a
+        // compound statement (GH-783)
+        // and kuna-arm-float-arguments / ARM hard-float inputs keep their VFP
+        // widths and caller/callee storage
+        // and kuna-ownreturn / an argument moved back into its own register
+        // across a call stays a returned half and a parameter
+        // and kuna-veneer-tailcall / a veneer to another function's entry is a
+        // tail call when its prototype is stated or it lies outside the extent
+        // (GH-781)
+        // and kuna-globalpointee / a pointer stored to a global is dereferenced
+        // through its own variable, not through the global
+        // and kuna-zextpair / a 64-bit return whose high register is zero keeps
+        // its zero-extension
+        // and kuna-stackstoreguard / a byte copied into an initialized stack
+        // buffer through a walking pointer still reaches the later test and call
+        // and kuna-globalvalue / a value a sign-sensitive op reads keeps its own
+        // variable instead of merging into a global it is stored to
+        // and kuna-narrowext / a narrow RISC-V argument or return value is
+        // extended by the sign of its type (GH-816)
+        // and kuna-floatret / a value returned in a float register is a float
+        // and kuna-retcallhalf / a caller that changes only the high word of a
+        // callee's 64-bit result returns all eight bytes
+        // and kuna-syscallregs-{arm,aarch64,riscv,mips,ppc,cortexm} / an inline
+        // system call writes its result register (GH-812)
+        // and kuna-flowmode / a blx selects Thumb for its own target only
+        // and kuna-storealias / a global read back after a store through a
+        // pointer prints as the global (GH-792)
+        // and kuna-globalloadguard / a store to a global before a pointer load
+        // is kept when the global is stored again (GH-825)
+        // and kuna-calleeprotostack-homeslot / a store into the caller's home
+        // slot survives a declared callee that is passed its address
+        // and kuna-protoranges-homeslot / a prototype's <localrange> makes the
+        // Win64 home area a local, so its address prints by name
+        // and kuna-bejoin + kuna-bejoin-sparc + kuna-bejoin-sparc64 +
+        // kuna-bejoin-mips + kuna-bejoin-avr / a two-register value is joined
+        // in the ABI's order when its low word is returned on purpose
+        // and gh840-varargbits-x86 + gh840-varargbits-a64 / an integer passed
+        // in a variadic float register prints as a reinterpretation
+        // and kuna-stackguard-tailcall / a canary checked right before a tail
+        // call loses its entry-side load with the check (GH-866)
+        // and gh876-varargupper-x86 / an int forwarded in its own register to a
+        // variadic call drops the undeclared upper half (GH-876)
+        // and kuna-zextword / a zero-extended word return keeps its register
+        // where every 32-bit return is sign-extended (GH-865)
+        // and kuna-sparc-callreturn + kuna-sparc64-callreturn / a SPARC call's
+        // result is its output, not the argument register (#862)
+        // and kuna-calltargettype + kuna-calltargettype-a64 +
+        // kuna-calltargettype-armhf / an indirect call's target takes the
+        // function-pointer type the call states (GH-869)
+        // and kuna-ilp32long-mips + kuna-ilp32long-ppc / long is 4 bytes on
+        // the ILP32 MIPS and PowerPC compiler specs
+        // and kuna-floatparam / a parameter passed in a float register is a
+        // float of its width (GH-888)
+        // and gh854-hiddenretarg-a64 + -a64apple + -a64win / a value left in
+        // the AArch64 hidden-return register x8 is no call argument (GH-854)
+        // and kuna-callretpairhalf / a caller that reads only the high word of
+        // a callee's 64-bit result gets the pair from the call (#851)
+        // and kuna-constptrdeclared-{riscv,x86,msp430} / a constant in a
+        // declared non-pointer return or argument is not inferred as a pointer
+        // (GH-846)
+        // and kuna-condexeretuse / a use a re-tested condition rules out does
+        // not reject an ARM return value (GH-874)
+        // and kuna-calleeretpreserves-mips + -mipsbe / a pointer gcc keeps in
+        // $v1 across a callee that never writes it survives the call (GH-878)
+        // and kuna-calleereadarg + -arm + -a64 / a call argument the
+        // caller also tests is kept when the callee reads it (GH-881)
+        // and kuna-retsysreg + -a64 + -mips / a register set for a system
+        // register is not the high word of the return (GH-885)
+        // and gh831-riscv-fpmove + gh831-riscv32-fpmove / RISC-V fmv.x.* and
+        // fcvt.w* read and write the real registers (GH-831)
+        // and kuna-condstmts / a folded condition operand prints at most the
+        // capped number of statements before its test
+        // and gh873-zerofillreturn-a64 / the zero fill above a returned
+        // AArch64 vector lane is no part of the value (GH-873)
+        // and kuna-floatglobals / a float parameter stored into a global the
+        // program only moves through float registers is a float (GH-888)
+        // and kuna-arrayextent / an indexed stack array covers the slots its
+        // index reaches past four elements (GH-867)
+        // and kuna-pointer-arguments / standalone printing has no batch contract
+        // and kuna-floatbits / a float helper that only works on the bits of
+        // its float-register input is a float on both sides (GH-890)
+        // and kuna-indexedstoreguard / an indexed stack store of any width
+        // keeps a later read of a slot it may overwrite from seeing the
+        // slot's earlier value
+        // and kuna-zeroloopfield / a field stored after the loop that zeroes
+        // its request prints after that loop
+        // and kuna-indexedstoreguard-a64 / the guarded slots of an AArch64
+        // long or int array past four elements stay elements of the array
+        // and kuna-syscallregs-mips-a3 + -ppc-cr0 / the MIPS a3 and PowerPC
+        // cr0 error flag a system call leaves (GH-857)
+        // and kuna-widestrings32 / a 4-byte wide literal argument prints as
+        // L"..." (GH-845)
+        // and gh839-reloadarg + -a64 / a register popped from a slot that holds
+        // the caller's incoming rax is no argument of the call after it, and
+        // a saved frame pointer read from the frame still is (GH-839)
+        // and gh841-varargsharedfloat-ppc / a 32-bit PowerPC -O0 variadic
+        // double that also feeds an earlier argument (GH-841)
+        // and kuna-floateq / an integer == or != on the bits of a float
+        // compares the bits, not the float values (GH-890)
+        // and kuna-pointerwalk-budget-mips / a pointer built through nested
+        // choices does not stall the stack-store guard's walks
+        // and kuna-pointerwalk-memo / those walks give what an exhaustive
+        // walk gives
+        // and kuna-ucomiss-unordered / an x86 float compare flag read by
+        // seta/setae/setbe/setb keeps its unordered case
+        // and kuna-conditional-register / an unused guarded path does not emit
+        // a transfer from a call-clobbered register
+        // and kuna-arm-conditional-switch / a guarded A32 PC table retains its
+        // bounded case bodies after positive-domain narrowing
+        // and kuna-arm-constant-shift / a signed fixed ARM LSL is defined in C
+        // and kuna-thunkentry / the target of a jmp thunk is a function entry
+        // and kuna-armwalkmode / a bl target keeps A32 after a blx to Thumb
+        // and kuna-sparc-zeropair / a SPARC int's return 0 is not the second
+        // argument shifted into the high word (#796)
+        // and kuna-msvcsig / an MSVC-mangled import gets its declared prototype
+        // and kuna-rust-switch-labels / a Rust match arm is signed by its
+        // scrutinee's type (GH-883)
+        // and kuna-aifbracket / an AIF candidate that rejoins the function around
+        // it is not a function (GH-299)
+        // and kuna-aifnoppad / no AIF entry starts on nop padding (GH-299)
+        // and gh847-zerocallregs / a register a -fzero-call-used-regs epilogue
+        // clears is not returned (GH-847)
+        // and kuna-signed-float-trunc{,64} / signed float conversions remain signed
+        // before assignments to unsigned merged variables
+        // and kuna-globalarrayanchor{,-a64} / a negative element bias keeps the mapped array base
+        // and kuna-switchguardreload / kuna-switchunrolledsense: a guarded
+        // relative table is not read past its guard (GH-1028)
+        // and kuna-addrtakenentry / code whose address the program takes is a
+        // function entry (GH-1039)
+        // and kuna-condcall / a predicated call's fall-through is not a function
+        // (GH-299)
+        // and kuna-thumbswitch / the Listing walk reads a Thumb tbb/tbh switch
+        // table (GH-299)
+        // and kuna-aifpoolslide / no AIF entry starts on a literal-pool word
+        // (GH-299)
+        // and kuna-pushpadread / a register a callee only pushes above a call's
+        // stack arguments is no argument it reads
+        // and kuna-declorder / locals print in natural number order
+        // and kuna-elfmain-named / an executable's own `main` gets the C runtime's
+        // declaration, as far as its own analysis recovers its parameters
+        // and kuna-bejoin-evidence, -sparc, -armeb / a big-endian pair joins
+        // high word first on proof (GH-904)
+        // and kuna-strlenscan / an inline repnz scasb length prints as strlen
+        // and kuna-libcnames / a local takes the name of the library call it meets
+        // and kuna-register-pair-call-args / overwritten register-pair argument slots
+        // and kuna-rettriangle / a one-block if keeps one return
+        // and kuna-narrow-register-inputs / mixed-width reads do not span known inputs
+        // and kuna-indirect-value-arguments / declared aggregate value arguments
+        // and guarded/preloaded local read controls on SPARC and x86
+        // and kuna-global-aggregate-store / kuna-global-array-member-store
+        // and kuna-float-storage-truncation / integer extraction preserves float bits
+        // and kuna-fpu-trunc-views / separate logical integers from floating storage
+        // and kuna-arm-frame-inventory / validated A32 frames join the default inventory
+        // and kuna-arraysize / an escaped stack buffer ends at its call's stated count
+        // and kuna-narrowret, -x86 / a single-function decompile states no narrow call result
+        // and kuna-bodyreads / a self-call keeps the register its own body reads
+        // and kuna-regsigned / a register local at the width its values are sign extended from
+        // and kuna-armfloat-preset / ARM hard-float VFP contracts in the aggressive preset
+        // and kuna-pointer-storage-literal / typed pointer byte-copy initializers
+        // and kuna-sparc-register-pair / an ldd-loaded SPARC register pair whose
+        // registers then hold two 32-bit values keeps them apart (option off = one
+        // 64-bit local updated with CONCAT44)
+        // and kuna-prefersplit / the compiler spec's split registers reach heritage pass 0
+        // and kuna-gomorestack / the Go stack-growth entry guard folds (option gomorestack)
+        // and kuna-fatstr / a read-only (ptr,len) constant pair prints as a bounded literal
+        // and kuna-gobool / a Go boolean return narrows out of its stale-high concatenation
+        // and kuna-variantnames / variant-part discriminants print as variant names
+        // and kuna-gowritebarrier / the Go GC write-barrier diamond folds (option gowritebarrier)
+        // and kuna-sparc-delay-condition / a flag-writing delay slot cannot change its branch
+        assert_eq!(count, 590, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
