@@ -2931,6 +2931,26 @@ membership, and storage-source metadata unchanged. Once eligible, the node is
 detached from its HighVariable while its location is still available; an empty
 HighVariable is erased, followed by the node and its storage-source metadata.
 
+The Varnode and op banks' `get` and `get_mut` accessors are inlineable, exposing
+repeated accesses to the optimizer without changing their lookup contract.
+Bounds checks and full-id comparisons remain enabled in release and debug builds;
+stale and null ids still return `None`. Retired PcodeOps remain accessible until
+the bank is cleared. The checked arena
+(`decompiler/crates/kuna-decomp/src/substrate/kuna_checkedarena.rs`) stores each
+value in a slot followed by a 64-bit key word. An occupied slot's word is the full
+FFI encoding of its live id, so a lookup checks the slot index against the slot
+count and compares that one word. The word sits directly after the value's last
+fields, which for Varnode and PcodeOp currently include their flag words, so the check
+normally reads a cache line the caller touches anyway; there is no separate key
+array. A vacant slot's word holds an even version and the index of the next free slot,
+which never names the slot itself, and the sentinel slot's word is zero, which no
+id encodes, so a checked id cannot match a vacancy. Allocation, free-list order,
+version increments and clearing order replicate `slotmap::SlotMap`, so every id is
+unchanged, and these two slot types keep SlotMap's slot size.
+The record getters `PcodeOp::code` and
+`Varnode::has_no_descend` are inlineable as well; `code` still panics if the
+opcode has not been assigned.
+
 Registering an input varnode also applies the prototype's saved-register and
 return-address effects. This is unconditional registration behavior, not a
 separate feature gate; `funcdata_varnode.rs (apply_input_effect_marking)` uses

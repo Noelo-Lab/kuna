@@ -437,7 +437,7 @@ impl Iterator for IntrusiveIter<'_> {
 }
 
 /// The op arena alias (ADR 0001): a slotmap keyed by [`OpId`].
-type OpArena = slotmap::SlotMap<OpId, PcodeOp>;
+type OpArena = crate::kuna_checkedarena::Arena<OpId, PcodeOp>;
 
 // ---------------------------------------------------------------------------
 // PcodeOp
@@ -882,6 +882,7 @@ impl PcodeOp {
     /// Panics if the opcode is unset (the C++ would dereference a null `opcode`
     /// — an internal-invariant violation, ADR 0004): `code()` is only ever
     /// called on ops that have been through `PcodeOpBank::change_opcode`.
+    #[inline]
     pub fn code(&self) -> OpCode {
         self.opcode
             .as_ref()
@@ -1646,10 +1647,12 @@ impl PcodeOpBank {
     }
 
     /// Borrow a PcodeOp by id.
+    #[inline(always)]
     pub fn get(&self, id: OpId) -> Option<&PcodeOp> {
         self.arena.get(id)
     }
     /// Mutably borrow a PcodeOp by id.
+    #[inline(always)]
     pub fn get_mut(&mut self, id: OpId) -> Option<&mut PcodeOp> {
         self.arena.get_mut(id)
     }
@@ -2100,6 +2103,32 @@ mod tests {
     fn typeop(opc: OpCode) -> TypeOp {
         // Flags don't matter for the list-bucketing tests; name is the symbol.
         TypeOp::new(opc, 0, format!("{opc:?}"))
+    }
+
+    #[test]
+    fn accessors_keep_id_validity() {
+        let m = build_manager();
+        let mut bank = PcodeOpBank::new();
+        let retired = bank.create_at(1, ram(&m, 0x100));
+        bank.get_mut(retired).unwrap().set_order(7);
+        assert_eq!(bank.get(retired).unwrap().get_seq_num().get_order(), 7);
+        bank.destroy(retired);
+        assert!(bank.get(retired).is_some());
+        assert!(bank.get_mut(retired).is_some());
+
+        bank.clear();
+        let live = bank.create_at(1, ram(&m, 0x200));
+        assert_ne!(retired, live);
+        let null = <OpId as slotmap::Key>::null();
+        for id in [retired, null] {
+            assert!(bank.get(id).is_none());
+            assert!(bank.get_mut(id).is_none());
+        }
+        assert!(bank.get(live).is_some());
+        assert!(bank.get_mut(live).is_some());
+        bank.clear();
+        assert!(bank.get(live).is_none());
+        assert!(bank.get_mut(live).is_none());
     }
 
     // --- allocation-order monotonicity ------------------------------------

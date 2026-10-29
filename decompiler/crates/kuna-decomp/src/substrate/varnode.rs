@@ -36,7 +36,7 @@ use kuna_base::address::{mach_extreme, Address, SeqNum};
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::space::{spacetype, AddrSpace, AddrSpaceManager};
 use kuna_base::types::{int2, int4, uint2, uint4, uintb, uintm, Wrap};
-use slotmap::SlotMap;
+use crate::kuna_checkedarena::Arena;
 use smallvec::SmallVec;
 
 use crate::cover::{Cover, CoverContext};
@@ -1025,6 +1025,7 @@ impl Varnode {
             == varnode_flags::insert
     }
     /// C++ `hasNoDescend`.
+    #[inline]
     pub fn has_no_descend(&self) -> bool {
         self.descend.is_empty()
     }
@@ -1583,7 +1584,7 @@ pub struct VarnodeBank {
     /// Number of varnodes created (C++ `create_index`)
     create_index: uint4,
     /// The varnode arena (ADR 0001): the bank owns the store
-    arena: SlotMap<VarnodeId, Varnode>,
+    arena: Arena<VarnodeId, Varnode>,
     /// Varnodes sorted by location then def (C++ `loc_tree`)
     loc_tree: BTreeMap<LocKey, VarnodeId>,
     /// Inputs and written Varnodes sorted by def then location (C++ `def_tree`).
@@ -1619,7 +1620,7 @@ impl VarnodeBank {
             uniqbase: uniq_start,
             uniqid: uniq_start,
             create_index: 0,
-            arena: SlotMap::with_key(),
+            arena: Arena::with_key(),
             loc_tree: BTreeMap::new(),
             def_tree: BTreeMap::new(),
             uniq_space,
@@ -1653,10 +1654,12 @@ impl VarnodeBank {
     }
 
     /// Borrow a Varnode by id.
+    #[inline(always)]
     pub fn get(&self, id: VarnodeId) -> Option<&Varnode> {
         self.arena.get(id)
     }
     /// Mutably borrow a Varnode by id.
+    #[inline(always)]
     pub fn get_mut(&mut self, id: VarnodeId) -> Option<&mut Varnode> {
         self.arena.get_mut(id)
     }
@@ -2472,6 +2475,32 @@ mod tests {
     /// A no-op `replace_reads` callback (no equivalent varnode is expected).
     fn no_replace() -> impl FnMut(&mut VarnodeBank, VarnodeId, VarnodeId) -> KunaResult<()> {
         |_: &mut VarnodeBank, _: VarnodeId, _: VarnodeId| -> KunaResult<()> { Ok(()) }
+    }
+
+    #[test]
+    fn accessors_keep_id_validity() {
+        let m = build_manager();
+        let mut bank = VarnodeBank::new(&m, 0).unwrap();
+        let addr = Address::new(space(&m, 2), 0x800);
+        let stale = bank.create(4, addr.clone(), dt(4));
+        bank.get_mut(stale).unwrap().set_consume(7);
+        assert_eq!(bank.get(stale).unwrap().get_consume(), 7);
+        bank.destroy(stale).unwrap();
+        assert!(bank.get(stale).is_none());
+        assert!(bank.get_mut(stale).is_none());
+
+        let live = bank.create(4, addr, dt(4));
+        assert_ne!(stale, live);
+        let null = <VarnodeId as slotmap::Key>::null();
+        for id in [stale, null] {
+            assert!(bank.get(id).is_none());
+            assert!(bank.get_mut(id).is_none());
+        }
+        assert!(bank.get(live).is_some());
+        assert!(bank.get_mut(live).is_some());
+        bank.clear();
+        assert!(bank.get(live).is_none());
+        assert!(bank.get_mut(live).is_none());
     }
 
     // -- Reference comparators: a literal re-transcription of varnode.cc:34-79
