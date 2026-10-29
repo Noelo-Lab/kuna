@@ -365,6 +365,20 @@ pub struct Node {
     pub children: Vec<NodeRef>,
 }
 
+/// A crafted name can nest tens of thousands of levels; dropping that
+/// recursively would exhaust the stack, so children are released from a
+/// worklist.
+impl Drop for Node {
+    fn drop(&mut self) {
+        let mut pending = std::mem::take(&mut self.children);
+        while let Some(child) = pending.pop() {
+            if let Ok(mut node) = Rc::try_unwrap(child) {
+                pending.append(&mut node.children);
+            }
+        }
+    }
+}
+
 impl Node {
     pub fn new(kind: Kind) -> NodeRef {
         Rc::new(Node {

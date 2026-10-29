@@ -860,7 +860,11 @@ impl Printer {
             LocalDeclName => {
                 self.print_child(n, 1);
                 self.s(" #");
-                let i = n.first().map(|c| c.get_index()).unwrap_or(0) + 1;
+                let i = n
+                    .first()
+                    .map(|c| c.get_index())
+                    .unwrap_or(0)
+                    .saturating_add(1);
                 self.s(&i.to_string());
                 None
             }
@@ -1110,7 +1114,11 @@ impl Printer {
                 )
             }
             ExplicitClosure => {
-                let idx = n.child(1).map(|c| c.get_index()).unwrap_or(0) + 1;
+                let idx = n
+                    .child(1)
+                    .map(|c| c.get_index())
+                    .unwrap_or(0)
+                    .saturating_add(1);
                 self.print_entity(
                     n,
                     as_prefix_context,
@@ -1122,7 +1130,11 @@ impl Printer {
                 )
             }
             ImplicitClosure => {
-                let idx = n.child(1).map(|c| c.get_index()).unwrap_or(0) + 1;
+                let idx = n
+                    .child(1)
+                    .map(|c| c.get_index())
+                    .unwrap_or(0)
+                    .saturating_add(1);
                 self.print_entity(
                     n,
                     as_prefix_context,

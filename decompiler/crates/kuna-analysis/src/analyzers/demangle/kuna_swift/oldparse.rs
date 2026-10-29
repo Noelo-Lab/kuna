@@ -15,7 +15,10 @@ struct OldParser<'a> {
     text: &'a [u8],
     pos: usize,
     subs: Vec<NodeRef>,
+    depth: usize,
 }
+
+const MAX_DEPTH: usize = 128;
 
 /// Parse the body after `_Tt` into a `Type` node; `None` when anything
 /// outside the subset appears or input remains.
@@ -24,6 +27,7 @@ pub fn parse_old_type(body: &str) -> Option<NodeRef> {
         text: body.as_bytes(),
         pos: 0,
         subs: Vec::new(),
+        depth: 0,
     };
     let ty = p.ty()?;
     if p.pos != p.text.len() {
@@ -63,6 +67,9 @@ impl<'a> OldParser<'a> {
             n = n
                 .checked_mul(10)?
                 .checked_add((self.next() - b'0') as usize)?;
+            if n > i32::MAX as usize {
+                return None;
+            }
         }
         Some(n)
     }
@@ -70,7 +77,7 @@ impl<'a> OldParser<'a> {
     /// `NATURAL IDENTIFIER-STRING`; punycode and operator names refuse.
     fn identifier(&mut self) -> Option<String> {
         let len = self.natural()?;
-        if len == 0 || self.pos + len > self.text.len() {
+        if len == 0 || self.pos.checked_add(len)? > self.text.len() {
             return None;
         }
         let s = std::str::from_utf8(&self.text[self.pos..self.pos + len]).ok()?;
@@ -212,6 +219,18 @@ impl<'a> OldParser<'a> {
     }
 
     fn ty(&mut self) -> Option<NodeRef> {
+        // `G`/`C` nest through `ty` and `context`; a crafted name must not
+        // recurse without bound.
+        if self.depth >= MAX_DEPTH {
+            return None;
+        }
+        self.depth += 1;
+        let r = self.ty_inner();
+        self.depth -= 1;
+        r
+    }
+
+    fn ty_inner(&mut self) -> Option<NodeRef> {
         match self.next() {
             b'C' => self.nominal(Kind::Class),
             b'V' => self.nominal(Kind::Structure),

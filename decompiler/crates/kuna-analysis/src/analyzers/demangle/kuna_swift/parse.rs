@@ -131,7 +131,8 @@ impl<'a> Parser<'a> {
     // ---- numbers -------------------------------------------------------
 
     /// `NATURAL ::= [1-9][0-9]*`; `None` when no digit follows (a leading
-    /// `0` is not a natural).
+    /// `0` is not a natural) or the value exceeds `i32::MAX`, the reference
+    /// demangler's limit.
     fn natural(&mut self) -> Option<u64> {
         if !self.peek().is_ascii_digit() {
             return None;
@@ -141,6 +142,9 @@ impl<'a> Parser<'a> {
             n = n
                 .checked_mul(10)?
                 .checked_add((self.next() - b'0') as u64)?;
+            if n > i32::MAX as u64 {
+                return None;
+            }
         }
         Some(n)
     }
@@ -197,14 +201,14 @@ impl<'a> Parser<'a> {
             if self.next_if(b'0') {
                 break;
             }
-            let num = self.natural()? as usize;
+            let num = usize::try_from(self.natural()?).ok()?;
             if num == 0 {
                 return None;
             }
             if is_punycoded {
                 self.next_if(b'_');
             }
-            if self.pos + num > self.text.len() {
+            if self.pos.checked_add(num)? > self.text.len() {
                 return None;
             }
             let slice = &self.text[self.pos..self.pos + num];
@@ -339,7 +343,10 @@ impl<'a> Parser<'a> {
                 return self.push_multi_substitutions(repeat, (c - b'A') as usize);
             }
             if c == b'_' {
-                let idx = repeat.map_or(26, |r| r as usize + 27);
+                let idx = match repeat {
+                    None => 26,
+                    Some(r) => usize::try_from(r).ok()?.checked_add(27)?,
+                };
                 return self.subs.get(idx).cloned();
             }
             self.push_back();
@@ -378,7 +385,11 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.push_back();
-                let repeat = self.natural();
+                let repeat = if self.peek().is_ascii_digit() {
+                    Some(self.natural()?)
+                } else {
+                    None
+                };
                 if repeat.is_some_and(|r| r > MAX_REPEAT) {
                     return None;
                 }
@@ -459,8 +470,8 @@ impl<'a> Parser<'a> {
     // ---- function types ------------------------------------------------
 
     fn clang_type(&mut self) -> Option<NodeRef> {
-        let num = self.natural()? as usize;
-        if num == 0 || self.pos + num > self.text.len() {
+        let num = usize::try_from(self.natural()?).ok()?;
+        if num == 0 || self.pos.checked_add(num)? > self.text.len() {
             return None;
         }
         let s = std::str::from_utf8(&self.text[self.pos..self.pos + num])
@@ -768,6 +779,8 @@ impl<'a> Parser<'a> {
         lists: &[NodeRef],
         mut idx: usize,
     ) -> Option<NodeRef> {
+        // Recursion follows the context chain; the node budget bounds it.
+        self.tick()?;
         let consumes = !matches!(
             nominal.kind,
             Kind::Variable
@@ -1781,13 +1794,17 @@ impl<'a> Parser<'a> {
         Some(Node::with(kind, children))
     }
 
-    fn dropped_arguments(&mut self) -> Vec<NodeRef> {
+    fn dropped_arguments(&mut self) -> Option<Vec<NodeRef>> {
         let mut out = Vec::new();
         while self.next_if(b't') {
-            let n = self.natural().map_or(0, |n| n + 1);
+            let n = if self.peek().is_ascii_digit() {
+                self.natural()?.saturating_add(1)
+            } else {
+                0
+            };
             out.push(Node::index(Kind::DroppedArgument, n));
         }
-        out
+        Some(out)
     }
 
     fn generic_specialization(&mut self, kind: Kind, dropped: Vec<NodeRef>) -> Option<NodeRef> {
@@ -2024,7 +2041,7 @@ impl<'a> Parser<'a> {
             )?,
             b't' => {
                 self.push_back();
-                let dropped = self.dropped_arguments();
+                let dropped = self.dropped_arguments()?;
                 let kind = match self.next() {
                     b'g' => Kind::GenericSpecialization,
                     b'G' => Kind::GenericSpecializationNotReAbstracted,

@@ -295,7 +295,7 @@ impl NamePrinter {
             }
             Kind::LocalDeclName => {
                 self.decl_name(n.child(1)?)?;
-                self.s(&format!("#{}", n.first()?.get_index() + 1));
+                self.s(&format!("#{}", n.first()?.get_index().saturating_add(1)));
                 Some(())
             }
             Kind::PrefixOperator | Kind::PostfixOperator | Kind::InfixOperator => {
@@ -478,7 +478,7 @@ impl NamePrinter {
                 self.entity(n, Some(&format!("default_argument#{idx}")), false)
             }
             ExplicitClosure | ImplicitClosure => {
-                let idx = n.child(1)?.get_index() + 1;
+                let idx = n.child(1)?.get_index().saturating_add(1);
                 let word = if n.kind == ExplicitClosure {
                     "closure"
                 } else {

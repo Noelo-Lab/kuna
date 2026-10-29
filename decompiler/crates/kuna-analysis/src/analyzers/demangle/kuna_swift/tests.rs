@@ -452,3 +452,74 @@ fn mutated_inputs_never_panic() {
         None
     );
 }
+
+/// Length fields and indexes near the integer limits, and unbounded nesting:
+/// every one returns `None` instead of overflowing or exhausting the stack.
+#[test]
+fn hostile_counts_and_nesting_are_refused() {
+    let huge = u64::MAX.to_string();
+    let near = (u64::MAX - 1).to_string();
+    for raw in [
+        // identifier lengths past the end of the text and past usize
+        format!("$s{huge}main"),
+        format!("$s{near}main"),
+        format!("_TtC{huge}main"),
+        format!("_TtC{near}main3Foo"),
+        // a C-type length
+        format!("$sXzC{huge}abc"),
+        // a punycode length
+        format!("$s00{huge}_abc"),
+        // substitution / repeat counts past the table
+        format!("$s4mainA{huge}_"),
+        format!("$s4mainA{near}_"),
+        format!("$sS{huge}i"),
+        // dropped-argument counts
+        format!("$s4main3fooyyFTt{huge}g5"),
+        // a builtin width
+        format!("$sBi{huge}_"),
+        // an over-limit repeat count is not silently ignored
+        "$sSDyS2147483648SGSgMD".to_string(),
+        "$s5XCAPP6RegionV4codeS4294967296Svg".to_string(),
+        // an over-limit dropped-argument count
+        "$s4main3fooyyFSi_Tt2147483648g5".to_string(),
+    ] {
+        assert_eq!(demangle_swift_full(&raw), None, "{raw}");
+        assert_eq!(demangle_swift_name(&raw), None, "{raw}");
+    }
+    // Counts above the reference demangler's `i32::MAX` limit are refused
+    // even where the text could satisfy them.
+    assert_eq!(demangle_swift_full("$s4main3fooL2147483648_yyF"), None);
+    assert_eq!(
+        demangle_swift_full("$s4main3fooL2147483647_yyF").as_deref(),
+        Some("foo #2147483649 () -> () in main")
+    );
+    assert_eq!(
+        demangle_swift_name("$s4main3fooL2147483647_yyF").as_deref(),
+        Some("main.foo#2147483649()")
+    );
+    // Unbounded nesting in the runtime-name grammar and in the `$s` grammar.
+    assert_eq!(
+        demangle_swift_full(&format!("_Tt{}C4main3Foo", "G".repeat(100_000))),
+        None
+    );
+    assert_eq!(
+        demangle_swift_full(&format!("_Tt{}C4main3Foo", "C".repeat(100_000))),
+        None
+    );
+    assert_eq!(
+        demangle_swift_full(&format!("$s1a{}N", "1bV".repeat(30_000))),
+        None
+    );
+    assert_eq!(
+        demangle_swift_full(&format!(
+            "$s1a{}y{}GN",
+            "1bV".repeat(20_000),
+            "Si_".repeat(20_000)
+        )),
+        None
+    );
+    assert_eq!(
+        demangle_swift_full(&format!("$s4main3FooV{}N", "Sg".repeat(30_000))),
+        None
+    );
+}
