@@ -3009,6 +3009,7 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // facts are computed at LOAD and COMMITTED only when this gate is on, so
         // `off` renders exactly what the base table alone renders.
         "libcsigs" => arch.analysis_libcsigs,
+        "libgccsigs" => arch.analysis_libgccsigs,
         // (kuna) The LOAD-TIME format-string resolver — a Listing consumer whose
         // per-call-site overrides are computed at the deferred commit point and
         // applied only when the gate asks for the static half (`static` on x86,

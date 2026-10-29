@@ -38,7 +38,7 @@ use kuna_decomp::fspec::PrototypePieces;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
-mod kuna_libgcc;
+pub mod kuna_libgcc;
 mod kuna_libcnames;
 pub mod kuna_libcsigs;
 pub mod kuna_libctypes;
@@ -610,7 +610,6 @@ impl AnalysisPass for LibProtoPass {
         let (_addr_size, word_size) = ctx.arch.data_org();
         seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
         seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size, L);
-        kuna_libgcc::seed(ctx, &mut out, &present, &imports);
         out.c_runtime_imports = crate::loader::pe_iat::c_runtime_import_names(ctx.bytes);
         out
     }

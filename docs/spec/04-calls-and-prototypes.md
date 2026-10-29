@@ -2117,11 +2117,21 @@ compiled with sibling-call optimization disabled exhibit exactly that case.
 Recovery then retains the wide result; an explicit scalar caller prototype
 is needed to state the otherwise indistinguishable narrow contract.
 
+The pair proof does not follow arithmetic. A caller that returns a value
+computed from the call's words (`a / b + 1`, `-(a / b)`, an absolute value, a
+shift) or a phi of the call's words and an incoming argument
+(`f ? a / b : c`) leaves the second word inactive, so its return keeps only the
+high word or none. That is why the SPARC32 `__divdi3` contract (`libgccsigs`,
+§1) is off by default: without it the helper is an unknown callee, and such a
+caller returns every word in the first-register-low join. With a declared wide
+callee from DWARF or `--assert prototype`, the same limit applies.
+
 The authored `kuna-cli/tests/libgcc_divdi3.rs` round trips cover direct,
 saved-across-call, guarded, nontrivial-constant and one-word-replaced quotient
 returns at compiler `-O0` and `-O2`,
-both with the runtime contract and with an explicit wide prototype while
-`libproto` is off. They also check single-word truncations and call effects.
+both with `libgccsigs` on and with an explicit wide prototype while
+`libproto` is off. They also check single-word truncations, call effects, and
+that the default (`libgccsigs` off) leaves a low-word store as before.
 
 After native return trials are finalized, an otherwise unknown ten-byte scalar
 result in the full x87 ST0 register receives an extended floating type when the

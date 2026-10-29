@@ -509,6 +509,9 @@ Three tiers:
 | CALL fall-through addresses are assigned to stack variables | [`win32sigs`](#win32sigs) |
 | a Win32 call's wide string argument renders as a bare 0x... constant | [`win32sigs`](#win32sigs) |
 | calleearity and varargstackargs both on and a Windows API call is still argumentless | [`win32sigs`](#win32sigs) |
+| a SPARC32 caller stores the low word of a 64-bit quotient from a local nothing assigns | [`libgccsigs`](#libgccsigs) |
+| __divdi3 is called with four 32-bit arguments and only %o0 is read back | [`libgccsigs`](#libgccsigs) |
+| *p = v1; after a __divdi3 call where v1 is never written | [`libgccsigs`](#libgccsigs) |
 | a call to a function I named with --define-function still renders with no arguments | [`declaredlibcproto`](#declaredlibcproto) |
 | the argument stores are emitted as raw stack writes on the lines above an argumentless call | [`declaredlibcproto`](#declaredlibcproto) |
 | naming a callee changes the spelling of the call and nothing else | [`declaredlibcproto`](#declaredlibcproto) |
@@ -2410,6 +2413,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default (DIV-141). On, a Windows PE renders `LoadLibraryExW(v1,0,8)` / `WriteFile(h,buf,n,&written,0)` instead of `LoadLibraryExW()` with the pushed values left behind as `v41 = 0x401baf;`-style stack stores. Flip OFF to ablate the table's contribution -- to check whether a Win32 call's arguments came from the parked signature rather than from recovery, or if a target statically links its own function under a Win32 spelling that the imports-only restriction did not catch. Every non-PE target is byte-identical either way.
 - **Where / provenance:** P1/external-refinement · kuna · correctness-fix · repipe-resource-loader-c-retains
 - **Example:** `option win32sigs off`
+
+### `libgccsigs` -- on | off, default `off`
+
+- **Symptoms:** a SPARC32 caller stores the low word of a 64-bit quotient from a local nothing assigns; __divdi3 is called with four 32-bit arguments and only %o0 is read back; *p = v1; after a __divdi3 call where v1 is never written.
+- **What it does:** Seed the libgcc DI-mode contract `long long __divdi3(long long, long long)` onto a SPARC32 big-endian ELF (`sparc:BE:32:default:default`) that names `__divdi3`, defined or imported. The helper's widths come from GCC machine modes, not the C data model: it takes two eight-byte operands in %o0:%o1 and %o2:%o3 and returns the eight-byte quotient in %o0:%o1, high word first. Without the contract the caller sees an unknown callee that writes only %o0, so a caller that stores only the low word (`*p = (int)(a / b);`, the `st %o1` after the call) stores a local nothing assigns. With it the call prints `__divdi3(CONCAT44(a0,a1),CONCAT44(a2,a3))` and the stored word is `(int)__divdi3(..)`. A DWARF or explicit `--assert prototype` declaration keeps precedence, a stripped image names no helper and is unchanged, and every other target and helper (`__moddi3`, `__udivdi3`, `__umoddi3`) keeps its inferred contract.
+- **When to flip:** Off by default: the locked eight-byte result still costs a caller that RETURNS arithmetic on the quotient. Return recovery keeps a caller's two return words only when each is a bare slice of the call result or a literal (`return a / b;`, a quotient kept across a call, a guarded `return -1`), so `return a / b + 1;` prints `int inc(..)` with only the high word, `return -(a / b);` prints `int neg(..)`, and `return f ? a / b : c;` prints `void sel(..)`, dropping both values; with the option off all three return every word (in the first-register-low join `bejoin` leaves without evidence). Of 21 authored caller shapes at clang -O2, 13 lose words that way: +1, +c, negation, abs, `>> 3`, an unsigned `>> 32`, ^c, |c, *c, a sum of two quotients, an accumulation loop, a quotient an argument replaces on one path, and the `sel` phi. Turn on for a SPARC32 binary whose callers store or pass the quotient (`*p = (int)(a / b);`, `g(a / b)`) or return it unchanged, where the off output reads an unassigned local; check any `int` or `void` caller that should return a `long long` against the disassembly.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · pr-1252-libgcc-divdi3
+- **Example:** `option libgccsigs on`
 
 ### `declaredlibcproto` -- on | off, default `on`
 

@@ -1,4 +1,5 @@
-//! Signed DI-mode call results survive stores and full-width caller returns.
+//! Signed DI-mode call results survive stores and full-width caller returns
+//! under `libgccsigs`, which is off by default.
 use crate::common;
 use object::{
     write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags, SymbolKind,
@@ -66,18 +67,32 @@ fn signed_di_quotient_low_word_survives_an_opaque_call() {
         .filter(|cc| Command::new(cc).arg("--version").output().is_ok())
         .collect();
     assert!(!compilers.is_empty(), "a C compiler is required");
-    let (output, error, status) = common::run_kuna(&[
-        "decompile",
-        image.to_str().unwrap(),
-        "divide_low",
-        "--json",
-        "--assert",
-        "prototype divide_low void divide_low(int divisor,unsigned int *result)",
-    ]);
-    assert_eq!(status, 0, "{error}");
-    let document: serde_json::Value = serde_json::from_str(&output).unwrap();
-    assert!(document["functions"][0]["error"].is_null(), "{output}");
-    let body = document["functions"][0]["code"].as_str().unwrap();
+    let decompile = |option: Option<&str>| {
+        let mut args = vec![
+            "decompile",
+            image.to_str().unwrap(),
+            "divide_low",
+            "--json",
+            "--assert",
+            "prototype divide_low void divide_low(int divisor,unsigned int *result)",
+        ];
+        if let Some(value) = option {
+            args.extend(["--option", "libgccsigs", value]);
+        }
+        let (output, error, status) = common::run_kuna(&args);
+        assert_eq!(status, 0, "{error}");
+        let document: serde_json::Value = serde_json::from_str(&output).unwrap();
+        assert!(document["functions"][0]["error"].is_null(), "{output}");
+        document["functions"][0]["code"].as_str().unwrap().to_string()
+    };
+    let off = decompile(Some("off"));
+    assert_eq!(decompile(None), off, "libgccsigs is off by default");
+    assert!(
+        !off.contains("CONCAT44") && off.contains("__divdi3(0x3e,0x80000000,"),
+        "off keeps the inferred four-word call: {off}"
+    );
+    let body = decompile(Some("on"));
+    assert!(body.contains("__divdi3(0x3e80000000,"), "{body}");
     let source = root.path().join("quotient.c");
     std::fs::write(
         &source,
@@ -130,6 +145,7 @@ fn an_explicit_scalar_signature_overrides_the_runtime_contract() {
     std::fs::write(&image, caller(false)).unwrap();
     let (output, error, status) = common::run_kuna(&[
         "decompile", image.to_str().unwrap(), "divide_low", "--json",
+        "--option", "libgccsigs", "on",
         "--assert", "prototype divide_low void divide_low(int value,unsigned int *result)",
         "--assert", "prototype __divdi3 unsigned int __divdi3(unsigned int a,unsigned int b,unsigned int c,unsigned int d)",
     ]);
@@ -215,7 +231,9 @@ int high(long long a,long long b){return (int)((a/b)>>32);}
             let mut bodies = String::new();
             for function in ["q", "keep", "guard", "low", "high", "choose", "mixed"] {
                 let mut args = vec!["decompile", image.to_str().unwrap(), function, "--json"];
-                if explicit {
+                if !explicit {
+                    args.extend(["--option", "libgccsigs", "on"]);
+                } else {
                     args.extend([
                         "--option",
                         "libproto",

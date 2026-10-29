@@ -88,6 +88,10 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // `--option libcsigs on|off` via `engine.rs::analysis_pass_enabled`, so `off`
         // is byte-identical to the base table alone.
         Box::new(crate::protos::kuna_libcsigs::LibcSigsPass),
+        // S1 libgcc DI-mode contracts (`libgccsigs`): `long long __divdi3(long long,
+        // long long)` on SPARC32 BE ELF. Registered always; the COMMIT is gated by
+        // `--option libgccsigs on|off` (default off) via `analysis_pass_enabled`.
+        Box::new(crate::protos::kuna_libgcc::LibgccSigsPass),
         // S1 built-in Win32 API signatures (`win32sigs`): the Windows half of the
         // `.gdt` stand-in, which nothing in the tree carried. PE/COFF only, and
         // keyed by ENTRY ADDRESS rather than by name -- a PE import is TWO

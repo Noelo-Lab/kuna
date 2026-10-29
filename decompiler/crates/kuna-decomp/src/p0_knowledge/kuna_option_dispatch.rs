@@ -890,6 +890,7 @@ kuna_options! { self, p1;
     "peimportcall" => on_off!(analysis_peimportcall, "PE/Mach-O import-slot call binding"),
     "libproto" => on_off!(analysis_libproto, "Library-prototype analysis pass"),
     "libcsigs" => on_off!(analysis_libcsigs, "Measured libc signature extension"),
+    "libgccsigs" => on_off!(analysis_libgccsigs, "libgcc __divdi3 DI-mode contract"),
     "libctypes" => {
         use crate::kuna_libctypes::LibcTypesLayout;
         let layout = match p1.trim().to_ascii_lowercase().as_str() {
