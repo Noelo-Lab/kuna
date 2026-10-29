@@ -4189,8 +4189,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   chained-fixup overlay (§1.2) on an arm64(e) image or as a raw word on a classic
   `LC_DYLD_INFO` image, and decodes the string (8-bit when the `flags` unicode bit
   `0x10` is clear, UTF-16 otherwise). The commit seam then types the entry a
-  `char[N]` and seeds the `StringManager` at the entry address with the resolved
-  bytes, so a reference renders the literal (`NSLog("Reachability Flag Status: …")`)
+  `char[N]` spanning the entry's own four words (never the string's length, which
+  would overrun the next entry and hide it) and seeds the `StringManager` at the
+  entry address with the resolved bytes, so a reference renders the literal (`NSLog("Reachability Flag Status: …")`)
   across the one indirection the printer cannot follow on its own. The entries are
   marked read-only (a CFString constant is immutable), which the route requires on
   the historical writable `__DATA,__cfstring` layout (`__DATA_CONST` is already

@@ -5342,11 +5342,11 @@ fn commit_analysis_output(
         if occupied {
             continue;
         }
-        // char[len+1]: the element count carries a trailing NUL slot, matching the
-        // `char[N]` a NUL-terminated literal gets; the printer renders from the
-        // seeded bytes, not this length.
+        // The array spans the entry struct, never the string: the printer renders
+        // from the seeded bytes, and a string-sized array would overrun the next
+        // entry and hide it behind this one's symbol.
         let ch = prog.arch().types().get_type_char(prog.arch().types().get_size_of_char())?;
-        let arr = prog.arch().types().get_type_array((fact.bytes.len() + 1) as i32, ch)?;
+        let arr = prog.arch().types().get_type_array(fact.size as i32, ch)?;
         let name = format!("s_{:x}", fact.addr);
         // Seed the StringManager BEFORE the symbol so the char pointer resolves to
         // the real string (char width 1 — the `char[N]` element width above).

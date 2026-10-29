@@ -103,6 +103,10 @@ pub struct CFStringFact {
     pub addr: u64,
     /// The UTF-8 string bytes (no trailing NUL), the entry's char pointer resolved.
     pub bytes: Vec<u8>,
+    /// Byte span of the entry (four pointer words). The `char[N]` the commit
+    /// plants covers exactly this span: sized from the string, a long one would
+    /// overrun the next entry and hide it.
+    pub size: u32,
 }
 
 /// A processor-context decode-mode paint: set context variable `var` to `value`

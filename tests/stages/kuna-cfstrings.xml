@@ -21,14 +21,16 @@
 
     The XML wrapper only supplies the harness architecture. Both passes clear
     it and load the real arm64 Mach-O fixture `macho_cfstring` (built from
-    `macho_cfstring.c`, see the fixtures README): one hand-built CFString
-    constant `{ ___CFConstantStringClassReference, 0x7c8, "cfstring hello",
-    14 }` in `__DATA_CONST,__cfstring` @0x100004008 and `_get_greeting`
-    @0x100000538 returning its address.
+    `macho_cfstring.c`, see the fixtures README): three hand-built CFString
+    constants in `__DATA_CONST,__cfstring` and a getter returning each one's
+    address. `_get_greeting` @0x100000538 returns "cfstring hello" @0x100004008;
+    `_get_after` @0x100000550 returns the entry @0x100004048, which sits right
+    behind an entry whose string is longer than its own 32 bytes, so it is only
+    reached when that entry's `char[N]` stays inside the entry.
 
-    Pass 1 (the default, the BUG): `_get_greeting` returns the bare entry
-    address `0x100004008`. Pass 2 (`option cfstrings on`, the FIX): it returns
-    the literal `"cfstring hello"`.
+    Pass 1 (the default, the BUG): the getters return the bare entry addresses
+    `0x100004008` and `0x100004048`. Pass 2 (`option cfstrings on`, the FIX): they
+    return the literals `"cfstring hello"` and `"after the long one"`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c0035fd6
@@ -42,6 +44,9 @@ c0035fd6
   <com>load addr 0x100000538</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x100000550</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_cfstring</com>
   <com>option cfstrings on</com>
@@ -49,9 +54,14 @@ c0035fd6
   <com>load addr 0x100000538</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>load addr 0x100000550</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="cfstrings off: the __cfstring reference is the bare entry address" min="1" max="1">return 0x100004008;</stringmatch>
 <stringmatch name="cfstrings on: the __cfstring reference renders its string literal" min="1" max="1">return "cfstring hello";</stringmatch>
 <stringmatch name="cfstrings on: the returned constant is typed as a char pointer" min="1" max="1">char \* _get_greeting\(void\)</stringmatch>
+<stringmatch name="cfstrings off: the entry behind a long string is its bare address" min="1" max="1">return 0x100004048;</stringmatch>
+<stringmatch name="cfstrings on: the entry behind a long string still renders its literal" min="1" max="1">return "after the long one";</stringmatch>
 </decompilertest>

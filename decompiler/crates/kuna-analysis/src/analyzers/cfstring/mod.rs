@@ -118,7 +118,7 @@ impl AnalysisPass for CFStringPass {
                 // compiler-emitted constant), which is already UTF-8.
                 raw.to_vec()
             };
-            out.cfstrings.push(CFStringFact { addr: entry, bytes });
+            out.cfstrings.push(CFStringFact { addr: entry, bytes, size: stride as u32 });
             // A CFString constant is immutable; marking the struct read-only lets
             // the printer's constant-string route fire even on the historical
             // writable `__DATA,__cfstring` layout (it is already read-only in

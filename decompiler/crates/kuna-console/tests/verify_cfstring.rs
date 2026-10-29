@@ -3,20 +3,21 @@
 //!
 //! Fixture: `tests/fixtures/macho_cfstring` — a self-contained arm64 Mach-O built
 //! from `macho_cfstring.c` with `zig cc -target aarch64-macos -O0`. It hand-builds
-//! one `__builtin_CFString` constant in `__DATA_CONST,__cfstring`
-//! (`{ ___CFConstantStringClassReference, 0x7c8 (8-bit), "cfstring hello", 14 }`)
-//! and a function `_get_greeting` that returns its address. Its char pointer is a
-//! classic `LC_DYLD_INFO` pointer into `__TEXT,__cstring`. The build recipe + the
-//! pinned VMA are in `tests/fixtures/README.md`.
+//! three `__builtin_CFString` constants in `__DATA_CONST,__cfstring` (8-bit,
+//! `flags` 0x7c8) and a getter returning each one's address. The second string is
+//! longer than a 32-byte entry; the third entry sits right behind it. The char
+//! pointers are classic `LC_DYLD_INFO` pointers into `__TEXT,__cstring`. The build
+//! recipe + the pinned VMAs are in `tests/fixtures/README.md`.
 //!
 //! ## The two-state proof (the `verify_objc` posture)
 //!
-//! - **`--option cfstrings off`** (default): `_get_greeting` returns the bare
-//!   `__cfstring` entry address `0x100004008` — the CFString struct the printer
-//!   cannot follow on its own.
-//! - **`--option cfstrings on`**: the SAME function returns the literal
-//!   `"cfstring hello"` — the entry's char pointer resolved, the string seeded
-//!   into the `StringManager`, the entry typed `char[N]`.
+//! - **`--option cfstrings off`** (default): each getter returns the bare
+//!   `__cfstring` entry address — the CFString struct the printer cannot follow on
+//!   its own.
+//! - **`--option cfstrings on`**: each returns its literal — the entry's char
+//!   pointer resolved, the string seeded into the `StringManager`, the entry typed
+//!   `char[N]` over its own 32 bytes only, so a long string never hides the next
+//!   entry.
 //!
 //! Both run on the real-Mach-O path, so the XML datatest oracles never reach this.
 
@@ -31,14 +32,15 @@ use kuna_console::ifacedecomp::{
 use kuna_console::ifaceterm::ConsoleCommands;
 use kuna_decomp::decompile_drive::build_and_follow_flow;
 
-/// The pinned VMA of `_get_greeting` in the fixture (PIE imagebase `0x100000000`).
-const GET_GREETING_VMA: u64 = 0x100000538;
-
-/// The resolved CFString text the pass renders.
-const GREETING: &str = "cfstring hello";
-
-/// The bare `__cfstring` entry address the default run renders instead.
-const ENTRY_ADDR: &str = "0x100004008";
+/// `(getter VMA, entry address rendered when off, literal rendered when on)`.
+/// The second string is longer than one 32-byte entry, and the third entry sits
+/// right behind it, so it is only reachable when the second entry's `char[N]`
+/// stays inside its own entry.
+const ENTRIES: [(u64, &str, &str); 3] = [
+    (0x100000538, "0x100004008", "cfstring hello"),
+    (0x100000544, "0x100004028", "a constant string longer than one entry"),
+    (0x100000550, "0x100004048", "after the long one"),
+];
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -65,7 +67,7 @@ fn name_at(prog: &ConsoleProgram, vma: u64) -> String {
 
 /// Bootstrap the fixture, (optionally) enable `cfstrings`, commit, then decompile
 /// `_get_greeting` and return its rendered C.
-fn run(mode: Mode) -> String {
+fn run(mode: Mode, vma: u64) -> String {
     let root = repo_root();
     let spec_roots = vec![root.join("specs").to_str().unwrap().to_string()];
     let bin = fixtures().join("macho_cfstring");
@@ -79,10 +81,10 @@ fn run(mode: Mode) -> String {
     }
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
-    let name = name_at(&prog, GET_GREETING_VMA);
+    let name = name_at(&prog, vma);
     let code_space =
         prog.arch().manage().get_default_code_space().expect("a default code space").clone();
-    let addr = Address::new(Rc::clone(&code_space), GET_GREETING_VMA);
+    let addr = Address::new(Rc::clone(&code_space), vma);
     let fd = {
         let arch = prog.arch_mut();
         build_and_follow_flow(arch, &name, addr, kuna_console::engine::UNBOUNDED_SIZE)
@@ -106,32 +108,22 @@ fn run(mode: Mode) -> String {
 }
 
 /// The two-state proof: a `__cfstring` reference is the bare entry address by
-/// default and becomes the string literal only when `cfstrings` is on.
+/// default and becomes the string literal only when `cfstrings` is on, for every
+/// entry, including the one behind an entry whose string is longer than it.
 #[test]
 fn cfstring_renders_as_literal_only_when_on() {
-    let off = run(Mode::Off);
-    let on = run(Mode::On);
-
-    eprintln!("---- cfstrings OFF (default) ----\n{off}");
-    eprintln!("---- cfstrings ON ----\n{on}");
-
-    // Default: the bare __cfstring entry address, NOT the string.
-    assert!(
-        off.contains(ENTRY_ADDR),
-        "cfstrings off must render the bare __cfstring entry address {ENTRY_ADDR}:\n{off}"
-    );
-    assert!(
-        !off.contains(GREETING),
-        "cfstrings off must NOT render the string {GREETING:?} (proves the value is the pass's):\n{off}"
-    );
-
-    // On: the resolved string literal.
-    assert!(
-        on.contains(&format!("\"{GREETING}\"")),
-        "cfstrings on must render the CFString literal {GREETING:?}:\n{on}"
-    );
-    assert!(
-        !on.contains(ENTRY_ADDR),
-        "cfstrings on must replace the bare entry address with the literal:\n{on}"
-    );
+    for (vma, entry, text) in ENTRIES {
+        let off = run(Mode::Off, vma);
+        let on = run(Mode::On, vma);
+        assert!(
+            off.contains(&format!("return {entry};")),
+            "cfstrings off must render the bare __cfstring entry address {entry}:\n{off}"
+        );
+        assert!(!off.contains(text), "cfstrings off must not render {text:?}:\n{off}");
+        assert!(
+            on.contains(&format!("return \"{text}\";")),
+            "cfstrings on must render the CFString literal {text:?}:\n{on}"
+        );
+        assert!(on.contains("char *"), "cfstrings on types the constant a char pointer:\n{on}");
+    }
 }
