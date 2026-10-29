@@ -125,7 +125,12 @@ impl AnalysisPass for ObjcMetadataPass {
                 self.walk_class(&img, &tctx, ctx.file.architecture(), class_ptr, &mut selectors, &mut out);
             }
         }
-        out.const_ranges = kuna_objcrefs::emit(&img, ctx.file, &tctx, &mut selectors, &mut out);
+        let const_ranges = kuna_objcrefs::emit(&img, ctx.file, &tctx, &mut selectors, &mut out);
+        // A chained slot holds its packed fixup word until `dynrelocs` unpacks it
+        // at load; with that gate off the slot is named but never folded.
+        if !img.chained() || kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
+            out.const_ranges = const_ranges;
+        }
         out
     }
 }

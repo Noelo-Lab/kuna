@@ -4251,7 +4251,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   Off, every load through a slot stays a load of the named global
   (`objc_msgSend(obj, selRef_init)`), the shape to read when the slot itself is
   the question. The fold is what the chained-fixup unpacking in §1.3 exists for
-  here: without it a selref slot folds to its packed chain word.
+  here: a chained slot holds its packed chain word until `dynrelocs` unpacks it,
+  so on a chained image the pass reports no constant slot while `dynrelocs` is
+  off (the names stay). Like every analysis gate, `objcrefconst` is read at the
+  `read symbols` commit; flipping it afterwards does not re-paint.
 - **PDB** (`pdb`, PE-only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pdb/mod.rs`): Windows' debug info
   lives in a separate `.pdb` the PE only fingerprints, so the pass reads the

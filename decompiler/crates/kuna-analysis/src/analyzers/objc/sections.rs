@@ -129,6 +129,11 @@ impl<'a> MachoImage<'a> {
         self.fixups.bind_name(va)
     }
 
+    /// Whether the image carries chained fixups (`LC_DYLD_CHAINED_FIXUPS`).
+    pub fn chained(&self) -> bool {
+        !self.fixups.is_empty()
+    }
+
     /// The pointer a **rebase** slot at `va` holds: the resolved chained-fixup
     /// target, or on a classic `LC_DYLD_INFO` image the non-zero raw word (a
     /// bind slot there reads `0`). `None` for a bind slot or an unmapped `va`;
@@ -137,7 +142,7 @@ impl<'a> MachoImage<'a> {
         if let Some(resolved) = self.fixups.resolved_ptr(va) {
             return Some(resolved);
         }
-        if !self.fixups.is_empty() {
+        if self.chained() {
             return None;
         }
         self.read_ptr(va).filter(|&p| p != 0)
