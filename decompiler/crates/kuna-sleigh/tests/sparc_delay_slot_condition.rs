@@ -65,7 +65,11 @@ impl Machine {
         let state = Rc::new(RefCell::new(state));
         let breaks = Rc::new(RefCell::new(BreakTableCallBack::new(Rc::clone(&trans))));
         let emulator = EmulatePcodeCache::new(trans, manager, Rc::clone(&state), breaks);
-        Machine { emulator, state, ram }
+        Machine {
+            emulator,
+            state,
+            ram,
+        }
     }
 
     fn step(&mut self, registers: &[(&str, u64)]) -> u64 {
@@ -110,7 +114,11 @@ fn check_branch(bits: u32, predicted: bool, extended: bool, annul: bool, cond: u
             registers.extend([(flag, incoming), ("g1", left), ("g2", right)]);
             let next = machine.step(&registers);
             let context = format!("SPARC{bits} predicted={predicted} extended={extended} annul={annul} {flag}={incoming} slot={slot_flag}");
-            assert_eq!(next, if incoming == 1 { 0x1010 } else { 0x1008 }, "{context}");
+            assert_eq!(
+                next,
+                if incoming == 1 { 0x1010 } else { 0x1008 },
+                "{context}"
+            );
             assert_eq!(
                 machine.read(flag),
                 if annul && incoming == 0 {
@@ -150,17 +158,24 @@ fn register_branches_test_the_register_before_the_delay_slot_rewrites_it() {
         (7, |v| v >= 0),
     ];
     for bits in [32u32, 64] {
-        let mask = if bits == 32 { u64::from(u32::MAX) } else { u64::MAX };
+        let mask = if bits == 32 {
+            u64::from(u32::MAX)
+        } else {
+            u64::MAX
+        };
         for annul in [false, true] {
             for (rcond, holds) in rconds {
                 for slot in [-1i64, 0, 1] {
-                    let branch = (u32::from(annul) << 29) | (rcond << 25) | (3 << 22) | (1 << 14) | 4;
+                    let branch =
+                        (u32::from(annul) << 29) | (rcond << 25) | (3 << 22) | (1 << 14) | 4;
                     let mov_g1 = 0x82102000 | (slot as u32 & 0x1fff);
                     let mut machine = Machine::new(bits, branch, mov_g1);
                     for incoming in [-1i64, 0, 1] {
                         let taken = holds(incoming);
                         let next = machine.step(&[("g1", incoming as u64 & mask)]);
-                        let context = format!("SPARC{bits} rcond={rcond} annul={annul} g1={incoming} slot={slot}");
+                        let context = format!(
+                            "SPARC{bits} rcond={rcond} annul={annul} g1={incoming} slot={slot}"
+                        );
                         assert_eq!(next, if taken { 0x1010 } else { 0x1008 }, "{context}");
                         let g1 = if annul && !taken { incoming } else { slot };
                         assert_eq!(machine.read("g1"), g1 as u64 & mask, "{context}");
