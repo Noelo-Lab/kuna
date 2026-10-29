@@ -23,6 +23,9 @@ mod macro_symbol;
 #[path = "ppc_lwarx_reservation.rs"]
 mod ppc_lwarx_reservation;
 
+#[path = "ppc_ldx_ldarx_encoding.rs"]
+mod ppc_ldx_ldarx_encoding;
+
 #[path = "ppc_nested_operands.rs"]
 mod ppc_nested_operands;
 

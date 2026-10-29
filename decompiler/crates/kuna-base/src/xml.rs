@@ -2112,7 +2112,8 @@ mod tests {
         // and kuna-variantnames / variant-part discriminants print as variant names
         // and kuna-gowritebarrier / the Go GC write-barrier diamond folds (option gowritebarrier)
         // and kuna-ppc-lwarx-reservation / PowerPC lwarx sets the reservation its stwcx. checks
-        assert_eq!(count, 590, "corpus file count drifted");
+        // and kuna-ppc64-ldarx-encoding / generic PowerPC ldx and ldarx decode at their own opcodes
+        assert_eq!(count, 591, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
