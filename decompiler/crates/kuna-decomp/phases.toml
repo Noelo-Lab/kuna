@@ -8107,6 +8107,26 @@ tier = "analysis"
 symptoms = "arm64e mach-o decoded with the generic v8A spec so pointer-auth ops are unmodeled|pac instructions in an apple-silicon binary not modeled by the loaded spec"
 
 [[settable]]
+option = "kernelcache"
+values = "auto|off|<bundle-id>"
+default = "auto"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-kernelcache"
+summary = "Load an Apple kernelcache straight from its firmware container. An IMG4 or bare IM4P file is parsed as DER, its payload is decoded (LZFSE bvx2/bvxn/bvx- blocks or a complzss LZSS container, checked against the declared size and Adler-32), and an encrypted payload (one carrying a KBAG) is refused with a message instead of being misread. The decoded image is usually an MH_FILESET kernel collection: one Mach-O header per LC_FILESET_ENTRY (the kernel and every kext) sharing one file and one LC_DYLD_CHAINED_FIXUPS table. kuna applies every rebase of that table to its pointer slot (DYLD_CHAINED_PTR_64_KERNEL_CACHE, ARM64E_KERNEL and X86_64_KERNEL_CACHE, pointer-authentication bits stripped) and then loads ONE entry as a thin Mach-O: `auto` takes the kernel (the MH_EXECUTE entry), a bundle id takes that entry, matched exactly or by a unique dotted suffix (`IOSurface` finds com.apple.iokit.IOSurface). Loader-tier: read through the KUNA_KERNELCACHE env var, because the image is chosen inside load file."
+use_when = "Auto (default): `kuna functions kernelcache` lists the kernel's functions with their symbol names; `--option kernelcache com.apple.iokit.IOSurface` loads that kext instead, its __auth_stubs calls named after the kernel functions they reach. Flip off to pass the bytes through untouched: an IMG4 is then an unrecognized format and a bare MH_FILESET loads as one image with no code sections."
+example = "--option kernelcache com.apple.iokit.IOSurface"
+source_decompiler = "kuna"
+inspiration = "Apple's public IMG4/IM4P DER layout, the lzfse reference format, mach-o/loader.h MH_FILESET + LC_FILESET_ENTRY and mach-o/fixup-chains.h kernel-cache pointer formats; unlace ios_img4.rs / apple_kernelcache.rs"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "an iOS kernelcache (IMG4/IM4P) is rejected as an unrecognized input format|kuna functions on a decompressed MH_FILESET kernelcache finds no functions|a kext cannot be selected out of a kernel collection|pointers in a kernelcache read as packed chained-fixup words instead of addresses"
+
+
+[[settable]]
 option = "outline"
 values = "off|<fn>:<head>-<exit>[;...]"
 default = "off"

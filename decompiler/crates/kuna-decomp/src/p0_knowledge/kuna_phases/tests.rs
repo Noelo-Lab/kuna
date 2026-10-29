@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_377() {
-    assert_eq!(kuna_num_settables(), 377);
-    assert_eq!(SETTABLE_TABLE.len(), 377);
+fn settable_count_is_378() {
+    assert_eq!(kuna_num_settables(), 378);
+    assert_eq!(SETTABLE_TABLE.len(), 378);
 }
 
 #[test]
-fn tier_counts_are_130_core_153_transform_94_analysis() {
+fn tier_counts_are_130_core_153_transform_95_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_130_core_153_transform_94_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (130, 153, 94));
+    assert_eq!((core, transform, analysis), (130, 153, 95));
 }
 
 #[test]
@@ -580,6 +580,9 @@ fn option_values_live_value_present_for_178() {
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
         "lazyfuncs",
+        // (kuna) Apple kernelcache unwrapping + MH_FILESET entry choice -- a
+        // LOAD-time gate read from `KUNA_KERNELCACHE`. Default auto.
+        "kernelcache",
     ];
     let mut with_live = 0;
     for i in 0..kuna_num_settables() {
@@ -1170,7 +1173,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
     // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
-    assert_eq!(json.matches("},\n").count(), 376);
+    // +1 for `kernelcache`; its P1 row sits beside `macho-arm64e`.
+    assert_eq!(json.matches("},\n").count(), 377);
 }
 
 #[test]

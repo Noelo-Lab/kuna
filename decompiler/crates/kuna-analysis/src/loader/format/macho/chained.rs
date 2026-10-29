@@ -70,6 +70,11 @@ mod ptr_format {
     /// `DYLD_CHAINED_PTR_ARM64E_USERLAND24` — `ARM64E_USERLAND` with a 24-bit
     /// bind ordinal.
     pub const ARM64E_USERLAND24: u16 = 12;
+    /// `DYLD_CHAINED_PTR_64_KERNEL_CACHE` — 4-byte stride, a 30-bit target offset
+    /// from the base of the cache level named in bits 30..31.
+    pub const PTR_64_KERNEL_CACHE: u16 = 8;
+    /// `DYLD_CHAINED_PTR_X86_64_KERNEL_CACHE` — the same layout, 1-byte stride.
+    pub const X86_64_KERNEL_CACHE: u16 = 11;
 }
 
 /// One bind fixup: the import a slot is bound to at load time.
@@ -451,7 +456,9 @@ fn walk_segment(
         ptr_format::PTR_64
         | ptr_format::PTR_64_OFFSET
         | ptr_format::PTR_32
-        | ptr_format::ARM64E_KERNEL => 4,
+        | ptr_format::ARM64E_KERNEL
+        | ptr_format::PTR_64_KERNEL_CACHE => 4,
+        ptr_format::X86_64_KERNEL_CACHE => 1,
         _ => return,
     };
     out.width = if pointer_format == ptr_format::PTR_32 { 4 } else { 8 };
@@ -571,6 +578,16 @@ fn decode_ptr(raw: u64, format: &Format) -> (u64, Option<Fixup>) {
                 unpacked
             };
             (next, Some(Fixup::Rebase(resolved)))
+        }
+        // dyld_chained_ptr_64_kernel_cache_rebase { target:30 cacheLevel:2
+        // diversity:16 addrDiv:1 key:2 next:12 isAuth:1 }: only a target in this
+        // collection's own level (0) is rebased from its base.
+        ptr_format::PTR_64_KERNEL_CACHE | ptr_format::X86_64_KERNEL_CACHE => {
+            let next = (raw >> 51) & 0xFFF;
+            if (raw >> 30) & 3 != 0 {
+                return (next, None);
+            }
+            (next, Some(Fixup::Rebase(imagebase.wrapping_add(raw & 0x3FFF_FFFF))))
         }
         // dyld_chained_ptr_32_rebase { target:26 next:5 bind:1 }
         // dyld_chained_ptr_32_bind   { ordinal:20 addend:6 next:5 bind:1 }
@@ -740,6 +757,21 @@ mod tests {
         assert_eq!(fixup, Some(Fixup::Bind { ordinal: 0x12_0003, addend: -1 }));
         let (_n, fixup) = decode_ptr(raw | (1 << 63), &fmt(ptr_format::ARM64E));
         assert_eq!(fixup, Some(Fixup::Bind { ordinal: 3, addend: 0 }));
+    }
+
+    /// The kernel-collection formats rebase every target from the collection
+    /// base; a target in another cache level stays unresolved.
+    #[test]
+    fn decode_kernel_cache_formats() {
+        let base = 0xffff_fff0_0700_4000;
+        let at = |pointer_format| Format { pointer_format, imagebase: base, max_valid_pointer: 0 };
+        let raw = (1u64 << 63) | (5u64 << 51) | (0x1234u64 << 32) | 0x00d7_8010;
+        let rebase = |t| Some(Fixup::Rebase(t));
+        assert_eq!(decode_ptr(raw, &at(ptr_format::PTR_64_KERNEL_CACHE)), (5, rebase(base + 0xd7_8010)));
+        let other_level = (1u64 << 30) | 0x10;
+        assert_eq!(decode_ptr(other_level, &at(ptr_format::PTR_64_KERNEL_CACHE)), (0, None));
+        let plain = (2u64 << 51) | 0x8000;
+        assert_eq!(decode_ptr(plain, &at(ptr_format::ARM64E_KERNEL)), (2, rebase(base + 0x8000)));
     }
 
     /// An unhandled pointer format resolves nothing and stops the chain.

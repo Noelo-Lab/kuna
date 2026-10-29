@@ -10,7 +10,7 @@ use std::process::Command;
 
 use kuna_decomp::{
     kuna_calltargettype, kuna_dwarfstructs, kuna_dwarfvariants, kuna_dynrelocs, kuna_i386_pie_plt,
-    kuna_ifuncfpret, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
+    kuna_ifuncfpret, kuna_kernelcache, kuna_libctypes, kuna_msvcfpconst, kuna_pdatachained, kuna_peordinal,
     kuna_goabi, kuna_goreg, kuna_gotypes, kuna_relocrebase, kuna_rexthunk, kuna_sourcelang, kuna_swiftdemangle,
     kuna_symbolnamebound, kuna_symbolnamechars,
     kuna_variantnames,
@@ -26,6 +26,7 @@ enum Encoding {
     SymbolNameChars,
     Trimmed,
     LibcTypes,
+    Kernelcache,
     SourceLang,
     Ppc32Pic,
 }
@@ -39,6 +40,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
         "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
         "relocrebase" => (kuna_relocrebase::RELOCREBASE_ENV, DefaultOn),
         "dynrelocs" => (kuna_dynrelocs::DYNRELOCS_ENV, DefaultOn),
+        "kernelcache" => (kuna_kernelcache::KERNELCACHE_ENV, Kernelcache),
         "pdatachained" => (kuna_pdatachained::PDATACHAINED_ENV, DefaultOn),
         "rexthunk" => (kuna_rexthunk::REXTHUNK_ENV, DefaultOn),
         "goabi" => (kuna_goabi::GOABI_ENV, DefaultOn),
@@ -86,6 +88,9 @@ impl Encoding {
                 .as_str()
                 .into(),
             Self::Trimmed => value.trim().into(),
+            Self::Kernelcache => {
+                kuna_kernelcache::KernelcacheChoice::parse(value).unwrap_or_default().as_str().into()
+            }
             Self::LibcTypes => {
                 if off {
                     "off".into()
@@ -248,6 +253,15 @@ mod tests {
                     ("", None),
                     ("off", None),
                     ("invalid", None),
+                ],
+            ),
+            (
+                "kernelcache",
+                vec![
+                    (" AUTO ", Some("auto")),
+                    ("OFF", Some("off")),
+                    ("IOSurface", Some("IOSurface")),
+                    ("two words", Some("auto")),
                 ],
             ),
             (

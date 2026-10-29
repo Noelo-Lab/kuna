@@ -265,7 +265,35 @@ where
         }
     }
 
+    if header.filetype(endian) == object::macho::MH_KEXT_BUNDLE {
+        push_kext_bound_imports(&symtab, endian, &mut out);
+    }
     finish_with_exports(neutral, out)
+}
+
+/// (kuna `kernelcache`) A kext cut out of a kernel collection carries each
+/// import the collection bound as an `N_ABS | N_EXT` symbol at the callee's
+/// address (see `kuna_kernelcache`), the target of the kext's direct calls.
+fn push_kext_bound_imports<Mach: MachHeader<Endian = Endianness>>(
+    symtab: &SymbolTable<Mach>,
+    endian: Endianness,
+    out: &mut MachOIndirectSymbols,
+) {
+    use object::read::macho::Nlist;
+    for nlist in symtab.iter() {
+        let n_type = nlist.n_type();
+        if n_type & object::macho::N_STAB != 0
+            || n_type & object::macho::N_TYPE != object::macho::N_ABS
+            || n_type & object::macho::N_EXT == 0
+        {
+            continue;
+        }
+        let addr: u64 = nlist.n_value(endian).into();
+        let Ok(name) = nlist.name(endian, symtab.strings()) else { continue };
+        if addr != 0 && !name.is_empty() {
+            out.imports.push(ImportSym { addr, name: strip_leading_underscore(name), kind: ImportSymKind::Import });
+        }
+    }
 }
 
 /// True only for the two typed Mach-O section classes whose entries the dynamic

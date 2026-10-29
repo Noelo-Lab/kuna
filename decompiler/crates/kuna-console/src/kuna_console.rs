@@ -165,6 +165,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
             Some(n) => Cow::Owned(n.to_string()),
         });
     }
+    if option == "kernelcache" {
+        return Some(Cow::Owned(conf.analysis_kernelcache.as_str().to_string()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
