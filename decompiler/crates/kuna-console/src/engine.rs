@@ -4386,7 +4386,7 @@ pub fn bootstrap_from_object_with_isa(
     // entry selection, ahead of every other normalization.
     let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
     let peeled = kuna_analysis::loader::kuna_kernelcache::peel(bytes, &choice)
-        .map_err(|e| KunaError::lowlevel(format!("{path}: {e}")))?;
+        .map_err(KunaError::lowlevel)?;
     if let Some(note) = &peeled.note {
         kuna_base::notes::say_once(path, &format!("[kuna] {note}"));
     }

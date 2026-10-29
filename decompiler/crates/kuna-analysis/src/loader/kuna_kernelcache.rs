@@ -20,8 +20,6 @@ mod lzss;
 #[cfg(test)]
 mod tests;
 
-pub use fileset::FilesetEntry;
-
 /// The largest payload the decompressors will produce.
 const DECODED_LIMIT: usize = 1 << 31;
 
@@ -59,16 +57,6 @@ pub fn peel(bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<Peeled, String
     };
     let note = (!notes.is_empty()).then(|| notes.join("; "));
     Ok(Peeled { bytes, note })
-}
-
-/// The entries of an `MH_FILESET` (after unwrapping any container), in load
-/// command order; empty for any other image.
-pub fn fileset_entries(bytes: &[u8]) -> Result<Vec<FilesetEntry>, String> {
-    if is_container(bytes) {
-        let (payload, _) = unwrap_payload(bytes)?;
-        return Ok(fileset::entries(&payload).unwrap_or_default());
-    }
-    Ok(fileset::entries(bytes).unwrap_or_default())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

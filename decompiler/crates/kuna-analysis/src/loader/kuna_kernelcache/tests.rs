@@ -124,8 +124,10 @@ fn fileset_entry_selection() {
     assert_eq!(&kernel.bytes[12..16], &2u32.to_le_bytes(), "auto loads the MH_EXECUTE kernel");
     let kext = peel(image.clone(), &KernelcacheChoice::Entry("Widget".into())).unwrap();
     assert_eq!(&kext.bytes[12..16], &11u32.to_le_bytes(), "suffix match picks the kext");
-    let err = peel(image, &KernelcacheChoice::Entry("Gadget".into())).err().unwrap();
+    let err = peel(image.clone(), &KernelcacheChoice::Entry("Gadget".into())).err().unwrap();
     assert!(err.contains("com.apple.kernel"), "{err}");
+    let list = peel(image, &KernelcacheChoice::Entry("list".into())).err().unwrap();
+    assert!(list.ends_with("(2):\ncom.apple.kernel\ncom.example.driver.Widget"), "{list}");
 }
 
 /// The kext's authenticated `__got` slot and the kernel's function table read as
@@ -147,7 +149,5 @@ fn compressed_containers_peel_to_the_same_kernel() {
     for name in ["kernelcache.img4", "kernelcache.lzss.im4p"] {
         let peeled = peel(fixture(name), &KernelcacheChoice::Auto).unwrap();
         assert!(peeled.bytes == expected, "{name}");
-        let entries = fileset_entries(&fixture(name)).unwrap();
-        assert_eq!(entries.len(), 2, "{name}");
     }
 }

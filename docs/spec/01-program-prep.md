@@ -999,8 +999,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   copy is refused if any of the entry's file-backed segments starts inside the
   header it would overwrite. `auto` takes the `MH_EXECUTE` entry (the kernel);
   any other value names an entry by its bundle id, exactly or by a unique
-  case-insensitive dotted suffix (`IOSurface`), and a miss lists the
-  candidates. A kext calls into the kernel and into the kexts it depends on
+  case-insensitive dotted suffix (`IOSurface`), a miss lists the
+  candidates, and `list` stops the load with every entry id. A kext calls into the kernel and into the kexts it depends on
   with a direct `bl` that the collection's builder resolved, so the only record
   of the callee's name is the kext's undefined `nlist`; when the chosen entry is
   not the kernel, each undefined symbol that another entry exports from an

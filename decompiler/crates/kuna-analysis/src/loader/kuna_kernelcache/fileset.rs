@@ -20,13 +20,11 @@ const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x400;
 
 /// One image of a kernel collection.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct FilesetEntry {
-    pub id: String,
-    pub vmaddr: u64,
-    pub fileoff: u64,
-    /// The entry header's `filetype` (`MH_EXECUTE` for the kernel,
-    /// `MH_KEXT_BUNDLE` for a kext).
-    pub filetype: u32,
+pub(super) struct FilesetEntry {
+    pub(super) id: String,
+    pub(super) fileoff: u64,
+    /// `MH_EXECUTE` for the kernel, `MH_KEXT_BUNDLE` for a kext.
+    pub(super) filetype: u32,
 }
 
 pub(super) fn is_fileset(bytes: &[u8]) -> bool {
@@ -89,7 +87,6 @@ pub(super) fn entries(bytes: &[u8]) -> Option<Vec<FilesetEntry>> {
             let fileoff = rd_u64(bytes, p + 16)?;
             Some(FilesetEntry {
                 id: String::from_utf8_lossy(name).into_owned(),
-                vmaddr: rd_u64(bytes, p + 8)?,
                 fileoff,
                 filetype: rd_u32(bytes, usize::try_from(fileoff).ok()?.checked_add(12)?)?,
             })
@@ -111,6 +108,10 @@ fn select<'a>(all: &'a [FilesetEntry], choice: &KernelcacheChoice) -> Result<&'a
     if let Some(e) = all.iter().find(|e| e.id == *name) {
         return Ok(e);
     }
+    if name == "list" {
+        let ids: Vec<&str> = all.iter().map(|e| e.id.as_str()).collect();
+        return Err(format!("MH_FILESET entries ({}):\n{}", all.len(), ids.join("\n")));
+    }
     let lower = name.to_ascii_lowercase();
     let suffix = format!(".{lower}");
     let hits: Vec<&FilesetEntry> = all
@@ -130,7 +131,8 @@ fn select<'a>(all: &'a [FilesetEntry], choice: &KernelcacheChoice) -> Result<&'a
     };
     let shown = if near.is_empty() { all.iter().map(|e| e.id.as_str()).take(8).collect() } else { near };
     Err(format!(
-        "no single MH_FILESET entry matches {name:?} ({} entries; {}: {})",
+        "no single MH_FILESET entry matches {name:?} ({} entries; {}: {}; \
+         `--option kernelcache list` prints them all)",
         all.len(),
         if hits.len() > 1 { "ambiguous between" } else { "for example" },
         shown.join(", ")
