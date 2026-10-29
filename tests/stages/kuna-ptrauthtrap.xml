@@ -21,6 +21,10 @@
     the `macho_arm64e_auth` fixture (an arm64e PAC00 image, see the fixtures
     README) through the object bootstrap.
 
+    The bytechunk `both` is a guard whose two arms are both traps
+    (`tbz x0, #62, 1f; brk #0xc471; 1: brk #0xc472`). No arm survives to fall
+    through to, so the fold leaves it whole.
+
     Pass 1 (`option ptrauthtrap off`) reproduces the BUG: `_tail_auth` carries
     the bit test, the trap call and a variable for the incoming x30.
     Pass 2 (`option ptrauthtrap on`, the shipped default) is the FIX:
@@ -29,11 +33,14 @@
     the same plain load in both passes.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
-c0035fd6
+4000f0b6208e38d4408e38d4
 </bytechunk>
-<symbol space="ram" offset="0x100000" name="harness_stub"/>
+<symbol space="ram" offset="0x100000" name="both"/>
 </binaryimage>
 <script>
+  <com>lo fu both</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/macho_arm64e_auth</com>
   <com>option ptrauthtrap off</com>
@@ -56,9 +63,10 @@ c0035fd6
   <com>quit</com>
 </script>
 <stringmatch name="PTRAUTHTRAP #1: off keeps the bit test on the incoming return address" min="1" max="1">if \(\(v1 \^ v1 &lt;&lt; 1\) &gt;&gt; 0x3e &amp; 1\)</stringmatch>
-<stringmatch name="PTRAUTHTRAP #2: off keeps the trap call" min="1" max="1">SoftwareBreakpoint\(0xc471</stringmatch>
+<stringmatch name="PTRAUTHTRAP #2: off keeps the trap call" min="1" max="1">SoftwareBreakpoint\(0xc471,0x100000444\)</stringmatch>
 <stringmatch name="PTRAUTHTRAP #3: the tail call survives in both passes" min="2" max="2">_helper2\(\); // tail-call</stringmatch>
 <stringmatch name="PTRAUTHTRAP #4: only off declares a variable for the incoming x30" min="1" max="1"> v1; // stack - 0x8 \| x30</stringmatch>
 <stringmatch name="PTRAUTHTRAP #5: the call to _helper survives in both passes" min="2" max="2">  _helper\(\);</stringmatch>
 <stringmatch name="PTRAUTHTRAP #6: the xpacd compare folds in both passes" min="2" max="2">return \*\(unsigned int \*\)\*a0;</stringmatch>
+<stringmatch name="PTRAUTHTRAP #7: a guard whose both arms trap is left whole" min="1" max="1">SoftwareBreakpoint\(0xc472</stringmatch>
 </decompilertest>

@@ -89,7 +89,8 @@ fn is_trap_block(data: &Funcdata, bl: BlockId, userop: uint4) -> bool {
 }
 
 /// The `(guard block, out-edge)` pairs of every `CBRANCH` that branches into a
-/// pointer-auth trap block.
+/// pointer-auth trap block. A guard whose both arms trap keeps both: there is
+/// no surviving arm to fall through to.
 fn trap_edges(data: &Funcdata, userop: uint4) -> Vec<(BlockId, int4)> {
     let blocks = data.bblocks_ref();
     let mut out = Vec::new();
@@ -113,6 +114,11 @@ fn trap_edges(data: &Funcdata, userop: uint4) -> Vec<(BlockId, int4)> {
             }
         }
     }
+    let mut per_guard: std::collections::HashMap<BlockId, usize> = std::collections::HashMap::new();
+    for &(g, _) in &out {
+        *per_guard.entry(g).or_default() += 1;
+    }
+    out.retain(|(g, _)| per_guard[g] == 1);
     out
 }
 

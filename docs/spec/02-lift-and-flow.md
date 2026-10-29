@@ -3232,7 +3232,8 @@ before nearly every tail call of an Apple binary: 205 times in iOS 16's
 all come from one instruction, and that instruction's `SoftwareBreakpoint`
 `CALLOTHER` carries an immediate in `0xc470..=0xc473`. Each in-edge that is
 one arm of a CBRANCH is removed. A trap block entered any other way keeps
-that entry.
+that entry, and so does a CBRANCH whose both arms trap: no arm would be left
+to fall through to.
 
 **The edit and the window.** `remove_branch` plus `remove_unreachable_blocks`,
 pre-SSA, registered after `gowritebarrier` in the same window. The `eor` and
