@@ -37,6 +37,14 @@ the upper register bank. The rules apply in both language variants. See the
 [SPARC V9 instruction mapping](https://docs.oracle.com/cd/E19963-01/html/821-1607/sparcv9-32853.html).
 This is a SLEIGH correctness repair, without an inference option.
 
+PowerPC `lwarx` sets the reservation (`RESERVE`, its length and its address)
+before loading the word, as the ISA constructor does. `stwcx.` and `stdcx.`
+store only while `RESERVE` is set, so a load-reserve/store-conditional retry
+loop decompiles to its single conditional store instead of a loop that tests
+an uninitialized reservation flag. The generic constructor takes precedence
+for ordinary encodings in every PowerPC language, the ISA languages included.
+This is a SLEIGH correctness repair, without an inference option.
+
 Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
 `CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
 constants. A32 and Thumb constructors use unattached numeric aliases of the token
