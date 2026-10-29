@@ -672,23 +672,32 @@ pub fn swift_section_present<'a>(names: impl Iterator<Item = &'a str>) -> bool {
 
 /// `true` if `name` is a Swift-mangled symbol: the Swift 5 `$s`/`$S` scheme or
 /// the Swift 4 `_T0` scheme, each with an optional platform leading underscore
-/// (Mach-O spells them `_$s…`/`__T0…`).
+/// (Mach-O spells them `_$s…`/`__T0…`), or an Objective-C runtime type name in
+/// the Swift 3 `_Tt` scheme (`_TtC6Toyota3Foo`, the form the ObjC metadata
+/// carries for Swift classes and protocols).
 ///
-/// The prefix is held to the scheme's own next token — an identifier length, a
-/// known-type shortcut, or the stdlib module contraction — so an assembler
-/// local like `$LN3` or a C `_T0mumble` cannot claim the image. No other
+/// The prefix is held to the scheme's own next token — an operator or
+/// identifier length — so an assembler local like `$LN3` or a C `_T0mumble`
+/// cannot claim the image. No other
 /// toolchain emits `$s`-namespace symbols, which keeps a one-symbol test as
 /// safe as the Rust v0 grammar parse.
 pub fn is_swift_mangled(name: &str) -> bool {
     let bare = name.strip_prefix('_').unwrap_or(name);
     if let Some(rest) = bare.strip_prefix("$s").or_else(|| bare.strip_prefix("$S")) {
-        return rest
-            .bytes()
-            .next()
-            .is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase() || b == b's');
+        // Any operator may open the body (`$sx…` a generic parameter, `$sy…`
+        // the empty list); the demangler itself rejects what is not Swift.
+        return rest.bytes().next().is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_');
     }
     if let Some(rest) = bare.strip_prefix("_T0").or_else(|| name.strip_prefix("_T0")) {
         return rest.bytes().next().is_some_and(|b| b.is_ascii_digit() || b.is_ascii_uppercase());
+    }
+    if let Some(rest) = name.strip_prefix("_Tt") {
+        // A type kind (class, struct, enum, protocol, bound generic) followed by
+        // a context: an identifier length, a nested type kind, or a
+        // substitution / stdlib contraction.
+        let mut b = rest.bytes();
+        return matches!(b.next(), Some(b'C' | b'V' | b'O' | b'P' | b'G'))
+            && b.next().is_some_and(|c| c.is_ascii_digit() || matches!(c, b'C' | b'V' | b'O' | b'P' | b'G' | b'S' | b's' | b'E'));
     }
     false
 }
@@ -1030,11 +1039,17 @@ mod tests {
             // Swift 4 scheme.
             "_T04main5helloyyF",
             "__T04main5helloyyF",
+            // ObjC runtime type names (Swift 3 scheme).
+            "_TtC6Toyota3Foo",
+            "_TtCC6Toyota5Outer5Inner",
+            "_TtP6Toyota5Proto_",
+            "_TtGC7SwiftUI19UIHostingControllerVVS_7TabItem8RootView_",
+            "_TtCs12_SwiftObject",
         ] {
             assert!(is_swift_mangled(name), "{name} is Swift-mangled");
         }
-        // Assembler locals, plain C names, and `$`/`_T0` with no mangling body.
-        for name in ["$LN3", "_$LN3", "main", "_Runtime", "$", "_T0", "_T0mumble", "_RNvCs1234_4core5panic"] {
+        // Assembler locals, plain C names, and `$`/`_T0`/`_Tt` with no mangling body.
+        for name in ["$LN3", "_$LN3", "main", "_Runtime", "$", "_T0", "_T0mumble", "_RNvCs1234_4core5panic", "_Tt", "_TtX", "_Ttable"] {
             assert!(!is_swift_mangled(name), "{name} is not Swift-mangled");
         }
     }
