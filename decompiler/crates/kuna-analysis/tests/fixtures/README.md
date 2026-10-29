@@ -1137,6 +1137,44 @@ recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
 `loadimage_object.rs (macho_chained_fixups_are_applied_to_the_image)`,
 `chained.rs (fixture_rebases_and_binds)` and `tests/verify_dynrelocs_gate.rs`.
 
+### `macho_objc_refs_arm64` — selector, class and super references + `__objc_stubs`
+
+`macho_objc_refs_arm64` (arm64, ~50 KB) is the fixture for the ObjC reference-slot
+naming (`analyzers/objc/kuna_objcrefs.rs`, stage test `tests/stages/kuna-objcrefs.xml`).
+Source `macho_objc_refs.m`: two root classes (`Base` with `+tag`, `-greet:`,
+`-count`; `Derived : Base` whose `-greet:` calls `[super greet:n]`), an `@interface
+Remote` with **no implementation** (so its `_OBJC_CLASS_$_Remote` is an undefined
+symbol resolved by dynamic lookup — a chained **bind** slot in `__objc_classrefs`),
+and four plain functions: `use` (a selref send + a stub send), `tag` (a classref
+receiver through a stub), `use2` (a stub send with an argument), `remote` (the bind
+classref). The committed `macho_objc_refs_arm64.s` is `clang -S` output with three
+sends hand-routed through linker stubs — the open-source clang has no
+`-fobjc-msgsend-selector-stubs`, so the `adrp/ldr x1` selref load is deleted and the
+`bl _objc_msgSend` replaced by `bl "_objc_msgSend$count"` (likewise `$tag`,
+`$greet:`); `ld64.lld -objc_stubs_fast` then synthesizes the `__objc_stubs` section
+and the selrefs the stubs load:
+
+```bash
+clang -target arm64-apple-macos11 -fno-objc-arc -O1 -S macho_objc_refs.m -o macho_objc_refs_arm64.s
+# edit: route the `count`, `tag` and second `greet:` sends through `_objc_msgSend$<sel>`
+clang -target arm64-apple-macos11 -c macho_objc_refs_arm64.s -o refs.o
+ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains -objc_stubs_fast \
+         -undefined dynamic_lookup -x -e _main -o macho_objc_refs_arm64 refs.o
+```
+
+ImageBase `0x100000000`, `DYLD_CHAINED_PTR_64` chained fixups, `SG_READ_ONLY` on
+`__DATA_CONST`. **Pinned VMAs:** `__objc_stubs`@`0x1000008c0` (three 32-byte
+entries: `objc_msgSend$count`@`0x1000008c0`, `$greet:`@`0x1000008e0`,
+`$tag`@`0x100000900`), `__objc_methname`@`0x100000942` (`count`, `tag`, `greet:`,
+`isa`), `__objc_superrefs`@`0x1000081f0` (one slot → `class_t Derived`@`0x100008050`),
+`__objc_selrefs`@`0x1000081f8` (six slots), `__objc_classrefs`@`0x100008228` (slot 0 a
+rebase → `Derived`, slot 1 `0x100008230` a bind → `_OBJC_CLASS_$_Remote`),
+`-[Derived greet:]` IMP@`0x1000007ec`. With `objc on` the super send reads
+`objc_msgSendSuper2(&v1, sel_greet_, arg1)` with `_OBJC_CLASS_$_Derived` in the super
+struct, `_use` calls `objc_msgSend$count(a0)`, `_use2` calls
+`objc_msgSend$greet:(a0, 5)` and `_remote` sends to `classRef_Remote`; off, the slots
+are `dat_1000081f8`/`dat_1000081f0`/`dat_100008230` and the stub is `sub_1000008c0`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate

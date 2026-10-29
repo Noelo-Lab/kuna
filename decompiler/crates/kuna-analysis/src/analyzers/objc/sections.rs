@@ -123,6 +123,26 @@ impl<'a> MachoImage<'a> {
         })
     }
 
+    /// The import symbol a chained-fixup **bind** slot at `va` names
+    /// (`_OBJC_CLASS_$_NSObject`), or `None` for any other slot.
+    pub fn bind_name(&self, va: u64) -> Option<&str> {
+        self.fixups.bind_name(va)
+    }
+
+    /// The pointer a **rebase** slot at `va` holds: the resolved chained-fixup
+    /// target, or on a classic `LC_DYLD_INFO` image the non-zero raw word (a
+    /// bind slot there reads `0`). `None` for a bind slot or an unmapped `va`;
+    /// on a chained image a slot the overlay does not cover is never a pointer.
+    pub fn rebase_ptr(&self, va: u64) -> Option<u64> {
+        if let Some(resolved) = self.fixups.resolved_ptr(va) {
+            return Some(resolved);
+        }
+        if !self.fixups.is_empty() {
+            return None;
+        }
+        self.read_ptr(va).filter(|&p| p != 0)
+    }
+
     /// A little/big-endian `u32` at `va` (the `method_list_t` header fields +
     /// the relative-method-list `i32` offsets are read through this).
     pub fn read_u32(&self, va: u64) -> Option<u32> {

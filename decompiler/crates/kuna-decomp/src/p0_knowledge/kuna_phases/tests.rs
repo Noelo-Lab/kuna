@@ -38,13 +38,13 @@ fn surface_count_is_121() {
 }
 
 #[test]
-fn settable_count_is_377() {
-    assert_eq!(kuna_num_settables(), 377);
-    assert_eq!(SETTABLE_TABLE.len(), 377);
+fn settable_count_is_378() {
+    assert_eq!(kuna_num_settables(), 378);
+    assert_eq!(SETTABLE_TABLE.len(), 378);
 }
 
 #[test]
-fn tier_counts_are_130_core_153_transform_94_analysis() {
+fn tier_counts_are_130_core_154_transform_94_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_130_core_153_transform_94_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (130, 153, 94));
+    assert_eq!((core, transform, analysis), (130, 154, 94));
 }
 
 #[test]
@@ -504,6 +504,10 @@ fn option_values_live_value_present_for_178() {
         // no codegen live reader (read console-side via kuna_live_value), like the
         // gates around it. Default-off, Mach-O-only.
         "objc",
+        // (kuna) Objective-C reference-slot folding — committed console-side with
+        // the `objc` facts (read via kuna_live_value), like `objc` above.
+        // Default-on, inert unless `objc` is on.
+        "objcrefconst",
         // (kuna) PE PDB metadata recovery — an analysis-pass gate with no codegen
         // live reader (read console-side via kuna_live_value), like the gates around
         // it. Default-on (DIV-129), PE-only, `.pdb`-sidecar-gated.
@@ -1170,7 +1174,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
     // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
     // +1 for `persistcalls`; its P3 row sits after `readonlycalls`.
-    assert_eq!(json.matches("},\n").count(), 376);
+    // +1 for `objcrefconst`; its P1 row sits beside `objc`.
+    assert_eq!(json.matches("},\n").count(), 377);
 }
 
 #[test]
