@@ -41,7 +41,7 @@ pub(super) fn decode_stream(src: &[u8], size: usize) -> Vec<u8> {
     let mut ring = [0u8; N];
     ring[..N - F].fill(b' ');
     let mut r = N - F;
-    let mut out = Vec::with_capacity(size);
+    let mut out = Vec::with_capacity(size.min(src.len().saturating_mul(9)));
     let mut input = src.iter().copied();
     let mut flags = 0u32;
     while out.len() < size {

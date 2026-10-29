@@ -47,9 +47,11 @@ pub(super) fn is_lzfse(bytes: &[u8]) -> bool {
     })
 }
 
-/// Decode a whole LZFSE stream. `limit` caps the decoded size.
+/// Decode a whole LZFSE stream. `limit` caps the decoded size; the declared
+/// `size_hint` only sizes the first allocation, never past what the input could
+/// plausibly expand to.
 pub(super) fn decode(src: &[u8], size_hint: usize, limit: usize) -> Result<Vec<u8>, Error> {
-    let mut out = Vec::with_capacity(size_hint.min(limit));
+    let mut out = Vec::with_capacity(size_hint.min(limit).min(src.len().saturating_mul(8)));
     let mut pos = 0usize;
     loop {
         let magic = rd_u32(src, pos).ok_or("LZFSE stream ends without an end-of-stream block")?;
@@ -58,7 +60,7 @@ pub(super) fn decode(src: &[u8], size_hint: usize, limit: usize) -> Result<Vec<u
             MAGIC_RAW => {
                 let n = rd_u32(src, pos + 4).ok_or(TRUNCATED)? as usize;
                 reserve(&out, n, limit)?;
-                let body = src.get(pos + 8..pos + 8 + n).ok_or(TRUNCATED)?;
+                let body = slice(src, pos + 8, n)?;
                 out.extend_from_slice(body);
                 pos += 8 + n;
             }
@@ -66,18 +68,18 @@ pub(super) fn decode(src: &[u8], size_hint: usize, limit: usize) -> Result<Vec<u
                 let n_raw = rd_u32(src, pos + 4).ok_or(TRUNCATED)? as usize;
                 let n_payload = rd_u32(src, pos + 8).ok_or(TRUNCATED)? as usize;
                 reserve(&out, n_raw, limit)?;
-                let body = src.get(pos + 12..pos + 12 + n_payload).ok_or(TRUNCATED)?;
+                let body = slice(src, pos + 12, n_payload)?;
                 lzvn_decode(body, &mut out, n_raw)?;
                 pos += 12 + n_payload;
             }
             MAGIC_V2 => {
                 let block = BlockV2::parse(src.get(pos..).ok_or(TRUNCATED)?)?;
                 reserve(&out, block.n_raw_bytes, limit)?;
-                let start = pos + block.header_size;
-                let end = start + block.n_literal_payload_bytes + block.n_lmd_payload_bytes;
-                let payload = src.get(start..end).ok_or(TRUNCATED)?;
+                let start = pos.checked_add(block.header_size).ok_or(TRUNCATED)?;
+                let len = block.n_literal_payload_bytes + block.n_lmd_payload_bytes;
+                let payload = slice(src, start, len)?;
                 block.decode(payload, &mut out)?;
-                pos = end;
+                pos = start + len;
             }
             MAGIC_V1 => return Err("LZFSE v1 (bvx1) blocks are not supported"),
             _ => return Err("bad LZFSE block magic"),
@@ -86,6 +88,10 @@ pub(super) fn decode(src: &[u8], size_hint: usize, limit: usize) -> Result<Vec<u
 }
 
 const TRUNCATED: Error = "truncated LZFSE block";
+
+fn slice(src: &[u8], start: usize, len: usize) -> Result<&[u8], Error> {
+    src.get(start..start.checked_add(len).ok_or(TRUNCATED)?).ok_or(TRUNCATED)
+}
 
 fn reserve(out: &[u8], n: usize, limit: usize) -> Result<(), Error> {
     match out.len().checked_add(n) {

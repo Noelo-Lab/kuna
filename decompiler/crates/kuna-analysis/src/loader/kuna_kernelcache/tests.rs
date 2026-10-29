@@ -151,3 +151,27 @@ fn compressed_containers_peel_to_the_same_kernel() {
         assert!(peeled.bytes == expected, "{name}");
     }
 }
+
+/// A header that declares a huge decoded size allocates by the input it has,
+/// not by the declaration, and still fails cleanly.
+#[test]
+fn declared_sizes_do_not_drive_allocation() {
+    let mut container = lzss::MAGIC.to_vec();
+    container.extend_from_slice(&0u32.to_be_bytes());
+    container.extend_from_slice(&((1u32 << 30) - 1).to_be_bytes());
+    container.extend_from_slice(&2u32.to_be_bytes());
+    container.resize(0x180, 0);
+    container.extend_from_slice(&[0x01, b'a']);
+    assert!(lzss::decode(&container, DECODED_LIMIT).is_err());
+
+    let raw_block = [b"bvx-".as_slice(), &u32::MAX.to_le_bytes(), b"xy"].concat();
+    assert!(lzfse::decode(&raw_block, usize::MAX, DECODED_LIMIT).is_err());
+}
+
+/// A fileset entry whose `sizeofcmds` runs past the file is refused, not copied.
+#[test]
+fn truncated_fileset_entry_header_is_refused() {
+    let mut image = fixture("fileset.macho");
+    image[0x2000 + 20..0x2000 + 24].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(peel(image, &KernelcacheChoice::Entry("Widget".into())).is_err());
+}

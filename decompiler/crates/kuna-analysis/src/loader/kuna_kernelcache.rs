@@ -21,7 +21,7 @@ mod lzss;
 mod tests;
 
 /// The largest payload the decompressors will produce.
-const DECODED_LIMIT: usize = 1 << 31;
+const DECODED_LIMIT: usize = 1 << 30;
 
 /// The loadable image after [`peel`], plus a one-line note on what was done.
 pub struct Peeled {

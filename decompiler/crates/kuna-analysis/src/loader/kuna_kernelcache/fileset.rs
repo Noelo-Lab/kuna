@@ -43,13 +43,13 @@ fn load_commands(bytes: &[u8], at: usize) -> Option<Vec<(u32, usize)>> {
         return None;
     }
     let ncmds = rd_u32(bytes, at + 16)? as usize;
-    let end = at + HEADER_LEN + rd_u32(bytes, at + 20)? as usize;
+    let end = at.checked_add(HEADER_LEN)?.checked_add(rd_u32(bytes, at + 20)? as usize)?;
     let mut out = Vec::with_capacity(ncmds.min(4096));
     let mut p = at + HEADER_LEN;
     for _ in 0..ncmds {
         let cmd = rd_u32(bytes, p)?;
         let size = rd_u32(bytes, p + 4)? as usize;
-        if size < 8 || p + size > end {
+        if size < 8 || p.checked_add(size)? > end {
             return None;
         }
         out.push((cmd, p));
@@ -150,6 +150,9 @@ pub(super) fn extract(mut bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<
     let at = usize::try_from(entry.fileoff).map_err(|_| "fileset entry offset out of range")?;
     let sizeofcmds = rd_u32(&bytes, at + 20).ok_or("truncated fileset entry header")? as usize;
     let header_len = HEADER_LEN + sizeofcmds;
+    if at.checked_add(header_len).is_none_or(|end| end > bytes.len()) {
+        return Err(format!("the header of {} runs past the end of the collection", entry.id));
+    }
     let segs = segments(&bytes, at).ok_or_else(|| format!("malformed load commands in {}", entry.id))?;
     if segs.iter().any(|s| s.filesize > 0 && s.fileoff < header_len as u64) {
         return Err(format!("cannot cut {} out of its collection: its data starts inside the header", entry.id));
@@ -181,13 +184,15 @@ fn symbols(bytes: &[u8], at: usize) -> Option<Symbols> {
     let cmds = load_commands(bytes, at)?;
     let (_, st) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_SYMTAB)?;
     let (_, dy) = *cmds.iter().find(|&&(cmd, _)| cmd == LC_DYSYMTAB)?;
+    let symoff = rd_u32(bytes, st + 8)? as usize;
+    let nsyms = (rd_u32(bytes, st + 12)? as usize).min(bytes.len().saturating_sub(symoff) / NLIST_LEN);
     let range = |i: usize| -> Option<std::ops::Range<usize>> {
-        let first = rd_u32(bytes, dy + i)? as usize;
-        Some(first..first + rd_u32(bytes, dy + i + 4)? as usize)
+        let first = (rd_u32(bytes, dy + i)? as usize).min(nsyms);
+        Some(first..first.saturating_add(rd_u32(bytes, dy + i + 4)? as usize).min(nsyms))
     };
     Some(Symbols {
-        symoff: rd_u32(bytes, st + 8)? as usize,
-        nsyms: rd_u32(bytes, st + 12)? as usize,
+        symoff,
+        nsyms,
         stroff: rd_u32(bytes, st + 16)? as usize,
         extdef: range(16)?,
         undef: range(24)?,
@@ -211,7 +216,6 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
     let mut wanted: std::collections::HashMap<Vec<u8>, Option<(u64, bool)>> = own
         .undef
         .clone()
-        .filter(|&i| i < own.nsyms)
         .filter_map(|i| nlist_name(bytes, &own, i).map(|n| (n.to_vec(), None)))
         .collect();
     for (i, entry) in all.iter().enumerate() {
@@ -221,7 +225,7 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
         let at = entry.fileoff as usize;
         let (Some(syms), Some(code)) = (symbols(bytes, at), code_ranges(bytes, at)) else { continue };
         let is_kernel = entry.filetype == MH_EXECUTE;
-        for s in syms.extdef.clone().filter(|&s| s < syms.nsyms) {
+        for s in syms.extdef.clone() {
             let Some(name) = nlist_name(bytes, &syms, s) else { continue };
             let Some(slot) = wanted.get_mut(name) else { continue };
             let Some(addr) = rd_u64(bytes, syms.symoff + s * NLIST_LEN + 8) else { continue };
@@ -236,16 +240,17 @@ fn bind_to_collection(bytes: &mut [u8], all: &[FilesetEntry], index: usize) -> u
         }
     }
     let mut bound = 0;
-    for i in own.undef.clone().filter(|&i| i < own.nsyms) {
+    for i in own.undef.clone() {
         let Some(name) = nlist_name(bytes, &own, i) else { continue };
         let Some(&Some((addr, _))) = wanted.get(name) else { continue };
         if addr == 0 {
             continue;
         }
         let at = own.symoff + i * NLIST_LEN;
-        bytes[at + 4] = N_ABS | N_EXT;
-        bytes[at + 5] = 0;
-        bytes[at + 8..at + 16].copy_from_slice(&addr.to_le_bytes());
+        let Some(nlist) = bytes.get_mut(at..at + NLIST_LEN) else { continue };
+        nlist[4] = N_ABS | N_EXT;
+        nlist[5] = 0;
+        nlist[8..].copy_from_slice(&addr.to_le_bytes());
         bound += 1;
     }
     bound
@@ -262,7 +267,7 @@ fn code_ranges(bytes: &[u8], at: usize) -> Option<Vec<std::ops::Range<u64>>> {
             let s = p + 72 + k * 80;
             if rd_u32(bytes, s + 64)? & S_ATTR_SOME_INSTRUCTIONS != 0 {
                 let addr = rd_u64(bytes, s + 32)?;
-                out.push(addr..addr + rd_u64(bytes, s + 40)?);
+                out.push(addr..addr.saturating_add(rd_u64(bytes, s + 40)?));
             }
         }
     }
@@ -272,18 +277,23 @@ fn code_ranges(bytes: &[u8], at: usize) -> Option<Vec<std::ops::Range<u64>>> {
 /// Write every rebase of the collection's `LC_DYLD_CHAINED_FIXUPS` into its slot,
 /// with the pointer-authentication bits stripped.
 fn apply_fixups(bytes: &mut [u8]) -> Result<usize, String> {
-    let segs = segments(bytes, 0).ok_or("malformed MH_FILESET segments")?;
+    let mut segs = segments(bytes, 0).ok_or("malformed MH_FILESET segments")?;
+    segs.retain(|s| s.filesize > 0);
+    segs.sort_by_key(|s| s.vmaddr);
     let rebases: Vec<(u64, u64)> = {
         let file = object::File::parse(&*bytes).map_err(|e| format!("MH_FILESET: {e}"))?;
         resolve_chained_fixups(&file, bytes).rebases().collect()
     };
     let mut applied = 0;
     for (va, target) in rebases {
-        let Some(seg) = segs.iter().find(|s| va >= s.vmaddr && va - s.vmaddr + 8 <= s.filesize) else {
+        let Some(seg) = segs[..segs.partition_point(|s| s.vmaddr <= va)].last() else { continue };
+        if va - seg.vmaddr >= seg.filesize.saturating_sub(7) {
+            continue;
+        }
+        let Some(off) = seg.fileoff.checked_add(va - seg.vmaddr).and_then(|o| usize::try_from(o).ok()) else {
             continue;
         };
-        let off = (seg.fileoff + (va - seg.vmaddr)) as usize;
-        if let Some(slot) = bytes.get_mut(off..off + 8) {
+        if let Some(slot) = bytes.get_mut(off..off.saturating_add(8)) {
             slot.copy_from_slice(&target.to_le_bytes());
             applied += 1;
         }
