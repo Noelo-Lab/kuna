@@ -3484,15 +3484,14 @@ study summarized in `docs/history.md`; every row below is re-verified against th
 | (kuna/angr) P7/P8 structuring fallback | degraded re-run | the region structurer cannot collapse the graph to a single root | nothing; `sblocks` is re-seeded clean | `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs (ActionBlockStructure)` falls back to `CollapseStructure` after `decompiler/crates/kuna-decomp/src/p8_structure/region_structurer.rs (run_region_structurer)` declines |
 | P0 → everything, the outer loop | knowledge-store re-run | an operator/agent writes an assertion (`option`, `kassert`, override) and re-decompiles | the entire P0 store | `decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_assert.rs (Dispatch)`; the console rebuilds the IR per `decompile`, re-seeding stashed facts — `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (decompile_func_full_with_override_dyn)` (§0.8 is when the rebuild is skipped) |
 
-**Not implemented in kuna** (theory-only, kept for the record): the upstream
-jump-table *size-mismatch* restart — `matchModel` finding the recovered model's
-size differs from the flow-recovered address table would persist
-`Override::insertMultistageJump` and restart. In kuna the mismatch keeps the
-flow-recovered addresses and does not restart
-(`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (JumpTable::match_model)`,
-a documented stub); the Override store already carries the hint surface
-(`decompiler/crates/kuna-decomp/src/p0_knowledge/overrides.rs
-(Override::insert_multistage_jump)`) with no live producer.
+**Partly implemented in kuna**: the upstream jump-table *size-mismatch*
+restart. When `matchModel` finds a flow-time table of one address whose late
+model has more entries, kuna persists `Override::insert_multistage_jump` (with
+the late model's targets) and restarts, at most once per jump
+(`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (JumpTable::request_multistage)`;
+§2.3 *Multistage recovery* has the guard and reach checks). Every other size
+mismatch keeps the flow-recovered addresses and does not restart
+(`decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs (JumpTable::match_model)`).
 
 Mechanisms are mutually disabling by design: no restart, and no dead-code-delay
 bump, fires inside the jump-table sub-decompilation — the sub-query must answer

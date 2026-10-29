@@ -5973,7 +5973,7 @@ impl JumpTable {
             return Ok(());
         }
         if jbasic.rows_rejected {
-            self.drop_model_for_rows(fd);
+            self.drop_model_for_rows(fd, true);
             return Ok(());
         }
         // Try model 2 (default-path).
@@ -6165,6 +6165,16 @@ impl JumpTable {
         Ok(())
     }
 
+    /// (kuna) A second flow-time stage that again recovered a single address
+    /// adopts the targets the late model recorded with the multistage hint, so
+    /// flow follows every case of the table.
+    pub fn kuna_adopt_multistage_targets(&mut self, targets: Vec<Address>) {
+        if self.addresstable.len() == 1 && targets.len() > 1 {
+            self.addresstable = targets;
+            self.row_loads = None;
+        }
+    }
+
     /// Set manual override information on \b this jump-table
     /// (C++ `JumpTable::setOverride`, `jumptable.cc:2616`).
     ///
@@ -6186,9 +6196,10 @@ impl JumpTable {
     /// Try to match the JumpTable model to the existing function
     /// (C++ `JumpTable::matchModel`, `jumptable.cc:2833`).
     ///
-    /// The table keeps its flow-recovered addresses; the multistage restart
-    /// upstream takes on a size mismatch is replaced by a row check that
-    /// decides which values may label them ([`Self::choose_label_values`]).
+    /// A one-address flow-time table whose current model has more entries
+    /// requests upstream's multistage restart ([`Self::request_multistage`]).
+    /// Any other size mismatch keeps the flow-recovered addresses, and a row
+    /// check decides which values may label them ([`Self::choose_label_values`]).
     pub fn match_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         if !self.is_recovered() {
             return Err(KunaError::lowlevel(
@@ -6212,10 +6223,62 @@ impl JumpTable {
             .and_then(|m| LabelRows::new(m, &self.addresstable, self.row_loads.as_ref()))
             .map(|rows| Rc::new(rows.with_default(self.default_addresses())));
         self.recover_model(fd, rows.clone())?; // Create a current instance of the model
+        // (kuna) Unlike upstream, keep labelling this pass: when the drive's
+        // restart budget is spent, this pass is the one printed, under its own
+        // restart warning rather than the model-drop one.
+        let restarting = self.request_multistage(fd);
         if let Some(rows) = rows {
-            self.choose_label_values(fd, &rows);
+            self.choose_label_values(fd, &rows, !restarting);
         }
         Ok(())
+    }
+
+    /// The multistage restart of C++ `JumpTable::matchModel` (`jumptable.cc:2709`):
+    /// a flow-time table of one address whose current model has more entries was
+    /// not fully recovered during flow, so record the jump for a second recovery
+    /// stage and request a restart.
+    ///
+    /// (kuna) The current model's own targets are recorded with the hint, since
+    /// the second flow-time stage repeats the first one's view of the function
+    /// and can recover the same single address. A jump is restarted at most once,
+    /// and only when every value in the model's range passes the guards on its
+    /// path (a range wider than the guards, as `switchguardbound` can recover,
+    /// would turn guarded-out rows into cases) and every target is mapped and
+    /// within the `0xffff` reach that `sanity_check` allows an intraprocedural
+    /// table.
+    fn request_multistage(&self, fd: &mut Funcdata) -> bool {
+        let Some(model) = self.jmodel.as_ref() else { return false };
+        if self.addresstable.len() != 1
+            || model.get_table_size() <= 1
+            || fd.get_override().query_multistage_jumptable(&self.opaddress)
+        {
+            return false;
+        }
+        let Some(indirect) = self.indirect else { return false };
+        let dispatched = model
+            .as_any()
+            .downcast_ref::<JumpBasicModel>()
+            .and_then(|basic| Some(basic.values_pass_guards(fd, basic.jrange.as_ref()?.clone_box(), 0)));
+        if !dispatched.is_some_and(|rows| !rows.is_empty() && rows.iter().all(|&row| row)) {
+            return false;
+        }
+        let mut targets = Vec::new();
+        if model.build_addresses(fd, indirect, &mut targets, None, None).is_err() || targets.len() <= 1 {
+            return false;
+        }
+        let jump = self.opaddress.get_offset();
+        if !targets.iter().all(|target| {
+            let offset = target.get_offset();
+            offset != 0
+                && offset.abs_diff(jump) <= 0xffff
+                && fd.get_arch().get_load_image_value(target, 4).is_ok()
+        }) {
+            return false;
+        }
+        fd.get_override_mut().insert_multistage_jump(self.opaddress.clone());
+        fd.get_override_mut().insert_multistage_targets(self.opaddress.clone(), targets);
+        fd.set_restart_pending(true);
+        true
     }
 
     /// Choose the values that label \b this table after a late re-recovery:
@@ -6223,9 +6286,9 @@ impl JumpTable {
     /// model's own values when they rebuild the table, and otherwise none (the
     /// model is dropped, so the trivial model labels each case by address).
     ///
-    /// Stands in for the upstream multistage restart on a table mismatch
-    /// (`Override::insertMultistageJump`/`setRestartPending`, not ported).
-    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows) {
+    /// Stands in for the upstream multistage restart on a table mismatch that
+    /// [`Self::request_multistage`] does not restart.
+    fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows, warn: bool) {
         let indop = self.indirect.unwrap();
         let Some(model) = self
             .jmodel
@@ -6246,7 +6309,7 @@ impl JumpTable {
             self.origmodel = None;
             return;
         }
-        self.drop_model_for_rows(fd);
+        self.drop_model_for_rows(fd, warn);
     }
 
     /// The table addresses whose block is the current default destination.
@@ -6260,8 +6323,9 @@ impl JumpTable {
 
     /// Drop the model of a table whose flow-time rows no recovered model can
     /// label, so the trivial model labels each case by address: by the
-    /// flow-time table values that reach it.
-    fn drop_model_for_rows(&mut self, fd: &mut Funcdata) {
+    /// flow-time table values that reach it. `warn` adds the header warning; a
+    /// pass that has requested a multistage restart is not the final one.
+    fn drop_model_for_rows(&mut self, fd: &mut Funcdata, warn: bool) {
         self.case_values = self
             .block2addr
             .iter()
@@ -6273,9 +6337,11 @@ impl JumpTable {
         self.case_values.sort();
         self.case_values.dedup();
         self.jmodel = None;
-        fd.warning_header(
-            "Switch model does not reproduce the recovered table; cases are labelled by address",
-        );
+        if warn {
+            fd.warning_header(
+                "Switch model does not reproduce the recovered table; cases are labelled by address",
+            );
+        }
     }
 
     /// Recover the case labels for \b this jump-table
@@ -6382,12 +6448,8 @@ impl JumpTable {
     }
 
     /// Check if this jump-table requires an additional recovery stage
-    /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:3003`).
-    ///
-    /// STUB(W4): the override-table query (`fd->getOverride().queryMultistageJumptable`)
-    /// is W4; the structural guards are faithful and short-circuit before the
-    /// query whenever possible.
-    pub fn check_for_multistage(&mut self, _fd: &Funcdata) -> KunaResult<bool> {
+    /// (C++ `JumpTable::checkForMultistage`, `jumptable.cc:2865`).
+    pub fn check_for_multistage(&mut self, fd: &Funcdata) -> KunaResult<bool> {
         if self.addresstable.len() != 1 {
             return Ok(false);
         }
@@ -6400,10 +6462,14 @@ impl JumpTable {
         if self.recover_count > 1 {
             return Ok(false);
         }
-        // fd->getOverride().queryMultistageJumptable(indirect->getAddr()) STUB(W4)
-        Err(KunaError::lowlevel(
-            "JumpTable::checkForMultistage: Override::queryMultistageJumptable is W4",
-        ))
+        let Some(addr) = self.indirect.and_then(|op| fd.obank().get(op)).map(|op| op.get_addr().clone()) else {
+            return Ok(false);
+        };
+        if fd.get_override().query_multistage_jumptable(&addr) {
+            self.partial_table = true; // Mark that we need additional recovery
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// Perform a sanity check on recovered address targets

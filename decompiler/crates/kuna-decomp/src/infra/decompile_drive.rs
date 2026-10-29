@@ -1072,7 +1072,10 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             return Ok(total);
         }
         if reflows >= MAX_REFLOW {
-            // Exceeded the cross-flow restart budget; keep the last analyzed IR.
+            // Exceeded the cross-flow restart budget.  The last pass's analysis
+            // is complete; re-following now would clear it and leave nothing
+            // analyzed to print, so keep it and say more restarts were pending.
+            fd.warning_header("Exceeded maximum restarts with more pending");
             fd.set_restart_pending(false);
             drain_pipeline_comments(arch, fd);
             return Ok(total);

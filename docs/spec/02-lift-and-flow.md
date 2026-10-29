@@ -1652,11 +1652,35 @@ Without the option the branch is truncated to a `CALLIND` carrying
 (the `jumpassist` user-op family) and the manual `JumpBasicOverride` model are
 unported shells: `jumptable.rs (JumpTable::set_override)` and the
 `<basicoverride>` arm of `jumptable.rs (JumpTable::decode)` return errors, and
-`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback). Likewise upstream's
-multistage *restart* accounting — persisting a table whose size disagrees at
-`matchModel` time and restarting the whole function — is a recorded loss: kuna
-keeps the flow-recovered addresses instead and lets the row check below decide
-which values label them (`jumptable.rs (JumpTable::match_model)`).
+`recover_model` walks only JumpBasic/JumpBasic2 and, when `option constselectjump` is on, the constant-destination model above (Trivial exists only as the label-time fallback).
+
+**Multistage recovery.** A flow-time table can come out with a single address
+when the partial clone folds its index to a constant. One case is a stack slot
+stored before a call, whose address is passed to that call and read back as the
+switch index. The partial does not yet know the call's inputs, so it collapses
+the INDIRECT the call casts over the slot and reads the stored value. As
+upstream does at `matchModel` time, a table of one address whose late model has
+more entries records a multistage hint for its jump and restarts the function
+(`jumptable.rs (JumpTable::match_model)`). On the next flow,
+`flow.rs (FlowInfo::check_multistage_jumptables)` queues the hinted table again
+and recovers it through `jumptable.rs (JumpTable::recover_multistage)`. (kuna) The
+second stage runs on the same kind of partial, so it can fold the index again.
+The hint therefore also carries the targets the late model built
+(`overrides.rs (Override::multistage_targets)`). A second stage that again finds
+one address adopts them (`jumptable.rs (JumpTable::kuna_adopt_multistage_targets)`),
+so flow follows every case and the late check below labels them. Each jump is
+restarted at most once. A jump is not restarted unless every value in the
+late model's range passes the guards on its path
+(`jumptable.rs (JumpBasicModel::values_pass_guards)`) and every target is
+mapped and within the `0xffff` reach of the jump. A range wider than its guards,
+as `switchguardbound` can recover under a lower-bound guard, would otherwise
+turn rows the code never dispatches into cases. The restarting pass still
+labels its table, without the model-drop warning, because it is the pass
+printed when the drive's restart budget runs out. On that last pass
+`decompile_drive.rs (run_pipeline)` keeps the analysis instead of re-following
+flow, and adds `Exceeded maximum restarts with more pending` to the header.
+This is a correctness repair, without an option: before it, such a switch kept
+one case, and its other indexes fell through to the code after the switch.
 
 ### The late check: labels, normalization folding, guard folding
 
