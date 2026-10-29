@@ -6196,9 +6196,10 @@ impl JumpTable {
     /// Try to match the JumpTable model to the existing function
     /// (C++ `JumpTable::matchModel`, `jumptable.cc:2833`).
     ///
-    /// The table keeps its flow-recovered addresses; the multistage restart
-    /// upstream takes on a size mismatch is replaced by a row check that
-    /// decides which values may label them ([`Self::choose_label_values`]).
+    /// A one-address flow-time table whose current model has more entries
+    /// requests upstream's multistage restart ([`Self::request_multistage`]).
+    /// Any other size mismatch keeps the flow-recovered addresses, and a row
+    /// check decides which values may label them ([`Self::choose_label_values`]).
     pub fn match_model(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         if !self.is_recovered() {
             return Err(KunaError::lowlevel(
@@ -6285,8 +6286,8 @@ impl JumpTable {
     /// model's own values when they rebuild the table, and otherwise none (the
     /// model is dropped, so the trivial model labels each case by address).
     ///
-    /// Stands in for the upstream multistage restart on a table mismatch
-    /// (`Override::insertMultistageJump`/`setRestartPending`, not ported).
+    /// Stands in for the upstream multistage restart on a table mismatch that
+    /// [`Self::request_multistage`] does not restart.
     fn choose_label_values(&mut self, fd: &mut Funcdata, rows: &LabelRows, warn: bool) {
         let indop = self.indirect.unwrap();
         let Some(model) = self
