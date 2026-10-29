@@ -1826,7 +1826,7 @@ impl<'a> Parser<'a> {
             {
                 continue;
             }
-            if param.len() < 1 {
+            if param.is_empty() {
                 continue;
             }
             let pk = param.first()?.get_index();
