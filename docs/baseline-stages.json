@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3237,
-    3237
+    3240,
+    3240
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1452,6 +1452,9 @@
     "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
     "data:PEMAIN #2: default, the same call site names main",
     "data:PEMAIN #3: default, main is defined under its name",
+    "data:PIC conflicting indirect caller acquires no global contract",
+    "data:PIC indirect caller is decompiled",
+    "data:PIC indirect returning call retains return 7",
     "data:PIC off keeps the unnamed stub",
     "data:PIC on names the actual returning import",
     "data:POINTERLITERAL #1: pointer literal converts its integer carrier",

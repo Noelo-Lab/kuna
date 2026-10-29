@@ -23,6 +23,7 @@ pub struct Fixture {
     pub caller: Option<Vec<u32>>,
     pub second_caller: Option<Vec<u32>>,
     pub second_stub: bool,
+    pub lazy_resolver: bool,
 }
 impl Fixture {
     pub fn new(plt: Plt) -> Self {
@@ -42,6 +43,7 @@ impl Fixture {
             caller: None,
             second_caller: None,
             second_stub: false,
+            lazy_resolver: false,
         }
     }
     pub fn target(&self) -> u32 {
@@ -178,6 +180,26 @@ impl Fixture {
                 0x7d6903a6,
                 0x4e800420,
                 0x60000000,
+            ]));
+        }
+        if self.lazy_resolver {
+            let pc = 0x1800 + stub.len() as u32;
+            let delta = (got + 4).wrapping_sub(pc + 12);
+            stub.extend(self.words(&[
+                0x3d6b0000,
+                0x7c0802a6,
+                0x429f0005,
+                0x396b001c,
+                0x7d8802a6,
+                0x7c0803a6,
+                0x7d6c5850,
+                0x3d8c0000 | (delta.wrapping_add(0x8000) >> 16),
+                0x800c0000 | u32::from(delta as u16),
+                0x818c0000 | u32::from(delta.wrapping_add(4) as u16),
+                0x7c0903a6,
+                0x7c0b5a14,
+                0x7d605a14,
+                0x4e800420,
             ]));
         }
         if self.bad_stub && !stub.is_empty() {
@@ -413,8 +435,103 @@ impl Fixture {
 
 #[allow(dead_code)]
 fn main() {
-    let path = std::env::args_os().nth(1).expect("output path required");
-    let mut fixture = Fixture::new(Plt::Short);
-    fixture.pic_collision = true;
-    std::fs::write(path, fixture.bytes()).unwrap();
+    let mut args = std::env::args_os().skip(1);
+    let path = args.next().expect("output path required");
+    let bytes = if let Some(name) = args.next() {
+        proof_gap(name.to_str().unwrap(), false)
+    } else {
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.pic_collision = true;
+        fixture.bytes()
+    };
+    std::fs::write(path, bytes).unwrap();
+}
+
+/// Independent paths into a two-import PIC stub, including relocated code.
+pub fn proof_gap(name: &str, little: bool) -> Vec<u8> {
+    let mut f = Fixture::new(Plt::Short);
+    f.pic_collision = true;
+    f.little = little;
+    match name {
+        "lr-join" => {
+            f.caller = Some(vec![
+                0x3bc02800, 0x2c030000, 0x41820008, 0x480007f5, 0x2c040000, 0x41820014, 0x3bc0100c,
+                0x7fc803a6, 0x48000014, 0x60000000, 0x3bc01008, 0x7fc803a6, 0x60000000, 0x3bc02804,
+                0x4e800020,
+            ])
+        }
+        "padding" => {
+            f.caller = Some(vec![0x3bc02800, 0x480007fc, 0x4e800020]);
+            f.second_caller = Some(vec![0x3bc02804, 0x480007ec]);
+        }
+        "indirect" => {
+            f.caller = Some(vec![0x3bc02800, 0x480007fc, 0x4e800020]);
+            f.second_caller = Some(vec![
+                0x7c0802a6, 0x9421fff0, 0x90010014, 0x93c10008, 0x3bc02804, 0x39801800, 0x7d8903a6,
+                0x4e800421, 0x38600007, 0x80010014, 0x83c10008, 0x38210010, 0x7c0803a6, 0x4e800020,
+            ]);
+        }
+        "relocated" => {
+            f.second_stub = true;
+            f.caller = Some(vec![
+                0x7c0802a6, 0x9421fff0, 0x90010014, 0x3bc02804, 0x480007f1, 0x480007fd, 0x80010014,
+                0x38210010, 0x7c0803a6, 0x4e800020,
+            ]);
+        }
+        _ => panic!("unknown proof fixture"),
+    }
+    let mut bytes = f.bytes();
+    bytes[16..18].copy_from_slice(&f.half(2));
+    if matches!(name, "padding" | "relocated") {
+        let read = |b: &[u8]| {
+            if little {
+                u32::from_le_bytes(b.try_into().unwrap())
+            } else {
+                u32::from_be_bytes(b.try_into().unwrap())
+            }
+        };
+        let shoff = read(&bytes[32..36]) as usize;
+        let oldaddr = if name == "padding" { 0x1800 } else { 0x5200 };
+        let address = if name == "padding" { 0x17f8 } else { oldaddr };
+        let section = (1..12)
+            .map(|i| shoff + i * 40)
+            .find(|&s| read(&bytes[s + 12..s + 16]) == oldaddr)
+            .unwrap();
+        let oldoff = read(&bytes[section + 16..section + 20]) as usize;
+        let oldsize = read(&bytes[section + 20..section + 24]) as usize;
+        let mut data = bytes[oldoff..oldoff + oldsize].to_vec();
+        if name == "padding" {
+            let mut prefix = f.words(&[0x48000000, 0x60000000]);
+            prefix.extend(data);
+            data = prefix;
+        } else {
+            data.extend(f.words(&[0x1800, 1, 0x3bc02808, 0x1804, 1, 0x4e800020]));
+        }
+        let offset = bytes.len() as u32;
+        let size = data.len() as u32;
+        bytes.extend(data);
+        for (field, value) in [(12, address), (16, offset), (20, size)] {
+            bytes[section + field..section + field + 4].copy_from_slice(&f.word(value));
+        }
+        let count = if little {
+            u16::from_le_bytes(bytes[44..46].try_into().unwrap())
+        } else {
+            u16::from_be_bytes(bytes[44..46].try_into().unwrap())
+        };
+        for i in 0..usize::from(count) {
+            let ph = 52 + i * 32;
+            if read(&bytes[ph + 8..ph + 12]) == oldaddr {
+                for (field, value) in [
+                    (4, offset),
+                    (8, address),
+                    (12, address),
+                    (16, size),
+                    (20, size),
+                ] {
+                    bytes[ph + field..ph + field + 4].copy_from_slice(&f.word(value));
+                }
+            }
+        }
+    }
+    bytes
 }

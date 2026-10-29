@@ -1122,20 +1122,32 @@ funcsym stream:
   `ppc32picimports` option additionally resolves short and long PIC stubs through
   `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32picimports.rs (resolve)`.
   Each incoming direct transfer must belong to a disjoint, sized text-symbol
-  extent and prove the same relocation slot. The bounded caller walk starts
-  with unknown registers, tracks `r30` and LR through PC capture and immediate
-  arithmetic, and intersects equal constants at joins until a fixed point.
-  Loads, update-addressing writes, unsupported instructions and unknown calls
-  discard affected facts. Only a call already proved to select an import slot
-  may preserve `r30`, following the PPC32 ABI's nonvolatile-register contract.
-  Indirect jumps reject a caller; entries into its interior, overlapping extents
-  and dynamic text relocations also prevent proof. Exported or address-taken
-  stubs, interior stub entries, conflicting callers, and missing caller extents
-  stay unresolved. Sized `.dynsym` exports suffice after `.symtab` is stripped;
-  this does not infer missing local function bounds. Both stub forms support
-  both byte orders. The option off path keeps the previous refusal behavior,
-  while BSS-PLT and absolute stubs remain available. In the console, set this
-  option before `load file`; CLI options are bridged before either loader runs.
+  extent and prove the same relocation slot. The bounded caller walk tracks
+  register constants, the original return-address token and its stack spill.
+  Joins retain equal values; merging computed LR values yields unknown, never
+  an ABI return. A return requires the original token, including a verified
+  save/load sequence. Across import calls, only the entry linkage-area LR spill
+  above an allocated stack frame is retained. Overwriting or exposing its spill
+  discards that evidence. LR writes outside certified code prevent proof too.
+  Only a call proved to select an import slot may preserve nonvolatile registers;
+  unknown calls and unsupported effects discard evidence. A tail transfer or
+  fallthrough across function bounds needs a proven return token or a proven
+  known no-return import.
+  Application indirect transfers that the walk cannot certify prevent PIC
+  contracts for the image, including addresses constructed in instructions.
+  The exceptions are complete import stubs and the validated GNU/LLD lazy
+  resolver whose complete instruction sequence loads its dispatch target from
+  the designated GOT header. Entries bypassing that sequence invalidate it.
+  Executable dynamic relocations prevent PIC proof: modified instructions could
+  introduce new edges or overwrite r30 in a previously recognized stub.
+  Branches, symbols, the image entry and stored pointers into skipped pre-stub padding prevent a
+  contract. Exported/address-taken stubs, interior entries and ambiguous caller
+  extents stay unresolved. Sized `.dynsym` exports suffice after `.symtab` is
+  stripped; missing local bounds and indirect-call-heavy images can remain
+  unresolved. Both stub forms support both byte orders. The option off path
+  keeps the previous refusal behavior, while BSS-PLT and absolute stubs remain
+  available. In the console, set this option before `load file`; CLI options
+  are bridged before either loader runs.
   It remains opt-in because proving caller state across a large import inventory
   adds load-time work; unrelated formats and the default path do not pay that cost. `DT_PPC_GOT`, a valid GOT header and a retained
   `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
