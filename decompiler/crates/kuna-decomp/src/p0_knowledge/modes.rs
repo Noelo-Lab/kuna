@@ -595,7 +595,11 @@ mod tests {
               // the web front-end, the benchmark) materialize every target they walk
               // anyway, so preset membership would buy nothing there and has not been
               // measured on them. Flip it into the preset with that measurement.
-              "lazyfuncs"];
+              "lazyfuncs",
+              // `libgccsigs` costs a SPARC32 caller that returns arithmetic on
+              // the `__divdi3` quotient its low word or its whole return (see its
+              // catalog row), so the preset must not turn it on.
+              "libgccsigs"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

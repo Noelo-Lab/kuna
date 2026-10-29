@@ -196,9 +196,16 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   the preset would make a near-neutral judgment call the default output under
   500 KiB.
 
+- **`libgccsigs`** — the SPARC32 `long long __divdi3(long long, long long)`
+  contract fixes a caller that stores only the quotient's low word, but a caller
+  that returns arithmetic on the quotient (`a / b + 1`, `-(a / b)`,
+  `f ? a / b : c`) then keeps only the high word or returns nothing, where the
+  default returns every word.
+
 These therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
 `--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,
-`--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`)
+`--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`,
+`--option libgccsigs on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence. For `formatstring` only the `full` loop above is excluded:
 its `static` default reads the same format constants out of the image at load, so
