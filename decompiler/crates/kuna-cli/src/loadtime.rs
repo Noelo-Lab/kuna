@@ -33,6 +33,7 @@ fn binding(name: &str) -> Option<(&'static str, Encoding)> {
     use Encoding::*;
     Some(match name {
         "relocobjects" => (RELOC_OBJECTS_ENV, RelocObjects),
+        "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, DefaultOff),
         "i386_pie_plt" => (kuna_i386_pie_plt::I386_PIE_PLT_ENV, DefaultOn),
         "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
         "relocrebase" => (kuna_relocrebase::RELOCREBASE_ENV, DefaultOn),
