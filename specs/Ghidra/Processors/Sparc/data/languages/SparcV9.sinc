@@ -771,12 +771,12 @@ d16off: reloc  is d16hi & d16lo [reloc = inst_start+4*((d16hi<<14) | d16lo);] { 
 predict: ",pt"  is p=1 { }
 predict: ",pn"  is p=0 { }
 
-:brz^predict RS1,d16off              is op=0 & a=0 & bit28=0 & rcond2=0x1 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 == 0)  goto d16off;}
-:brlez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x2 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s<= 0) goto d16off;}
-:brlz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x3 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s< 0)  goto d16off;}
-:brnz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x5 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 != 0)  goto d16off;}
-:brgz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x6 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s> 0)  goto d16off;}
-:brgez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x7 & op2=0x3 & RS1 & d16off & predict { delayslot(1); if (RS1 s>= 0) goto d16off;}
+:brz^predict RS1,d16off              is op=0 & a=0 & bit28=0 & rcond2=0x1 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 == 0); delayslot(1); if (taken) goto d16off;}
+:brlez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x2 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s<= 0); delayslot(1); if (taken) goto d16off;}
+:brlz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x3 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s< 0); delayslot(1); if (taken) goto d16off;}
+:brnz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x5 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 != 0); delayslot(1); if (taken) goto d16off;}
+:brgz^predict RS1,d16off             is op=0 & a=0 & bit28=0 & rcond2=0x6 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s> 0); delayslot(1); if (taken) goto d16off;}
+:brgez^predict RS1,d16off            is op=0 & a=0 & bit28=0 & rcond2=0x7 & op2=0x3 & RS1 & d16off & predict { local taken:1 = (RS1 s>= 0); delayslot(1); if (taken) goto d16off;}
 
 :brz^",a"^predict RS1,d16off         is op=0 & a=1 & bit28=0 & rcond2=0x1 & op2=0x3 & RS1 & d16off & predict { if (RS1 != 0)  goto inst_next; delayslot(1); goto d16off;}
 :brlez^",a"^predict RS1,d16off       is op=0 & a=1 & bit28=0 & rcond2=0x2 & op2=0x3 & RS1 & d16off & predict { if (RS1 s> 0)  goto inst_next; delayslot(1); goto d16off;}

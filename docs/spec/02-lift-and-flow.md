@@ -42,7 +42,11 @@ overflow flags before expanding the delay slot. A flag-writing slot still
 publishes its new flags to subsequent instructions, but cannot change the
 current branch's decision. Ordinary and predicted branches share these
 condition operands; annulled branches retain their conditional slot execution.
-This is a SLEIGH correctness repair, without an inference option.
+The non-annulled register branches (`brz`, `brlez`, `brlz`, `brnz`, `brgz`,
+`brgez`) likewise test `rs1` before the delay slot, so a slot that rewrites
+that register keeps its new value without changing the branch. Annulled forms
+already tested the register first. This is a SLEIGH correctness repair,
+without an inference option.
 
 Generic ARM `MCR`/`MRC` and `MCR2`/`MRC2` transfers pass the encoded
 `CRn` and `CRm` numbers to their opaque coprocessor intrinsics as four-byte
