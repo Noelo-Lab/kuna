@@ -2936,16 +2936,17 @@ repeated accesses to the optimizer without changing their lookup contract.
 Bounds checks and full-id comparisons remain enabled in release and debug builds;
 stale and null ids still return `None`. Retired PcodeOps remain accessible until
 the bank is cleared. The checked arena
-(`decompiler/crates/kuna-decomp/src/substrate/kuna_checkedarena.rs`) retains
-SlotMap storage and allocation order, and caches the full FFI encoding of each
-live id in a compact array indexed by slot. A lookup checks that array's bounds and
-compares the full cached id before reading the original slot. Removal and clear
-invalidate cached ids before modifying storage; only the arena wrapper can change
-slot membership. The all-ones encoding marks vacancies. Its index is `u32::MAX`,
-which the cache rejects during insertion, so a checked id cannot match a vacancy.
-This adds eight bytes per slot, while avoiding out-of-line
-SlotMap validation calls and allowing repeated checks to fold together. Debug
-builds also perform SlotMap's original checks at the final slot access.
+(`decompiler/crates/kuna-decomp/src/substrate/kuna_checkedarena.rs`) stores each
+value in a slot followed by a 64-bit key word. An occupied slot's word is the full
+FFI encoding of its live id, so a lookup checks the slot index against the slot
+count and compares that one word. The word sits directly after the value's last
+fields, which for Varnode and PcodeOp currently include their flag words, so the check
+normally reads a cache line the caller touches anyway; there is no separate key
+array. A vacant slot's word holds an even version and the index of the next free slot,
+which never names the slot itself, and the sentinel slot's word is zero, which no
+id encodes, so a checked id cannot match a vacancy. Allocation, free-list order,
+version increments and clearing order replicate `slotmap::SlotMap`, so every id is
+unchanged, and these two slot types keep SlotMap's slot size.
 The record getters `PcodeOp::code` and
 `Varnode::has_no_descend` are inlineable as well; `code` still panics if the
 opcode has not been assigned.

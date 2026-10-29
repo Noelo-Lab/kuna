@@ -1,4 +1,5 @@
 use super::*;
+use slotmap::SlotMap;
 
 slotmap::new_key_type! { struct TestId; }
 
