@@ -1,0 +1,29 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default">
+<!--
+  Synthetic generic PPC64: ldx r9,r3,r4; ldarx r3,r9,r5; blr.
+  P2 instruction decoding, correctness repair without an option. ldx is
+  extended opcode 21 and ldarx is 84; both are doubleword loads, so the
+  return is a two-level load rather than a bad-instruction halt.
+  atomic_increment: ldarx r9,0,r3; addi r9,r9,1; stdcx. r9,0,r3; bne- retry;
+  blr. stdcx. stores only while the reservation is set, so ldarx must set it;
+  otherwise the store and the loop exit depend on an uninitialized reserve
+  flag. The ISA languages already give this output.
+-->
+<bytechunk space="ram" offset="0x10000">7d23202a7c6928a84e8000207d2018a8392900017d2019ad4082fff44e800020</bytechunk>
+<symbol space="ram" offset="0x10000" name="ldx_then_ldarx"/>
+<symbol space="ram" offset="0x1000c" name="atomic_increment"/>
+</binaryimage>
+<script>
+  <com>load function ldx_then_ldarx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function atomic_increment</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="PPC64 ldarx #1: no bad instruction" min="0" max="0">halt_baddata</stringmatch>
+<stringmatch name="PPC64 ldarx #2: both doubleword loads reach the return" min="1" max="1">return \*\(unsigned long \*\)\(\*\(int8 \*\)\(a0 \+ a1\) \+ a2\);</stringmatch>
+<stringmatch name="PPC64 ldarx #3: the reservation is set, not read uninitialized" min="0" max="0">reserve</stringmatch>
+<stringmatch name="PPC64 ldarx #4: the conditional store runs once without a loop" min="1" max="1">^  \*a0 = storeDoubleWordConditionalIndexed\(\*a0 \+ 1,0,a0\);</stringmatch>
+</decompilertest>
