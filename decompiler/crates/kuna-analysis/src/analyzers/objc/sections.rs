@@ -129,9 +129,10 @@ impl<'a> MachoImage<'a> {
         self.fixups.bind_name(va)
     }
 
-    /// Whether the image carries chained fixups (`LC_DYLD_CHAINED_FIXUPS`).
+    /// Whether the image carries chained fixups (`LC_DYLD_CHAINED_FIXUPS`), a
+    /// bind-only image included: its slots are packed words, not pointers.
     pub fn chained(&self) -> bool {
-        !self.fixups.is_empty()
+        self.fixups.is_chained()
     }
 
     /// The pointer a **rebase** slot at `va` holds: the resolved chained-fixup

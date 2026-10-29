@@ -968,6 +968,25 @@ mod tests {
         assert_eq!(va_to_fileoff(&segs, u64::MAX - 2), None);
     }
 
+    /// `macho_bind_only_arm64` has `LC_DYLD_CHAINED_FIXUPS` with a single bind
+    /// and no rebase: the overlay is empty, but the image is still chained, so a
+    /// consumer must not read the packed bind word as a pointer.
+    #[test]
+    fn bind_only_image_is_chained() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_bind_only_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let fixups = resolve_chained_fixups(&file, &bytes);
+        assert!(fixups.is_chained());
+        assert!(fixups.is_empty(), "no rebase in the image");
+        assert_eq!(fixups.bind_name(0x100004000), Some("_ext"));
+        assert_eq!(fixups.resolved_ptr(0x100004000), None);
+
+        let classic = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_objc")).unwrap();
+        let classic_file = object::File::parse(classic.as_slice()).unwrap();
+        assert!(!resolve_chained_fixups(&classic_file, &classic).is_chained());
+    }
+
     /// `resolve_chained_fixups` is a strict no-op on a non-Mach-O input.
     #[test]
     fn resolver_noop_on_non_macho() {

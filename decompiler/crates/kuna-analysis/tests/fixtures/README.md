@@ -1175,6 +1175,17 @@ struct, `_use` calls `objc_msgSend$count(a0)`, `_use2` calls
 `objc_msgSend$greet:(a0, 5)` and `_remote` sends to `classRef_Remote`; off, the slots
 are `dat_1000081f8`/`dat_1000081f0`/`dat_100008230` and the stub is `sub_1000008c0`.
 
+### `macho_bind_only_arm64` — a chained-fixup image with no rebase
+
+`macho_bind_only_arm64` (arm64, ~33 KB) carries `LC_DYLD_CHAINED_FIXUPS` whose only
+fixup is a **bind**: `macho_bind_only.c` is `extern int ext; void *p = &ext;` plus an
+empty `main`, so the `__data` slot `p`@`0x100004000` binds `_ext` by dynamic lookup
+and nothing else in the image holds a pointer. It pins that a bind-only image is
+still *chained* (its slot words are packed entries, never pointers) even though the
+rebase overlay is empty. Build: `clang -target arm64-apple-macos11 -O1 -c
+macho_bind_only.c -o bo.o` then the `macho_objc_refs_arm64` link line without
+`-objc_stubs_fast`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate

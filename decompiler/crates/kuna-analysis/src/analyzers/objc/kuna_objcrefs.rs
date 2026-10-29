@@ -354,6 +354,19 @@ mod tests {
         assert_eq!(slots, vec![(0x1000081f8, 0x100008228)], "six adjacent selref slots merge");
     }
 
+    /// On a bind-only chained image the packed bind word is not a pointer.
+    #[test]
+    fn bind_only_chained_image_has_no_rebase_pointer() {
+        use crate::loader::format::macho::resolve_chained_fixups;
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/macho_bind_only_arm64");
+        let bytes = std::fs::read(path).expect("read fixture");
+        let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O");
+        let img = MachoImage::with_fixups(&file, resolve_chained_fixups(&file, &bytes));
+        assert!(img.chained());
+        assert_eq!(img.rebase_ptr(0x100004000), None);
+        assert_eq!(img.bind_name(0x100004000), Some("_ext"));
+    }
+
     #[test]
     fn adjacent_slots_merge() {
         let mut r = Vec::new();
