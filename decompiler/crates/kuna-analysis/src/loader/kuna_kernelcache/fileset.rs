@@ -170,11 +170,10 @@ pub(super) fn extract(mut bytes: Vec<u8>, choice: &KernelcacheChoice) -> Result<
     Ok((bytes, note))
 }
 
-/// An entry's `LC_SYMTAB` (`symoff`, `nsyms`) and `LC_DYSYMTAB` external-defined
-/// and undefined index ranges.
+/// An entry's `LC_SYMTAB` and its `LC_DYSYMTAB` external-defined and undefined
+/// index ranges, clamped to the symbols the file actually holds.
 struct Symbols {
     symoff: usize,
-    nsyms: usize,
     stroff: usize,
     extdef: std::ops::Range<usize>,
     undef: std::ops::Range<usize>,
@@ -192,7 +191,6 @@ fn symbols(bytes: &[u8], at: usize) -> Option<Symbols> {
     };
     Some(Symbols {
         symoff,
-        nsyms,
         stroff: rd_u32(bytes, st + 16)? as usize,
         extdef: range(16)?,
         undef: range(24)?,
