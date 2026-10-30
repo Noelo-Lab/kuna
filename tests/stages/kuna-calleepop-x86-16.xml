@@ -1,0 +1,50 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1288: under a prototype model with extrapop="unknown" the stack
+    solver guesses each call's stack-pointer change as 4, the x86-32 return
+    address. An x86 16-bit near call stores a two-byte return address, so a
+    callee that pops nothing was credited two bytes it never popped and every
+    stack slot after the call sat two bytes too high. Here the push after the
+    near call landed on the caller's local [bp-2], the local became a third
+    argument of the first call, and the final add read the call's AX:
+
+      0x00 caller: push bp; mov bp,sp; sub sp,2; mov word [bp-2],9
+                   push 5; push 7; call addtwo; add sp,4
+                   push ax; call 0000:farf; add sp,2
+                   add ax,[bp-2]; mov sp,bp; pop bp; ret
+      0x30 addtwo: returns [bp+4] + [bp+6]
+      0x40 farf:   returns [bp+6] + 1 (retf)
+
+    (nasm -f bin, org 0.) The guess's base is now the bytes the call
+    instruction itself stores: two for the near call, four for the far one.
+
+    Stage: P6 variables, kuna_calleepop.rs (return_address_bytes), under
+    option calleepop. Pass one is option calleepop off, upstream's constant 4;
+    pass two is the default.
+-->
+<bytechunk space="ram" offset="0x0">
+5589e583ec02c746fe09006a056a07e81e0083c404509a4000000083c4020346
+fe89ec5dc390909090909090909090905589e58b46040346065dc39090909090
+5589e58b4606405dcb
+</bytechunk>
+<symbol space="ram" offset="0x0" name="caller"/>
+<symbol space="ram" offset="0x30" name="addtwo"/>
+<symbol space="ram" offset="0x40" name="farf"/>
+</binaryimage>
+<script>
+  <com>option calleepop off</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option calleepop on</com>
+  <com>lo fu caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="calleepop-x86-16 #1: with the constant 4 the local becomes a third argument of the near call" min="1" max="1">^  v1 = addtwo\(7,5,9\);$</stringmatch>
+<stringmatch name="calleepop-x86-16 #2: with the constant 4 the final add reads the call's result instead of the local" min="1" max="1">^  return farf\(\) \+ v1;$</stringmatch>
+<stringmatch name="calleepop-x86-16 #3: a near call is credited its two-byte return address, so it takes two arguments" min="1" max="1">^  addtwo\(7,5\);$</stringmatch>
+<stringmatch name="calleepop-x86-16 #4: the local survives the calls and is added as the constant it holds" min="1" max="1">^  return farf\(\) \+ 9;$</stringmatch>
+</decompilertest>

@@ -43,6 +43,10 @@
 
     The asserts read the stack and memory accesses as segment() calls, so the
     script pins option segmentize off (see kuna-segmentize.xml for the default).
+    Assert 2 relies on the solver's guess for the call to g2 being upstream's
+    constant 4, which is what g2's RET 2 pops; the default guess is the two
+    bytes a near call stores, so the script also pins option calleepop off
+    (see kuna-calleepop-x86-16.xml).
 -->
 <bytechunk space="ram" offset="0x0">
 4ce80c0085c075f9c390909090909090c3c20200909090909090909090909090
@@ -55,6 +59,7 @@
 </binaryimage>
 <script>
   <com>option segmentize off</com>
+  <com>option calleepop off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
