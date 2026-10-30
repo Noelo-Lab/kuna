@@ -1,0 +1,48 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1288: in an x86 real-mode image, every near CALL/JMP/Jcc rel16 above
+    linear 0x10000 branched into the first 64 KiB.
+
+    Real-mode addresses are linear, CS*16 + IP, and a code segment need not
+    start on a 64 KiB boundary. kuna's GH-7418 fix (tests/stages/
+    gh7418-x86-call-rel16-mask.xml) masks a rel16 target to its low 16 bits,
+    which is right for a 0x66-prefixed branch in 32-bit code but was also
+    applied to 16-bit code: a DOS program loaded at segment 0x1000 lost every
+    call target, so discovery found 12 of its functions instead of 330, and
+    calls landed in data as phantom functions.
+
+        1fff0  e8 00 70     CALL 0x26ff3      ; 0x1fff3 + 0x7000
+        1fff3  c3           RET
+        26ff3  b8 07 00     MOV  AX,0x7
+        26ff6  c3           RET
+
+    Stage: P1/P2 decode (x86 SLEIGH spec fix, no option). `rel16` now splits
+    on the decode mode: with a 0x66 prefix (32-bit code) the GH-7418 mask
+    stays; in real mode the target is the linear sum; in 16-bit protected
+    mode the offset wraps inside its selector, as upstream computes it (see
+    kuna-x86-16-protected-rel16.xml).
+
+    Assert 1 is the decoded target, assert 2 forbids the masked 0x6ff3, and
+    assert 3 is the call reaching the function that is there.
+-->
+<bytechunk space="ram" offset="0x1fff0">
+e80070c3
+</bytechunk>
+<bytechunk space="ram" offset="0x26ff3">
+b80700c3
+</bytechunk>
+<symbol space="ram" offset="0x1fff0" name="f"/>
+<symbol space="ram" offset="0x26ff3" name="g"/>
+</binaryimage>
+<script>
+  <com>disassemble 0x1fff0 0x1fff4</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="real-rel16 #1: CALL rel16 at 0x1fff0 reaches the linear target 0x26ff3" min="1" max="1">^0x0001fff0: CALL +0x26ff3</stringmatch>
+<stringmatch name="real-rel16 #2: the target is not masked into the first 64 KiB" min="0" max="0">0x6ff3</stringmatch>
+<stringmatch name="real-rel16 #3: f calls g" min="1" max="1">^  g\(\);$</stringmatch>
+</decompilertest>

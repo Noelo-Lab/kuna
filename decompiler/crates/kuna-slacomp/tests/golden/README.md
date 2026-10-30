@@ -32,7 +32,11 @@ They were regenerated with the recorded C++ compiler after checking that it
 reproduces both unmodified x86 hashes; kuna’s compiler produces the same changed
 element streams.
 The combined digests were produced with `slacomp`, which reproduces the
-pinned C++ digests for each of those changes applied alone.
+pinned C++ digests for each of those changes applied alone. The 32-bit x86
+digest also covers the mode-split `rel16` near-branch target (the 16-bit
+constructors sit at the end of `x86.slaspec`); the recorded C++ compiler
+reproduces both previous x86 digests on the previous sources and produces the
+new one, which `slacomp` matches, and `x86-64.slaspec` is unchanged.
 
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both

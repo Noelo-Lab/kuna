@@ -75,6 +75,21 @@ This repairs selector identity without an option and does not emulate CP15,
 interpret processor-specific registers, or change named CP15 intrinsics,
 coprocessor data processing, or double-register transfers.
 
+An x86 near branch with a 16-bit displacement (`CALL`/`JMP`/`Jcc rel16`)
+computes its target from the mode it decodes in. With a 0x66 prefix, which is
+how such a branch reaches 32-bit code, the target is masked to its low 16 bits,
+since the CPU zeroes the high half of EIP (GH-7418). In 16-bit real mode the
+target is the linear sum of the next instruction's address and the
+displacement: a real-mode address is CS*16 + IP and a code segment need not
+start on a 64 KiB boundary, so the mask had sent every call made above linear
+0x10000 into the first 64 KiB, where it found data or nothing (issue #1288: a DOS
+program loaded at segment 0x1000 lost all but 12 of its 330 functions). In 16-bit
+protected mode an address is selector*0x10000 + offset, so the upper half is
+kept and the offset wraps, as upstream computes it. A real-mode branch that
+wraps IP past the end of its segment is not modeled, because the decoder sees
+the linear address and not CS. This is a SLEIGH correctness repair, without an
+inference option.
+
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,
 but cannot repaint the caller. After a successful instruction, a mode commit

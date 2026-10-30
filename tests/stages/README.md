@@ -80,7 +80,9 @@ writeup, not here.
 
 | `gh1243-8051-addc.xml` | [GH-1243](https://github.com/NationalSecurityAgency/ghidra/issues/1243) | S2 pcode-lift (8051 spec-fix, no option) | SLEIGH ADDC carry-in computed in a 2-byte temp (`do_addc`) so the carry-out survives |
 
-| `gh7418-x86-call-rel16-mask.xml` | [GH-7418](https://github.com/NationalSecurityAgency/ghidra/issues/7418) | S1 decode / S2 p-code lift (x86 spec-fix, no option) | SLEIGH `rel16` masks tempEIP to low 16 bits (32/16-bit) |
+| `gh7418-x86-call-rel16-mask.xml` | [GH-7418](https://github.com/NationalSecurityAgency/ghidra/issues/7418) | S1 decode / S2 p-code lift (x86 spec-fix, no option) | SLEIGH `rel16` masks tempEIP to low 16 bits (32-bit code, 0x66 prefix; see kuna-x86-16-real-rel16.xml) |
+| `kuna-x86-16-real-rel16.xml` | kuna [#1288](https://github.com/Noelo-Lab/kuna/issues/1288) (a DOS program loaded at segment 0x1000: the GH-7418 mask sent every real-mode `CALL rel16` above linear 0x10000 into the first 64 KiB, so discovery found 12 of 330 functions) | S1 decode / S2 p-code lift (x86 spec-fix, no option) | SLEIGH `rel16` is the linear sum in real mode; the GH-7418 mask applies only with a 0x66 prefix |
+| `kuna-x86-16-protected-rel16.xml` | kuna [#1288](https://github.com/Noelo-Lab/kuna/issues/1288) (companion: a 16-bit protected-mode branch lost its selector to the same mask) | S1 decode / S2 p-code lift (x86 spec-fix, no option) | SLEIGH `rel16` keeps the selector and wraps the offset in 16-bit protected mode |
 
 | `gh7139-x86-16-disp16-signed.xml` | [GH-7139](https://github.com/NationalSecurityAgency/ghidra/issues/7139) | S1 decode / operand rendering (x86 spec-fix, no option) | SLEIGH 16-bit disp16 (modrm mod=2) uses signed `simm16` |
 
