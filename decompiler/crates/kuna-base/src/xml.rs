@@ -2115,7 +2115,8 @@ mod tests {
         // and kuna-ppc64-ldarx-encoding / generic PowerPC ldx and ldarx decode at their own opcodes
         // and kuna-sparc-delay-condition / a flag-writing delay slot cannot change its branch
         // and kuna-stacksolver-unsolved / a 16-bit stack solution of 65535 is solved once
-        assert_eq!(count, 593, "corpus file count drifted");
+        // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
+        assert_eq!(count, 594, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
