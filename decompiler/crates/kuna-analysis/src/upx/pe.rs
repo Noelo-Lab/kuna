@@ -117,6 +117,7 @@ pub(super) struct PeHeader {
     /// Offset of the `PE\0\0` signature within its own buffer.
     pub at: usize,
     pub opt_size: usize,
+    pub optional_magic: u16,
     /// COFF characteristics.
     pub flags: u16,
     pub code_size: u32,
@@ -147,22 +148,25 @@ impl PeHeader {
         let nsec = le16(b, at + 6)? as usize;
         let opt_size = le16(b, at + 20)? as usize;
         let opt = at + 24;
-        if le16(b, opt)? != 0x10b {
-            return Err(unsupported("PE32+ image -- only 32-bit win32/pe is implemented"));
-        }
+        let optional_magic = le16(b, opt)?;
+        let (ndirs_offset, dirs_offset) = match optional_magic {
+            0x10b => (92, 96),
+            0x20b => (108, 112),
+            magic => return Err(unsupported(format!("PE optional header magic {magic:#x}"))),
+        };
         if nsec == 0 || nsec > 96 {
             return Err(corrupt(format!("PE header declares {nsec} sections")));
         }
-        if opt_size < 96 {
+        if opt_size < dirs_offset {
             return Err(corrupt(format!("optional header is {opt_size} bytes")));
         }
-        let ndirs = le32(b, opt + 92)? as usize;
-        if ndirs > 16 || opt_size < 96 + 8 * ndirs {
+        let ndirs = le32(b, opt + ndirs_offset)? as usize;
+        if ndirs > 16 || opt_size < dirs_offset + 8 * ndirs {
             return Err(corrupt(format!("optional header declares {ndirs} data directories")));
         }
         let mut dirs = Vec::with_capacity(ndirs);
         for i in 0..ndirs {
-            dirs.push((le32(b, opt + 96 + 8 * i)?, le32(b, opt + 100 + 8 * i)?));
+            dirs.push((le32(b, opt + dirs_offset + 8 * i)?, le32(b, opt + dirs_offset + 4 + 8 * i)?));
         }
         let table = at + 24 + opt_size;
         let mut sections = Vec::with_capacity(nsec);
@@ -172,12 +176,20 @@ impl PeHeader {
         Ok(PeHeader {
             at,
             opt_size,
+            optional_magic,
             flags: le16(b, at + 22)?,
             code_size: le32(b, opt + 4)?,
             code_base: le32(b, opt + 20)?,
             sections,
             dirs,
         })
+    }
+
+    fn require_pe32(&self) -> Result<(), UpxError> {
+        if self.optional_magic != 0x10b {
+            return Err(unsupported("PE32+ image -- only 32-bit win32/pe is implemented"));
+        }
+        Ok(())
     }
 }
 
@@ -282,6 +294,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
             super::format_name(info.format)
         )));
     }
+    img.hdr.require_pe32()?;
     let last = img.hdr.sections.last().expect("parse rejects an empty section table");
     let packed_end = last.rawptr as usize + last.rawsize as usize;
     if packed_end < img.bytes.len() {
@@ -312,6 +325,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
         .ok_or_else(|| corrupt("block is too short to carry a trailer"))?;
     let skip = le32(&obuf, trailer_end)? as usize;
     let mut oh = PeHeader::parse(&obuf, skip)?;
+    oh.require_pe32()?;
     let rvamin = oh.sections[0].vaddr;
     let extra = oh.section_table_at() + oh.sections.len() * SECTION_HEADER_SIZE;
     if extra > trailer_end {
