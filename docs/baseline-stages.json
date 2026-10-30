@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3233,
-    3233
+    3243,
+    3243
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2021,6 +2021,16 @@
     "data:bejoin-evidence-sparc #2: only off shifts widen's sign into the low word",
     "data:bejoin-evidence-sparc #2b: only off shifts uwiden's argument into the high word",
     "data:bejoin-evidence-sparc #3: shi keeps %o0 low in both passes, which truncates to its int",
+    "data:bejoin-pairs #1: the default returns ld_ll's long long whole",
+    "data:bejoin-pairs #1b: only off swaps ld_ll's words",
+    "data:bejoin-pairs #2: the default returns ldfield_ll's field whole",
+    "data:bejoin-pairs #2b: only off swaps ldfield_ll's words",
+    "data:bejoin-pairs #3: carry_ll reads and returns wid's pair in one order in both passes",
+    "data:bejoin-pairs #3b: the default keeps carry_ll's pair r3 high",
+    "data:bejoin-pairs #3c: only off keeps carry_ll's pair r3 low",
+    "data:bejoin-pairs #4: the default's carry_hi returns the high word of wid's long long",
+    "data:bejoin-pairs #4b: carry_hi stays an int in both passes",
+    "data:bejoin-pairs #5: ld_sum stays an int in both passes",
     "data:bejoin-sparc #1: wide_mul returns the 64-bit product, high word in o0",
     "data:bejoin-sparc #2: bound keeps its value in the low half, which its int4 return keeps",
     "data:bejoin-sparc #3: bound returns int4",
