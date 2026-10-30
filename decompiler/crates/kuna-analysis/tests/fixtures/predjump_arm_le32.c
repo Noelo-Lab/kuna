@@ -14,7 +14,9 @@
    `bail` exits through `bxne r0` or `bl abort`, and `bail_caller` calls it
    before its own `return`. `unguarded` is an `ldr pc,[pc,r0,lsl #2]` table
    with no range check, placed right after `pool_tail`'s literal-pool word, so
-   nothing decoded ends at its entry.
+   nothing decoded ends at its entry. A one-word `.got` holding `pool_msg`
+   makes this a GOT image, the only kind where picpool reads Thumb literal
+   copies.
 
    Built with GCC 14.2 for armhf musl (homebrew `musl-cross` 0.9.11); the
    SHA-256 below is that toolchain's output:
@@ -23,7 +25,7 @@
            -ffreestanding -fno-asynchronous-unwind-tables -Wl,--build-id=none \
            -Wl,--sort-section=name -o predjump_arm_le32 predjump_arm_le32.c
 
-   SHA-256 bae1f6cf535004360b6378a747f3d11217b6553d3fe1a5cd5b6cefaf8c2c1bfc. */
+   SHA-256 8bf1b1c714fb61c6de64b79b38417cf1deda04f4026363bf80f44d7a2e12db29. */
 
 void __attribute__((noinline)) log_msg(const char *s)
 {
@@ -113,7 +115,12 @@ __asm__(".syntax unified\n"
         "    bx lr\n"
         ".Lu_default: mvn r0, #0\n"
         "    bx lr\n"
-        ".size unguarded, . - unguarded\n");
+        ".size unguarded, . - unguarded\n"
+
+        ".pushsection .got, \"aw\"\n"
+        ".p2align 2\n"
+        "    .word pool_msg\n"
+        ".popsection\n");
 
 int __attribute__((noinline)) bail_caller(void (*cb)(void), int x)
 {
