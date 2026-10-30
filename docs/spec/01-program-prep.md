@@ -965,6 +965,11 @@ through the packed image's import data directory, because retargeting the direct
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
 `tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
 
+PE32+ headers are parsed for PackHeader discovery so unsupported 64-bit PE images
+are named as unsupported instead of being interpreted as ELF-style overlays. Only
+PE32 images are reconstructed; both the packed header and the recovered header
+must be PE32, even when the PackHeader claims `win32/pe`.
+
 The agreement is over the *set* of DLL names, not a position-by-position walk. The
 loader table holds one descriptor per distinct DLL, while the original image may
 import a single DLL across several descriptors -- a 32-bit MSVC witness names seven
