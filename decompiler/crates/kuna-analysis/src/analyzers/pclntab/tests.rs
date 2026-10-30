@@ -703,16 +703,29 @@ fn rdata_with_table(lead: &[u8], table: &[u8]) -> Vec<u8> {
 
 const PE_FUNCS: [(u32, &str); 3] = [(0x10, "main.main"), (0x80, "main.compute"), (0x200, "runtime.gopanic")];
 
+/// The head of a go1.16+ `moduledata`: the `pcHeader` pointer, then the
+/// `funcnametab` slice (the test tables put it right after their 0x48-byte
+/// header), padded to the 24 words the runtime record spans.
+fn moduledata(header_vma: u64) -> Vec<u8> {
+    let mut m = Vec::new();
+    push_u64_le(&mut m, header_vma);
+    push_u64_le(&mut m, header_vma + 0x48);
+    m.resize(24 * 8, 0);
+    m
+}
+
 /// A Go PE (go1.18..go1.25 shape: `textStart` set in the header) with a
-/// magic-shaped 8-byte decoy ahead of the table in `.rdata`.
+/// magic-shaped 8-byte decoy ahead of the table in `.rdata`, and the
+/// `moduledata` naming that table in `.data`.
 fn go_pe(blob_in_data: bool, table_in_rdata: bool) -> (Vec<u8>, u64) {
     let decoy = [0xf1, 0xff, 0xff, 0xff, 0, 0, 1, 8, 0xff, 0xff, 0xff, 0xff];
     let probe = build_go118_image(0, 0, &PE_FUNCS);
     let rlen = rdata_with_table(&decoy, &probe).len();
-    let (text_vma, _, _) = pe_vmas(0x400, rlen, 0x100);
+    let (text_vma, rdata_vma, _) = pe_vmas(0x400, rlen, 0x100);
     let table = build_go118_image(0, text_vma, &PE_FUNCS);
     let mut data = if blob_in_data { buildinfo("go1.21.3") } else { Vec::new() };
     let rdata = if table_in_rdata {
+        data.extend(moduledata(rdata_vma + (rlen - table.len()) as u64));
         rdata_with_table(&decoy, &table)
     } else {
         data = rdata_with_table(&data, &table);
@@ -730,6 +743,28 @@ fn pe_rdata_pclntab_is_found_past_a_decoy_and_decoded() {
         recover_go_functions(&file),
         PE_FUNCS.iter().map(|&(o, n)| GoFunc { addr: text_vma + o as u64, name: n.into() }).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn pe_own_table_wins_over_an_embedded_go_image() {
+    // A `//go:embed`ded Go program sits in the same `.rdata`, ahead of the
+    // program's own table and just as plausible; only the own table has a
+    // `moduledata` pointing at it.
+    const FOREIGN: [(u32, &str); 2] = [(0x20, "payload.main"), (0x40, "payload.run")];
+    let probe = rdata_with_table(&build_go118_image(0, 0, &FOREIGN), &build_go118_image(0, 0, &PE_FUNCS));
+    let (text_vma, rdata_vma, _) = pe_vmas(0x400, probe.len(), 0x100);
+    let own = build_go118_image(0, text_vma, &PE_FUNCS);
+    let rdata = rdata_with_table(&build_go118_image(0, text_vma, &FOREIGN), &own);
+    let mut data = buildinfo("go1.21.3");
+    data.extend(moduledata(rdata_vma + (rdata.len() - own.len()) as u64));
+    data.resize(0x100, 0);
+    let bytes = build_pe(&[0xc3; 0x400], &rdata, &data);
+    let file = object::File::parse(&bytes[..]).expect("hand-built PE must parse");
+    assert_eq!(
+        recover_go_functions(&file),
+        PE_FUNCS.iter().map(|&(o, n)| GoFunc { addr: text_vma + o as u64, name: n.into() }).collect::<Vec<_>>()
+    );
+    assert_eq!(crate::sourcelang::detect_compiler(&file, &bytes), crate::sourcelang::Compiler::Go);
 }
 
 #[test]
@@ -771,6 +806,15 @@ fn pe_is_go_only_with_its_own_buildinfo_and_readonly_table() {
     assert!(!detect(&go_pe(false, true).0).is_golang());
     assert!(!detect(&build_pe(&[0xc3; 0x400], &[0; 0x100], &buildinfo("go1.21.3"))).is_golang());
     assert!(!detect(&go_pe(true, false).0).is_golang());
+    // The same Go image carried twice, a const copy in `.rdata` and a writable
+    // one in `.data`: blob and table are both there, but the `.data` copy's
+    // `moduledata` names the address the table had in its own image.
+    let (text_vma, rdata_vma, _) = pe_vmas(0x400, 0x200, 0x200);
+    let rdata = rdata_with_table(&[], &build_go118_image(0, text_vma, &PE_FUNCS));
+    let mut data = buildinfo("go1.21.3");
+    data.extend(moduledata(rdata_vma + 0x7000));
+    data.resize(0x200, 0);
+    assert!(!detect(&build_pe(&[0xc3; 0x400], &rdata, &data)).is_golang());
     // The bare magic string, as a C `char[]` would carry it.
     let (text, rdata) = (vec![0xc3; 0x400], go_pe(true, true));
     let file = object::File::parse(&rdata.0[..]).expect("parse");

@@ -424,7 +424,9 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// 2. the `runtime.pclntab` / `runtime.firstmoduledata`-adjacent symbol — kuna
 ///    resolves the `runtime.pclntab` symbol directly when present;
 /// 3. a byte scan of the read-only data sections for the validated header magic
-///    whose table also resolves ([`table_plausible`]).
+///    whose table also resolves ([`table_plausible`]), preferring the table the
+///    image's own `moduledata` points at ([`moduledata_anchored`]) over an
+///    earlier one it only carries as data.
 pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
     // (1) The named section. Go's ELF uses `.gopclntab`; some toolchains/PE use
     // `gopclntab` (no dot); Mach-O names it `__gopclntab` (in `__DATA_CONST`).
@@ -468,7 +470,12 @@ pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64
     // section with every other rodata symbol), Mach-O `__rodata`/`__const`/
     // `__noptrdata`/`__data`. A magic-shaped prefix is only a candidate: the
     // header must also describe a table that resolves, so a coincidental
-    // 8-byte match ahead of the real table does not end the scan.
+    // 8-byte match ahead of the real table does not end the scan. A Go program
+    // that embeds another Go image (`//go:embed` keeps it in the same rodata,
+    // ahead of the table) holds two such tables; the program's own is the one
+    // its `moduledata` points at, and the first plausible one is kept only for
+    // an image where no table is anchored.
+    let mut first = None;
     for name in [
         ".rodata",
         ".rdata",
@@ -481,34 +488,60 @@ pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64
         "__data",
     ] {
         if let Some(sec) = file.section_by_name(name) {
-            if let Some(vma) = scan_section(img, &sec) {
-                return Some(vma);
+            let anchored = scan_section(img, &sec, |vma| {
+                first.get_or_insert(vma);
+                moduledata_anchored(file, img, vma)
+            });
+            if anchored.is_some() {
+                return anchored;
             }
         }
     }
-    None
+    first
 }
 
 /// `true` when a read-only data section of `file` holds a pclntab whose table
-/// resolves — the image's OWN Go metadata, as opposed to Go bytes it merely
-/// carries in writable data (a dropper's embedded payload). The PE detection
-/// arm pairs this with the build-info blob.
+/// resolves and whose `moduledata` points back at it — the image's OWN Go
+/// metadata, as opposed to Go bytes it merely carries (a dropper's embedded
+/// payload, in either data section). The PE detection arm pairs this with the
+/// build-info blob.
 pub(crate) fn readonly_table_present(file: &object::File) -> bool {
     let img = ImageBytes::new(file);
     file.sections()
         .filter(|s| s.kind() == object::SectionKind::ReadOnlyData)
-        .any(|s| scan_section(&img, &s).is_some())
+        .any(|s| scan_section(&img, &s, |vma| moduledata_anchored(file, &img, vma)).is_some())
 }
 
-/// The first validated header in `sec`, stepping the 8-byte alignment the
-/// linker gives the table.
-fn scan_section(img: &ImageBytes, sec: &object::Section) -> Option<u64> {
+/// The first validated header in `sec` that `accept` takes, stepping the
+/// 8-byte alignment the linker gives the table.
+fn scan_section(img: &ImageBytes, sec: &object::Section, mut accept: impl FnMut(u64) -> bool) -> Option<u64> {
     let base = sec.address();
     let data = sec.data().ok()?;
     (0..data.len().saturating_sub(7))
         .step_by(8)
-        .find(|&off| probe_header(&data[off..off + 8]).is_some() && table_plausible(img, base + off as u64))
-        .map(|off| base + off as u64)
+        .map(|off| (off, base + off as u64))
+        .find(|&(off, vma)| probe_header(&data[off..off + 8]).is_some() && table_plausible(img, vma) && accept(vma))
+        .map(|(_, vma)| vma)
+}
+
+/// `true` when a writable data section holds the `moduledata` record of the
+/// table at `vma`. The record opens with the header pointer and then the name
+/// table's (`pcHeader`, `funcnametab`, go1.16+), or with the table blob and,
+/// after its length and capacity, the functab's (`pclntable`, `ftab`, go1.2).
+/// The linker always writes it for the module's own table; a copy of another
+/// image's table, carried as data, has none pointing at where the copy sits.
+fn moduledata_anchored(file: &object::File, img: &ImageBytes, vma: u64) -> bool {
+    let Some(h) = parse_header(img, vma) else { return false };
+    let ps = h.ptr_size as usize;
+    let (idx, want) = if h.ver == GoVer::Go12 { (3, h.functab_vma) } else { (1, h.funcname_vma) };
+    let word = |rec: &[u8], i: usize| rd_ptr(&rec[i * ps..], h.ptr_size, h.end);
+    file.sections().filter(|s| s.kind() == object::SectionKind::Data).any(|sec| {
+        let Ok(data) = sec.data() else { return false };
+        let lead = (ps - (sec.address() as usize % ps)) % ps;
+        (lead..data.len().saturating_sub((idx + 1) * ps - 1))
+            .step_by(ps)
+            .any(|off| word(&data[off..], 0) == vma && word(&data[off..], idx) == want)
+    })
 }
 
 /// `true` when the header at `vma` describes a table that is really there: a

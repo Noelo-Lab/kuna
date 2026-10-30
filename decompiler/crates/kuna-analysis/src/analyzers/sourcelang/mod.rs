@@ -340,10 +340,11 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
 /// 1. **Go** — a Go build-info section (`.go.buildinfo` etc.) is present, OR
 ///    the build-info blob Go's Windows linker merges into `.data` validates
 ///    there (`loader::gobuildinfo::pe_buildinfo_blob`) AND a pclntab whose
-///    table resolves sits in read-only data (`pclntab::readonly_table_present`).
-///    A `go build` PE has only the plain `.text`/`.rdata`/`.data` sections, so
-///    content is its one signal; the pclntab half keeps a C program that merely
-///    carries a Go image in its `.data` (a dropper's payload) from being read as
+///    table resolves sits in read-only data with the image's own `moduledata`
+///    naming it (`pclntab::readonly_table_present`). A `go build` PE has only
+///    the plain `.text`/`.rdata`/`.data` sections, so content is its one
+///    signal; the pclntab half keeps a C program that merely carries a Go image
+///    as data (a dropper's payload, in either data section) from being read as
 ///    Go. Checked first, as on every format: a cgo build also links C objects
 ///    whose toolchain records the later arms read.
 /// 2. **Rust** — a Rust-mangled symbol, OR a `rustc version` toolchain record in

@@ -3150,12 +3150,19 @@ moves.
   aligned slots, so it costs one byte compare per 16 bytes of `.data` (1.5 ms
   on a 13.7 MB `.data`); on an internally linked Go image the blob is the
   section's first object. Second, is there a pclntab in **read-only** data
-  whose table resolves
+  whose table resolves and which the image's own `moduledata` names
   (`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
-  (readonly_table_present)`) — the Go program's own metadata, as opposed to a
-  Go image a C program merely carries in its `.data` (a dropper's payload
-  stored there has a valid blob too, but its pclntab sits beside it in
-  writable data). Both must hold. The arm runs first, as on every format, and
+  (readonly_table_present, moduledata_anchored)`): a pointer-aligned record in
+  writable data whose first word is the header's address and whose next
+  pointer is the name table's (go1.16+, `pcHeader` then `funcnametab`) or,
+  after the blob's length and capacity, the functab's (go1.2–go1.15,
+  `pclntable` then `ftab`). The linker always writes that record for the
+  module's own table. A Go image a C program merely carries as data has none
+  pointing at where the copy sits, whichever section holds it: a payload in
+  `.data` has a valid blob but its table is in writable data, and one carried
+  twice (a const copy in `.rdata`, a writable one in `.data`) has a blob and
+  a read-only table whose only `moduledata` names the address the table had in
+  its own image. Both questions must hold. The arm runs first, as on every format, and
   returns before the `.rdata` toolchain-record scan the later arms do.
   Nothing else changes for a non-Go PE: its verdict is the same as before. The
   same blob lookup (`buildinfo_blob`) gives the version-keyed `goreg` shells
@@ -3271,7 +3278,12 @@ every other binary's pass list is byte-identical to before the pass existed):
   header must also describe a table that resolves (a function count in range, a
   functab and a name table that both lie inside the image,
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
-  (table_plausible)`), or the scan moves on. An entry is admitted only
+  (table_plausible)`), or the scan moves on. A plausible table can still be
+  someone else's: a Go program that `//go:embed`s another Go executable keeps
+  it in the same rodata, ahead of its own table, so the scan prefers the first
+  table the image's `moduledata` names (`moduledata_anchored`, as in the PE
+  detection above) and keeps the first plausible one only for an image where
+  no table is named. An entry is admitted only
   when it lands in an executable extent — a corrupt table cannot mint a function
   over data. Because the `functab` also carries each function's **end**, the pass
   feeds those extents to the interior-entry rejection, so a jump-table case block
