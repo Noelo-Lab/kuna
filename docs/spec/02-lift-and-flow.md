@@ -85,10 +85,18 @@ start on a 64 KiB boundary, so the mask had sent every call made above linear
 0x10000 into the first 64 KiB, where it found data or nothing (issue #1288: a DOS
 program loaded at segment 0x1000 lost all but 12 of its 330 functions). In 16-bit
 protected mode an address is selector*0x10000 + offset, so the upper half is
-kept and the offset wraps, as upstream computes it. A real-mode branch that
-wraps IP past the end of its segment is not modeled, because the decoder sees
-the linear address and not CS. This is a SLEIGH correctness repair, without an
-inference option.
+kept and the offset wraps, as upstream computes it; `x86:LE:32:System
+Management Mode` decodes with that same 16-bit protected-mode context and takes
+the same form. The decoder sees the linear address and not CS, so the real-mode
+sum cannot model IP wrapping past 0xFFFF. It is exact for every branch in a
+segment of at most 32 KiB. In a larger segment, a branch to a target more than
+32 KiB away is encoded through the wrap, and its decoded target lands 64 KiB
+from the real one, in data or outside the image. Code whose CS is 0 loses those
+branches as well, which the old mask had decoded exactly. Upstream's form, a
+wrap inside the branch's own 64 KiB block, is exact only when CS is a multiple
+of 0x1000, and it recovers fewer of that DOS program's callees. Modeling the
+wrap needs the segment base from the loader. This is a SLEIGH correctness
+repair, without an inference option.
 
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,

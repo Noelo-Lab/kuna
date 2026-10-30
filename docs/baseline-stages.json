@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3241,
-    3241
+    3242,
+    3242
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2803,9 +2803,10 @@
     "data:ptrfromuse #7: a parameter that is shifted before it is dereferenced is refused in all three passes",
     "data:ptrfromuse #8: and a parameter that upstream already typed is untouched in all three",
     "data:ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes",
-    "data:real-rel16 #1: CALL rel16 at 0x1fff0 reaches the linear target 0x26ff3",
-    "data:real-rel16 #2: the target is not masked into the first 64 KiB",
-    "data:real-rel16 #3: f calls g",
+    "data:real-rel16 #1: CALL rel16 at 0x2b680 (CS 0x2b58) reaches the linear target 0x30010 across the 64 KiB line",
+    "data:real-rel16 #2: the target is not masked into the first 64 KiB (0x10)",
+    "data:real-rel16 #3: the target is not wrapped into the call's own 64 KiB block (0x20010)",
+    "data:real-rel16 #4: f calls g",
     "data:realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void",
     "data:realtypes-pointee #2: no unknown pointee collapses to void in either pass",
     "data:realtypes-pointee #3: the 4-byte errno store keeps its access width",
