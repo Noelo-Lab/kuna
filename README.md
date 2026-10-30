@@ -15,6 +15,7 @@ Learn more about this approach in this [post](https://noelo.org/blog/kuna-releas
 
 [![Discord](https://img.shields.io/discord/1542982153912975470?label=Discord&logo=discord&logoColor=white&color=5865F2&style=flat)](https://discord.gg/vAQ8BKUPXv)
 [![Featured on Made with REA](https://madewithrea.com/badges/featured.svg)](https://madewithrea.com/builds/kuna-agent-first-rust-decompiler-ported-from-ghidra)
+[![Featured by Awesome REA](https://raw.githubusercontent.com/reacher-z/Awesome-REA/main/assets/featured-by-awesome-rea-inline.svg)](https://github.com/reacher-z/Awesome-REA)
 
 ## Install & Usage
 Kuna is distributed as a single Rust binary and can be run on most systems.
