@@ -263,6 +263,13 @@ struct PcHeader {
     funcdata_base: u64,
 }
 
+impl PcHeader {
+    /// Word `i` of a pointer-sized record laid out by this table's target.
+    fn word(&self, rec: &[u8], i: usize) -> u64 {
+        rd_ptr(&rec[i * self.ptr_size as usize..], self.ptr_size, self.end)
+    }
+}
+
 /// Parse the header at `header_vma` into a [`PcHeader`], resolving the table
 /// bases. `None` on any malformation (the never-fail contract — the caller turns
 /// `None` into an empty output).
@@ -470,11 +477,7 @@ pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64
     // section with every other rodata symbol), Mach-O `__rodata`/`__const`/
     // `__noptrdata`/`__data`. A magic-shaped prefix is only a candidate: the
     // header must also describe a table that resolves, so a coincidental
-    // 8-byte match ahead of the real table does not end the scan. A Go program
-    // that embeds another Go image (`//go:embed` keeps it in the same rodata,
-    // ahead of the table) holds two such tables; the program's own is the one
-    // its `moduledata` points at, and the first plausible one is kept only for
-    // an image where no table is anchored.
+    // 8-byte match ahead of the real table does not end the scan.
     let mut first = None;
     for name in [
         ".rodata",
@@ -532,16 +535,27 @@ fn scan_section(img: &ImageBytes, sec: &object::Section, mut accept: impl FnMut(
 /// image's table, carried as data, has none pointing at where the copy sits.
 fn moduledata_anchored(file: &object::File, img: &ImageBytes, vma: u64) -> bool {
     let Some(h) = parse_header(img, vma) else { return false };
-    let ps = h.ptr_size as usize;
     let (idx, want) = if h.ver == GoVer::Go12 { (3, h.functab_vma) } else { (1, h.funcname_vma) };
-    let word = |rec: &[u8], i: usize| rd_ptr(&rec[i * ps..], h.ptr_size, h.end);
-    file.sections().filter(|s| s.kind() == object::SectionKind::Data).any(|sec| {
-        let Ok(data) = sec.data() else { return false };
-        let lead = (ps - (sec.address() as usize % ps)) % ps;
-        (lead..data.len().saturating_sub((idx + 1) * ps - 1))
-            .step_by(ps)
-            .any(|off| word(&data[off..], 0) == vma && word(&data[off..], idx) == want)
-    })
+    file.sections()
+        .filter(|s| s.kind() == object::SectionKind::Data)
+        .any(|sec| moduledata_records(&sec, h, vma, idx + 1).any(|rec| h.word(rec, idx) == want))
+}
+
+/// The pointer-aligned `words`-word records in `sec` that open with
+/// `header_vma`: where a `moduledata` for that table can sit.
+fn moduledata_records<'d>(
+    sec: &object::Section<'d, '_>,
+    h: PcHeader,
+    header_vma: u64,
+    words: usize,
+) -> impl Iterator<Item = &'d [u8]> {
+    let ps = h.ptr_size as usize;
+    let data = sec.data().unwrap_or_default();
+    let lead = (ps - (sec.address() as usize % ps)) % ps;
+    (lead..(data.len() + 1).saturating_sub(words * ps))
+        .step_by(ps)
+        .map(move |off| &data[off..off + words * ps])
+        .filter(move |rec| h.word(rec, 0) == header_vma)
 }
 
 /// `true` when the header at `vma` describes a table that is really there: a
@@ -612,20 +626,13 @@ fn functab_end(img: &ImageBytes, h: &PcHeader) -> Option<u64> {
 /// words 20-23 are `minpc, maxpc, text, etext`, which must nest. Searched in the
 /// data sections the linker places `runtime.firstmoduledata` in.
 fn moduledata_text(file: &object::File, h: &PcHeader, header_vma: u64) -> Option<u64> {
-    let ps = h.ptr_size as usize;
-    let word = |rec: &[u8], i: usize| rd_ptr(&rec[i * ps..], h.ptr_size, h.end);
     for name in [".go.module", "__go_module", ".noptrdata", ".data", "__noptrdata", "__data"] {
         let Some(sec) = file.section_by_name(name) else { continue };
-        let Ok(data) = sec.data() else { continue };
-        let lead = (ps - (sec.address() as usize % ps)) % ps;
-        let mut off = lead;
-        while off + 24 * ps <= data.len() {
-            let rec = &data[off..off + 24 * ps];
-            off += ps;
-            if word(rec, 0) != header_vma || word(rec, 17) != h.nfunc.wrapping_add(1) {
+        for rec in moduledata_records(&sec, *h, header_vma, 24) {
+            if h.word(rec, 17) != h.nfunc.wrapping_add(1) {
                 continue;
             }
-            let (minpc, maxpc, text, etext) = (word(rec, 20), word(rec, 21), word(rec, 22), word(rec, 23));
+            let (minpc, maxpc, text, etext) = (h.word(rec, 20), h.word(rec, 21), h.word(rec, 22), h.word(rec, 23));
             if text != 0 && text <= minpc && minpc < maxpc && maxpc <= etext {
                 return Some(text);
             }
