@@ -4263,7 +4263,22 @@ every other binary's pass list is byte-identical to before the pass existed):
   context demangles its extended type, a parent in another image is named
   through its module-descriptor import). Only a code address is ever named as a
   function (a base-protocol or associated-type witness row points at data), and
-  function names use the FID-precedent placeholder gate. On the Toyota iOS app
+  function names use the FID-precedent placeholder gate. Every record's claim
+  on a function is collected before any name is given, because the linker
+  folds functions with identical bodies (identical code folding) and one
+  address is then the target of records of unrelated types — on the Toyota
+  app 2,350 of the 57,147 claimed functions, 2,037 of them claimed by more
+  than one type. Such a function is never named after one of its claimants:
+  when all claims come from one type it is named after the first member
+  (sorted) with the count of members it serves
+  (`<T:P>.requirement#0.merged#2`); when they are witnesses of one protocol
+  member from different types it is named after the member alone
+  (`<*:Swift.RawRepresentable>.init(rawValue:)`); any other mix (different
+  types' vtable slots, different members) keeps the engine placeholder. A
+  name already given to another function (the same member's second folded
+  body; a static and an instance requirement spelled alike; two Clang types
+  of one name) gets `.2`, `.3`, … in address order, so every name resolves
+  to one function. On the Toyota iOS app
   (314,038 functions, 304,309 of them `sub_<addr>`) the pass names 57,147
   stripped functions — 14,615 metadata accessors, 15,204 vtable slots, 27,322
   witnesses, 6 overrides — every one at an address function discovery already
@@ -4320,7 +4335,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`swift.type_metadata *Module.Type.type_metadata_accessor(long request)`, so
   `return &Module.Type.type_metadata;`); and the `self` of every class vtable
   getter and of every local protocol's witness getter (the `IsInstance` flag
-  read, so a static property's metatype `self` is left alone). Swift passes
+  read, so a static property's metatype `self` is left alone; a getter whose
+  body the linker folded with another type's, or with a member that is not a
+  getter, gets no `self` at all — `Namer::ambiguous_self`). Swift passes
   `self` in the `swiftself` register (x20 on arm64, r13 on x86-64), which no
   calling-convention model describes and which a locked prototype cannot name
   without also fixing the arity; a getter's arity is known, so the pass pins

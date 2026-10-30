@@ -929,7 +929,11 @@ impl<'a> Types<'a> {
             };
             for e in &ctx.vtable {
                 let Some(f) = e.impl_addr else { continue };
-                if e.kind != MethodKind::Getter || !e.instance || !self.namer.is_code(f) {
+                if e.kind != MethodKind::Getter
+                    || !e.instance
+                    || !self.namer.is_code(f)
+                    || self.namer.ambiguous_self(f)
+                {
                     continue;
                 }
                 out.swift_types.param_locks.push(ParamLockFact {
@@ -975,7 +979,7 @@ impl<'a> Types<'a> {
                 let Some(&f) = self.md.words.get(&slot) else {
                     continue;
                 };
-                if !self.namer.is_code(f) {
+                if !self.namer.is_code(f) || self.namer.ambiguous_self(f) {
                     continue;
                 }
                 let (Some(mp), Some(vp)) = (metadata_ptr.clone(), self.void_ptr()) else {

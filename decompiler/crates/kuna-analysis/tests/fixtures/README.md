@@ -1778,3 +1778,28 @@ self->count; }` and the accessor as `swift.type_metadata *
 typefix.Point.type_metadata_accessor(long request) { return
 &typefix.Point.type_metadata; }`; with `swifttypes off` the getter takes no
 parameter and reads `*(long *)(v2 + 0x60)`.
+
+### `swift_icf_elf` — a stripped Swift executable with folded code (`swiftmetadata`)
+
+`swift_icf_elf` (x86-64 ELF, 12 KB) is the identical-code-folding fixture
+(`tests/stages/kuna-swifticf.xml`). Its source `swift_icf_elf.swift` declares
+protocols `Tagged` and `Keyed` and structs whose witnesses the linker folds:
+`Alpha.tag` and `Beta.tag` are both `{ 7 }` (one protocol member, two types),
+`Delta.tag` and `Delta.describe()` are both `{ d * 3 }` (one type, two
+members), and `Gamma.key` is its own `{ k + 11 }`. Built with function sections
+and the linker's folding:
+
+```bash
+swiftc -O -module-name icffix -use-ld=lld -Xfrontend -function-sections \
+  -Xlinker --icf=all swift_icf_elf.swift -o icffix
+llvm-strip --strip-all -o swift_icf_elf icffix
+```
+
+**Pinned VMAs** (the unstripped `icffix` symbol table): the `Tagged.tag.getter`
+witnesses of `Alpha` and `Beta` both at `0x27f0`, `Delta`'s `tag.getter` and
+`describe()` witnesses both at `0x2ab0`, `Gamma`'s `Keyed.key.getter` witness
+at `0x2850`, `Alpha`'s `describe()` at `0x2800`. With `swiftmetadata on` they
+decompile as `<*:icffix.Tagged>.requirement#0(void)`,
+`<icffix.Delta:icffix.Tagged>.requirement#0.merged#2(void)` and
+`<icffix.Gamma:icffix.Keyed>.requirement#0(swift.type_metadata *Self, void
+*witness_table, icffix.Gamma *self)`.
