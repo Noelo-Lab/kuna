@@ -1,0 +1,42 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1288: decompiling a PKLITE-packed DOS executable grew memory without
+    bound. Its compressed body decodes as code, and stray 0x4c bytes are
+    `DEC SP`.
+
+    `ActionStackPtrFlow`'s `StackSolver` marked an unsolved variable with the
+    value 65535 (C++ `coreaction.cc` `StackSolver::propagate`). Equation
+    constants are the stack pointer's unsigned offset, so on a 16-bit stack
+    pointer `DEC SP` (`SP + 0xffff`) solves to exactly 65535 and reads back as
+    unsolved. Here the loop-head MULTIEQUAL, the DEC SP and the call's
+    INDIRECT all solve to 65535 and re-pushed each other forever:
+
+        0000  4c           DEC  SP
+        0001  e8 0c 00     CALL 0x10
+        0004  85 c0        TEST AX,AX
+        0006  75 f9        JNZ  0x1
+        0008  c3           RET
+        0010  c3           RET            ; g
+
+    Stage: P6 variables, `coreaction_stackptr.rs (StackSolver)`, scheduled in
+    `stackstall`. No option: a strict fix, since a solution is now an Option
+    and each variable is solved and pushed at most once.
+
+    Assert 1 is the fix: the decompile finishes and prints the loop around
+    the call. Before it, this test never finished.
+-->
+<bytechunk space="ram" offset="0x0">
+4ce80c0085c075f9c390909090909090c3
+</bytechunk>
+<symbol space="ram" offset="0x0" name="f"/>
+<symbol space="ram" offset="0x10" name="g"/>
+</binaryimage>
+<script>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted" min="1" max="1">^  \} while \(g\(\)\);$</stringmatch>
+</decompilertest>
