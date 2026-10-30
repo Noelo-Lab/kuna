@@ -946,6 +946,9 @@ kuna_options! { self, p1;
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
+    "gowalkprune" => {
+        on_off!(analysis_gowalkprune, "Go pclntab functions out of the fast inventory walk")
+    },
     "flowmode" => {
         let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {
             "on" | "1" | "true" => (true, false),

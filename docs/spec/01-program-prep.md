@@ -5246,6 +5246,26 @@ format oracles; full `funcstart_patterns` roots are included only when both
 static CALL from those trustworthy roots, and `fast_funcdisc` commits all
 resulting function entries.
 
+On a Go image the walk leaves out the roots the pclntab already accounts for
+(`gowalkprune`, default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+(function_entries)`). The pclntab names every Go function and gives its extent,
+and the `gopclntab` pass puts each in the inventory. Walking them finds those
+same functions again, and on an x64 PE it is expensive: Go's Windows linker
+writes a `.pdata` record for every Go function, so with those records as roots
+the walk decoded the whole Go text. A root at a pclntab function entry is
+therefore dropped before the walk, and every other root is kept, so cgo's C
+code and anything else the image's own records name is still walked. Measured
+on four Go images (gh 2.89.0 for Windows and Linux, two other Go PEs), the
+inventory's addresses, names and sizes do not change. What changes is that a
+Go function the walk reached only by a call no longer also carries a
+`sub_<addr>` alias; a function another source of entries names (a `.pdata`
+record, an entry oracle) keeps its alias as before; the decompiled C is the
+same. The pruning applies only where `fast_funcdisc` builds the walk without
+the full Listing, which is fast mode on every surface. With the Listing on,
+every root is walked as before. `--option gowalkprune off` walks the Go
+functions again.
+
 The second source covers indirect-only callbacks. On non-ARM objects, scan
 allocated, initialized, non-executable data for pointer-width runs of at least
 two absolute values into executable ranges. Ignore a table longer than 256

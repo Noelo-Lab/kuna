@@ -1792,6 +1792,13 @@ pub struct Architecture {
     /// never claimed as a function; the call REFERENCE is filed either way. Off
     /// restores the previous (husk-producing) discovery set exactly.
     pub analysis_ppclocalentry: bool,
+    /// (kuna) Leave the functions a Go `pclntab` names out of the roots of the
+    /// fast inventory walk (`gowalkprune`); default **on**. The pclntab names
+    /// every Go function and gives its extent, so walking them from their `.pdata`
+    /// records only re-finds those functions; the walk keeps every other root.
+    /// Applies where `fast_funcdisc` builds the walk without the full Listing.
+    /// Off walks them again.
+    pub analysis_gowalkprune: bool,
     /// (kuna) Paint the ARM mode of code a stripped image proves through control
     /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
     /// default **off**, which leaves the context database as the walk left it.
@@ -3176,6 +3183,7 @@ impl Architecture {
             analysis_thunkentry: false,
             analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
+            analysis_gowalkprune: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
             analysis_picbase: false,
@@ -3611,6 +3619,8 @@ impl Architecture {
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
         self.analysis_ppclocalentry = true;
+        // (kuna) Go pclntab functions out of the fast inventory walk -- default-ON.
+        self.analysis_gowalkprune = true;
         // (kuna) ARM flow-proven decode-mode paints -- default-OFF (GH-780): the
         // proof trusts a fall-through the compiler may leave unreachable.
         self.analysis_flowmode = false;

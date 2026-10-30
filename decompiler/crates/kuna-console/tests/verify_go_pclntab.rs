@@ -318,3 +318,64 @@ fn stripped_go_pe_functions_recovered_from_pclntab() {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+/// `gowalkprune`: the fast inventory walk leaves the functions the pclntab names
+/// to the table. On a stripped Go ELF the walk roots are pclntab functions found
+/// by the entry oracles; on a Go PE every pclntab function with a `.pdata` record
+/// is one. With the option off the walk follows calls through the Go runtime,
+/// and a function it reaches only that way gains a `sub_<addr>` alias beside its
+/// pclntab name; on, those are not walked, and only the roots keep the alias
+/// their entry source gave them. The inventory (addresses, names, sizes) is the
+/// same either way.
+#[test]
+fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    for (goos, file) in [("linux", "go_stripped"), ("windows", "go_stripped.exe")] {
+        let dir = std::env::temp_dir().join(format!("kuna_go_walkprune_{goos}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out_bin = dir.join(file);
+        if !build_go(&dir, &out_bin, goos, "amd64", /* strip */ true) {
+            let _ = std::fs::remove_dir_all(&dir);
+            panic!("installed Go compiler failed to build the {goos}/amd64 fixture");
+        }
+        let bin = out_bin.to_str().expect("utf8 path").to_string();
+        let specs = repo_root().join("specs");
+        let spec_roots = vec![specs.to_str().unwrap().to_string()];
+        let inventory = |prune: &str| {
+            let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
+                .expect("bootstrap fixture with built processor specs");
+            for (option, value) in [("fast_funcdisc", "on"), ("gowalkprune", prune)] {
+                prog.arch_mut().set_kuna_option(option, value).expect("option applies");
+            }
+            prog.commit_pending_analysis().expect("analysis commit succeeds");
+            prog.function_entries_canonical()
+        };
+        let walked = inventory("off");
+        let pruned = inventory("on");
+
+        let shape = |entries: &[kuna_console::engine::FunctionEntry]| {
+            entries.iter().map(|e| (e.addr.get_offset(), e.name.clone(), e.size)).collect::<Vec<_>>()
+        };
+        assert_eq!(shape(&walked), shape(&pruned), "{goos}: the inventory must not change");
+        assert!(walked.iter().any(|e| e.name == "main.compute"), "{goos}: pclntab names recovered");
+        let generated_aliases = |entries: &[kuna_console::engine::FunctionEntry]| {
+            entries
+                .iter()
+                .filter(|e| !e.name.starts_with("sub_") && e.aliases.iter().any(|a| a.starts_with("sub_")))
+                .map(|e| e.addr.get_offset())
+                .collect::<std::collections::BTreeSet<u64>>()
+        };
+        let (walked_aliases, pruned_aliases) = (generated_aliases(&walked), generated_aliases(&pruned));
+        assert!(
+            pruned_aliases.is_subset(&walked_aliases) && pruned_aliases.len() < walked_aliases.len(),
+            "{goos}: gowalkprune on must not walk the pclntab functions the roots call \
+             ({} aliased pruned, {} walked)",
+            pruned_aliases.len(),
+            walked_aliases.len()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
