@@ -143,6 +143,29 @@ fn fileset_pointer_slots_are_rebased() {
     assert!(kext.note.unwrap().contains("3 chained-fixup pointers rebased"));
 }
 
+/// An Auxiliary KC's chains name two cache levels: its own (3), rebased from
+/// its base, and the boot collection's (0), which this file does not hold and
+/// so leaves the slot as it was.
+#[test]
+fn auxiliary_collection_rebases_only_its_own_level() {
+    let base = 0xffff_fff0_0700_4000u64;
+    let mut image = fixture("fileset.macho");
+    let word = |image: &[u8], off: usize| u64::from_le_bytes(image[off..off + 8].try_into().unwrap());
+    let set_level = |image: &mut Vec<u8>, off: usize, level: u64| {
+        let raw = (word(image, off) & !(3 << 30)) | (level << 30);
+        image[off..off + 8].copy_from_slice(&raw.to_le_bytes());
+    };
+    set_level(&mut image, 0x4000, 3);
+    set_level(&mut image, 0x4808, 3);
+    set_level(&mut image, 0x4800, 0);
+    let foreign = word(&image, 0x4800);
+    let kext = peel(image, &KernelcacheChoice::Entry("Widget".into())).unwrap();
+    assert_eq!(word(&kext.bytes, 0x4000), base + 0x3000);
+    assert_eq!(word(&kext.bytes, 0x4808), base + 0x2400, "kext __const -> \"Widget\"");
+    assert_eq!(word(&kext.bytes, 0x4800), foreign, "a boot-KC target is not rebased from this base");
+    assert!(kext.note.unwrap().contains("2 chained-fixup pointers rebased"));
+}
+
 #[test]
 fn compressed_containers_peel_to_the_same_kernel() {
     let expected = peel(fixture("fileset.macho"), &KernelcacheChoice::Auto).unwrap().bytes;
