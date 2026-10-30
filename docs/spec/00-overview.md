@@ -2839,6 +2839,17 @@ address offset here would swap the masks of a register pair and allow live
 pointer, loop-bound or floating point values to be replaced with zero. This
 applies to integer and FPU lanes.
 
+Before `TransformManager` materializes anything,
+`decompiler/crates/kuna-decomp/src/substrate/transform.rs (check_free_fanout)`
+refuses a transform that would give a free varnode more than one reader: an
+undefined temporary, a constant, or a lane of a varnode that is not an input.
+That is the condition `Varnode::addDescend` rejects, and the upstream code only
+meets it in `placeInputs`, after `removeOld` and `transformInputVarnodes` have
+already destroyed ops and varnodes. Failing first keeps a refused transform free
+of side effects, which `ActionLaneDivide` relies on: it treats a failed apply as
+"no split" and keeps walking the varnodes it collected before the attempt. A
+lane of an input stays allowed, since it becomes an input itself.
+
 Lookup-only hash maps keyed by engine ids and image addresses (values the
 decompiler makes or reads from the binary, so they need speed rather than
 collision resistance) hash with
