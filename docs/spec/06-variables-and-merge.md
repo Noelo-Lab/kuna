@@ -3177,6 +3177,23 @@ other forever, and the work stack grows until the process runs out of memory
 is solved, and pushed, at most once, and the propagation is bounded by the
 equation count. The solution arithmetic wraps, as the C++ `int4` does.
 
+Upstream only ever writes a variable that reads as unsolved, so the first
+solution a variable gets is its last, and kuna keeps exactly that rule: where
+no variable solves to 65535 the two solves take identical steps and pick the
+same winner between conflicting equations. Where one does and upstream still
+finishes, its answer differs, and kuna's is the right one. Upstream lets a
+later neighbour overwrite the genuine 65535, lets the guessed-equation loop
+replace it with a guess, and skips it in the rewrite, so that producer keeps
+its INDIRECT or MULTIEQUAL form, the offsets behind it stay unsolved, and the
+function keeps a raw stack-pointer local where a frame slot should be. Only a
+2-byte stack pointer reaches the value in practice: it is the stack pointer at
+entry - 1, while on 32 or 64 bits it would be 64 KiB above the entry value. The
+solve itself only runs under a prototype model whose extrapop is unknown, the
+x86-16, M16C/60 and 32-bit Windows, Borland and Delphi x86 specs among them. On
+M16C/60 `PUSH.B` lowers the stack pointer by one, so a byte push at a
+function's entry is ordinary compiled code, and with a loop after it upstream
+never finished.
+
 The guessed equation is where kuna diverges (option `calleepop`, default on).
 Upstream's constant `extrapop = 4` states that the callee pops none of its
 arguments, and under a compiler spec whose `<default_proto>` carries

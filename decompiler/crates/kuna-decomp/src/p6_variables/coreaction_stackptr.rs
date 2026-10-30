@@ -23,8 +23,8 @@
 //! guess, the `-1` multiply test) are the verbatim C++ literals.  One deliberate
 //! departure: the C++ marks an unsolved variable with the value `65535`, which a
 //! 16-bit stack pointer reaches (`DEC SP` adds `0xffff`); a variable solved to it
-//! read back as unsolved and was re-pushed without end.  `soln` is an `Option`.  The two surfaces the merged tree does not yet build — the
-//! per-call `FuncCallSpecs` (`getCallSpecs`/`setEffectiveExtraPop`, a W6/W7 boundary,
+//! read back as unsolved and was re-pushed without end.  `soln` is an `Option`.
+//! The two surfaces the merged tree does not yet build — the per-call `FuncCallSpecs` (`getCallSpecs`/`setEffectiveExtraPop`, a W6/W7 boundary,
 //! `numCalls()==0` here) and the IOP-space `getOpFromConst` decode (W3-varnode
 //! boundary) — are reached exactly where the C++ reaches them: with no call specs
 //! the INDIRECT companion takes the C++ `fc==0` *guess* branch (`rhs=4`), and the
