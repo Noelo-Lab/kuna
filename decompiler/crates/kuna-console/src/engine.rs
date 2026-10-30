@@ -51,6 +51,7 @@ use kuna_num::pcoderaw::VarnodeData;
 
 use kuna_sleigh::loadimage::{section_flags, LoadImage, LoadImageFunc, LoadImageSection};
 use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MACHINES};
+use kuna_analysis::loadimage_mz::{is_mz_dos_image, MzImage, MZ_LANGUAGE};
 use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
@@ -3812,6 +3813,19 @@ pub fn bootstrap_from_raw(
     isa: Option<ArmIsa>,
     spec_roots: &[String],
 ) -> KunaResult<ConsoleProgram> {
+    bootstrap_raw_image(path, target, base, entries, isa, spec_roots, None)
+}
+
+/// [`bootstrap_from_raw`] over the file, or over `bytes` built in memory.
+fn bootstrap_raw_image(
+    path: &str,
+    target: &str,
+    base: u64,
+    entries: &[u64],
+    isa: Option<ArmIsa>,
+    spec_roots: &[String],
+    bytes: Option<Vec<u8>>,
+) -> KunaResult<ConsoleProgram> {
     if target.trim().is_empty() {
         return Err(KunaError::lowlevel(
             "raw image input requires --target <SLEIGH-language-id>",
@@ -3845,7 +3859,10 @@ pub fn bootstrap_from_raw(
         })
     };
     let base_bytes = address_to_byte(base, "base")?;
-    raw.build_loader_at(Rc::clone(&code_space), base)?;
+    match bytes {
+        Some(bytes) => raw.build_loader_from_bytes(Rc::clone(&code_space), base, bytes),
+        None => raw.build_loader_at(Rc::clone(&code_space), base)?,
+    }
     let loader = raw
         .loader()
         .ok_or_else(|| KunaError::lowlevel("raw loader vanished after open"))?;
@@ -3941,9 +3958,80 @@ pub fn bootstrap_from_image_with_isa(
 ) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
         bootstrap_from_te(path, target, spec_roots, isa)
+    } else if let Some(bytes) = file_mz_dos_image(path) {
+        bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa)
     } else {
         bootstrap_from_object_with_isa(path, target, spec_roots, isa)
     }
+}
+
+/// The file's bytes when it is a plain DOS `MZ` executable. A PE is turned
+/// away on its `e_lfanew` signature before the whole file is read.
+fn file_mz_dos_image(path: &str) -> Option<Vec<u8>> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut head = [0u8; 0x40];
+    let got = file.read(&mut head).ok()?;
+    if got < 2 || !matches!(&head[..2], b"MZ" | b"ZM") {
+        return None;
+    }
+    if got == head.len() {
+        let lfanew = u32::from_le_bytes([head[0x3c], head[0x3d], head[0x3e], head[0x3f]]);
+        let mut sig = [0u8; 4];
+        let is_pe = file.seek(SeekFrom::Start(u64::from(lfanew))).is_ok()
+            && file.read_exact(&mut sig).is_ok()
+            && &sig == b"PE\0\0";
+        if is_pe {
+            return None;
+        }
+    }
+    let bytes = std::fs::read(path).ok()?;
+    is_mz_dos_image(&bytes).then_some(bytes)
+}
+
+/// Bootstrap an MS-DOS `MZ` executable as x86 real-mode code: its load module,
+/// relocated at segment 0x1000, is the one mapped range, and its `CS:IP` the
+/// seed entry that raw-image discovery widens from. An explicit target picks
+/// another language.
+pub fn bootstrap_from_mz_bytes(
+    path: &str,
+    bytes: &[u8],
+    target: &str,
+    spec_roots: &[String],
+    isa: Option<ArmIsa>,
+) -> KunaResult<ConsoleProgram> {
+    let image = MzImage::parse(bytes)?;
+    if let Some(packer) = image.packer {
+        kuna_base::notes::say_once(
+            path,
+            &format!(
+                "[kuna mz] {path}: {packer}-compressed; its code is the decompressor stub and \
+                 a packed body, so unpack it first (for example `deark -m pklite`)"
+            ),
+        );
+    }
+    if image.skipped_relocations > 0 {
+        kuna_base::notes::say_once(
+            path,
+            &format!(
+                "[kuna mz] {path}: {} relocation(s) name a word outside the load module and were not applied",
+                image.skipped_relocations
+            ),
+        );
+    }
+    let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or(MZ_LANGUAGE);
+    let entry = image.entry;
+    let mut program = bootstrap_raw_image(
+        path,
+        target,
+        image.base,
+        &[entry],
+        isa,
+        spec_roots,
+        Some(image.module),
+    )?;
+    program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
+    Ok(program)
 }
 
 /// [`bootstrap_from_image_with_isa`] with the ARM decode mode read from the
@@ -5508,6 +5596,15 @@ pub fn bootstrap_from_file(
 ) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path)
         .map_err(|e| KunaError::lowlevel(format!("Unable to recognize imagefile {path}: {e}")))?;
+    if is_mz_dos_image(&bytes) {
+        let isa = std::env::var(ARM_ISA_ENV)
+            .ok()
+            .map(|value| ArmIsa::parse(&value))
+            .transpose()
+            .map_err(KunaError::lowlevel)?
+            .flatten();
+        return bootstrap_from_mz_bytes(path, &bytes, target, spec_roots, isa);
+    }
     if is_te_image(&bytes) {
         let isa = std::env::var(ARM_ISA_ENV)
             .ok()

@@ -1114,6 +1114,30 @@ slice and is ignored, as on any thin image. Project exports retain the TE entry
 (reported through the inventory, at its even address) and the named section
 table.
 
+### MS-DOS MZ executables
+
+A DOS `.EXE` (an `MZ` header that is not the stub of a PE, NE, LE or LX image)
+loads without `--raw-image`. kuna places the load module at segment 0x1000
+(linear 0x10000), applies the relocation table, and seeds discovery from the
+header's `CS:IP`, decoding as `x86:LE:16:Real Mode:default` unless `--target`
+names another language:
+
+```bash
+kuna functions GAME.EXE --json            # the entry, (0x1000+CS)*16+IP, then discovery
+kuna decompile GAME.EXE 0x2b580 --addr
+kuna decompile-project GAME.EXE -o out/
+```
+
+Addresses are linear real-mode addresses, `segment * 16 + offset` with the load
+segment added. Only the load module is mapped: the header, any overlay past the
+image size, and the uninitialized memory the header asks for are not. A file
+packed with PKLITE or LZEXE loads too, but its code is the decompressor stub and
+a packed body, so kuna says so on stderr; unpack it first (for example with
+`deark -m pklite`). `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
+`decompile-project` and the console support MZ input; `strings`, `xrefs`,
+`decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
+object-file view and refuse it with a capability error, as for a TE.
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from
