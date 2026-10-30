@@ -19,6 +19,7 @@ msvc-demangler.workspace = true
 undname.workspace = true
 gimli.workspace = true
 pdb.workspace = true
+memchr.workspace = true
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }

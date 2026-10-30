@@ -3116,8 +3116,16 @@ moves.
   names exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
-  (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,
-  before pass selection, and shapes the pass list: `rustc version` records in
+  (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) is asked
+  for its verdict several times per load: by the loader's language-id choice,
+  by pass selection, for the engine fact below, by the `addrtakenentry` gate
+  and by the CLI's runtime hints. So it reads the image in place. The PE arm
+  tests `.comment` and `.rdata` as one NUL-delimited record stream (a record
+  left open at the end of `.comment` continues into `.rdata`) without copying
+  either, and decodes only the records around a substring hit of the record
+  it looks for. On a 20 MB `.rdata` that is a few milliseconds per ask, where
+  copying the section and splitting every record cost a quarter of a second.
+  Detection shapes the pass list: `rustc version` records in
   `.comment` or Rust-mangled symbols → the Rust no-return list;
   `.go.buildinfo`/`.note.go.buildid` (any format's spelling) → the Go list plus
   the pclntab pass; a Swift 5 reflection-metadata section (any format's
