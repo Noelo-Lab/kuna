@@ -9779,6 +9779,36 @@ fn a_value_only_a_no_return_path_reads_proves_nothing() {
     bejoin_round_trip("bejoin_noreturn_mips32_Os", &src_text, &printed);
 }
 
+/// gcc -O0 on ARM big-endian reloads a `long long` stack temporary into
+/// `r0:r1` and moves the `int` taken from its high word back into `r0` out of
+/// the stack slot it kept it in, so the pair holds both loaded words, the
+/// shape of `return *p`. A register moved back to the value it already held,
+/// through a stack slot or not, proves nothing, and neither does a low word
+/// whose reload something else reads (`hi_lo_stored` stores it on), so the
+/// three `int`s and their caller print as with `bejoin off`, while `ll_copy`,
+/// the `long long` itself, still joins high word first.
+#[test]
+fn an_int_kept_in_a_stack_slot_proves_no_loaded_pair() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/bejoin_reload_arm32_be_O0.o")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let run = |mode: &str| {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", mode]);
+        assert!(ok, "kuna decompile-all bejoin_reload_arm32_be_O0.o ({mode}) failed: {stderr}");
+        stdout
+    };
+    let (evidence, off) = (run("evidence"), run("off"));
+    let ints = ["hi_local", "hi_lo_stored", "hi_named", "hi_use"];
+    let structs = regex::Regex::new(r"struct_\d+").unwrap();
+    let norm = |listing: &str| structs.replace_all(&callrettype_functions(listing, &ints), "struct_N").into_owned();
+    assert_eq!(norm(&evidence), norm(&off), "an int moved back out of its stack slot proves nothing:\n{evidence}");
+    let ll = callrettype_functions(&evidence, &["ll_copy"]);
+    assert!(ll.contains("return *a0;"), "ll_copy returns its long long whole:\n{ll}");
+}
+
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low
 /// half in the second register: `(u32)((x + y) >> 48)` on PowerPC -O2 is
 /// `addc 4,6,4; adde 3,5,3; srwi 3,3,16`, ARM's `umull r1,r0` leaves the low

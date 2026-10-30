@@ -2256,15 +2256,20 @@ instruction, one of:
   of one base (`lwz 4,4(3); lwz 3,0(3)`, `ldmia r0,{r0,r1}`, a field, a
   global, an array element), the high word's at the lower address, or the
   two halves of one load twice a register's width (SPARC's `ldd [%i0],%i0`),
-  the low word read by nothing but moves and stores into the stack frame. An
-  `int` that returns one word of a 64-bit object loads only that word (the
-  other load is dead, and gone at -O1 and up), and an `int` truncation that
-  reloads a stack temporary loads the words the other way round (clang -O0's
-  `lwz 4,12(31); lwz 3,16(31)` for `(int)t`). A volatile object is the
-  exception: `return *(volatile long long *)p >> 32` must load both words and
-  compiles to the bytes of `return *p` on PowerPC, MIPS gcc, SPARC and ARM
-  gcc at -O1 and up, and reads as the `long long`; its callers that read only
-  the first register still read the high word;
+  the low word read by nothing but moves and stores into the stack frame,
+  where a load of a slot such a store filled is the low word too, so an
+  instruction that reads the reload reads the low word (gcc -O0 keeps
+  `int lo = v` in a stack slot and passes it on from there). An `int` that
+  returns one word of a 64-bit object loads only that word (the other load is
+  dead, and gone at -O1 and up), and an `int` truncation that reloads a stack
+  temporary loads the words the other way round (clang -O0's `lwz 4,12(31);
+  lwz 3,16(31)` for `(int)t`). A volatile object is the exception:
+  `return *(volatile long long *)p >> 32` must load both words and compiles
+  to the bytes of `return *p` with gcc and clang at -O1 and up, through a
+  pointer or of a global, as does `a = r[0]; (void)r[1]; return a;` over two
+  volatile words (ARM big-endian clang, MIPS gcc); both read as the `long
+  long`, and their callers that read only the first register still read the
+  high word;
 * the pair one direct call handed back, the call's first register in the
   first and its second in the second, the second moved back into place by the
   function itself after the call, through another register or a stack slot
@@ -2285,9 +2290,11 @@ those verdicts first, walking each function still once per image, and a
 function whose verdict depends on its own, through any chain of callees, is
 not proven, whichever function of the cycle is asked about first. When a
 pair register's latest write moved in the value the register already held,
-the RETURN proves only by the first three shapes: gcc -O0 lowers `(u32)(v >>
-32)` of a reloaded 64-bit temporary as `ldmia r1,{r0,r1}; mov r3,r0; mov
-r0,r3` on ARM big-endian, which leaves both loaded words in the pair, and no
+directly or out of a stack slot it was stored to, the RETURN proves only by
+the first three shapes: gcc -O0 lowers `(u32)(v >> 32)` of a reloaded 64-bit
+temporary as `ldmia r1,{r0,r1}; mov r3,r0; mov r0,r3` on ARM big-endian, or,
+with the `int` kept in a local, `mov r3,r0; str r3,[fp,#-20]; ...; ldr
+r3,[fp,#-20]; mov r0,r3`, which leaves both loaded words in the pair, and no
 optimizing build moves a register's value back into it.
 
 Every read counts, on every path, a path that ends in a call that does not

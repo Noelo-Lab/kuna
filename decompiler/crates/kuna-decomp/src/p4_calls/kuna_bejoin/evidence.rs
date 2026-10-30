@@ -39,8 +39,9 @@
 //! * the two words of one object read from memory: two loads of adjacent
 //!   words, the high word's at the lower address, or the halves of one load
 //!   twice as wide (SPARC's `ldd`), the low word read by nothing but moves and
-//!   spills (an `int` returning one word of a 64-bit object never loads the
-//!   other, unless the object is volatile);
+//!   spills, a reload of a spill read as the low word itself (an `int`
+//!   returning one word of a 64-bit object never loads the other, unless the
+//!   object is volatile);
 //! * the pair a direct call handed back, its high register in the first and
 //!   its low register in the second, the low word moved back into place by
 //!   the function after the call (through another register or the stack
@@ -53,8 +54,9 @@
 //! every path end proves or fits, at least one proves, and every callee those
 //! ends depend on is proven ([`verdict`] takes those first; a cycle is not
 //! proven). A pair whose register's latest write moved in the value it
-//! already held (gcc -O0 lowering `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3`
-//! over a reloaded 64-bit temporary) proves only by the first three shapes.
+//! already held, directly or through a stack slot (gcc -O0 lowering
+//! `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3` over a reloaded 64-bit
+//! temporary), proves only by the first three shapes.
 //!
 //! "Nothing reads" counts every path, a path ending in a call that does not
 //! return included: gcc -Os hoists an error path's computation into a branch
@@ -777,7 +779,7 @@ impl<'a> Walk<'a> {
                         if let Some(o) = out {
                             let same = !insn.window
                                 && Self::key(o).is_some_and(|k| {
-                                    path.regs.iter().rev().find(|(r, _, _)| overlaps(r, &k)).is_some_and(|&(r, held, _)| r == k && held == t)
+                                    path.regs.iter().rev().find(|(r, _, _)| overlaps(r, &k)).is_some_and(|&(r, held, _)| r == k && self.unwrap(held) == self.unwrap(t))
                                 });
                             self.write(&mut path, o, t, by);
                             if same {
@@ -1051,7 +1053,7 @@ impl<'a> Walk<'a> {
             }
             _ => false,
         };
-        adjacent && !self.reads.iter().any(|r| !r.spill && (r.term == lo || r.term == site.lo))
+        adjacent && !self.reads.iter().any(|r| !r.spill && self.unwrap(r.term) == lo)
     }
 
     /// Does `site` hold the pair one direct call handed back, its high and its
