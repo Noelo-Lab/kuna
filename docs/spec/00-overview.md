@@ -1917,11 +1917,28 @@ write end its parent holds, so end of pipe means the parent is gone by any route
 including SIGKILL, and the worker removes the pool's scratch directory and exits
 rather than running on reparented to init.
 
+Progress is the result file growing, so a worker that holds its records back has
+to show progress some other way. The one-worker structsynth path does: it
+delivers its ordered chunk only after its own convergence sweep has run, and that
+chunk is every function that synthesized (8,991 of dxcompiler.dll's 37,204). Its
+silence used to look exactly like a wedged function. The parent killed the worker
+after four budgets plus a load, blamed the chunk's first function (a 144-byte one
+that decompiles in 2 ms), and re-ran the rest one function per chunk, which
+undoes the ordering the path exists for. So that worker writes a begin frame as
+it starts each function, in the pass and in the sweep. The frame carries the
+function's chunk position and is not a record
+(`decompiler/crates/kuna-cli/src/jobs/wire.rs (ResultWriter::begin)`). The stall
+window then measures one function, as it does for any streaming worker. If the
+worker dies anyway, the last frame names the function it was on, and only that
+function is the suspect.
+
 A worker that dies — a panic no per-function guard catches, an OOM kill, a
 signal, or that stall kill — costs the function it was running and nothing else.
 A worker decompiles its chunk in spec order and flushes one record per function,
 so the records it leaves are a prefix: the first target without one is the
-function it was on, and every later target never started. Before it takes more
+function it was on, and every later target never started. The holding worker
+leaves no records, so the function it was on is the one its last begin frame
+names, and every other target counts as never started. Before it takes more
 work, the thread that served the chunk re-runs each of those targets once as a
 chunk of its own (`decompiler/crates/kuna-cli/src/jobs.rs (retry_order)`): the
 function that was running goes first, onto the fresh worker the thread starts

@@ -1973,7 +1973,11 @@ Behaviors specific to `decompile-all`:
   - **A worker that dies costs one function, not its chunk.** A worker
     decompiles its chunk in order and writes each result as it finishes, so when
     it dies — a panic, an OOM kill, a signal, the stall watchdog — the pool knows
-    which function it was on and which never started. The thread that gave it
+    which function it was on and which never started. The one ordered
+    structsynth worker holds its results until its sweep has run. It writes a
+    marker as it starts each function instead, so the stall watchdog times each
+    of its functions and not the whole chunk, and a stall there is charged to the
+    function that stalled. The thread that gave it
     the chunk re-runs every function the worker did not deliver, one function per
     chunk: the one that was running first, on a fresh worker, so its `error`
     record is the failure it repeats on its own, then the rest. Without this, one

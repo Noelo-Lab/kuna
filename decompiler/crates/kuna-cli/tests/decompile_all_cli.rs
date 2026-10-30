@@ -4222,6 +4222,46 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
     }
 }
 
+/// The one-worker structsynth path decompiles every function that synthesized
+/// in one ordered chunk and holds its records back until the sweep has run, so
+/// the frame it writes as each function starts is all the parent sees of it. A
+/// function that stalls there is the one blamed, not the chunk's first
+/// function, and the window is the warm one: the run does not wait out a
+/// program load on top of it. `sub_14ea` stalls the second time it starts,
+/// which is in the ordered chunk.
+#[test]
+fn jobs_a_stall_in_the_ordered_structsynth_worker_blames_the_function_that_stalled() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let args = ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "1", "--sleighpath", sp.as_str(),
+        "--option", "protoorder", "off", "--jobs", "2"];
+    let started = Instant::now();
+    let (got, stderr, ok) = run_kuna_env_with_timeout(
+        &args,
+        &[("KUNA_JOBS_FAULT", "synth:serial,stall-again:0x14ea")],
+        Duration::from_secs(240),
+    )
+    .expect("the stalled ordered chunk wedged the pool");
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("in one ordered chunk, 1 worker process"), "{stderr}");
+    assert_eq!(stderr.matches("KUNA_JOBS_FAULT: injected stall at 0x14ea").count(), 1, "{stderr}");
+    assert!(started.elapsed() < Duration::from_secs(45), "the stall waited out a cold window:\n{stderr}");
+    let records = json_records(&got);
+    let failed: Vec<String> = records
+        .iter()
+        .filter(|r| r.contains("\"error\": \""))
+        .map(|r| record_name(r))
+        .collect();
+    assert_eq!(failed, ["sub_14ea"], "only the function that stalled is lost:\n{stderr}");
+    let lost = records.iter().find(|r| record_name(r) == "sub_14ea").unwrap();
+    assert!(lost.contains("\"error\": \"worker stalled past the per-function watchdog (1s)"), "{lost}");
+    assert!(recovered_count(&stderr).is_some_and(|n| n >= 1), "{stderr}");
+}
+
 /// A worker that cannot install the replayed structures takes its chunk down
 /// with it. The functions it was given are the record pool's, not lost work:
 /// the run decompiles them again by the one-worker serial path instead of

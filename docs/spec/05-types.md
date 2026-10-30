@@ -2055,6 +2055,13 @@ ledger probes `find_by_name` from `struct_0` up to the first free name, reads
 each one's layout back, and declines any whose members are not all named
 `field_0x<hex>` — that name is held by a type from somewhere else (DWARF, a
 parsed header) and is never handed out as the answer to an access pattern.
+A lookup therefore makes up to 1,024 name probes. Each probe is a binary search
+of the factory's name index, which is kept sorted by (name, id) as the C++
+`nametree` set is (`decompiler/crates/kuna-decomp/src/substrate/dtype.rs
+(find_by_id_local)`). The port used to scan the whole index on every probe. A
+lookup then cost the full ledger times every named type the program holds, and
+once a whole-image MSVC run filled the ledger, that cost grew to half of each
+later function's decompile.
 Every mint declines on an error rather than propagating one: `find_add` rejects
 a second, different definition of a held name.
 

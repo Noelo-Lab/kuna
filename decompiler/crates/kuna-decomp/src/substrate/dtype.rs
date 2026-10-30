@@ -5215,24 +5215,18 @@ impl TypeFactoryImpl {
     /// Look up a data-type locally by name and id (C++
     /// `TypeFactory::findByIdLocal`, type.cc:3804-3822).  When `id == 0` the name
     /// may be non-unique; the first type with a matching name is returned.
+    ///
+    /// `nametree` is kept ordered by (name, id), so this is the C++ set's
+    /// ordered search: a scan made every name probe cost the whole factory.
     fn find_by_id_local(&self, n: &str, id: uint8) -> Option<Rc<Datatype>> {
         let store = self.store.borrow();
-        if id != 0 {
-            // Exact (name,id) match.
-            store
-                .nametree
-                .iter()
-                .find(|dt| dt.name == n && dt.id == id)
-                .map(Rc::clone)
+        let names = &store.nametree;
+        let at = if id != 0 {
+            names.partition_point(|dt| (dt.name.as_str(), dt.id) < (n, id))
         } else {
-            // First type with this name (nametree is kept ordered by (name,id)).
-            store
-                .nametree
-                .iter()
-                .filter(|dt| dt.name == n)
-                .min_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)))
-                .map(Rc::clone)
-        }
+            names.partition_point(|dt| dt.name.as_str() < n)
+        };
+        names.get(at).filter(|dt| dt.name == n && (id == 0 || dt.id == id)).map(Rc::clone)
     }
 
     /// Search by name and/or id, applying the variable-length size hash (C++
