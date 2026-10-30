@@ -309,10 +309,10 @@ impl<'a> Image<'a> {
     /// The NUL-terminated string at image address `rva`, capped so a missing
     /// terminator cannot run the whole file into a symbol name.
     fn cstr_at_rva(&self, rva: u32) -> Result<&'a [u8], UpxError> {
-        let off = self
+        let tail = self
             .file_offset(rva)
+            .and_then(|off| self.bytes.get(off..self.bytes.len().min(off + 512)))
             .ok_or_else(|| corrupt(format!("import name at {rva:#x} is outside the image")))?;
-        let tail = &self.bytes[off..self.bytes.len().min(off + 512)];
         let end = tail
             .iter()
             .position(|&c| c == 0)
@@ -649,7 +649,10 @@ fn rebuild_imports(
 
     let mut names = Vec::with_capacity(dlls.len());
     for d in &dlls {
-        names.push(img.cstr_at_rva(desc_base + d.name_off)?);
+        let at = desc_base
+            .checked_add(d.name_off)
+            .ok_or_else(|| corrupt("DLL name offset overflows the image"))?;
+        names.push(img.cstr_at_rva(at)?);
     }
     let dll_names_len: usize = names.iter().map(|n| n.len() + 1).sum();
     let mut dll_name_rva = inamespos;
@@ -785,12 +788,10 @@ fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<Imp
 /// while the original image may import one DLL across several descriptors, so
 /// the two lists differ in length whenever a binary does that. The packer's own
 /// `KERNEL32.DLL` descriptor is not part of `table`; see [`loader_import_table`].
-fn table_names_dlls(table: &[u32], base: u32, dlls: &[ImportDll]) -> bool {
-    if table.is_empty() {
-        return false;
-    }
-    let wanted: BTreeSet<u32> = dlls.iter().filter_map(|d| base.checked_add(d.name_off)).collect();
-    table.iter().copied().collect::<BTreeSet<u32>>() == wanted
+fn table_names_dlls(table: &[u32], base: u32, wanted: &BTreeSet<u32>) -> bool {
+    !table.is_empty()
+        && table.iter().map(|n| n.checked_sub(base)).collect::<Option<BTreeSet<u32>>>().as_ref()
+            == Some(wanted)
 }
 
 /// Find the packed loader's own import descriptor table, which is what the
@@ -809,7 +810,18 @@ fn table_names_dlls(table: &[u32], base: u32, dlls: &[ImportDll]) -> bool {
 /// stub's own `KERNEL32.DLL` descriptor (`LoadLibraryA`, `GetProcAddress`, ...)
 /// even when the original imports nothing from it, so one descriptor naming
 /// that DLL is allowed beyond the set the trailer asks for.
+///
+/// The scan reads only bytes the file holds, and gives up after one candidate
+/// per four file bytes -- all an honest image, whose sections do not overlap in
+/// the file, can need.
 fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxError> {
+    let wanted: BTreeSet<u32> = dlls.iter().map(|d| d.name_off).collect();
+    if wanted.len() > MAX_LOADER_DLLS {
+        return Err(corrupt(format!(
+            "trailer names {} DLLs, more than a loader table holds",
+            wanted.len()
+        )));
+    }
     let agrees = |base: u32| -> bool {
         let mut names = Vec::new();
         let mut stub_kernel32 = false;
@@ -821,12 +833,12 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
                 return false;
             };
             if desc.iter().all(|&b| b == 0) {
-                return table_names_dlls(&names, base, dlls);
+                return table_names_dlls(&names, base, &wanted);
             }
             let name = u32::from_le_bytes([desc[12], desc[13], desc[14], desc[15]]);
             // Nearly every position a scan tries fails on its first descriptor;
             // the set comparison alone would walk each one on to a terminator.
-            if !dlls.iter().any(|d| base.checked_add(d.name_off) == Some(name)) {
+            if !name.checked_sub(base).is_some_and(|o| wanted.contains(&o)) {
                 let kernel32 =
                     img.cstr_at_rva(name).is_ok_and(|n| n.eq_ignore_ascii_case(b"KERNEL32.DLL"));
                 if stub_kernel32 || !kernel32 {
@@ -843,18 +855,22 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
     if declared != 0 && agrees(declared) {
         return Ok(declared);
     }
+    let mut budget = img.bytes.len() / 4 + img.hdr.sections.len();
     let mut found = None;
     for s in &img.hdr.sections {
-        if s.rawsize == 0 {
-            continue;
-        }
-        let mut rva = s.vaddr;
-        while rva < s.vaddr + s.rawsize {
-            if agrees(rva) {
-                if found.is_some_and(|f| f != rva) {
+        let present = img.bytes.len().saturating_sub(s.rawptr as usize);
+        let end = (u64::from(s.vaddr) + (s.rawsize as usize).min(present) as u64).min(1 << 32);
+        let mut rva = u64::from(s.vaddr);
+        while rva < end {
+            budget = budget.checked_sub(1).ok_or_else(|| {
+                corrupt("packed sections overlap too much to scan for a loader table")
+            })?;
+            let at = rva as u32;
+            if agrees(at) {
+                if found.is_some_and(|f| f != at) {
                     return Err(corrupt("packed image has more than one loader import table"));
                 }
-                found = Some(rva);
+                found = Some(at);
             }
             rva += 4;
         }
@@ -1064,15 +1080,23 @@ fn rebuild_exports(
     let moved = img
         .at_rva(irva, isize as usize)
         .ok_or_else(|| corrupt("packed export directory is outside the image"))?;
-    let built = rebuild_export_dir(moved, irva, orva)?;
+    let room = obuf.len().saturating_sub(rva_off(rvamin, orva)?);
+    let built = rebuild_export_dir(moved, irva, orva, room)?;
     write_at(obuf, rvamin, orva, &built)?;
     confine_to_section(oh, orva, built.len() as u32, "rebuilt export directory")
 }
 
 /// `Export::convert` over the directory at `base` (whose bytes are `dir`), then
 /// `Export::build` at `newbase`: header, address table, name pointers,
-/// ordinals, the DLL name, the export names, then the forwarder strings.
-fn rebuild_export_dir(dir: &[u8], base: u32, newbase: u32) -> Result<Vec<u8>, UpxError> {
+/// ordinals, the DLL name, the export names, then the forwarder strings. Every
+/// name pointer may name the same long string, so the layout is sized as the
+/// strings are read and refused once it outgrows the `room` left in the image.
+fn rebuild_export_dir(
+    dir: &[u8],
+    base: u32,
+    newbase: u32,
+    room: usize,
+) -> Result<Vec<u8>, UpxError> {
     let local = |rva: u32, len: usize| -> Result<usize, UpxError> {
         let off = rva.checked_sub(base).map(|o| o as usize);
         off.filter(|o| o.checked_add(len).is_some_and(|e| e <= dir.len()))
@@ -1096,17 +1120,32 @@ fn rebuild_export_dir(dir: &[u8], base: u32, newbase: u32) -> Result<Vec<u8>, Up
     let funcs_at = local(le32(&edir, 28)?, nfuncs.saturating_mul(4))?;
     let names_at = local(le32(&edir, 32)?, nnames.saturating_mul(4))?;
     let ords_at = local(le32(&edir, 36)?, nnames.saturating_mul(2))?;
+    let mut size = EXPORT_DIR_SIZE + 4 * nfuncs + 6 * nnames;
+    let mut grow = |s: &[u8]| -> Result<(), UpxError> {
+        size += s.len() + 1;
+        if size > room {
+            return Err(corrupt("rebuilt export directory outgrows the image"));
+        }
+        Ok(())
+    };
+    grow(ename)?;
     let mut funcs: Vec<u32> =
         (0..nfuncs).map(|i| le32(dir, funcs_at + 4 * i)).collect::<Result<_, _>>()?;
     let mut names = Vec::with_capacity(nnames);
     for i in 0..nnames {
-        names.push(cstr(le32(dir, names_at + 4 * i)?)?);
+        let n = cstr(le32(dir, names_at + 4 * i)?)?;
+        grow(n)?;
+        names.push(n);
     }
     let end = base.saturating_add(dir.len() as u32);
-    let forwarders: Vec<Option<&[u8]>> = funcs
-        .iter()
-        .map(|&f| if f >= base && f < end { cstr(f).map(Some) } else { Ok(None) })
-        .collect::<Result<_, _>>()?;
+    let mut forwarders: Vec<Option<&[u8]>> = Vec::with_capacity(nfuncs);
+    for &f in &funcs {
+        let fw = if f >= base && f < end { Some(cstr(f)?) } else { None };
+        if let Some(s) = fw {
+            grow(s)?;
+        }
+        forwarders.push(fw);
+    }
 
     let functionp = EXPORT_DIR_SIZE;
     let namep = functionp + 4 * nfuncs;
@@ -1175,13 +1214,13 @@ fn rebuild_resources(
         .ok_or_else(|| corrupt("packed resource directory is outside the image"))?;
     let mut tree = tree_src.to_vec();
 
-    let mut leaves = Vec::new();
-    let mut extent = 0u32;
-    walk_resource_dir(&tree, 0, 0, &mut extent, &mut leaves)?;
-    confine_to_section(oh, res_rva, extent, "rebuilt resource directory")?;
+    let mut walk = ResourceWalk::default();
+    walk_resource_dir(&tree, 0, 0, 0, &mut walk)?;
+    confine_to_section(oh, res_rva, walk.extent, "rebuilt resource directory")?;
 
     let mut icondir_count = icondir_count;
-    for leaf in leaves {
+    let mut moved = 0usize;
+    for (leaf, ty) in walk.leaves {
         let at = leaf as usize;
         let (data_rva, size) = (le32(&tree, at)?, le32(&tree, at + 4)?);
         if data_rva <= packed_rva {
@@ -1190,83 +1229,84 @@ fn rebuild_resources(
             continue;
         }
         let orig = le32(
-            img.at_rva(data_rva - 4, 4)
+            data_rva
+                .checked_sub(4)
+                .and_then(|r| img.at_rva(r, 4))
                 .ok_or_else(|| corrupt("moved resource has no back-pointer"))?,
             0,
         )?;
+        moved = moved.saturating_add(size as usize);
+        if moved > img.bytes.len() {
+            return Err(corrupt("moved resources add up to more than the packed file"));
+        }
         let body = img
             .at_rva(data_rva, size as usize)
             .ok_or_else(|| corrupt("moved resource runs past the packed image"))?;
         tree[at..at + 4].copy_from_slice(&orig.to_le_bytes());
         write_at(obuf, rvamin, orig, body)?;
-        if icondir_count != 0 && resource_type_of(&tree, leaf)? == RT_GROUP_ICON {
+        if icondir_count != 0 && ty == RT_GROUP_ICON {
             write_at(obuf, rvamin, orig.saturating_add(4), &icondir_count.to_le_bytes())?;
             icondir_count = 0;
         }
     }
     let entries = le32(obuf, rva_off(rvamin, res_rva)? + 12)?;
     if entries == 0 {
-        write_at(obuf, rvamin, res_rva, &tree[..extent as usize])?;
+        let dir = tree
+            .get(..walk.extent as usize)
+            .ok_or_else(|| corrupt("resource directory runs past its packed copy"))?;
+        write_at(obuf, rvamin, res_rva, dir)?;
     }
     Ok(())
 }
 
-/// Depth-first walk of an `IMAGE_RESOURCE_DIRECTORY` tree, collecting the
-/// offsets of its data entries and the extent of everything it reaches. The
-/// depth cap is UPX's own three levels (type / name / language) plus slack; the
-/// tree is attacker-controlled, so a cycle must terminate the walk.
+/// What a walk of a resource tree reached: one past the last byte any
+/// directory, entry or data entry occupies, and each data entry's offset with
+/// the top-level type it sits under, in walk order.
+#[derive(Default)]
+struct ResourceWalk {
+    extent: u32,
+    leaves: Vec<(u32, u32)>,
+    seen: BTreeSet<u32>,
+}
+
+/// Depth-first walk of an `IMAGE_RESOURCE_DIRECTORY` tree. The depth cap is
+/// UPX's own three levels (type / name / language) plus slack; the tree is
+/// attacker-controlled, so a cycle must terminate the walk, and a directory or
+/// data entry reached twice -- which no linker writes, and which would let a
+/// small tree fan out into an exponential walk -- is refused.
 fn walk_resource_dir(
     tree: &[u8],
     at: u32,
     depth: u32,
-    extent: &mut u32,
-    leaves: &mut Vec<u32>,
+    ty: u32,
+    walk: &mut ResourceWalk,
 ) -> Result<(), UpxError> {
     if depth > 4 {
         return Err(corrupt("resource directory nests deeper than a PE allows"));
+    }
+    if !walk.seen.insert(at | 0x8000_0000) {
+        return Err(corrupt("resource directory reaches one subdirectory twice"));
     }
     let named = u32::from(le16(tree, at as usize + 12)?);
     let ids = u32::from(le16(tree, at as usize + 14)?);
     let count = named + ids;
     let entries = at.saturating_add(16);
-    *extent = (*extent).max(entries.saturating_add(8 * count));
+    walk.extent = walk.extent.max(entries.saturating_add(8 * count));
     for i in 0..count {
         let e = (entries + 8 * i) as usize;
         let child = le32(tree, e + 4)?;
         if child & 0x8000_0000 != 0 {
-            walk_resource_dir(tree, child & 0x7fff_ffff, depth + 1, extent, leaves)?;
+            let ty = if depth == 0 { le32(tree, e)? & 0x7fff_ffff } else { ty };
+            walk_resource_dir(tree, child & 0x7fff_ffff, depth + 1, ty, walk)?;
         } else {
-            if leaves.contains(&child) {
+            if !walk.seen.insert(child) {
                 return Err(corrupt("resource directory reaches one data entry twice"));
             }
-            *extent = (*extent).max(child.saturating_add(RESOURCE_DATA_ENTRY_SIZE));
-            leaves.push(child);
+            walk.extent = walk.extent.max(child.saturating_add(RESOURCE_DATA_ENTRY_SIZE));
+            walk.leaves.push((child, ty));
         }
     }
     Ok(())
-}
-
-/// The top-level type id owning a data entry -- the level UPX's icon fixup keys
-/// off. Only entries reachable in three levels are attributed, which is every
-/// entry a compiler-produced `.rsrc` has.
-fn resource_type_of(tree: &[u8], leaf: u32) -> Result<u32, UpxError> {
-    let named = u32::from(le16(tree, 12)?);
-    let ids = u32::from(le16(tree, 14)?);
-    for i in 0..named + ids {
-        let e = (16 + 8 * i) as usize;
-        let ty = le32(tree, e)?;
-        let child = le32(tree, e + 4)?;
-        if child & 0x8000_0000 == 0 {
-            continue;
-        }
-        let mut ext = 0;
-        let mut sub = Vec::new();
-        walk_resource_dir(tree, child & 0x7fff_ffff, 1, &mut ext, &mut sub)?;
-        if sub.contains(&leaf) {
-            return Ok(ty & 0x7fff_ffff);
-        }
-    }
-    Ok(0)
 }
 
 /// Write into the recovered image at address `rva`, refusing anything that
@@ -1324,7 +1364,9 @@ fn overlay_of(tail: &[u8], sections_end: usize, original_len: usize) -> &[u8] {
 /// has thrown the original's away: `e_lfanew` no longer exists to be rewritten,
 /// and the recovered PE header would sit at an offset nothing points at. That is
 /// refused here rather than written out, and the assembled file is re-read at the
-/// end to prove it is a PE a loader can follow.
+/// end to prove it is a PE a loader can follow. The layout is sized before
+/// anything is written, so no header field can make it longer than the original
+/// the PackHeader declares.
 fn assemble(
     img: &Image<'_>,
     obuf: &[u8],
@@ -1340,19 +1382,18 @@ fn assemble(
             img.pe_off
         )));
     }
-    let mut out = img.bytes[..img.pe_off].to_vec();
-    out.extend_from_slice(
-        obuf.get(skip..skip + oh.hdr_len)
-            .ok_or_else(|| corrupt("recovered PE header runs past the block"))?,
-    );
+    let header = obuf
+        .get(skip..skip + oh.hdr_len)
+        .ok_or_else(|| corrupt("recovered PE header runs past the block"))?;
+    let table = oh.sections.len() * SECTION_HEADER_SIZE;
+    let section_table = obuf
+        .get(oh.table_at..oh.table_at + table)
+        .ok_or_else(|| corrupt("recovered section table runs past the block"))?;
     // The section table goes where the COFF header says the optional header
     // ends, which is where a loader will look for it.
-    out.resize(img.pe_off + 24 + oh.opt_size, 0);
-    let table = oh.sections.len() * SECTION_HEADER_SIZE;
-    out.extend_from_slice(
-        obuf.get(oh.table_at..oh.table_at + table)
-            .ok_or_else(|| corrupt("recovered section table runs past the block"))?,
-    );
+    let table_at = img.pe_off + 24 + oh.opt_size;
+    let mut end = table_at + table;
+    let mut raw = Vec::with_capacity(oh.sections.len());
     for s in &oh.sections {
         if s.rawsize == 0 {
             continue;
@@ -1372,16 +1413,29 @@ fn assemble(
         if ptr.checked_add(size).is_none() || ptr + size > 512 * 1024 * 1024 {
             return Err(corrupt(format!("section raw range at {ptr:#x} is not credible")));
         }
-        if out.len() < ptr {
-            out.resize(ptr, 0);
-        }
-        out.resize(out.len().max(ptr + size), 0);
-        out[ptr..ptr + size].copy_from_slice(&obuf[src..src + size]);
+        end = end.max(ptr + size);
+        raw.push((ptr, &obuf[src..src + size]));
     }
-    if !tail.is_empty() {
-        out.resize(align_up(out.len(), oh.file_align), 0);
-        out.extend_from_slice(overlay_of(tail, out.len(), original_len));
+    let (overlay_at, overlay) = if tail.is_empty() {
+        (end, &[][..])
+    } else {
+        let at = align_up(end, oh.file_align);
+        (at, overlay_of(tail, at, original_len))
+    };
+    let total = overlay_at + overlay.len();
+    if total > original_len {
+        return Err(corrupt(format!(
+            "rebuilt {total} bytes, PackHeader declares an original of {original_len}"
+        )));
     }
+    let mut out = vec![0u8; total];
+    out[..img.pe_off].copy_from_slice(&img.bytes[..img.pe_off]);
+    out[img.pe_off..img.pe_off + header.len()].copy_from_slice(header);
+    out[table_at..table_at + table].copy_from_slice(section_table);
+    for (ptr, data) in raw {
+        out[ptr..ptr + data.len()].copy_from_slice(data);
+    }
+    out[overlay_at..].copy_from_slice(overlay);
     // A section whose raw data starts inside the headers would have overwritten
     // what was just written there, so read the result back the way a loader
     // would rather than trusting the layout that produced it.
@@ -1404,6 +1458,10 @@ mod tests {
             .collect()
     }
 
+    fn offsets(dlls: &[ImportDll]) -> BTreeSet<u32> {
+        dlls.iter().map(|d| d.name_off).collect()
+    }
+
     /// The regression: a 32-bit MSVC crackme importing seven DLLs across
     /// thirteen descriptors (KERNEL32 four times, three others twice). Its
     /// loader table holds one descriptor per distinct DLL, so the two lists are
@@ -1415,14 +1473,14 @@ mod tests {
         let table: Vec<u32> =
             [224, 237, 250, 263, 273, 286, 297].iter().map(|o| base + o).collect();
         let repeated = dlls(&[224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297]);
-        assert!(table_names_dlls(&table, base, &repeated));
+        assert!(table_names_dlls(&table, base, &offsets(&repeated)));
     }
 
     #[test]
     fn one_descriptor_per_dll_still_matches() {
         let base = 0x1000;
         let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
-        assert!(table_names_dlls(&table, base, &dlls(&[16, 32, 48])));
+        assert!(table_names_dlls(&table, base, &offsets(&dlls(&[16, 32, 48]))));
     }
 
     /// Set equality both ways: a table naming a DLL the trailer never asks for
@@ -1431,9 +1489,9 @@ mod tests {
     fn a_table_whose_names_differ_is_rejected() {
         let base = 0x1000;
         let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
-        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32])));
-        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32, 48, 64])));
-        assert!(!table_names_dlls(&[], base, &dlls(&[16])));
+        assert!(!table_names_dlls(&table, base, &offsets(&dlls(&[16, 32]))));
+        assert!(!table_names_dlls(&table, base, &offsets(&dlls(&[16, 32, 48, 64]))));
+        assert!(!table_names_dlls(&[], base, &offsets(&dlls(&[16]))));
     }
 
     /// A minimal PE header at `skip` inside a block, laid out the way UPX stores
@@ -1709,7 +1767,7 @@ mod tests {
         put(&mut d, names + 4, base + n1 as u32);
 
         let newbase = 0x3000u32;
-        let out = rebuild_export_dir(&d, base, newbase).unwrap();
+        let out = rebuild_export_dir(&d, base, newbase, 0x1000).unwrap();
         let rd = |at: usize| u32::from_le_bytes(out[at..at + 4].try_into().unwrap());
         let at = |rva: u32| (rva - newbase) as usize;
         let cstr = |rva: u32| {
@@ -1724,6 +1782,100 @@ mod tests {
         assert_eq!(cstr(rd(48)), "K32.Sleep", "the forwarder string moves with the table");
         assert_eq!((cstr(rd(52)), cstr(rd(56))), ("alpha".to_owned(), "fwd".to_owned()));
         assert_eq!(&out[60..64], &[0, 0, 2, 0]);
+    }
+
+    /// Every name pointer of a packed export directory may name the same long
+    /// string; the rebuild stops once its layout outgrows the room it has
+    /// instead of copying the string once per pointer.
+    #[test]
+    fn export_names_that_share_one_long_string_are_bounded_by_the_image() {
+        let base = 0x9000u32;
+        let n = 4000usize;
+        let mut d = vec![0u8; 40 + 4 * n];
+        let text = d.len() as u32;
+        d.extend_from_slice(&[b'A'; 8000]);
+        d.push(0);
+        d[12..16].copy_from_slice(&(base + text).to_le_bytes());
+        d[24..28].copy_from_slice(&(n as u32).to_le_bytes());
+        for f in [28, 32, 36] {
+            d[f..f + 4].copy_from_slice(&(base + 40).to_le_bytes());
+        }
+        for i in 0..n {
+            d[40 + 4 * i..44 + 4 * i].copy_from_slice(&(base + text).to_le_bytes());
+        }
+        let err = rebuild_export_dir(&d, base, 0x3000, 0x10000).expect_err("32 MB of names");
+        assert!(format!("{err}").contains("outgrows"), "{err}");
+    }
+
+    /// Five directories of a few hundred entries that all name the next one
+    /// would be walked hundreds-to-the-fourth times; a shared subdirectory is
+    /// refused the first time it is reached again.
+    #[test]
+    fn a_resource_tree_that_shares_a_subdirectory_is_refused() {
+        let (n, levels) = (300usize, 5usize);
+        let dsz = 16 + 8 * n;
+        let mut tree = vec![0u8; dsz * levels];
+        for k in 0..levels - 1 {
+            let o = k * dsz;
+            tree[o + 14..o + 16].copy_from_slice(&(n as u16).to_le_bytes());
+            for i in 0..n {
+                let e = o + 16 + 8 * i;
+                tree[e..e + 4].copy_from_slice(&(i as u32 + 1).to_le_bytes());
+                let child = 0x8000_0000 | ((k + 1) * dsz) as u32;
+                tree[e + 4..e + 8].copy_from_slice(&child.to_le_bytes());
+            }
+        }
+        let err = walk_resource_dir(&tree, 0, 0, 0, &mut ResourceWalk::default())
+            .expect_err("a shared subdirectory");
+        assert!(format!("{err}").contains("subdirectory twice"), "{err}");
+    }
+
+    /// A section mapped at the top of the address space must not wrap the
+    /// loader-table scan back to address zero, and a section whose raw data
+    /// lies past the end of the file names nothing.
+    #[test]
+    fn a_hostile_packed_section_table_cannot_wrap_or_overrun_the_scan() {
+        let wanted = vec![ImportDll { name_off: 0x80, iat: 0, thunks: Vec::new() }];
+        let mut bytes = tiny_pe(&[0x11u8; 0x40]);
+        let t = 0x40 + 24 + 224;
+        bytes[t + 12..t + 16].copy_from_slice(&0xffff_fff0u32.to_le_bytes());
+        bytes[t + 16..t + 20].copy_from_slice(&0xfu32.to_le_bytes());
+        let img = Image::new(&bytes).unwrap();
+        assert!(loader_import_table(&img, &wanted).is_err());
+
+        let mut bytes = tiny_pe(&[0x11u8; 0x40]);
+        bytes[t + 20..t + 24].copy_from_slice(&0x10_0000u32.to_le_bytes());
+        let img = Image::new(&bytes).unwrap();
+        assert!(img.cstr_at_rva(0x1000).is_err());
+        assert!(loader_import_table(&img, &wanted).is_err());
+    }
+
+    /// A huge `FileAlignment` in the recovered header used to pad the overlay
+    /// out to gigabytes before the length check refused the file; the layout
+    /// is now sized, and refused, before anything is allocated.
+    #[test]
+    fn a_huge_file_alignment_is_refused_before_it_is_allocated() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/upx_packed_pe_x86_64.exe");
+        let mut bytes = std::fs::read(p).unwrap();
+        let info = super::super::detect(&bytes).expect("fixture is UPX-packed");
+        let data = info.pack_header_offset + super::super::PACK_HEADER_SIZE;
+        let obuf = super::super::elf::method_codec(info.method)
+            .unwrap()
+            .decompress(&bytes[data..data + info.c_len as usize], info.u_len as usize)
+            .unwrap();
+        bytes.extend_from_slice(b"overlay!");
+        let img = Image::new(&bytes).unwrap();
+        let skip = le32(&obuf, obuf.len() - 4).unwrap() as usize;
+        let mut oh = PeHeader::parse(&obuf, skip, Layout::Trailer).unwrap();
+        let rvamin = oh.sections[0].vaddr;
+        let tail = &bytes[bytes.len() - 8..];
+        let sane = assemble(&img, &obuf, &oh, rvamin, skip, tail, 3072 + 8).unwrap();
+        assert_eq!(&sane[3072..], b"overlay!");
+        oh.file_align = 0xf000_0000;
+        let err = assemble(&img, &obuf, &oh, rvamin, skip, tail, 3072 + 8)
+            .expect_err("a 4 GB alignment is not credible");
+        assert!(format!("{err}").contains("rebuilt 4026531848 bytes"), "{err}");
     }
 
     /// An eight-byte directory is the empty block "some tricky dlls use", which

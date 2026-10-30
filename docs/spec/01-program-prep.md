@@ -1041,6 +1041,16 @@ be exactly the original's length, or short of it only by what UPX itself drops: 
 trailing `.reloc` section of an image packed without relocations (its directory is
 gone too), or debug data that started the overlay (the debug directory stays).
 
+Every size and offset these rebuilds follow comes from the file, so each walk is
+bounded by bytes the file actually holds. The loader-table scan reads only section
+bytes present in the file, at most one candidate per four of them. A resource tree
+that reaches one directory or data entry twice is refused rather than walked
+exponentially, and the leaves it moves may not add up to more than the packed file.
+An export rebuild is sized as its strings are read, and refused once it outgrows the
+image -- every name pointer may name the same long string. The output file is laid
+out, and refused if it would be longer than the declared original, before anything
+is allocated for it.
+
 What is not rebuilt is named. The `win64/arm64` and `wince/arm` targets exit with
 their names; so does PackHeader version 14, UPX's exact-layout PE mode, whose trailer
 stores the original headers and the gaps between sections verbatim instead, and so

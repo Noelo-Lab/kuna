@@ -392,8 +392,6 @@ fn a_raw_modifier_without_a_range_is_a_usage_error() {
     assert!(stderr.contains("only applies with --raw-lzma"), "{stderr}");
 }
 
-/// Write the NRV witness out with its `b_method` overwritten and its header
-/// checksum repaired, so the walk gets as far as the block decode.
 /// The reported case (#1294): a valid `win64/pe` image `upx -t` accepts was
 /// answered with "corrupt UPX image: PackHeader declares an overlay outside the
 /// file". It now unpacks to the reporter's PE32+, which kuna then decompiles the
@@ -446,6 +444,8 @@ fn win64_arm64_is_refused_by_name_and_writes_nothing() {
     assert!(!std::path::Path::new(&out).exists(), "a refused unpack wrote {out}");
 }
 
+/// Write the NRV witness out with its `b_method` overwritten and its header
+/// checksum repaired, so the walk gets as far as the block decode.
 fn reheaded_fixture(method: u8, to: &str) {
     let mut bytes = std::fs::read(packed_fixture()).expect("fixture");
     let ph = 0x2c40usize;
