@@ -18,16 +18,16 @@ use kuna_console::ifacedecomp::{execute, register_decomp_commands, IfaceDecompDa
 use kuna_console::ifaceterm::ConsoleCommands;
 
 /// `pool_skip`: the `add r0,pc,r2` after `bxne r3`, and its string.
-const POOL_SKIP_ADD: u64 = 0x10080;
-const POOL_MSG: u64 = 0x10158;
+const POOL_SKIP_ADD: u64 = 0x100a0;
+const POOL_MSG: u64 = 0x10178;
 /// `pool_skip_t`: the `add r2,pc` after `it ne; bxne r3`, and its string.
-const POOL_SKIP_T_ADD: u64 = 0x10094;
-const POOL_MSG_T: u64 = 0x1016a;
+const POOL_SKIP_T_ADD: u64 = 0x100b4;
+const POOL_MSG_T: u64 = 0x1018a;
 /// The predicated computed jumps: `bxne r3` in `pool_skip` and `pool_skip_t`,
 /// `bxne r0` in `bail`.
-const PREDICATED_JUMPS: [u64; 3] = [0x1007c, 0x10092, 0x100a4];
+const PREDICATED_JUMPS: [u64; 3] = [0x1009c, 0x100b2, 0x100c4];
 /// `unguarded`'s dispatch, its entry.
-const UNGUARDED: u64 = 0x100b8;
+const UNGUARDED: u64 = 0x100d8;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
