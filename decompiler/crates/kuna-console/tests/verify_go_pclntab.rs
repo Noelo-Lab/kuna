@@ -22,6 +22,10 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use kuna_console::engine::bootstrap_from_object;
+use kuna_console::ifacedecomp::{
+    execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
+};
+use kuna_console::ifaceterm::ConsoleCommands;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").canonicalize().unwrap()
@@ -108,6 +112,24 @@ fn bootstrap(bin: &str) -> kuna_console::engine::ConsoleProgram {
     // flags), not eagerly at bootstrap — trigger that commit here.
     prog.commit_pending_analysis().expect("analysis commit succeeds");
     prog
+}
+
+/// `load function <func>` → `decompile` → `print C` over an already-committed
+/// program, returning the console transcript (which carries the C).
+fn decompile(prog: kuna_console::engine::ConsoleProgram, func: &str) -> String {
+    let cmds: Vec<String> = [format!("load function {func}"), "decompile".into(), "print C".into()].to_vec();
+    let count = cmds.len();
+    let mut status = ConsoleCommands::into_status(cmds);
+    register_decomp_commands(&mut status);
+    {
+        let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+        let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+        dcp.conf = Some(prog);
+    }
+    for _ in 0..count {
+        execute(&mut status);
+    }
+    status.optr.clone()
 }
 
 /// The headline e2e: a STRIPPED Go binary (no `.symtab`) recovers `main.main` and
@@ -226,4 +248,39 @@ fn stripped_go_macho_functions_recovered_from_pclntab() {
     assert!(interior.is_empty(), "entries claimed inside main.main: {interior:?}");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The PE arm. A `go build` for Windows carries no Go-named section at all: the
+/// build-info blob heads `.data` and the pclntab rides inside `.rdata`, so the
+/// image is only recognized as Go, and its table only found, by reading
+/// content. Cross-built pure-Go for each Windows architecture kuna decodes; on
+/// each, the names must come back and `main.main` must decompile calling
+/// `main.compute` by name. On amd64 the Go-gated rules must act too: the
+/// stack-growth guard folds away (`gomorestack auto`, keyed on the detected
+/// language).
+#[test]
+fn stripped_go_pe_functions_recovered_from_pclntab() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    for goarch in ["amd64", "386", "arm64"] {
+        let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_pe_{goarch}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let out_bin = dir.join("go_stripped.exe");
+        if !build_go(&dir, &out_bin, "windows", goarch, /* strip */ true) {
+            let _ = std::fs::remove_dir_all(&dir);
+            panic!("installed Go compiler failed to cross-build the windows/{goarch} fixture");
+        }
+        let prog = bootstrap(out_bin.to_str().expect("utf8 path"));
+        for name in ["main.main", "main.compute", "runtime.main"] {
+            assert!(prog.lookup_symbol(name).is_some(), "{name} not recovered from a windows/{goarch} pclntab");
+        }
+        let c = decompile(prog, "main.main");
+        assert!(c.contains("main.compute("), "windows/{goarch} main.main must call main.compute by name:\n{c}");
+        if goarch == "amd64" {
+            assert!(!c.contains("morestack"), "windows/amd64 main.main keeps its stack-growth guard:\n{c}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

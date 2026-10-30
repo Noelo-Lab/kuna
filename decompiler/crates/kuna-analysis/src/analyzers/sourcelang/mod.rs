@@ -76,7 +76,8 @@
 //!   an ordinary C `_Runtime`/`_RC4_set_key` on Mach-O is not taken for one.
 //! - **Go** — a Go build-info section under *any* format's naming
 //!   (`.go.buildinfo`/`.note.go.buildid` on ELF, `__go_buildinfo` on Mach-O):
-//!   [`golang_section_present`].
+//!   [`golang_section_present`]. A PE has no such section (the Windows linker
+//!   folds the blob into `.data`), so its arm also validates the blob in place.
 //!
 //! The format-specific arms are **detection-only**: nothing in the output changes
 //! unless a language-specific pass acts, and those passes act only for
@@ -336,7 +337,15 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
 /// Detect the toolchain that produced a **PE** image.
 ///
 /// Precedence (most-specific source language first, then the toolchain):
-/// 1. **Go** — a Go build-info section (`.go.buildinfo` etc.) is present.
+/// 1. **Go** — a Go build-info section (`.go.buildinfo` etc.) is present, OR
+///    the build-info blob Go's Windows linker merges into `.data` validates
+///    there (`loader::gobuildinfo::pe_buildinfo_blob`) AND a pclntab whose
+///    table resolves sits in read-only data (`pclntab::readonly_table_present`).
+///    A `go build` PE has only the plain `.text`/`.rdata`/`.data` sections, so
+///    content is its one signal; the pclntab half keeps a C program that merely
+///    carries a Go image in its `.data` (a dropper's payload) from being read as
+///    Go. Checked first, as on every format: a cgo build also links C objects
+///    whose toolchain records the later arms read.
 /// 2. **Rust** — a Rust-mangled symbol, OR a `rustc version` toolchain record in
 ///    `.rdata`/`.comment` (the format-neutral Rust paths).
 /// 3. **Clang** — a `clang version` record, OR an MSVC `Rich` header whose
@@ -349,7 +358,10 @@ pub fn detect_compiler_elf(file: &object::File) -> Compiler {
 ///    to lift the binary out of `Unknown`; this never changes output.
 /// 6. **Unknown** otherwise.
 pub fn detect_compiler_pe(file: &object::File, bytes: &[u8]) -> Compiler {
-    if golang_section_present(file.sections().filter_map(|s| s.name().ok())) {
+    if golang_section_present(file.sections().filter_map(|s| s.name().ok()))
+        || (crate::loader::gobuildinfo::pe_buildinfo_blob(file).is_some()
+            && crate::pclntab::readonly_table_present(file))
+    {
         return Compiler::Go;
     }
 

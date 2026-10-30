@@ -625,3 +625,157 @@ fn macho_lrodata_gopcln_section_is_found_and_decoded() {
         ]
     );
 }
+
+// A Go PE has no pclntab section (the Windows linker keeps the table inside
+// `.rdata`) and no build-info section (the blob heads `.data`).
+
+const PE_BASE: u64 = 0x1_4000_0000;
+
+/// A minimal x86-64 PE with `.text`, `.rdata`, `.data` in that order.
+fn build_pe(text: &[u8], rdata: &[u8], data: &[u8]) -> Vec<u8> {
+    use object::pe::*;
+    use object::write::pe::{NtHeaders, Writer};
+    let mut buf = Vec::new();
+    let mut w = Writer::new(true, 0x1000, 0x200, &mut buf);
+    w.reserve_dos_header_and_stub();
+    w.reserve_nt_headers(16);
+    w.reserve_section_headers(3);
+    let t = w.reserve_text_section(text.len() as u32);
+    let r = w.reserve_rdata_section(rdata.len() as u32);
+    let d = w.reserve_data_section(data.len() as u32, data.len() as u32);
+    w.write_dos_header_and_stub().expect("dos header");
+    w.write_nt_headers(NtHeaders {
+        machine: IMAGE_FILE_MACHINE_AMD64,
+        time_date_stamp: 0,
+        characteristics: IMAGE_FILE_EXECUTABLE_IMAGE | IMAGE_FILE_LARGE_ADDRESS_AWARE,
+        major_linker_version: 3,
+        minor_linker_version: 0,
+        address_of_entry_point: t.virtual_address,
+        image_base: PE_BASE,
+        major_operating_system_version: 6,
+        minor_operating_system_version: 1,
+        major_image_version: 1,
+        minor_image_version: 0,
+        major_subsystem_version: 6,
+        minor_subsystem_version: 1,
+        subsystem: IMAGE_SUBSYSTEM_WINDOWS_CUI,
+        dll_characteristics: 0,
+        size_of_stack_reserve: 0x20_0000,
+        size_of_stack_commit: 0x1000,
+        size_of_heap_reserve: 0x10_0000,
+        size_of_heap_commit: 0x1000,
+    });
+    w.write_section_headers();
+    w.write_section(t.file_offset, text);
+    w.write_section(r.file_offset, rdata);
+    w.write_section(d.file_offset, data);
+    buf
+}
+
+/// The `(.text, .rdata, .data)` VMAs [`build_pe`] assigns to sections of these
+/// sizes, so contents can point at each other before the image is written.
+fn pe_vmas(text: usize, rdata: usize, data: usize) -> (u64, u64, u64) {
+    let bytes = build_pe(&vec![0; text], &vec![0; rdata], &vec![0; data]);
+    let file = object::File::parse(&bytes[..]).expect("hand-built PE must parse");
+    let at = |n: &str| file.section_by_name(n).expect("section").address();
+    (at(".text"), at(".rdata"), at(".data"))
+}
+
+/// A go1.18+ inline build-info blob (`cmd/link`'s `buildinfo`), 16-byte padded.
+fn buildinfo(version: &str) -> Vec<u8> {
+    let mut b = b"\xff Go buildinf:".to_vec();
+    b.extend_from_slice(&[8, 2]);
+    b.resize(32, 0);
+    b.push(version.len() as u8);
+    b.extend_from_slice(version.as_bytes());
+    b.push(0);
+    b.resize(b.len().next_multiple_of(16), 0);
+    b
+}
+
+/// `.rdata` = `lead` bytes of other rodata, then the pclntab.
+fn rdata_with_table(lead: &[u8], table: &[u8]) -> Vec<u8> {
+    let mut r = lead.to_vec();
+    r.resize(r.len().next_multiple_of(8), 0);
+    r.extend_from_slice(table);
+    r
+}
+
+const PE_FUNCS: [(u32, &str); 3] = [(0x10, "main.main"), (0x80, "main.compute"), (0x200, "runtime.gopanic")];
+
+/// A Go PE (go1.18..go1.25 shape: `textStart` set in the header) with a
+/// magic-shaped 8-byte decoy ahead of the table in `.rdata`.
+fn go_pe(blob_in_data: bool, table_in_rdata: bool) -> (Vec<u8>, u64) {
+    let decoy = [0xf1, 0xff, 0xff, 0xff, 0, 0, 1, 8, 0xff, 0xff, 0xff, 0xff];
+    let probe = build_go118_image(0, 0, &PE_FUNCS);
+    let rlen = rdata_with_table(&decoy, &probe).len();
+    let (text_vma, _, _) = pe_vmas(0x400, rlen, 0x100);
+    let table = build_go118_image(0, text_vma, &PE_FUNCS);
+    let mut data = if blob_in_data { buildinfo("go1.21.3") } else { Vec::new() };
+    let rdata = if table_in_rdata {
+        rdata_with_table(&decoy, &table)
+    } else {
+        data = rdata_with_table(&data, &table);
+        vec![0; rlen]
+    };
+    data.resize(data.len().max(0x100), 0);
+    (build_pe(&[0xc3; 0x400], &rdata, &data), text_vma)
+}
+
+#[test]
+fn pe_rdata_pclntab_is_found_past_a_decoy_and_decoded() {
+    let (bytes, text_vma) = go_pe(true, true);
+    let file = object::File::parse(&bytes[..]).expect("hand-built PE must parse");
+    assert_eq!(
+        recover_go_functions(&file),
+        PE_FUNCS.iter().map(|&(o, n)| GoFunc { addr: text_vma + o as u64, name: n.into() }).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn pe_zero_text_start_resolves_against_moduledata_in_data() {
+    // go1.26+: the header's `textStart` is 0 and the runtime reads
+    // `moduledata.text`, which the Windows linker keeps in `.data`.
+    let probe = build_go118_image_end(0, &PE_FUNCS, Some(0x300));
+    let (text_vma, rdata_vma, _) = pe_vmas(0x400, probe.len(), 0x100 + 24 * 8);
+    let mut data = buildinfo("go1.26.1");
+    for w in 0..24u64 {
+        push_u64_le(
+            &mut data,
+            match w {
+                0 => rdata_vma,
+                17 => PE_FUNCS.len() as u64 + 1,
+                20 | 22 => text_vma,
+                21 | 23 => text_vma + 0x300,
+                _ => 0,
+            },
+        );
+    }
+    data.resize(0x100 + 24 * 8, 0);
+    let bytes = build_pe(&[0xc3; 0x400], &probe, &data);
+    let file = object::File::parse(&bytes[..]).expect("hand-built PE must parse");
+    let (funcs, end) = recover_go_table(&file);
+    assert_eq!(funcs.iter().map(|f| f.addr).collect::<Vec<_>>(), vec![text_vma + 0x10, text_vma + 0x80, text_vma + 0x200]);
+    assert_eq!(end, Some(text_vma + 0x300));
+}
+
+#[test]
+fn pe_is_go_only_with_its_own_buildinfo_and_readonly_table() {
+    let detect = |bytes: &[u8]| {
+        let file = object::File::parse(bytes).expect("hand-built PE must parse");
+        crate::sourcelang::detect_compiler(&file, bytes)
+    };
+    assert_eq!(detect(&go_pe(true, true).0), crate::sourcelang::Compiler::Go);
+    // A table with no build info, build info with no table, and a C program
+    // carrying a whole Go image in its writable data are not Go programs.
+    assert!(!detect(&go_pe(false, true).0).is_golang());
+    assert!(!detect(&build_pe(&[0xc3; 0x400], &[0; 0x100], &buildinfo("go1.21.3"))).is_golang());
+    assert!(!detect(&go_pe(true, false).0).is_golang());
+    // The bare magic string, as a C `char[]` would carry it.
+    let (text, rdata) = (vec![0xc3; 0x400], go_pe(true, true));
+    let file = object::File::parse(&rdata.0[..]).expect("parse");
+    let rd = file.section_by_name(".rdata").unwrap().data().unwrap().to_vec();
+    let mut bare = b"\xff Go buildinf:\0".to_vec();
+    bare.resize(0x100, 0);
+    assert!(!detect(&build_pe(&text, &rd, &bare)).is_golang());
+}
