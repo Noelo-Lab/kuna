@@ -10,8 +10,8 @@
 //! on a machine running a release `kuna`, and shelling out to a packer to look
 //! at a hostile binary is not a thing an analyzer should do. The compressed
 //! stream is UCL NRV2B/NRV2D/NRV2E ([`nrv`]) or LZMA ([`lzma`]) under a
-//! per-block branch filter ([`filter`]); the reconstruction walk lives in
-//! `elf`.
+//! per-block branch filter ([`filter`]); the reconstruction walks live in
+//! `elf` and `pe`.
 //!
 //! # Refusing beats guessing
 //!
@@ -24,8 +24,9 @@
 //! and to total exactly the original file size the header declares.
 //!
 //! Ported from UPX (GPL-2.0-or-later): `src/p_lx_elf.cpp`, `src/p_unix.cpp`,
-//! `src/packhead.cpp`, `src/filter/*.h`, and UCL's `src/n2{b,d,e}_d.c`; the
-//! LZMA back-end follows the public-domain LZMA SDK reference decoder.
+//! `src/pefile.cpp`, `src/packer_r.cpp`, `src/packhead.cpp`, `src/filter/*.h`,
+//! and UCL's `src/n2{b,d,e}_d.c`; the LZMA back-end follows the public-domain
+//! LZMA SDK reference decoder.
 
 pub mod filter;
 pub mod lzma;
@@ -201,7 +202,10 @@ fn parse_pack_header(image: &[u8]) -> Result<PackInfo, UpxError> {
         found = Some(i);
     }
     let i = found.ok_or(UpxError::NotPacked)?;
-    decode_pack_header(image, base + i, true)
+    // A PE-format header only turns up here when the PE probe could not read
+    // the image's own headers; it still has no overlay field to decode, and
+    // `unpack` then reports why those headers did not parse.
+    decode_pack_header(image, base + i, !pe::is_pe_format(tail[i + 5]))
 }
 
 /// Decode the 32-byte `PackHeader` at `at`. `overlay` says whether the le32
@@ -299,7 +303,7 @@ pub fn format_name(format: u8) -> &'static str {
         18 => "ps1/exe",
         19 => "vmlinux/i386",
         20 => "linux/elfi386",
-        21 => "arm/wince-pe",
+        21 => "wince/arm",
         22 => "linux/amd64",
         23 => "linux/arm",
         24 => "bsd/i386",
@@ -319,7 +323,8 @@ pub fn format_name(format: u8) -> &'static str {
         39 => "linux/ppc64le",
         40 => "vmlinux/ppc64le",
         42 => "linux/arm64",
-        43 => "win64/pe-arm64",
+        43 => "win64/arm64",
+        44 => "win64/arm64ec",
         45 => "linux/riscv64",
         46 => "cpm86/cmd",
         129 => "atari/tos",
@@ -520,51 +525,126 @@ mod tests {
         std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
     }
 
-    /// Walk a PE's import directory the way a disassembler would, returning
-    /// `DLL!name` for every thunk. A rebuild that produced descriptors nothing
-    /// can follow is the failure this guards.
-    fn pe_imports(image: &[u8]) -> Vec<String> {
-        let rd = |o: usize| u32::from_le_bytes(image[o..o + 4].try_into().unwrap());
-        let pe = rd(0x3c) as usize;
-        let opt = pe + 24;
-        let nsec = u16::from_le_bytes([image[pe + 6], image[pe + 7]]) as usize;
-        let table = opt + u16::from_le_bytes([image[pe + 20], image[pe + 21]]) as usize;
-        let secs: Vec<(u32, u32, u32)> = (0..nsec)
-            .map(|i| {
-                let o = table + 40 * i;
-                (rd(o + 12), rd(o + 16), rd(o + 20))
-            })
-            .collect();
-        let off = |rva: u32| -> usize {
-            let (va, sz, ptr) = *secs
+    /// The bits of a PE a disassembler reads, for checking what a rebuild wrote.
+    struct PeView<'a> {
+        image: &'a [u8],
+        pe: usize,
+        pe64: bool,
+        secs: Vec<(u32, u32, u32)>,
+    }
+
+    impl<'a> PeView<'a> {
+        fn new(image: &'a [u8]) -> Self {
+            let rd = |o: usize| u32::from_le_bytes(image[o..o + 4].try_into().unwrap());
+            let pe = rd(0x3c) as usize;
+            assert_eq!(&image[pe..pe + 4], b"PE\0\0");
+            let pe64 = u16::from_le_bytes([image[pe + 24], image[pe + 25]]) == 0x20b;
+            let nsec = u16::from_le_bytes([image[pe + 6], image[pe + 7]]) as usize;
+            let table = pe + 24 + u16::from_le_bytes([image[pe + 20], image[pe + 21]]) as usize;
+            let secs = (0..nsec)
+                .map(|i| {
+                    let o = table + 40 * i;
+                    (rd(o + 12), rd(o + 16), rd(o + 20))
+                })
+                .collect();
+            PeView { image, pe, pe64, secs }
+        }
+
+        fn rd(&self, o: usize) -> u32 {
+            u32::from_le_bytes(self.image[o..o + 4].try_into().unwrap())
+        }
+
+        fn opt(&self, at: usize) -> u32 {
+            self.rd(self.pe + 24 + at)
+        }
+
+        fn dir(&self, i: usize) -> (u32, u32) {
+            let d = self.pe + 24 + if self.pe64 { 112 } else { 96 } + 8 * i;
+            (self.rd(d), self.rd(d + 4))
+        }
+
+        fn section_names(&self) -> Vec<String> {
+            let table = self.pe
+                + 24
+                + u16::from_le_bytes([self.image[self.pe + 20], self.image[self.pe + 21]]) as usize;
+            (0..self.secs.len())
+                .map(|i| {
+                    let o = table + 40 * i;
+                    String::from_utf8_lossy(&self.image[o..o + 8]).trim_end_matches('\0').to_owned()
+                })
+                .collect()
+        }
+
+        fn off(&self, rva: u32) -> usize {
+            let (va, _, ptr) = *self
+                .secs
                 .iter()
                 .find(|(va, sz, _)| rva >= *va && rva - *va < *sz)
-                .expect("rva is mapped");
-            let _ = sz;
+                .unwrap_or_else(|| panic!("rva {rva:#x} is mapped"));
             (ptr + (rva - va)) as usize
-        };
-        let cstr = |rva: u32| -> String {
-            let a = off(rva);
-            let n = image[a..].iter().position(|&c| c == 0).unwrap();
-            String::from_utf8_lossy(&image[a..a + n]).into_owned()
-        };
-        let mut out = Vec::new();
-        let mut d = off(rd(opt + 96 + 8));
-        while rd(d + 12) != 0 {
-            let dll = cstr(rd(d + 12));
-            let mut thunk = rd(d + 16);
-            while rd(off(thunk)) != 0 {
-                let v = rd(off(thunk));
-                out.push(if v & 0x8000_0000 != 0 {
-                    format!("{dll}!#{}", v & 0xffff)
-                } else {
-                    format!("{dll}!{}", cstr(v + 2))
-                });
-                thunk += 4;
-            }
-            d += 20;
         }
-        out
+
+        fn cstr(&self, rva: u32) -> String {
+            let a = self.off(rva);
+            let n = self.image[a..].iter().position(|&c| c == 0).unwrap();
+            String::from_utf8_lossy(&self.image[a..a + n]).into_owned()
+        }
+
+        fn word(&self, rva: u32) -> u64 {
+            let o = self.off(rva);
+            if self.pe64 {
+                u64::from_le_bytes(self.image[o..o + 8].try_into().unwrap())
+            } else {
+                u64::from(self.rd(o))
+            }
+        }
+
+        /// `DLL!name` (or `DLL!#ordinal`) for every thunk. A rebuild that
+        /// produced descriptors nothing can follow is the failure this guards.
+        fn imports(&self) -> Vec<String> {
+            let (flag, step) = if self.pe64 { (1u64 << 63, 8) } else { (1u64 << 31, 4) };
+            let mut out = Vec::new();
+            let mut d = self.off(self.dir(1).0);
+            while self.rd(d + 12) != 0 {
+                let dll = self.cstr(self.rd(d + 12));
+                let mut thunk = self.rd(d + 16);
+                while self.word(thunk) != 0 {
+                    let v = self.word(thunk);
+                    out.push(if v & flag != 0 {
+                        format!("{dll}!#{}", v & 0xffff)
+                    } else {
+                        format!("{dll}!{}", self.cstr(v as u32 + 2))
+                    });
+                    thunk += step;
+                }
+                d += 20;
+            }
+            out
+        }
+
+        /// `(type, rva)` for every base relocation that is not padding.
+        fn relocs(&self) -> Vec<(u16, u32)> {
+            let (rva, size) = self.dir(5);
+            let mut out = Vec::new();
+            let mut o = self.off(rva);
+            let end = o + size as usize;
+            while o + 8 <= end {
+                let (page, sob) = (self.rd(o), self.rd(o + 4) as usize);
+                for i in 0..(sob - 8) / 2 {
+                    let e =
+                        u16::from_le_bytes([self.image[o + 8 + 2 * i], self.image[o + 9 + 2 * i]]);
+                    if e >> 12 != 0 {
+                        out.push((e >> 12, page + u32::from(e & 0xfff)));
+                    }
+                }
+                o += sob;
+            }
+            out
+        }
+    }
+
+    fn pe_imports(image: &[u8]) -> Vec<String> {
+        PeView::new(image).imports()
     }
 
     /// A PE keeps its PackHeader in the header padding, not the tail -- the one
@@ -677,6 +757,200 @@ mod tests {
         // Break the compressed stream's own Adler-32 in the header.
         bytes[0x3ec..0x3f0].copy_from_slice(&0u32.to_le_bytes());
         assert!(detect(&bytes).is_none());
+    }
+
+    fn fixture_named(name: &str) -> Vec<u8> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name);
+        std::fs::read(&p).unwrap_or_else(|e| panic!("read {}: {e}", p.display()))
+    }
+
+    /// The #1294 witness (see its `.provenance` sidecar): the reporter's own
+    /// clang + lld-link program packed by UPX 5.2.1. Its PackHeader is in the
+    /// header padding like every PE's, but the image is PE32+.
+    fn win64_fixture() -> Vec<u8> {
+        fixture_named("upx_packed_pe_x86_64.exe")
+    }
+
+    /// Rewrite the PackHeader's version byte and re-seal its checksum.
+    fn with_version(mut bytes: Vec<u8>, version: u8) -> Vec<u8> {
+        let at = detect(&bytes).expect("fixture is UPX-packed").pack_header_offset;
+        bytes[at + 4] = version;
+        bytes[at + PACK_HEADER_SIZE - 1] =
+            pack_header_checksum(&bytes[at..at + PACK_HEADER_SIZE - 1]);
+        bytes
+    }
+
+    #[test]
+    fn detects_the_win64_witness_in_its_header_padding() {
+        let info = detect(&win64_fixture()).expect("fixture is UPX-packed");
+        assert_eq!(info.pack_header_offset, 0x1fd);
+        assert_eq!(info.version, 13);
+        assert_eq!(info.format, 36);
+        assert_eq!(info.format_name(), "win64/pe");
+        assert_eq!(info.method_name(), "NRV2B_LE32");
+        assert_eq!(info.filter, 0x49);
+        assert_eq!(info.u_file_size, 3072);
+        assert_eq!(info.overlay_offset, 0);
+    }
+
+    /// The reported failure was "corrupt UPX image: PackHeader declares an
+    /// overlay outside the file". What comes back now is the reporter's
+    /// program: a PE32+ with its own sections, entry point and exception
+    /// directory, whose code is unfiltered.
+    #[test]
+    fn unpacks_the_win64_witness_to_a_usable_pe32plus() {
+        let out = unpack(&win64_fixture()).expect("fixture unpacks");
+        assert_eq!(out.bytes.len(), 3072);
+        assert_eq!(out.blocks.len(), 1);
+        let pe = PeView::new(&out.bytes);
+        assert!(pe.pe64, "PE32+ magic survives");
+        assert_eq!(u16::from_le_bytes([out.bytes[pe.pe + 4], out.bytes[pe.pe + 5]]), 0x8664);
+        assert_eq!(pe.section_names(), [".text", ".rdata", ".data", ".pdata"]);
+        assert_eq!(pe.opt(16), 0x1060, "entry is the reporter's `entry`");
+        assert_eq!(pe.dir(3), (0x4000, 0x24), "the .pdata exception directory is back");
+        // `select_value` calls `increment` and `entry` calls `select_value`;
+        // both calls only read as these rel32s once the ctok filter (0x49) is
+        // reversed with the code's bias from the first section.
+        let text = &out.bytes[0x400..];
+        assert_eq!(&text[0x33..0x38], &[0xe8, 0xc8, 0xff, 0xff, 0xff]);
+        assert_eq!(&text[0x69..0x6e], &[0xe8, 0xb2, 0xff, 0xff, 0xff]);
+        assert_eq!(&text[0x60..0x64], &[0x48, 0x83, 0xec, 0x28]);
+    }
+
+    /// The misdiagnosis itself: when the PE headers cannot be read, the PE
+    /// PackHeader the tail scan still finds has no overlay field, so the error
+    /// names the header that did not parse rather than an overlay.
+    #[test]
+    fn a_win64_image_whose_headers_do_not_parse_is_not_called_an_overlay_problem() {
+        let mut bytes = win64_fixture();
+        let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+        bytes[pe + 24..pe + 26].copy_from_slice(&0x30bu16.to_le_bytes());
+        let err = unpack(&bytes).expect_err("an unreadable header cannot be rebuilt");
+        let msg = format!("{err}");
+        assert!(!msg.contains("overlay"), "{msg}");
+        assert!(msg.contains("optional header magic 0x30b"), "{msg}");
+    }
+
+    #[test]
+    fn a_corrupted_win64_literal_is_caught_by_the_checksum() {
+        let mut bytes = win64_fixture();
+        bytes[0x280] ^= 0xff;
+        assert!(detect(&bytes).is_some(), "a corrupt stream is still a UPX file");
+        let err = unpack(&bytes).expect_err("a corrupted stream must not unpack");
+        assert!(
+            format!("{err}").contains("checksum mismatch") || format!("{err}").contains("block at"),
+            "{err}"
+        );
+    }
+
+    /// A MinGW PE32+ packed with `--lzma` (see its `.provenance` sidecar)
+    /// exercises what the minimal witness cannot: imports by name and by
+    /// ordinal -- one of them a `KERNEL32` ordinal, which UPX routes through its
+    /// own loader table -- import names that were never contiguous, kept
+    /// `DIR64` relocations, a resource tree with a moved icon group, and TLS.
+    #[test]
+    fn rebuilds_a_mingw_pe32plus_with_imports_relocations_resources_and_tls() {
+        let out = unpack(&fixture_named("upx_packed_pe_x86_64_lzma.exe")).expect("fixture unpacks");
+        assert_eq!(out.info.method_name(), "LZMA");
+        assert_eq!(out.bytes.len(), 13824);
+        let pe = PeView::new(&out.bytes);
+        assert_eq!(pe.opt(16), 0x13b0);
+        assert_eq!(
+            pe.section_names(),
+            [".text", ".rdata", ".data", ".pdata", ".tls", ".rsrc", ".reloc"]
+        );
+
+        let imports = pe.imports();
+        assert_eq!(imports.len(), 39, "{imports:?}");
+        for want in [
+            "KERNEL32.DLL!#100",
+            "KERNEL32.DLL!GetTickCount",
+            "lib.dll!lib_add",
+            "lib.dll!#2",
+            "USER32.dll!MessageBoxA",
+            "api-ms-win-crt-stdio-l1-1-0.dll!__stdio_common_vfprintf",
+        ] {
+            assert!(imports.iter().any(|i| i == want), "no {want} in {imports:?}");
+        }
+
+        // Every relocation comes back as DIR64, and each pointer it covers
+        // holds the original absolute address again.
+        let relocs = pe.relocs();
+        assert_eq!(relocs.len(), 36);
+        assert!(relocs.iter().all(|&(ty, _)| ty == 10));
+        assert_eq!(relocs[0].1, 0x3008);
+        assert_eq!(pe.word(0x3008), 0x1_4000_401c);
+        assert_eq!(pe.word(0x3010), 0x1_4000_0000);
+
+        assert_eq!(pe.dir(9), (0x3510, 0x28), "TLS directory");
+        assert_eq!(pe.word(0x3510), 0x1_4000_6000, "TLS raw data start");
+        assert_eq!(pe.dir(2), (0x7000, 0x758), "resource directory");
+        assert_eq!(
+            u16::from_le_bytes([out.bytes[0x2c0e], out.bytes[0x2c0f]]),
+            4,
+            "four resource types"
+        );
+        // The icon group UPX kept out of the compressed image is repointed at
+        // the address the original had, and its directory header is there.
+        assert_eq!((pe.rd(0x2ce0), pe.rd(0x2ce4)), (0x7578, 20));
+        assert_eq!(&out.bytes[0x3178..0x317e], &[0, 0, 1, 0, 1, 0]);
+    }
+
+    /// A PE32+ DLL (see its `.provenance` sidecar): UPX moves the export
+    /// directory out of the image and keeps every relocation, so both are
+    /// rebuilt -- a named export, a `NONAME` ordinal and a forwarder included.
+    #[test]
+    fn rebuilds_a_pe32plus_dll_with_its_exports() {
+        let out = unpack(&fixture_named("upx_packed_pe_x86_64.dll")).expect("fixture unpacks");
+        assert_eq!(out.bytes.len(), 7680);
+        let pe = PeView::new(&out.bytes);
+        assert_ne!(
+            u16::from_le_bytes([out.bytes[pe.pe + 22], out.bytes[pe.pe + 23]]) & 0x2000,
+            0,
+            "still a DLL"
+        );
+        let (exp, _) = pe.dir(0);
+        assert_eq!(exp, 0x2360);
+        let e = pe.off(exp);
+        assert_eq!(pe.cstr(pe.rd(e + 12)), "lib.dll");
+        assert_eq!((pe.rd(e + 16), pe.rd(e + 20), pe.rd(e + 24)), (1, 4, 3));
+        let names: Vec<String> =
+            (0..3).map(|i| pe.cstr(pe.rd(pe.off(pe.rd(e + 32)) + 4 * i))).collect();
+        assert_eq!(names, ["lib_add", "lib_fwd", "lib_unused"]);
+        let funcs: Vec<u32> = (0..4).map(|i| pe.rd(pe.off(pe.rd(e + 28)) + 4 * i)).collect();
+        assert_eq!(&funcs[..3], &[0x13a0, 0x13c0, 0x13e0]);
+        assert_eq!(pe.cstr(funcs[3]), "KERNEL32.GetTickCount", "the forwarder string is back");
+
+        let relocs = pe.relocs();
+        assert_eq!(relocs.len(), 20);
+        assert!(relocs.iter().all(|&(ty, _)| ty == 10));
+        assert!(pe.imports().iter().any(|i| i == "KERNEL32.DLL!Sleep"));
+    }
+
+    /// UPX 5.3.0's `win64/arm64` target (see the fixture's `.provenance`) is
+    /// recognized and refused by name: its loader uses an ARM64 branch filter
+    /// this build does not reverse.
+    #[test]
+    fn win64_arm64_is_refused_by_name() {
+        let bytes = fixture_named("upx_packed_pe_arm64.exe");
+        let info = detect(&bytes).expect("fixture is UPX-packed");
+        assert_eq!(info.format, 43);
+        assert_eq!(info.format_name(), "win64/arm64");
+        let err = unpack(&bytes).expect_err("win64/arm64 is not rebuilt");
+        assert!(matches!(&err, UpxError::Unsupported(m) if m.contains("win64/arm64")), "{err}");
+    }
+
+    /// PackHeader version 14 is UPX's exact-layout PE mode, which stores the
+    /// original headers verbatim instead of the rebuild trailer; it is named,
+    /// not misread as the trailer it does not have.
+    #[test]
+    fn the_exact_layout_pe_version_is_refused_by_name() {
+        let err =
+            unpack(&with_version(win64_fixture(), 14)).expect_err("version 14 is not rebuilt");
+        assert!(matches!(&err, UpxError::Unsupported(m) if m.contains("exact-layout")), "{err}");
+        let err =
+            unpack(&with_version(win64_fixture(), 11)).expect_err("version 11 is not rebuilt");
+        assert!(matches!(&err, UpxError::Unsupported(m) if m.contains("version 11")), "{err}");
     }
 
     #[test]

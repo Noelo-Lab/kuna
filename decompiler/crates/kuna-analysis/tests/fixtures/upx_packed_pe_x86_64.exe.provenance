@@ -1,0 +1,40 @@
+upx_packed_pe_x86_64.exe -- the win64/pe (PE32+) fixture for `kuna unpack` /
+`kuna_analysis::upx::pe`, and the witness of issue #1294.
+
+What it is
+  The issue's own reproducer: three tiny functions linked with no CRT, packed by
+  UPX 5.2.1 with default settings. 2,048 bytes packed; 3,072 bytes unpacked. The
+  UPX! PackHeader is in the header padding at 0x1fd and reads version=13,
+  format=36 (win64/pe), method=2 (NRV2B_LE32), level=8, filter=0x49 (ctok32).
+  One compressed block, 0x11d bytes in, 0x41ac out. No imports, no relocations
+  (none are needed), an exception directory (.pdata).
+
+  Before the fix `kuna unpack` answered it with "corrupt UPX image: PackHeader
+  declares an overlay outside the file": the PE header parser rejected PE32+, and
+  the tail-scan fallback then decoded the PE PackHeader as if it had the overlay
+  field only non-PE targets carry.
+
+  `upx -d` (5.2.1 and 5.3.0) writes the same 3,072 bytes `kuna unpack` does. Both
+  differ from the linker's original only in the .text padding past the section's
+  virtual size (0x7b), which UPX never compresses and so writes back as zeros.
+
+Where it came from
+  Built in the mstorsjo/llvm-mingw docker image (clang 23.1.4, lld-link), exactly
+  as the issue gives it:
+
+      cat > fixture.c <<'C'
+      volatile int global_counter = 5;
+      __declspec(noinline) int increment(int n) { return n + global_counter; }
+      __declspec(noinline) int select_value(int n) { return n > 0 ? increment(n) : -1; }
+      void entry(void) { volatile int r = select_value(7); (void)r; }
+      C
+      clang -target x86_64-pc-windows-msvc -c fixture.c -o fixture.obj
+      lld-link /entry:entry /subsystem:console /nodefaultlib /out:fixture.exe fixture.obj
+      upx -o upx_packed_pe_x86_64.exe fixture.exe          # UPX 5.2.1
+
+  sha256(original fixture.exe)  e79c2e177ec3737e41c56bd4757bf3c8203ddd174d60d80b0d0b291a5b7607d9
+  sha256(packed)                642cb05761d02a637a334a78798022f4cf135c307c59c41b36a3d0c2f903aefb
+
+Why it is vendored rather than built
+  `upx` is not a build dependency of this repo and is not installed on CI, and no
+  CI toolchain links a PE32+.
