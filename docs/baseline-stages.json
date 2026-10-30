@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3243,
-    3243
+    3246,
+    3246
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2985,6 +2985,9 @@
     "data:stack lifetimes: unknown memory observers remain in both modes",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
     "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
+    "data:stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted",
+    "data:stacksolver-unsolved #2: h, which terminated before, reads its return address two bytes above the entry slot",
+    "data:stacksolver-unsolved #3: no raw stack-pointer local is left",
     "data:stackstruct #10: structdefs prints the record above the function",
     "data:stackstruct #11: gcc -O0's later slots stay separate locals",
     "data:stackstruct #12: the vector zero store's lanes put the count in the gcc -O2 record",

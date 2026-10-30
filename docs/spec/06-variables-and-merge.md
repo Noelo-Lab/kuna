@@ -3157,14 +3157,42 @@ a *clog* (`coreaction_stackptr.rs (check_clog)`: `SP = SP + *(SP+k)` — an
 `alloca`-style adjustment loaded from the stack; when the matching constant
 STORE is found the LOAD becomes a COPY), and unresolved stack adjustments
 across calls (`coreaction_stackptr.rs (StackSolver)`: a linear system over
-every spacebase reference — one variable per reference, sentinel 65535 for
-"unsolved" — whose solution rewrites the INDIRECT survivors into explicit
-`INT_ADD SP, #c`; an underdetermined call contributes the guessed equation
-`extrapop = 4`). Once the solve succeeds the action latches
-(`analysis_finished`) until the next restart resets it. Its failure mode is
-honest: an unsolvable system leaves the INDIRECTs in place, the affected
-frame offsets never promote, and the function keeps raw pointer arithmetic
-where locals should be.
+every spacebase reference — one variable per reference — whose solution
+rewrites the INDIRECT survivors into explicit `INT_ADD SP, #c`; an
+underdetermined call contributes the guessed equation `extrapop = 4`). Once the
+solve succeeds the action latches (`analysis_finished`) until the next restart
+resets it. Its failure mode is honest: an unsolvable system leaves the
+INDIRECTs in place, the affected frame offsets never promote, and the function
+keeps raw pointer arithmetic where locals should be.
+
+Unsolved is a state of its own in kuna, not a value. Upstream marks an
+unsolved variable with the number 65535, but the equations carry each constant
+as the stack pointer's unsigned offset, so on a 16-bit stack pointer one
+`DEC SP` (`SP + 0xffff`) solves its variable to exactly 65535. Upstream's
+propagation then reads that variable back as unsolved and pushes it again from
+every neighbour; two such variables joined by a COPY or a MULTIEQUAL push each
+other forever, and the work stack grows until the process runs out of memory
+(issue #1288: a DOS executable whose packed body decodes as code with stray
+`DEC SP` bytes). kuna keeps the solutions as `Option` values, so each variable
+is solved, and pushed, at most once, and the propagation is bounded by the
+equation count. The solution arithmetic wraps, as the C++ `int4` does.
+
+Upstream only ever writes a variable that reads as unsolved, so the first
+solution a variable gets is its last, and kuna keeps exactly that rule: where
+no variable solves to 65535 the two solves take identical steps and pick the
+same winner between conflicting equations. Where one does and upstream still
+finishes, its answer differs, and kuna's is the right one. Upstream lets a
+later neighbour overwrite the genuine 65535, lets the guessed-equation loop
+replace it with a guess, and skips it in the rewrite, so that producer keeps
+its INDIRECT or MULTIEQUAL form, the offsets behind it stay unsolved, and the
+function keeps a raw stack-pointer local where a frame slot should be. Only a
+2-byte stack pointer reaches the value in practice: it is the stack pointer at
+entry - 1, while on 32 or 64 bits it would be 64 KiB above the entry value. The
+solve itself only runs under a prototype model whose extrapop is unknown, the
+x86-16, M16C/60 and 32-bit Windows, Borland and Delphi x86 specs among them. On
+M16C/60 `PUSH.B` lowers the stack pointer by one, so a byte push at a
+function's entry is ordinary compiled code, and with a loop after it upstream
+never finished.
 
 The guessed equation is where kuna diverges (option `calleepop`, default on).
 Upstream's constant `extrapop = 4` states that the callee pops none of its
