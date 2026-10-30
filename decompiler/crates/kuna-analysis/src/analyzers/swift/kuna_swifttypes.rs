@@ -96,6 +96,15 @@ fn locate_arm64(img: &MachoImage, accessor: u64) -> Option<u64> {
         i = 2;
     }
     let adrp = words[i]?;
+    if adrp & 0x9f00_0000 == 0x1000_0000 && adrp & 31 == 0 && words[i + 1] == Some(0xd503_201f) {
+        // `adr x0, …; nop`: the linker's relaxation of the `adrp`/`add` pair.
+        let imm = ((((adrp >> 5) & 0x7_ffff) << 2) | ((adrp >> 29) & 3)) as i64;
+        let imm = if imm & (1 << 20) != 0 { imm - (1 << 21) } else { imm };
+        let next = words[i + 2]?;
+        let plain = next == 0x5280_0001 || next == 0xd280_0001 || next == 0xd65f_03c0;
+        let call = next & 0xfc00_0000 == 0x9400_0000 || next & 0xfc00_0000 == 0x1400_0000;
+        return (plain || call).then_some((accessor + 4 * i as u64).wrapping_add(imm as u64));
+    }
     if adrp & 0x9f00_0000 != 0x9000_0000 || adrp & 31 != 0 {
         return None;
     }
@@ -960,7 +969,7 @@ impl<'a> Types<'a> {
             let Some(path) = self.unique_path(t) else {
                 continue;
             };
-            let Some(self_t) = self.self_pointer(t, &path) else {
+            let Some(self_t) = self.witness_self(t, &path) else {
                 continue;
             };
             if !c.witnesses.is_empty() || c.flags & (1 << 17) != 0 {
@@ -1010,6 +1019,16 @@ impl<'a> Types<'a> {
             }
         }
         (vtable, witness)
+    }
+
+    /// The `self` a protocol witness of the type at `addr` receives: the
+    /// address of the value, so a class instance arrives as `Class **`.
+    fn witness_self(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
+        let t = self.self_pointer(addr, path)?;
+        match self.md.contexts.get(&addr)?.kind {
+            ContextKind::Class => self.tf.get_type_pointer(self.ptr_size, t, 1).ok(),
+            _ => Some(t),
+        }
     }
 
     /// `Type *`: the pointer a class or struct `self` is passed as.

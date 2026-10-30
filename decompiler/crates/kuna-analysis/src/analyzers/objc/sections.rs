@@ -68,6 +68,13 @@ impl<'a> MachoImage<'a> {
             if matches!(sec.kind(), SectionKind::UninitializedData) {
                 continue;
             }
+            // An ELF's unmapped sections (`.symtab`, `.strtab`, debug info)
+            // sit at address 0 and would shadow the mapped ones there.
+            if let object::SectionFlags::Elf { sh_flags } = sec.flags() {
+                if sh_flags & u64::from(object::elf::SHF_ALLOC) == 0 {
+                    continue;
+                }
+            }
             let addr = sec.address();
             let size = sec.size();
             if size == 0 {

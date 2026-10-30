@@ -4237,7 +4237,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   `__swift5_proto` (conformance descriptors: protocol, conforming type, witness
   table pattern, resilient witnesses) and `__swift5_fieldmd` (field descriptors),
   per the ABI's `Metadata.h`. Everything there is a 32-bit self-relative pointer,
-  so no fixup resolution is needed; an *indirectable* pointer (low bit set)
+  so no fixup resolution is needed (an ELF's unallocated sections — the symbol
+  and string tables, debug info — sit at address 0 and are left out of the
+  address map the reader resolves through, so a binary that kept its symbols
+  reads as its stripped twin does); an *indirectable* pointer (low bit set)
   names a pointer-sized slot, which is a rebase (resolved through the
   chained-fixup overlay, §1.2) or a bind to another image — and the overlay
   records each bind slot's import name (`ChainedFixups::binds`), which is
@@ -4279,7 +4282,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   descriptor's `MetadataInitialization` is none: no resilient superclass, no
   foreign or singleton initialization) has that metadata laid out statically,
   and its accessor is the one-line function that returns the address — `adrp
-  x0, …; add x0, x0, …; mov x1, #0; ret` on arm64, `lea rax, [rip + …]; xor
+  x0, …; add x0, x0, …; mov x1, #0; ret` on arm64 (or the `adr x0, …; nop` a
+  linker relaxes the pair to), `lea rax, [rip + …]; xor
   edx, edx; ret` on x86-64, a class with Objective-C heritage tail-calling the
   runtime with the same address — which the pass decodes and checks: the
   metadata's descriptor word must point back at the descriptor (through the
@@ -4328,7 +4332,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   `map param` (`AnalysisOutput::swift_types.param_locks` →
   `Architecture::loader_param_locks` → the decompile drive's `mapped_params`),
   the rest of the signature recovered as usual — and a witness getter also
-  names its two leading arguments, the `Self` metadata and the witness table.
+  names its two leading arguments, the `Self` metadata and the witness table
+  (its `self` is the address of the value: `T *` for a struct, `Class **` for
+  a class).
   On the Toyota iOS app the pass locates 12,809 static metadata records (4,790
   structs, 4,811 enums, 3,208 classes; the 859 classes and 351 structs whose
   accessors look up a runtime cache are skipped), lays out 4,585 structs and
