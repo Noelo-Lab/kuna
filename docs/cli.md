@@ -1165,7 +1165,9 @@ to `decompile` (text and JSON), `decompile-all`, `functions`, and
 reports the required raw-image command shape, including when its first byte is
 `<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
 console filenames preserve paths containing whitespace; the interactive spelling
-is `load raw <target> <base> <entry[,entry...]> <filename>`.
+is `load raw <target> <base> <entry[,entry...]> <filename>`, where the target may
+be quoted too, as the DOS target needs: `load raw "x86:LE:16:Real Mode:default"
+0x0 0x70 dazzle.exe`.
 
 **Failure contract (DIV-45).** A function whose decompile pipeline aborts is
 *loud*:
