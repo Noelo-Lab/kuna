@@ -1,0 +1,46 @@
+upx_packed_pe_x86_64_lzma.exe -- the MinGW win64/pe fixture for
+`kuna_analysis::upx::pe`: every rebuild a PE32+ console program needs.
+
+What it is
+  A small MinGW-w64 (llvm-mingw) console program packed with `upx --lzma`
+  (UPX 5.2.1). 11,776 bytes packed; 13,824 bytes unpacked. PackHeader at 0x1fd:
+  version=13, format=36 (win64/pe), method=14 (LZMA), filter=0x49.
+
+  It carries what the minimal #1294 witness cannot:
+    - 39 imports over 11 DLLs, by name and by ordinal (lib.dll #2), including a
+      KERNEL32 import by ordinal (#100) -- which UPX records as the offset of its
+      own loader thunk rather than as the ordinal -- and import names that were
+      never one contiguous run (UPX then leaves them in place);
+    - 36 kept DIR64 base relocations (ASLR image), rebuilt from UPX's delta
+      stream;
+    - a resource tree (icon, icon group, string table, version info) whose
+      uncompressed leaves UPX moved out of the image;
+    - a TLS directory with a callback, and an exception directory.
+
+  `kuna unpack` writes what `upx -d` (5.3.0) writes except the IAT data
+  directory and each import descriptor's OriginalFirstThunk, which upx -d
+  zeroes. Against the linker's original, the sections, imports (as a set),
+  relocations, TLS and resource leaves all match; .text padding past the virtual
+  size, the TLS index slot UPX zeroes, the import descriptor order (UPX sorts the
+  DLLs) and the resource directory layout (UPX rebuilds it) differ, exactly as
+  in upx -d's output.
+
+Where it came from
+  Built in the mstorsjo/llvm-mingw docker image (clang 23.1.4) from three small
+  sources: cons.c (printf/malloc/MessageBoxA, a pointer table, a _Thread_local
+  counter and a TLS callback, calls into lib.dll by name and by NONAME ordinal,
+  and into KERNEL32 by ordinal 100 through a dlltool import library), lib.c
+  (see upx_packed_pe_x86_64.dll.provenance), and res.rc (icon, string table,
+  version info):
+
+      x86_64-w64-mingw32-clang -O1 -s -shared -o lib.dll lib.c lib.def -Wl,--out-implib,liblib.a
+      x86_64-w64-mingw32-dlltool -d k32ord.def -l libk32ord.a
+      x86_64-w64-mingw32-windres res.rc -O coff -o res.o
+      x86_64-w64-mingw32-clang -O1 -s -o cons.exe cons.c res.o -L. -llib -lk32ord -luser32
+      upx --lzma -o upx_packed_pe_x86_64_lzma.exe cons.exe   # UPX 5.2.1
+
+  sha256(original cons.exe)  61cba978266556bacea479b67a3ca78720e337033c2e1d4e24523464679e85d8
+  sha256(packed)             b939625e94786b269ccf72952422a0645c32e39b3cf6408aade18f5da8d16bbb
+
+Why it is vendored rather than built
+  `upx` is not installed on CI, and neither is a MinGW toolchain.

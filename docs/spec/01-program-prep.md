@@ -957,30 +957,108 @@ A PE (`upx/pe.rs`) carries the `PackHeader` in the header padding immediately be
 the compressed data -- outside the tail window entirely -- and holds the whole image
 in a single block, followed by a trailer that the packer's own loader consumes at
 run time and the unpacker replays instead: the original PE header and section table,
-the import descriptors, thunk arrays and hint/name entries UPX strips out of the
-image, and the resource leaves it moves out of it. The DLL *names* are not in the
+then one record per rebuild -- where the stripped import list starts, where the
+relocation stream starts, and the icon count the resource rebuild restores -- then a
+pointer back to that header. `win32/pe` (PE32) and `win64/pe` (PE32+, amd64) are the
+same walk; they differ only in word size, which the header's optional-header magic
+sets and the PackHeader's target format must agree with: eight-byte import thunks
+whose ordinal flag is bit 63 instead of four-byte ones with bit 31, and `DIR64`
+relocations instead of `HIGHLOW`. A PE header that does not parse is reported as
+what it is; the tail scan that serves every other target can still find such a
+file's PackHeader, but a PE PackHeader has no overlay field, so it is never decoded
+as though it had one -- that misreading is what used to answer a valid `win64/pe`
+file with "PackHeader declares an overlay outside the file".
+
+UPX filters only the code, and every rewritten branch target carries the code's
+distance from the image's first section as a bias, so the unfilter takes that bias
+rather than refusing a code base that does not start the image. `win64/pe` uses the
+`ctok` filter (`0x49`) alone; `win32/pe` adds the plain calltricks `0x11`-`0x16` a
+`--brute` pack can choose.
+
+The import descriptors, thunk arrays and hint/name entries UPX strips out of the
+image come back from the trailer's compact list. The DLL *names* are not in the
 trailer at all; they stay in the packed loader's own import table, which the trailer
 addresses by offset. That table is found by agreement with the trailer rather than
 through the packed image's import data directory, because retargeting the directory
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
-`tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
+`tests/fixtures/upx_packed_pe_i386.exe` is exactly that. Where the original's import
+names were one contiguous run, the trailer says where it started and they are
+written back there in order; where they were scattered -- every MinGW image -- UPX
+leaves each descriptor's name address and each thunk's hint/name address in place
+and only the strings go back where those already point. A `KERNEL32` import by
+ordinal is recorded as the offset of the packer's own loader thunk for it, and the
+ordinal is read out of that thunk rather than out of the offset.
 
 The agreement is over the *set* of DLL names, not a position-by-position walk. The
 loader table holds one descriptor per distinct DLL, while the original image may
 import a single DLL across several descriptors -- a 32-bit MSVC witness names seven
 DLLs from thirteen, `KERNEL32.DLL` four times -- so the two lists differ in length
 whenever a binary does that, and a positional comparison can never agree on one. It
-did not merely lose the table: it reported the image as corrupt.
+did not merely lose the table: it reported the image as corrupt. The table also
+carries the stub's own `KERNEL32.DLL` descriptor even when the original imports
+nothing from that DLL, so one such descriptor is allowed beyond the set.
 
-Base relocations are refused only when the packer kept them. UPX strips an EXE's
-relocations by default, marking the packed header `RELOCS_STRIPPED`, and its own
-unpacker then zeroes the recovered header's relocation directory rather than
-rebuilding anything; `kuna unpack` does the same, so the recovered file is the one
-`upx -d` writes. The relocations UPX keeps -- every DLL's, and every ASLR image's --
-travel as an optimized stream plus a five-byte trailer record that this tier does not
-replay, and such an image is refused by name before the resource rebuild could read
-that record as its icon count. A TLS directory needs no step at all: UPX's own
-`rebuildTls` is empty, so the directory comes back with the image it was packed in.
+Base relocations are rebuilt the way `upx -d` rebuilds them. UPX strips an EXE's
+relocations when it may, marking the packed header `RELOCS_STRIPPED`, and its own
+unpacker then zeroes the recovered header's relocation directory; `kuna unpack` does
+the same. The relocations UPX keeps -- every DLL's, and every ASLR image's, which on
+win64 is nearly all of them -- were rebased to zero, byte-swapped in place and
+recorded as a delta-coded position stream; the rebuild decodes the stream, restores
+each pointer, and lays the positions out as a fresh `.reloc` table (one block per
+page, padded to four bytes), with the 16-bit `LOW`/`HIGH` lists a PE32 may append.
+Entries of a kind UPX does not keep -- anything but `DIR64` in a PE32+ -- were
+dropped when it packed, so they are not in the result either. An export directory
+UPX moved out of the image -- a DLL's always, an EXE's with `--compress-exports=0`
+-- is rebuilt at its original address in the compact layout UPX's `Export::build`
+writes, forwarder strings included. A TLS directory needs no step: UPX's own
+`rebuildTls` is empty. The resource directory comes back with every leaf UPX moved
+repointed, unless UPX could not clear the original's (its pieces were not
+contiguous), in which case the original's is still in the image and stays.
+
+Which trailer records exist is read from the trailer's length rather than predicted
+from the data directories. The packer writes a record only when it had something to
+put in it, while UPX's own unpacker predicts each one from the original's
+directories, and the two disagree on an image whose import directory names no DLL or
+whose relocations are all of a kind UPX drops -- `upx -d` then reads the next record
+as this one and fails. The three records are 8, 5 and 2 bytes and no two sets of them
+sum alike, so the length names exactly one set, and a length no set reaches is
+refused as a PE feature this tier does not rebuild.
+
+The rebuilt header matches what `upx -d` writes in two ways and keeps the original's
+in two. The bound-import directory is zeroed -- its table lived in header slack the
+packed file's own headers took over -- and so is the checksum, which covers bytes
+the rebuilds re-laid out. The import-address-table directory and `SizeOfHeaders`
+keep the original's values, which `upx -d` zeroes and recomputes, and each rebuilt
+import descriptor's `OriginalFirstThunk` names its `FirstThunk` array rather than
+the zero `upx -d` leaves; with those set aside the file is byte-identical to
+`upx -d`'s. Data past the packed file's last section is the original's overlay -- a
+signature, a MinGW image's COFF symbol table -- and is appended again at the
+original's offset. With nothing dropped from the image, the original's length says
+how long that overlay was, and the packed file's tail can carry more than it on
+either side. UPX 3.9x writes its stub's relocation block twice; the second copy
+spills past the last section's declared end, and the spill and its zero padding to
+the file alignment sit in front of the overlay, where `upx -d` copies them too. Bytes
+appended to the packed file afterwards -- a signature, a payload -- sit behind it. So
+the overlay is read from past a front of exactly the spill's shape, and only for its
+own length; neither shifts it. The reconstructed file must
+be exactly the original's length, or short of it only by what UPX itself drops: the
+trailing `.reloc` section of an image packed without relocations (its directory is
+gone too), or debug data that started the overlay (the debug directory stays).
+
+Every size and offset these rebuilds follow comes from the file, so each walk is
+bounded by bytes the file actually holds. The loader-table scan reads only section
+bytes present in the file, at most one candidate per four of them. A resource tree
+that reaches one directory or data entry twice is refused rather than walked
+exponentially, and the leaves it moves may not add up to more than the packed file.
+An export rebuild is sized as its strings are read, and refused once it outgrows the
+image -- every name pointer may name the same long string. The output file is laid
+out, and refused if it would be longer than the declared original, before anything
+is allocated for it.
+
+What is not rebuilt is named. The `win64/arm64` and `wince/arm` targets exit with
+their names; so does PackHeader version 14, UPX's exact-layout PE mode, whose trailer
+stores the original headers and the gaps between sections verbatim instead, and so
+do versions before 12, older than any layout UPX's own unpacker still reads.
 
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
