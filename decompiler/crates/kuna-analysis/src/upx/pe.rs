@@ -1341,17 +1341,34 @@ fn confine_to_section(oh: &PeHeader, rva: u32, len: u32, what: &str) -> Result<(
 }
 
 /// The original's overlay, out of the bytes the packed file carries past its
-/// last section. It is always their suffix, and normally all of them; UPX 3.9x
-/// writes bytes of its own past its last section's declared end, in front of the
-/// overlay it copies. With nothing dropped from the image, the original's
-/// length says exactly how long the overlay was, so those bytes are cut off the
-/// front; when the rebuilt sections fall short of it (see [`check_length`]) the
-/// whole tail is the overlay.
-fn overlay_of(tail: &[u8], sections_end: usize, original_len: usize) -> &[u8] {
+/// last section -- normally all of them. With nothing dropped from the image,
+/// the original's length says how long the overlay was, and two things can
+/// stand beside it. UPX 3.9x writes its stub's relocation block twice; the
+/// second copy spills past the last section's declared end, and that spill,
+/// padded with zeros to the packed file's alignment, is the first `spill` bytes
+/// of the tail. Bytes appended to the packed file afterwards (a signature, a
+/// payload) come after the overlay. So the overlay starts past the spill and
+/// stops at its own length. When the rebuilt sections fall short of the
+/// original (see [`check_length`]) the whole tail is the overlay.
+fn overlay_of(tail: &[u8], sections_end: usize, original_len: usize, spill: usize) -> &[u8] {
     match original_len.checked_sub(sections_end) {
-        Some(want) if want <= tail.len() => &tail[tail.len() - want..],
+        Some(want) if want <= tail.len() => {
+            let lead = if tail.len() - want >= spill { spill } else { 0 };
+            &tail[lead..lead + want]
+        }
         _ => tail,
     }
+}
+
+/// Is `front` the end of the packed stub's relocation table followed by zeros?
+/// The stub's table is a few fixups and the padding is under one file-alignment
+/// unit, so anything larger is not that spill.
+fn is_stub_reloc_spill(front: &[u8], relocs: &[u8]) -> bool {
+    if front.len() > 0x1_0000 || relocs.len() > 0x1000 {
+        return false;
+    }
+    let nonzero = front.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    (nonzero..=relocs.len().min(front.len())).any(|k| front[..k] == relocs[relocs.len() - k..])
 }
 
 /// Lay the recovered image back out as a file: the packed file's own DOS header
@@ -1420,7 +1437,13 @@ fn assemble(
         (end, &[][..])
     } else {
         let at = align_up(end, oh.file_align);
-        (at, overlay_of(tail, at, original_len))
+        let (rva, size) = img.hdr.dir(DIR_BASERELOC);
+        let stub_relocs = img.at_rva(rva, size as usize).unwrap_or(&[]);
+        let spill = tail
+            .get(..img.hdr.file_align as usize)
+            .filter(|front| is_stub_reloc_spill(front, stub_relocs))
+            .map_or(0, <[u8]>::len);
+        (at, overlay_of(tail, at, original_len, spill))
     };
     let total = overlay_at + overlay.len();
     if total > original_len {
@@ -1876,6 +1899,33 @@ mod tests {
         let err = assemble(&img, &obuf, &oh, rvamin, skip, tail, 3072 + 8)
             .expect_err("a 4 GB alignment is not credible");
         assert!(format!("{err}").contains("rebuilt 4026531848 bytes"), "{err}");
+    }
+
+    /// The overlay is cut out of the packed file's tail by the original's
+    /// length. UPX 3.9x's spilled second copy of the stub relocations (and its
+    /// zero padding) comes off the front; bytes appended after packing -- a
+    /// signature, a payload -- come off the end instead of shifting the overlay.
+    #[test]
+    fn the_overlay_is_cut_from_whichever_end_holds_something_else() {
+        let relocs = [0, 0x10, 1, 0, 12, 0, 0, 0, 0x60, 0x39, 0, 0];
+        let mut front = vec![0x60, 0x39, 0, 0];
+        front.resize(512, 0);
+        assert!(is_stub_reloc_spill(&front, &relocs));
+        assert!(!is_stub_reloc_spill(b"COFF symbols", &relocs));
+        assert!(!is_stub_reloc_spill(&[0x39, 0x60, 0, 0], &relocs));
+
+        let overlay = b"COFF symbols and strings";
+        let later = b"certificate appended later";
+        let (end, len) = (0x1000, 0x1000 + overlay.len());
+        let spilled = [&front[..], overlay].concat();
+        assert_eq!(overlay_of(&spilled, end, len, 512), overlay);
+        let both = [&front[..], overlay, later].concat();
+        assert_eq!(overlay_of(&both, end, len, 512), overlay);
+        let appended = [&overlay[..], later].concat();
+        assert_eq!(overlay_of(&appended, end, len, 0), overlay);
+        assert_eq!(overlay_of(overlay, end, len, 0), overlay);
+        assert_eq!(overlay_of(overlay, end, len + 100, 0), overlay);
+        assert_eq!(overlay_of(&appended, end, end, 0), b"");
     }
 
     /// An eight-byte directory is the empty block "some tricky dlls use", which

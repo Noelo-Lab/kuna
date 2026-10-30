@@ -1033,10 +1033,14 @@ import descriptor's `OriginalFirstThunk` names its `FirstThunk` array rather tha
 the zero `upx -d` leaves; with those set aside the file is byte-identical to
 `upx -d`'s. Data past the packed file's last section is the original's overlay -- a
 signature, a MinGW image's COFF symbol table -- and is appended again at the
-original's offset. UPX 3.9x writes 512 bytes of its own past its last section's declared end, in
-front of the overlay it copies, which `upx -d` then copies too; since the overlay is always the
-packed file's suffix and, with nothing dropped from the image, the original's length
-says how long it was, those bytes are cut off instead. The reconstructed file must
+original's offset. With nothing dropped from the image, the original's length says
+how long that overlay was, and the packed file's tail can carry more than it on
+either side. UPX 3.9x writes its stub's relocation block twice; the second copy
+spills past the last section's declared end, and the spill and its zero padding to
+the file alignment sit in front of the overlay, where `upx -d` copies them too. Bytes
+appended to the packed file afterwards -- a signature, a payload -- sit behind it. So
+the overlay is read from past a front of exactly the spill's shape, and only for its
+own length; neither shifts it. The reconstructed file must
 be exactly the original's length, or short of it only by what UPX itself drops: the
 trailing `.reloc` section of an image packed without relocations (its directory is
 gone too), or debug data that started the overlay (the debug directory stays).
