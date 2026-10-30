@@ -3989,6 +3989,8 @@ fn file_mz_dos_image(path: &str) -> Option<Vec<u8>> {
     is_mz_dos_image(&bytes).then_some(bytes)
 }
 
+const MZ_RAW_IMAGE_HINT: &str = "to map the whole file as-is, use --raw-image --target \"x86:LE:16:Real Mode:default\" --base <address> and at least one --entry/--addr <address>";
+
 /// Bootstrap an MS-DOS `MZ` executable as x86 real-mode code: its load module,
 /// relocated at segment 0x1000, is the one mapped range, and its `CS:IP` the
 /// seed entry that raw-image discovery widens from. An explicit target picks
@@ -4000,7 +4002,8 @@ pub fn bootstrap_from_mz_bytes(
     spec_roots: &[String],
     isa: Option<ArmIsa>,
 ) -> KunaResult<ConsoleProgram> {
-    let image = MzImage::parse(bytes)?;
+    let image = MzImage::parse(bytes)
+        .map_err(|error| KunaError::lowlevel(format!("{}; {MZ_RAW_IMAGE_HINT}", error.explain())))?;
     if let Some(packer) = image.packer {
         kuna_base::notes::say_once(
             path,

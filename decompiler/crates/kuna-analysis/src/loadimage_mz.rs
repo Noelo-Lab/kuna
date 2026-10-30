@@ -44,6 +44,16 @@ fn word(bytes: &[u8], off: usize) -> u16 {
     u16::from_le_bytes([bytes[off], bytes[off + 1]])
 }
 
+/// Whether `e_lfanew` (0x3c..0x40) can hold a pointer to a newer header: it
+/// must lie in the header and outside the relocation table, as deark decides.
+fn lfanew_is_a_field(bytes: &[u8]) -> bool {
+    let header = usize::from(word(bytes, 0x08)) * 16;
+    let nrelocs = usize::from(word(bytes, 0x06));
+    let table = usize::from(word(bytes, 0x18));
+    let overlaps = (0x3d..0x40).contains(&table) || (nrelocs > 0 && table < 0x40 && table + 4 * nrelocs > 0x3c);
+    header > 0x3c && !overlaps
+}
+
 /// Whether `bytes` is a plain DOS executable: an `MZ` (or `ZM`) header that is
 /// not the stub of a newer executable format.
 pub fn is_mz_dos_image(bytes: &[u8]) -> bool {
@@ -56,7 +66,7 @@ pub fn is_mz_dos_image(bytes: &[u8]) -> bool {
             if lfanew >= 4 && sig == b"PE\0\0" {
                 return false;
             }
-            if lfanew >= 0x40 && matches!(&sig[..2], b"NE" | b"LE" | b"LX") {
+            if lfanew >= 0x40 && matches!(&sig[..2], b"NE" | b"LE" | b"LX") && lfanew_is_a_field(bytes) {
                 return false;
             }
         }
@@ -203,12 +213,28 @@ mod tests {
         assert!(is_mz_dos_image(&bytes));
         for sig in [&b"PE\0\0"[..], b"NE", b"LE", b"LX"] {
             let mut stub = bytes.clone();
+            stub[0x08..0x0a].copy_from_slice(&4u16.to_le_bytes());
             stub[0x3c..0x40].copy_from_slice(&0x100u32.to_le_bytes());
             stub[0x100..0x100 + sig.len()].copy_from_slice(sig);
             assert!(!is_mz_dos_image(&stub), "{sig:?}");
         }
         assert!(!is_mz_dos_image(b"MZ"));
         assert!(!is_mz_dos_image(&[0x7f, b'E', b'L', b'F', 0, 0, 0, 0]));
+    }
+
+    /// Bytes 0x3c..0x40 are only `e_lfanew` when the header reaches past them
+    /// and the relocation table does not cover them.
+    #[test]
+    fn an_lfanew_that_is_code_or_a_relocation_is_not_a_newer_header() {
+        let mut bytes = image();
+        bytes.resize(0x200, 0);
+        bytes[0x3c..0x40].copy_from_slice(&0x100u32.to_le_bytes());
+        bytes[0x100..0x102].copy_from_slice(b"LE");
+        assert!(is_mz_dos_image(&bytes), "a two-paragraph header ends before e_lfanew");
+        bytes[0x08..0x0a].copy_from_slice(&5u16.to_le_bytes());
+        assert!(!is_mz_dos_image(&bytes));
+        bytes[0x06..0x08].copy_from_slice(&10u16.to_le_bytes());
+        assert!(is_mz_dos_image(&bytes), "the relocation table covers e_lfanew");
     }
 
     #[test]

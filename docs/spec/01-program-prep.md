@@ -838,7 +838,11 @@ validation; it does not rewrite the machine bytes to another architecture.
 `decompiler/crates/kuna-analysis/src/loadimage_mz.rs (MzImage)` claims a file
 with an `MZ` (or `ZM`) header that is not the stub of a newer format: a `PE\0\0`
 signature at `e_lfanew`, an `NE`/`LE`/`LX` one there past the old header, or an
-image the `object` crate opens as PE keeps the object path. The load module is
+image the `object` crate opens as PE keeps the object path. Bytes 0x3c..0x40 are
+read as `e_lfanew` for the `NE`/`LE`/`LX` test only when the header reaches past
+them and the relocation table does not cover them (deark's rule); otherwise they
+are code or a relocation entry, and a stray `LE` they happen to point at does not
+turn a DOS program away. The load module is
 the file from the header's paragraph count to the size its page fields declare
 (an overlay past that is not mapped), and it is placed at segment 0x1000, linear
 0x10000, as DOS would place it at some free paragraph: each relocation-table
