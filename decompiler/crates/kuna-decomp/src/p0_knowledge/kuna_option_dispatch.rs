@@ -1385,6 +1385,7 @@ kuna_options! { self, p1;
     "objc" => on_off!(analysis_objc, "Mach-O Objective-C metadata recovery pass"),
     "swiftmetadata" => on_off!(analysis_swiftmetadata, "Swift runtime-metadata recovery pass"),
     "swifttypes" => on_off!(analysis_swifttypes, "Swift type layouts from static metadata"),
+    "swiftcall" => on_off!(analysis_swiftcall, "Swift calling convention on methods and witnesses"),
     "pdb" => on_off!(analysis_pdb, "PE PDB metadata recovery pass"),
     "relocobjects" => {
         let val = on_or_off(p1)?;

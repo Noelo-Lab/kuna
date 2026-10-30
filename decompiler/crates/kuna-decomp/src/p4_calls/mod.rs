@@ -87,6 +87,8 @@ pub(crate) mod kuna_customreturn;
 pub(crate) mod kuna_stackparamalign;
 pub mod kuna_x87emptyreturn;
 pub(crate) mod kuna_inputstorage;
+pub mod kuna_inputhints; // (kuna) unlocked names and types for recovered inputs
+pub mod kuna_swiftcall; // (kuna) Swift calls that may throw, and stale swiftself arguments
 pub mod kuna_floatregister;
 pub mod kuna_x87free;
 

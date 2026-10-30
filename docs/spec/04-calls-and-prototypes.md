@@ -3832,6 +3832,63 @@ pointer that is still an unresolved frame-derived expression keeps the INDIRECT
 too, until the merge resolves. Elsewhere such a pointer is usually a cursor into
 a local buffer, and it defers to the mark.
 
+### (kuna) `swiftcall` — Swift's `self` and error registers
+
+Swift's convention adds registers the C model has no row for: `swiftself` (x20
+on arm64, r13 on x86-64) carries a method's `self` when it is one pointer, and
+`swifterror` (x21 / r12) carries a throwing function's error back to its caller,
+which zeroes the register before the call and tests it after. The AArch64,
+AppleSilicon and x86-64 gcc compiler specs carry two more models for them.
+`__swiftcall` is the C model with one more input entry ahead of the others,
+`swiftself` with `storage="class1"`: a storage class of its own opens its own
+resource section (§4.1), so the register is a parameter exactly when the body
+reads it, a body that reads only `x1` does not grow a `self`, and one that reads
+only `x20` does not grow `x0`; no declared type is ever assigned to it. Ghidra's
+`AARCH64_swift.cspec` instead lists x20 first among the integer registers of a
+`__thiscall`, so any argument in x0 forces a `self` before it. `__swiftcall`
+keeps x20 and x21 among the preserved registers, as a non-throwing callee
+keeps them; `__swiftcall_throws` moves the error register to the killed ones,
+so the value a caller tests after the call is the callee's.
+
+A convention can be bound to a function without a signature: the analysis
+tier's `(addr, model)` facts land in `Architecture::loader_proto_models` and
+reach every function's handle as `ArchContext::bound_proto_models`
+(`decompiler/crates/kuna-decomp/src/substrate/context.rs
+(ArchContext::bound_proto_model)`). The function's own decompile, when no
+prototype and no parameter lock is declared for it, sets the model on its
+prototype and locks the model alone, so `ActionPrototypeTypes` keeps it and
+input recovery runs under it; `ArchContext::callee_proto_model` answers the
+bound model for a callee with no declared pieces, and `ActionDefaultParams`
+gives a call to it that model instead of the evaluation default, so the
+caller's argument recovery sees the callee's `swiftself`.
+
+What the binding cannot do is type the parameter, since a declared parameter
+fixes the arity. An input hint names and types one input storage without
+locking anything (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_inputhints.rs`,
+`Architecture::loader_input_hints`, seeded onto the `Funcdata` with the model):
+when recovery finds the body reading the hinted register at the hinted size,
+type inference gives that input the hinted type, as it gives `elfmain`'s
+runtime arguments theirs, and propagation and record synthesis leave it in
+place; the recovered parameter takes the hinted name. A hint with no type
+names the parameter only. A body that never reads the register declares
+nothing.
+
+Two call-site rules read the image's Swift registers
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_swiftcall.rs`,
+`ArchContext::swift_abi`, present only when the pass bound the convention).
+A call whose block writes zero to the whole error register as its last write
+before the call — a constant copy, the register `xor`ed with itself, or the
+zero extension of either — is a throwing Swift call, direct or indirect, and
+`ActionDefaultParams` gives it `__swiftcall_throws` (`throwing_call`): the
+test after it reads the callee's error, so `try?`'s fallback and a `catch`
+block survive, and the call passes the `self` the caller set. And a struct or
+enum member found by symbol may take `self` exploded into its trailing
+arguments rather than in `swiftself`, so a call to one keeps a `swiftself`
+argument only when the caller set the register for that call: a value that
+reaches the call through an `INDIRECT`, or past another call on the dominator
+path from its definition (or from the entry, for the caller's own input), is
+scored no-use in `ActionActiveParam` (`stale_self`).
+
 ### (kuna) `msvcbyval` — an MSVC by-value class sized at the call
 
 An MSVC name states every parameter's type but not the size of a class passed by

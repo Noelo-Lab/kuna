@@ -553,6 +553,7 @@ impl Action for ActionDefaultParams {
                             // present (Phase 3); a declaration that names none
                             // follows the image's float convention.
                             let seed_model = callee_model
+                                .clone()
                                 .or_else(|| {
                                     crate::kuna_armfloatreturn::declared_helper_model(&arch, &pieces.name).or_else(|| {
                                         crate::kuna_armfloatreturn::declared_helper_model(&arch, data.get_call_specs(i).get_name())
@@ -600,8 +601,13 @@ impl Action for ActionDefaultParams {
                     None => {
                         // No source-declared callee prototype (a symbol with no
                         // Funcdata): set the default-model internal proto.  The
-                        // register-parameter datatests resolve here.
+                        // register-parameter datatests resolve here.  (kuna) A
+                        // throwing Swift call, or a callee bound to a model
+                        // without a signature, has its arguments recovered
+                        // under that model.
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
+                            .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
+                            .or(callee_model)
                             .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
@@ -2108,7 +2114,9 @@ fn update_input_types(
         let _ = is_persist;
         // (kuna `elfmain`) A runtime argument of an executable's own `main` takes
         // its runtime name. See `kuna_elfmaindecl`.
-        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size()).unwrap_or_default();
+        let name = crate::kuna_elfmaindecl::param_name(data, &addr, ty.get_size())
+            .or_else(|| crate::kuna_inputhints::param_name(data, &addr, ty.get_size()))
+            .unwrap_or_default();
         let pieces = crate::fspec::ParameterPieces { addr, type_: Some(ty), flags: 0 };
         data.get_func_proto_mut().store_set_input(count, &name, &pieces);
         count += 1;

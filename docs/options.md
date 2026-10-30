@@ -896,6 +896,10 @@ Three tiers:
 | swift struct and class fields render as raw offsets off self | [`swifttypes`](#swifttypes) |
 | swift getters named by swiftmetadata take no self parameter | [`swifttypes`](#swifttypes) |
 | type metadata accessors return undefined16 | [`swifttypes`](#swifttypes) |
+| swift methods named by swiftmetadata read self from an unnamed x20 or r13 | [`swiftcall`](#swiftcall) |
+| calls to swift methods drop the self they pass | [`swiftcall`](#swiftcall) |
+| a try? error path or a do/catch after a throwing call folds away | [`swiftcall`](#swiftcall) |
+| swift struct mutating methods write through an untyped register | [`swiftcall`](#swiftcall) |
 | stripped windows pe functions stay FUN_<addr> although a matching .pdb exists | [`pdb`](#pdb) |
 | pdb symbol names not applied to a pe | [`pdb`](#pdb) |
 | a .pdb beside the exe is ignored | [`pdb`](#pdb) |
@@ -3392,6 +3396,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** Off only to see a swiftmetadata-named binary without layouts: fields render as raw offsets, getters take no self, the accessors return undefined16. On (default) when swiftmetadata is on: self->field through the recovered struct, typed metadata records.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swifttypes
 - **Example:** `option swifttypes off`
+
+### `swiftcall` -- on | off, default `on`
+
+- **Symptoms:** swift methods named by swiftmetadata read self from an unnamed x20 or r13; calls to swift methods drop the self they pass; a try? error path or a do/catch after a throwing call folds away; swift struct mutating methods write through an untyped register.
+- **What it does:** The calling-convention arm of the Swift metadata pass (inert unless swiftmetadata is on; it reads the type-layout arm, so swifttypes off turns it off too). Swift passes a method's self in the swiftself register (x20 on arm64, r13 on x86-64) when it is one pointer - a class instance, the address of a mutating or indirect value, a thick metatype - and returns a throwing function's error in the swifterror register (x21 / r12), which the caller zeroes before the call and tests after it. Under the C model neither register is a parameter, so a method's self is an unnamed register read, a call drops the self it passes, and the caller's test reads the zero it stored, so the error path of try? folds away. The AArch64, AppleSilicon and x86-64 gcc compiler specs carry __swiftcall (the C model with swiftself as an input resource section of its own, so self is a parameter exactly when the body reads it and never forces the argument registers around it) and __swiftcall_throws (the same, handing the error register back to the caller). The arm binds __swiftcall to every function it can place in a type, with no signature so the arity stays recovered: a class's vtable slots and overrides, a conformance's witnesses, a protocol's default implementations, and in an image that kept its symbols each method, accessor, initializer and deinitializer the demangler places in a class, struct or enum (throws read off the function type selects __swiftcall_throws; a struct's static member, whose metatype is thin, takes none). Its self is named and, where the type is known, typed as an unlocked hint the recovered parameter takes: Class * for an instance member, swift.class_metadata * for a class member or allocating initializer, the address of the value for a witness (T * for a struct, Class ** for a class), swift.type_metadata * for a static requirement; a body two types share (identical code folding) keeps the name and drops the type. A direct call to a bound function recovers its arguments under the model, so it passes self; a call to a struct member, which may take self exploded into its trailing arguments instead, keeps a swiftself argument only when the caller set the register after its last call. Any call, direct or indirect, whose block zeroes the error register as its last write before it is given __swiftcall_throws, so the test after it reads the callee's error. Default-ON because it is inert unless swiftmetadata is on (default-off), the XML corpus never runs the pass (0/675), and on the Toyota iOS app (84 MB) the arm adds no measurable load time and about 8 MB, and decompiling the 42,240 functions it binds takes 2.5% longer (1:13:53 against 1:12:07).
+- **When to flip:** Off to see a swiftmetadata-named binary under the C model: methods without self, calls without the self they pass, and try? error paths folded away. On (default) when swiftmetadata is on: self typed in methods, initializers, accessors and witnesses, passed at direct calls, and the error a throwing call returns tested where the binary tests it.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-swiftcall
+- **Example:** `option swiftcall off`
 
 ### `pdb` -- on | off, default `on`
 

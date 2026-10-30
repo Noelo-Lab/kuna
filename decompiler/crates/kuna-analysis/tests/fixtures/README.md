@@ -1778,3 +1778,41 @@ self->count; }` and the accessor as `swift.type_metadata *
 typefix.Point.type_metadata_accessor(long request) { return
 &typefix.Point.type_metadata; }`; with `swifttypes off` the getter takes no
 parameter and reads `*(long *)(v2 + 0x60)`.
+### `swift_call_elf` / `swift_call_syms_elf` — Swift methods, witnesses and a throwing call (`swiftcall`)
+
+`swift_call_elf` (x86-64 ELF, 16 KB, stripped) and `swift_call_syms_elf` (the
+same link with its symbols, 29 KB) are the Swift calling-convention fixtures
+(`tests/stages/kuna-swiftcall.xml`). Their source `swift_call_elf.swift`
+declares a class method of two arguments (`Account.deposit(_:fee:)`), a
+throwing one (`Account.withdraw(_:)`), a mutating struct method
+(`Counter.advance(by:times:)`, `self` in r13) and a non-mutating one
+(`Counter.peek(_:)`, `self` exploded into its trailing arguments), and a
+protocol whose witnesses a struct and a class provide; `run` calls them all
+and wraps the throwing call in `try?`. Built with the swiftly 6.3 toolchain:
+
+```bash
+swiftc -O -module-name callfix swift_call_elf.swift -o swift_call_syms_elf
+llvm-strip --strip-all -o swift_call_elf swift_call_syms_elf
+```
+
+SHA-256: `swift_call_elf` `2e5c5c167fbc52869a76838d74d8d9e59a2140d644dafa4b8dc9f098cbbb23b3`,
+`swift_call_syms_elf` `ed6e7e5f022f7abed9e622e8175da76d0702bd0dca388a6baada5f800bb84183`.
+
+**Pinned VMAs** (the symbol table of `swift_call_syms_elf`):
+`$s7callfix7AccountC7deposit_3feeS2i_SitF` (vtable slot 7)@`0x37b0`,
+`$s7callfix7AccountC8withdrawyS2iKF` (slot 8, throws)@`0x37f0`,
+`$s7callfix7CounterV7advance2by5timesySi_SitF`@`0x35e0`,
+`$s7callfix7CounterV4peekyS2iF`@`0x3600`, the `bump` witnesses
+`$s7callfix7CounterVAA8PingableA2aDP4bumpyySiFTW`@`0x2fb0` and
+`$s7callfix7AccountCAA8PingableA2aDP4bumpyySiFTW`@`0x3020`, and
+`$s7callfix3runySiAA7AccountC_AA7CounterVzSitF`@`0x3430`, which zeroes r12
+(`xor %r12d,%r12d`) before the throwing virtual call at `0x347e` and tests it
+after. With `swiftmetadata on` (`swiftcall` is on by default) the class method
+decompiles as `callfix.Account.vtable#7.method(callfix.Account *self,long
+a1,long a2)`, the struct witness writes `self->step`, the class witness takes
+`callfix.Account **self`, and `run` keeps `if (v5) { swift_release(v5); v3 =
+-1; }`; with symbols, `advance` takes `callfix.Counter *self` and `run` passes
+it `a1`, while `peek` gains no `self`. With `swiftcall off` the methods read
+`self` from an unnamed r13 and `run` returns the throwing call's result
+unchecked.
+

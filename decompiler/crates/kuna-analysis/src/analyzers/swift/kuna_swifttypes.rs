@@ -55,6 +55,7 @@ use crate::pass::{AnalysisOutput, ParamLockFact, TypedDataFact};
 /// The `swiftself` register and the first two argument registers.
 pub struct Registers {
     pub self_reg: &'static str,
+    pub error_reg: &'static str,
     pub args: [&'static str; 2],
 }
 
@@ -63,10 +64,12 @@ impl Registers {
         Some(match arch {
             object::Architecture::Aarch64 => Registers {
                 self_reg: "x20",
+                error_reg: "x21",
                 args: ["x0", "x1"],
             },
             object::Architecture::X86_64 => Registers {
                 self_reg: "R13",
+                error_reg: "R12",
                 args: ["RDI", "RSI"],
             },
             _ => return None,
@@ -279,6 +282,7 @@ impl<'a> Types<'a> {
             let Some(meta) = locate_metadata(self.img(), self.arch, accessor) else {
                 continue;
             };
+
             let descriptor_slot = match ctx.kind {
                 ContextKind::Class => meta + self.class_flags_offset() + 24,
                 _ => meta + self.md.ptr_size,
@@ -295,7 +299,7 @@ impl<'a> Types<'a> {
     }
 
     /// The dotted path of the type at `addr`, unless another type shares it.
-    fn unique_path(&self, addr: u64) -> Option<String> {
+    pub(super) fn unique_path(&self, addr: u64) -> Option<String> {
         let path = self.namer.path(addr, 0)?;
         (!self.ambiguous.contains(&path)).then_some(path)
     }
@@ -1021,18 +1025,28 @@ impl<'a> Types<'a> {
         (vtable, witness)
     }
 
+    /// The descriptor of the one type spelled `path`.
+    pub(super) fn nominal_at(&self, path: &str) -> Option<u64> {
+        self.by_path.get(path).copied()
+    }
+
     /// The `self` a protocol witness of the type at `addr` receives: the
     /// address of the value, so a class instance arrives as `Class **`.
-    fn witness_self(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
+    pub(super) fn witness_self(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
         let t = self.self_pointer(addr, path)?;
         match self.md.contexts.get(&addr)?.kind {
-            ContextKind::Class => self.tf.get_type_pointer(self.ptr_size, t, 1).ok(),
+            ContextKind::Class => self.pointer_to(t),
             _ => Some(t),
         }
     }
 
+    /// A pointer to `t`.
+    pub(super) fn pointer_to(&self, t: Rc<Datatype>) -> Option<Rc<Datatype>> {
+        self.tf.get_type_pointer(self.ptr_size, t, 1).ok()
+    }
+
     /// `Type *`: the pointer a class or struct `self` is passed as.
-    fn self_pointer(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
+    pub(super) fn self_pointer(&self, addr: u64, path: &str) -> Option<Rc<Datatype>> {
         let st = self
             .struct_type(addr)
             .or_else(|| self.tf.find_by_name(path).ok().flatten())
