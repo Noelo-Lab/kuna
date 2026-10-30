@@ -9783,10 +9783,13 @@ fn a_value_only_a_no_return_path_reads_proves_nothing() {
 /// `r0:r1` and moves the `int` taken from its high word back into `r0` out of
 /// the stack slot it kept it in, so the pair holds both loaded words, the
 /// shape of `return *p`. A register moved back to the value it already held,
-/// through a stack slot or not, proves nothing, and neither does a low word
-/// whose reload something else reads (`hi_lo_stored` stores it on), so the
-/// three `int`s and their caller print as with `bejoin off`, while `ll_copy`,
-/// the `long long` itself, still joins high word first.
+/// through a stack slot or not, proves nothing while the other register is
+/// left where the reload put it, and neither does a low word whose reload
+/// something else reads (`hi_lo_stored` stores it on), so the three `int`s
+/// and their caller print as with `bejoin off`, while `ll_copy`, the `long
+/// long` itself, still joins high word first. `hi_kept` does the same to
+/// `ll_copy`'s pair and is not proven either; `ll_kept` and `ll_passed` move
+/// both of its words back into place and return it whole.
 #[test]
 fn an_int_kept_in_a_stack_slot_proves_no_loaded_pair() {
     let sp = specs();
@@ -9807,6 +9810,12 @@ fn an_int_kept_in_a_stack_slot_proves_no_loaded_pair() {
     assert_eq!(norm(&evidence), norm(&off), "an int moved back out of its stack slot proves nothing:\n{evidence}");
     let ll = callrettype_functions(&evidence, &["ll_copy"]);
     assert!(ll.contains("return *a0;"), "ll_copy returns its long long whole:\n{ll}");
+    for f in ["ll_kept", "ll_passed"] {
+        let w = callrettype_functions(&evidence, &[f]);
+        assert!(w.contains("return ll_copy(a0);"), "{f} hands ll_copy's pair back whole:\n{w}");
+    }
+    let hk = callrettype_functions(&evidence, &["hi_kept"]);
+    assert!(!hk.is_empty() && !hk.contains("return ll_copy(a0);"), "hi_kept moves only its int back:\n{hk}");
 }
 
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low

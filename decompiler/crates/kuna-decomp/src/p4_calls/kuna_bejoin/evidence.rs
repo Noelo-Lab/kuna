@@ -53,10 +53,12 @@
 //! tail branch proves it when its callee does. A function is proven when
 //! every path end proves or fits, at least one proves, and every callee those
 //! ends depend on is proven ([`verdict`] takes those first; a cycle is not
-//! proven). A pair whose register's latest write moved in the value it
-//! already held, directly or through a stack slot (gcc -O0 lowering
-//! `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3` over a reloaded 64-bit
-//! temporary), proves only by the first three shapes.
+//! proven). A pair one of whose registers' latest write moved in the value
+//! it already held, directly or through a stack slot, and the other's not
+//! (gcc -O0 lowering `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3` over a
+//! reloaded 64-bit temporary), proves only by the first three shapes. Both
+//! moved back is the pair the function held handed back whole (gcc -O0's
+//! `return v` of a spilled `long long` local, `mov r1,r3; mov r0,r2`).
 //!
 //! "Nothing reads" counts every path, a path ending in a call that does not
 //! return included: gcc -Os hoists an error path's computation into a branch
@@ -309,7 +311,8 @@ enum Dest {
 
 /// What one RETURN reached holds in the pair, with the instruction that
 /// last wrote the low register and the one that made its value, and whether
-/// either register's latest write moved in the value it already held.
+/// one register's latest write, but not the other's, moved in the value it
+/// already held.
 struct Site {
     hi: usize,
     lo: usize,
@@ -988,7 +991,8 @@ impl<'a> Walk<'a> {
         }
         let (hi, lo) = (self.read(path, &self.hi.clone()), self.read(path, &self.lo.clone()));
         let lo_writer = path.regs.iter().rev().find(|(r, _, _)| *r == self.lo).map(|r| r.2);
-        let redundant = path.redundant.iter().any(|r| overlaps(r, &self.hi) || overlaps(r, &self.lo));
+        let moved_back = |k: &Key| path.redundant.iter().any(|r| overlaps(r, k));
+        let redundant = moved_back(&self.hi) != moved_back(&self.lo);
         Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant })
     }
 

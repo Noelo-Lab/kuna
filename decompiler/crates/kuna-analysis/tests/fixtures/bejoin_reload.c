@@ -7,3 +7,6 @@ u32 hi_lo_stored(const i64 *p) { i64 v = *p; u32 lo = (u32)v; u32 hi = (u32)(v >
 u32 hi_named(const u64 *p) { u64 v = *p; u32 h = v >> 32; return h; }
 int hi_use(const i64 *p) { return hi_local(p) + 1; }
 i64 ll_copy(const i64 *p) { i64 v = *p; return v; }
+i64 ll_kept(const i64 *p) { i64 r = ll_copy(p); return r; }
+i64 ll_passed(const i64 *p) { return ll_copy(p); }
+int hi_kept(const i64 *p) { i64 r = ll_copy(p); int h = r >> 32; return h; }
