@@ -3261,6 +3261,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   i-th table and made `kuna functions` report hundreds of bytes of executable
   `std::basic_stringbuf` code as vtable objects. Only the table itself wears a
   `vftable` name, and it is unindexed.
+
+  The pass runs at every PE load whatever its gate says (its facts are committed
+  only when it is on), so its cost is paid by every command on a C++ DLL. Both of
+  its byte-searches — from the TypeDescriptors back to the words that reference
+  them, and from the validated CompleteObjectLocators forward to the meta slots
+  before their vftables — are therefore one scan of the image for every class at
+  once, grouping the hits by target and visiting them in image order, which emits
+  exactly what a search per class would. A search per class is
+  `O(classes × image)`: `torch_cpu.dll` (31,623 type descriptors in 309 MB) did
+  not finish loading in 30 minutes that way.
 - **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, default-off;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
   GCC/Clang counterpart of the pass above, and a capability with **no Ghidra
