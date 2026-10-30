@@ -2088,6 +2088,10 @@ const SAME_VALUE_DEPTH: u32 = 6;
 /// (kuna) The most blocks [`GuardRecord::no_write_between`] walks back.
 const NO_WRITE_BLOCKS: usize = 8;
 
+/// (kuna) The most upstream index values
+/// [`JumpBasicModel::narrow_readonly_selector_domain`] emulates: any 16-bit index.
+const MAX_SELECTOR_INPUTS: uintb = 1 << 16;
+
 /// (kuna) Whether `a` and `b` hold the same value: the same varnode, equal
 /// constants, or outputs of the same pure op over inputs holding the same
 /// values, at most `depth` ops deep.  Two LOADs through equal addresses are
@@ -2437,7 +2441,10 @@ impl JumpBasicModel {
     /// Replace a loaded selector's full byte range with the values a bounded
     /// upstream index actually produces, but only when every direct or implicit
     /// load-image read is in global read-only, non-volatile memory. Without this
-    /// proof, the current memory image may not describe future map values.
+    /// proof, the current memory image may not describe future map values. The
+    /// upstream index may range past `maxtablesize`: the map is as long as that
+    /// range, but the table holds only the rows the map selects, so the index is
+    /// bounded by [`MAX_SELECTOR_INPUTS`] emulations instead.
     fn narrow_readonly_selector_domain(&mut self, fd: &Funcdata, maxtablesize: uint4) {
         // Model 2 adds a separate default value outside its base range. It does
         // not use this model-1 recovery path, but keep the provenance constraint
@@ -2463,7 +2470,7 @@ impl JumpBasicModel {
             return;
         }
 
-        let mut remaining_budget = maxtablesize as uintb;
+        let mut remaining_budget = MAX_SELECTOR_INPUTS.max(maxtablesize as uintb);
         for pos in selector_pos + 1..self.path_meld.num_common_varnode() {
             let start_vn = self.path_meld.get_varnode(pos);
             let mut range = CircleRange::new_empty();

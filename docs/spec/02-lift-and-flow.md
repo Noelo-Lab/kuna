@@ -1539,14 +1539,20 @@ the case targets.
    load image and the table has one entry.
    If that normalized variable is itself the output of a byte-sized LOAD, a
    bounded common input farther down the meld may prove a smaller, exact output
-   domain. Kuna emulates every input value through the path, with one
-   `max_jumptable_size` total value budget across candidates, and accepts that
+   domain. Kuna emulates every input value through the path, with one total
+   budget of 65,536 values across candidates (`jumptable.rs
+   (MAX_SELECTOR_INPUTS)`, or `jumptablemax` when that is larger), and accepts that
    domain only when every direct or implicit load-image read is wholly covered,
    byte by byte, by global read-only and non-volatile properties. It then
    carries the resulting finite set through target recovery. An unbounded input,
    failed emulation, or any writable or unclassified read leaves the original
    selector range intact, so an image snapshot cannot stand in for mutable
-   program state.
+   program state. The budget counts emulations, not table rows: a map is as long
+   as the range of the index that reads it, which can pass `jumptablemax` while
+   the map selects only a few rows. MSVC's byte map for a 1,477-value range in
+   node.exe selects three; with the budget set to `jumptablemax` the selector kept
+   all 256 values, map bytes were read as table rows, and flow left for the
+   addresses they named.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of
