@@ -16,6 +16,9 @@
     The call, stack change, shared finish and loop exercise the reported failing
     path without bytes from Dazzle. Before the fix decompilation panics; the
     assertions require a complete body with its loop and final memory read.
+
+    The asserts read the stack and memory accesses as segment() calls, so the
+    script pins option segmentize off (see kuna-segmentize.xml for the default).
 -->
 <bytechunk space="ram" offset="0x1000">
 067507e81000f7e37607268a17e302e2fe2ea172bac3c3
@@ -24,6 +27,7 @@
 <symbol space="ram" offset="0x1016" name="helper"/>
 </binaryimage>
 <script>
+  <com>option segmentize off</com>
   <com>lo fu late_phi</com>
   <com>decompile</com>
   <com>print C</com>

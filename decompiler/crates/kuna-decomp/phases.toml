@@ -2431,6 +2431,28 @@ tier = "transform"
 symptoms = "an x86-64 syscall renders as syscall() with empty parens, with the number and every argument erased|a syscall wrapper returns its own first parameter, the syscall number, instead of the syscall's result|the register writes feeding a SYSCALL are all missing from the C while kuna disassemble shows them|a SYSCALL's result is never assigned to anything"
 
 [[settable]]
+option = "segmentize"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "kuna-1288-segmentop"
+summary = "Apply the processor spec's `<segmentop>` the way upstream does. x86 16-bit real and protected mode, Z80 and HCS12 compute every effective address through a SLEIGH user-op: real mode writes `segment(SS,SP)` for each push and pop, `segment(DS,addr16)` for each data access and `EIP = segment(CS,IP)` before each return. Left a CALLOTHER, that op prints as a call on every access (`*(int *)segment(v3,0x1234)`, `segment(v2,*(unsigned short *)segment(v3,&Stack0000));` for a `RET`), and the stack is never seen through it, so pushes and pops stay pointer stores and loads and the parameters are never recovered. On, `ActionSegmentize` rewrites each such CALLOTHER into the internal SEGMENTOP, which the stack, type and printing passes see through and which prints as its near pointer alone; `RuleSegment` folds a SEGMENTOP with a constant segment and offset through the spec's p-code snippet (`res = (zext(base) << 4) + zext(inner)`), and replaces a far pointer's two halves with the far pointer; a constant pointer into the space resolves as near (its segment is the tracked value of the spec's resolve register, `DS`) or far (segment in the high bytes), and the space accepts near-pointer-sized constants as pointers; and a far-pointer spec sizes `void *` at the near width with a far alternate. Jump tables read through `segment(CS,...)` are recovered, because the jump-table emulator now runs the snippet too. Ghidra mode, which has no local `.sla` to compile the snippet against, keeps the CALLOTHER."
+use_when = "Leave on: it is upstream's behaviour and the readable form of any 16-bit x86, Z80 or HCS12 function (on the deark-unpacked DAZZLE.EXE, 14,283 `segment(` calls across 330 functions drop to none and the output shrinks by a third). Set off to audit the raw segment arithmetic, or where the SLEIGH real-mode code segment (`currentCS`, the instruction address rounded down to 64 KiB) is wrong for a program, so a `jmp [cs:bx+table]` reads its table from the wrong segment: off leaves that jump a call through `segment(...)` instead of following table entries that are not code. Inert on every processor whose spec declares no `<segmentop>` (byte-identical, 0/675 on the datatest corpus)."
+example = "option segmentize off"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra ActionSegmentize, RuleSegment, SegmentOp and SegmentedResolver (coreaction.cc, ruleaction.cc, userop.cc, architecture.cc), unported until now; kuna #1288 (DOS program Dazzle) printed every memory access through segment()"
+change_kind = "correctness-fix"
+tier = "transform"
+symptoms = "every memory access in a 16-bit x86 function prints through segment(DS, ...) or segment(SS, ...)|a RET prints as a bare segment(CS, *(unsigned short *)segment(SS, &Stack0000)) statement|pushes and pops print as stores and loads through segment(SS, v), so no parameter of a 16-bit function is recovered|a cs-relative jump table in real-mode code prints as a call through segment(0x...,...)|Z80 or HCS12 stack accesses print through a segment() call"
+live_field = "segmentize"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "syscallregs"
 values = "off|auto|on"
 default = "auto"

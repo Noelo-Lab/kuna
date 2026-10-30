@@ -40,6 +40,9 @@
     the call. Before it, this test never finished. Asserts 2 and 3 are `h`:
     its RET reads the slot at entry + 2, and no raw stack-pointer local is
     left (both failed before the fix, with `h` decompiled on its own).
+
+    The asserts read the stack and memory accesses as segment() calls, so the
+    script pins option segmentize off (see kuna-segmentize.xml for the default).
 -->
 <bytechunk space="ram" offset="0x0">
 4ce80c0085c075f9c390909090909090c3c20200909090909090909090909090
@@ -51,6 +54,7 @@
 <symbol space="ram" offset="0x20" name="h"/>
 </binaryimage>
 <script>
+  <com>option segmentize off</com>
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>

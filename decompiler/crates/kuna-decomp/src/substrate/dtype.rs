@@ -5131,8 +5131,8 @@ impl TypeFactoryImpl {
             // aliases them (MSVC, ARM32 AAPCS).
             self.size_of_long_double.set(self.size_of_double.get());
         }
-        // STUB(W4): the segmented far-pointer adjustment (glb->getSegmentOp) is a
-        // W4 surface; without it sizeOfAltPointer stays 0, as for a flat space.
+        // The segmented far-pointer adjustment (glb->getSegmentOp) is applied
+        // after boot by `Architecture::apply_segmentize`, once the snippet exists.
         if self.align_map.borrow().is_empty() {
             self.set_default_alignment_map();
         }
@@ -5161,6 +5161,11 @@ impl TypeFactoryImpl {
     /// Set the default pointer size (C++ `decodeDataOrganization`'s `<pointer_size>`).
     pub fn set_size_of_pointer(&self, s: int4) {
         self.size_of_pointer.set(s);
+    }
+    /// Set the alternate (far) pointer size (the C++ `setupSizes` far-pointer
+    /// adjustment for a segmented data space).
+    pub fn set_size_of_alt_pointer(&self, s: int4) {
+        self.size_of_alt_pointer.set(s);
     }
     /// (kuna) Set the default short size (cspec `<short_size>`).
     pub fn set_size_of_short(&self, s: int4) {

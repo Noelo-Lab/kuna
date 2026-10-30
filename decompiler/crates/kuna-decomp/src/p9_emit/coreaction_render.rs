@@ -412,39 +412,82 @@ impl Action for ActionSegmentize {
     fn reset(&mut self, _data: &mut Funcdata) {
         self.localcount = 0;
     }
-    fn apply(&mut self, _data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:639 — ActionSegmentize::apply
-        //   numops = getArch()->userops.numSegmentOps();
-        //   if (numops == 0) return 0;
-        //   if (localcount > 0) return 0;   // Only perform once
-        //   localcount = 1;
-        //   bindlist = [null, null];
-        //   for (i = 0; i < numops; ++i):
-        //       segdef = userops.getSegmentOp(i); if (!segdef) continue;
-        //       spc = segdef->getSpace(); uindex = segdef->getIndex();
-        //       for (segroot in beginOp(CPUI_CALLOTHER)..endOp(CPUI_CALLOTHER)):
-        //           if (segroot->isDead()) continue;
-        //           if (segroot->getIn(0)->getOffset() != uindex) continue;
-        //           if (!segdef->unify(data,segroot,bindlist)) throw "Segment op in wrong form";
-        //           if (segdef->getNumVariableTerms()==1) bindlist[0] = newConstant(4,0);
-        //           opSetOpcode(segroot, CPUI_SEGMENTOP);
-        //           opSetInput(segroot, newVarnodeSpace(spc), 0);
-        //           opSetInput(segroot, bindlist[0], 1);
-        //           opSetInput(segroot, bindlist[1], 2);
-        //           for (j = numInput()-1; j > 2; --j) opRemoveInput(segroot, j);
-        //           count += 1;
-        //   return 0;
-        //
-        // The `userops.numSegmentOps()==0` / `localcount>0` early-outs would gate
-        // the body; without `getArch()->userops` here, the *first*-pass guard
-        // (`localcount`) is the only realizable part and is left to the stub since
-        // the body it gates cannot run.
-        //
-        // STUB(W8-funcdata): the `SegmentOp` user-op table (`getArch()->userops`),
-        // `SegmentOp::unify`, and the CALLOTHER->SEGMENTOP rewrite
-        // (`opSetOpcode`/`opSetInput`/`newVarnodeSpace`/`opRemoveInput`) are not
-        // present.  Body transcribed; no change applied (count stays 0).
+    /// C++ `ActionSegmentize::apply` (coreaction.cc:625): rewrite each live
+    /// CALLOTHER of a segment op into `SEGMENTOP(spc, base, inner)`.  The table is
+    /// the per-function snapshot, empty under `option segmentize off`.
+    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+        let glb = Rc::clone(data.get_arch());
+        let numops = glb.num_segment_ops();
+        if numops == 0 {
+            return 0;
+        }
+        if self.localcount > 0 {
+            return 0; // Only perform once
+        }
+        self.localcount = 1; // Mark as having performed once
+        for i in 0..numops {
+            let Some(segdef) = glb.get_segment_op(i) else { continue };
+            let uindex = segdef.useropindex as uintb;
+            let roots: Vec<OpId> = data.obank().iter_code(OpCode::CPUI_CALLOTHER).collect();
+            for segroot in roots {
+                let Some(op) = data.obank().get(segroot) else { continue };
+                if op.is_dead() {
+                    continue;
+                }
+                let Some(in0) = op.get_in(0) else { continue };
+                if data.vbank().get(in0).map(|v| v.get_offset()) != Some(uindex) {
+                    continue;
+                }
+                // SegmentOp::unify (userop.cc:189)
+                if op.num_input() != 3 {
+                    data.warning_header(&format!(
+                        "Segment op in wrong form at {:#x}",
+                        op.get_addr().get_offset()
+                    ));
+                    continue;
+                }
+                let (Some(in1), Some(in2)) = (op.get_in(1), op.get_in(2)) else { continue };
+                let mut innervn = in1;
+                let basevn = if segdef.baseinsize != 0 {
+                    innervn = in2;
+                    Some(constant_resized(data, in1, segdef.baseinsize))
+                } else {
+                    None
+                };
+                let innervn = constant_resized(data, innervn, segdef.innerinsize);
+                let basevn = match basevn {
+                    Some(b) if segdef.get_num_variable_terms() != 1 => b,
+                    _ => data.new_constant(4, 0),
+                };
+                // Redefine the op as a segmentop
+                data.op_set_opcode_code(segroot, OpCode::CPUI_SEGMENTOP);
+                let spcvn = data.new_varnode_space(&segdef.spc);
+                if data.op_set_input(segroot, spcvn, 0).is_err()
+                    || data.op_set_input(segroot, basevn, 1).is_err()
+                    || data.op_set_input(segroot, innervn, 2).is_err()
+                {
+                    continue;
+                }
+                let n = data.obank().get(segroot).map(|o| o.num_input()).unwrap_or(0);
+                for j in (3..n).rev() {
+                    data.op_remove_input(segroot, j); // Remove anything else
+                }
+                self.base_mut().count += 1;
+            }
+        }
         0
+    }
+}
+
+/// `vn`, or a fresh constant of `size` bytes with its value when `vn` is a
+/// constant (the `SegmentOp::unify` re-sizing of constant terms).
+fn constant_resized(data: &mut Funcdata, vn: VarnodeId, size: i32) -> VarnodeId {
+    match data.vbank().get(vn) {
+        Some(v) if v.is_constant() => {
+            let off = v.get_offset();
+            data.new_constant(size, off)
+        }
+        _ => vn,
     }
 }
 
