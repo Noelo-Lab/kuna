@@ -26,16 +26,21 @@
     (`option swiftcall off`, stripped) reproduces the BUG: the class method
     `vtable#7.method` (`deposit(_:fee:)`) takes two parameters and reads its
     `self` from an unnamed `r13`, the struct witness reads `v1 + 8`, and
-    `run` returns the throwing call's result unchecked. Pass 2 (the
-    default, stripped) is the FIX: the method takes `callfix.Account *self`
-    first, the struct witness writes `self->step`, the class witness takes
-    `callfix.Account **self` (a witness gets the address of the value), and
-    `run` keeps the error path (`if (v5) { swift_release(v5); v3 = -1; }`)
-    and passes `self` to the throwing virtual call. Pass 3 (the default,
-    with symbols) types the mutating struct method by its name
+    `run` passes no `self` to its virtual calls and returns the throwing
+    call's result unchecked. Pass 2 (the default, stripped) is the FIX: the
+    method takes `callfix.Account *self` first and passes it on to the
+    virtual calls it makes on itself, the struct witness writes
+    `self->step`, the class witness takes `callfix.Account **self` (a
+    witness gets the address of the value), and `run` keeps the error path
+    (`if (v5) { swift_release(v5); v3 = -1; }`) and passes the `self` it
+    sets to both virtual calls. Pass 3 (the default, with symbols) types the
+    mutating struct method by its name
     (`callfix.Counter.advance(by:times:)(callfix.Counter *self,...)`) and
     `run`'s call passes it `self`, while the non-mutating `peek`, whose
-    `self` is exploded into its trailing arguments, gains none.
+    `self` is exploded into its trailing arguments, gains none; the final
+    method `settle` hands its own, untouched `self` to `fee(for:)` before
+    and after a call. Pass 4 (`swiftcall off`, with symbols) shows `settle`
+    calling `fee(for:)` without it.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -48,54 +53,71 @@ c3
   <com>option swiftmetadata on</com>
   <com>option swiftcall off</com>
   <com>read symbols</com>
-  <com>load addr 0x37b0</com>
+  <com>load addr 0x3830</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x2fb0</com>
+  <com>load addr 0x2ff0</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x3430</com>
+  <com>load addr 0x3490</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_elf</com>
   <com>option swiftmetadata on</com>
   <com>read symbols</com>
-  <com>load addr 0x37b0</com>
+  <com>load addr 0x3830</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x2fb0</com>
+  <com>load addr 0x2ff0</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x3020</com>
+  <com>load addr 0x3060</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x3430</com>
+  <com>load addr 0x3490</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_syms_elf</com>
   <com>option swiftmetadata on</com>
   <com>read symbols</com>
+  <com>load addr 0x3660</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3490</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>load addr 0x35e0</com>
   <com>decompile</com>
   <com>print C</com>
-  <com>load addr 0x3430</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_syms_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x35e0</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="swiftcall off: the class method takes no self" min="1" max="1">vtable#7\.method\(int8 a0,int8 a1\)</stringmatch>
-<stringmatch name="swiftcall off: self is an unnamed register read" min="1" max="1">int8 \*v3; // r13</stringmatch>
+<stringmatch name="swiftcall off: self is an unnamed register read" min="2" max="2">int8 \*v3; // r13</stringmatch>
 <stringmatch name="swiftcall off: the struct witness writes through an unnamed register" min="1" max="1">\*\(int8 \*\)\(v1 \+ 8\) = \*\(int8 \*\)\(v1 \+ 8\) \+ a0;</stringmatch>
 <stringmatch name="swiftcall off: the throwing call's error path folds away" min="1" max="1">v3 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x88\)\)\(\);</stringmatch>
+<stringmatch name="swiftcall off: the virtual call drops the self it is passed" min="1" max="1">v2 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x80\)\)\(a2,2\);</stringmatch>
+<stringmatch name="swiftcall off: a final method calls another without its self" min="1" max="1">v1 = callfix\.Account\.fee\(for:\)\(a0\);</stringmatch>
 <stringmatch name="swiftcall on: the class method takes the class's self first" min="1" max="1">callfix\.Account\.vtable#7\.method\(callfix\.Account \*self,int8 a1,int8 a2\)</stringmatch>
+<stringmatch name="swiftcall on: a virtual call on self passes self" min="2" max="2">\(\*\(\(code \*\*\)self-&gt;isa\)\[9\]\)\(self\);</stringmatch>
 <stringmatch name="swiftcall on: the struct witness writes a field of self" min="1" max="1">self-&gt;step = self-&gt;step \+ a1;</stringmatch>
 <stringmatch name="swiftcall on: a class witness takes the address of the reference" min="1" max="1">requirement#1\(callfix\.Account \*\*self,int8 a1\)</stringmatch>
+<stringmatch name="swiftcall on: the virtual call passes the self it set" min="2" max="2">v2 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x80\)\)\(a0,a2,2\);</stringmatch>
 <stringmatch name="swiftcall on: the throwing virtual call passes self" min="2" max="2">v3 = \(\*\*\(code \*\*\)\(\*a0 \+ 0x88\)\)\(a0\);</stringmatch>
 <stringmatch name="swiftcall on: the error path survives" min="2" max="2">swift_release\(v5\);</stringmatch>
 <stringmatch name="swiftcall on, symbols: the mutating struct method takes the struct's self" min="1" max="1">callfix\.Counter\.advance\(by:times:\)\(callfix\.Counter \*self,int8 a1,int8 a2\)</stringmatch>
 <stringmatch name="swiftcall on, symbols: the mutating method's body reads self's fields" min="1" max="1">self-&gt;value = v1 \+ a2 \+ self-&gt;value;</stringmatch>
 <stringmatch name="swiftcall on, symbols: the call passes the struct's address as self" min="1" max="1">callfix\.Counter\.advance\(by:times:\)\(a1,a2,3\);</stringmatch>
 <stringmatch name="swiftcall on, symbols: the non-mutating method gains no self" min="1" max="1">callfix\.Counter\.peek\(_:\)\(a2,a1-&gt;field_0x0,a1-&gt;field_0x8\)</stringmatch>
+<stringmatch name="swiftcall on, symbols: a final method hands its own self on" min="1" max="1">v1 = callfix\.Account\.fee\(for:\)\(self,a1\);</stringmatch>
+<stringmatch name="swiftcall on, symbols: and again after a call" min="1" max="1">return callfix\.Account\.fee\(for:\)\(self,v2\) \+ v1;</stringmatch>
 </decompilertest>

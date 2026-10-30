@@ -5709,7 +5709,8 @@ fn commit_analysis_output(
             let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
             Some((Address::new(loc.space.clone()?, loc.offset), loc.size as i32))
         };
-        if let (Some((self_reg, error_reg)), Some(throws)) = (out.swift_types.regs, throws) {
+        let call = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL).cloned();
+        if let (Some((self_reg, error_reg)), Some(call), Some(throws)) = (out.swift_types.regs, call, throws) {
             if let (Some(self_reg), Some(error_reg)) = (reg(self_reg), reg(error_reg)) {
                 let maybe_self = out
                     .swift_types
@@ -5721,6 +5722,7 @@ fn commit_analysis_output(
                 prog.arch_mut().loader_swift_abi = Some(Rc::new(kuna_decomp::kuna_swiftcall::SwiftAbi {
                     self_reg,
                     error_reg,
+                    call,
                     throws,
                     maybe_self,
                 }));

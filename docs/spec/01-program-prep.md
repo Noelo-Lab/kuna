@@ -4377,7 +4377,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   the register carries when the member reads it at all. A body two types' members share (identical code
   folding) keeps the name and drops the type, and a getter the layout arm has
   already pinned keeps that lock. A struct or enum member found by symbol is
-  marked as one that may not take `self`, which the call side reads (04 §4.4).
+  marked as one that may not take `self`, which the call side reads (04 §4.4);
+  a method's own `self` handed on untouched is passed at a direct call, and an
+  indirect call dispatched through an object's own isa passes that object.
   On the Toyota iOS app the arm binds 42,607 functions; decompiling them,
   23,153 take a `self` parameter and 18,058 a typed one (15,834 `T *`, 1,442
   `Class **`, 782 metadata), against the 6,837 the getter locks alone typed;

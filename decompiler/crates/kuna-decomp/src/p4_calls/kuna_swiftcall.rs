@@ -1,5 +1,5 @@
-//! (kuna `swiftcall`) Swift calls: the ones that may throw, and the `self`
-//! a call to a struct member does not pass.
+//! (kuna `swiftcall`) Swift calls: the ones that may throw, the `self` a
+//! method hands on, and the `self` a call to a struct member does not pass.
 //!
 //! A throwing Swift function returns its error in the `swifterror` register
 //! (x21 on arm64, r12 on x86-64), which every other convention preserves:
@@ -17,6 +17,14 @@
 //! argument only when the caller set the register for that call: a value
 //! that reaches it across an earlier call is that call's, not this one's
 //! ([`stale_self`]).
+//!
+//! A method hands its own `self` on to the methods it calls without writing
+//! the register again; that value is the caller's input in a preserved
+//! register, which ancestor scoring takes for no argument, so it is passed
+//! explicitly ([`passes_own_self`]). An indirect call through a target its
+//! block loads takes `__swiftcall` ([`indirect_call`]), and passes
+//! `swiftself` exactly when it dispatches on the value the register holds,
+//! through that value's isa ([`indirect_self`]).
 //!
 //! Inert unless the Swift metadata pass bound the convention in this image.
 //!
@@ -47,6 +55,7 @@ use crate::funcdata::Funcdata;
 pub struct SwiftAbi {
     pub self_reg: (Address, int4),
     pub error_reg: (Address, int4),
+    pub call: Rc<ProtoModel>,
     pub throws: Rc<ProtoModel>,
     /// The bound callees that may or may not take `swiftself`, by entry
     /// `(space index, offset)`.
@@ -137,6 +146,154 @@ pub fn stale_self(data: &Funcdata, idx: int4, slot: int4, addr: &Address, size: 
         return true;
     }
     call_since(data, def, op)
+}
+
+/// Is `(addr, size)` the image's `swiftself` register?
+pub fn is_self_storage(data: &Funcdata, addr: &Address, size: int4) -> bool {
+    data.get_arch().swift_abi.as_ref().is_some_and(|abi| &abi.self_reg.0 == addr && abi.self_reg.1 == size)
+}
+
+/// Is the model one of the two Swift models?
+fn is_swift(model: &ProtoModel) -> bool {
+    matches!(model.get_name(), SWIFTCALL | SWIFTCALL_THROWS)
+}
+
+/// Is the `swiftself` trial of call `idx` (input `slot`, in `addr`/`size`) the
+/// caller's own `self`, handed on untouched or through copies (a value saved
+/// in another callee-saved register and moved back)? A Swift method decompiled under
+/// the convention passes the `self` it received to a callee that takes one
+/// without writing the register again; its input is preserved by every call,
+/// so it reads as no argument at all. [`stale_self`] has already refused it
+/// for a callee that may not take `self`. A direct call only; an indirect
+/// one is [`indirect_self`]'s.
+pub fn passes_own_self(data: &Funcdata, idx: int4, slot: int4, addr: &Address, size: int4) -> bool {
+    let Some(abi) = data.get_arch().swift_abi.as_ref() else { return false };
+    if addr != &abi.self_reg.0 || size != abi.self_reg.1 {
+        return false;
+    }
+    let own = data.get_func_proto();
+    let call = data.get_call_specs(idx);
+    if !own.has_model() || !is_swift(own.model()) || !call.proto().has_model() || !is_swift(call.proto().model()) {
+        return false;
+    }
+    let op = call.get_op();
+    let Some(vn) = data.obank().get(op).and_then(|o| o.get_in(slot)) else { return false };
+    let root = copy_root(data, vn);
+    let own = data.vbank().get(root).is_some_and(|v| v.is_input() && v.get_addr() == addr && v.get_size() == size);
+    own && data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_CALL)
+}
+
+/// The Varnode `vn` copies, through any chain of copies.
+fn copy_root(data: &Funcdata, mut vn: crate::context::VarnodeId) -> crate::context::VarnodeId {
+    for _ in 0..8 {
+        let def = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d));
+        match def {
+            Some(d) if d.code() == OpCode::CPUI_COPY => match d.get_in(0) {
+                Some(a) => vn = a,
+                None => break,
+            },
+            _ => break,
+        }
+    }
+    vn
+}
+
+/// The `swiftself` trial of the indirect call `idx`, when the call is under
+/// a Swift model: an argument exactly when the call dispatches on the value
+/// the register holds, through that value's own isa (`obj->isa[k](obj, …)`).
+/// A value witness, a witness-table entry or a closure reached any other way
+/// is not told what `swiftself` holds, so the register is not its argument.
+pub fn indirect_self(data: &Funcdata, idx: int4, slot: int4, addr: &Address, size: int4) -> Option<bool> {
+    let abi = data.get_arch().swift_abi.as_ref()?;
+    if addr != &abi.self_reg.0 || size != abi.self_reg.1 {
+        return None;
+    }
+    let call = data.get_call_specs(idx);
+    let op = call.get_op();
+    if !data.obank().get(op).is_some_and(|o| o.code() == OpCode::CPUI_CALLIND)
+        || !call.proto().has_model()
+        || !is_swift(call.proto().model())
+    {
+        return None;
+    }
+    let vn = data.obank().get(op).and_then(|o| o.get_in(slot))?;
+    Some(dispatches_on(data, op, vn))
+}
+
+/// Is the target of the indirect call `op` a slot loaded through `obj`'s
+/// own first word, its isa: `obj->isa[k]`, a method dispatched on `obj`?
+fn dispatches_on(data: &Funcdata, op: OpId, obj: crate::context::VarnodeId) -> bool {
+    let def = |v: crate::context::VarnodeId| {
+        data.vbank().get(v).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d))
+    };
+    let root = |v| copy_root(data, v);
+    let obj = root(obj);
+    let mut v = match data.obank().get(op).and_then(|o| o.get_in(0)) {
+        Some(v) => v,
+        None => return false,
+    };
+    let mut loads = 0;
+    for _ in 0..8 {
+        if loads == 2 {
+            return root(v) == obj;
+        }
+        let Some(d) = def(v) else { return false };
+        v = match d.code() {
+            OpCode::CPUI_LOAD => {
+                loads += 1;
+                match d.get_in(1) {
+                    Some(a) => a,
+                    None => return false,
+                }
+            }
+            OpCode::CPUI_COPY | OpCode::CPUI_INT_ADD | OpCode::CPUI_PTRADD | OpCode::CPUI_PTRSUB => {
+                match d.get_in(0) {
+                    Some(a) => a,
+                    None => return false,
+                }
+            }
+            _ => return false,
+        };
+    }
+    false
+}
+
+/// `__swiftcall` for an indirect call whose target its block loads from
+/// memory, in an image the convention is bound in: a vtable slot, a witness
+/// entry or a closure's function, which take it. The model only makes room
+/// for `swiftself`; [`indirect_self`] decides whether the call passes it. A
+/// trap's target or a coroutine continuation the previous call returned is
+/// not a load and keeps the C model.
+pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
+    let abi = data.get_arch().swift_abi.as_ref()?;
+    let op = data.obank().get(call)?;
+    if op.code() != OpCode::CPUI_CALLIND {
+        return None;
+    }
+    let target = data.vbank().get(op.get_in(0)?)?;
+    let (mut addr, mut size) = (target.get_addr().clone(), target.get_size());
+    let mut cur = data.op_previous_op(call);
+    for _ in 0..MAX_SCAN {
+        let id = cur?;
+        let prev = data.obank().get(id)?;
+        if let Some(out) = prev.get_out().and_then(|o| data.vbank().get(o)) {
+            if overlaps(out.get_addr(), out.get_size(), &addr, size) {
+                match prev.code() {
+                    OpCode::CPUI_LOAD => return Some(Rc::clone(&abi.call)),
+                    OpCode::CPUI_COPY => {
+                        let src = data.vbank().get(prev.get_in(0)?)?;
+                        if src.is_constant() {
+                            return None;
+                        }
+                        (addr, size) = (src.get_addr().clone(), src.get_size());
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        cur = data.op_previous_op(id);
+    }
+    None
 }
 
 /// How many dominating blocks [`call_since`] walks.

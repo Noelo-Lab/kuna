@@ -1,7 +1,8 @@
 // Fixture for the Swift calling-convention arm (`swiftcall`): a class
 // method taking two arguments, a throwing method, a mutating struct method
 // and a non-mutating one, and protocol witnesses of a struct and a class,
-// called from one function so the call sites carry `self` and the error.
+// called from one function so the call sites carry `self` and the error,
+// and a final method that calls another on its own `self`.
 public struct Counter {
     public var value: Int
     public var step: Int
@@ -19,6 +20,8 @@ open class Account {
         if amount > balance { throw Oops.bad }
         balance -= amount; return balance
     }
+    @inline(never) public final func fee(for amount: Int) -> Int { amount / 100 &+ balance % 7 }
+    @inline(never) public final func settle(_ amount: Int) -> Int { fee(for: amount) &+ fee(for: balance) }
 }
 public protocol Pingable { func ping(_ x: Int) -> Int; mutating func bump(_ k: Int) }
 extension Counter: Pingable {
@@ -40,4 +43,4 @@ extension Account: Pingable {
 let n = CommandLine.arguments.count
 let acct = Account(balance: 100, owner: "x")
 var ctr = Counter(value: n, step: 2)
-print(run(acct, &ctr, n), ctr.value, acct.balance, pingAll([ctr, acct]))
+print(run(acct, &ctr, n), ctr.value, acct.balance, pingAll([ctr, acct]), acct.settle(n))

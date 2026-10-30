@@ -608,6 +608,7 @@ impl Action for ActionDefaultParams {
                         let model = crate::kuna_armfloatreturn::helper_model(&arch, data.get_call_specs(i).get_name())
                             .or_else(|| crate::kuna_swiftcall::throwing_call(data, data.get_call_specs(i).get_op()))
                             .or(callee_model)
+                            .or_else(|| crate::kuna_swiftcall::indirect_call(data, data.get_call_specs(i).get_op()))
                             .unwrap_or_else(|| evalfp.clone());
                         data.get_call_specs_mut(i).proto_mut().set_internal(model, void_ty.clone());
                         // (kuna) A console `map return <addr>`-only callee: keep the
