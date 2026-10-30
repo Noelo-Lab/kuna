@@ -175,6 +175,25 @@ fn bounded_byte_map_recovers_only_its_reachable_selector_values() {
     }
 }
 
+/// `selector_domain.S` assembled with `-DINPUT_COUNT=1500`: the guarded index
+/// ranges past `jumptablemax`, but the map still selects three table rows.
+#[test]
+fn byte_map_longer_than_the_table_limit_recovers_only_its_selector_values() {
+    let code = decompile_dispatch(include_bytes!("fixtures/selector_domain_wide_text.bin"), true);
+
+    assert_eq!(
+        code.matches("case ").count(),
+        3,
+        "unexpected switch labels:\n{code}"
+    );
+    for target in ["0x00400000", "0x00400001", "0x00400002"] {
+        assert!(
+            !code.contains(&format!("flows to r{target}")),
+            "invented target {target}:\n{code}"
+        );
+    }
+}
+
 #[test]
 fn writable_byte_map_keeps_the_conservative_selector_domain() {
     let code = decompile_dispatch(include_bytes!("fixtures/selector_domain_text.bin"), false);
