@@ -1552,7 +1552,9 @@ the case targets.
    the map selects only a few rows. MSVC's byte map for a 1,477-value range in
    node.exe selects three; with the budget set to `jumptablemax` the selector kept
    all 256 values, map bytes were read as table rows, and flow left for the
-   addresses they named.
+   addresses they named. A candidate stops as soon as its values cover the
+   selector's whole range, since it can no longer narrow it: a 65,536-entry
+   map that names all 256 rows in its first 256 bytes costs 256 emulations.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of

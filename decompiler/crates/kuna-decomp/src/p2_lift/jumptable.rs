@@ -2444,7 +2444,8 @@ impl JumpBasicModel {
     /// proof, the current memory image may not describe future map values. The
     /// upstream index may range past `maxtablesize`: the map is as long as that
     /// range, but the table holds only the rows the map selects, so the index is
-    /// bounded by [`MAX_SELECTOR_INPUTS`] emulations instead.
+    /// bounded by [`MAX_SELECTOR_INPUTS`] emulations instead. A candidate stops
+    /// as soon as its values cover the selector's whole range.
     fn narrow_readonly_selector_domain(&mut self, fd: &Funcdata, maxtablesize: uint4) {
         // Model 2 adds a separate default value outside its base range. It does
         // not use this model-1 recovery path, but keep the provenance constraint
@@ -2518,6 +2519,10 @@ impl JumpBasicModel {
                     break;
                 }
                 values.insert(value & calc_mask(selector.get_size()));
+                if values.len() as uintb >= selector_size {
+                    proven = false;
+                    break;
+                }
                 more = inputs.next().unwrap_or(false);
             }
 
