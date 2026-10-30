@@ -7085,6 +7085,28 @@ impl Architecture {
             byname.insert(rc.get_name().to_string(), Rc::clone(&rc));
             out.push(rc);
         }
+        // (kuna `swiftcall`) Swift's two models, derived from the default one
+        // on a language Swift targets when the spec declares neither.
+        let default_el = find_child(root, "default_proto").and_then(|dp| find_child(&dp, "prototype"));
+        let regs = crate::kuna_swiftcall::swift_registers(|name| {
+            self.translate.probe_register_varnode(name.as_bytes()).map(|v| v.size as int4)
+        });
+        if let (Some(el), Some((self_reg, error_reg))) = (default_el, regs) {
+            for (name, error) in [
+                (crate::kuna_swiftcall::SWIFTCALL, None),
+                (crate::kuna_swiftcall::SWIFTCALL_THROWS, Some(error_reg)),
+            ] {
+                if byname.contains_key(name) {
+                    continue;
+                }
+                let derived = Rc::new(crate::kuna_swiftcall::derive_model(&el, name, self_reg, error));
+                if let Ok(model) = self.decode_proto_model(&derived, root) {
+                    let rc = Rc::new(model);
+                    byname.insert(name.to_string(), Rc::clone(&rc));
+                    out.push(rc);
+                }
+            }
+        }
         // C++ `parseCompilerConfig` tail, architecture.cc:1342 — "We must have a
         // __thiscall calling convention": when the spec declares none, clone it
         // off the default so `getModel("__thiscall")` resolves on every language.

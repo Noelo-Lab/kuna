@@ -3837,9 +3837,15 @@ a local buffer, and it defers to the mark.
 Swift's convention adds registers the C model has no row for: `swiftself` (x20
 on arm64, r13 on x86-64) carries a method's `self` when it is one pointer, and
 `swifterror` (x21 / r12) carries a throwing function's error back to its caller,
-which zeroes the register before the call and tests it after. The AArch64,
-AppleSilicon and x86-64 gcc compiler specs carry two more models for them.
-`__swiftcall` is the C model with one more input entry ahead of the others,
+which zeroes the register before the call and tests it after. Two more models
+describe them, derived when the compiler spec is read from its own default
+model on any language with those registers (x20/x21 at eight bytes, AArch64;
+R13/R12, x86-64) unless the spec declares models of the same names
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_swiftcall.rs (derive_model)`,
+the way a spec with no `__thiscall` gets one cloned off its default), so a
+vendored spec stays as Ghidra ships it and a spec a Ghidra host sends carries
+them too. `__swiftcall` is the C model with one more input entry ahead of the
+others,
 `swiftself` with `storage="class1"`: a storage class of its own opens its own
 resource section (§4.1), so the register is a parameter exactly when the body
 reads it, a body that reads only `x1` does not grow a `self`, and one that reads

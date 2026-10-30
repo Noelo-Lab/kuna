@@ -19,9 +19,20 @@
 //! ([`stale_self`]).
 //!
 //! Inert unless the Swift metadata pass bound the convention in this image.
+//!
+//! The two models are derived from the compiler spec's own default model
+//! when the spec declares neither ([`derive_model`]), so any AArch64 or
+//! x86-64 spec carries them, including one a Ghidra host sends: `__swiftcall`
+//! is the default with `swiftself` added as an input of storage class
+//! `class1`, its own resource section, so it is a parameter exactly when the
+//! body reads it and never forces the argument registers around it;
+//! `__swiftcall_throws` also moves the error register from the preserved
+//! registers to the killed ones.
 
 use std::collections::BTreeSet;
 use std::rc::Rc;
+
+use kuna_base::xml::Element;
 
 use kuna_base::address::Address;
 use kuna_base::types::{int4, uintb};
@@ -45,6 +56,10 @@ pub struct SwiftAbi {
 fn overlaps(a: &Address, asize: int4, b: &Address, bsize: int4) -> bool {
     a.overlap(0, b, bsize) >= 0 || b.overlap(0, a, asize) >= 0
 }
+
+/// The names of the two models.
+pub const SWIFTCALL: &str = "__swiftcall";
+pub const SWIFTCALL_THROWS: &str = "__swiftcall_throws";
 
 /// How many ops before the call the zeroing store is looked for.
 const MAX_SCAN: usize = 64;
@@ -148,4 +163,87 @@ fn call_since(data: &Funcdata, def: Option<OpId>, op: OpId) -> bool {
         cur = data.bb_op_tail(bl);
     }
     false
+}
+
+/// The `swiftself` and `swifterror` register names of a language Swift
+/// targets: AArch64's x20 / x21 and x86-64's r13 / r12.
+pub fn swift_registers(has_register: impl Fn(&str) -> Option<int4>) -> Option<(&'static str, &'static str)> {
+    [("x20", "x21"), ("R13", "R12")]
+        .into_iter()
+        .find(|(s, e)| has_register(s) == Some(8) && has_register(e) == Some(8))
+}
+
+fn register(name: &str) -> Rc<Element> {
+    let mut r = Element::new();
+    r.set_name("register");
+    r.add_attribute("name", name.as_bytes());
+    Rc::new(r)
+}
+
+fn shell(from: &Element) -> Element {
+    let mut el = Element::new();
+    el.set_name(from.get_name());
+    for i in 0..from.get_num_attributes() {
+        el.add_attribute(from.get_attribute_name(i), from.get_attribute_value_at(i));
+    }
+    el
+}
+
+/// The `<prototype>` named `name`: the default model `proto` with
+/// `self_reg` as a `class1` input ahead of every other, and with `error_reg`
+/// killed by the call rather than preserved across it.
+pub fn derive_model(proto: &Element, name: &str, self_reg: &str, error_reg: Option<&str>) -> Element {
+    let mut out = Element::new();
+    out.set_name("prototype");
+    for i in 0..proto.get_num_attributes() {
+        let attr = proto.get_attribute_name(i);
+        let value = if attr == "name" { name.as_bytes() } else { proto.get_attribute_value_at(i) };
+        out.add_attribute(attr, value);
+    }
+    let names = |el: &Element, reg: &str| {
+        el.get_attribute_value("name").is_ok_and(|n| n.eq_ignore_ascii_case(reg.as_bytes()))
+    };
+    for child in proto.get_children() {
+        match (child.get_name(), error_reg) {
+            ("input", _) => {
+                let mut input = shell(child);
+                let mut entry = Element::new();
+                entry.set_name("pentry");
+                entry.add_attribute("minsize", b"1");
+                entry.add_attribute("maxsize", b"8");
+                entry.add_attribute("storage", b"class1");
+                entry.add_child(register(self_reg));
+                input.add_child(Rc::new(entry));
+                for c in child.get_children() {
+                    input.add_child(Rc::clone(c));
+                }
+                out.add_child(Rc::new(input));
+            }
+            ("unaffected", Some(err)) => {
+                let mut list = shell(child);
+                for c in child.get_children().iter().filter(|c| !names(c, err)) {
+                    list.add_child(Rc::clone(c));
+                }
+                out.add_child(Rc::new(list));
+            }
+            ("killedbycall", Some(err)) => {
+                let mut list = shell(child);
+                list.add_child(register(err));
+                for c in child.get_children() {
+                    list.add_child(Rc::clone(c));
+                }
+                out.add_child(Rc::new(list));
+            }
+            _ => out.add_child(Rc::clone(child)),
+        }
+    }
+    if let Some(err) = error_reg {
+        if !proto.get_children().iter().any(|c| c.get_name() == "killedbycall") {
+            let mut list = Element::new();
+            list.set_name("killedbycall");
+            list.add_child(register(err));
+            out.add_child(Rc::new(list));
+        }
+    }
+    out
 }

@@ -5704,7 +5704,7 @@ fn commit_analysis_output(
         for (entry, list) in hints {
             prog.arch_mut().loader_input_hints.insert(entry, Rc::new(list));
         }
-        let throws = prog.arch().get_model(kuna_analysis::swift::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
+        let throws = prog.arch().get_model(kuna_decomp::kuna_swiftcall::SWIFTCALL_THROWS).cloned();
         let reg = |name: &str| {
             let loc = prog.arch().get_register_varnode(name.as_bytes()).ok()?;
             Some((Address::new(loc.space.clone()?, loc.offset), loc.size as i32))

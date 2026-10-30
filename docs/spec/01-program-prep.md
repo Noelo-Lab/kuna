@@ -4353,8 +4353,9 @@ every other binary's pass list is byte-identical to before the pass existed):
   trailing argument registers instead; a throwing function returns its error in
   the `swifterror` register (x21 / r12). Neither is a parameter under the
   platform's C model, so a method's `self` was an unnamed register read and a
-  call dropped the `self` it passed. The compiler specs carry a `__swiftcall`
-  model for both (04 §4.4), and this arm binds it, with no signature, to every
+  call dropped the `self` it passed. A `__swiftcall` model derived from each
+  AArch64 and x86-64 compiler spec's default describes both (04 §4.4), and this
+  arm binds it, with no signature, to every
   function it can place in a type: a class's vtable slots and overrides (an
   override of an imported method is a class member when its method
   descriptor's demangled entity is `static` or an allocating initializer), a

@@ -12,7 +12,8 @@
 //! method reads is an unnamed register read, and a call drops the `self`
 //! it passes.
 //!
-//! The cspecs carry `__swiftcall`: the C model with `swiftself` added as an
+//! The engine derives `__swiftcall` from the compiler spec's default model
+//! (`kuna_decomp::kuna_swiftcall`): the C model with `swiftself` added as an
 //! input resource section of its own, so recovery declares `self` exactly
 //! when the body reads it and never forces the argument registers around
 //! it; `__swiftcall_throws` also returns the error register to the caller.
@@ -43,8 +44,7 @@ use crate::demangle::kuna_swift::node::{Kind, Node, NodeRef};
 use crate::demangle::kuna_swift::print::print_full;
 use crate::pass::{AnalysisOutput, InputHintFact, ModelFact};
 
-pub const SWIFTCALL: &str = "__swiftcall";
-pub const SWIFTCALL_THROWS: &str = "__swiftcall_throws";
+use kuna_decomp::kuna_swiftcall::{SWIFTCALL, SWIFTCALL_THROWS};
 
 #[derive(Default, Debug)]
 pub struct Stats {
