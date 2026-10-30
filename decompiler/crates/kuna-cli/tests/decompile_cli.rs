@@ -214,6 +214,31 @@ fn raw_image_flags_reach_single_function_engine_with_quoted_path() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("return 7;"));
 }
 
+/// `x86:LE:16:Real Mode:default`, the DOS target, names its variant with a
+/// space; the single-function engine must load the image under the whole id.
+#[test]
+fn raw_image_target_with_a_space_reaches_the_engine() {
+    let raw = common::scratch_file("raw real mode", "bin");
+    std::fs::write(&raw, [0xb8, 0x07, 0x00, 0xc3]).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            raw.to_str().unwrap(),
+            "0x0",
+            "--raw-image",
+            "--target",
+            "x86:LE:16:Real Mode:default",
+            "--base",
+            "0",
+        ])
+        .output()
+        .expect("run kuna decompile over a real-mode raw image");
+    let _ = std::fs::remove_file(&raw);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("return 7;"), "{stdout}");
+}
+
 /// An empty `print C` keeps the pre-existing "no C output" error (that path is
 /// unchanged, and still exits non-zero).
 #[test]
