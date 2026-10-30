@@ -1807,7 +1807,9 @@ A structure can travel only if another process can rebuild every field type,
 and a named type counts only if the worker's load created it
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (AtLoad)`): `pebnames` creates `PEB` and `TEB` the first time a function reads
-them, so one worker holds them and another does not. When such a field would
+them, so one worker holds them and another does not. The unnamed unknown
+placeholder a Varnode starts with is held by no factory and is rebuilt as itself
+(chapter [05](05-types.md)). When such a field would
 have to travel, when the questions do not settle in four rounds, when a repeated
 question could be answered differently, or when a second decompile fails where
 the first did not (a dead worker, a table it could not install), the functions
