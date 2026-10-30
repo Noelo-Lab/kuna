@@ -588,6 +588,48 @@ mod tests {
         assert_eq!(info.overlay_offset, 0);
     }
 
+    fn pe32plus_header(format: u8) -> Vec<u8> {
+        let mut image = vec![0u8; 0x500];
+        image[..2].copy_from_slice(b"MZ");
+        image[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        image[0x80..0x84].copy_from_slice(b"PE\0\0");
+        image[0x86..0x88].copy_from_slice(&2u16.to_le_bytes());
+        image[0x94..0x96].copy_from_slice(&240u16.to_le_bytes());
+        image[0x98..0x9a].copy_from_slice(&0x20bu16.to_le_bytes());
+        let second_section = 0x80 + 24 + 240 + 40;
+        image[second_section + 20..second_section + 24].copy_from_slice(&0x400u32.to_le_bytes());
+        image[0x400..0x404].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let checksum = adler32(1, &image[0x400..0x404]);
+        let header = &mut image[0x3e0..0x400];
+        header[..4].copy_from_slice(b"UPX!");
+        header[4..8].copy_from_slice(&[13, format, 2, 8]);
+        header[12..16].copy_from_slice(&checksum.to_le_bytes());
+        header[16..20].copy_from_slice(&16u32.to_le_bytes());
+        header[20..24].copy_from_slice(&4u32.to_le_bytes());
+        header[24..28].copy_from_slice(&3072u32.to_le_bytes());
+        header[31] = pack_header_checksum(&header[..31]);
+        image
+    }
+
+    #[test]
+    fn detects_pe32plus_but_refuses_to_reconstruct_it() {
+        let image = pe32plus_header(36);
+        let info = detect(&image).expect("PE32+ UPX header is recognized");
+        assert_eq!(info.format_name(), "win64/pe");
+        assert_eq!(info.overlay_offset, 0);
+        assert!(
+            matches!(unpack(&image), Err(UpxError::Unsupported(message)) if message.contains("win64/pe"))
+        );
+    }
+
+    #[test]
+    fn refuses_pe32plus_even_if_its_pack_header_claims_pe32() {
+        let image = pe32plus_header(9);
+        assert!(
+            matches!(unpack(&image), Err(UpxError::Unsupported(message)) if message.contains("PE32+"))
+        );
+    }
+
     /// The end-to-end contract: a PE whose sections, import table and resource
     /// directory are all back, not merely a file of the right length.
     #[test]
