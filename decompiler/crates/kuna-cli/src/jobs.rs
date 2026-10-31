@@ -96,8 +96,9 @@ const RUN_RERUN_FAILURES: usize = 16;
 /// Test-only fault injection, comma-separated: `panic:<addr>` panics a worker
 /// as it starts the target at `<addr>`, `panic-once:<addr>` only the first time
 /// in a run, `stall:<addr>` wedges it there until the stall watchdog kills it,
-/// `stall-again:<addr>` only the second time in a run, `spawn:<n>` refuses every worker spawn after the first `n`, `load-abort:<n>`
-/// aborts the first `n` worker loads of the run (`*` every one) the way a
+/// `stall-again:<addr>` only the second time in a run, `spawn:<n>` refuses
+/// every worker spawn after the first `n`, `load-abort:<n>` aborts the first
+/// `n` worker loads of the run (`*` every one) the way a
 /// refused allocation does, before the worker reaches its first chunk,
 /// `synth:serial` names synthesized structures by the one-worker serial path,
 /// `synth:force` renames no function and `synth:noinstall` makes a worker
