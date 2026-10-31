@@ -469,6 +469,9 @@ mod x64_syscall_memory;
 #[path = "xref_body_ownership.rs"]
 mod xref_body_ownership;
 
+#[path = "xrefs_address_pairs.rs"]
+mod xrefs_address_pairs;
+
 #[path = "xrefs_cli.rs"]
 mod xrefs_cli;
 
