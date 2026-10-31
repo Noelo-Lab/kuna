@@ -541,9 +541,7 @@ fn decode_markup_refs(
 /// architecture exactly as `decompile_drive::print_c` does) and decode the
 /// resulting clang `<function>` into its `(oprefs, varrefs)` sets.
 fn markup_refs_for(base: &mut Architecture, fd: &Funcdata) -> (BTreeSet<u64>, BTreeSet<u64>) {
-    let mut printer = base.take_print();
-    let bytes = printer.doc_function_markup(fd, base);
-    base.put_print(printer);
+    let bytes = base.with_print(|printer, base| printer.doc_function_markup(fd, base));
     assert!(!bytes.is_empty(), "doc_function_markup produced no bytes");
     decode_markup_refs(fd.get_arch().manage(), &bytes).expect("decode markup <function>")
 }
