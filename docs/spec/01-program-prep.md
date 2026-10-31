@@ -6963,13 +6963,15 @@ own address as SLEIGH spells the PC (`inst_start`, Thumb's `+ 4`, A32's `+ 8`) t
 be PC-relative where an add or subtract reads it (RISC-V `auipc`), and keeps a
 value PC-relative through an add or subtract of something that is not; the
 difference of two (a switch's `sub eax,r13d` after two RIP-relative `lea`s) is a
-distance, and a mask or a shift of one is a number. PIC base folding exempts what
-it composes through the proven base for the same reason (an ld.lld i386 PIE's
-`lea eax,[ebx-0x3088]` into its first page). The recogniser is built only for an
-image that maps something below the floor, so any other image's walk is unchanged;
-nor does a folded `adr` change which constants may *start* a carry in an `ET_DYN`
-image (only a visible PC does), which keeps the internal address register of
-SLEIGH's `ldm` out of an ARM shared object's rows.
+distance, and a mask, a shift or a truncation below 32 bits of one (`movzx
+ecx,al`, Thumb `uxtb`) is a number. PIC base folding exempts what it composes
+through the proven base for the same reason (an ld.lld i386 PIE's `lea
+eax,[ebx-0x3088]` into its first page). The recogniser is built only for an image
+that maps something below the floor. Every PIE and shared object does (its
+`.dynsym`, a PIE's `.interp`), so only a fixed-address executable's walk is
+untouched. Nor does a folded `adr` change which constants may *start* a carry in
+an `ET_DYN` image (only a visible PC does), which keeps the internal address
+register of SLEIGH's `ldm` out of an ARM shared object's rows.
 
 Measured over 375 images (the 127 above, 220 zero-based ELF images from the angr
 test corpus and the vendored fixtures, 30 decbench x86-64 PIEs, and zlib linked
@@ -6982,7 +6984,9 @@ predecessors; the other 18 match GNU objdump's `auipc` pair annotation or were
 checked by hand. A PIE whose first page holds only metadata (every decbench x86-64
 image) gains nothing. The walk costs no measurable time: an in-process interleaved
 A/B over x86-64, AArch64, ARM and RISC-V C libraries and bash stays within ±1.5%,
-the same spread an A/A run shows. Emitted C is unchanged.
+the same spread an A/A run shows. Recomputing the forms costs 6 to 24 ns per
+decoded instruction, 0.1–0.4% of the walk over the x86-64, AArch64 and ARM C
+libraries and bash. Emitted C is unchanged.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.

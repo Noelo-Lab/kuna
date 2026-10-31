@@ -65,7 +65,8 @@
 //! (`adrp`'s page 0), or the instruction's own address as the operand of an add
 //! (`auipc`'s `(imm << 12) + inst_start`), plus or minus a value that is not
 //! one. A difference of two (`sub eax,r13d` after two `lea [rip]`) is a
-//! distance, and a mask or shift of one is a number.
+//! distance, and a mask, a shift or a truncation below 32 bits of one is a
+//! number.
 //!
 //! An ELF `ET_DYN` image is relocated as a whole, so an absolute immediate in it
 //! is a number, never an address: `lui s2,0x3; addi s2,s2,-5` in a RISC-V shared
@@ -115,6 +116,10 @@ const MAX_TRACKED: usize = 8;
 /// How far past an instruction's own address a constant may lie and still be
 /// its materialized PC: A32 reads `pc` as `inst_start + 8`, Thumb as `+ 4`.
 const PC_WINDOW: u64 = 16;
+
+/// The narrowest truncation of a PC-relative value that is still an address:
+/// a 32-bit register or pointer. The low byte or half of one is a number.
+const ADDR_BYTES: u32 = 4;
 
 /// One register the walk carries.
 #[derive(Debug, Clone, Copy)]
@@ -246,8 +251,9 @@ struct Val {
     /// Computed from the instruction's own address.
     pc: bool,
     /// An address relative to the PC: a value [`super::kuna_pcform`] folded,
-    /// or the PC plus or minus something that is not one ([`fold`]). Exempt
-    /// from the `checkOperands` floor.
+    /// or the PC plus or minus something that is not one ([`fold`]), kept
+    /// through a truncation to [`ADDR_BYTES`] or wider. Exempt from the
+    /// `checkOperands` floor.
     addr: bool,
     /// The constant is this instruction's address as SLEIGH spells its PC
     /// (`inst_start`, Thumb's `+ 4`, A32's `+ 8`), which an add or subtract
@@ -425,7 +431,7 @@ impl Frame {
                     }
                     let shift = if m.big_endian { end - hi } else { lo - o };
                     let v = val.v.checked_shr((8 * shift) as u32).unwrap_or(0) & mask(vn.size);
-                    Some(Val { v, composed: None, addr: val.addr && shift == 0, ..val })
+                    Some(Val { v, composed: None, addr: val.addr && shift == 0 && vn.size >= ADDR_BYTES, ..val })
                 })
             }
             _ => None,
@@ -465,7 +471,7 @@ fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
         OpCode::CPUI_SUBPIECE => {
             let by = b?.v;
             let low = unary(a.v.checked_shr(u32::try_from(by.checked_mul(8)?).ok()?).unwrap_or(0))?;
-            Some(Val { addr: a.addr && by == 0, ..low })
+            Some(Val { addr: a.addr && by == 0 && out.size >= ADDR_BYTES, ..low })
         }
         OpCode::CPUI_INT_ADD
         | OpCode::CPUI_INT_SUB
@@ -848,6 +854,26 @@ mod tests {
         let insns = [(isa.set(1, 0x1100), Some(0x1100)), (isa.set(0, 0x1500), Some(0x1500)), (sub, None)];
         let got = walk_low(&isa, false, &insns);
         assert!(got.is_empty(), "{got:?}");
+    }
+
+    /// The low byte or half of a PC-relative value is a number: `lea
+    /// rax,[rip+a]; movzx ecx,al; lea rdx,[rcx+0x300]`, Thumb `adr; uxtb;
+    /// adds`. A 32-bit truncation (`lea eax,[rip+a]`, `sext.w`) is the address.
+    #[test]
+    fn a_pc_relative_value_truncated_below_32_bits_is_a_number() {
+        let isa = Isa::new();
+        let low = |vn: VarnodeData| vec![op(OpCode::CPUI_INT_ZEXT, Some(isa.x(1)), vec![vn])];
+        let subpiece = vec![
+            op(OpCode::CPUI_SUBPIECE, Some(vn(&isa.u, 0x100, 1)), vec![isa.x(0), vn(&isa.c, 0, 4)]),
+            op(OpCode::CPUI_INT_ZEXT, Some(isa.x(1)), vec![vn(&isa.u, 0x100, 1)]),
+        ];
+        let run = |narrow: Vec<FullOp>| {
+            walk_low(&isa, false, &[(isa.set(0, 0x5a0), Some(0x5a0)), (narrow, None), (isa.add(2, 1, 0x300), None)])
+        };
+        assert!(run(low(vn(&isa.r, 0, 1))).is_empty());
+        assert!(run(low(vn(&isa.r, 0, 2))).is_empty());
+        assert!(run(subpiece).is_empty());
+        assert_eq!(run(low(vn(&isa.r, 0, 4))), vec![(0x1008, 0x8a0, XrefKind::Data)]);
     }
 
     #[test]
