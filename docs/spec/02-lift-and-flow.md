@@ -88,12 +88,15 @@ and a code segment need not start on a 64 KiB boundary. The context variable
 `JMP`, `Jcc`, `LOOP`, `JCXZ`) wraps IP inside the segment, so its target is
 `realCS*16 + ((IP + displacement) & 0xFFFF)`, and it commits `realCS` to that
 target (a SLEIGH `globalset`), so a callee decodes in its caller's segment. A
-far `CALL`/`JMP ptr16:16` commits the segment it names to its target. A near
-`CALL` pushes IP, not the low half of the linear address, and the CS a `CS:`
+far `CALL`/`JMP ptr16:16` commits the segment it names to its target. Every
+16-bit `CALL` pushes IP, not the low half of the linear address; a far `CALL
+ptr16:16` keeps its own segment in the scratch context field `callerCS` while
+`ptr1616` states its target's, so it pushes IP in its own segment. The CS a `CS:`
 override or a near indirect `CALL`/`JMP` reads is `realCS`, so a `jmp
 [cs:bx+table]` reads its table from its own segment (upstream assumed the
-instruction's 64 KiB block). An instruction outside the 64 KiB above
-`realCS*16` cannot be in that segment: there a near branch is the linear sum of
+instruction's 64 KiB block). An instruction that starts outside the 64 KiB
+above `realCS*16` cannot be in that segment (one that ends on the segment's last
+byte is inside it, and its IP wraps to 0): there a near branch is the linear sum of
 the next address and the displacement, which is exact unless the branch was
 encoded through the wrap, `CALL` pushes the low 16 bits of its next address,
 and CS is upstream's 64 KiB block. A committed segment holds from its target up to

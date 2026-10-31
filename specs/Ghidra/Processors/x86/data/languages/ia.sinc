@@ -483,7 +483,7 @@ define context contextreg
 @define PRE_F3		"prefix_f3=1"
 @define PRE_F2		"prefix_f2=1"
 @ifdef IA16
-define context contextreg realCS=(48,63); # (kuna #1288) the real-mode code segment, see x86-16.slaspec
+define context contextreg realCS=(48,63) callerCS=(32,47); # (kuna #1288) the real-mode code segment, and a far CALL's own while ptr1616 states its target's (bits only VEX/EVEX decode reads), see x86-16.slaspec
 @endif
 # Define special registers for debugger
 @ifdef IA64
