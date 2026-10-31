@@ -778,6 +778,11 @@ kuna_options! { self, p1;
         self.returndup_triangle = val;
         Ok(msg)
     },
+    "clonephiorder" => {
+        let (val, msg) = crate::p8_structure::kuna_clonephiorder::OptionClonePhiOrder.apply(p1)?;
+        self.clone_phi_order = val;
+        Ok(msg)
+    },
     "earlyreturn" => {
         let (val, msg) =
             crate::p8_structure::kuna_earlyreturn::OptionEarlyReturn.apply(p1)?;

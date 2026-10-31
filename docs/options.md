@@ -311,6 +311,9 @@ Three tiers:
 | if (!c) return 0; f(); return 0; where the source has if (c) f(); return 0; | [`rettriangle`](#rettriangle) |
 | a duplicated constant return right after a one-statement body | [`rettriangle`](#rettriangle) |
 | // return-dupe on a function whose only split is a short if before its return | [`rettriangle`](#rettriangle) |
+| global stores just before a return print in ascending address order but the disassembly stores them in another order | [`clonephiorder`](#clonephiorder) |
+| two stores in one predecessor of a shared epilogue print in the opposite order to the binary | [`clonephiorder`](#clonephiorder) |
+| memory-mapped register writes before a return print in address order rather than instruction order | [`clonephiorder`](#clonephiorder) |
 | inverted diamond: if (guard) { entire body } else { v = 0; } return v; | [`earlyreturn`](#earlyreturn) |
 | leading argument-validity check wraps the whole body instead of an early return | [`earlyreturn`](#earlyreturn) |
 | function opens with if (p != 0) { everything } where source wrote if (!p) return 0; | [`earlyreturn`](#earlyreturn) |
@@ -2061,6 +2064,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Turn ON when a short `if` before a constant return comes out as an early return plus a duplicated return, `if (!c) return 0; f(); return 0;`, where IDA prints `if (c) f(); return 0;`. The `aggressive` preset (what `--mode auto` picks under 500 KiB) already turns it on. Leave it off to keep `returndup`'s guard-clause form for every shared constant return.
 - **Where / provenance:** P8/goto-quality · ida · structure-recovery · kuna-rettriangle
 - **Example:** `option rettriangle on`
+
+### `clonephiorder` -- on | off, default `on`
+
+- **Symptoms:** global stores just before a return print in ascending address order but the disassembly stores them in another order; two stores in one predecessor of a shared epilogue print in the opposite order to the binary; memory-mapped register writes before a return print in address order rather than instruction order.
+- **What it does:** The order in which a return block cloned per predecessor prints the global stores its phis absorbed. When copy propagation folds a store's value into the MULTIEQUAL a shared return block holds for that global, the store dies and its position in the predecessor is lost; splitting the return block (returndup, earlyreturn, switchreturn, ActionReturnSplit) then turns the clone's copy of the phi into that store, at the start of the clone. Several such stores print in the order the phis are cloned, and nothing in the IR records the order the binary made them in. ON (`kuna_clonephiorder::order_global_phis`) clones the phis on globals after the others and in address order, which is the order kuna printed most of these stores in before the clone kept its return guards' `return_copy` flag (#1355). OFF clones them in block order, the reverse of the order heritage placed them. Only the clone is reordered; the original block, which keeps one in-edge, prints its absorbed stores in block order either way. Both are heuristics: over 140 corpus binaries the two orders differ in 119 store runs; in the 34 whose order the disassembly decides, ON matches the binary in 21 and OFF in 9 (neither in 4). A source that stores globals in descending address order (betaflight `setRssiDirect`: rssi, then rssiRaw below it) prints reversed with ON.
+- **When to flip:** Leave ON. Turn OFF when a run of global stores just before a return prints in ascending address order and the disassembly stores them in another order, typically a function whose paths all jump to one shared epilogue; OFF prints them in heritage's order instead. Neither order is read from the binary, so check the disassembly when the order of volatile or memory-mapped stores matters.
+- **Where / provenance:** P8/goto-quality · kuna · presentation-default · kuna-1355
+- **Example:** `option clonephiorder off`
 
 ### `earlyreturn` -- on | off, default `on`
 

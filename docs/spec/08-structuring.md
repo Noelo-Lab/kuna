@@ -768,8 +768,7 @@ A CFG split must leave every path performing the same writes, the same number
 of times. The p-code half of `node_split`,
 `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (CloneBlockOps)`,
 copies two kinds of op that write nothing but name a global as their output.
-Upstream's clone let copy propagation turn both into stores (kuna #1355), and it
-printed the stores it did copy in heritage's order:
+Upstream's clone let copy propagation turn both into stores (kuna #1355):
 
 - *The return guard.* A RETURN block carries one `Heritage::guardReturns`
   `glob = glob` COPY per persistent global (§3.1). It is flagged `return_copy`,
@@ -787,23 +786,38 @@ printed the stores it did copy in heritage's order:
   return instead, which reorders the function's stores.
   `CloneBlockOps::settle_one_input_phi` settles every phi the split leaves with
   one input. A phi from a global to the same global writes nothing: its readers
-  take the incoming Varnode and the COPY is destroyed, always in the clone, and in
-  the original block once the incoming Varnode is a COPY's output (the only shape
-  propagation rewrites). A guard that reads a one-input phi through a temporary
+  take the incoming Varnode and the COPY is destroyed, in the clone and in the
+  original block alike. A copy left in the original is no safer than one in the
+  clone: the next split of that block clones it as a plain COPY, and
+  `ActionVarnodeProps` replaces a known-zero COPY output with the constant 0, so
+  the guard that read it printed `glob = 0;` a second time (bash `sh_getopt`,
+  scp `getopt_internal`). A guard that reads a one-input phi through a temporary
   (`ConditionalExecution` builds those) takes the incoming Varnode when that is
   its own global.
-- *Store order.* When a predecessor's store was absorbed into the phi (its value
-  is the phi's input), the clone's copy of the phi is that store, and it belongs
-  at the start of the clone, before the block's own stores.
-  `CloneBlockOps::order_global_phis` clones the phis on globals after the others,
-  in address order, rather than in the reverse order heritage placed them.
+
+What the split cannot recover is where a store sat once copy propagation folded
+its value into the phi (`RulePropagateCopy` lets a non-constant value into a
+MULTIEQUAL, and the store then dies). The clone's copy of that phi is the store,
+at the start of the clone, after every store the predecessor kept; several such
+stores print in the order the phis are cloned. That order is the
+`clonephiorder` decision point,
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`:
+on (the default) clones the phis on globals after the others and in address
+order, which is how kuna printed most of these stores before the clone kept its
+guards' flag; off clones them in block order, the reverse of heritage's
+placement. Only the clone is reordered: the original block keeps its op order,
+which merging also reads (reordering its phis too printed bash
+`get_urandom32`'s seed store inside the loop it leaves). Neither order comes
+from the binary. Over 140 corpus binaries the two
+orders differ in 119 store runs; of the 34 the disassembly decides, on matches
+the binary in 21 and off in 9.
 
 A `store; cmp; cmov; ret` function (clang and gcc, -O1 and -O2) hit the first
 through `returndup`, `earlyreturn` and `switchreturn` alike, because SLEIGH lifts
 the CMOV as a branch around one move, which leaves the RET with two in-edges. A
 `-O0` function whose paths all jump to one `leave; ret` hit the second.
-`ActionReturnSplit` clones through the same helper. This is a strict fix with no
-option.
+`ActionReturnSplit` clones through the same helper. Keeping the flag and
+settling the phis is a strict fix with no option.
 
 Two more run inside §8.1's machinery: `branchflip` (described there) and
 `loopbreak_recovery` (inside `ActionFinalStructure`, below). All of them

@@ -33,7 +33,18 @@
     Both passes run, with returndup (the harness default, #1) and with
     earlyreturn (#2); #5 checks both results are still returned.
 
-    Stage: P8 structure (return-block node split), strict fix, no option.
+    audit_pair (hand-written, at 0x1100) returns 2 without a store, or
+    stores its argument to audit_lo and then audit_hi, the next word, and
+    returns 1.  Both paths reach one RET, the storing one last.  Copy
+    propagation folds the stored register into the RET block's phis and the
+    two stores die, so the split prints them from the clone's copies of the
+    phis, in the order the phis are cloned, which the binary does not record.
+    `option clonephiorder` picks that order: on (the default) clones the phis
+    on globals in address order, which is the binary's order here (#8); off
+    clones them in heritage's order, the reverse (#9).
+
+    Stage: P8 structure (return-block node split).  #1-#7 are a strict fix,
+    no option; #8-#9 pin `option clonephiorder on|off`.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">
 8d4707c38d470bc38d4713c3488d05f5ffffff488905e61f0000833de71f0000
@@ -42,8 +53,11 @@
 89e54883ec08897dfc8975f8837dfc007423c705901f000001000000837df800
 7407b801000000eb11e8cfffffffb802000000eb05b803000000c9c3
 </bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">
+85ff7507b802000000eb118935ff1e00008935fd1e0000b801000000c3
+</bytechunk>
 <bytechunk space="ram" offset="0x3000">
-00000000000000000000000000000000
+000000000000000000000000000000000000000000000000
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="audit_fast"/>
 <symbol space="ram" offset="0x1004" name="audit_safe"/>
@@ -52,11 +66,22 @@
 <symbol space="ram" offset="0x1034" name="audit_select_gcc"/>
 <symbol space="ram" offset="0x105d" name="audit_tick"/>
 <symbol space="ram" offset="0x105e" name="audit_retry"/>
+<symbol space="ram" offset="0x1100" name="audit_pair"/>
 </binaryimage>
 <script>
   <com>map address r0x3000 code *audit_recorded</com>
   <com>map address r0x3008 int4 audit_choice</com>
   <com>map address r0x300c int4 audit_count</com>
+  <com>map address r0x3010 int4 audit_lo</com>
+  <com>map address r0x3014 int4 audit_hi</com>
+  <com>lo fu audit_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option clonephiorder off</com>
+  <com>lo fu audit_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option clonephiorder on</com>
   <com>lo fu audit_select</com>
   <com>decompile</com>
   <com>print C</com>
@@ -81,5 +106,11 @@ if \(audit_choice\)</stringmatch>
 <stringmatch name="RETCOPYCLONE #6: audit_retry writes the global once in each" min="2" max="2">audit_count = </stringmatch>
 <stringmatch name="RETCOPYCLONE #7: the b path returns without a second write" min="2" max="2">audit_count = 1;
 if \(\w+\)
+return 1;</stringmatch>
+<stringmatch name="RETCOPYCLONE #8: by default audit_pair's stores print in address order, as the binary makes them" min="1" max="1">audit_lo = \w+;
+audit_hi = \w+;
+return 1;</stringmatch>
+<stringmatch name="RETCOPYCLONE #9: with clonephiorder off they print in heritage's order, reversed" min="1" max="1">audit_hi = \w+;
+audit_lo = \w+;
 return 1;</stringmatch>
 </decompilertest>

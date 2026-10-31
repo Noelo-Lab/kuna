@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_352() {
-    assert_eq!(kuna_num_settables(), 352);
-    assert_eq!(SETTABLE_TABLE.len(), 352);
+fn settable_count_is_353() {
+    assert_eq!(kuna_num_settables(), 353);
+    assert_eq!(SETTABLE_TABLE.len(), 353);
 }
 
 #[test]
-fn tier_counts_are_126_core_134_transform_92_analysis() {
+fn tier_counts_are_126_core_135_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_126_core_134_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (126, 134, 92));
+    assert_eq!((core, transform, analysis), (126, 135, 92));
 }
 
 #[test]
@@ -628,6 +628,7 @@ fn option_values_live_value_present_for_155() {
                             | "returndup"
                             | "orchain"
                             | "rettriangle"
+                            | "clonephiorder"
                             | "earlyreturn"
                             | "switchreturn"
                             | "loopbreak_recovery"
@@ -1148,7 +1149,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `earlyrestart`; its P3 row sits after `deadwaves`.
     // +1 for `pltlocal`; its P4 row sits after `passthrough`.
     // +1 for `haltloopguard`; its P3 row sits after `earlyrestart`.
-    assert_eq!(json.matches("},\n").count(), 351);
+    // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
+    assert_eq!(json.matches("},\n").count(), 352);
 }
 
 #[test]
