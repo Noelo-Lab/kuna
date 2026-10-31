@@ -1,0 +1,55 @@
+# (kuna #1288) x86 code whose default operand size is 16 bits: real mode,
+# 16-bit protected mode and System Management Mode. It is x86.slaspec plus the
+# real-mode code segment, realCS, in the decode context (defined in ia.sinc,
+# default 0).
+#
+# A real-mode address is the linear CS*16 + IP. A near branch wraps IP inside
+# its 64 KiB segment, which need not start on a 64 KiB boundary, and passes
+# realCS on to its target; a far CALL/JMP ptr16:16 states its target's. A near
+# CALL pushes IP, and CS (a CS: override, a near indirect CALL/JMP) reads
+# realCS. An instruction outside the 64 KiB above realCS*16 cannot be in that
+# segment, so there the branch takes the linear sum of its next address and
+# displacement (exact unless it was encoded through the wrap), CALL pushes the
+# low 16 bits of its next address, and CS is ia.sinc's 64 KiB block guess. An
+# instruction that ends on its segment's last byte is inside it: IP wraps to 0.
+# A far CALL ptr16:16 pushes IP in its own segment, which ptr1616 keeps in
+# callerCS before it states its target's.
+#
+# In 16-bit protected mode an address is selector*0x10000 + offset and a near
+# branch wraps the offset inside its selector.
+#
+# Each constructor below specializes the ia.sinc one it replaces. They follow
+# every other constructor, so the rest keep the unique-space layout and source
+# lines they have in x86.sla.
+@define IA16 "IA16"
+@include "x86.slaspec"
+
+# IP after the instruction in segment realCS, and 1 when the instruction starts inside the segment, else 0 (SLEIGH has no comparison).
+@define REAL_IP "(inst_next - (realCS << 4))"
+@define REAL_IP_FITS "(1 / ((((inst_start - (realCS << 4)) >> 16) & 0xFFFF) + 1))"
+@define CALLER_IP_FITS "(1 / ((((inst_start - (callerCS << 4)) >> 16) & 0xFFFF) + 1))"
+
+realNextIP: nextIP is epsilon [ nextIP = (inst_next - (realCS << 4) * $(REAL_IP_FITS)) & 0xFFFF; ] { export *[const]:2 nextIP; }
+farNextIP: nextIP is epsilon [ nextIP = (inst_next - (callerCS << 4) * $(CALLER_IP_FITS)) & 0xFFFF; ] { export *[const]:2 nextIP; }
+# CS, or where realCS cannot hold the instruction, the 64 KiB block guess of ia.sinc's currentCS.
+realCurrentCS: segv is epsilon [ segv = realCS * $(REAL_IP_FITS) + ((inst_next >> 4) & 0xF000) * (1 - $(REAL_IP_FITS)); ] { export *[const]:2 segv; }
+
+rel8: reloc is simm8 & protectedMode=0 [ reloc = inst_next + simm8 - (((($(REAL_IP) + simm8) >> 16) << 16) * $(REAL_IP_FITS)); globalset(reloc, realCS); ] { export *[ram]:$(SIZE) reloc; }
+rel16: reloc is simm16 & protectedMode=0 [ reloc = inst_next + simm16 - (((($(REAL_IP) + simm16) >> 16) << 16) * $(REAL_IP_FITS)); globalset(reloc, realCS); ] { export *[ram]:$(SIZE) reloc; }
+rel16: reloc is simm16 & protectedMode=1 [ reloc = ((inst_next >> 16) << 16) | ((inst_next + simm16) & 0xFFFF); ] { export *[ram]:$(SIZE) reloc; }
+# ptr1616 is only reached with opsize=0 (CALLF/JMPF), and VEX encodings do not exist in real mode.
+ptr1616: reloc is protectedMode=0 & opsize=0 & imm16; j16 [ reloc = j16*0x10 + imm16; callerCS = realCS; realCS = j16; globalset(reloc, realCS); ] { CS = j16; export *[ram]:4 reloc; }
+currentCS: CS is protectedMode=0 & vexMode=0 & CS & realCurrentCS { CS = realCurrentCS; export CS; }
+
+with : lockprefx=0 {
+:CALL rel16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=0 & opsize=0 & protectedMode=0 & byte=0xe8; rel16 & realNextIP { push22(realNextIP); call rel16; }
+:CALL rel16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=1 & opsize=0 & protectedMode=0 & byte=0xe8; rel16 & realNextIP { push42(realNextIP); call rel16; }
+:CALL rel16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=0 & opsize=0 & protectedMode=0 & byte=0xe8; simm16=0 & rel16 & realNextIP { push22(realNextIP); goto rel16; }
+:CALL rel16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=1 & opsize=0 & protectedMode=0 & byte=0xe8; simm16=0 & rel16 & realNextIP { push42(realNextIP); goto rel16; }
+:CALL rm16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=0 & opsize=0 & protectedMode=0 & byte=0xff & currentCS & realNextIP; rm16 & reg_opcode=2 ... { local dest:4 = segment(currentCS,rm16); push22(realNextIP); call [dest]; }
+:CALL rm16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=1 & opsize=0 & protectedMode=0 & byte=0xff & realNextIP; rm16 & reg_opcode=2 ... { local dest:2 = rm16; push42(realNextIP); call [dest]; }
+:CALLF ptr1616 is vexMode=0 & addrsize=0 & opsize=0 & protectedMode=0 & byte=0x9a & farNextIP; ptr1616 { push22(CS); build ptr1616; push22(farNextIP); call ptr1616; }
+:CALLF ptr1616 is vexMode=0 & addrsize=1 & opsize=0 & protectedMode=0 & byte=0x9a & farNextIP; ptr1616 { push42(CS); build ptr1616; push42(farNextIP); call ptr1616; }
+:CALLF addr16 is vexMode=0 & addrsize=0 & opsize=0 & protectedMode=0 & byte=0xff & realNextIP; addr16 & reg_opcode=3 ... { local ptr:$(SIZE) = segment(DS,addr16); local addrptr:$(SIZE) = segment(*:2 (ptr+2),*:2 ptr); push22(CS); push22(realNextIP); call [addrptr]; }
+:CALLF addr32 is vexMode=0 & addrsize=1 & opsize=0 & protectedMode=0 & byte=0xff & realNextIP; addr32 & reg_opcode=3 ... { local dest:4 = addr32; push42(CS); push42(realNextIP); call [dest]; }
+}
