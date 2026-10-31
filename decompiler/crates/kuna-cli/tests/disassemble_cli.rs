@@ -1229,3 +1229,46 @@ fn raw_pcode_rejects_unmapped_addresses_and_unsupported_walks() {
         assert!(stderr.contains("error:"));
     }
 }
+
+#[test]
+fn raw_pcode_arm_interworking_selects_the_right_mode() {
+    let binary = fixture("arm_interwork_le32");
+    let raw = |target: &str| {
+        let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, target, "--count", "1", "--json"]);
+        assert_eq!(code, 0, "{stderr}");
+        serde_json::from_str::<Json>(&stdout).unwrap()
+    };
+    let call = raw("0x2000004");
+    let instruction = &call["instructions"][0];
+    assert_eq!(instruction["bytes"], "0d0000fa");
+    assert_eq!(instruction["mnemonic"], "blx");
+    assert!(instruction["ops"].as_array().unwrap().iter().any(|op|
+        op["opcode"] == "CALL" && op["inputs"][0]["offset"] == 0x2000040));
+    let thumb = raw("0x2000040");
+    let odd_thumb = raw("0x2000041");
+    assert_eq!(thumb["instructions"], odd_thumb["instructions"]);
+    assert_eq!(thumb["instructions"][0]["bytes"], "0720");
+    assert_eq!(thumb["instructions"][0]["size"], 2);
+    assert_eq!(thumb["instructions"][0]["mnemonic"], "movs");
+    let arm = raw("0x2000080");
+    assert_eq!(arm["instructions"][0]["bytes"], "010080e2");
+    assert_eq!(arm["instructions"][0]["size"], 4);
+    assert_eq!(arm["instructions"][0]["mnemonic"], "add");
+}
+
+#[test]
+fn raw_pcode_mips_return_includes_delay_slot() {
+    let binary = fixture("bejoin_order_mips32_O2");
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "widen", "--count", "2", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    let ret = &doc["instructions"][1];
+    assert_eq!(ret["address_hex"], "0x400134");
+    assert_eq!(ret["bytes"], "03e0000800801825");
+    assert_eq!(ret["size"], 8);
+    assert_eq!(ret["mnemonic"], "jr");
+    let ops = ret["ops"].as_array().unwrap();
+    let delay = ops.iter().position(|op| op["opcode"] == "INT_OR").unwrap();
+    let return_op = ops.iter().position(|op| op["opcode"] == "RETURN").unwrap();
+    assert!(delay < return_op);
+}

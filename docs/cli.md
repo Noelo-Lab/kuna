@@ -2335,6 +2335,9 @@ ordered `inputs`. Each varnode has its named address `space`, numeric `offset`,
 `LOAD` and `STORE`, the first constant input identifies the accessed address
 space, rather than an ordinary program value. Numeric addresses and offsets are
 also spelled as hexadecimal strings for consumers without exact 64-bit numbers.
+When SLEIGH includes a delay slot in one lift (for example a MIPS `jr`), the
+row's size and bytes cover the branch and its delay slot, and its ops include
+the slot's operations before the branch. `--count` counts such a lift as one.
 
 `decompile --raw` instead prints the decompiler's current IR after its passes.
 

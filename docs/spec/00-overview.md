@@ -3676,4 +3676,6 @@ window is bounded by the resolved inventory extent or the caller; it does not
 follow control flow or claim that every decoded byte is reachable code. If a
 later instruction fails, the query returns the decoded prefix, its exclusive end,
 the failure address and a nonzero exit status. Each row carries the exact loaded
-bytes consumed by the translator alongside the operations.
+bytes consumed by the translator alongside the operations. A lift that includes
+a delay slot reports the combined byte span and the slot's operations in the
+same row.
