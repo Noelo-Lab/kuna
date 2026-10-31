@@ -436,6 +436,8 @@ pub enum Scramble {
     /// The v1.50 descrambler, in its ADD form (which also byte-swaps the long
     /// relocation table).
     Add150,
+    /// The descrambler of the v1.50 IBM build: an XOR chain.
+    Ibm150,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -622,26 +624,29 @@ fn stub(l: &Layout) -> Vec<u8> {
 
     match l.scramble {
         Scramble::None => {}
-        Scramble::Xor114 | Scramble::Add150 => {
+        Scramble::Xor114 | Scramble::Add150 | Scramble::Ibm150 => {
             let start = copier_pos;
             let last = STUB_LEN - 2;
             let count = (last + 2 - start) / 2;
-            let (pat, count_at, end_at, jmp_at): (&[u8], usize, usize, usize) = if l.scramble
-                == Scramble::Xor114
-            {
-                (
-                        b"\x2d\x20\x00\x8e\xd0\x2d??\x50\x52\xb9??\xbe??\x8b\xfe\xfd\x90\x49\x74?\xad\x92\x33\xc2\xab\xeb\xf6",
-                        11,
-                        14,
-                        22,
-                    )
-            } else {
-                (
-                        b"\x59\x2d\x20\x00\x8e\xd0\x51??\x00\x50\x80\x3e\x41\x01\xc3\x75\xe6\x52\xb8??\xbe??\x56\x56\x52\x50\x90???????\x74",
-                        20,
-                        23,
-                        38,
-                    )
+            let (pat, count_at, end_at, jmp_at): (&[u8], usize, usize, usize) = match l.scramble {
+                Scramble::Xor114 => (
+                    b"\x2d\x20\x00\x8e\xd0\x2d??\x50\x52\xb9??\xbe??\x8b\xfe\xfd\x90\x49\x74?\xad\x92\x33\xc2\xab\xeb\xf6",
+                    11,
+                    14,
+                    22,
+                ),
+                Scramble::Ibm150 => (
+                    b"\x59\x2d\x20\x00\x8e\xd0\x51\x2d??\x50\x52\xb9??\xbe??\x8b\xfe\xfd\x90\x49\x74?\xad\x92\x33",
+                    13,
+                    16,
+                    24,
+                ),
+                _ => (
+                    b"\x59\x2d\x20\x00\x8e\xd0\x51??\x00\x50\x80\x3e\x41\x01\xc3\x75\xe6\x52\xb8??\xbe??\x56\x56\x52\x50\x90???????\x74",
+                    20,
+                    23,
+                    38,
+                ),
             };
             place(&mut ep, position2, pat);
             if l.scramble == Scramble::Add150 {
@@ -891,6 +896,11 @@ pub fn layouts() -> Vec<Case> {
             ..Layout::new(Intro::V150, m(true, false, 0, 0))
         },
         false,
+    );
+    add(
+        "v1.50 IBM-scrambled small extra",
+        Layout { scramble: Scramble::Ibm150, ..Layout::new(Intro::V150, m(false, false, 1, 0)) },
+        true,
     );
     add(
         "v1.20 small, offset key",
