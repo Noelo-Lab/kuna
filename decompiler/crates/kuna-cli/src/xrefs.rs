@@ -23,6 +23,14 @@
 //!
 //! `--json` emits the machine-readable document; without it, one tab-separated
 //! row per reference under a `#` header line.
+//!
+//! The rows are instruction references. A pointer the image stores in its data
+//! (an initialized function pointer, a vtable slot) is a reference too, but no
+//! instruction makes it; those are the separate `pointer` rows
+//! ([`kuna_analysis::loader::kuna_dataptrs`]), taken from the image's own
+//! rebase/relocation metadata, never merged into the instruction rows, and
+//! reported with the metadata that listed them (`data_refs_coverage`, `none`
+//! for an image that lists no pointer relocations).
 
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -62,6 +70,10 @@ struct XrefArgs {
     json: bool,
     /// `--kind call,data`: restrict to these kinds; empty means every kind.
     kinds: Vec<XrefKind>,
+    /// Report instruction rows: no `--kind`, or one naming an instruction kind.
+    instructions: bool,
+    /// Report the data-held `pointer` rows: no `--kind`, or one naming it.
+    pointers: bool,
     options: Vec<(String, String)>,
     mode: Option<String>,
     slice: Option<String>,
@@ -277,14 +289,119 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     };
     let rows: Vec<&Xref> = rows
         .into_iter()
-        .filter(|r| args.kinds.is_empty() || args.kinds.contains(&r.kind))
+        .filter(|r| args.instructions && (args.kinds.is_empty() || args.kinds.contains(&r.kind)))
         .collect();
+    let data = kuna_analysis::loader::kuna_dataptrs::data_pointers(&file, &bytes);
+    let operands = matches!(
+        object::Object::architecture(&file),
+        object::Architecture::I386 | object::Architecture::X86_64 | object::Architecture::X86_64_X32
+    );
+    let pointers = if args.pointers {
+        data_rows(&prog, &index, &names, &target, args.direction, &data.pointers, operands)
+    } else {
+        Vec::new()
+    };
+    let data = DataRefs { coverage: data.coverage, rows: pointers };
 
     Ok(if args.json {
-        format!("{}\n", dumps_indent2(&result_json(args, &prog, &index, &names, &target, &rows)))
+        format!("{}\n", dumps_indent2(&result_json(args, &prog, &index, &names, &target, &rows, &data)))
     } else {
-        render_text(args, &prog, &index, &names, &target, &rows)
+        render_text(args, &prog, &index, &names, &target, &rows, &data)
     })
+}
+
+// --- data-held pointers -----------------------------------------------------
+
+/// The data-held pointers the query answers, and the metadata that listed them.
+struct DataRefs {
+    coverage: kuna_analysis::loader::kuna_dataptrs::Coverage,
+    rows: Vec<DataRef>,
+}
+
+/// One stored pointer: the word's address, the address it holds, and the names
+/// of both ends.
+struct DataRef {
+    slot: u64,
+    target: u64,
+    width: u8,
+    slot_name: Option<String>,
+    target_name: Option<String>,
+}
+
+/// The stored pointers `--to` answers (each word holding an address of the
+/// target's class) or `--from` answers (each word inside the target, when the
+/// target is data rather than code: its symbol's extent, else one word).
+///
+/// With `operands` (x86, whose instructions embed absolute addresses), a word
+/// that lies inside a decoded instruction referencing the same address is that
+/// instruction's operand and row, not a stored pointer: a 32-bit PE's base
+/// relocations list every `push offset f` and `jmp [slot]` in `.text`. A word
+/// past the instruction's end (a table in `.text` after a `mov eax, offset f`)
+/// stays a pointer, and so does one no decoded instruction covers.
+fn data_rows(
+    prog: &ConsoleProgram,
+    index: &XrefIndex,
+    names: &EntryNames,
+    target: &Target,
+    direction: Direction,
+    pointers: &[kuna_analysis::loader::kuna_dataptrs::DataPointer],
+    operands: bool,
+) -> Vec<DataRef> {
+    let in_code = |vma: u64| {
+        prog.sections().iter().any(|&(lo, size, flags)| {
+            flags & kuna_sleigh::loadimage::section_flags::CODE != 0 && vma >= lo && vma - lo < size
+        })
+    };
+    let selected: Vec<_> = match direction {
+        Direction::To => pointers.iter().filter(|p| target.class.contains(&p.target)).collect(),
+        Direction::From if in_code(target.addr) || index.is_function_entry(target.addr) => Vec::new(),
+        Direction::From => {
+            let extent = prog
+                .global_data_symbols()
+                .into_iter()
+                .find(|(_, vma, _)| *vma == target.addr)
+                .map_or(0, |(_, _, size)| size.max(0) as u64);
+            let first = pointers.partition_point(|p| p.slot < target.addr);
+            pointers[first..]
+                .iter()
+                .take_while(|p| p.slot < target.addr.saturating_add(extent.max(u64::from(p.width))))
+                .collect()
+        }
+    };
+    let code_space = prog.arch().manage().get_default_code_space().cloned().filter(|_| operands);
+    let operand = |p: &kuna_analysis::loader::kuna_dataptrs::DataPointer| {
+        let Some(space) = code_space.as_ref() else { return false };
+        let end = p.slot.saturating_add(u64::from(p.width));
+        (p.slot.saturating_sub(15)..p.slot).any(|at| {
+            index.refs_from_instruction(at).iter().any(|r| r.to == p.target)
+                && kuna_analysis::listing::decode::decode_one(prog.arch().translate(), at, space, false, false)
+                    .is_ok_and(|insn| at.saturating_add(u64::from(insn.len)) >= end)
+        })
+    };
+    let selected: Vec<_> = selected.into_iter().filter(|p| !operand(p)).collect();
+    if selected.is_empty() {
+        return Vec::new();
+    }
+    let data = prog.global_data_symbols();
+    let holder = |slot: u64| -> Option<String> {
+        data.iter()
+            .filter(|(_, vma, size)| slot >= *vma && slot - vma < (*size).max(1) as u64)
+            .max_by_key(|(_, vma, _)| *vma)
+            .map(|(name, vma, _)| {
+                if *vma == slot { name.clone() } else { format!("{name}+0x{:x}", slot - vma) }
+            })
+            .or_else(|| name_at(prog, index, names, slot))
+    };
+    selected
+        .into_iter()
+        .map(|p| DataRef {
+            slot: p.slot,
+            target: p.target,
+            width: p.width,
+            slot_name: holder(p.slot),
+            target_name: name_at(prog, index, names, p.target),
+        })
+        .collect()
 }
 
 // --- target resolution -------------------------------------------------------
@@ -450,6 +567,7 @@ fn result_json(
     names: &EntryNames,
     target: &Target,
     rows: &[&Xref],
+    data: &DataRefs,
 ) -> Json {
     let xrefs = Json::Array(
         rows.iter()
@@ -509,7 +627,35 @@ fn result_json(
         ("direction".into(), Json::Str(args.direction.as_str().to_string())),
         ("count".into(), Json::Number(rows.len().to_string())),
         ("xrefs".into(), xrefs),
+        ("data_refs_coverage".into(), Json::Str(data.coverage.as_str().to_string())),
+        ("data_refs_count".into(), Json::Number(data.rows.len().to_string())),
+        ("data_refs".into(), data_refs_json(data)),
     ])
+}
+
+/// The `data_refs` rows: each stored pointer's word (`from_address`, and the
+/// data object holding it) and the address it holds (`to_address`, and its
+/// name), with `kind` `pointer` and the metadata that listed it as `source`.
+fn data_refs_json(data: &DataRefs) -> Json {
+    let name = |n: &Option<String>| n.clone().map(Json::Str).unwrap_or(Json::Null);
+    Json::Array(
+        data.rows
+            .iter()
+            .map(|r| {
+                Json::Object(vec![
+                    ("kind".into(), Json::Str("pointer".into())),
+                    ("from_address".into(), Json::Number(r.slot.to_string())),
+                    ("from_address_hex".into(), Json::Str(format!("0x{:x}", r.slot))),
+                    ("from_name".into(), name(&r.slot_name)),
+                    ("to_address".into(), Json::Number(r.target.to_string())),
+                    ("to_address_hex".into(), Json::Str(format!("0x{:x}", r.target))),
+                    ("to_name".into(), name(&r.target_name)),
+                    ("width".into(), Json::Number(r.width.to_string())),
+                    ("source".into(), Json::Str(data.coverage.as_str().to_string())),
+                ])
+            })
+            .collect(),
+    )
 }
 
 /// The human surface: a `#` header naming the query, then one tab-separated row
@@ -523,6 +669,7 @@ fn render_text(
     names: &EntryNames,
     target: &Target,
     rows: &[&Xref],
+    data: &DataRefs,
 ) -> String {
     use std::fmt::Write as _;
     let mut out = String::new();
@@ -579,6 +726,33 @@ fn render_text(
             }
         }
     }
+    if !data.rows.is_empty() {
+        let plural = if data.rows.len() == 1 { "pointer" } else { "pointers" };
+        let _ = writeln!(
+            out,
+            "# {} data-held {plural} {} {label} ({})",
+            data.rows.len(),
+            args.direction.as_str(),
+            data.coverage.as_str()
+        );
+    }
+    for r in &data.rows {
+        let named = |n: &Option<String>| n.clone().unwrap_or_else(|| "-".into());
+        match args.direction {
+            Direction::To => {
+                let _ = writeln!(out, "0x{:x}\tpointer\t{}", r.slot, named(&r.slot_name));
+            }
+            Direction::From => {
+                let _ = writeln!(
+                    out,
+                    "0x{:x}\tpointer\t{}\t@0x{:x}",
+                    r.target,
+                    named(&r.target_name),
+                    r.slot
+                );
+            }
+        }
+    }
     out
 }
 
@@ -607,6 +781,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
     let mut spec: Option<(Direction, String)> = None;
     let mut json = false;
     let mut kinds: Vec<XrefKind> = Vec::new();
+    let mut pointer_kind = false;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
@@ -630,7 +805,11 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
             "--kind" => {
                 let v = take(argv, &mut i, "--kind")?;
                 for k in v.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-                    kinds.push(parse_kind(k)?);
+                    if k.eq_ignore_ascii_case("pointer") {
+                        pointer_kind = true;
+                    } else {
+                        kinds.push(parse_kind(k)?);
+                    }
                 }
             }
             "--option" => options.push(crate::args::take_option(argv, &mut i)?),
@@ -657,12 +836,16 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
 
     let binary = binary.ok_or("xrefs requires <binary>")?;
     let (direction, spec) = spec.ok_or("xrefs requires --to <target> or --from <target>")?;
+    let pointers = pointer_kind || kinds.is_empty();
+    let instructions = !pointer_kind || !kinds.is_empty();
     Ok(XrefArgs {
         binary,
         spec,
         direction,
         json,
         kinds,
+        instructions,
+        pointers,
         options,
         mode,
         slice,
@@ -679,14 +862,14 @@ fn parse_kind(k: &str) -> Result<XrefKind, String> {
         "data" => Ok(XrefKind::Data),
         "read" => Ok(XrefKind::Read),
         "write" => Ok(XrefKind::Write),
-        other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write)")),
+        other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write, pointer)")),
     }
 }
 
 fn usage() {
     eprintln!(
         "usage: kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] \\\n\
-         \x20                  [--kind call,jump,data,read,write] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                  [--kind call,jump,data,read,write,pointer] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                  [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          --to    everything that references the target (call sites, branches, data references).\n\
@@ -696,8 +879,15 @@ fn usage() {
          \x20       when the library calls it through one.\n\
          --from  everything the target references (its callees and the data it touches)\n\
          \n\
+         `pointer` rows are words the image stores in its data that hold the target's\n\
+         address (--to) or that lie in the target (--from), as its rebase/relocation\n\
+         metadata lists them; data_refs_coverage names that metadata, `none` when the\n\
+         image lists no pointer relocations (a non-PIE ELF).\n\
+         \n\
          --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\
-         xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}]}};\n\
+         xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}],\n\
+         data_refs_coverage,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
+         to_address,to_name,width,source,..}}]}};\n\
          without it, one tab-separated row each."
     );
 }

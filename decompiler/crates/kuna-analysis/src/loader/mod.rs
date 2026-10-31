@@ -68,6 +68,9 @@ pub(crate) mod le;
 // .rel.dyn / .rela.plt) so a GOT slot holds the value the run-time loader
 // would write, and report the PT_GNU_RELRO-frozen slots as constant.
 pub mod kuna_dynrelocs;
+// (kuna) The pointers an image stores in its data, as its rebase / relocation
+// metadata lists them (the data half of `kuna xrefs`).
+pub mod kuna_dataptrs;
 // (kuna) `pltlocal`: the PLT stubs the image's own relocations bind to a
 // function it defines.
 pub(crate) mod kuna_pltlocal;

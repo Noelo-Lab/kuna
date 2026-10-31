@@ -1383,6 +1383,58 @@ funcsym stream:
   are already the unslid pointers, and its bound slots are already zero or a
   stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
   them.
+
+  A Mach-O image's dynamic relocations are its `LC_DYLD_CHAINED_FIXUPS` chains,
+  and there the on-disk word is worse than zero: it is not a value at all. Each
+  pointer slot holds a packed chain entry, the target in its low bits and the
+  hop to the next slot of the page in its high bits, and in Apple `ld64`'s
+  `DYLD_CHAINED_PTR_64_OFFSET` layout the target is an offset from the image
+  base. GH #1333's slot for a pointer to `audit_target` at `0x100000410` reads
+  `10 04 00 00 00 00 00 00`, and a slot that is not the last on its chain carries
+  `next` bits above the target (`0x0010000100000440` for a pointer to
+  `0x100000440`). `kuna_dynrelocs.rs (macho_chained)` takes the chains from
+  `chained.rs (resolve_chained_fixups)` and writes each rebase's resolved target
+  and a zero for each bind, the word every other format's loader leaves in an
+  import slot. A bind names an import, whose address is in another image, so
+  nothing better is knowable. No Mach-O slot is reported constant: the read-only
+  `__DATA_CONST` segment is the RELRO analog, but no Mach-O section is read-only
+  to the engine today, so there is nothing for the warrant to narrow. A classic
+  image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
+  are already the unslid pointers, and its bound slots are already zero or a
+  stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
+  them.
+- **Data-held pointers** (kuna,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_dataptrs.rs (data_pointers)`):
+  the read-only twin of the two writers above, for `kuna xrefs`. A word in data
+  that holds `&audit_target` is a reference no instruction makes, so the
+  instruction walk never reports it, and calling it a call edge would be wrong.
+  But a rebased image lists every such word, because its loader must fix each
+  one up: a chained-fixup Mach-O threads them on its chains (the rebase carries
+  its target), a classic Mach-O lists them in its `LC_DYLD_INFO` rebase opcodes
+  (interpreted here; the slot already holds the unslid target), a
+  position-independent ELF carries a dynamic relocation for each, and a PE lists
+  them in `.reloc`. The ELF list is read here, not through `dynrelocs` (whose
+  writes are an option of the loaded image): a `RELATIVE` word holds `B + A`, and
+  an absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
+  holds `S + A`. The absolute kind is how a shared object stores its own exported
+  functions, which are preemptible (`R_X86_64_64 audit_target` for the first entry
+  of a callback table). The list keeps
+  each word whose target is in an allocated section, and says which metadata it
+  came from. An image that lists none (a non-PIE ELF, whose own pointers carry no
+  relocation, a PE without base relocations, a relocatable object) reports
+  coverage `none`: its pointers are plain words no metadata tells from integers,
+  and guessing would make an empty answer mean two things. A bound slot is not
+  listed, since it holds an address of another image. `kuna xrefs` reports these
+  as separate `pointer` rows with that coverage, never merged into the
+  instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
+  embed an absolute address, so a 32-bit PE's `.reloc` also lists every
+  `push offset f` and `jmp [slot]` operand in `.text`; a word that lies inside a
+  decoded instruction referencing the same address (the instruction's bytes, as
+  its own decode measures them, cover the word) is that instruction's row and is
+  left out (`xrefs.rs (data_rows)`). A word just past the instruction, such as a
+  pointer table placed in `.text` after a `mov eax, offset f`, stays a pointer,
+  and so does one inside an instruction the walk never decoded or whose reference
+  it did not record, so dropping a row never leaves the word unanswered.
 - **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
