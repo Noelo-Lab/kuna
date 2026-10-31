@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A cloned return block wrote a global a second time (kuna #1355).
+    audit_select is clang 14 -O1 -fPIC x86-64:
+
+        audit_recorded = audit_decoy;
+        if (audit_choice) return audit_fast;
+        return audit_safe;
+
+    The binary stores audit_recorded once, then picks the result with a
+    CMOVE and returns; there is no second store.  SLEIGH lifts the CMOVE as
+    a branch around one move, so the RET is a block with two in-edges, and
+    the return splitters (earlyreturn, switchreturn, returndup, upstream
+    ActionReturnSplit) clone it per edge.  Heritage puts an
+    `audit_recorded = audit_recorded` liveness COPY before every RETURN and
+    marks it return_copy, which keeps the propagation rules off it.  The
+    clone dropped that flag, so the value stored at 0x1137 was propagated
+    into the copy and it printed `audit_recorded = audit_decoy;` again on
+    the audit_safe path.  The clone now keeps the flag, and the global is
+    written once before the choice (#3-#5) whichever splitter clones the
+    block: returndup, the harness default (#1), or earlyreturn (#2).
+
+    Stage: P8 structure (return-block node split), strict fix, no option.
+-->
+<bytechunk space="ram" offset="0x1100" readonly="true">
+8d4707c3662e0f1f84000000000066908d470bc3662e0f1f8400000000006690
+8d4713c3662e0f1f8400000000006690488d05e9ffffff488905ea2e0000833d
+eb2e000000488d0dc4ffffff488d05adffffff480f44c1c30f1f840000000000
+893dca2e0000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x4028">
+00000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1100" name="audit_fast"/>
+<symbol space="ram" offset="0x1110" name="audit_safe"/>
+<symbol space="ram" offset="0x1120" name="audit_decoy"/>
+<symbol space="ram" offset="0x1130" name="audit_select"/>
+<symbol space="ram" offset="0x1160" name="audit_set_choice"/>
+</binaryimage>
+<script>
+  <com>map address r0x4028 code *audit_recorded</com>
+  <com>map address r0x4030 int4 audit_choice</com>
+  <com>lo fu audit_select</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETCOPYCLONE #1: returndup clones the return block" min="1" max="1">audit_select\(void\) // return-dupe$</stringmatch>
+<stringmatch name="RETCOPYCLONE #2: earlyreturn clones it with returndup off" min="1" max="1">audit_select\(void\) // .*early-return$</stringmatch>
+<stringmatch name="RETCOPYCLONE #3: the global is written once in each" min="2" max="2">audit_recorded = </stringmatch>
+<stringmatch name="RETCOPYCLONE #4: the write precedes the choice" min="2" max="2">audit_recorded = audit_decoy;
+if \(audit_choice\)</stringmatch>
+<stringmatch name="RETCOPYCLONE #5: both results are returned" min="4" max="4">return audit_(fast|safe);</stringmatch>
+</decompilertest>

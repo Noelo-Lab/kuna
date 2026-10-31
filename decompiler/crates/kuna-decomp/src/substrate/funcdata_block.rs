@@ -4207,7 +4207,11 @@ impl CloneBlockOps {
                 // behaviour faithfully (matches the upstream byte output).
                 | opf::fallthru_true
                 | opf::calculated_bool
-                | opf::ptrflow);
+                | opf::ptrflow
+                // (kuna) not in the upstream mask: a cloned `guardReturns` liveness
+                // COPY that loses the flag gets a value propagated into it and
+                // prints as a second store to the global on the split path.
+                | opf::return_copy);
         // The addl-flag subset (funcdata_block.cc:987-988), plus the kuna_zextreturn and
         // kuna_exactfloat records.
         use crate::op::pcodeop_addlflags as opaf;

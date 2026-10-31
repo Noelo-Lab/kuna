@@ -764,6 +764,23 @@ the schedule (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
   cloned, SSA/def-use is untouched, and the printer re-emits the same ops in
   the new layout.
 
+A CFG split must leave every path performing the same writes, the same number
+of times. A RETURN block carries one `Heritage::guardReturns` `glob = glob`
+COPY per persistent global (§3.1). Each is flagged `return_copy`, and that flag
+is what keeps `RulePropagateCopy` off it. Upstream's `buildOpClone`
+mask (`funcdata_block.cc:982`) drops the flag, so in a clone the propagation
+rules replaced the guard's input with the value the function last stored. The
+COPY then read as a store and printed a second `glob = <value>;` on the cloned
+path, after the real store had already executed (kuna #1355). A
+`store; cmp; cmov; ret` function (clang and gcc, -O1 and -O2) hit this through
+`returndup`, `earlyreturn` and `switchreturn` alike, because SLEIGH lifts the
+CMOV as a branch around one move, which leaves the RET with two in-edges;
+`ActionReturnSplit` clones through the same helper.
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(CloneBlockOps::build_op_clone)` therefore keeps `return_copy` on the clone.
+The cloned guard stays an identity copy that merges with the global and does not
+print, as the original does. This is a strict fix with no option.
+
 Two more run inside §8.1's machinery: `branchflip` (described there) and
 `loopbreak_recovery` (inside `ActionFinalStructure`, below). All of them
 share the safety stance: exact structural preconditions, hard caps, and
