@@ -1185,6 +1185,9 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
     assert_eq!(doc["truncated"], true);
     let ops = instructions[0]["ops"].as_array().unwrap();
     assert_eq!(instructions[0]["mnemonic"], "PUSH");
+    assert_eq!(instructions[0]["bytes"], "55");
+    assert_eq!(doc["start_hex"], instructions[0]["address_hex"]);
+    assert_eq!(doc["end_hex"], format!("0x{:x}", doc["end"].as_u64().unwrap()));
     assert_eq!(ops.iter().map(|op| op["opcode"].as_str().unwrap()).collect::<Vec<_>>(), ["COPY", "INT_SUB", "STORE"]);
     assert_eq!(ops[1]["inputs"][1]["space"], "const");
     assert_eq!(ops[1]["inputs"][1]["offset"], 8);
@@ -1199,6 +1202,7 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
     }
     let (text, stderr, code) = run_kuna(&["raw-pcode", &binary, "main", "--count", "1"]);
     assert_eq!(code, 0, "{stderr}");
+    assert!(text.contains("55  PUSH RBP"));
     assert!(text.contains(ops[0]["opcode"].as_str().unwrap()));
     assert!(text.contains("# truncated at"));
     let next = format!("0x{:x}", doc["end"].as_u64().unwrap());

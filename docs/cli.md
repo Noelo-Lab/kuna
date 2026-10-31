@@ -2325,6 +2325,17 @@ or `decode_error`. On an undecodable or boundary-crossing instruction the
 command exits nonzero, while retaining decoded instructions in stdout; JSON
 `error` reports the failure address and message, and `end` is the exclusive
 end of the successfully decoded prefix.
+In JSON, `binary` names the input; `start` and `end` are numeric VMAs with
+`end` exclusive. `truncated` is true when the requested or derived walk did not
+finish. Each `instructions` row has a numeric `address`, `address_hex`, `size`
+in bytes, lowercase hexadecimal `bytes`, `mnemonic`, `operands` and an ordered
+`ops` array. Each op has the SLEIGH `opcode`, an `output` varnode or null, and
+ordered `inputs`. Each varnode has its named address `space`, numeric `offset`,
+`offset_hex`, and byte `size`; a `const` offset is the constant value. For
+`LOAD` and `STORE`, the first constant input identifies the accessed address
+space, rather than an ordinary program value. Numeric addresses and offsets are
+also spelled as hexadecimal strings for consumers without exact 64-bit numbers.
+
 `decompile --raw` instead prints the decompiler's current IR after its passes.
 
 ## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough

@@ -69,16 +69,20 @@ fn render_raw(args: &DisArgs) -> Result<(String, i32), String> {
             let (_, mnemonic, operands) = prog
                 .disassemble_at(addr)
                 .map_err(|e| format!("cannot disassemble 0x{addr:x}: {e}"))?;
-            Ok((size, ops, next, mnemonic, operands))
+            let bytes = prog
+                .read_bytes(addr, size as usize)
+                .ok_or_else(|| format!("cannot read instruction bytes at 0x{addr:x}"))?;
+            Ok((size, ops, next, mnemonic, operands, bytes))
         })();
-        let (size, ops, next, mnemonic, operands) = match decoded {
+        let (size, ops, next, mnemonic, operands, bytes) = match decoded {
             Ok(decoded) => decoded,
             Err(message) => {
                 failure = Some((addr, message));
                 break;
             }
         };
-        text.push_str(&format!("0x{addr:x}: {mnemonic} {operands}\n"));
+        let bytes = hex(&bytes);
+        text.push_str(&format!("0x{addr:x}: {bytes}  {mnemonic} {operands}\n"));
         let mut json_ops = Vec::new();
         for op in ops {
             let output = op.output.as_ref().map(varnode);
@@ -96,7 +100,7 @@ fn render_raw(args: &DisArgs) -> Result<(String, i32), String> {
             ));
             json_ops.push(json!({"opcode": op.opcode, "output": output, "inputs": inputs}));
         }
-        instructions.push(json!({"address": addr, "address_hex": format!("0x{addr:x}"), "size": size, "mnemonic": mnemonic, "operands": operands, "ops": json_ops}));
+        instructions.push(json!({"address": addr, "address_hex": format!("0x{addr:x}"), "size": size, "bytes": bytes, "mnemonic": mnemonic, "operands": operands, "ops": json_ops}));
         addr = next;
     }
     let stop_reason = if failure.is_some() {
@@ -122,7 +126,7 @@ fn render_raw(args: &DisArgs) -> Result<(String, i32), String> {
         });
         Ok((
             format!("{}\n", serde_json::to_string_pretty(&json!({
-            "binary": args.binary, "start": region.start, "end": addr, "truncated": truncated,
+            "binary": args.binary, "start": region.start, "start_hex": format!("0x{:x}", region.start), "end": addr, "end_hex": format!("0x{addr:x}"), "truncated": truncated,
             "stop_reason": stop_reason, "error": error, "instructions": instructions
         })).map_err(|e| e.to_string())?),
             status,
