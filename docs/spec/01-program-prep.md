@@ -6774,10 +6774,11 @@ exactly, 895 more trace back through a base objdump annotated, 2,237 on AArch64,
 MIPS, PowerPC and x86-64 match an independent capstone def-chain resolver, the 344
 ARM PLT slot reads match the entries' own `add`/`add`/`ldr` arithmetic, and the
 other 80 (Thumb `adr` + `ldrd` pool reads, a MIPS delay-slot `addiu`, a RISC-V
-`c.lui` store and an `amoswap` on a lock) were checked by hand. The
-walk costs about 3% more on x86-64, where almost nothing is carried, and up to 9%
-on AArch64 and RISC-V, about half of that rendering the rows they gain. Emitted C
-is unchanged.
+`c.lui` store and an `amoswap` on a lock) were checked by hand. The walk
+itself costs within 2% more on x86-64 and ARM, where little is carried, and 8-10%
+more on AArch64, RISC-V and MIPS, where a high half precedes nearly every global
+access; a whole `kuna xrefs` answer costs under 1% more on x86-64 and 3-5% more on
+the others. Emitted C is unchanged.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
