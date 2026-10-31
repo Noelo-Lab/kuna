@@ -487,6 +487,13 @@ pub struct Architecture {
     segment_defs: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
     /// (kuna `segmentize`) What applying the option changed, for `off`.
     segment_saved: Option<crate::kuna_segmentize::SegmentSaved>,
+    /// (kuna `fpuemu`) `option fpuemu` mode (`FpuEmuMode` as u8): decode the
+    /// 8087 emulator's `INT 34h`-`3Dh` as x87 instructions.  Default auto.
+    /// See [`kuna_fpuemu`](crate::kuna_fpuemu).
+    pub fpu_emu: u8,
+    /// (kuna `fpuemu`) The loader found 8087-emulator code in the image, which
+    /// `auto` decodes by.
+    pub fpu_emu_evidence: bool,
     /// (kuna `syscallregs`) When the ARM/AArch64/RISC-V/MIPS/PowerPC system-call
     /// user-op writes its result register and reads the registers the function
     /// sets up for it: `off`, `auto` (the default: only on an image the loader
@@ -2950,6 +2957,8 @@ impl Architecture {
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
             segmentize: false, // (kuna) option segmentize; reset_defaults sets the shipped default
+            fpu_emu: 0, // (kuna) option fpuemu; reset_defaults sets the shipped default (auto)
+            fpu_emu_evidence: false,
             segment_defs: Vec::new(),
             segment_saved: None,
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
@@ -3381,6 +3390,8 @@ impl Architecture {
         self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::Off; // (kuna) default-OFF: with a RUNTIME syscall number nothing can say how many argument registers the callee reads, so both answers the option offers are modelling judgements rather than facts; ON in the `aggressive` preset, which `auto` selects under 500 KiB
         self.segmentize = true; // (kuna) default-ON, as upstream: a processor spec's `<segmentop>` segmentizes its CALLOTHERs and resolves constant pointers through it. Only x86 16-bit, Z80 and HCS12 declare one and no datatest uses them (0/675); `option segmentize off` keeps the bare `segment(...)` calls
         self.apply_segmentize();
+        self.fpu_emu = crate::kuna_fpuemu::FpuEmuMode::Auto.as_u8(); // (kuna #1288) decode the 8087 emulator's INT 34h-3Dh as x87 where the loader found emulator code (MS-DOS executables); only x86-16.sla has the fpuEmu context bit, so every other input and every datatest is unchanged; `option fpuemu off` keeps the interrupts
+        crate::kuna_fpuemu::apply(self);
         self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.struct_synth = crate::kuna_structsynth::StructSynthMode::Locals; // (kuna) structsynth default `locals`: a pointer parameter, or a pointer a call returned, read at two or more constant offsets is declared `struct_N *` and the reads render as fields. Moves 0/675 datatest assertions; `option structsynth param` restores parameters only, `off` the raw offset arithmetic
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on

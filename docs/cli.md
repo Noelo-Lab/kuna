@@ -1143,6 +1143,11 @@ does not open with code, is data in a far data segment rather than a function;
 `--option mzsweep off` sweeps the whole module as a raw image does. A file packed with PKLITE or LZEXE loads too, but its code is the
 decompressor stub and a packed body, so kuna says so on stderr; unpack it first
 (`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
+A program linked with Microsoft's or Borland's 8087 emulator carries its float
+instructions as `INT 34h`-`3Dh`; when the load module holds emulator code,
+kuna decodes them as the x87 instructions they stand for (`--option fpuemu
+off` keeps the interrupts, `on` forces the decode, for example on a
+`--raw-image` `.COM` program).
 `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
 `decompile-project` and the console support MZ input; `strings`, `xrefs`,
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
