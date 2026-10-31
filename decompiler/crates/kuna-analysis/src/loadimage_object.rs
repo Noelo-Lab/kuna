@@ -538,6 +538,10 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
+    /// dynamic relocations bind to a function it defines, ascending by stub. See
+    /// [`crate::loader::kuna_pltlocal`].
+    plt_local: Vec<(u64, u64)>,
     elfv1: crate::loader::elfv1::Descriptors,
     elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
@@ -979,6 +983,8 @@ impl ObjectLoadImage {
         // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
+        let plt_local = fmt.local_import_targets(&file, bytes);
+
         // (kuna) The import pointer slots the funcsym walk above just registered
         // names at — recorded as addresses so the enumeration can tell a pointer
         // word from a function entry. Empty off-PE.
@@ -1027,6 +1033,7 @@ impl ObjectLoadImage {
             const_ranges,
             dynreloc_const,
             import_slots,
+            plt_local,
             elfv1,
             elf_functions,
             spaceid: None,
@@ -1188,6 +1195,7 @@ impl ObjectLoadImage {
             // A pre-link object has no Import Address Table: its external calls
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
+            plt_local: Vec::new(),
             elfv1: Default::default(),
             elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
@@ -1271,6 +1279,12 @@ impl ObjectLoadImage {
     /// varnode inside one even when global propagation is off.
     pub fn dynreloc_const_ranges(&self) -> &[(u64, u64)] {
         &self.dynreloc_const
+    }
+
+    /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
+    /// relocations bind to a function it defines, ascending by stub.
+    pub fn plt_local_targets(&self) -> &[(u64, u64)] {
+        &self.plt_local
     }
 
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
@@ -1593,6 +1607,10 @@ impl LoadImage for ObjectLoadImage {
             r.1 = r.1.wadd(badjust);
         }
         for r in &mut self.dynreloc_const {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.plt_local {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
