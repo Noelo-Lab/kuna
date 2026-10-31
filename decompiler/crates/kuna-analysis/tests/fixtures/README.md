@@ -924,6 +924,16 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
        -undefined dynamic_lookup -e _call_slots -o macho_import_slots m.o
 ```
 
+`macho_alias_names_arm64` (arm64, 17 KB) is GH #1357's witness: several `nlist`
+names at one entry. `_audit_export_a`/`_audit_export_b`@`0x240` (external),
+`_audit_local_a`/`_audit_local_b`@`0x248` (local), and two objects' local
+`_audit_shared`/`_audit_both` labels, one of them the only name at `0x25c`.
+Before the fix only the first name at an address selected it. Sources
+`macho_alias_names.s` and `macho_alias_names_other.s`; recipe, toolchain and
+SHA-256 in `macho_alias_names_arm64.provenance`. Pinned by
+`loadimage_object/alias_tests.rs (macho_and_pe_alias_names_survive)` and
+`kuna-cli/tests/macho_alias_names_cli.rs`.
+
 `macho_datasyms_arm64` (arm64, 33 KB) is GH #1339's witness: two external
 `__DATA,__data` globals (`_audit_global`@`0x100004000`, `_audit_message`@`0x100004008`)
 beside `_audit_read`@`0x1000003c8` and `_main`@`0x1000003d4`. An external
