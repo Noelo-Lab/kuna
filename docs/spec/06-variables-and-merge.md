@@ -352,6 +352,20 @@ and replaced with a single COPY hoisted to the common dominator block
 (`funcdata_merge.rs (MergeContext::build_dominant_copy)`) — one assignment
 instead of one per predecessor.
 
+*(kuna perf)* A merge pass edits ops but never blocks, so while one runs
+every Cover walk shares a single block-index table built on first use
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::cover_blocks)`,
+set and dropped by `funcdata_merge.rs (Funcdata::with_covermerge)`) instead of
+each walk rebuilding it from the block list. The intersection tests read the
+highs' and members' covers in place instead of copying them
+(`merge.rs (MergeContext::high_get_cover)`), a high's flag word is recomputed
+from each member's flags without building the member's whole view
+(`variable.rs (HighContext::vn_flags)`), and merging two highs whose instance
+lists do not interleave, which is every forced merge of the Varnodes at one
+address, appends one list to the other instead of re-merging both
+(`variable.rs (HighVariableBank::merge_inst_lists)`). None of this changes
+which Varnodes merge.
+
 **Copy and speculative merges.** After the forced merges and explicit/implied
 marking (below), three passes fuse variables to reduce clutter:
 
