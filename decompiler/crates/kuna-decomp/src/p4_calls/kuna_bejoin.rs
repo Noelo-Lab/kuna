@@ -2480,6 +2480,13 @@ fn pair_halves(data: &Funcdata, whole: VarnodeId) -> Option<(Address, i32, Addre
     }
 }
 
+/// Is `name` a section the exception tables live in (`.eh_frame`,
+/// `.gcc_except_table*`, `.ARM.exidx*`, `.ARM.extab*`)? The object bootstrap
+/// hands those to [`crate::architecture::Architecture::eh_sections`].
+pub fn is_exception_table(name: &str) -> bool {
+    name == ".eh_frame" || name.starts_with(".gcc_except_table") || name.starts_with(".ARM.exidx") || name.starts_with(".ARM.extab")
+}
+
 #[path = "kuna_bejoin/evidence.rs"]
 mod evidence;
 

@@ -49,7 +49,11 @@
 //! literal pool's `0x0008` decodes as `movs r0,r1`), or, before any branch,
 //! the target of a direct call (a function whose symbol `strip -x` removed),
 //! nor any in a part of a function gcc's hot/cold partition names `f.cold`,
-//! whose blocks the hot part enters.
+//! whose blocks the hot part enters. A C++ landing pad, which the unwinder
+//! enters with the selector in the second register, ends a site the same way
+//! on any path; the pads come from the image's exception tables
+//! ([`landing`]), and a caller whose tables do not decode, or an image whose
+//! tables cannot be placed, gives no evidence.
 //!
 //! The call sites come from one scan of the executable bytes for the
 //! direct-call encodings (PowerPC `bl`, MIPS `jal` and `bal`, SPARC `call`,
@@ -83,6 +87,17 @@ const MAX_CLOBBER_FUNCS: usize = 32;
 
 /// How many bytes of code one read of the image takes.
 const CHUNK: usize = 1 << 20;
+
+/// The symbols that say an image unwinds C++ exceptions.
+const EH_NAMES: [&[u8]; 7] = [
+    b"__gxx_personality_v0",
+    b"__gcc_personality_v0",
+    b"__gxx_personality_sj0",
+    b"__gcc_personality_sj0",
+    b"_Unwind_Resume",
+    b"__cxa_begin_catch",
+    b"__cxa_end_cleanup",
+];
 
 const M32: u64 = 0xffff_ffff;
 
@@ -267,6 +282,8 @@ pub(super) struct Index {
     entries: Vec<u64>,
     /// The symbols gcc's hot/cold partition names `f.cold`, sorted.
     cold: Vec<u64>,
+    /// The landing pads its exception tables name.
+    eh: landing::Landing,
 }
 
 impl Index {
@@ -283,11 +300,14 @@ impl Index {
         let loader = arch.translate().loader_rc();
         let mut starts = Vec::new();
         let mut cold = Vec::new();
+        let (mut named, mut sjlj) = (false, false);
         {
             let l = loader.borrow();
             l.open_symbols();
             let mut rec = kuna_sleigh::loadimage::LoadImageFunc::default();
             while l.get_next_symbol(&mut rec) {
+                named |= EH_NAMES.contains(&rec.name.as_slice());
+                sjlj |= rec.name.starts_with(b"_Unwind_SjLj_");
                 if rec.address.get_space().is_some_and(|s| Rc::ptr_eq(s, &code)) {
                     starts.push(rec.address.get_offset() & mask);
                     if rec.name.ends_with(b".cold") || rec.name.windows(6).any(|w| w == b".cold.") {
@@ -339,7 +359,10 @@ impl Index {
         calls.retain(|(t, _)| funcs.binary_search_by_key(t, |f| f.0).is_ok());
         calls.sort_unstable();
         calls.dedup();
-        Some(Index { code, windows: isa == Isa::Sparc, funcs, calls, entries, cold })
+        let eh = landing::read(arch.eh_sections.as_deref().map(Vec::as_slice), named, sjlj, &|a| range_of(a).is_some(), &mut |a, buf| {
+            loader.borrow_mut().load_fill(buf, &Address::new(Rc::clone(&code), a)).is_ok()
+        });
+        Some(Index { code, windows: isa == Isa::Sparc, funcs, calls, entries, cold, eh })
     }
 
     fn start(&self, entry: u64) -> Option<(u64, u64)> {
@@ -953,7 +976,8 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
     };
     while let Some((at, insn, mut op, mut facts, mut deriv, branched)) = todo.pop() {
         if at != site && op == 0 {
-            if layout.data.range(at..at + insn.len.max(1)).next().is_some() || (!branched && layout.joins.contains(&at)) {
+            let end = at + insn.len.max(1);
+            if layout.data.range(at..end).next().is_some() || index.eh.pad_in(at, end) || (!branched && layout.joins.contains(&at)) {
                 return Use::Dead;
             }
             if index.entry(at) {
@@ -1132,10 +1156,12 @@ struct Layout {
 /// the bytes of its own extent it reads (an ARM literal pool's words); `None`
 /// when it jumps through a register (a jump table, whose targets the walk
 /// does not know), when it is the `.cold` part of a function (whose blocks
-/// the hot part enters), or when it is too long to walk.
+/// the hot part enters), when its landing pads are not known (its exception
+/// data does not decode, or the image's cannot be placed), or when it is too
+/// long to walk.
 fn layout_of(arch: &Architecture, index: &Index, func: (u64, u64)) -> Option<Layout> {
     let (start, end) = func;
-    if index.cold.binary_search(&start).is_ok() {
+    if index.cold.binary_search(&start).is_ok() || index.eh.blind || index.eh.unknown_in(start, end) {
         return None;
     }
     let base = tracked(arch, index, start);
@@ -1212,6 +1238,9 @@ fn clobbers(arch: &Architecture, index: &Index, lo: Key, entry: u64, cache: &mut
     }
     false
 }
+
+#[path = "landing.rs"]
+mod landing;
 
 #[cfg(test)]
 #[path = "callers_tests.rs"]

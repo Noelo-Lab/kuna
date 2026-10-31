@@ -4429,6 +4429,16 @@ pub fn bootstrap_from_object_with_isa(
     );
     let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
 
+    // (kuna `bejoin callers`) The exception-table sections, at the addresses
+    // the loader maps them to (an object's synthetic layout, relocated), so
+    // the caller evidence can read the landing pads off the image's bytes.
+    let eh_sections: Vec<(String, u64, u64)> = loader
+        .section_metadata()
+        .iter()
+        .filter(|s| kuna_decomp::kuna_bejoin::is_exception_table(&s.name))
+        .map(|s| (s.name.clone(), s.vma, s.size))
+        .collect();
+
     // readLoaderSymbols (the ELF FUNC symbols) BEFORE handing the loader off.
     let mut symbols = read_loader_symbols_generic(&loader);
     let object_sections: Vec<ObjectSectionLocation> = loader
@@ -4583,6 +4593,7 @@ pub fn bootstrap_from_object_with_isa(
     // `code_const_ranges`, so `GlobalContainer::litpool_const_contains` can
     // binary-search.
     prog.arch_mut().litpool_const = std::rc::Rc::new(litpool_const);
+    prog.arch_mut().eh_sections = Some(std::rc::Rc::new(eh_sections));
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
     prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);

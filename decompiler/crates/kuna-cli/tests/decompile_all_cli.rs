@@ -9909,7 +9909,10 @@ fn bejoin_callers_read_a_pair_alike_in_every_run() {
 /// and built with gcc's hot/cold partition, `u_cold.cold` lays the rare block
 /// its hot part enters right after the `bl hi` (`mr 3,4`). In
 /// `bejoin_unreach_thumb.c`, built for big-endian Thumb, the literal pool after
-/// `u_pool`'s `bl hi` holds `0x00080123`, which decodes as `movs r0,r1`.
+/// `u_pool`'s `bl hi` holds `0x00080123`, which decodes as `movs r0,r1`. In
+/// `bejoin_unreach_eh.cc`, built for PowerPC and ARM big-endian (linked, and
+/// as an ARM object), the `catch` landing pad follows `u_eh`'s call of `hi`
+/// and compares the selector the unwinder leaves in the second register.
 /// `c_hi` reads only the first register of each, so every function prints as
 /// with `bejoin evidence`, in a whole `decompile-all` and a single
 /// `kuna decompile`.
@@ -9917,12 +9920,15 @@ fn bejoin_callers_read_a_pair_alike_in_every_run() {
 fn bejoin_callers_ignore_code_a_call_does_not_return_to() {
     let sp = specs();
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
-    let cases: [(&str, &[&str], &str); 5] = [
+    let cases: [(&str, &[&str], &str); 8] = [
         ("bejoin_unreach_ppc32_O1", &["hi", "hj", "u_unr", "u_sw", "c_hi"], "return CONCAT44(a1 + a3,"),
         ("bejoin_unreach_arm32_be_O2", &["hi", "u_pool", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
         ("bejoin_unreach_strip_ppc32_O2", &["hi", "u_tail", "u_cold", "c_hi"], "return CONCAT44(a1 + a3,"),
         ("bejoin_unreach_cold_ppc32_O2", &["hi", "u_tail", "u_cold", "c_hi"], "return CONCAT44(a1 + a3,"),
         ("bejoin_unreach_thumb_be_O2", &["hi", "u_pool", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_eh_ppc32_O2", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_eh_arm32_be_O2", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_eh_arm32_be_O2_obj", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
     ];
     for (fixture, funcs, expect) in cases {
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();

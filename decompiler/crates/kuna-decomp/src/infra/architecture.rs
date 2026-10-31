@@ -296,6 +296,12 @@ pub struct Architecture {
     /// object bootstrap beside [`Self::dynreloc_const`]. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `bejoin callers`) The image's exception-table sections
+    /// (`.eh_frame`, `.gcc_except_table*`, `.ARM.exidx*`, `.ARM.extab*`) as
+    /// `(name, address, size)`, which the object bootstrap installs beside
+    /// [`Self::litpool_const`]; `None` on a path without a section table. The
+    /// caller evidence reads the landing pads from them.
+    pub eh_sections: Option<Rc<Vec<(String, u64, u64)>>>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` (inclusive) byte ranges
     /// of the loaded sections a program's own data objects live in, as the
     /// object loader classifies them (`ObjectLoadImage::data_object_ranges`).
@@ -2910,6 +2916,7 @@ impl Architecture {
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
+            eh_sections: None,
             globalref_ranges: Rc::new(Vec::new()),
             litpoolconst: false,
             infer_pointers: false,

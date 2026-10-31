@@ -2444,10 +2444,30 @@ before it, and its first instructions read its second argument; a path that
 branches to such a target is a tail call and ends there), nor any site in a
 symbol named `f.cold` or `f.cold.N` (gcc's hot/cold partition,
 `-freorder-blocks-and-partition`, puts the rare blocks there and enters each
-from the hot part, so the block after a call need not follow it). A C++
-landing pad laid out right after such a call (the unwinder enters it with the
-selector in the second register) still reads as a caller's read; nothing in
-the bytes the walk reads tells the two apart. A caller whose RETURN the register
+from the hot part, so the block after a call need not follow it). Nor does a
+site whose walk reaches a C++ landing pad on any path: gcc and clang lay the
+`catch` block out right after `f(); __builtin_unreachable();` inside a `try`,
+and the unwinder enters it with the exception's selector in the second return
+register (`bl hi; cmplwi 4,2` on PowerPC, `bl hi; cmp r1,#1` on ARM). The pads
+come from the image's exception tables, which the object bootstrap hands over
+as the sections `.eh_frame`, `.gcc_except_table*`, `.ARM.exidx*` and
+`.ARM.extab*` at the addresses the loader maps them to, an object's relocated
+layout included
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/landing.rs`): each
+FDE whose CIE carries an `L` augmentation points at an LSDA whose call-site
+records give the pads, as offsets from the function or from the LSDA's own
+base; on ARM each `.ARM.exidx` entry whose `.ARM.extab` data opens with a
+personality routine has its LSDA after the unwind opcodes, compact entries have
+none, and one whose descriptor list is not empty (another compiler's handler
+table) is not understood. A caller whose own LSDA does not decode, or names a
+pad outside the code, gives no evidence. No caller gives any in an image that
+has C++ exception tables (an LSDA, a `.gcc_except_table` or `.ARM.extab`
+section, or a symbol such as `__gxx_personality_v0`, `_Unwind_Resume` or
+`__cxa_begin_catch`) this cannot place: an FDE with an LSDA for an address
+outside the code (a PowerPC object, whose `R_PPC_REL32` FDE addresses the
+loader does not apply), tables that do not parse, a front end with no section
+table, or `setjmp` unwinding (`_Unwind_SjLj_*`), whose pads a dispatch the
+tables do not name reaches. A caller whose RETURN the register
 reaches untouched (`return f();` in a function that keeps a frame, so it is no
 tail call, and SPARC's `call f; restore`) proves `f` once that caller is
 proven itself, which for such a caller means by its own callers: the path
