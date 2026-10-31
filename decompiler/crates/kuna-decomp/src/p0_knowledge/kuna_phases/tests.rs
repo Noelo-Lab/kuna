@@ -637,6 +637,9 @@ fn option_values_live_value_present_for_154() {
                             // the same reason `pebnames` is here. Its live value
                             // is `Architecture::ptr_from_use`.
                             | "ptrfromuse"
+                            // (kuna) `readonlycalls` takes `off|on|<n>`, a guard
+                            // count; its live value is `Architecture::readonly_calls`.
+                            | "readonlycalls"
                             // (kuna) `narrowargs` takes `off|on|callers`; its
                             // live value is the pair `Architecture::narrow_args`
                             // and `Architecture::narrow_args_callers`.
@@ -903,7 +906,8 @@ fn option_values_live_value_present_for_154() {
     // 152 -> 153: +1 for `callwide` (live_field = call_wide).
     // 153 -> 154: +1 for `pairrefine` (live_field = pair_refine).
     // 154 -> 156: +2 for `readonlycalls` and `prunedssa` (readonly_calls, pruned_ssa).
-    assert_eq!(with_live, 156);
+    // 156 -> 155: `readonlycalls` takes `off|on|<n>` and has no live_field.
+    assert_eq!(with_live, 155);
 }
 
 #[test]

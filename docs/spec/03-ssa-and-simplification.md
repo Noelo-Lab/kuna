@@ -346,8 +346,8 @@ global stores keep their original statements and ordering. Turning the option
 off restores the previous guards without changing the function's time or memory
 budgets.
 
-Under `option readonlycalls` (default on), a heritage pass that would guard
-at least 65,536 read-only-range and call pairs (its calls times its new, read,
+Under `option readonlycalls N` (default 65536), a heritage pass that would
+guard at least N read-only-range and call pairs (its calls times its new, read,
 read-only ranges in the default data space,
 `heritage.rs (Heritage::readonly_cross_product)`) gives a range the image maps
 without write permission, which this function never writes, no INDIRECT at a
@@ -366,7 +366,10 @@ the reads linked to the entry value, `SplitDatatype::splitCopy` declines a
 copy of a read-only literal into a local (its input is an input varnode) and
 prints one cast whole-word copy instead of one per element, and an expression
 over a constant global may be printed again after a call instead of being kept
-in a variable.
+in a variable. So the same function prints differently on either side of N,
+which is why N is the option's value: `on` leaves read-only ranges unguarded
+in every pass with a call, so every function prints the way one above the
+threshold does, and `off` keeps every guard, upstream's placement.
 
 Under `option prunedssa` (default on) a stack range that is neither persistent
 nor address-tied gets the unknown-effect INDIRECT only at a call after which a

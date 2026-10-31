@@ -939,8 +939,9 @@ pub struct Architecture {
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
     pub callee_preserves: bool,
     pub global_call_ranges: bool,
-    /// (kuna) Give a call no guard over read-only memory (option `readonlycalls`).
-    pub readonly_calls: bool,
+    /// (kuna) Give a call no guard over read-only memory once a pass would build
+    /// this many such guards, `None` to keep them all (option `readonlycalls`).
+    pub readonly_calls: Option<u64>,
     /// (kuna) Place heritage markers only where the range is live (option `prunedssa`).
     pub pruned_ssa: bool,
     /// (kuna) Let the callee's decoded body answer for the call's RETURN
@@ -3033,7 +3034,7 @@ impl Architecture {
             zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
-            readonly_calls: true,
+            readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             pruned_ssa: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,
@@ -3439,7 +3440,7 @@ impl Architecture {
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.global_call_ranges = true;
-        self.readonly_calls = true;
+        self.readonly_calls = Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT);
         self.pruned_ssa = true;
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
