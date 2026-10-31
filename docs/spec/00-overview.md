@@ -3725,21 +3725,30 @@ high variable or a unique matching name. The existing named-high and address-tak
 parameter fallbacks remain in their original order, so the index changes lookup
 cost rather than which rendered uses belong to a variable.
 
-The `raw-pcode` CLI query lifts each instruction directly through SLEIGH before
-the decompiler pipeline, exposing opcode and ordered varnode tuples. Its linear
-window is bounded by the resolved inventory extent or the caller; it does not
-follow control flow or claim that every decoded byte is reachable code. If a
-later instruction fails, the query returns the decoded prefix, its exclusive end,
-the failure address and a nonzero exit status. Each row carries the exact loaded
-bytes consumed by the translator alongside the operations. A lift that includes
-a delay slot reports the combined byte span and the slot's operations in the
-same row.
+### Raw p-code query
 
-The raw p-code `--follow` query walks only known direct intra-window successors
-and fallthrough, groups the resulting lifts into basic blocks, and reports
-unresolved, out-of-window, overlapping or undecodable paths explicitly. Its
-completeness flag is scoped to this bounded walk and does not prove all dynamic
-execution paths.
+`kuna raw-pcode` (`decompiler/crates/kuna-cli/src/disassemble/raw_pcode.rs`) lifts
+each instruction with `Translate::one_instruction` before the decompiler
+pipeline and reports the opcode and ordered varnode tuples beside the exact
+loaded bytes the translator consumed. It resolves its operand, its window and
+its program load through `kuna disassemble`'s path, so a caller-bounded window
+takes the same windowed load. The straight-line walk never guesses: it stops at
+the first instruction that does not lift or that would cross the window or the
+end of mapped memory, and returns the lifted prefix, its exclusive end, the
+failure and exit status 1. A lift that includes a delay slot reports the
+combined byte span and the slot's operations in the same row.
+
+The `--follow` walk (`raw_pcode/flow.rs`) reads each lift's successors with the
+rule `FlowInfo::xrefControlFlow` applies (`p2_lift/flow.rs`): a branch into the
+constant space is p-code-relative and stays in the lift, ops after an
+unconditional transfer that no relative branch skips are dead, and the lift
+falls through unless its last live op is a BRANCH, BRANCHIND or RETURN or a
+relative branch runs to its end. A predicated instruction therefore continues
+the walk with a branch and a fall-through to the next address. Calls are
+assumed to return. The walk visits direct successors inside its window, groups
+the lifts into basic blocks, and reports indirect, out-of-window, overlapping,
+over-budget and undecodable paths; its completeness flag is scoped to that
+bounded walk and does not prove all dynamic execution paths.
 
 When raw-pcode receives an odd ARM32 code pointer, its private decode context
 starts in Thumb mode at the corresponding even byte address. The mode seed is

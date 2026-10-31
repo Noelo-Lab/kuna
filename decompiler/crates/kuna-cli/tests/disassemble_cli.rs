@@ -1200,16 +1200,20 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
             assert!(vn["size"].as_u64().is_some());
         }
     }
+    assert_eq!(doc["kind"], "pcode");
+    assert_eq!(doc["target"]["name"], "main");
+    assert_eq!(doc["count"], 1);
     let (text, stderr, code) = run_kuna(&["raw-pcode", &binary, "main", "--count", "1"]);
     assert_eq!(code, 0, "{stderr}");
+    assert!(text.starts_with("# 1 instruction at main @ 0x40071d (0x40071d..0x40071e, 1 bytes)\n"), "{text}");
     assert!(text.contains("55  PUSH RBP"));
     assert!(text.contains(ops[0]["opcode"].as_str().unwrap()));
     assert!(text.contains("# truncated at"));
     let next = format!("0x{:x}", doc["end"].as_u64().unwrap());
     let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, &next, "--bytes", "1"]);
-    assert_ne!(code, 0);
-    assert!(stderr.is_empty(), "{stderr}");
-    assert!(stdout.contains("crosses the requested or mapped boundary"), "{stdout}");
+    assert_eq!(code, 1);
+    assert!(stderr.contains("error: instruction at 0x40071e crosses the requested or mapped boundary"), "{stderr}");
+    assert!(stdout.contains("# stopped at 0x40071e: instruction at 0x40071e crosses"), "{stdout}");
     let (partial, stderr, code) = run_kuna(&["raw-pcode", &binary, "main", "--bytes", "2", "--json"]);
     assert_eq!(code, 1, "{stderr}");
     let partial: Json = serde_json::from_str(&partial).unwrap();
@@ -1275,9 +1279,13 @@ fn raw_pcode_mips_return_includes_delay_slot() {
 
 
 fn raw_flow_fixture(bytes: &[u8]) -> String {
+    raw_flow_fixture_for(object::Architecture::X86_64, bytes)
+}
+
+fn raw_flow_fixture_for(arch: object::Architecture, bytes: &[u8]) -> String {
     use object::write::{Object, Symbol, SymbolSection};
-    use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
-    let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+    use object::{BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
+    let mut obj = Object::new(BinaryFormat::Elf, arch, Endianness::Little);
     let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     obj.append_section_data(section, bytes, 16);
     obj.add_symbol(Symbol { name: b"probe".to_vec(), value: 0, size: bytes.len() as u64,
@@ -1391,4 +1399,47 @@ fn raw_pcode_thumb_interior_pointer_uses_thumb_without_changing_other_isas() {
     let doc = read(&["raw-pcode", &x86, "0x40071d", "--count", "1", "--json"]);
     assert_eq!(doc["start_hex"], "0x40071d");
     assert_eq!(doc["instructions"][0]["bytes"], "55");
+}
+
+#[test]
+fn raw_pcode_follow_falls_through_predicated_instructions() {
+    // cmp edi,esi; cmovg eax,edi; ret -- CMOVG skips its own body with a CBRANCH
+    // to the next address, which is no reason to stop the walk.
+    let binary = raw_flow_fixture(&[0x39, 0xf7, 0x0f, 0x4f, 0xc7, 0xc3]);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--follow", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["kind"], "flow");
+    assert_eq!(doc["complete"], true, "{doc}");
+    assert_eq!(doc["instruction_count"], 3, "{doc}");
+    let start = doc["start"].as_u64().unwrap();
+    let cmov = doc["blocks"][0]["successors"].as_array().unwrap();
+    let edges: Vec<_> = cmov.iter().map(|e| (e["kind"].as_str().unwrap(), e["target"].as_u64())).collect();
+    assert_eq!(edges, [("branch", Some(start + 5)), ("fallthrough", Some(start + 5))]);
+    assert_eq!(doc["blocks"][1]["instructions"][0]["mnemonic"], "RET");
+
+    // cmp r0,r1; movle r0,r1; bx lr
+    let arm = raw_flow_fixture_for(
+        object::Architecture::Arm,
+        &[0x01, 0x00, 0x50, 0xe1, 0x01, 0x00, 0xa0, 0xd1, 0x1e, 0xff, 0x2f, 0xe1],
+    );
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &arm, "probe", "--follow"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.starts_with("# 3 instructions reached from probe @ "), "{stdout}");
+    assert!(stdout.contains("movle r0,r1"), "{stdout}");
+    assert!(stdout.contains("bx lr"), "{stdout}");
+    assert!(!stdout.contains("# incomplete"), "{stdout}");
+}
+
+#[test]
+fn raw_pcode_help_and_data_targets_say_what_they_are() {
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", "--help"]);
+    assert_eq!(code, 0);
+    assert!(stdout.is_empty(), "help belongs on stderr like every other block: {stdout}");
+    assert!(stderr.starts_with("usage: kuna raw-pcode"), "{stderr}");
+    let (_, stderr, code) = run_kuna(&["raw-pcode"]);
+    assert_eq!(code, 2);
+    assert!(stderr.contains("error: raw-pcode requires <binary>"), "{stderr}");
+    let (_, stderr, _) = run_kuna(&["raw-pcode", &fauxware(), "0x601040", "--bytes", "2", "--json"]);
+    assert!(stderr.contains("note: 0x601040 is in a non-executable data section"), "{stderr}");
 }

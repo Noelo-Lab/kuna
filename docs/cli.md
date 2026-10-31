@@ -2434,57 +2434,68 @@ kuna raw-pcode ./a.out 0x401000-0x401020 --json
 kuna raw-pcode ./a.out main --follow --json
 ```
 
-This linearly lifts each instruction directly with SLEIGH, before decompiler
-analysis, simplification, or SSA construction. Each operation carries an opcode,
-an optional output, and ordered input varnodes, each with its address space,
-offset and size in bytes. The JSON result groups operations by instruction and
-reports the exclusive end and whether the instruction limit or mapped-image
-boundary truncated the walk.
-The range and function extent use the same inventory as `disassemble`; absent a
-known extent, the default window is 64 bytes, and derived walks stop at 1024
-instructions. `--count` and `--bytes` bound the walk. This is a linear listing,
-not a control-flow walk: it can encounter data inside a function and does not
-follow branches. `stop_reason` is `range_end`, `instruction_limit`, `mapped_end`,
-or `decode_error`. On an undecodable or boundary-crossing instruction the
-command exits nonzero, while retaining decoded instructions in stdout; JSON
-`error` reports the failure address and message, and `end` is the exclusive
-end of the successfully decoded prefix.
-In JSON, `binary` names the input; `start` and `end` are numeric VMAs with
-`end` exclusive. `truncated` is true when the requested or derived walk did not
-finish. Each `instructions` row has a numeric `address`, `address_hex`, `size`
-in bytes, lowercase hexadecimal `bytes`, `mnemonic`, `operands` and an ordered
-`ops` array. Each op has the SLEIGH `opcode`, an `output` varnode or null, and
-ordered `inputs`. Each varnode has its named address `space`, numeric `offset`,
-`offset_hex`, and byte `size`; a `const` offset is the constant value. For
-`LOAD` and `STORE`, the first constant input identifies the accessed address
-space, rather than an ordinary program value. Numeric addresses and offsets are
-also spelled as hexadecimal strings for consumers without exact 64-bit numbers.
-For a single numeric ARM32 code pointer, an odd address selects Thumb mode at
-its even byte address, including inside a function. This applies only to the
-raw-pcode query; `--isa arm` with an odd pointer is rejected as contradictory.
-An address range is read literally. Other architectures retain odd addresses.
+```text
+# 1 instruction at main @ 0x40071d (0x40071d..0x40071e, 1 bytes)
+0x40071d: 55  PUSH RBP
+  (unique,0x4f900,8) = COPY (register,0x28,8)
+  (register,0x20,8) = INT_SUB (register,0x20,8), (const,0x8,8)
+  STORE (const,0x3,8), (register,0x20,8), (unique,0x4f900,8)
+# truncated at 0x40071e (instruction_limit)
+```
 
-When SLEIGH includes a delay slot in one lift (for example a MIPS `jr`), the
-row's size and bytes cover the branch and its delay slot, and its ops include
-the slot's operations before the branch. `--count` counts such a lift as one.
+Each instruction's p-code exactly as SLEIGH lifts it, beside the bytes it
+consumed and its disassembly, before any decompiler analysis, simplification or
+SSA construction (`decompile --raw` prints the decompiler's IR after its
+passes). The operand, the flags and the window are `kuna disassemble`'s: a name
+lists its function extent, a bare address 64 bytes, and `--count`, `--bytes` or
+a `0xstart-0xend` range bound the walk; a derived walk stops at 1024
+instructions. A window the caller bounded is answered without the whole-image
+discovery walk when that walk could not change it, as for `disassemble`.
 
-With `--follow`, the command instead visits direct intra-range branches and
-fallthrough from the entry, and groups lifts into blocks. Calls are assumed to
-return and are not followed into callees. The count caps lifts; the function
-inventory or an explicit range bounds addresses. JSON `mode: "flow"` contains
-`blocks`, each with `start`, `start_hex`, `instructions`, and `successors`.
-An edge has a `kind` and a numeric `target` plus `target_hex`, or null for an
-unknown target. `range_end` is an exclusive address bound, not a claim that all
-bytes below it were decoded. `instruction_count` counts the lifts visited.
-`complete` means this bounded direct-flow walk encountered no known gaps, not
-that all runtime execution paths are proven. The `issues` array reports
-`indirect_branch`, `unsupported_pcode_flow`, `out_of_range`,
-`overlapping_instruction`, `instruction_limit`, and `decode_error`, with the
-source address and any target or error message. Decode errors exit nonzero
-while preserving the graph already built. Indirect targets, exception paths and
-callee no-return behavior are not inferred.
+The straight line is lifted forward from the start and never guessed: it stops
+at the first instruction that does not lift or that would cross the end of the
+window or of mapped memory, keeps what it lifted on stdout (text `# stopped at`,
+JSON `error`), prints `error:` on stderr and exits `1`. `stop_reason` is
+`range_end`, `instruction_limit`, `mapped_end` or `decode_error`, and `end` is
+the exclusive end of what was lifted. A start in a non-executable data section
+is lifted anyway, with a `note:` on stderr (and in `notes`).
 
-`decompile --raw` instead prints the decompiler's current IR after its passes.
+`--json` is `disassemble`'s envelope with `kind: "pcode"` — `binary`, `kind`,
+`target` (`name`, `address`, `address_hex`), `start`/`start_hex`,
+`end`/`end_hex`, `count`, `bytes`, `truncated`, `notes` — then `stop_reason`,
+`error` (`address`, `address_hex`, `message`, or null) and `instructions`. Each
+row has `address`, `address_hex`, `size`, lowercase hex `bytes`, `mnemonic`,
+`operands` and the ordered `ops`. Each op has the SLEIGH `opcode`, an `output`
+varnode or null, and ordered `inputs`; each varnode has its address `space`,
+`offset`, `offset_hex` and byte `size`. A `const` offset is the constant itself;
+the first input of `LOAD`/`STORE` is the accessed space's id, and a `BRANCH` or
+`CBRANCH` into `const` is a branch by that many ops inside the same lift.
+
+When SLEIGH lifts a delay slot with its branch (a MIPS `jr`), the row's `size`
+and `bytes` cover both and its ops include the slot's before the branch;
+`--count` counts the pair as one. An odd ARM32 address is a Thumb code pointer:
+it lifts as Thumb at the even address, inside a function too, in a decode
+context scoped to the query. `--isa arm` with an odd address is an error, a
+range is read literally, and other architectures keep odd addresses.
+
+`--follow` walks direct flow from the start instead and groups the lifts into
+blocks. Successors are read the way the decompiler's flow reads them: a branch
+into `const` stays inside the lift, ops after an unconditional transfer are
+dead, and a lift falls through unless its last live op is `BRANCH`,
+`BRANCHIND` or `RETURN`. So a predicated instruction (ARM `movle`, x86
+`CMOVG`) lists the next address twice, as a `branch` and as its `fallthrough`,
+and the walk goes on; a call is assumed to return and is not entered. The
+window is `--bytes` or the range, else the function extent; `--count` caps the
+lifts (1024 by default). JSON has `binary`, `kind: "flow"`, `target`,
+`start`, `range_end` (exclusive bound of the window, not a claim every byte
+below it was lifted), `complete`, `instruction_count`, `notes`, `issues` and
+`blocks` (`start`, `start_hex`, `successors`, `instructions`). An edge has a
+`kind` (`branch`, `fallthrough`, `indirect`, `unresolved`) and a `target`
+(null when unknown). `issues` lists `indirect_branch`, `out_of_range`,
+`overlapping_instruction`, `instruction_limit`, `decode_error` (with its
+`message`) and `unsupported_pcode_flow` (a relative branch that leaves the
+lift); `complete` means the bounded walk met none of them, not that every
+runtime path is proven. A decode error exits `1` with the graph already built.
 
 ## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough
 

@@ -286,18 +286,28 @@ fn run_as(argv: &[String], default_view: ViewRequest) -> i32 {
 /// Load, resolve, walk, and render — the whole command, minus the stdout
 /// boundary, so the listing is testable without a subprocess.
 pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
-    let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
+    let want = args.view.unwrap_or(ViewRequest::Auto);
+    let (prog, region) = load_target(args, want, window_is_caller_bounded(args))?;
+    listing_for(args, &prog, region)
+}
 
-    // A caller-bounded window is answerable without the program-wide discovery
-    // walk, so try it there first and keep the answer only if it is already the
-    // one the full inventory would give ([`windowed_answer_is_final`]).
-    if window_is_caller_bounded(args) {
+/// Load the program and resolve the target. A window the caller `bounded` is
+/// answerable without the program-wide discovery walk, so it is tried there
+/// first and kept only if it is already the one the full inventory would give
+/// ([`windowed_answer_is_final`]).
+fn load_target(
+    args: &DisArgs,
+    want: ViewRequest,
+    bounded: bool,
+) -> Result<(ConsoleProgram, Region), String> {
+    let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
+    if bounded {
         let load = load_args(args, windowed_options(&options, &args.options));
         let prog = load_program(&load, DriverDefaults::Inventory)?;
         if let Ok(region) = resolve_region(&prog, args) {
             let section = section_flags_at(&prog, region.start);
-            if windowed_answer_is_final(&region, section, args.view.unwrap_or(ViewRequest::Auto)) {
-                return listing_for(args, &prog, region);
+            if windowed_answer_is_final(&region, section, want) {
+                return Ok((prog, region));
             }
         }
     }
@@ -306,9 +316,8 @@ pub(crate) fn render(args: &DisArgs) -> Result<Listing, String> {
     // and to bound a function, and decompiles nothing.
     let load = load_args(args, options);
     let prog = load_program(&load, DriverDefaults::Inventory)?;
-
     let region = resolve_region(&prog, args)?;
-    listing_for(args, &prog, region)
+    Ok((prog, region))
 }
 
 /// The load arguments this surface takes, with `options` already resolved.
@@ -336,16 +345,7 @@ fn load_args(args: &DisArgs, options: Vec<(String, String)>) -> Args {
 
 /// Render the listing for an already-resolved target.
 fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<Listing, String> {
-    // A packed image is the common way to hold an address that is real in the
-    // program and absent from the file, so the failure names the move that fixes
-    // it rather than leaving the caller to guess.
-    if !prog.vma_bytes_mapped(region.start) {
-        return Err(format!(
-            "no bytes mapped at 0x{:x} in {}: no loaded segment covers it \
-             (a packed image maps none of its original addresses -- `kuna unpack` first)",
-            region.start, args.binary
-        ));
-    }
+    require_mapped(args, prog, &region)?;
     let (view, mut notes) = choose_view(prog, &region, args.view.unwrap_or(ViewRequest::Auto));
     let text = match view {
         View::Code => {
@@ -387,6 +387,21 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
         }
     };
     Ok(Listing { text, notes })
+}
+
+/// Refuse a target the image holds no bytes for. A packed image is the common
+/// way to hold an address that is real in the program and absent from the file,
+/// so the failure names the move that fixes it rather than leaving the caller to
+/// guess.
+fn require_mapped(args: &DisArgs, prog: &ConsoleProgram, region: &Region) -> Result<(), String> {
+    if prog.vma_bytes_mapped(region.start) {
+        return Ok(());
+    }
+    Err(format!(
+        "no bytes mapped at 0x{:x} in {}: no loaded segment covers it \
+         (a packed image maps none of its original addresses -- `kuna unpack` first)",
+        region.start, args.binary
+    ))
 }
 
 // --- the windowed load --------------------------------------------------------
@@ -816,14 +831,7 @@ fn envelope(
     vec![
         ("binary".into(), Json::Str(args.binary.clone())),
         ("kind".into(), Json::Str(kind.to_string())),
-        (
-            "target".into(),
-            Json::Object(vec![
-                ("name".into(), region.name.clone().map(Json::Str).unwrap_or(Json::Null)),
-                ("address".into(), Json::Number(region.start.to_string())),
-                ("address_hex".into(), Json::Str(format!("0x{:x}", region.start))),
-            ]),
-        ),
+        ("target".into(), target_json(region)),
         ("start".into(), Json::Number(region.start.to_string())),
         ("start_hex".into(), Json::Str(format!("0x{:x}", region.start))),
         ("end".into(), Json::Number(end.to_string())),
@@ -833,6 +841,15 @@ fn envelope(
         ("truncated".into(), Json::Bool(truncated)),
         ("notes".into(), Json::Array(notes.iter().cloned().map(Json::Str).collect())),
     ]
+}
+
+/// What the program calls the start: its `name` (or null) and its address.
+fn target_json(region: &Region) -> Json {
+    Json::Object(vec![
+        ("name".into(), region.name.clone().map(Json::Str).unwrap_or(Json::Null)),
+        ("address".into(), Json::Number(region.start.to_string())),
+        ("address_hex".into(), Json::Str(format!("0x{:x}", region.start))),
+    ])
 }
 
 /// The human surface: a `#` header naming what was listed, then one column-aligned
@@ -1006,6 +1023,12 @@ fn label(region: &Region) -> String {
 // --- argument parsing --------------------------------------------------------
 
 pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
+    parse_args_for(argv, "disassemble")
+}
+
+/// [`parse_args`] for another command sharing this command line, which the
+/// missing-operand errors name.
+pub(crate) fn parse_args_for(argv: &[String], command: &str) -> Result<DisArgs, String> {
     let mut positional: Vec<String> = Vec::new();
     let mut by_address = false;
     let mut view: Option<ViewRequest> = None;
@@ -1055,8 +1078,9 @@ pub(crate) fn parse_args(argv: &[String]) -> Result<DisArgs, String> {
         return Err(format!("unexpected argument {:?}", positional[2]));
     }
     let mut it = positional.into_iter();
-    let binary = it.next().ok_or("disassemble requires <binary>")?;
-    let spec = it.next().ok_or("disassemble requires <name|0xaddr|0xstart-0xend>")?;
+    let binary = it.next().ok_or_else(|| format!("{command} requires <binary>"))?;
+    let spec =
+        it.next().ok_or_else(|| format!("{command} requires <name|0xaddr|0xstart-0xend>"))?;
     Ok(DisArgs {
         binary,
         spec,

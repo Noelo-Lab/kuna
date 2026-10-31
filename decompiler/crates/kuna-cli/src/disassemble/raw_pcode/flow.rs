@@ -1,4 +1,10 @@
-//! Conservative function-local traversal of SLEIGH's unmodified operations.
+//! `raw-pcode --follow`: the lifts direct flow reaches from the start, grouped
+//! into blocks with their successors, and every place the walk could not go on.
+//!
+//! Successors are read off each lift's own p-code by the rule the decompiler's
+//! flow follows ([`successors`]), so a predicated instruction falls through and
+//! a call is assumed to return. The walk stays inside one window: the caller's
+//! `--bytes` or range, else the function extent (64 bytes outside any function).
 
 use super::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -8,50 +14,182 @@ struct Edge {
     target: Option<u64>,
 }
 
+impl Edge {
+    fn json(&self) -> Json {
+        Json::Object(vec![
+            ("kind".into(), Json::Str(self.kind.into())),
+            (
+                "target".into(),
+                self.target
+                    .map_or(Json::Null, |t| Json::Number(t.to_string())),
+            ),
+            (
+                "target_hex".into(),
+                self.target
+                    .map_or(Json::Null, |t| Json::Str(format!("0x{t:x}"))),
+            ),
+        ])
+    }
+
+    fn text(&self) -> String {
+        match self.target {
+            Some(t) => format!("{} 0x{t:x}", self.kind),
+            None => self.kind.to_string(),
+        }
+    }
+}
+
+/// A place the walk could not go on: its reason, the lift's address, and the
+/// target or error message that goes with it.
+struct Issue {
+    reason: &'static str,
+    address: u64,
+    target: Option<u64>,
+    message: Option<String>,
+}
+
+impl Issue {
+    fn at(reason: &'static str, address: u64) -> Self {
+        Self {
+            reason,
+            address,
+            target: None,
+            message: None,
+        }
+    }
+
+    fn json(&self) -> Json {
+        let mut members = vec![
+            ("reason".into(), Json::Str(self.reason.into())),
+            ("address".into(), Json::Number(self.address.to_string())),
+            (
+                "address_hex".into(),
+                Json::Str(format!("0x{:x}", self.address)),
+            ),
+        ];
+        match &self.message {
+            Some(message) => members.push(("message".into(), Json::Str(message.clone()))),
+            None => {
+                members.push((
+                    "target".into(),
+                    self.target
+                        .map_or(Json::Null, |t| Json::Number(t.to_string())),
+                ));
+                members.push((
+                    "target_hex".into(),
+                    self.target
+                        .map_or(Json::Null, |t| Json::Str(format!("0x{t:x}"))),
+                ));
+            }
+        }
+        Json::Object(members)
+    }
+
+    fn text(&self) -> String {
+        match (&self.message, self.target) {
+            (Some(message), _) => format!("{} at 0x{:x}: {message}", self.reason, self.address),
+            (None, Some(t)) => format!("{} at 0x{:x} -> 0x{t:x}", self.reason, self.address),
+            (None, None) => format!("{} at 0x{:x}", self.reason, self.address),
+        }
+    }
+}
+
 struct Node {
     end: u64,
-    row: Value,
-    text: String,
+    row: String,
     edges: Vec<Edge>,
 }
 
-fn issue(issues: &mut Vec<Value>, reason: &str, address: u64, target: Option<u64>) {
-    issues.push(json!({"reason": reason, "address": address,
-        "address_hex": format!("0x{address:x}"), "target": target,
-        "target_hex": target.map(|v| format!("0x{v:x}"))}));
-}
-
-fn edge_json(edge: &Edge) -> Value {
-    json!({"kind": edge.kind, "target": edge.target,
-        "target_hex": edge.target.map(|v| format!("0x{v:x}"))})
-}
-
-pub(super) fn render(args: &DisArgs) -> Result<(String, i32), String> {
-    let options =
-        mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
-    let prog = load_program(&load_args(args, options), DriverDefaults::Inventory)?;
-    let (args, thumb) = pointer_args(&prog, args)?;
-    if let Some(vma) = thumb {
-        return prog
-            .with_thumb_pointer(vma, || render_loaded(&args, &prog))
-            .map_err(|e| e.to_string())?;
+/// The successors of one lift, by the rule `FlowInfo::xrefControlFlow` applies
+/// (`p2_lift/flow.rs`): a branch into the constant space is p-code-relative and
+/// stays inside the lift, the ops after an unconditional transfer that no
+/// internal branch skips past are dead, and the lift falls through unless its
+/// last live op is a BRANCH, BRANCHIND or RETURN, or an internal branch runs to
+/// its end. A predicated instruction (ARM `movle`, x86 `CMOVG`) that skips its
+/// own body therefore names the next address twice, as a branch and as its
+/// fall-through. `None` for a relative branch that lands outside the lift.
+fn successors(ops: &[RawPcodeOp], next: u64) -> Option<Vec<Edge>> {
+    let mut edges = Vec::new();
+    let (mut deepest, mut to_end, mut last) = (0usize, false, None);
+    for (i, op) in ops.iter().enumerate() {
+        last = Some(op.opcode);
+        match op.opcode {
+            "BRANCH" | "CBRANCH" => {
+                let dest = op.inputs.first()?;
+                if dest.space == "const" {
+                    let target = relative_target(i, dest)?;
+                    match target.cmp(&ops.len()) {
+                        std::cmp::Ordering::Less => deepest = deepest.max(target),
+                        std::cmp::Ordering::Equal => to_end = true,
+                        std::cmp::Ordering::Greater => return None,
+                    }
+                } else {
+                    edges.push(Edge {
+                        kind: "branch",
+                        target: Some(dest.offset),
+                    });
+                }
+                if op.opcode == "BRANCH" && i >= deepest {
+                    break;
+                }
+            }
+            "BRANCHIND" => {
+                edges.push(Edge {
+                    kind: "indirect",
+                    target: None,
+                });
+                if i >= deepest {
+                    break;
+                }
+            }
+            "RETURN" if i >= deepest => break,
+            _ => {}
+        }
     }
-    render_loaded(&args, &prog)
+    if to_end || !matches!(last, Some("BRANCH" | "BRANCHIND" | "RETURN")) {
+        edges.push(Edge {
+            kind: "fallthrough",
+            target: Some(next),
+        });
+    }
+    Some(edges)
 }
 
-fn render_loaded(args: &DisArgs, prog: &ConsoleProgram) -> Result<(String, i32), String> {
-    let mut region = resolve_region(prog, args)?;
-    if !prog.vma_bytes_mapped(region.start) {
-        return Err(format!("no bytes mapped at 0x{:x}", region.start));
-    }
-    // A count limits work, not the function's address space.
+/// The op index a p-code-relative branch at `index` lands on: SLEIGH stores the
+/// distance in ops, masked to the varnode's size.
+fn relative_target(index: usize, dest: &RawPcodeVarnode) -> Option<usize> {
+    let bits = dest.size.clamp(1, 8) * 8;
+    let distance = if bits == 64 {
+        dest.offset as i64
+    } else {
+        let raw = dest.offset & ((1u64 << bits) - 1);
+        if raw >> (bits - 1) == 1 {
+            raw as i64 - (1i64 << bits)
+        } else {
+            raw as i64
+        }
+    };
+    usize::try_from(index as i64 + distance).ok()
+}
+
+/// Walk direct flow from the start and render the blocks it reached.
+pub(super) fn render(args: &DisArgs) -> Result<Output, String> {
+    // A count limits work, not the window, so only a byte bound is the caller's.
+    let bounded = args.bytes.is_some() || split_range(args.spec.trim()).is_some();
+    with_target(args, bounded, |prog, args, region| walk(args, prog, region))
+}
+
+fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Output, String> {
+    require_mapped(args, prog, &region)?;
+    let notes = data_notes(prog, &region);
     if region.end.is_none() {
         let extent = prog.function_extent_at(region.start);
-        region.end = Some(region.start.saturating_add(if extent > 0 {
+        let span = if extent > 0 {
             extent
         } else {
             DEFAULT_WINDOW_BYTES
-        }));
+        };
+        region.end = Some(region.start.saturating_add(span));
     }
     let end = region.stop().ok_or("cannot bound control-flow walk")?;
     let inside = |address: u64| address >= region.start && address < end;
@@ -59,142 +197,71 @@ fn render_loaded(args: &DisArgs, prog: &ConsoleProgram) -> Result<(String, i32),
     let mut queue = VecDeque::from([region.start]);
     let mut nodes = BTreeMap::<u64, Node>::new();
     let mut issues = Vec::new();
-    let mut failed = false;
+    let mut widest = 0u64;
+    let mut failures = 0usize;
     while let Some(addr) = queue.pop_front() {
-        if nodes.contains_key(&addr) {
-            continue;
-        }
-        if !inside(addr) {
+        if nodes.contains_key(&addr) || !inside(addr) {
             continue;
         }
         if nodes.len() >= limit {
-            issue(&mut issues, "instruction_limit", addr, None);
+            issues.push(Issue::at("instruction_limit", addr));
             break;
         }
-        let lifted = (|| -> Result<_, String> {
-            let (size, ops) = prog.raw_pcode_at(addr).map_err(|e| e.to_string())?;
-            if size <= 0 {
-                return Err("invalid instruction length".into());
-            }
-            let next = addr
-                .checked_add(size as u64)
-                .ok_or("instruction address overflow")?;
-            if next > end {
-                return Err("instruction crosses the range or mapped boundary".into());
-            }
-            let (_, mnemonic, operands) = prog.disassemble_at(addr).map_err(|e| e.to_string())?;
-            let bytes = prog
-                .read_bytes(addr, size as usize)
-                .ok_or("cannot read instruction bytes")?;
-            Ok((size, ops, next, mnemonic, operands, bytes))
-        })();
-        let (size, ops, next, mnemonic, operands, bytes) = match lifted {
-            Ok(value) => value,
+        let lifted = match lift(prog, addr, Some(end)) {
+            Ok(lifted) => lifted,
             Err(message) => {
-                issues.push(json!({"reason":"decode_error", "address":addr,
-                    "address_hex":format!("0x{addr:x}"), "message":message}));
-                failed = true;
+                issues.push(Issue {
+                    message: Some(message),
+                    ..Issue::at("decode_error", addr)
+                });
+                failures += 1;
                 continue;
             }
         };
-        if nodes
-            .iter()
-            .any(|(&start, node)| addr < node.end && next > start)
-        {
-            issue(&mut issues, "overlapping_instruction", addr, None);
+        let next = lifted.end();
+        let lowest = addr.saturating_sub(widest.saturating_sub(1));
+        if nodes.range(lowest..next).any(|(_, node)| node.end > addr) {
+            issues.push(Issue::at("overlapping_instruction", addr));
         }
-        let mut edges = Vec::new();
-        let flow_ops: Vec<_> = ops
-            .iter()
-            .enumerate()
-            .filter(|(_, op)| matches!(op.opcode, "BRANCH" | "CBRANCH" | "BRANCHIND" | "RETURN"))
-            .collect();
-        let unsupported = flow_ops.iter().any(|(i, op)| {
-            *i + 1 != ops.len()
-                || (matches!(op.opcode, "BRANCH" | "CBRANCH")
-                    && op.inputs.first().is_none_or(|v| v.space == "const"))
-        }) || flow_ops.len() > 1;
-        if unsupported {
-            issue(&mut issues, "unsupported_pcode_flow", addr, None);
-            edges.push(Edge {
+        widest = widest.max(lifted.size);
+        let edges = successors(&lifted.ops, next).unwrap_or_else(|| {
+            issues.push(Issue::at("unsupported_pcode_flow", addr));
+            vec![Edge {
                 kind: "unresolved",
                 target: None,
-            });
-        } else if let Some((_, op)) = flow_ops.last() {
-            match op.opcode {
-                "RETURN" => {}
-                "BRANCHIND" => {
-                    issue(&mut issues, "indirect_branch", addr, None);
-                    edges.push(Edge {
-                        kind: "indirect",
-                        target: None,
-                    });
-                }
-                "BRANCH" | "CBRANCH" => {
-                    let target = op.inputs[0].offset;
-                    edges.push(Edge {
-                        kind: "branch",
-                        target: Some(target),
-                    });
-                    if op.opcode == "CBRANCH" {
-                        edges.push(Edge {
-                            kind: "fallthrough",
-                            target: Some(next),
-                        });
-                    }
-                }
-                _ => unreachable!(),
-            }
-        } else {
-            edges.push(Edge {
-                kind: "fallthrough",
-                target: Some(next),
-            });
-        }
+            }]
+        });
         for edge in &edges {
-            if let Some(target) = edge.target {
-                if inside(target) {
-                    queue.push_back(target);
-                } else {
-                    issue(&mut issues, "out_of_range", addr, Some(target));
-                }
+            match edge.target {
+                Some(target) if inside(target) => queue.push_back(target),
+                Some(target) => issues.push(Issue {
+                    target: Some(target),
+                    ..Issue::at("out_of_range", addr)
+                }),
+                None if edge.kind == "indirect" => issues.push(Issue::at("indirect_branch", addr)),
+                None => {}
             }
         }
-        let bytes = hex(&bytes);
-        let mut text = format!("0x{addr:x}: {bytes}  {mnemonic} {operands}\n");
-        let mut json_ops = Vec::new();
-        for op in ops {
-            let output = op.output.as_ref().map(varnode);
-            let inputs: Vec<_> = op.inputs.iter().map(varnode).collect();
-            let display = |v: &RawPcodeVarnode| format!("({},{:#x},{})", v.space, v.offset, v.size);
-            let prefix = op
-                .output
-                .as_ref()
-                .map(|v| format!("{} = ", display(v)))
-                .unwrap_or_default();
-            text.push_str(&format!(
-                "  {prefix}{} {}\n",
-                op.opcode,
-                op.inputs.iter().map(display).collect::<Vec<_>>().join(", ")
-            ));
-            json_ops.push(json!({"opcode":op.opcode,"output":output,"inputs":inputs}));
-        }
+        let row = if args.json {
+            dumps_indent2(&lifted.json())
+        } else {
+            lifted.text()
+        };
         nodes.insert(
             addr,
             Node {
                 end: next,
-                text,
+                row,
                 edges,
-                row: json!({"address":addr,"address_hex":format!("0x{addr:x}"),"size":size,
-                "bytes":bytes,"mnemonic":mnemonic,"operands":operands,"ops":json_ops}),
             },
         );
     }
+
     let mut leaders = BTreeSet::from([region.start]);
     let mut incoming = BTreeMap::<u64, usize>::new();
     for node in nodes.values() {
         for edge in &node.edges {
-            if let Some(target) = edge.target.filter(|v| nodes.contains_key(v)) {
+            if let Some(target) = edge.target.filter(|t| nodes.contains_key(t)) {
                 *incoming.entry(target).or_default() += 1;
                 if node.edges.len() != 1 || edge.kind != "fallthrough" || target != node.end {
                     leaders.insert(target);
@@ -207,66 +274,183 @@ fn render_loaded(args: &DisArgs, prog: &ConsoleProgram) -> Result<(String, i32),
             .iter()
             .filter_map(|(&addr, &n)| (n > 1).then_some(addr)),
     );
+
     let mut seen = BTreeSet::new();
-    let mut blocks = Vec::new();
-    let mut text = String::new();
+    let (mut blocks, mut text) = (Vec::new(), String::new());
     for &start in nodes.keys() {
         if seen.contains(&start) {
             continue;
         }
-        let mut current = start;
-        let mut rows = Vec::new();
-        let mut last_edges = Vec::new();
-        text.push_str(&format!("block 0x{start:x}:\n"));
+        let (mut current, mut rows) = (start, Vec::new());
+        let mut last: &[Edge] = &[];
+        if !args.json {
+            text.push_str(&format!("block 0x{start:x}:\n"));
+        }
         while let Some(node) = nodes.get(&current) {
             if !seen.insert(current) {
                 break;
             }
-            rows.push(node.row.clone());
-            text.push_str(&node.text);
-            last_edges = node.edges.iter().map(edge_json).collect();
-            if node.edges.len() != 1 || node.edges[0].kind != "fallthrough" {
-                break;
+            if args.json {
+                rows.push(node.row.clone());
+            } else {
+                text.push_str(&node.row);
             }
-            let Some(next) = node.edges[0].target else {
+            last = &node.edges;
+            let [Edge {
+                kind: "fallthrough",
+                target: Some(next),
+            }] = node.edges.as_slice()
+            else {
                 break;
             };
-            if next != node.end
-                || leaders.contains(&next)
-                || seen.contains(&next)
-                || !nodes.contains_key(&next)
-            {
+            if *next != node.end || leaders.contains(next) || !nodes.contains_key(next) {
                 break;
             }
-            current = next;
+            current = *next;
         }
-        text.push_str(&format!(
-            "  successors: {}\n",
-            serde_json::to_string(&last_edges).map_err(|e| e.to_string())?
-        ));
-        blocks.push(json!({"start":start,"start_hex":format!("0x{start:x}"),"instructions":rows,"successors":last_edges}));
+        if args.json {
+            let members = vec![
+                ("start".into(), Json::Number(start.to_string())),
+                ("start_hex".into(), Json::Str(format!("0x{start:x}"))),
+                (
+                    "successors".into(),
+                    Json::Array(last.iter().map(Edge::json).collect()),
+                ),
+            ];
+            blocks.push(object_with_rows(members, "instructions", &rows));
+        } else {
+            let edges: Vec<String> = last.iter().map(Edge::text).collect();
+            let edges = if edges.is_empty() {
+                "none".to_string()
+            } else {
+                edges.join(", ")
+            };
+            text.push_str(&format!("  successors: {edges}\n"));
+        }
     }
+
     let complete = issues.is_empty();
-    let status = i32::from(failed);
-    if args.json {
-        Ok((
-            format!(
-                "{}\n",
-                serde_json::to_string_pretty(&json!({"binary":args.binary,"mode":"flow",
-            "start":region.start,"start_hex":format!("0x{:x}",region.start),
-            "range_end":end,"range_end_hex":format!("0x{end:x}"),"complete":complete,
-            "instruction_count":nodes.len(),"issues":issues,"blocks":blocks}))
-                .map_err(|e| e.to_string())?
+    let error = issues
+        .iter()
+        .find_map(|issue| issue.message.as_ref())
+        .map(|first| {
+            format!("{failures} instruction(s) in the walk did not lift; the first: {first}")
+        });
+    let text = if args.json {
+        let doc = vec![
+            ("binary".into(), Json::Str(args.binary.clone())),
+            ("kind".into(), Json::Str("flow".into())),
+            ("target".into(), target_json(&region)),
+            ("start".into(), Json::Number(region.start.to_string())),
+            (
+                "start_hex".into(),
+                Json::Str(format!("0x{:x}", region.start)),
             ),
-            status,
-        ))
+            ("range_end".into(), Json::Number(end.to_string())),
+            ("range_end_hex".into(), Json::Str(format!("0x{end:x}"))),
+            ("complete".into(), Json::Bool(complete)),
+            (
+                "instruction_count".into(),
+                Json::Number(nodes.len().to_string()),
+            ),
+            (
+                "notes".into(),
+                Json::Array(notes.iter().cloned().map(Json::Str).collect()),
+            ),
+            (
+                "issues".into(),
+                Json::Array(issues.iter().map(Issue::json).collect()),
+            ),
+        ];
+        object_with_rows(doc, "blocks", &blocks) + "\n"
     } else {
+        let plural = if nodes.len() == 1 {
+            "instruction"
+        } else {
+            "instructions"
+        };
+        let mut out = format!(
+            "# {} {plural} reached from {} (window 0x{:x}..0x{end:x})\n",
+            nodes.len(),
+            label(&region),
+            region.start
+        );
+        out.push_str(&text);
         if !complete {
-            text.push_str(&format!(
-                "# incomplete: {}\n",
-                serde_json::to_string(&issues).map_err(|e| e.to_string())?
-            ));
+            let issues: Vec<String> = issues.iter().map(Issue::text).collect();
+            out.push_str(&format!("# incomplete: {}\n", issues.join("; ")));
         }
-        Ok((text, status))
+        out
+    };
+    Ok(Output { text, notes, error })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn op(opcode: &'static str, inputs: &[(&str, u64, u32)]) -> RawPcodeOp {
+        RawPcodeOp {
+            opcode,
+            output: None,
+            inputs: inputs
+                .iter()
+                .map(|&(space, offset, size)| RawPcodeVarnode {
+                    space: space.into(),
+                    offset,
+                    size,
+                })
+                .collect(),
+        }
+    }
+
+    fn edges(ops: &[RawPcodeOp]) -> Vec<(&'static str, Option<u64>)> {
+        successors(ops, 0x104)
+            .unwrap()
+            .iter()
+            .map(|e| (e.kind, e.target))
+            .collect()
+    }
+
+    #[test]
+    fn flow_is_read_the_way_the_decompiler_reads_it() {
+        let predicated = [
+            op("CBRANCH", &[("ram", 0x104, 4), ("unique", 0, 1)]),
+            op("COPY", &[]),
+        ];
+        assert_eq!(
+            edges(&predicated),
+            [("branch", Some(0x104)), ("fallthrough", Some(0x104))]
+        );
+        let conditional_return = [op("CBRANCH", &[("ram", 0x104, 4)]), op("RETURN", &[])];
+        assert_eq!(edges(&conditional_return), [("branch", Some(0x104))]);
+        let jump = [op("BRANCH", &[("ram", 0x200, 4)])];
+        assert_eq!(edges(&jump), [("branch", Some(0x200))]);
+        let skip_to_end = [
+            op("CBRANCH", &[("const", 2, 4)]),
+            op("BRANCH", &[("ram", 0x200, 4)]),
+        ];
+        assert_eq!(
+            edges(&skip_to_end),
+            [("branch", Some(0x200)), ("fallthrough", Some(0x104))]
+        );
+        let internal = [
+            op("CBRANCH", &[("const", 2, 4)]),
+            op("RETURN", &[]),
+            op("COPY", &[]),
+        ];
+        assert_eq!(edges(&internal), [("fallthrough", Some(0x104))]);
+        let backward = [op("COPY", &[]), op("CBRANCH", &[("const", 0xffff_ffff, 4)])];
+        assert_eq!(edges(&backward), [("fallthrough", Some(0x104))]);
+        assert!(successors(&[op("BRANCH", &[("const", 5, 4)])], 0x104).is_none());
+        assert_eq!(
+            edges(&[op("BRANCHIND", &[("register", 0, 4)])]),
+            [("indirect", None)]
+        );
+        assert_eq!(
+            edges(&[op("CALL", &[("ram", 0x300, 4)])]),
+            [("fallthrough", Some(0x104))]
+        );
+        assert_eq!(edges(&[]), [("fallthrough", Some(0x104))]);
     }
 }
