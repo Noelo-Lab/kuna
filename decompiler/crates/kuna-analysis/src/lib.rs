@@ -58,6 +58,7 @@ pub mod analyzers;
 pub mod listing;
 pub mod upx;
 pub mod neolite;
+pub mod pklite;
 
 // Flat re-export: analyzer paths stay `kuna_analysis::<analyzer>` (the
 // `analyzers/` folder is a layout grouping, not an API namespace).
