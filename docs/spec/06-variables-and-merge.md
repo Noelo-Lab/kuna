@@ -342,6 +342,20 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
    boundary and keeps the partially merged state — the failure mode is a
    residual un-fused marker op, not a dead function.
 
+*(kuna decompile-all watchdog)* Each merge pass is one action, and the action
+loop probes a budgeted drive's deadline only between actions; on a function
+with millions of Varnodes one merge pass runs for minutes (`ActionMergeRequired`
+took 470 s of the 804 s serde-hkx's 174 KB deserializer at `0x1406491d0` needed,
+and a budget that ran out inside it was overrun by as much). So every merge
+step probes (`merge.rs (Merge::budget)`): each address-tied window, each
+Varnode `unify_address` snips, each op of `merge_marker`, `merge_opcode` and
+`merge_adjacent`, each pair `merge_linear` tests and each `Merge::merge`. Every
+64th probe asks the drive's budget (`decompile_drive.rs (deadline_passed)`);
+once one has seen it spent, that one names `variable merging` as the budget's
+site and every later step of that `Merge` fails at once. The merge actions drop
+the error like any other, the next action boundary stops the pipeline, and the
+drive reports the budget. Without a budget no probe fails.
+
 The inserted trim COPYs accumulate in the persistent `Merge::copy_trims`
 (`funcdata_merge.rs (Funcdata::with_covermerge)` keeps one `Merge` per
 function so they survive between actions). Later,
@@ -351,6 +365,20 @@ COPYs (tracked by the `copy_in1`/`copy_in2` bits) gets them grouped by source
 and replaced with a single COPY hoisted to the common dominator block
 (`funcdata_merge.rs (MergeContext::build_dominant_copy)`) — one assignment
 instead of one per predecessor.
+
+*(kuna perf)* A merge pass edits ops but never blocks, so while one runs
+every Cover walk shares a single block-index table built on first use
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::cover_blocks)`,
+set and dropped by `funcdata_merge.rs (Funcdata::with_covermerge)`) instead of
+each walk rebuilding it from the block list. The intersection tests read the
+highs' and members' covers in place instead of copying them
+(`merge.rs (MergeContext::high_get_cover)`), a high's flag word is recomputed
+from each member's flags without building the member's whole view
+(`variable.rs (HighContext::vn_flags)`), and merging two highs whose instance
+lists do not interleave, which is every forced merge of the Varnodes at one
+address, appends one list to the other instead of re-merging both
+(`variable.rs (HighVariableBank::merge_inst_lists)`). None of this changes
+which Varnodes merge.
 
 **Copy and speculative merges.** After the forced merges and explicit/implied
 marking (below), three passes fuse variables to reduce clutter:

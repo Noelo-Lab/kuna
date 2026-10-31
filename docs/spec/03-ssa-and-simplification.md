@@ -1190,6 +1190,31 @@ is the (kuna) cooperative deadline probed every 1024 op-visits
 occurred in kuna's history (the lowered-switch repair, §3.1), and it presented
 as mainloop reporting one change per iteration for good.
 
+(kuna `deadwaves`, default on) Dead-op removal (`RuleEarlyRemoval`, first in
+every opcode's list) takes out an op only when the cursor reaches it, and the
+op that defined what it read usually sits earlier in sequence order, so a chain
+of values nothing reads dies one link per sweep: the call-guard `INDIRECT` and
+join `MULTIEQUAL` chain of a vector register across a thousand calls costs a
+thousand sweeps over every op of the function. A sweep whose only changes were
+such removals leaves those ops dead in the tree and changes nothing else but
+the readers of the Varnodes they read, so a test the next sweep makes fails
+again unless it reads what a removal changed. That next pass is therefore a
+wave: it walks the ops in the same order with the same cursor but offers the
+rules only the ops
+`decompiler/crates/kuna-decomp/src/infra/action.rs (ActionPool::wave_wants)`
+names: the dead ops (destroyed, as the sweep destroys them), the definition and
+readers of each Varnode a removed op read, every op of an opcode a far-walking
+rule fires on (the sub-variable and split flows, which walk a whole data-flow
+web, `action.rs (Rule::walks_far)`), and the same neighbourhood of each op the
+wave itself removes. Removals are recorded as they happen
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::note_dead_removal)`). The first application other than a removal
+turns the rest of the pass back into the ordinary sweep, and a pool with a
+breakpoint set always sweeps. A rule whose test reads two or more ops away from
+the op it fires on without walking a web can see a removal the wave does not
+offer it; that rule then fires at the next full sweep instead. With
+`deadwaves off` every pass sweeps every op.
+
 Three pools exist in the `decompile` tree
 (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
 (universal_sched)`): **oppool1**, 141 registered rules, sits inside the

@@ -1542,7 +1542,9 @@ rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`), before each
 range heritage's guard placement visits and before each
 address the written-slot guard guards, every 256 new values a pointer walk of
-`stackstoreguard` visits, and again after the final layout checks: the drive
+`stackstoreguard` visits, every 64 steps of a variable-merging pass
+(`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
+chapter 06), and again after the final layout checks: the drive
 publishes its deadline to
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
 so a walk inside one pass gives up rather than run past it. Flow-time
@@ -1559,8 +1561,8 @@ ran out: the first probe to see the expiry records its site
 and later ones leave it, so the site is the innermost polled loop that was
 running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
-(ActionPool::budget_site)`), heritage, region structuring, a store-reachability
-walk or a jump-table step. While a flow-time table is being recovered
+(ActionPool::budget_site)`), heritage, variable merging, region structuring, a
+store-reachability walk or a jump-table step. While a flow-time table is being recovered
 (`decompile_drive.rs (JumpTableScope)`) a site from inside that recovery — an
 action of the reduced `jumptable` pipeline, say — is suffixed with the indirect
 jump's address. Each drive starts with no site and restores the enclosing
@@ -1572,7 +1574,8 @@ architecture carries none. The flow `load function` / `load addr` follow before
 any drive, which the next `decompile` adopts, is held to the same budget and
 memory limit (`decompile_drive.rs (build_and_follow_flow_within_budget)`): a
 follow still running when either runs out fails the load with that one's
-error, which `kuna decompile` reports as the function's failure, so a
+error, whose site is `flow following` unless a probe inside the follow (a
+jump-table step) named one, which `kuna decompile` reports as the function's failure, so a
 truncated IR is never adopted, and the drive that adopts a completed one arms
 its own, measuring from where the follow left the resident set. The follow
 recovers every jump table, and a jump table's sub-pipeline heritages
@@ -1626,11 +1629,28 @@ run, but each such stop usually replaces a worker the kernel would have
 killed outright. A run outside a capped cgroup has no default. The resident set
 is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
 larger of the working set and the private commit; a platform that reports no
-resident set (macOS) refuses a non-zero limit. A function whose drive
-completes before expiry is byte-identical with or without a budget, and the
-console/parity paths set one only through `decomp_dbg --max-fn-seconds`. It is not a hard wall around discovery,
-unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
-construction, total project time, or memory.
+resident set (macOS) refuses a non-zero limit. Printing the function counts
+against the same budget: the drive hands back what is left of its deadline
+with the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::render_budget)`), and whoever renders it publishes that, counted
+from when rendering starts, as the deadline the probes read
+(`decompile_drive.rs (RenderBudget)`): the batch render and its variable
+extraction (`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`)
+and the console's `print C`. The printer probes before each statement of a
+basic block and every 256 Varnodes of its local declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(PrintC::emit_basic_block_ops, PrintC::emit_local_var_decls)`) and stops
+printing once it has passed; the batch probes again after the C text and
+after the variable extraction. A render past the budget never reaches the
+output: the function's `error` (or the console command's error, which
+`kuna decompile` reports as `decompilation failed for <fn> in <binary>:`
+followed by it) is the budget message naming `rendering C` or `extracting
+variables`. A function
+whose drive and rendering complete before expiry is byte-identical with or
+without a budget, and the console/parity paths set one only through
+`decomp_dbg --max-fn-seconds`. It is not a hard wall around discovery,
+unprobed SLEIGH work, assembly/JSON construction, total project time, or
+memory.
 
 (kuna) **Synthesized structures across a batch.** With `structsynth` on, a
 function decompiled later can measure more of a record that an earlier one has

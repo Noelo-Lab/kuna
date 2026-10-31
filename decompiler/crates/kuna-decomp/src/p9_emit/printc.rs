@@ -3263,8 +3263,12 @@ impl PrintC {
             }
             s
         };
+        let named = SameNamed::new(fd);
         let vlist: Vec<crate::context::VarnodeId> = fd.vbank().iter_loc().collect();
-        for vn in vlist {
+        for (k, vn) in vlist.into_iter().enumerate() {
+            if k % 256 == 0 && crate::decompile_drive::deadline_passed_in("rendering C") {
+                break;
+            }
             let high = match fd.vbank().get(vn).and_then(|v| v.get_high()) {
                 Some(h) => h,
                 None => continue,
@@ -3307,7 +3311,7 @@ impl PrintC {
             // carries that name and has at least one NON-constant (storage)
             // instance — the stack/register varnodes the printer declares from.
             let has_storage_sibling = all_constant
-                && fd.high_bank().iter().any(|(id, h)| {
+                && same_named(fd, named.get(&name)).any(|(id, h)| {
                     id != high
                         && h.kuna_name() == Some(name.as_str())
                         && (0..h.num_instances()).any(|i| {
@@ -3318,7 +3322,7 @@ impl PrintC {
                         })
                 });
             if has_storage_sibling {
-                if let Some(owner) = reference_owner(fd, high, &name) {
+                if let Some(owner) = reference_owner(fd, named.get(&name), high, &name) {
                     self.local_name_aliases.insert(high, owner);
                 }
                 continue;
@@ -3367,10 +3371,10 @@ impl PrintC {
                 });
                 composite
                     && h.kuna_symbol_offset() >= 0
-                    && high_name_has_whole_sibling(fd, high, &name)
+                    && high_name_has_whole_sibling(fd, named.get(&name), high, &name)
             });
             if is_proto_partial_piece {
-                if let Some(root) = owner_in_group(fd, high, &name, |_, h| h.kuna_symbol_offset() == -1) {
+                if let Some(root) = owner_in_group(fd, named.get(&name), high, &name, |_, h| h.kuna_symbol_offset() == -1) {
                     self.local_name_aliases.insert(high, root);
                 }
                 continue;
@@ -3406,10 +3410,10 @@ impl PrintC {
                 };
                 // A strict partial: offset into the symbol, or narrower than the whole.
                 let is_strict_partial = h.kuna_symbol_offset() > 0 || rep_size < sym_size;
-                is_strict_partial && high_name_has_scalar_whole_sibling(fd, high, &name)
+                is_strict_partial && high_name_has_scalar_whole_sibling(fd, named.get(&name), high, &name)
             });
             if is_scalar_partial_piece {
-                if let Some(whole) = owner_in_group(fd, high, &name, is_scalar_whole) {
+                if let Some(whole) = owner_in_group(fd, named.get(&name), high, &name, is_scalar_whole) {
                     self.local_name_aliases.insert(high, whole);
                 }
                 continue;
@@ -5693,6 +5697,9 @@ impl PrintC {
         let mut separator = false;
         let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
         while let Some(inst) = cur {
+            if crate::decompile_drive::deadline_passed_in("rendering C") {
+                break;
+            }
             cur = fd.bb_op_next(inst);
             let o = match fd.obank().get(inst) {
                 Some(o) => o,
@@ -12252,6 +12259,43 @@ impl RealTypeCtx {
     }
 }
 
+/// (kuna perf) The named highs of one function grouped by name, each group in
+/// the bank's own order and built on the first search, so a declaration's
+/// search for a same-named sibling visits only that name's highs instead of
+/// every high of the function.
+struct SameNamed<'a> {
+    fd: &'a Funcdata,
+    by_name: std::cell::OnceCell<std::collections::HashMap<&'a str, Vec<crate::context::HighVariableId>>>,
+}
+
+impl<'a> SameNamed<'a> {
+    fn new(fd: &'a Funcdata) -> Self {
+        SameNamed { fd, by_name: std::cell::OnceCell::new() }
+    }
+
+    fn get(&self, name: &str) -> &[crate::context::HighVariableId] {
+        let by_name = self.by_name.get_or_init(|| {
+            let mut by_name: std::collections::HashMap<&'a str, Vec<crate::context::HighVariableId>> =
+                std::collections::HashMap::new();
+            for (id, h) in self.fd.high_bank().iter() {
+                if let Some(name) = h.kuna_name() {
+                    by_name.entry(name).or_default().push(id);
+                }
+            }
+            by_name
+        });
+        by_name.get(name).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+/// The highs `ids` names, in order (a [`SameNamed`] group).
+fn same_named<'a>(
+    fd: &'a Funcdata,
+    ids: &'a [crate::context::HighVariableId],
+) -> impl Iterator<Item = (crate::context::HighVariableId, &'a crate::variable::HighVariable)> + 'a {
+    ids.iter().filter_map(move |&id| fd.high_bank().get(id).map(|h| (id, h)))
+}
+
 /// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
 /// (printc.cc:2697): is there a *whole-symbol* sibling high (the proto-partial
 /// ROOT) sharing `name` whose `kuna_symbol_offset == -1`?  A register-returned
@@ -12262,10 +12306,11 @@ impl RealTypeCtx {
 /// piece itself (excluded so a lone whole high is not its own sibling).
 fn high_name_has_whole_sibling(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
-    fd.high_bank().iter().any(|(id, h)| {
+    same_named(fd, siblings).any(|(id, h)| {
         id != except
             && h.kuna_symbol_offset() == -1
             && h.kuna_name() == Some(name)
@@ -12286,12 +12331,12 @@ fn high_is_global(fd: &Funcdata, high: crate::context::HighVariableId) -> bool {
 /// `whole`: the declaration a skipped piece is printed through.
 fn owner_in_group(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     except: crate::context::HighVariableId,
     name: &str,
     whole: impl Fn(&Funcdata, &crate::variable::HighVariable) -> bool,
 ) -> Option<crate::context::HighVariableId> {
-    fd.high_bank()
-        .iter()
+    same_named(fd, siblings)
         .find(|(id, h)| {
             *id != except
                 && h.kuna_name() == Some(name)
@@ -12307,12 +12352,12 @@ fn owner_in_group(
 /// for.  A reference with no recorded local Symbol has no owner.
 fn reference_owner(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     high: crate::context::HighVariableId,
     name: &str,
 ) -> Option<crate::context::HighVariableId> {
     let sym = fd.high_bank().get(high)?.kuna_ref_symbol()?;
-    fd.high_bank()
-        .iter()
+    same_named(fd, siblings)
         .find(|(id, h)| {
             *id != high
                 && h.kuna_name() == Some(name)
@@ -12350,12 +12395,11 @@ fn is_scalar_whole(fd: &Funcdata, h: &crate::variable::HighVariable) -> bool {
 /// lone partial that has no whole cover.
 fn high_name_has_scalar_whole_sibling(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
-    fd.high_bank()
-        .iter()
-        .any(|(id, h)| id != except && h.kuna_name() == Some(name) && is_scalar_whole(fd, h))
+    same_named(fd, siblings).any(|(id, h)| id != except && h.kuna_name() == Some(name) && is_scalar_whole(fd, h))
 }
 
 /// Whether `spc` should use the kuna angr-style `dat_<addr>` global naming (a

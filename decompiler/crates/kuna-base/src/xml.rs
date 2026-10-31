@@ -2129,7 +2129,9 @@ mod tests {
         // and kuna-bejoin-callers / a long long whose callers read both registers joins
         // high word first (option bejoin evidence = swapped)
         // and kuna-x86-16-fpuemu / the 8087 emulator's INT 34h-3Dh decode as x87 (option fpuemu)
-        assert_eq!(count, 606, "corpus file count drifted");
+        // and kuna-retsplitlimit / a return block too costly to clone keeps its gotos (option retsplitlimit)
+        // and kuna-deadwaves / a pass after a removal-only pass visits only what it touched (option deadwaves)
+        assert_eq!(count, 608, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

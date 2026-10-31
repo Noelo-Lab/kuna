@@ -2711,6 +2711,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "deadwaves"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "simplification-quiescence"
+strength = "HARD"
+rewind = "P3"
+issue = "GH-1034"
+summary = "Run a rule-pool pass that follows a pass whose only change was dead-op removal as a wave over what that removal touched. A pool re-sweeps every op until a sweep changes nothing, and dead-op removal (`RuleEarlyRemoval`) takes out an op only when the cursor reaches it, so a chain of values nothing reads dies one link per sweep, backwards against sequence order: a call-guard and join chain of a vector register across a thousand calls costs a thousand sweeps over every op of the function. The previous pass left the ops it removed dead in the tree and changed nothing but the readers of the Varnodes they read, so the wave walks the ops in the same order but offers the rules only the dead ops (destroying them as the sweep would), the definition and readers of each Varnode they read, every op of an opcode a sub-variable or split flow fires on (those walk a whole data-flow web), and the same neighbourhood of each op it removes. The first application other than a removal turns the rest of the pass back into the full sweep. Off sweeps every op every pass."
+use_when = "Leave on. Turn off to compare against the plain sweep when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have."
+example = "option deadwaves off"
+source_decompiler = "ghidra"
+inspiration = "serde-hkx 0.7.3 hkxc.exe 0x1406491d0: oppool1 ran 1,085 sweeps in the main pipeline and 1,077 in its jump-table sub-pipelines; 884 of the main ones applied only 3 to 10 dead-op removals (XMM-register INDIRECT and MULTIEQUAL chains) and cost 46 of oppool1's 68 seconds."
+change_kind = "speed"
+tier = "transform"
+symptoms = "a huge function spends most of its time in oppool1|rule pool sweep count in the thousands for one function|each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops"
+live_field = "pool_dead_waves"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "noreturn_externmatch"
 values = "on|off"
 default = "on"
@@ -4637,6 +4659,25 @@ inspiration = "repipe:simd-constant-string-initializer, 653d88600f4238b24302b0ec
 change_kind = "presentation-default"
 tier = "transform"
 symptoms = "the same run of dat_<addr> = ... statements is emitted two or three times in one function|a long global-filling epilogue is duplicated once per path that reaches the return|option returndup off does not stop a shared epilogue from being cloned|46% of a function's text is three copies of one exit block"
+
+[[settable]]
+option = "retsplitlimit"
+values = "off|<n>"
+default = "1048576"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "gh-1034"
+summary = "Keep the gotos into a shared RETURN block when splitting it would clone more than <n> ops (default 1,048,576). ActionReturnSplit gives every goto into a RETURN block its own copy of the whole block, every op once per split edge. A bare epilogue is a few ops, but a RETURN block also carries one `glob = glob` guard COPY per global the function reads (Heritage::guardReturns), so a huge function that reads thousands of globals and reaches one return from hundreds of gotos clones millions of ops, which every later pass and the variable merge then walk: serde-hkx's 194 KB deserializer has two return blocks of 4,524 ops reached by 674 and 658 gotos, 6.0 million cloned ops (8.75 million ops in the function right after the split, 7.19 million of them guard COPYs). The cost is the block's op count times its split edges; a block under the limit splits exactly as upstream, so the C changes only in a function that would have cloned more, where those paths print `goto` to the shared return instead of their own `return`. `off` restores the unlimited split."
+use_when = "On by default at 1048576. Lower it to keep a large function's return gotos when splitting them costs memory, or set it off to always give every goto its own return, as upstream does."
+example = "option retsplitlimit off"
+source_decompiler = "kuna"
+inspiration = "GH-1034 serde-hkx 0.7.3's hkxc.exe at 0x1406198f0: splitting two shared return blocks of 4,524 ops reached by 674 and 658 gotos cloned 6.0 million ops, and the function passed 15 GB."
+change_kind = "performance"
+tier = "transform"
+symptoms = "a huge function exhausts memory right after its return blocks are split|millions of COPY ops of a global into itself fill a large function's IR|a function with hundreds of gotos to one return and thousands of globals takes gigabytes to decompile"
 
 [[settable]]
 option = "taildup"

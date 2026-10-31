@@ -51,7 +51,7 @@ fn check_target(target: &str) {
         fn vn_view(&self, _: VarnodeId) -> VarnodeView {
             unreachable!("location-only insertion")
         }
-        fn vn_cover(&self, _: VarnodeId) -> Option<Cover> {
+        fn vn_cover(&self, _: VarnodeId) -> Option<&Cover> {
             unreachable!("location-only insertion")
         }
         fn vn_has_cover(&self, _: VarnodeId) -> bool {
