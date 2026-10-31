@@ -344,7 +344,9 @@ fn check_errors(
     // missing bytes remain selection failures.
     if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
-            if reason.contains("per-function decompile budget exceeded") {
+            if reason.contains("per-function decompile budget exceeded")
+                || reason.contains("per-function memory limit exceeded")
+            {
                 return Some(format!("decompilation failed for {target} in {binary}: {reason}"));
             }
             return Some(reason);
@@ -2112,6 +2114,33 @@ Execution error: No symbol named: v9
                 "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
                 "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
             ));
+    }
+
+    /// The x86 real-mode language id contains a space; the load line quotes it
+    /// so the console does not read `Mode:default` as the next argument.
+    #[test]
+    fn build_script_quotes_a_target_containing_a_space() {
+        for raw_image in [true, false] {
+            let script = build_script(
+                &super::DecompileArgs {
+                    by_address: true,
+                    raw_image,
+                    base: raw_image.then_some(0),
+                    bfd_target: Some("x86:LE:16:Real Mode:default".into()),
+                    ..script_args("/tmp/dazzle.exe", "0x70")
+                },
+                Path::new("/tmp/kuna.c"),
+                LISTING,
+                None,
+            );
+            let load = script.lines().next().unwrap();
+            let expected = if raw_image {
+                "load raw \"x86:LE:16:Real Mode:default\" 0x0 0x70 /tmp/dazzle.exe"
+            } else {
+                "load file \"x86:LE:16:Real Mode:default\" /tmp/dazzle.exe"
+            };
+            assert_eq!(load, expected);
+        }
     }
 
     /// A checked-in fixture path, so the architecture classification behind the

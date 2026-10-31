@@ -75,6 +75,50 @@ This repairs selector identity without an option and does not emulate CP15,
 interpret processor-specific registers, or change named CP15 intrinsics,
 coprocessor data processing, or double-register transfers.
 
+An x86 near branch with a 16-bit displacement (`CALL`/`JMP`/`Jcc rel16`) in
+32-bit code takes a 0x66 prefix, and its target is masked to the low 16 bits,
+since the CPU zeroes the high half of EIP (GH-7418). Code whose default operand
+size is 16 bits (`x86:LE:16:Real Mode`, `x86:LE:16:Protected Mode` and
+`x86:LE:32:System Management Mode`) decodes with its own spec,
+`specs/Ghidra/Processors/x86/data/languages/x86-16.slaspec`, which is
+`x86.slaspec` plus the real-mode code segment in the decode context; `x86.sla`
+and `x86-64.sla` are unchanged. A real-mode address is the linear CS*16 + IP,
+and a code segment need not start on a 64 KiB boundary. The context variable
+`realCS` (default 0) holds CS. A near branch (`rel8` and `rel16`: `CALL`,
+`JMP`, `Jcc`, `LOOP`, `JCXZ`) wraps IP inside the segment, so its target is
+`realCS*16 + ((IP + displacement) & 0xFFFF)`, and it commits `realCS` to that
+target (a SLEIGH `globalset`), so a callee decodes in its caller's segment. A
+far `CALL`/`JMP ptr16:16` commits the segment it names to its target. Every
+16-bit `CALL` pushes IP, not the low half of the linear address; a far `CALL
+ptr16:16` keeps its own segment in the scratch context field `callerCS` while
+`ptr1616` states its target's, so it pushes IP in its own segment. The CS a `CS:`
+override or a near indirect `CALL`/`JMP` reads is `realCS`, so a `jmp
+[cs:bx+table]` reads its table from its own segment (upstream assumed the
+instruction's 64 KiB block). An instruction that starts outside the 64 KiB
+above `realCS*16` cannot be in that segment (one that ends on the segment's last
+byte is inside it, and its IP wraps to 0): there a near branch is the linear sum of
+the next address and the displacement, which is exact unless the branch was
+encoded through the wrap, `CALL` pushes the low 16 bits of its next address,
+and CS is upstream's 64 KiB block. A committed segment holds from its target up to
+the next address the segment was set at, so this bound is what keeps a far
+target's segment from reaching unrelated code above it. With the default CS 0
+the first 64 KiB wrap as the GH-7418 mask did (a `.COM` program's
+`call 0x9103` from 0x100 encoded as -0x7000), and code above it takes the
+linear sum, which the mask had sent into the first 64 KiB (issue #1288: a DOS
+program loaded at segment 0x1000 lost all but 12 of its 330 functions). A
+loader states the segments it knows through
+`decompiler/crates/kuna-analysis/src/loader/kuna_realmodecs.rs (paint)`. A
+raw image (`--raw-image`) that ends inside the first 64 KiB keeps CS 0, another
+raw image of at most 64 KiB is one segment that starts at its base paragraph,
+and a larger one states none (`raw_image_cs`). The raw image's linear call
+sweep decodes data as code, so it runs with `realCS` commits masked
+(`without_commits`). With the main segment of that DOS program stated (CS
+0x2b58), all 697 of its `rel16` branches decode to their targets, against 651
+with the linear sum and none with the mask. In 16-bit protected mode an address
+is selector*0x10000 + offset, so a near branch keeps the selector and wraps the
+offset, as upstream computes it. This is a SLEIGH correctness repair, without
+an inference option.
+
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,
 but cannot repaint the caller. After a successful instruction, a mode commit
@@ -1539,14 +1583,22 @@ the case targets.
    load image and the table has one entry.
    If that normalized variable is itself the output of a byte-sized LOAD, a
    bounded common input farther down the meld may prove a smaller, exact output
-   domain. Kuna emulates every input value through the path, with one
-   `max_jumptable_size` total value budget across candidates, and accepts that
+   domain. Kuna emulates every input value through the path, with one total
+   budget of 65,536 values across candidates (`jumptable.rs
+   (MAX_SELECTOR_INPUTS)`, or `jumptablemax` when that is larger), and accepts that
    domain only when every direct or implicit load-image read is wholly covered,
    byte by byte, by global read-only and non-volatile properties. It then
    carries the resulting finite set through target recovery. An unbounded input,
    failed emulation, or any writable or unclassified read leaves the original
    selector range intact, so an image snapshot cannot stand in for mutable
-   program state.
+   program state. The budget counts emulations, not table rows: a map is as long
+   as the range of the index that reads it, which can pass `jumptablemax` while
+   the map selects only a few rows. MSVC's byte map for a 1,477-value range in
+   node.exe selects three; with the budget set to `jumptablemax` the selector kept
+   all 256 values, map bytes were read as table rows, and flow left for the
+   addresses they named. A candidate stops as soon as its values cover the
+   selector's whole range, since it can no longer narrow it: a 65,536-entry
+   map that names all 256 rows in its first 256 bytes costs 256 emulations.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of

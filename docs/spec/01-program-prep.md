@@ -992,6 +992,11 @@ through the packed image's import data directory, because retargeting the direct
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
 `tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
 
+PE32+ headers are parsed for PackHeader discovery so unsupported 64-bit PE images
+are named as unsupported instead of being interpreted as ELF-style overlays. Only
+PE32 images are reconstructed; both the packed header and the recovered header
+must be PE32, even when the PackHeader claims `win32/pe`.
+
 The agreement is over the *set* of DLL names, not a position-by-position walk. The
 loader table holds one descriptor per distinct DLL, while the original image may
 import a single DLL across several descriptors -- a 32-bit MSVC witness names seven
@@ -1008,6 +1013,19 @@ travel as an optimized stream plus a five-byte trailer record that this tier doe
 replay, and such an image is refused by name before the resource rebuild could read
 that record as its icon count. A TLS directory needs no step at all: UPX's own
 `rebuildTls` is empty, so the directory comes back with the image it was packed in.
+
+Every offset these rebuilds follow comes from the file, so each walk is bounded by
+the bytes the file holds. The loader-table scan reads only section bytes present in
+the file -- a section past the end of the file maps nothing, and one at the top of
+the address space does not wrap -- and reads at most two descriptors per four bytes
+of the file, about twice what an honest image needs; a trailer naming more than 256
+distinct DLLs is refused as unsupported, since UPX can pack more. A resource
+tree that reaches one directory or data entry twice is refused: UPX's packer writes
+the directory out afresh with every node once, even for an original whose linker
+shared a subtree, so only an edited file has one, and following it lets a small tree
+fan out into an exponential walk. The leaves it moves may not add up to more than
+the packed file. The output is laid out, and checked against the original length the
+PackHeader declares, before it is allocated.
 
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
@@ -1108,6 +1126,59 @@ an explicit override and not a fallback the `PackHeader` search reaches on its o
 refusal path is unchanged and deliberately so: an image that genuinely is not packed
 still exits `1` naming that, because an `unpack` that exited `0` on everything would
 trade a right answer for a reachable one.
+
+(kuna) **PKLITE.** The DOS packer, recognized after NEOLite and before UPX by its
+decompressor stub at the DOS entry point, so a file without one reaches the UPX arm
+exactly as before. A Windows or OS/2 program (`e_lfanew` naming a `PE`, `NE`, `LE`
+or `LX` header) is never PKLITE's, even when its DOS stub is a PKLITE file: the
+program is the new-style executable, which PKLITE does not pack.
+`decompiler/crates/kuna-analysis/src/pklite` is a port of deark's
+`pklite` module (MIT; the notice is in the module header and `NOTICE`): `stub.rs`
+reads the parameters out of the stub, `decode.rs` is the decoder, and `mod.rs`
+rebuilds the file. A packed EXE enters at `FFF0:0100` -- the start of its code --
+and its load module is the stub, the compressed program, a compressed relocation
+table and an 8-byte footer holding the original `SS`, `SP`, `CS`, `IP`; the 1990
+betas put the data before the decoder instead. Without extra compression (`-e`) the
+stub's header also keeps a copy of the original MZ header.
+
+Nothing trustworthy *declares* the parameters. The version word at `0x1C` is
+routinely wrong, so the compression mode and the data's position are read from the
+stub's machine code, walked component by component against known byte patterns:
+the intro (whose `MOV DX` immediate keys the descrambler some versions run over the
+rest of the stub, an XOR or ADD chain undone in place before anything else is
+read), the copier (whose `MOV SI` immediate locates the decompressor), and the
+decompressor (whose immediate is the compressed data's paragraph, and whose
+literal-copy loop, length table and register setup say whether extra compression,
+large compression or the v1.20 code tables are in use, plus any XOR key on match
+offsets). Every component that matches no pattern is a named refusal.
+
+The codec is LZ77 over an 8 KiB window with fixed Huffman codes for the match
+length and the distance's high five bits. Control bits come from 16-bit words read
+least-significant first, and the next word is fetched the moment the last bit of
+the current one is consumed, ahead of the data byte that follows; extra compression
+XORs each literal with the number of control bits left at that moment. One length
+code escapes to a byte that is a longer length, the stop code, a no-op, or an
+uncompressed area, whose eight-byte `PKLITE` signature and length byte are restored
+in the output while the history gets zeros (two registered PKZIP 2.04 builds put
+stale memory there instead, matched by content). The relocation table is the short
+form (count byte, segment, offsets) normally and the long form (count word per
+`0x0FFF`-paragraph segment) under extra compression, byte-swapped when the stub's
+descrambler is the ADD kind.
+
+The rebuild uses the kept header copy only when its registers agree with the footer
+and its relocation count with the table; otherwise it writes a 28-byte header with
+the code 16-byte aligned, the footer's registers, `MAXALLOC` from the packed file
+and `MINALLOC` estimated from the stub's own free-memory check, as deark does.
+The kept copy runs up to the original relocation table, and PKLITE does not record
+the bytes between that table and the code, so those are zero. An overlay is carried over when
+the decompressed module ends exactly where the recovered header says. The format
+has no checksum, so the proofs are structural: the stream must end on its stop
+code, the relocation table must end where an 8-byte footer still fits before the end
+of the load module, and a match may not reach before the output or behind an
+uncompressed area. A file whose stub stores a `PK` signature into the PSP is
+unpacked with a warning that the program checks for it at run time. A PKLITE COM
+file is decompressed whole. As with UPX, nothing on the load path unpacks
+implicitly; the runtime hint names the stub (`PKLITE packed: run 'kuna unpack'`).
 
 ## 1.3 Loader markup
 
@@ -3138,8 +3209,16 @@ moves.
   names exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
-  (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,
-  before pass selection, and shapes the pass list: `rustc version` records in
+  (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) is asked
+  for its verdict several times per load: by the loader's language-id choice,
+  by pass selection, for the engine fact below, by the `addrtakenentry` gate
+  and by the CLI's runtime hints. So it reads the image in place. The PE arm
+  tests `.comment` and `.rdata` as one NUL-delimited record stream (a record
+  left open at the end of `.comment` continues into `.rdata`) without copying
+  either, and decodes only the records around a substring hit of the record
+  it looks for. On a 20 MB `.rdata` that is a few milliseconds per ask, where
+  copying the section and splitting every record cost a quarter of a second.
+  Detection shapes the pass list: `rustc version` records in
   `.comment` or Rust-mangled symbols → the Rust no-return list;
   `.go.buildinfo`/`.note.go.buildid` (any format's spelling) → the Go list plus
   the pclntab pass; a Swift 5 reflection-metadata section (any format's
@@ -3157,6 +3236,43 @@ moves.
   reads the MSVC Rich header / MinGW `GCC:` records, Mach-O the
   `LC_BUILD_VERSION` family. The `Gcc`/`Clang` values are a kuna convenience
   nothing gates on.
+
+  A Go **PE** names nothing: Go's Windows linker emits only `.text`, `.rdata`,
+  `.data` (plus the `.pdata`/`.idata`/`.reloc` bookkeeping), merging the
+  build-info blob into the head of `.data` and the pclntab into `.rdata`, so
+  the section-name test above can never fire on one. The PE arm therefore
+  reads content, and asks two questions
+  (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
+  (detect_compiler_pe)`). First, is there a build-info blob where Go's own
+  `go version` looks for it
+  (`decompiler/crates/kuna-analysis/src/loader/gobuildinfo.rs
+  (pe_buildinfo_blob)`): the first writable initialized-data section, at a
+  16-byte-aligned offset, holding a header that validates whole
+  (`blob_is_buildinfo`) — the 14-byte `\xff Go buildinf:` magic, a pointer
+  size of 4 or 8, no unknown flag bits, and a version string (`go1.x` or
+  `devel …`, printable) that decodes, inline after zero padding since go1.18 or
+  through the header's pointer before. The magic string alone, or a header
+  shape with no version behind it, is not evidence. The scan visits only the
+  aligned slots, so it costs one byte compare per 16 bytes of `.data` (1.5 ms
+  on a 13.7 MB `.data`); on an internally linked Go image the blob is the
+  section's first object. Second, is there a pclntab in **read-only** data
+  whose table resolves and which the image's own `moduledata` names
+  (`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+  (readonly_table_present, moduledata_anchored)`): a pointer-aligned record in
+  writable data whose first word is the header's address and whose next
+  pointer is the name table's (go1.16+, `pcHeader` then `funcnametab`) or,
+  after the blob's length and capacity, the functab's (go1.2–go1.15,
+  `pclntable` then `ftab`). The linker always writes that record for the
+  module's own table. A Go image a C program merely carries as data has none
+  pointing at where the copy sits, whichever section holds it: a payload in
+  `.data` has a valid blob but its table is in writable data, and one carried
+  twice (a const copy in `.rdata`, a writable one in `.data`) has a blob and
+  a read-only table whose only `moduledata` names the address the table had in
+  its own image. Both questions must hold. The arm runs first, as on every format, and
+  returns before the `.rdata` toolchain-record scan the later arms do.
+  Nothing else changes for a non-Go PE: its verdict is the same as before. The
+  same blob lookup (`buildinfo_blob`) gives the version-keyed `goreg` shells
+  their toolchain on a PE.
 
   Every consumer acts on the **effective** verdict
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
@@ -3178,7 +3294,10 @@ moves.
   bools (`rustabi auto`, `reloadarg`'s Go stand-down) read that one fact now.
   Forcing a language never invents facts (forcing `go` on a non-Go image
   enables the pclntab pass, which finds no table); it changes which
-  language-gated rules may act.
+  language-gated rules may act. It is also the escape hatch when detection
+  misses: a Go PE whose build-info blob was wiped still has its pclntab in
+  `.rdata`, and `--option sourcelang go` registers the Go passes, which find
+  it.
   "Rust-mangled" is decided by the mangling grammar, not by a prefix
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
   (is_rust_mangled)`). The v0 scheme spells a symbol `_R` followed by a path, and a
@@ -3217,7 +3336,8 @@ every other binary's pass list is byte-identical to before the pass existed):
   the pclntab header, which `locate_header` already finds on a stripped image;
   the anchor is the data-section word holding that address whose next three
   words parse as the `funcnametab` slice — go1.26+ emits `firstmoduledata`
-  into its own `.go.module` section, which the scan covers), and the type
+  into its own `.go.module` section, which the scan covers, and a PE folds it
+  into `.data` with the rest of the data segment), and the type
   metadata is then found by CROSS-VALIDATION inside the moduledata window in
   whichever of its two historical forms is present — never by hardcoded field
   offsets. Through go1.25: the `types`/`etypes` pair plus the `typelinks`
@@ -3256,8 +3376,23 @@ every other binary's pass list is byte-identical to before the pass existed):
   `runtime.*` instead of `sub_<addr>`. It is format-neutral: the table is located
   by its ELF `.gopclntab` / Mach-O `__gopclntab` section, or the
   `.lrodata_gopclntab` / `__lrodata_gopcln` section a link that splits out large
-  read-only data gives it (or a scan of the read-only data sections that Go places
-  it in), and an entry is admitted only
+  read-only data gives it, or a scan of the data sections Go places it in. An
+  internally linked ELF PIE from go1.25 or older keeps the table in
+  `.data.rel.ro.gopclntab` (the relro spelling of `.gopclntab`, which no scanned
+  section covers), so that name is on the section list too. The
+  scan is the only route on a PE, whose linker writes no pclntab section and
+  keeps the table inside `.rdata` among every other rodata symbol, so `.rdata`
+  is on the list; and because a PE scan walks megabytes of other data before
+  reaching the table, an 8-byte magic-shaped match is only a candidate — the
+  header must also describe a table that resolves (a function count in range, a
+  functab and a name table that both lie inside the image,
+  `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+  (table_plausible)`), or the scan moves on. A plausible table can still be
+  someone else's: a Go program that `//go:embed`s another Go executable keeps
+  it in the same rodata, ahead of its own table, so the scan prefers the first
+  table the image's `moduledata` names (`moduledata_anchored`, as in the PE
+  detection above) and keeps the first plausible one only for an image where
+  no table is named. An entry is admitted only
   when it lands in an executable extent — a corrupt table cannot mint a function
   over data. Because the `functab` also carries each function's **end**, the pass
   feeds those extents to the interior-entry rejection, so a jump-table case block
@@ -3288,6 +3423,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   i-th table and made `kuna functions` report hundreds of bytes of executable
   `std::basic_stringbuf` code as vtable objects. Only the table itself wears a
   `vftable` name, and it is unindexed.
+
+  The pass runs at every PE load whatever its gate says (its facts are committed
+  only when it is on), so its cost is paid by every command on a C++ DLL. Both of
+  its byte-searches — from the TypeDescriptors back to the words that reference
+  them, and from the validated CompleteObjectLocators forward to the meta slots
+  before their vftables — are therefore one scan of the image for every class at
+  once, grouping the hits by target and visiting them in image order, which emits
+  exactly what a search per class would. A search per class is
+  `O(classes × image)`: `torch_cpu.dll` (31,623 type descriptors in 309 MB) did
+  not finish loading in 30 minutes that way.
 - **(kuna) Itanium RTTI** (`itaniumrtti`, ELF-only, default-off;
   `decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumrtti.rs`): the
   GCC/Clang counterpart of the pass above, and a capability with **no Ghidra
@@ -5201,6 +5346,40 @@ format oracles; full `funcstart_patterns` roots are included only when both
 `listing` and that option are on. The Listing walk recursively follows every
 static CALL from those trustworthy roots, and `fast_funcdisc` commits all
 resulting function entries.
+
+On a Go image the walk leaves out the roots the pclntab already accounts for
+(`gowalkprune`, default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+(function_entries)`). The pclntab names every Go function and gives its extent,
+and the `gopclntab` pass puts each in the inventory. Walking them finds those
+same functions again, and on an x64 PE it is expensive: Go's Windows linker
+writes a `.pdata` record for every Go function, so with those records as roots
+the walk decoded the whole Go text. A root at a pclntab function entry is
+therefore dropped before the walk, and every other root is kept, so cgo's C
+code and anything else the image's own records name is still walked. (Go's
+internal linker lists a cgo image's C functions in the pclntab too, so there
+they reach the inventory through the table; an external link leaves them out of
+it, and they stay roots.) The cost is what the walk could reach only through a
+pclntab function's body: it is no longer found unless something else names
+it. Go code calls C only through function pointers (`asmcgocall`, the cgo
+wrappers' data words), so this takes Go assembly that CALLs C code directly, in
+an externally linked image whose C carries neither symbols nor unwind records;
+there the called function and its callees are lost and the function before them
+absorbs their bytes. Measured on four Go images (gh 2.89.0 for Windows and
+Linux, two other Go PEs), on cgo builds (internal and external link, the race
+detector, c-shared, plugin) for Linux and Windows, and on Go builds for macOS
+and the BSDs, the inventory's addresses, names and sizes do not change. What changes is that a
+Go function the walk reached only by a call no longer also carries a
+`sub_<addr>` alias; a function another source of entries names (a `.pdata`
+record, an entry oracle) keeps its alias as before; the decompiled C is the
+same. The pruning applies only where `fast_funcdisc` builds the walk without
+the full Listing, which is fast mode on every surface. With the Listing on,
+every root is walked as before. The pruning also waits for the `gopclntab`
+pass: it applies only when the load-time verdict is Go (the verdict that chose
+the pass set, so a `sourcelang` force issued after the load does not count)
+and `gopclntab` is on, since with the pass off nothing else would put the
+dropped roots' functions in the inventory. `--option gowalkprune off` walks
+the Go functions again.
 
 The second source covers indirect-only callbacks. On non-ARM objects, scan
 allocated, initialized, non-executable data for pointer-width runs of at least

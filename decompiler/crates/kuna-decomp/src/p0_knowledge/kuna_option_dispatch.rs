@@ -288,6 +288,8 @@ kuna_options! { self, p1;
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
     "globalcallranges" => on_off!(global_call_ranges, "Global call access ranges"),
+    "readonlycalls" => on_off!(readonly_calls, "Unguarded read-only memory at calls"),
+    "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
     "localstackviews" => on_off!(local_stack_views, "Bounded local stack views"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
@@ -945,6 +947,9 @@ kuna_options! { self, p1;
     },
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
+    },
+    "gowalkprune" => {
+        on_off!(analysis_gowalkprune, "Go pclntab functions out of the fast inventory walk")
     },
     "flowmode" => {
         let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {

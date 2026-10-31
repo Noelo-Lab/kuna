@@ -1,0 +1,60 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna #1157 (secondary): decompiling python314.dll at 0x180099df0
+    panicked in TransformManager::apply (index -2 into a two-lane piece array).
+    Upstream Ghidra fixed the same line as GP-7434 ("Fix for LaneDivide
+    terminator SUBPIECE trace", NationalSecurityAgency/ghidra de40b0bf5dc6).
+
+    Stage: P3 dataflow, laned-register split (ActionLaneDivide driving
+    LaneDivide::traceForward).  A SUBPIECE too narrow for a lane, read from a
+    varnode that holds only the upper lanes of the split register, is kept as a
+    terminating SUBPIECE of the lane it starts in.  That lane was found from
+    the SUBPIECE's byte offset alone, which counts from the varnode, not from
+    the whole register, so it was off by the varnode's skipped lanes.
+
+    Authored x86-64 (GNU as), no option: a strict correctness fix.
+    f_hi:  movups xmm6,[rdi]; movd eax,xmm6; psrldq a copy by 8; movq rcx,xmm0.
+           rcx (lanes 2..3 of the 4x4-byte split) is loop-carried and its low
+           byte is read (sub r8b,cl): lane index 0 - 2 skipped lanes = -2, the
+           panic.  The byte is a0[2]'s.
+    f_mid: the same with psrldq 4 (rcx = lanes 1..2) and the byte at rcx+4
+           (shr r9,32; sub r8b,r9b): the old lane was 1 (a0[1]) instead of 2
+           (a0[2]), a silent wrong read.
+    f_hi at 0x100000, f_mid at 0x100080.
+
+    Before the fix: f_hi's decompilation fails (assert no_failed_decompile)
+    and f_mid subtracts a0[1]'s byte, so neither function reads a0[2] or
+    a0[6] (asserts lane2_load, lane2_reload).  After: both read the byte of
+    lane 2, from the first load and from the reload.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+0f1037660f7ef0660f6fc6660f73d808
+66480f7ec185f67e2a440fb6024128c8
+4401c001c8803a0075120f107710660f
+6fc6660f73d80866480f7ec148ffc2ff
+ceebd2c3cccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccc
+cccccccccccccccccccccccccccccccc
+0f1037660f7ef0660f6fc6660f73d804
+66480f7ec185f67e31440fb6024989c9
+49c1e9204528c84401c001c8803a0075
+120f107710660f6fc6660f73d8046648
+0f7ec148ffc2ffceebcbc3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="f_hi"/>
+<symbol space="ram" offset="0x100080" name="f_mid"/>
+</binaryimage>
+<script>
+  <com>lo fu f_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_mid</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="Lane divide terminator #1" min="0" max="0">decompilation failed</stringmatch>
+<stringmatch name="Lane divide terminator #2" min="2" max="2">v[0-9]+ = a0\[2\];</stringmatch>
+<stringmatch name="Lane divide terminator #3" min="2" max="2">v[0-9]+ = a0\[6\];</stringmatch>
+</decompilertest>

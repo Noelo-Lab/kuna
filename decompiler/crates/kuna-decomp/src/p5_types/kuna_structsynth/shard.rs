@@ -46,10 +46,11 @@ use crate::dtype::{Datatype, DatatypeKind, TypeFactory, TypeFactoryImpl, TypeFie
 /// How a field type is rebuilt in another process's factory.
 ///
 /// A named type is found by name and checked by id, metatype and size; a
-/// pointer or an array is rebuilt around its rebuilt element. Everything else
-/// (a pointer into a named space, a relative pointer, an unnamed aggregate, a
-/// synthesized structure) has no recipe, and a request carrying one cannot be
-/// replayed in another process.
+/// pointer or an array is rebuilt around its rebuilt element; the unnamed
+/// unknown placeholder ([`Datatype::is_unknown_placeholder`]) is built afresh,
+/// as every process builds it. Everything else (a pointer into a named space, a
+/// relative pointer, an unnamed aggregate, a synthesized structure) has no
+/// recipe, and a request carrying one cannot be replayed in another process.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum TypeRecipe {
     /// A type the factory holds by name.
@@ -58,6 +59,8 @@ pub enum TypeRecipe {
     Pointer { size: int4, wordsize: u32, to: Box<TypeRecipe> },
     /// `elem[count]`.
     Array { count: int4, elem: Box<TypeRecipe> },
+    /// `Datatype::new(size, TYPE_UNKNOWN)`.
+    Placeholder { size: int4 },
 }
 
 /// How deep a recipe follows pointers and arrays; the ledger spells a field no
@@ -96,6 +99,7 @@ impl TypeRecipe {
             | DatatypeKind::PartialUnion { .. }
             | DatatypeKind::PartialEnum { .. }
             | DatatypeKind::Spacebase { .. } => None,
+            _ if ct.is_unknown_placeholder() => Some(TypeRecipe::Placeholder { size: ct.get_size() }),
             _ if ct.get_name().is_empty() => None,
             // A synthesized structure is named by the process that minted it.
             _ if ledger::minted_number(ct).is_some() => None,
@@ -114,6 +118,7 @@ impl TypeRecipe {
             TypeRecipe::Named { id, .. } => at_load.ids.contains(id),
             TypeRecipe::Pointer { to, .. } => to.held_at_load(at_load),
             TypeRecipe::Array { elem, .. } => elem.held_at_load(at_load),
+            TypeRecipe::Placeholder { .. } => true,
         }
     }
 
@@ -126,6 +131,7 @@ impl TypeRecipe {
                 types.get_type_pointer(*size, to.build(types)?, *wordsize).ok()?
             }
             TypeRecipe::Array { count, elem } => types.get_type_array(*count, elem.build(types)?).ok()?,
+            TypeRecipe::Placeholder { size } => Rc::new(Datatype::new(*size, crate::dtype::type_metatype::TYPE_UNKNOWN)),
         };
         (TypeRecipe::of(&ct).as_ref() == Some(self)).then_some(ct)
     }
@@ -859,6 +865,10 @@ fn put_recipe(out: &mut Vec<u8>, r: &TypeRecipe) {
             put_i32(out, *count);
             put_recipe(out, elem);
         }
+        TypeRecipe::Placeholder { size } => {
+            out.push(3);
+            put_i32(out, *size);
+        }
     }
 }
 
@@ -874,6 +884,7 @@ fn read_recipe(r: &mut Reader, depth: u32) -> Option<TypeRecipe> {
             to: Box::new(read_recipe(r, depth + 1)?),
         },
         2 => TypeRecipe::Array { count: r.i32()?, elem: Box::new(read_recipe(r, depth + 1)?) },
+        3 => TypeRecipe::Placeholder { size: r.i32()? },
         _ => return None,
     })
 }

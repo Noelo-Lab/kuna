@@ -15,13 +15,17 @@
 //! reads only the first register of a proven callee reads the value's high
 //! word ([`build_high_read`]).
 //!
-//! The walk follows every path from the entry to a RETURN or a call that
-//! does not return, executing the p-code over symbolic values ([`Term`]): a
-//! register's value at the entry, a literal, an operation on values, or an
-//! opaque value (a load, a call's result or clobber, a partly written
-//! register). At each RETURN the model's pair must hold one of three shapes
-//! an `int` function has no reason to compute, both registers written by the
-//! function and neither read again before the RETURN:
+//! The walk follows every path from the entry to a RETURN, a tail branch to
+//! another function, or a call that does not return, executing the p-code
+//! over symbolic values ([`Term`]): a register's value at the entry, a
+//! literal, an operation on values, a load (with its address), what a call
+//! left in one of the pair's registers, or an opaque value (another
+//! register's clobber, a partly written register). A store into the
+//! function's own stack frame is remembered on its path, so a reload of the
+//! same slot names the value stored there. At each RETURN the model's pair,
+//! both registers written by the function and neither read again before the
+//! RETURN, must hold one of the shapes an `int` function has no reason to
+//! compute:
 //!
 //! * a sign extension: the first register is the second register's value
 //!   shifted right arithmetically by all but one of its bits, the shift (and
@@ -31,7 +35,33 @@
 //! * the two halves of one product of two extended words, the low half made
 //!   by an instruction of its own -- a separate low product of the same two
 //!   words (PowerPC's `mullw` beside `mulhw`), or a move out of the register
-//!   the multiply left it in (MIPS's `mflo`) -- and read by nothing.
+//!   the multiply left it in (MIPS's `mflo`) -- and read by nothing;
+//! * the two words of one object read from memory: two loads of adjacent
+//!   words, the high word's at the lower address, or the halves of one load
+//!   twice as wide (SPARC's `ldd`), the low word read by nothing but moves and
+//!   spills, a reload of a spill read as the low word itself (an `int`
+//!   returning one word of a 64-bit object never loads the other, unless the
+//!   object is volatile);
+//! * the pair a direct call handed back, its high register in the first and
+//!   its low register in the second, the low word moved back into place by
+//!   the function after the call (through another register or the stack
+//!   frame), on condition that the callee is proven: an `int` returning the
+//!   high word keeps only the first register across the next call.
+//!
+//! Some path ends need not prove it but must not contradict it: a pair a
+//! call left where it put them, on the same condition, and two literals. A
+//! tail branch proves it when its callee does. A function is proven when
+//! every path end proves or fits, at least one proves, and every callee those
+//! ends depend on is proven ([`verdict`] takes those first; a cycle is not
+//! proven). A pair whose high register was moved back to the value it
+//! already held, directly or through a stack slot, more times in a row than
+//! the low one (gcc -O0 lowering `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3`
+//! over a reloaded 64-bit temporary, or over a libcall's pair it first moved
+//! back whole), or whose low register alone was, proves only by the first
+//! three shapes. Both moved back otherwise is the pair the function held
+//! handed back whole (gcc -O0's `return v` of a spilled `long long` local,
+//! `mov r1,r3; mov r0,r2`; clang -O0 first copies a call's low word out and
+//! back, `mov r2,r1; mov r1,r2`).
 //!
 //! "Nothing reads" counts every path, a path ending in a call that does not
 //! return included: gcc -Os hoists an error path's computation into a branch
@@ -41,10 +71,10 @@
 //! argument; not a literal, not the second register's own entry value, not a
 //! load, a call's result or a piece of a wider value. A call reads every
 //! argument register holding a value the function put there. A loop, an
-//! indirect jump, a tail branch to another function, an operation given no
-//! register inputs, or a walk over its budget proves nothing, and neither does
-//! an "entry" whose first instruction calls itself (the placeholder an
-//! unrelocated call in an object file leaves).
+//! indirect jump, an operation given no register inputs, or a walk over its
+//! budget proves nothing, and neither does an "entry" whose first
+//! instruction calls itself (the placeholder an unrelocated call in an
+//! object file leaves).
 
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -116,17 +146,51 @@ impl WideView {
     }
 }
 
-/// The verdict for `key`, taken once per image.
+/// The verdict for `key`, taken once per image. A function proven only if
+/// some callees are (a tail branch, a pair a call handed back) takes theirs
+/// first; a callee whose verdict is still being taken, a cycle, is not
+/// proven, whichever function of the cycle is asked about first.
 fn verdict(arch: &Architecture, map: &mut HashMap<Entry, bool>, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
     if let Some(&v) = map.get(&key) {
         return v;
     }
-    let v = arch
-        .manage()
-        .get_space(key.0)
-        .is_some_and(|sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), key.1)));
-    map.insert(key, v);
-    v
+    let mut locals: HashMap<Entry, Local> = HashMap::new();
+    let mut stack = vec![key];
+    while let Some(&k) = stack.last() {
+        if map.contains_key(&k) {
+            stack.pop();
+            continue;
+        }
+        let local = locals.entry(k).or_insert_with(|| {
+            arch.manage()
+                .get_space(k.0)
+                .map_or(Local::No, |sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), k.1)))
+        });
+        let (mut v, deps): (bool, &[Entry]) = match local {
+            Local::No => (false, &[]),
+            Local::Yes(d) => (true, d),
+        };
+        let mut next = None;
+        for d in deps {
+            match map.get(d) {
+                Some(true) => {}
+                Some(false) => v = false,
+                None if stack.contains(d) => v = false,
+                None => next = next.or(Some(*d)),
+            }
+            if !v {
+                break;
+            }
+        }
+        match next.filter(|_| v) {
+            Some(d) => stack.push(d),
+            None => {
+                map.insert(k, v);
+                stack.pop();
+            }
+        }
+    }
+    map[&key]
 }
 
 /// A symbolic value.
@@ -138,9 +202,13 @@ enum Term {
     Const(u64, u32),
     /// An operation on values, with its output size.
     Op(OpCode, Args, u32),
-    /// A value nothing here can name: a load, a call's result or clobber, a
-    /// partly written register.
+    /// A value nothing here can name: a call's clobber of a register outside
+    /// the pair, a partly written register.
     Opaque(u32),
+    /// A load's value: its address, its size, and the load's own number.
+    Load(usize, u32, u32),
+    /// What the call at an instruction left in one of the pair's registers.
+    Out(u64, Key, u32),
 }
 
 /// An operation's inputs: at most three values.
@@ -176,9 +244,13 @@ impl Terms {
     }
 
     fn opaque(&mut self) -> usize {
+        let n = self.fresh();
+        self.intern(Term::Opaque(n))
+    }
+
+    fn fresh(&mut self) -> u32 {
         self.opaque += 1;
-        let t = Term::Opaque(self.opaque);
-        self.intern(t)
+        self.opaque
     }
 
     fn get(&self, id: usize) -> &Term {
@@ -200,6 +272,8 @@ struct Read {
     insn: u64,
     opc: OpCode,
     out: Option<usize>,
+    /// A store of the value into the function's own stack frame.
+    spill: bool,
 }
 
 /// A path's state.
@@ -224,21 +298,53 @@ struct Path {
     lo_at: Option<u64>,
     insns: usize,
     visited: Vec<u64>,
+    /// What the path stored into its own stack frame: offset from the entry
+    /// stack pointer, size, value.
+    mem: Vec<(i64, u32, usize)>,
+    /// Locations whose latest writes moved in the value they already held,
+    /// with how many such writes in a row.
+    redundant: Vec<(Key, u32)>,
 }
 
 /// Where a branch goes.
 enum Dest {
     Op(usize),
     Insn(Address),
+    Tail(Entry),
 }
 
 /// What one RETURN reached holds in the pair, with the instruction that
-/// last wrote the low register and the one that made its value.
+/// last wrote the low register and the one that made its value, and whether
+/// the high register's latest writes moved in the value it already held more
+/// times in a row than the low register's, or only the low register's did.
 struct Site {
     hi: usize,
     lo: usize,
     lo_writer: Option<u64>,
     lo_made: Option<u64>,
+    redundant: bool,
+}
+
+/// Where one path ends: at a RETURN, or in a tail branch to the function at
+/// an entry.
+enum End {
+    Return(Site),
+    Tail(Entry),
+}
+
+/// What one path end says about the function: it returns one wide value
+/// (on condition that a callee does), it is consistent with one, or it
+/// proves nothing.
+enum Says {
+    Wide(Option<Entry>),
+    Fits(Option<Entry>),
+    Nothing,
+}
+
+/// One walk's answer: not proven, or proven once every callee listed is.
+enum Local {
+    No,
+    Yes(Vec<Entry>),
 }
 
 /// What one decoded instruction is.
@@ -367,11 +473,15 @@ pub fn proven(data: &Funcdata, entry: &Address) -> bool {
 
 /// The walk: does every RETURN of the function at `entry` hand back one
 /// value twice a register's width in `pair` (see the module header)?
-fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, entry: &Address) -> bool {
-    let (Some(hi_key), Some(lo_key)) = (WidePair::key(&pair.hi), WidePair::key(&pair.lo)) else { return false };
+fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, entry: &Address) -> Local {
+    let (Some(hi_key), Some(lo_key)) = (WidePair::key(&pair.hi), WidePair::key(&pair.lo)) else { return Local::No };
     if entry.get_space().is_none_or(|s| s.get_type() != spacetype::IPTR_PROCESSOR) {
-        return false;
+        return Local::No;
     }
+    let sp = arch.manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok()).and_then(|b| {
+        let space = b.space.as_ref()?;
+        Some((space.get_index(), b.offset, b.size))
+    });
     let mut w = Walk {
         arch,
         model,
@@ -394,7 +504,11 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
             .unwrap_or_default(),
         entry: entry.clone(),
         ops: 0,
+        sp: None,
+        reloads: HashMap::new(),
+        calls: HashMap::new(),
     };
+    w.sp = sp.map(|k| w.terms.intern(Term::Input(k)));
     let tracked = arch.with_context_db(|db| db.get_tracked_set(entry).clone());
     let mut start = Path {
         at: entry.clone(),
@@ -408,6 +522,8 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
         lo_at: None,
         insns: 0,
         visited: Vec::new(),
+        mem: Vec::new(),
+        redundant: Vec::new(),
     };
     for t in &tracked {
         let Some(sp) = t.loc.space.as_ref() else { continue };
@@ -418,11 +534,26 @@ fn proves_wide(arch: &Architecture, model: &Rc<ProtoModel>, pair: &WidePair, ent
     let mut paths = 1usize;
     while let Some((path, op)) = todo.pop() {
         if w.run(path, op, &mut todo, &mut paths).is_none() || paths > MAX_PATHS {
-            return false;
+            return Local::No;
         }
     }
-    let sites = std::mem::take(&mut w.sites);
-    !sites.is_empty() && sites.iter().all(|site| w.proves(site))
+    let ends = std::mem::take(&mut w.sites);
+    let mut deps = Vec::new();
+    let mut wide = false;
+    for end in &ends {
+        let (says, dep) = match w.says(end) {
+            Says::Wide(d) => (true, d),
+            Says::Fits(d) => (false, d),
+            Says::Nothing => return Local::No,
+        };
+        wide |= says;
+        deps.extend(dep.filter(|d| !deps.contains(d)));
+    }
+    if wide {
+        Local::Yes(deps)
+    } else {
+        Local::No
+    }
 }
 
 struct Walk<'a> {
@@ -434,12 +565,24 @@ struct Walk<'a> {
     insns: HashMap<u64, Rc<Insn>>,
     /// Every operand read on every path walked, a no-return path's included.
     reads: Vec<Read>,
-    /// What each RETURN reached holds.
-    sites: Vec<Site>,
+    /// Where each path ended.
+    sites: Vec<End>,
     spaces: HashMap<int4, Rc<AddrSpace>>,
     args: Vec<Key>,
     entry: Address,
     ops: usize,
+    /// The stack pointer's entry value.
+    sp: Option<usize>,
+    /// A load from the stack frame, and the value a store on its path left
+    /// there (an opaque value where stores covered only part of it).
+    reloads: HashMap<usize, usize>,
+    /// Each direct call, and the function it calls.
+    calls: HashMap<u64, Entry>,
+}
+
+fn signed(v: u64, size: u32) -> i64 {
+    let bits = 8 * size.clamp(1, 8);
+    ((v << (64 - bits)) as i64) >> (64 - bits)
 }
 
 fn ones(size: u32) -> u64 {
@@ -542,8 +685,7 @@ impl<'a> Walk<'a> {
 
     fn write(&mut self, path: &mut Path, v: &VarnodeData, t: usize, by: u64) {
         let Some(k) = Self::key(v) else { return };
-        path.regs.retain(|(r, _, _)| !overlaps(r, &k));
-        path.regs.push((k, t, by));
+        Self::put(path, k, t, by);
         if overlaps(&k, &self.hi) {
             path.hi_read = false;
             path.hi_at = Some(path.at.get_offset());
@@ -552,6 +694,12 @@ impl<'a> Walk<'a> {
             path.lo_read = false;
             path.lo_at = Some(path.at.get_offset());
         }
+    }
+
+    fn put(path: &mut Path, k: Key, t: usize, by: u64) {
+        path.regs.retain(|(r, _, _)| !overlaps(r, &k));
+        path.redundant.retain(|r| !overlaps(&r.0, &k));
+        path.regs.push((k, t, by));
     }
 
     /// The value of `opc` over `ins`, folded when every input is a literal
@@ -636,32 +784,58 @@ impl<'a> Walk<'a> {
                             here
                         };
                         if let Some(o) = out {
+                            let same = !insn.window
+                                && Self::key(o).is_some_and(|k| {
+                                    path.regs.iter().rev().find(|(r, _, _)| overlaps(r, &k)).is_some_and(|&(r, held, _)| r == k && self.unwrap(held) == self.unwrap(t))
+                                });
+                            let k = Self::key(o);
+                            let moves = 1 + path.redundant.iter().find(|r| Some(r.0) == k).map_or(0, |r| r.1);
                             self.write(&mut path, o, t, by);
+                            if same {
+                                path.redundant.extend(k.map(|k| (k, moves)));
+                            }
                         }
                     }
                     OpCode::CPUI_LOAD => {
                         let a = self.value(&mut path, &ins[1]);
-                        path.reads.push(Read { term: a, insn: here, opc: *opc, out: None });
-                        let t = self.terms.opaque();
+                        path.reads.push(Read { term: a, insn: here, opc: *opc, out: None, spill: false });
+                        let size = out.as_ref().map_or(0, |o| o.size);
+                        let n = self.terms.fresh();
+                        let t = self.terms.intern(Term::Load(a, size, n));
+                        if let Some(off) = self.frame_offset(a) {
+                            if let Some(&(_, _, v)) = path.mem.iter().find(|(o, s, _)| *o == off && *s == size) {
+                                self.reloads.insert(t, v);
+                            } else if path.mem.iter().any(|(o, s, _)| off < o + *s as i64 && *o < off + size as i64) {
+                                let v = self.terms.opaque();
+                                self.reloads.insert(t, v);
+                            }
+                        }
                         if let Some(o) = out {
                             self.write(&mut path, o, t, here);
                         }
                     }
                     OpCode::CPUI_STORE => {
-                        for v in &ins[1..] {
+                        let a = self.value(&mut path, &ins[1]);
+                        path.reads.push(Read { term: a, insn: here, opc: *opc, out: None, spill: false });
+                        let frame = self.frame_offset(a);
+                        for v in &ins[2..] {
                             let t = self.value(&mut path, v);
-                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None, spill: frame.is_some() });
+                            if let Some(off) = frame {
+                                path.mem.retain(|(o, s, _)| !(off < o + *s as i64 && *o < off + v.size as i64));
+                                path.mem.push((off, v.size, t));
+                            }
                         }
                     }
                     OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
                         if *opc == OpCode::CPUI_CALLIND {
                             let t = self.value(&mut path, &ins[0]);
-                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None, spill: false });
                         }
                         for (k, t, _) in path.regs.clone() {
                             let arg = self.args.iter().any(|a| overlaps(a, &k));
                             if arg && self.terms.get(t) != &Term::Input(k) {
-                                path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                                path.reads.push(Read { term: t, insn: here, opc: *opc, out: None, spill: false });
                             }
                         }
                         let target = (*opc == OpCode::CPUI_CALL)
@@ -670,7 +844,7 @@ impl<'a> Walk<'a> {
                         if target.as_ref().is_some_and(|t| *t == self.entry && here == self.entry.get_offset()) {
                             return None;
                         }
-                        if target.is_some_and(|t| crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch, &t)) {
+                        if target.as_ref().is_some_and(|t| crate::p4_calls::kuna_calleenoreturn::is_no_return(self.arch, t)) {
                             self.reads.append(&mut path.reads);
                             return Some(false);
                         }
@@ -679,6 +853,14 @@ impl<'a> Walk<'a> {
                                 path.regs[i].1 = self.terms.opaque();
                                 path.regs[i].2 = here;
                             }
+                        }
+                        for k in [self.hi, self.lo] {
+                            let n = self.terms.fresh();
+                            let t = self.terms.intern(Term::Out(here, k, n));
+                            Self::put(&mut path, k, t, here);
+                        }
+                        if let Some(e) = target.as_ref().and_then(|t| t.get_space().map(|sp| (sp.get_index(), t.get_offset()))) {
+                            self.calls.insert(here, e);
                         }
                         path.after_call = true;
                         path.hi_read = false;
@@ -690,7 +872,7 @@ impl<'a> Walk<'a> {
                         }
                         for v in &ins[1..] {
                             let t = self.value(&mut path, v);
-                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None });
+                            path.reads.push(Read { term: t, insn: here, opc: *opc, out: None, spill: false });
                         }
                         if let Some(o) = out {
                             let t = self.terms.opaque();
@@ -700,14 +882,14 @@ impl<'a> Walk<'a> {
                     OpCode::CPUI_BRANCHIND => return None,
                     OpCode::CPUI_RETURN => {
                         let site = self.site(&path)?;
-                        self.sites.push(site);
+                        self.sites.push(End::Return(site));
                         self.reads.append(&mut path.reads);
                         return Some(true);
                     }
                     OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
                         let cond = if *opc == OpCode::CPUI_CBRANCH {
                             let c = self.value(&mut path, &ins[1]);
-                            path.reads.push(Read { term: c, insn: here, opc: *opc, out: None });
+                            path.reads.push(Read { term: c, insn: here, opc: *opc, out: None, spill: false });
                             self.terms.literal(c).map(|v| v != 0)
                         } else {
                             Some(true)
@@ -723,6 +905,11 @@ impl<'a> Walk<'a> {
                                     next = Some(a);
                                     op = insn.ops.len();
                                 }
+                                Dest::Tail(e) => {
+                                    self.sites.push(End::Tail(e));
+                                    self.reads.append(&mut path.reads);
+                                    return Some(true);
+                                }
                             }
                             continue;
                         }
@@ -733,6 +920,10 @@ impl<'a> Walk<'a> {
                             Dest::Insn(a) => {
                                 fork.at = a;
                                 todo.push((fork, 0));
+                            }
+                            Dest::Tail(e) => {
+                                self.sites.push(End::Tail(e));
+                                self.reads.append(&mut fork.reads);
                             }
                         }
                     }
@@ -746,7 +937,7 @@ impl<'a> Walk<'a> {
                         if !ts.contains(&t) {
                             for &i in &ts {
                                 if !matches!(self.terms.get(i), Term::Const(..)) {
-                                    path.reads.push(Read { term: i, insn: here, opc: *opc, out: Some(t) });
+                                    path.reads.push(Read { term: i, insn: here, opc: *opc, out: Some(t), spill: false });
                                 }
                             }
                         }
@@ -768,8 +959,9 @@ impl<'a> Walk<'a> {
     }
 
     /// Where a branch at op `index` of `insn` goes: another op of the same
-    /// instruction (a p-code relative target), or an instruction; `None` for a
-    /// tail branch into another function, or a relative target out of range.
+    /// instruction (a p-code relative target), an instruction, or a tail
+    /// branch to another function's entry; `None` for a branch to before the
+    /// entry that names no function, or a relative target out of range.
     fn destination(&self, insn: &Insn, index: usize, dest: &VarnodeData, next: &Option<Address>) -> Option<Dest> {
         if Self::is_const(dest) {
             let bits = 8 * dest.size.clamp(1, 8);
@@ -785,11 +977,12 @@ impl<'a> Walk<'a> {
         }
         let sp = dest.space.as_ref()?;
         let a = Address::new(Rc::clone(sp), dest.offset);
-        if a.get_offset() < self.entry.get_offset()
-            || (a != self.entry
-                && (self.arch.symboltab.find_function_across_scopes(&a).is_some()
-                    || self.arch.is_lazy_entry(a.get_offset())))
+        if a != self.entry
+            && (self.arch.symboltab.find_function_across_scopes(&a).is_some() || self.arch.is_lazy_entry(a.get_offset()))
         {
+            return Some(Dest::Tail((sp.get_index(), a.get_offset())));
+        }
+        if a.get_offset() < self.entry.get_offset() {
             return None;
         }
         Some(Dest::Insn(a))
@@ -804,7 +997,129 @@ impl<'a> Walk<'a> {
         }
         let (hi, lo) = (self.read(path, &self.hi.clone()), self.read(path, &self.lo.clone()));
         let lo_writer = path.regs.iter().rev().find(|(r, _, _)| *r == self.lo).map(|r| r.2);
-        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied() })
+        let moved_back = |k: &Key| path.redundant.iter().filter(|r| overlaps(&r.0, k)).map(|r| r.1).max().unwrap_or(0);
+        let (h, l) = (moved_back(&self.hi), moved_back(&self.lo));
+        let redundant = h > l || (h == 0 && l > 0);
+        Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant })
+    }
+
+    /// What the path end `end` says: a RETURN holding one of the module
+    /// header's shapes, or both halves of an aligned pair of loads, or a pair
+    /// a call handed back and the function moved back into place, is one wide
+    /// value; a tail branch is one when its callee's is; a pair a call left in
+    /// place, or two literals, fit one.
+    fn says(&self, end: &End) -> Says {
+        let site = match end {
+            End::Tail(e) => return Says::Wide(Some(*e)),
+            End::Return(site) => site,
+        };
+        if self.proves(site) {
+            return Says::Wide(None);
+        }
+        if site.redundant {
+            return Says::Nothing;
+        }
+        if self.loaded_pair(site) {
+            return Says::Wide(None);
+        }
+        if let Some((callee, moved)) = self.call_pair(site) {
+            return if moved { Says::Wide(Some(callee)) } else { Says::Fits(Some(callee)) };
+        }
+        if self.terms.literal(site.hi).is_some() && self.terms.literal(site.lo).is_some() {
+            return Says::Fits(None);
+        }
+        Says::Nothing
+    }
+
+    /// Follow a reload from the stack frame to the value stored there.
+    fn unwrap(&self, mut t: usize) -> usize {
+        for _ in 0..8 {
+            match self.reloads.get(&t) {
+                Some(&v) => t = v,
+                None => break,
+            }
+        }
+        t
+    }
+
+    /// Does `site` hold the two words of one wide value read from memory --
+    /// two loads of adjacent words, the high one at the lower address, or the
+    /// halves of one load twice as wide -- the low word read by nothing but
+    /// moves and spills?
+    fn loaded_pair(&self, site: &Site) -> bool {
+        let size = self.lo.2;
+        let (hi, lo) = (self.unwrap(site.hi), self.unwrap(site.lo));
+        let adjacent = match (self.terms.get(hi), self.terms.get(lo)) {
+            (Term::Load(ha, hs, _), Term::Load(la, ls, _)) => {
+                let ((hb, ho), (lb, lo_off)) = (self.base_off(*ha), self.base_off(*la));
+                *hs == size && *ls == size && hb == lb && lo_off == ho + size as i64
+            }
+            (Term::Op(OpCode::CPUI_SUBPIECE, h, _), Term::Op(OpCode::CPUI_SUBPIECE, l, _)) => {
+                h.len() == 2
+                    && l.len() == 2
+                    && h[0] == l[0]
+                    && matches!(self.terms.get(self.unwrap(h[0])), Term::Load(_, s, _) if *s == 2 * size)
+                    && self.terms.literal(h[1]) == Some(size as u64)
+                    && self.terms.literal(l[1]) == Some(0)
+            }
+            _ => false,
+        };
+        adjacent && !self.reads.iter().any(|r| !r.spill && self.unwrap(r.term) == lo)
+    }
+
+    /// Does `site` hold the pair one direct call handed back, its high and its
+    /// low register? The callee, and whether the low word was moved back into
+    /// place after the call (through another register or the stack frame)
+    /// rather than left where the call put it.
+    fn call_pair(&self, site: &Site) -> Option<(Entry, bool)> {
+        let (hi, lo) = (self.unwrap(site.hi), self.unwrap(site.lo));
+        let (Term::Out(ch, kh, _), Term::Out(cl, kl, _)) = (self.terms.get(hi), self.terms.get(lo)) else { return None };
+        if ch != cl || *kh != self.hi || *kl != self.lo {
+            return None;
+        }
+        let callee = *self.calls.get(ch)?;
+        Some((callee, site.lo_writer != Some(*ch) || lo != site.lo))
+    }
+
+    /// An address as a base value plus a literal offset (no base for an
+    /// absolute address).
+    fn base_off(&self, mut t: usize) -> (Option<usize>, i64) {
+        let lit = |t: usize| match self.terms.get(t) {
+            Term::Const(v, s) => Some(signed(*v, *s)),
+            _ => None,
+        };
+        let mut off = 0i64;
+        for _ in 0..16 {
+            match self.terms.get(t) {
+                Term::Const(v, s) => return (None, off.wrapping_add(signed(*v, *s))),
+                Term::Op(OpCode::CPUI_INT_ADD, a, _) if a.len() == 2 => match (lit(a[0]), lit(a[1])) {
+                    (_, Some(c)) => {
+                        off = off.wrapping_add(c);
+                        t = a[0];
+                    }
+                    (Some(c), None) => {
+                        off = off.wrapping_add(c);
+                        t = a[1];
+                    }
+                    _ => break,
+                },
+                Term::Op(OpCode::CPUI_INT_SUB, a, _) if a.len() == 2 => match lit(a[1]) {
+                    Some(c) => {
+                        off = off.wrapping_sub(c);
+                        t = a[0];
+                    }
+                    None => break,
+                },
+                _ => break,
+            }
+        }
+        (Some(t), off)
+    }
+
+    /// The offset of an address from the entry stack pointer, when it is one.
+    fn frame_offset(&self, addr: usize) -> Option<i64> {
+        let (base, off) = self.base_off(addr);
+        (base.is_some() && base == self.sp).then_some(off)
     }
 
     /// Does `site` hold one of the module header's shapes, judged against the
@@ -909,7 +1224,7 @@ impl<'a> Walk<'a> {
     fn on_purpose(&self, t: usize) -> bool {
         match self.terms.get(t) {
             Term::Input(k) => !overlaps(k, &self.lo) && self.args.iter().any(|a| overlaps(a, k)),
-            Term::Const(..) | Term::Opaque(_) => false,
+            Term::Const(..) | Term::Opaque(_) | Term::Load(..) | Term::Out(..) => false,
             Term::Op(OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT, x, _) => x.len() == 1 && self.on_purpose(x[0]),
             Term::Op(OpCode::CPUI_SUBPIECE | OpCode::CPUI_PIECE, _, _) => false,
             Term::Op(..) => true,

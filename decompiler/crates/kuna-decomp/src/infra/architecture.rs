@@ -939,6 +939,10 @@ pub struct Architecture {
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
     pub callee_preserves: bool,
     pub global_call_ranges: bool,
+    /// (kuna) Give a call no guard over read-only memory (option `readonlycalls`).
+    pub readonly_calls: bool,
+    /// (kuna) Place heritage markers only where the range is live (option `prunedssa`).
+    pub pruned_ssa: bool,
     /// (kuna) Let the callee's decoded body answer for the call's RETURN
     /// register too (option `calleeretpreserves`).  See
     /// [`crate::p4_calls::kuna_calleeretpreserves`].
@@ -1792,6 +1796,13 @@ pub struct Architecture {
     /// never claimed as a function; the call REFERENCE is filed either way. Off
     /// restores the previous (husk-producing) discovery set exactly.
     pub analysis_ppclocalentry: bool,
+    /// (kuna) Leave the functions a Go `pclntab` names out of the roots of the
+    /// fast inventory walk (`gowalkprune`); default **on**. The pclntab names
+    /// every Go function and gives its extent, so walking them from their `.pdata`
+    /// records only re-finds those functions; the walk keeps every other root.
+    /// Applies where `fast_funcdisc` builds the walk without the full Listing.
+    /// Off walks them again.
+    pub analysis_gowalkprune: bool,
     /// (kuna) Paint the ARM mode of code a stripped image proves through control
     /// flow where the walk's own `blx` writes left the other mode (`flowmode`);
     /// default **off**, which leaves the context database as the walk left it.
@@ -3029,6 +3040,8 @@ impl Architecture {
             zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
+            readonly_calls: true,
+            pruned_ssa: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,
             indirect_anchor: true,
@@ -3176,6 +3189,7 @@ impl Architecture {
             analysis_thunkentry: false,
             analysis_addrtakenentry: false,
             analysis_ppclocalentry: false,
+            analysis_gowalkprune: false,
             analysis_flowmode: false,
             analysis_flowmode_aftercall: false,
             analysis_picbase: false,
@@ -3433,6 +3447,8 @@ impl Architecture {
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.global_call_ranges = true;
+        self.readonly_calls = true;
+        self.pruned_ssa = true;
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
@@ -3611,6 +3627,8 @@ impl Architecture {
         // ever withholds the duplicate second entry over a function whose global
         // entry is already a seed, so no body can be lost).
         self.analysis_ppclocalentry = true;
+        // (kuna) Go pclntab functions out of the fast inventory walk -- default-ON.
+        self.analysis_gowalkprune = true;
         // (kuna) ARM flow-proven decode-mode paints -- default-OFF (GH-780): the
         // proof trusts a fall-through the compiler may leave unreachable.
         self.analysis_flowmode = false;
@@ -4323,6 +4341,8 @@ impl Architecture {
         ctx.zero_fill_return = self.zero_fill_return; // zerofillreturn
         ctx.zero_call_regs = self.zero_call_regs; // zerocallregs
         ctx.global_call_ranges = self.global_call_ranges;
+        ctx.readonly_calls = self.readonly_calls;
+        ctx.pruned_ssa = self.pruned_ssa;
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
         ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody

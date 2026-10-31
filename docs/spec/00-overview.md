@@ -1569,10 +1569,15 @@ decompile` passes the same budget to `decomp_dbg` (`--max-fn-seconds N`,
 default 120 like its `--json` face, `0` none), which sets it process-wide
 (`decompile_drive.rs (set_default_fn_budget_secs)`) for every drive whose
 architecture carries none. The flow `load function` / `load addr` follow before
-any drive, which the next `decompile` adopts, is held to the same budget
-(`decompile_drive.rs (build_and_follow_flow_within_budget)`): a follow still
-running when it runs out fails the load with the budget error, so a truncated
-IR is never adopted, and the drive that adopts a completed one arms its own.
+any drive, which the next `decompile` adopts, is held to the same budget and
+memory limit (`decompile_drive.rs (build_and_follow_flow_within_budget)`): a
+follow still running when either runs out fails the load with that one's
+error, which `kuna decompile` reports as the function's failure, so a
+truncated IR is never adopted, and the drive that adopts a completed one arms
+its own, measuring from where the follow left the resident set. The follow
+recovers every jump table, and a jump table's sub-pipeline heritages
+everything flow has reached, so in a huge function the follow is where the
+memory goes.
 `--max-fn-memory MiB` arms the
 same probes with a memory limit
 (`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the driver sets
@@ -1807,7 +1812,9 @@ A structure can travel only if another process can rebuild every field type,
 and a named type counts only if the worker's load created it
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (AtLoad)`): `pebnames` creates `PEB` and `TEB` the first time a function reads
-them, so one worker holds them and another does not. When such a field would
+them, so one worker holds them and another does not. The unnamed unknown
+placeholder a Varnode starts with is held by no factory and is rebuilt as itself
+(chapter [05](05-types.md)). When such a field would
 have to travel, when the questions do not settle in four rounds, when a repeated
 question could be answered differently, or when a second decompile fails where
 the first did not (a dead worker, a table it could not install), the functions
@@ -1917,11 +1924,28 @@ write end its parent holds, so end of pipe means the parent is gone by any route
 including SIGKILL, and the worker removes the pool's scratch directory and exits
 rather than running on reparented to init.
 
+Progress is the result file growing, so a worker that holds its records back has
+to show progress some other way. The one-worker structsynth path does: it
+delivers its ordered chunk only after its own convergence sweep has run, and that
+chunk is every function that synthesized (8,991 of dxcompiler.dll's 37,204). Its
+silence used to look exactly like a wedged function. The parent killed the worker
+after four budgets plus a load, blamed the chunk's first function (a 144-byte one
+that decompiles in 2 ms), and re-ran the rest one function per chunk, which
+undoes the ordering the path exists for. So that worker writes a begin frame as
+it starts each function, in the pass and in the sweep. The frame carries the
+function's chunk position and is not a record
+(`decompiler/crates/kuna-cli/src/jobs/wire.rs (ResultWriter::begin)`). The stall
+window then measures one function, as it does for any streaming worker. If the
+worker dies anyway, the last frame names the function it was on, and only that
+function is the suspect.
+
 A worker that dies — a panic no per-function guard catches, an OOM kill, a
 signal, or that stall kill — costs the function it was running and nothing else.
 A worker decompiles its chunk in spec order and flushes one record per function,
 so the records it leaves are a prefix: the first target without one is the
-function it was on, and every later target never started. Before it takes more
+function it was on, and every later target never started. The holding worker
+leaves no records, so the function it was on is the one its last begin frame
+names, and every other target counts as never started. Before it takes more
 work, the thread that served the chunk re-runs each of those targets once as a
 chunk of its own (`decompiler/crates/kuna-cli/src/jobs.rs (retry_order)`): the
 function that was running goes first, onto the fresh worker the thread starts

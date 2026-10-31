@@ -18,6 +18,7 @@ smallvec = "1.15"
 slotmap = "1.0"
 object = { version = "0.39", default-features = false, features = ["read_core", "elf", "pe", "macho", "coff", "std"] }
 regex = "1"
+memchr = "2"
 syn = { version = "2", default-features = false, features = ["full", "parsing", "printing", "clone-impls", "proc-macro"] }
 cpp_demangle = "0.5"
 rustc-demangle = "0.1"

@@ -3917,6 +3917,13 @@ fn bootstrap_raw_image(
         isa,
         isa.is_some(),
     )?;
+    if let Some(cs) = kuna_analysis::loader::kuna_realmodecs::raw_image_cs(image_base, image_size) {
+        kuna_analysis::loader::kuna_realmodecs::paint(
+            raw.sleigh().base().unwrap(),
+            &code_space,
+            &[(image_base, cs)],
+        );
+    }
 
     let pending_synthetic_entries = normalized_entries
         .into_iter()

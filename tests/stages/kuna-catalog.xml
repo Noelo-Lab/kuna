@@ -53,7 +53,7 @@
 <stringmatch name="KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in" min="1" max="1">"option": "armfloatargs", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
 <stringmatch name="KUNA-CATALOG #13: validated A32 inventory frames are the default" min="2" max="2">"option": "armframes", "values": \["inventory", "on", "off"\], "default": "inventory", "current": "inventory"</stringmatch>
 <stringmatch name="KUNA-CATALOG #14: full ARM frames are explicitly enabled" min="1" max="1">"option": "armframes", "values": \["inventory", "on", "off"\], "default": "inventory", "current": "on"</stringmatch>
-<stringmatch name="KUNA-CATALOG #15: 340 registry rows plus six individual queries" min="346" max="346">"option": </stringmatch>
+<stringmatch name="KUNA-CATALOG #15: 343 registry rows plus six individual queries" min="349" max="349">"option": </stringmatch>
 <stringmatch name="global array anchoring is default off" min="1" max="1">"option": "globalarrayanchor", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
 <stringmatch name="KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in" min="2" max="2">"option": "bytearrayc", "values": \["on", "off"\], "default": "off", "current": "off"</stringmatch>
 <stringmatch name="KUNA-CATALOG #17: standard C byte-array rendering exposes its live state" min="1" max="1">"option": "bytearrayc", "values": \["on", "off"\], "default": "off", "current": "on"</stringmatch>
