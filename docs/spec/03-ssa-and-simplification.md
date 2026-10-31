@@ -2328,8 +2328,9 @@ through `u0x5a200`, one at 16 bytes, so heritage carries the 16-byte temporary
 across blocks from an input at the entry, and its lanes, being unique storage,
 become temporaries read by four MULTIEQUALs. The function used to fail with
 `laned register split failed part way: Free varnode has multiple descendants`;
-it now decompiles without that split. This is a correctness repair with no
-option.
+it now decompiles without that split
+(`tests/stages/kuna-lanedivide-freefanout.xml`). This is a correctness repair
+with no option.
 
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.
