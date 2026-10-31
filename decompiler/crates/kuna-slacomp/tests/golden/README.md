@@ -38,6 +38,12 @@ context) was added with a digest from the recorded C++ compiler, which
 `slacomp` matches. Its `ia.sinc` hook replaces three blank lines, so the
 `x86.slaspec` and `x86-64.slaspec` digests are unchanged, source lines
 included.
+Its digest was regenerated with the recorded C++ compiler, which `slacomp`
+matches, when 16-bit x86 gained the 8087-emulator decode: the x87 ESC
+constructors moved into an `x87` table there. Their `ia.sinc` lines changed
+in place (each quoted mnemonic and `X87_Dn` macro expands back to the old
+text outside 16-bit x86, and the table's `with` block is under `@ifdef IA16`),
+so the `x86.slaspec` and `x86-64.slaspec` digests are again unchanged.
 
 `xml_ops.xml` is the same pinned C++ compiler's `-y` output for
 `snips/xml_ops.slaspec`. The CLI test compares XML output byte-for-byte in both
