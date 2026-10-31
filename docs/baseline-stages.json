@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3331,
-    3331
+    3335,
+    3335
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -979,7 +979,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 348 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 349 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2341,6 +2341,10 @@
     "data:cspecprotos #4: the registered __thiscall model resolves and recovers ECX as the first parameter",
     "data:cspecprotos #5: the member access is now a parameter dereference",
     "data:cspecprotos #6: the stack argument shifts to the second slot behind the this-pointer",
+    "data:deadwaves #1: both passes print churn",
+    "data:deadwaves #2: both passes keep churn's 256 calls",
+    "data:deadwaves #3: both passes leave the same live IR",
+    "data:deadwaves #4: both passes create the same ops",
     "data:declared wide input keeps its complete value",
     "data:declorder #1: with no option line (the shipped default) v2 follows v1",
     "data:declorder #2: and v10 follows v9",

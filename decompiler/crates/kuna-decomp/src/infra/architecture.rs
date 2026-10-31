@@ -815,6 +815,10 @@ pub struct Architecture {
     /// `option unrolledguard` needs to see an already-recovered sibling table
     /// (C++ has no equivalent flag — this is the upstream shape vs kuna's).
     pub jumptable_share_partial: bool,
+    /// (kuna `deadwaves`) After a rule-pool pass whose only change was dead-op
+    /// removal, the next pass revisits only the ops next to what it removed
+    /// (`infra/action.rs (ActionPool::apply_wave)`).
+    pub pool_dead_waves: bool,
     /// (kuna, angr `test_decompiling_incorrect_duplication_chcon_main`) Treat a
     /// direct CALL to a function whose *name* matches the vendored ELF
     /// known-no-return list as no-return at the `query_call_no_return` flow hook,
@@ -3034,6 +3038,7 @@ impl Architecture {
             switch_multi_pred: false,
             unrolled_guard: false,
             jumptable_share_partial: true,
+            pool_dead_waves: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
             local_stack_views: true,
@@ -3459,6 +3464,7 @@ impl Architecture {
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
+        self.pool_dead_waves = true;
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;
         self.local_stack_views = true;
@@ -4563,6 +4569,7 @@ impl Architecture {
         // (kuna) carry the shared-partial gate (`option jtsharepartial`) so
         // `Funcdata::stage_jump_table` reaches it.
         ctx.jumptable_share_partial = self.jumptable_share_partial;
+        ctx.pool_dead_waves = self.pool_dead_waves;
         ctx.loader = Some(self.translate.loader_rc());
         // Carry the read-only-propagation switch (C++ `glb->readonlypropagate`,
         // flipped by `option readonly`) so `ActionVarnodeProps` reaches it to gate
