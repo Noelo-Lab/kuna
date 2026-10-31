@@ -2336,13 +2336,12 @@ not something the program performs, and the split is what makes such a copy
 (Merge::mark_internal_copies)` marks it non-printing; split into one COPY per
 array element, the pieces land in different HighVariables and P9 prints a block of
 per-byte assignments into a `.rodata` string literal. The copies that reach the
-gate in that shape are the `return_copy` guards of §3.1 after a block clone has
-rewritten them. `substrate/funcdata_block.rs (CloneBlockOps::patch_inputs)`
-re-inputs the clone from a fresh COPY, so the same-address test cannot recognize
-it. The split does not consult the `return_copy` flag either, although
-`CloneBlockOps::build_op_clone` now keeps that flag on the clone (chapter 08,
-CFG splitters). The read-only output test does recognize the clone, and it is
-the property that actually matters. The
+gate in that shape were the `return_copy` guards of §3.1 after a block clone had
+rewritten them: the clone lost the flag, copy propagation replaced its input with
+the stored value, and neither the same-address test nor the flag could recognize
+it. `substrate/funcdata_block.rs (CloneBlockOps::build_op_clone)` now keeps the
+flag (chapter 08, CFG splitters), so a cloned guard stays an identity copy. The
+read-only output test stays, because it is the property that actually matters. The
 same invariant is what `substrate/funcdata_varnode.rs (Funcdata::fillin_read_only)`
 warns about (`Read-only address (ram,X) is written`) when `readonlypropagate` is
 on; declining the split does not depend on that option.

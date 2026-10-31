@@ -765,21 +765,45 @@ the schedule (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
   the new layout.
 
 A CFG split must leave every path performing the same writes, the same number
-of times. A RETURN block carries one `Heritage::guardReturns` `glob = glob`
-COPY per persistent global (§3.1). Each is flagged `return_copy`, and that flag
-is what keeps `RulePropagateCopy` off it. Upstream's `buildOpClone`
-mask (`funcdata_block.cc:982`) drops the flag, so in a clone the propagation
-rules replaced the guard's input with the value the function last stored. The
-COPY then read as a store and printed a second `glob = <value>;` on the cloned
-path, after the real store had already executed (kuna #1355). A
-`store; cmp; cmov; ret` function (clang and gcc, -O1 and -O2) hit this through
-`returndup`, `earlyreturn` and `switchreturn` alike, because SLEIGH lifts the
-CMOV as a branch around one move, which leaves the RET with two in-edges;
-`ActionReturnSplit` clones through the same helper.
-`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
-(CloneBlockOps::build_op_clone)` therefore keeps `return_copy` on the clone.
-The cloned guard stays an identity copy that merges with the global and does not
-print, as the original does. This is a strict fix with no option.
+of times. The p-code half of `node_split`,
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (CloneBlockOps)`,
+copies two kinds of op that write nothing but name a global as their output.
+Upstream's clone let copy propagation turn both into stores (kuna #1355), and it
+printed the stores it did copy in heritage's order:
+
+- *The return guard.* A RETURN block carries one `Heritage::guardReturns`
+  `glob = glob` COPY per persistent global (§3.1). It is flagged `return_copy`,
+  and that flag is what keeps `RulePropagateCopy` off it. Upstream's
+  `buildOpClone` mask (`funcdata_block.cc:982`) drops the flag, so the clone's
+  guard took the value the function last stored and printed a second
+  `glob = <value>;` on the cloned path, after the real store had already run.
+  `CloneBlockOps::build_op_clone` keeps the flag.
+- *The phi.* A return block reached on paths that leave a global with different
+  values starts with a MULTIEQUAL for it. Upstream's `patchInputs` turns the
+  clone's copy of that phi, and the original once one edge is left, into
+  `glob = COPY glob` from the incoming value. Propagation then turns that into a
+  second store of what the predecessor stored. When the predecessor's own store
+  had no other reader, the store was dropped and the copy printed it at the
+  return instead, which reorders the function's stores.
+  `CloneBlockOps::settle_one_input_phi` settles every phi the split leaves with
+  one input. A phi from a global to the same global writes nothing: its readers
+  take the incoming Varnode and the COPY is destroyed, always in the clone, and in
+  the original block once the incoming Varnode is a COPY's output (the only shape
+  propagation rewrites). A guard that reads a one-input phi through a temporary
+  (`ConditionalExecution` builds those) takes the incoming Varnode when that is
+  its own global.
+- *Store order.* When a predecessor's store was absorbed into the phi (its value
+  is the phi's input), the clone's copy of the phi is that store, and it belongs
+  at the start of the clone, before the block's own stores.
+  `CloneBlockOps::order_global_phis` clones the phis on globals after the others,
+  in address order, rather than in the reverse order heritage placed them.
+
+A `store; cmp; cmov; ret` function (clang and gcc, -O1 and -O2) hit the first
+through `returndup`, `earlyreturn` and `switchreturn` alike, because SLEIGH lifts
+the CMOV as a branch around one move, which leaves the RET with two in-edges. A
+`-O0` function whose paths all jump to one `leave; ret` hit the second.
+`ActionReturnSplit` clones through the same helper. This is a strict fix with no
+option.
 
 Two more run inside §8.1's machinery: `branchflip` (described there) and
 `loopbreak_recovery` (inside `ActionFinalStructure`, below). All of them
