@@ -1338,6 +1338,25 @@ funcsym stream:
   are already the unslid pointers, and its bound slots are already zero or a
   stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
   them.
+- **Data-held pointers** (kuna,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_dataptrs.rs (data_pointers)`):
+  the read-only twin of the two writers above, for `kuna xrefs`. A word in data
+  that holds `&audit_target` is a reference no instruction makes, so the
+  instruction walk never reports it, and calling it a call edge would be wrong.
+  But a rebased image lists every such word, because its loader must fix each
+  one up: a chained-fixup Mach-O threads them on its chains (the rebase carries
+  its target), a classic Mach-O lists them in its `LC_DYLD_INFO` rebase opcodes
+  (interpreted here; the slot already holds the unslid target), a
+  position-independent ELF carries a dynamic relocation for each (valued by
+  `kuna_dynrelocs.rs (resolve)`), and a PE lists them in `.reloc`. The list keeps
+  each word whose target is in an allocated section, and says which metadata it
+  came from. An image that lists none (a non-PIE ELF, whose own pointers carry no
+  relocation, a PE without base relocations, a relocatable object) reports
+  coverage `none`: its pointers are plain words no metadata tells from integers,
+  and guessing would make an empty answer mean two things. A bound slot is not
+  listed, since it holds an address of another image. `kuna xrefs` reports these
+  as separate `pointer` rows with that coverage, never merged into the
+  instruction rows or the call graph (`docs/cli.md`).
 - **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
