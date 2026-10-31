@@ -792,6 +792,10 @@ mod stacknode_flags {
     pub const dynamic_stack: uint4 = 4;
 }
 
+/// (kuna `readonlycalls`) The read-only-range by call guard count at which a
+/// heritage pass leaves read-only ranges unguarded.
+const READONLY_CROSS_PRODUCT: usize = 1 << 16;
+
 // =============================================================================
 // Heritage (heritage.hh:207)
 // =============================================================================
@@ -871,6 +875,9 @@ pub struct Heritage {
     /// Positive evidence of nested frame setup, retained across passes.
     protostack_frame_reload: Option<bool>,
     global_call_ranges: super::kuna_globalcallranges::Calls,
+    /// (kuna `readonlycalls`) Whether this pass leaves read-only ranges
+    /// unguarded at calls ([`Heritage::readonly_cross_product`]).
+    readonly_unguarded: bool,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
     store_frame_unresolved: Option<bool>,
@@ -929,6 +936,7 @@ impl Heritage {
             protostack_alias: None,
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
+            readonly_unguarded: false,
             store_frame_unresolved: None,
             store_frame_guarded: false,
             global_store_guards: 0,
@@ -1451,7 +1459,7 @@ impl Heritage {
         add_indirects: bool,
         read: &mut [crate::context::VarnodeId],
         write: &mut Vec<crate::context::VarnodeId>,
-    ) {
+    ) -> Option<uint4> {
         let guard_stack_bytes = add_indirects
             && super::kuna_stackstoreguard::enabled(fd, addr, write)
             && self.store_frame_resolves(fd, addr);
@@ -1502,6 +1510,22 @@ impl Heritage {
             .iter()
             .any(|&vn| fd.vbank().get(vn).is_some_and(|v| v.get_size() < size))
             .then(|| write.clone());
+        let mut full_write_ops: Vec<crate::context::OpId> = Vec::new();
+        let mut partial_write_ops: Vec<crate::context::OpId> = Vec::new();
+        if add_indirects {
+            for &vn in write.iter() {
+                let Some(v) = fd.vbank().get(vn) else { continue };
+                let Some(def) = v.get_def() else { continue };
+                if fd.obank().get(def).is_some_and(|o| o.code() == kuna_num::opcodes::OpCode::CPUI_INDIRECT) {
+                    continue;
+                }
+                if v.get_size() < size {
+                    partial_write_ops.push(def);
+                } else {
+                    full_write_ops.push(def);
+                }
+            }
+        }
         for slot in 0..write.len() {
             let vn = write[slot];
             if fd.vbank().get(vn).expect("guard: stale write vn").get_size() < size {
@@ -1566,7 +1590,12 @@ impl Heritage {
             // `local_array[10]`.  Net +7 (Partial splitting #15-19, Wayoff array
             // #1, No-for-loop alias #3), regressed-set empty.
             fl |= fd.query_local_properties(addr, size, &usepoint);
-            self.guard_calls(fd, fl, addr, size, write);
+            let live = (self.prunes(fd, fl, addr) && super::kuna_prunedssa::applies_to_calls(fd, addr)).then(|| {
+                super::kuna_prunedssa::live_calls(
+                    fd, fd.call_specs(), addr, size, read, &full_write_ops, &partial_write_ops,
+                )
+            });
+            self.guard_calls(fd, fl, addr, size, write, live.as_ref());
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
@@ -1611,7 +1640,17 @@ impl Heritage {
                 }
                 self.guard_loads(fd, fl, addr, size, write);
             }
+            return Some(fl);
         }
+        None
+    }
+
+    /// (kuna `prunedssa`) May this pass prune the markers of the range `addr`
+    /// with properties `fl`?
+    fn prunes(&self, fd: &crate::funcdata::Funcdata, fl: uint4, addr: &Address) -> bool {
+        addr.get_space().is_some_and(|spc| {
+            super::kuna_prunedssa::applies(fd, fl, addr, self.pass, self.get_info(spc).deadcodedelay)
+        })
     }
 
     pub(crate) fn rebound_frame_base_seen(&self) -> bool {
@@ -1682,11 +1721,14 @@ impl Heritage {
         addr: &Address,
         size: int4,
         write: &mut Vec<crate::context::VarnodeId>,
+        live: Option<&super::kuna_prunedssa::LiveCalls>,
     ) {
         use crate::fspec::{effect_type, Containment, OFFSET_UNKNOWN};
         use kuna_base::space::spacetype;
 
         let holdind = (fl & varnode_flags::addrtied) != 0;
+        let readonly = self.readonly_unguarded && (fl & varnode_flags::readonly) != 0 && write.is_empty();
+        let mut pruned = false;
         // (kuna) `option calloverlap off|in|full` — the two upstream partial-range
         // overlap guards.  See [`crate::p3_dataflow::kuna_calloverlap`].
         let overlap_level = fd.get_arch().call_overlap;
@@ -1889,6 +1931,9 @@ impl Heritage {
             {
                 effecttype = effect_type::KILLEDBYCALL;
             }
+            if readonly && effecttype == effect_type::UNKNOWN_EFFECT {
+                effecttype = effect_type::UNAFFECTED;
+            }
 
             // Output-active branch (heritage.cc:1470-1487): register a return-value
             // trial for the call's killed output register and, when the effect is a
@@ -1962,7 +2007,9 @@ impl Heritage {
             // C++-faithful: emitted for EVERY address-tied range whose effect is
             // unknown/return-address (no persist restriction).
             let _ = fl;
-            if effecttype == effect_type::UNKNOWN_EFFECT
+            if effecttype == effect_type::UNKNOWN_EFFECT && live.is_some_and(|l| !l.needs(op)) {
+                pruned = true;
+            } else if effecttype == effect_type::UNKNOWN_EFFECT
                 || effecttype == effect_type::RETURN_ADDRESS
             {
                 let indop = fd.new_indirect_op(op, addr, size, 0);
@@ -2001,6 +2048,9 @@ impl Heritage {
             }
         }
         fd.restore_call_specs(qlst);
+        if pruned {
+            self.seen_dead_code(&spc);
+        }
     }
 
     /// Register an input trial for the heritaged range at a call still recovering
@@ -4689,6 +4739,7 @@ impl Heritage {
         // in its place (so the container mutates mid-walk); a `while idx < len()`
         // walk with the refinement resetting `idx` to the first partition mirrors
         // the C++ iterator (which is reseated to `refiter`).
+        self.readonly_unguarded = self.readonly_cross_product(fd);
         let mut idx = 0usize;
         while idx < self.disjoint.len() {
             if self.deadline_passed() {
@@ -4762,7 +4813,7 @@ impl Heritage {
             }
             self.guard_input(fd, &memrange.addr, size, &inputvars);
             let add_indirects = memrange.new_addresses();
-            self.guard(fd, &memrange.addr, size, add_indirects, &mut readvars, &mut writevars);
+            let fl = self.guard(fd, &memrange.addr, size, add_indirects, &mut readvars, &mut writevars);
             // calcMultiequals(writevars): the realized engine takes the write
             // *blocks* (the C++ derives them as `write[i]->getDef()->getParent()`
             // — the block each normalized write is defined in).  Inputs/written
@@ -4775,6 +4826,12 @@ impl Heritage {
                 })
                 .collect();
             self.calc_multiequals(fd, &write_blocks);
+            if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fd, fl, &memrange.addr))
+                && super::kuna_prunedssa::prune_merges(fd, &memrange.addr, size, &mut self.merge)
+            {
+                let spc = memrange.addr.get_space().expect("place_multiequals: range space").clone();
+                self.seen_dead_code(&spc);
+            }
             // Construct each MULTIEQUAL at its merge block.
             let merge_blocks: Vec<BlockId> = self.merge.clone();
             let multi_typeop = typeop_skeleton(OpCode::CPUI_MULTIEQUAL);
@@ -4796,6 +4853,45 @@ impl Heritage {
             idx += 1;
         }
         self.merge.clear();
+    }
+
+    /// (kuna `readonlycalls`) Does this pass guard enough read-only RAM ranges
+    /// at enough calls to leave them unguarded? The product of the calls and
+    /// the pass's new, read, read-only ranges in the default data space must
+    /// reach [`READONLY_CROSS_PRODUCT`] guards: below it every call keeps
+    /// upstream's guard, whose chain the printer reads as a barrier.
+    fn readonly_cross_product(&self, fd: &crate::funcdata::Funcdata) -> bool {
+        let calls = fd.num_calls().max(0) as usize;
+        if !fd.get_arch().readonly_calls || calls == 0 || calls * self.disjoint.len() < READONLY_CROSS_PRODUCT {
+            return false;
+        }
+        let Some(ram) = fd.get_arch().manage().get_default_data_space() else {
+            return false;
+        };
+        let usepoint = Address::new_invalid();
+        let mut ranges = 0usize;
+        for i in 0..self.disjoint.len() {
+            let range = self.disjoint.get(i);
+            if !range.new_addresses() || range.addr.get_space().map(|s| s.get_index()) != Some(ram.get_index()) {
+                continue;
+            }
+            if fd.get_arch().query_global_properties(&range.addr, range.size, &usepoint) & varnode_flags::readonly == 0 {
+                continue;
+            }
+            let end = &range.addr + i64::from(range.size);
+            let read = fd.vbank().iter_loc_addr_range(&range.addr, &end).any(|vn| {
+                fd.vbank().get(vn).is_some_and(|v| {
+                    !v.is_written() && !v.is_input() && !v.is_heritage_known() && !v.has_no_descend()
+                })
+            });
+            if read {
+                ranges += 1;
+                if ranges * calls >= READONLY_CROSS_PRODUCT {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     /// (kuna decompile-all watchdog) Has the running pass's budget run out —

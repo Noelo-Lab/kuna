@@ -732,9 +732,11 @@ pub fn build_and_follow_flow_with_override(
 
 /// (kuna decompile-all watchdog) [`build_and_follow_flow_with_override`] for a
 /// follow made outside a drive (the console's `load function` / `load addr`),
-/// under the budget a drive of `arch` would arm: a follow still running when it
-/// runs out fails with the budget error instead of leaving a truncated IR for
-/// the drive to adopt. With no budget it is the plain follow.
+/// under the budget and memory limit a drive of `arch` would arm: a follow
+/// still running when either runs out fails with the budget error instead of
+/// leaving a truncated IR for the drive to adopt. The follow includes every
+/// jump-table recovery, whose sub-pipeline is the costliest part of a huge
+/// function. With neither armed it is the plain follow.
 pub fn build_and_follow_flow_within_budget(
     arch: &mut Architecture,
     name: &str,
@@ -742,10 +744,13 @@ pub fn build_and_follow_flow_within_budget(
     size: int4,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
-    let Some(budget) = fn_budget(arch) else {
-        return build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+    let memory = arch.kuna_drive_publishes().then(crate::kuna_fnmemory::Armed::enter);
+    let horizon = match fn_budget(arch) {
+        Some(budget) => budget,
+        None if memory.as_ref().is_some_and(|guard| guard.is_armed()) => MEMORY_ONLY_HORIZON,
+        None => return build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides),
     };
-    let outer = arch.kuna_fn_deadline.replace(std::time::Instant::now() + budget);
+    let outer = arch.kuna_fn_deadline.replace(std::time::Instant::now() + horizon);
     let result = {
         let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
         let fd = build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);

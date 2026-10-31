@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_341() {
-    assert_eq!(kuna_num_settables(), 341);
-    assert_eq!(SETTABLE_TABLE.len(), 341);
+fn settable_count_is_343() {
+    assert_eq!(kuna_num_settables(), 343);
+    assert_eq!(SETTABLE_TABLE.len(), 343);
 }
 
 #[test]
-fn tier_counts_are_120_core_130_transform_91_analysis() {
+fn tier_counts_are_122_core_130_transform_91_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_120_core_130_transform_91_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (120, 130, 91));
+    assert_eq!((core, transform, analysis), (122, 130, 91));
 }
 
 #[test]
@@ -906,7 +906,8 @@ fn option_values_live_value_present_for_154() {
     // 151 -> 152: +1 for `regsigned` (live_field = narrow_signed).
     // 152 -> 153: +1 for `callwide` (live_field = call_wide).
     // 153 -> 154: +1 for `pairrefine` (live_field = pair_refine).
-    assert_eq!(with_live, 154);
+    // 154 -> 156: +2 for `readonlycalls` and `prunedssa` (readonly_calls, pruned_ssa).
+    assert_eq!(with_live, 156);
 }
 
 #[test]
@@ -1116,7 +1117,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
         // +1 for `goreg`; its P1 row sits beside `goabi`.
     // +1 for `gobool`; its P4 row sits beside `sourcelang`.
     // +1 for `swiftdemangle`; its P1 row sits beside `sourcelang`.
-    assert_eq!(json.matches("},\n").count(), 340);
+    // +2 for `readonlycalls` and `prunedssa`; their P3 rows sit at the end.
+    // +1 for `gowalkprune`; its P1 row sits beside `gonoreturn`.
+    assert_eq!(json.matches("},\n").count(), 342);
 }
 
 #[test]

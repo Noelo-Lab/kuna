@@ -200,7 +200,9 @@ type; `--option protoorder off` disables it. Batch, `--jobs`, and
 `--max-fn-memory MiB` stops the decompile once `decomp_dbg` holds more than MiB
 resident and the function has added 64 MiB (see *Per-function memory limit*
 under `decompile-all`, including its cgroup default) and reports `per-function
-memory limit exceeded` instead of being killed. `--max-fn-seconds N` is the
+memory limit exceeded` instead of being killed. The limit covers the flow
+follow too, which recovers the function's jump tables before the decompile
+starts. `--max-fn-seconds N` is the
 wall-clock half (default 120, the same as `--json`; `0` disables): `decomp_dbg`
 arms it as the drive's cooperative deadline (see *Per-function watchdog* under
 `decompile-all`), and separately for the flow follow of its `load function`
