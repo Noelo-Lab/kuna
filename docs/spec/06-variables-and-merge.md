@@ -135,6 +135,27 @@ that index (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
 (FuncdataCoverCtx::block_id_of_index)`), rather than by rescanning the block list
 at every step, which made each Cover quadratic in the function's blocks.
 
+Covers are most of what variable merging holds in memory: every Varnode and
+every HighVariable keeps one, and the value of a long-lived variable covers
+nearly every block, almost all of them whole. In serde-hkx 0.7.3's `hkxc.exe`,
+`0x1406491d0`, 3,658 global entry values each cover up to 2,872 of the
+function's 2,878 blocks, because heritage's return COPYs read each global at
+every RETURN; with their HighVariables that is 21.6 million block entries, 97%
+of them whole blocks. A Cover therefore stores its blocks as runs
+(`cover.rs (Cover)`): a run of adjacent whole blocks is one entry, and any other
+block is an entry of its own, so a value that is live across the function costs
+a few entries rather than one per block. Each block packs its start and stop as
+an order index and a one-byte kind (none, begin, end, input, op, MULTIEQUAL),
+12 bytes, since those are the only facts the interval tests read. The walks that
+add blocks in predecessor order (`cover.rs (Cover::rebuild)`,
+`(Cover::add_ref_points_for)`) fill a per-thread table indexed by block and
+store the touched blocks once, in order. A run answers every query as the
+blocks it stands for would: the two-cover tests compare each overlapping
+stretch once, and the per-block merge is computed for each stretch. The stored
+blocks are the ones a map with one entry per block would hold, including the
+empty block a merge creates for a block only the other Cover has; that
+function's peak memory goes from 2.7 GB to 1.4 GB with identical output.
+
 A Cover is built from *two* kinds of point and is only correct when both are
 supplied. `cover.rs (Cover::add_def_point)` resets it to the single point where
 the Varnode is written; `cover.rs (Cover::add_ref_point_for)` then extends it

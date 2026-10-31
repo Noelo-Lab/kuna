@@ -84,11 +84,7 @@ fn addr(space: &Rc<AddrSpace>, off: u64) -> Address {
 }
 
 fn op_point(uindex: uintm) -> CoverPoint {
-    CoverPoint::Op {
-        id: oid(u64::from(uindex) + 1),
-        uindex,
-        code: OpCode::CPUI_COPY,
-    }
+    CoverPoint::Op { uindex, multiequal: false }
 }
 
 /// A one-block cover spanning `[start,stop]` on block `blk` (an instance's
