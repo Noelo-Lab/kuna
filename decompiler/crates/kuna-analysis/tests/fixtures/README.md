@@ -946,6 +946,17 @@ partial access whose left side must render as a store
 SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
 `kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
 
+`macho_trie_exports_arm64` and `macho_trie_exports_info_arm64` (arm64, 33 KB
+each) are GH #1349's witnesses: dylibs stripped of every `nlist` entry whose export
+trie still names `_audit_exported_function`@`0x328`, `_audit_caller`@`0x340` and
+the data export `_audit_exported_data`@`0x4000`. The first carries
+`LC_DYLD_EXPORTS_TRIE` and `LC_FUNCTION_STARTS`; the second is the classic
+`LC_DYLD_INFO_ONLY` layout with no function starts, so its trie is the only record
+of its functions. Source `macho_trie_exports.c`; recipe, toolchain and SHA-256 in
+`macho_trie_exports_arm64.provenance`. Pinned by `loadimage_object.rs
+(macho_trie_names_survive_a_stripped_symbol_table)` and
+`kuna-cli/tests/macho_trie_names_cli.rs`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
