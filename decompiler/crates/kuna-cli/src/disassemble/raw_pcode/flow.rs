@@ -30,7 +30,17 @@ pub(super) fn render(args: &DisArgs) -> Result<(String, i32), String> {
     let options =
         mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
     let prog = load_program(&load_args(args, options), DriverDefaults::Inventory)?;
-    let mut region = resolve_region(&prog, args)?;
+    let (args, thumb) = pointer_args(&prog, args)?;
+    if let Some(vma) = thumb {
+        return prog
+            .with_thumb_pointer(vma, || render_loaded(&args, &prog))
+            .map_err(|e| e.to_string())?;
+    }
+    render_loaded(&args, &prog)
+}
+
+fn render_loaded(args: &DisArgs, prog: &ConsoleProgram) -> Result<(String, i32), String> {
+    let mut region = resolve_region(prog, args)?;
     if !prog.vma_bytes_mapped(region.start) {
         return Err(format!("no bytes mapped at 0x{:x}", region.start));
     }

@@ -140,6 +140,7 @@ pub(crate) enum ViewRequest {
 }
 
 /// The parsed command line.
+#[derive(Clone)]
 pub(crate) struct DisArgs {
     pub(crate) binary: String,
     /// The target operand: a symbol name, an address, or a `start-end` range.

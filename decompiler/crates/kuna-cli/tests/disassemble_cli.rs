@@ -1360,3 +1360,35 @@ fn raw_pcode_follow_preserves_out_of_range_edges_and_partial_errors() {
     assert_eq!(doc["instruction_count"], 1);
     assert!(doc["issues"].as_array().unwrap().iter().any(|issue| issue["reason"] == "decode_error"));
 }
+
+#[test]
+fn raw_pcode_thumb_interior_pointer_uses_thumb_without_changing_other_isas() {
+    let binary = fixture("arm_interwork_le32");
+    let read = |args: &[&str]| {
+        let (stdout, stderr, status) = run_kuna(args);
+        assert_eq!(status, 0, "{stderr}\n{stdout}");
+        serde_json::from_str::<Json>(&stdout).unwrap()
+    };
+    let odd = read(&["raw-pcode", &binary, "0x2000043", "--count", "1", "--json"]);
+    let explicit = read(&["raw-pcode", &binary, "0x2000042", "--isa", "thumb", "--count", "1", "--json"]);
+    assert_eq!(odd["start_hex"], "0x2000042");
+    assert_eq!(odd["instructions"], explicit["instructions"]);
+    assert_eq!(odd["instructions"][0]["bytes"], "7047");
+    let graph = read(&["raw-pcode", &binary, "0x2000043", "--follow", "--json"]);
+    assert_eq!(graph["start_hex"], "0x2000042");
+    assert_eq!(graph["blocks"][0]["instructions"][0], odd["instructions"][0]);
+
+    // The pointer's low bit supplies the mode even when inventory says ARM.
+    let forced = read(&["raw-pcode", &binary, "0x2000001", "--count", "1", "--json"]);
+    let explicit = read(&["raw-pcode", &binary, "0x2000000", "--isa", "thumb", "--count", "1", "--json"]);
+    assert_eq!(forced["instructions"], explicit["instructions"]);
+    assert_eq!(forced["instructions"][0]["bytes"], "0040");
+
+    let (_, stderr, code) = run_kuna(&["raw-pcode", &binary, "0x2000043", "--isa", "arm", "--count", "1"]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("conflicting with --isa arm"), "{stderr}");
+    let x86 = fauxware();
+    let doc = read(&["raw-pcode", &x86, "0x40071d", "--count", "1", "--json"]);
+    assert_eq!(doc["start_hex"], "0x40071d");
+    assert_eq!(doc["instructions"][0]["bytes"], "55");
+}

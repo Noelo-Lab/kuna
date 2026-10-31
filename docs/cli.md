@@ -2336,6 +2336,11 @@ ordered `inputs`. Each varnode has its named address `space`, numeric `offset`,
 `LOAD` and `STORE`, the first constant input identifies the accessed address
 space, rather than an ordinary program value. Numeric addresses and offsets are
 also spelled as hexadecimal strings for consumers without exact 64-bit numbers.
+For a single numeric ARM32 code pointer, an odd address selects Thumb mode at
+its even byte address, including inside a function. This applies only to the
+raw-pcode query; `--isa arm` with an odd pointer is rejected as contradictory.
+An address range is read literally. Other architectures retain odd addresses.
+
 When SLEIGH includes a delay slot in one lift (for example a MIPS `jr`), the
 row's size and bytes cover the branch and its delay slot, and its ops include
 the slot's operations before the branch. `--count` counts such a lift as one.

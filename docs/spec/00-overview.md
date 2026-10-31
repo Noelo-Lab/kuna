@@ -3685,3 +3685,7 @@ and fallthrough, groups the resulting lifts into basic blocks, and reports
 unresolved, out-of-window, overlapping or undecodable paths explicitly. Its
 completeness flag is scoped to this bounded walk and does not prove all dynamic
 execution paths.
+
+When raw-pcode receives an odd ARM32 code pointer, its private decode context
+starts in Thumb mode at the corresponding even byte address. The mode seed is
+scoped to that query and leaves the loaded program's context unchanged.

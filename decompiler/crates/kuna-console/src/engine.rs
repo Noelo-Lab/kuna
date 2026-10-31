@@ -1763,6 +1763,24 @@ impl ConsoleProgram {
         self.arch().translate().loader_rc().borrow().get_segments()
     }
 
+    /// Decode an ARM code pointer in a private Thumb context until the query ends.
+    pub fn with_thumb_pointer<R>(&self, vma: u64, run: impl FnOnce() -> R) -> KunaResult<R> {
+        let space = Rc::clone(self.arch().manage().get_default_code_space()
+            .ok_or_else(|| KunaError::lowlevel("no default code space"))?);
+        let scope = self.arch().translate().context_scope()
+            .ok_or_else(|| KunaError::lowlevel("translator does not support scoped context"))?;
+        let address = Address::new(space, vma);
+        self.arch().with_context_db_mut(|db| db.set_variable(b"TMode", &address, 1))?;
+        let result = run();
+        drop(scope);
+        Ok(result)
+    }
+
+    /// Whether a numeric code pointer may carry the ARM32 Thumb bit.
+    pub fn is_arm32(&self) -> bool {
+        is_arm32_language(self.arch().get_description())
+    }
+
     /// (kuna) Whether the load image can actually read bytes at `addr` — i.e.
     /// whether an entry there could have a body at all.
     ///

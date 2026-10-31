@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 pub fn run(argv: &[String]) -> i32 {
     if argv.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("usage: kuna raw-pcode <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--json] [--follow] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]");
+        println!("usage: kuna raw-pcode <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--json] [--follow] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\n  --json emits an object rooted at {{binary, ...}}; --follow groups instructions into blocks.");
         return 0;
     }
     let args = match parse_args(argv) {
@@ -44,7 +44,37 @@ fn render_raw(args: &DisArgs) -> Result<(String, i32), String> {
     let options =
         mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
     let prog = load_program(&load_args(args, options), DriverDefaults::Inventory)?;
-    let region = resolve_region(&prog, args)?;
+    let (args, thumb) = pointer_args(&prog, args)?;
+    if let Some(vma) = thumb {
+        return prog
+            .with_thumb_pointer(vma, || render_loaded(&args, &prog))
+            .map_err(|e| e.to_string())?;
+    }
+    render_loaded(&args, &prog)
+}
+
+fn pointer_args(prog: &ConsoleProgram, args: &DisArgs) -> Result<(DisArgs, Option<u64>), String> {
+    let mut args = args.clone();
+    if !prog.is_arm32()
+        || split_range(&args.spec).is_some()
+        || !(args.by_address || looks_like_addr(&args.spec))
+    {
+        return Ok((args, None));
+    }
+    let addr = parse_addr(&args.spec)?;
+    if addr & 1 == 0 {
+        return Ok((args, None));
+    }
+    if args.isa == Some(kuna_console::engine::ArmIsa::Arm) {
+        return Err("an odd ARM code pointer requests Thumb, conflicting with --isa arm".into());
+    }
+    let vma = addr & !1;
+    args.spec = format!("0x{vma:x}");
+    Ok((args, Some(vma)))
+}
+
+fn render_loaded(args: &DisArgs, prog: &ConsoleProgram) -> Result<(String, i32), String> {
+    let region = resolve_region(prog, args)?;
     if !prog.vma_bytes_mapped(region.start) {
         return Err(format!("no bytes mapped at 0x{:x}", region.start));
     }
@@ -145,5 +175,31 @@ fn render_raw(args: &DisArgs) -> Result<(String, i32), String> {
             text.push_str(&format!("# truncated at 0x{addr:x} ({stop_reason})\n"));
         }
         Ok((text, status))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thumb_pointer_context_is_restored_after_success_and_error() {
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../kuna-analysis/tests/fixtures/arm_interwork_le32");
+        let args = parse_args(&[fixture.to_str().unwrap().into(), "0x2000000".into()]).unwrap();
+        let prog = load_program(&load_args(&args, Vec::new()), DriverDefaults::Inventory).unwrap();
+        let original = prog.disassemble_at(0x2000000).unwrap();
+        assert_eq!(original.0, 4);
+        let thumb = prog
+            .with_thumb_pointer(0x2000000, || prog.disassemble_at(0x2000000))
+            .unwrap()
+            .unwrap();
+        assert_eq!(thumb.0, 2);
+        assert_eq!(prog.disassemble_at(0x2000000).unwrap(), original);
+        let result = prog
+            .with_thumb_pointer(0x2000000, || -> Result<(), &str> { Err("stop") })
+            .unwrap();
+        assert_eq!(result, Err("stop"));
+        assert_eq!(prog.disassemble_at(0x2000000).unwrap(), original);
     }
 }
