@@ -2685,6 +2685,7 @@ mod tests {
         op_order: BTreeMap<u64, uintm>,
         op_in0: BTreeMap<u64, VarnodeId>,
         vn_cover: BTreeMap<u64, Cover>,
+        pieces: BTreeMap<u64, (HighVariableId, Vec<u64>)>,
         copy_shadow: bool,
         merged: Vec<(HighVariableId, HighVariableId, bool)>,
     }
@@ -2702,6 +2703,7 @@ mod tests {
                 op_order: BTreeMap::new(),
                 op_in0: BTreeMap::new(),
                 vn_cover: BTreeMap::new(),
+                pieces: BTreeMap::new(),
                 copy_shadow: false,
                 merged: Vec::new(),
             }
@@ -2818,8 +2820,8 @@ mod tests {
         fn high_group_info(&self, _h: HighVariableId) -> Option<HighGroupInfo> {
             None
         }
-        fn high_piece(&self, _h: HighVariableId) -> Option<MergePieceId> {
-            None
+        fn high_piece(&self, h: HighVariableId) -> Option<MergePieceId> {
+            self.pieces.iter().find(|(_, (ph, _))| *ph == h).map(|(&p, _)| MergePieceId(p))
         }
         fn piece_offset(&self, _p: MergePieceId) -> int4 {
             0
@@ -2830,14 +2832,14 @@ mod tests {
         fn piece_group(&self, _p: MergePieceId) -> u64 {
             0
         }
-        fn piece_high(&self, _p: MergePieceId) -> HighVariableId {
-            hid(0)
+        fn piece_high(&self, p: MergePieceId) -> HighVariableId {
+            self.pieces.get(&p.0).map_or(hid(0), |(h, _)| *h)
         }
-        fn piece_num_intersection(&self, _p: MergePieceId) -> int4 {
-            0
+        fn piece_num_intersection(&self, p: MergePieceId) -> int4 {
+            self.pieces.get(&p.0).map_or(0, |(_, i)| i.len() as int4)
         }
-        fn piece_intersection(&self, _p: MergePieceId, _i: int4) -> MergePieceId {
-            MergePieceId(0)
+        fn piece_intersection(&self, p: MergePieceId, i: int4) -> MergePieceId {
+            MergePieceId(self.pieces.get(&p.0).map_or(0, |(_, l)| l[i as usize]))
         }
         fn bank_update_piece_intersections(&mut self, _p: MergePieceId) {}
         fn bank_merge_highs(
@@ -3461,6 +3463,32 @@ mod tests {
             add_high(&mut m, h, st);
         }
         m
+    }
+
+    /// A refusal is carried past a trim only when the trimmed high is none of
+    /// the highs its Cover test read: its two highs and their pieces' partners.
+    #[test]
+    fn a_refusal_outlives_only_a_trim_its_cover_test_did_not_read() {
+        let mut m = Mock::new();
+        for h in 1..=6 {
+            add_high(&mut m, h, HighState::default());
+        }
+        m.pieces.insert(10, (hid(2), vec![11]));
+        m.pieces.insert(11, (hid(4), vec![10]));
+        m.pieces.insert(12, (hid(1), vec![13]));
+        m.pieces.insert(13, (hid(5), vec![12]));
+        let cover = MergeConflict { earlier: Some(hid(1)), high: hid(2) };
+        for read in [1, 2, 4, 5] {
+            assert!(!cover.outlives_trim(&m, hid(read)), "trimming high {read}");
+        }
+        for unread in [3, 6] {
+            assert!(cover.outlives_trim(&m, hid(unread)), "trimming high {unread}");
+        }
+        let no_cover = MergeConflict { earlier: None, high: hid(2) };
+        assert!(!no_cover.outlives_trim(&m, hid(2)));
+        assert!(!no_cover.outlives_trim(&m, hid(4)));
+        assert!(no_cover.outlives_trim(&m, hid(1)));
+        assert!(no_cover.outlives_trim(&m, hid(5)));
     }
 
     #[test]
