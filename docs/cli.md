@@ -2199,9 +2199,31 @@ act on and is answered; see below.
 |---|---|
 | `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. |
 | `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
-| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. |
-| `read` | The target is loaded from. |
-| `write` | The target is stored to. |
+| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. Also an address a **register pair** forms across instructions (`adrp x0,…; add x0,x0,#0x488`, `lui a0,…; addi a0,a0,0x25`), filed from the instruction that completes it. |
+| `read` | The target is loaded from — including through a register an earlier instruction set to (part of) the address (`adrp x8,…; ldr w0,[x8,#0x1d0]`, `lui a1,…; lw a1,0x1d0(a1)`). |
+| `write` | The target is stored to, likewise. |
+
+### Addresses formed in two instructions
+
+A fixed-width ISA cannot hold a whole address in one instruction, so it builds one
+in two: AArch64 `adrp` + `add`/`ldr`/`str`, RISC-V `lui` or `auipc` +
+`addi`/`lw`/`sw`/`ld`, MIPS `lui` + `addiu`/`lw`, PowerPC `lis` + `addi`/`lwz`. The
+walk carries a register's constant to the instructions that fall after it and reads
+the address off the instruction that completes it: `data` where that instruction
+only forms the address, `read`/`write` where it accesses memory there. A carried
+value lives for at most eight instructions, survives a call only in a callee-saved
+register, and is never believed past a **join** — an instruction another branch,
+switch case or function entry also reaches — so two bases meeting at a label form
+nothing. The page or high half on its own is not the reference (`adrp`'s page row
+appears only where it did before, when the page itself is a mapped address).
+
+Shapes that build a number rather than an address do not file `data`: a copy of the
+register, bitwise composition (`movk`, `ori`, `movt`) and a 32-bit add widened into a
+64-bit register (RV64 `addiw`). In an ELF shared object or PIE an absolute immediate
+cannot be an address, so there only a value computed from the instruction's own
+address (`auipc`, A32 `add rX,pc`) is carried; on x86-64 and AArch64 the PC-relative
+form (`lea [rip+…]`, `adrp`) is already a decode-time constant and is carried as
+before.
 
 ### One import, two addresses
 

@@ -52,6 +52,7 @@ pub(crate) mod kuna_decodereuse;
 mod kuna_picbase;
 mod kuna_picpool;
 mod kuna_poolref;
+mod kuna_regcarry;
 mod kuna_ppclocalentry;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
