@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3335,
-    3335
+    3342,
+    3342
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2013,6 +2013,13 @@
     "data:bejoin mips #2: no join puts the low product first",
     "data:bejoin mips #3: realeof and both return the bool in $2",
     "data:bejoin mips #4: nothing is shifted into the high word",
+    "data:bejoin-callers #1: the default returns add64's sum high word first",
+    "data:bejoin-callers #1b: evidence swaps add64, and add_hi keeps the old join in both passes",
+    "data:bejoin-callers #2: the default reads c_add's and c_pass's pair r3 high",
+    "data:bejoin-callers #2b: the default stores the high word at the lower address",
+    "data:bejoin-callers #2c: evidence reads both pairs r3 low",
+    "data:bejoin-callers #3: keep stays an int in both passes",
+    "data:bejoin-callers #3b: c_hi reads add_hi's int in both passes",
     "data:bejoin-evidence #1: the default joins wide_mul's mulhw word (r3) high",
     "data:bejoin-evidence #1b: only off puts the low product first",
     "data:bejoin-evidence #2: the default returns widen's argument sign-extended",

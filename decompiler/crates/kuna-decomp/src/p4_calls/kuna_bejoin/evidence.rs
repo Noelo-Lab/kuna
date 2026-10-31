@@ -63,6 +63,12 @@
 //! `mov r1,r3; mov r0,r2`; clang -O0 first copies a call's low word out and
 //! back, `mov r2,r1; mov r1,r2`).
 //!
+//! Under `option bejoin callers` a function is also proven when a caller
+//! reads its second register after calling it ([`callers`]), or when a
+//! caller that hands its pair back is proven. The verdict is the least fixed
+//! point of the three rules over every function it reaches ([`by_callers`]),
+//! so it does not depend on which function a run asks about first.
+//!
 //! "Nothing reads" counts every path, a path ending in a call that does not
 //! return included: gcc -Os hoists an error path's computation into a branch
 //! delay slot (`beqz a0; addiu v1,a1,1`), so the RETURN of `return 0` finds a
@@ -76,7 +82,7 @@
 //! instruction calls itself (the placeholder an unrelocated call in an
 //! object file leaves).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -89,6 +95,9 @@ use crate::architecture::Architecture;
 use crate::context::VarnodeId;
 use crate::fspec::{effect_type, FuncCallSpecs, ParamActive, ProtoModel};
 use crate::funcdata::Funcdata;
+
+#[path = "callers.rs"]
+mod callers;
 
 /// How many paths one walk follows before it gives up.
 const MAX_PATHS: usize = 64;
@@ -126,6 +135,9 @@ type Entry = (int4, uintb);
 pub struct WideCache {
     pair: Option<Option<WidePair>>,
     map: HashMap<Entry, bool>,
+    by_callers: BTreeMap<Entry, bool>,
+    locals: BTreeMap<Entry, Local>,
+    callers: callers::Cache,
 }
 
 /// One decompile's view: the model's pair, the verdicts of the function and
@@ -191,6 +203,115 @@ fn verdict(arch: &Architecture, map: &mut HashMap<Entry, bool>, model: &Rc<Proto
         }
     }
     map[&key]
+}
+
+/// How many functions one verdict under `option bejoin callers` weighs.
+const MAX_CONE: usize = 32;
+
+/// How many call sites one verdict under `option bejoin callers` reads.
+const MAX_CONE_SITES: usize = 48;
+
+/// How many callers in a row a pair is followed back through.
+const MAX_BACK: u8 = 2;
+
+/// The verdict for `key` in the `option bejoin` mode in force.
+fn take(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
+    if arch.be_join == super::BeJoinMode::Callers {
+        by_callers(arch, cache, model, pair, key)
+    } else {
+        verdict(arch, &mut cache.map, model, pair, key)
+    }
+}
+
+/// One function's part in a verdict under `option bejoin callers`: proven on
+/// its own or by a caller's read, the callees its own proof waits on, and the
+/// callers that hand its pair back.
+struct Node {
+    base: bool,
+    own: Option<Vec<Entry>>,
+    back: Vec<Entry>,
+}
+
+/// The verdict for `key` under `option bejoin callers`, once per image: the
+/// least fixed point over every function the verdict reaches of "proven on
+/// its own ([`proves_wide`]) once the callees it waits on are, a caller reads
+/// its second register ([`callers::Cache::evidence`]), or a caller that hands
+/// its pair back is". A caller reached only by handing a pair back is judged
+/// by its own callers alone: the path that hands the pair back leaves its own
+/// proof waiting on that callee. A pair is followed back through at most
+/// [`MAX_BACK`] callers in a row, and a cone past [`MAX_CONE`] functions or
+/// [`MAX_CONE_SITES`] call sites decides on what it holds. Only `key`'s verdict is kept, so each verdict is taken
+/// the same way whichever function a run asks about first.
+fn by_callers(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
+    if let Some(&v) = cache.by_callers.get(&key) {
+        return v;
+    }
+    let Some(lo) = WidePair::key(&pair.lo) else { return false };
+    let mut order: Vec<(Entry, u8)> = vec![(key, 0)];
+    let mut pos: BTreeMap<Entry, usize> = BTreeMap::from([(key, 0)]);
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut sites = 0usize;
+    while nodes.len() < order.len() && order.len() <= MAX_CONE {
+        let (k, back_depth) = order[nodes.len()];
+        sites += cache.callers.site_count(arch, k);
+        if !nodes.is_empty() && sites > MAX_CONE_SITES {
+            break;
+        }
+        let walked = back_depth == 0;
+        let own = if walked {
+            let local = match cache.locals.get(&k) {
+                Some(l) => l.clone(),
+                None => {
+                    let l = arch
+                        .manage()
+                        .get_space(k.0)
+                        .map_or(Local::No, |sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), k.1)));
+                    cache.locals.insert(k, l.clone());
+                    l
+                }
+            };
+            match local {
+                Local::Yes(d) => Some(d),
+                Local::No => None,
+            }
+        } else {
+            None
+        };
+        let alone = own.as_ref().is_some_and(|d| d.is_empty());
+        let (read, back) = if alone { (false, Vec::new()) } else { cache.callers.evidence(arch, lo, k) };
+        let base = alone || read;
+        if !base {
+            let back_next = if back_depth < MAX_BACK { &back[..] } else { &[] };
+            let next = own.iter().flatten().map(|d| (*d, 0)).chain(back_next.iter().map(|d| (*d, back_depth + 1)));
+            for (d, depth) in next {
+                if let std::collections::btree_map::Entry::Vacant(e) = pos.entry(d) {
+                    e.insert(order.len());
+                    order.push((d, depth));
+                }
+            }
+        }
+        nodes.push(Node { base, own, back });
+    }
+    let mut val: Vec<bool> = nodes.iter().map(|n| n.base).collect();
+    let holds = |val: &[bool], e: &Entry| pos.get(e).is_some_and(|&j| val.get(j).copied().unwrap_or(false));
+    loop {
+        let mut changed = false;
+        for i in 0..nodes.len() {
+            if val[i] {
+                continue;
+            }
+            let n = &nodes[i];
+            if n.own.as_ref().is_some_and(|d| d.iter().all(|e| holds(&val, e))) || n.back.iter().any(|e| holds(&val, e)) {
+                val[i] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    cache.by_callers.insert(key, val[0]);
+    val[0]
 }
 
 /// A symbolic value.
@@ -342,6 +463,7 @@ enum Says {
 }
 
 /// One walk's answer: not proven, or proven once every callee listed is.
+#[derive(Clone)]
 enum Local {
     No,
     Yes(Vec<Entry>),
@@ -354,6 +476,19 @@ struct Insn {
     /// Does it copy three or more registers into others at once (a register
     /// window's `save` or `restore`)?
     window: bool,
+}
+
+/// Decode the instruction at `at`.
+fn decode(arch: &Architecture, at: &Address) -> Option<Insn> {
+    let mut c = Collect::default();
+    let len = arch.translate().one_instruction(&mut c, at).ok().filter(|&n| n > 0)?;
+    let reg = |v: &VarnodeData| v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR);
+    let copies = c
+        .ops
+        .iter()
+        .filter(|(opc, out, ins)| *opc == OpCode::CPUI_COPY && out.as_ref().is_some_and(reg) && ins.first().is_some_and(reg))
+        .count();
+    Some(Insn { len: len as u64, ops: c.ops, window: copies >= 3 })
 }
 
 #[derive(Default)]
@@ -407,7 +542,7 @@ pub fn wide_pair(model: &ProtoModel, manager: &kuna_base::space::AddrSpaceManage
 /// Inert unless `option bejoin` is `evidence` and the image's model joins its
 /// pair high word first.
 pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
-    if arch.be_join != super::BeJoinMode::Evidence {
+    if !arch.be_join.proves() {
         return;
     }
     let Some(model) = arch.default_fp().cloned() else { return };
@@ -435,7 +570,7 @@ pub fn seed(arch: &mut Architecture, data: &mut Funcdata) {
     let mut verdicts = HashMap::new();
     for k in entries {
         if !verdicts.contains_key(&k) {
-            verdicts.insert(k, verdict(arch, &mut cache.map, &model, &pair, k));
+            verdicts.insert(k, take(arch, &mut cache, &model, &pair, k));
         }
     }
     data.kuna_set_wide(WideView { pair, verdicts, missed: Default::default() });
@@ -456,7 +591,7 @@ pub fn missed_proven(arch: &mut Architecture, data: &Funcdata) -> bool {
     let mut cache = std::mem::take(&mut arch.kuna_wide);
     let mut any = false;
     for k in missed {
-        any |= verdict(arch, &mut cache.map, &model, &view.pair, k);
+        any |= take(arch, &mut cache, &model, &view.pair, k);
     }
     arch.kuna_wide = cache;
     any
@@ -603,21 +738,14 @@ impl<'a> Walk<'a> {
         if let Some(i) = self.insns.get(&at.get_offset()) {
             return Some(Rc::clone(i));
         }
-        let mut c = Collect::default();
-        let len = self.arch.translate().one_instruction(&mut c, at).ok().filter(|&n| n > 0)?;
-        let mut copies = 0;
-        for (opc, out, ins) in &c.ops {
+        let i = Rc::new(decode(self.arch, at)?);
+        for (_, out, ins) in &i.ops {
             for v in out.iter().chain(ins.iter()) {
                 if let Some(sp) = v.space.as_ref() {
                     self.spaces.entry(sp.get_index()).or_insert_with(|| Rc::clone(sp));
                 }
             }
-            let reg = |v: &VarnodeData| v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR);
-            if *opc == OpCode::CPUI_COPY && out.as_ref().is_some_and(reg) && ins.first().is_some_and(reg) {
-                copies += 1;
-            }
         }
-        let i = Rc::new(Insn { len: len as u64, ops: c.ops, window: copies >= 3 });
         self.insns.insert(at.get_offset(), Rc::clone(&i));
         Some(i)
     }
@@ -1242,7 +1370,7 @@ impl<'a> Walk<'a> {
 /// `trialvn` holds each trial's INDIRECT creation, by original slot. Returns
 /// `false`, changing nothing, unless the pair is built.
 pub(crate) fn build_high_read(fc: &mut FuncCallSpecs, data: &mut Funcdata, trialvn: &[Option<VarnodeId>]) -> bool {
-    if super::mode(data) != super::BeJoinMode::Evidence {
+    if !super::mode(data).proves() {
         return false;
     }
     let reads: Vec<(Address, int4, VarnodeId)> = {

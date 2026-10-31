@@ -296,6 +296,17 @@ pub struct Architecture {
     /// object bootstrap beside [`Self::dynreloc_const`]. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub litpool_const: Rc<Vec<(u64, u64)>>,
+    /// (kuna `bejoin callers`) The image's exception-table sections
+    /// (`.eh_frame`, `.gcc_except_table*`, `.ARM.exidx*`, `.ARM.extab*`) as
+    /// `(name, address, size)`, which the object bootstrap installs beside
+    /// [`Self::litpool_const`]; `None` on a path without a section table. The
+    /// caller evidence reads the landing pads from them.
+    pub eh_sections: Option<Rc<Vec<(String, u64, u64)>>>,
+    /// (kuna `bejoin callers`) The `(address, size)` of each function symbol
+    /// whose symbol table states a size, sorted by address, which the object
+    /// bootstrap installs beside [`Self::eh_sections`]; empty on a path without
+    /// a symbol table. The caller evidence ends a function's extent there.
+    pub func_sizes: Rc<Vec<(u64, u64)>>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` (inclusive) byte ranges
     /// of the loaded sections a program's own data objects live in, as the
     /// object loader classifies them (`ObjectLoadImage::data_object_ranges`).
@@ -2918,6 +2929,8 @@ impl Architecture {
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
+            eh_sections: None,
+            func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
             litpoolconst: false,
             infer_pointers: false,
@@ -3446,7 +3459,7 @@ impl Architecture {
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.multi_reg_args = true;
-        self.be_join = crate::kuna_bejoin::BeJoinMode::Evidence; // (kuna) option bejoin default `evidence` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart); `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.call_wide = false;
         self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round

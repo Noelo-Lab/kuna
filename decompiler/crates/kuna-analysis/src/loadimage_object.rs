@@ -393,6 +393,9 @@ struct FuncSym {
     addr: u64,
     /// Symbol name (byte string, per the workspace marshal convention).
     name: Vec<u8>,
+    /// The byte size the symbol table states (`st_size`); 0 when it states
+    /// none or the symbol is synthetic (a PLT stub, an extern call target).
+    size: u64,
 }
 
 /// Linked ELF definitions and import stubs at normalized code addresses, before
@@ -903,10 +906,11 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
+            let size = sym.size();
             if seen.insert(addr) || !elfv1.0.is_empty() {
-                funcsyms.push(FuncSym { addr, name });
+                funcsyms.push(FuncSym { addr, name, size });
             } else if is_elf {
-                aliases.push(FuncSym { addr, name });
+                aliases.push(FuncSym { addr, name, size });
             }
         }
 
@@ -921,12 +925,12 @@ impl ObjectLoadImage {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
             let name = demangle_funcsym_name(p.name, namechars);
             if seen.insert(p.addr) {
-                funcsyms.push(FuncSym { addr: p.addr, name });
+                funcsyms.push(FuncSym { addr: p.addr, name, size: 0 });
             } else if let Some(&i) = ppc32_names.get(&p.addr) {
                 let previous = std::mem::replace(&mut funcsyms[i].name, name);
-                aliases.push(FuncSym { addr: p.addr, name: previous });
+                aliases.push(FuncSym { addr: p.addr, name: previous, size: 0 });
             } else if is_elf {
-                aliases.push(FuncSym { addr: p.addr, name });
+                aliases.push(FuncSym { addr: p.addr, name, size: 0 });
             }
         }
 
@@ -954,10 +958,11 @@ impl ObjectLoadImage {
                 continue;
             }
             let name = demangle_funcsym_name(name, namechars);
+            let size = sym.size();
             if seen.insert(addr) || !elfv1.0.is_empty() {
-                funcsyms.push(FuncSym { addr, name });
+                funcsyms.push(FuncSym { addr, name, size });
             } else if is_elf {
-                aliases.push(FuncSym { addr, name });
+                aliases.push(FuncSym { addr, name, size });
             }
         }
 
@@ -1126,7 +1131,9 @@ impl ObjectLoadImage {
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
+        let sizes: std::collections::HashMap<u64, u64> = layout.funcsizes.iter().copied().collect();
         for (addr, name) in layout.funcsyms {
+            let size = sizes.get(&addr).copied().unwrap_or(0);
             if addr == 0 {
                 continue;
             }
@@ -1136,9 +1143,9 @@ impl ObjectLoadImage {
             }
             let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
-                funcsyms.push(FuncSym { addr, name });
+                funcsyms.push(FuncSym { addr, name, size });
             } else if is_elf {
-                aliases.push(FuncSym { addr, name });
+                aliases.push(FuncSym { addr, name, size });
             }
         }
         let funcsym_aliases = distinct_aliases(&funcsyms, aliases);
@@ -1301,6 +1308,22 @@ impl ObjectLoadImage {
             .iter()
             .map(|s| (s.addr, String::from_utf8_lossy(&s.name).into_owned()))
             .collect()
+    }
+
+    /// The `(address, size)` of each function symbol whose symbol table states
+    /// a size, sorted by address, the largest when names share one; raw
+    /// addresses, Thumb bit included, rebased as [`Self::func_symbols`] is.
+    pub fn func_symbol_sizes(&self) -> Vec<(u64, u64)> {
+        let mut out: Vec<(u64, u64)> = self
+            .funcsyms
+            .iter()
+            .chain(&self.funcsym_aliases)
+            .filter(|s| s.size > 0)
+            .map(|s| (s.addr, s.size))
+            .collect();
+        out.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+        out.dedup_by_key(|s| s.0);
+        out
     }
 
     /// The ELF function names [`Self::func_symbols`] leaves out because an

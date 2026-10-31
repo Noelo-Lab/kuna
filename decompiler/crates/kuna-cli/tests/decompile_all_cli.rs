@@ -9804,6 +9804,171 @@ fn bejoin_evidence_reads_a_callee_pair_alike_in_every_run() {
     }
 }
 
+/// A 64-bit sum, and ARMv7's single-instruction product, compile to the bytes
+/// of the `int` that returns their high word, so the callee alone proves
+/// neither; the default, `bejoin callers`, also takes a caller that reads the
+/// second register after the call. In `bejoin_callers.c`, `c_add` and `c_mul`
+/// store both words of `add64` and `umul64`, and `c_pass` both words of
+/// `pass`, which returns `add64`'s value through a frame of its own, while
+/// `c_hi` and `c_mulhi` read only the first register of `add_hi` and
+/// `umul_hi`, and gcc keeps `c_keep`'s `b` in `r1` across `bl keep`, which
+/// never writes it. The verdict comes from the image's own call sites and
+/// symbols, so every function prints the same in a whole `decompile-all`, one
+/// narrowed by `--functions`, `--jobs 2` and a single `kuna decompile` (with
+/// `protoorder` off: its callee-first prototypes reach only the whole serial
+/// run, on main too), and every caller reads its callee's pair in one order in
+/// the default runs. `add64`, `umul64` and `pass` are compiled beside the
+/// source with gcc and clang and must compute it, and the `int`s print as
+/// with `bejoin evidence`.
+#[test]
+fn bejoin_callers_read_a_pair_alike_in_every_run() {
+    const FUNCS: [&str; 12] =
+        ["add64", "add_hi", "umul64", "umul_hi", "keep", "pass", "c_add", "c_hi", "c_mul", "c_mulhi", "c_keep", "c_pass"];
+    let sp = specs();
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    for (fixture, pair) in [("bejoin_callers_ppc32_O2", "// r3:r4"), ("bejoin_callers_arm32_be_O2.o", "// r0:r1")] {
+        let bin = fixtures.join(fixture).to_str().unwrap().to_string();
+        let run = |extra: &[&str]| {
+            let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
+            args.extend_from_slice(extra);
+            let (out, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all {fixture} {extra:?} failed: {stderr}");
+            out
+        };
+        let single = |f: &str, extra: &[&str]| {
+            let mut args = vec!["decompile", bin.as_str(), f, "--sleighpath", sp.as_str()];
+            args.extend_from_slice(extra);
+            let (out, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile {fixture} {f} failed: {stderr}");
+            out.trim().to_string()
+        };
+        let body = |listing: &str, f: &str| {
+            let text = callrettype_functions(listing, &[f]);
+            text.split_once('\n').map(|(_, b)| b.trim().to_string()).unwrap_or_default()
+        };
+        let off = ["--option", "protoorder", "off"];
+        let whole = run(&off);
+        let jobs = run(&["--option", "protoorder", "off", "--jobs", "2"]);
+        for f in FUNCS {
+            let text = body(&whole, f);
+            assert!(!text.is_empty(), "{fixture}: {f} prints:\n{whole}");
+            let narrowed = run(&["--option", "protoorder", "off", "--functions", f]);
+            for (mode, other) in [("--jobs 2", body(&jobs, f)), ("--functions", body(&narrowed, f)), ("decompile", single(f, &off))] {
+                assert_eq!(other, text, "{fixture}: {f} prints differently under {mode}");
+            }
+        }
+        let full = run(&[]);
+        for f in ["c_add", "c_mul", "c_pass"] {
+            for (mode, text) in [("decompile-all", body(&full, f)), ("decompile", single(f, &[]))] {
+                assert!(text.contains(pair), "{fixture} ({mode}): {f} reads its callee's pair {pair}:\n{text}");
+            }
+        }
+        let evidence = run(&["--option", "bejoin", "evidence"]);
+        for f in ["add_hi", "umul_hi", "keep", "c_hi", "c_mulhi", "c_keep"] {
+            assert_eq!(body(&full, f), body(&evidence, f), "{fixture}: {f} reads one register:\n{full}");
+        }
+        let add = body(&full, "add64");
+        assert!(add.contains("return CONCAT44(a0 + a2 + (unsigned int)CARRY4(a1,a3),a1 + a3);"), "{fixture}: add64 returns its sum high word first:\n{add}");
+        assert_ne!(add, body(&evidence, "add64"), "{fixture}: bejoin evidence leaves add64's halves swapped");
+        let wide: &[&str] = if fixture.ends_with(".o") { &["add64", "umul64", "pass"] } else { &["add64", "pass"] };
+        let printed = callrettype_functions(&full, wide);
+        let sigs: String = printed
+            .split("// Function: ")
+            .skip(1)
+            .filter_map(|part| part.lines().find(|l| l.contains('(')))
+            .map(|sig| format!("{sig};\n"))
+            .collect();
+        let product = if wide.contains(&"umul64") { "bad += (u64)umul64((unsigned)a, (unsigned)b) != (u64)(unsigned)a * (unsigned)b;\n" } else { "" };
+        let src_text = format!(
+            "#include <stdio.h>\n\
+             typedef unsigned long long u64;\n\
+             #define CONCAT44(h, l) ((unsigned long long)(unsigned int)(h) << 32 | (unsigned int)(l))\n\
+             #define CARRY4(a, b) ((unsigned int)(a) + (unsigned int)(b) < (unsigned int)(a))\n\
+             {sigs}{printed}\n\
+             int main(void) {{\n  static const u64 xs[6] = {{0, 1, 0xffffffffULL, 0x100000000ULL, 0x123456789abcdef0ULL, ~0ULL}};\n  \
+             int bad = 0;\n  for (int i = 0; i < 6; i++)\n    for (int j = 0; j < 6; j++) {{\n      u64 a = xs[i], b = xs[j];\n      \
+             bad += (u64)add64((int)(a >> 32), (unsigned)a, (int)(b >> 32), (unsigned)b) != a + b;\n      \
+             bad += (u64)pass((int)(a >> 32), (unsigned)a, (int)(b >> 32), (unsigned)b) != a + b;\n      {product}    }}\n  \
+             printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
+        );
+        bejoin_round_trip(&format!("callers-{fixture}"), &src_text, &printed);
+    }
+}
+
+/// A call kuna does not know never returns is followed by code of another
+/// path, which reads the second return register for a value of its own, so
+/// it is no caller reading the callee's pair. In `bejoin_unreach.c`, built
+/// for PowerPC, `hi` and `hj` return the high word of a 64-bit sum, and each
+/// is called once ahead of `__builtin_unreachable()`: gcc lays out the block
+/// a `bne` reaches right after `u_unr`'s `bl hi` (`add 3,7,4`), and the jump
+/// table's next case right after `u_sw`'s `bl hj` (`mulli 3,4,3`). In
+/// `bejoin_unreach_arm.c`, built for ARM big-endian, the literal pool follows
+/// `u_pool`'s `bl hi`, and its first word decodes as `andeq r0,r2,r0,lsl r1`.
+/// In `bejoin_unreach_ppc.c`, linked with the local symbols discarded, the
+/// static `s_next` follows `u_tail`'s `bl hi` and reads its second argument,
+/// and built with gcc's hot/cold partition, `u_cold.cold` lays the rare block
+/// its hot part enters right after the `bl hi` (`mr 3,4`). In
+/// `bejoin_unreach_thumb.c`, built for big-endian Thumb, the literal pool after
+/// `u_pool`'s `bl hi` holds `0x00080123`, which decodes as `movs r0,r1`. In
+/// `bejoin_unreach_eh.cc`, built for PowerPC and ARM big-endian (linked, and
+/// as an ARM object), the `catch` landing pad follows `u_eh`'s call of `hi`
+/// and compares the selector the unwinder leaves in the second register. In
+/// `bejoin_unreach_hidden.c`, linked with the local symbols discarded, a
+/// static function that only a pointer or a tail call reaches follows each
+/// `bl`, and on PowerPC so does the rare block of a `.cold` part whose symbol
+/// went with them; the sizes the symbols state keep the walk out of both.
+/// `c_hi` reads only the first register of each, so every function prints as
+/// with `bejoin evidence`, in a whole `decompile-all` and a single
+/// `kuna decompile`.
+#[test]
+fn bejoin_callers_ignore_code_a_call_does_not_return_to() {
+    const HIDDEN: &[&str] = &["hi_p", "hi_t", "hi_c", "u_ptr", "u_tl", "u_cold", "c_hi"];
+    let sp = specs();
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let cases: [(&str, &[&str], &str); 10] = [
+        ("bejoin_unreach_ppc32_O1", &["hi", "hj", "u_unr", "u_sw", "c_hi"], "return CONCAT44(a1 + a3,"),
+        ("bejoin_unreach_arm32_be_O2", &["hi", "u_pool", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_strip_ppc32_O2", &["hi", "u_tail", "u_cold", "c_hi"], "return CONCAT44(a1 + a3,"),
+        ("bejoin_unreach_cold_ppc32_O2", &["hi", "u_tail", "u_cold", "c_hi"], "return CONCAT44(a1 + a3,"),
+        ("bejoin_unreach_thumb_be_O2", &["hi", "u_pool", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_eh_ppc32_O2", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_eh_arm32_be_O2", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_eh_arm32_be_O2_obj", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_hidden_ppc32_O2", HIDDEN, "return v1 + v2 + 1 + hi_c(a0,a1,a2,a3);"),
+        ("bejoin_unreach_hidden_arm32_be_O2", HIDDEN, "return v1 + v2 + 1 + hi_c(a0,a1,a2,a3);"),
+    ];
+    for (fixture, funcs, expect) in cases {
+        let bin = fixtures.join(fixture).to_str().unwrap().to_string();
+        let run = |extra: &[&str]| {
+            let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
+            args.extend_from_slice(extra);
+            let (out, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all {fixture} {extra:?} failed: {stderr}");
+            out
+        };
+        let body = |listing: &str, f: &str| {
+            let text = callrettype_functions(listing, &[f]);
+            text.split_once('\n').map(|(_, b)| b.trim().to_string()).unwrap_or_default()
+        };
+        let single = |f: &str, extra: &[&str]| {
+            let mut args = vec!["decompile", bin.as_str(), f, "--sleighpath", sp.as_str()];
+            args.extend_from_slice(extra);
+            let (out, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile {fixture} {f} failed: {stderr}");
+            out.trim().to_string()
+        };
+        let evidence = ["--option", "bejoin", "evidence"];
+        let (full, narrow) = (run(&[]), run(&evidence));
+        for f in funcs {
+            let text = body(&full, f);
+            assert!(!text.is_empty(), "{fixture}: {f} prints:\n{full}");
+            assert_eq!(text, body(&narrow, f), "{fixture}: {f} prints as with bejoin evidence:\n{full}");
+            assert_eq!(single(f, &[]), single(f, &evidence), "{fixture}: {f} prints as with bejoin evidence in a single decompile");
+        }
+        assert!(full.contains(expect), "{fixture}: expected `{expect}`:\n{full}");
+    }
+}
+
 /// gcc -Os on MIPS computes `chk`'s exit argument from `b + 1`, made in the
 /// delay slot of the branch to the RETURN (`beqz a0; addiu v1,a1,1`), so
 /// `return 0` finds `b + 1` in `$3` beside the zero in `$2`, the shape of a
