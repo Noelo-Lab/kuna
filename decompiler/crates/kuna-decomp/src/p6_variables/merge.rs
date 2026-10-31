@@ -1098,7 +1098,14 @@ pub struct Merge {
     /// (kuna) The outputs of the MULTIEQUALs `tiedphitrim` trimmed, with the
     /// storage each was trimmed away from.
     tied_phis: Vec<(VarnodeId, kuna_base::address::Address)>,
+    /// (kuna decompile-all watchdog) Budget probes taken, and whether one saw
+    /// the running drive's budget spent ([`Merge::budget`]).
+    probes: u32,
+    spent: bool,
 }
+
+/// (kuna decompile-all watchdog) How many merge steps between budget probes.
+const BUDGET_STRIDE: u32 = 64;
 
 impl Merge {
     /// Construct given a specific function's intersection cache (C++
@@ -1108,7 +1115,33 @@ impl Merge {
     /// here the affecting-ops `PcodeOpSet` is supplied already wired (it is the
     /// `StackAffectingOps` populated from the function's CALL/STORE ops).
     pub fn new(test_cache: HighIntersectTest) -> Merge {
-        Merge { test_cache, copy_trims: Vec::new(), proto_partial: Vec::new(), tied_phis: Vec::new() }
+        Merge {
+            test_cache,
+            copy_trims: Vec::new(),
+            proto_partial: Vec::new(),
+            tied_phis: Vec::new(),
+            probes: 0,
+            spent: false,
+        }
+    }
+
+    /// (kuna decompile-all watchdog) An error once the running drive's budget
+    /// is spent. Each merge pass is a single action, which the action loop
+    /// cannot interrupt, and on a function with millions of Varnodes one pass
+    /// runs for minutes; every merge step therefore probes, every
+    /// [`BUDGET_STRIDE`]th one asking the clock, and once a probe has seen the
+    /// budget spent every later step fails at once. The merge actions drop the
+    /// error and the drive reports the budget.
+    pub(crate) fn budget(&mut self) -> KunaResult<()> {
+        if !self.spent {
+            self.probes = self.probes.wrapping_add(1);
+            self.spent = self.probes % BUDGET_STRIDE == 0
+                && crate::decompile_drive::deadline_passed_in("variable merging");
+        }
+        if self.spent {
+            return Err(KunaError::lowlevel("variable merging stopped at the function's budget"));
+        }
+        Ok(())
     }
 
     /// Borrow the intersection-test cache.
@@ -1124,6 +1157,7 @@ impl Merge {
         self.proto_partial.clear();
         self.tied_phis.clear();
         self.test_cache.affecting_ops_mut().clear();
+        self.spent = false;
     }
 
     /// Number of accumulated trim COPYs (C++ `copyTrims.size()`).  The persistent
@@ -1178,6 +1212,7 @@ impl Merge {
         if high1 == high2 {
             return Ok(true); // Already merged
         }
+        self.budget()?;
         if MergeIntersect::intersection(ctx, &mut self.test_cache, high1, high2)
             || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high1, high2)
         {
@@ -1210,6 +1245,7 @@ impl Merge {
         for high in order {
             let mut merged_into = false;
             for &out in &highstack {
+                self.budget()?;
                 let spec_ok = Self::merge_test_speculative(ctx, out, high)
                     && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, out, high)
                     && !crate::kuna_fputruncviews::keeps_root_alone(ctx, out, high);
@@ -1319,6 +1355,7 @@ impl Merge {
                 if ctx.op_code(op) != opc {
                     continue;
                 }
+                self.budget()?;
                 if opc == OpCode::CPUI_COPY && crate::kuna_fputruncviews::keeps_apart(ctx, op) {
                     continue;
                 }
@@ -1417,6 +1454,7 @@ impl Merge {
             if ctx.op_is_call(op) {
                 continue;
             }
+            self.budget()?;
             let vn1 = ctx.op_out(op);
             if !Self::merge_test_basic(ctx, vn1) {
                 continue;
@@ -1471,6 +1509,7 @@ impl Merge {
             if !ctx.op_is_marker(op) || ctx.op_is_indirect_creation(op) {
                 continue;
             }
+            self.budget()?;
             if ctx.op_code(op) == OpCode::CPUI_INDIRECT {
                 self.merge_indirect(ctx, op)?;
             } else {
@@ -1775,6 +1814,7 @@ impl Merge {
             if !range.addrtied {
                 continue;
             }
+            self.budget()?;
             self.unify_address(ctx, &range.all_varnodes)?;
             for sub in &range.must_merge_ranges {
                 // (kuna divergence) A forced merge that intersects — a heavily-reused
@@ -1847,6 +1887,7 @@ impl Merge {
             }
         });
         for &vn in &isectlist {
+            self.budget()?;
             self.eliminate_intersect(ctx, vn, &blocksort)?;
         }
         Ok(())
