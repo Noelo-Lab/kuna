@@ -2593,6 +2593,15 @@ storage-backed or name-backed evidence was found
 body object, but the function-scope uniqueness invariant gives it a suffix
 instead of re-declaring the parameter's identifier.
 
+*(kuna perf)* Whether a high is a reference, piece or strict partial whose
+declaration belongs to a same-named sibling (the whole symbol, the storage local
+a `&symbol` reference points at, the group's owner) is answered from the
+function's named highs grouped by name once per declaration walk, each group in
+the high bank's own order (`printc.rs (SameNamed)`). Each test walks only its
+name's group instead of every high of the function, and finds the same first
+sibling it found before. With the other GH-1034 fixes in, serde-hkx's 174 KB
+deserializer drops from 238 s to 152 s, nearly all of it in these walks.
+
 **(angr) dedupvardecls — collapsing duplicate declarations.** kuna's
 declaration emitter walks HighVariables, not the upstream symbol table (which
 declares each Symbol exactly once), so many scalar HighVariables sharing one
