@@ -990,13 +990,15 @@ that record as its icon count. A TLS directory needs no step at all: UPX's own
 Every offset these rebuilds follow comes from the file, so each walk is bounded by
 the bytes the file holds. The loader-table scan reads only section bytes present in
 the file -- a section past the end of the file maps nothing, and one at the top of
-the address space does not wrap -- and reads at most two descriptors per four of
-them, about twice what an honest image needs. A
-resource tree that reaches one directory or data entry twice, which no linker writes
-and which lets a small tree fan out into an exponential walk, is refused, and the
-leaves it moves may not add up to more than the packed file. The output is laid out,
-and checked against the original length the PackHeader declares, before it is
-allocated.
+the address space does not wrap -- and reads at most two descriptors per four bytes
+of the file, about twice what an honest image needs; a trailer naming more than 256
+distinct DLLs is refused as unsupported, since UPX can pack more. A resource
+tree that reaches one directory or data entry twice is refused: UPX's packer writes
+the directory out afresh with every node once, even for an original whose linker
+shared a subtree, so only an edited file has one, and following it lets a small tree
+fan out into an exponential walk. The leaves it moves may not add up to more than
+the packed file. The output is laid out, and checked against the original length the
+PackHeader declares, before it is allocated.
 
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that

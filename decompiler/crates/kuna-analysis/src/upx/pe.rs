@@ -570,8 +570,8 @@ fn table_names_dlls(table: &[u32], base: u32, wanted: &BTreeSet<u32>) -> bool {
 fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxError> {
     let wanted: BTreeSet<u32> = dlls.iter().map(|d| d.name_off).collect();
     if wanted.len() > MAX_LOADER_DLLS {
-        return Err(corrupt(format!(
-            "trailer names {} DLLs, more than a loader table holds",
+        return Err(unsupported(format!(
+            "trailer names {} DLLs; this build follows loader tables of at most {MAX_LOADER_DLLS}",
             wanted.len()
         )));
     }
@@ -741,8 +741,10 @@ struct ResourceWalk {
 /// Depth-first walk of an `IMAGE_RESOURCE_DIRECTORY` tree. The depth cap is
 /// UPX's own three levels (type / name / language) plus slack; the tree is
 /// attacker-controlled, so a cycle must terminate the walk, and a directory or
-/// data entry reached twice -- which no linker writes, and which would let a
-/// small tree fan out into an exponential walk -- is refused.
+/// data entry reached twice is refused. UPX never writes one: its packer lays
+/// the directory out afresh with every node once, even when the original shared
+/// a subtree, and following one would let a small tree fan out into an
+/// exponential walk.
 fn walk_resource_dir(
     tree: &[u8],
     at: u32,
@@ -1105,6 +1107,18 @@ mod tests {
             let err = loader_import_table(&img, &dlls(&[0x80])).expect_err("no loader table");
             assert!(format!("{err}").contains("cannot find"), "{err}");
         }
+    }
+
+    /// More distinct DLLs than a candidate table is followed for is this
+    /// build's limit, not damage: UPX packs up to 4096 import descriptors, and
+    /// older releases any number.
+    #[test]
+    fn more_dlls_than_the_scan_follows_is_unsupported() {
+        let img_bytes = tiny_pe(&[0; 0x40]);
+        let img = Image::new(&img_bytes).unwrap();
+        let wanted: Vec<u32> = (0..=MAX_LOADER_DLLS as u32).map(|k| 0x40 + 20 * k).collect();
+        let err = loader_import_table(&img, &dlls(&wanted)).expect_err("too many DLLs");
+        assert!(matches!(err, UpxError::Unsupported(_)), "{err}");
     }
 
     /// A section whose every word names a wanted DLL relative to the candidate
