@@ -147,6 +147,34 @@ collapse. For one header, `kuna_regionid.rs
    loop header, the attempt returns nothing and this header is removed from
    the live list — the inner loop must collapse first; the outer header is
    re-found on a later sweep.
+
+   *(kuna)* Most attempts end here, and the bail is decided before the
+   expensive steps. Every collapse restarts the sweep, so an outer header is
+   tried again after each inner loop collapses. CPython 3.11's
+   `_PyEval_EvalFrameDefault` (2,760 nodes, 75 loops) makes 6,445 attempts,
+   and 6,370 of them bail. Steps 1-2 run in this order:
+   - *Back edges*. They come from `find_loop_headers`'s depth-first walk of
+     the same graph (`KunaRegionIdentifier::back_edges`). No collapse happens
+     between that walk and the attempts, so step 1 does not walk the graph
+     again for its latching nodes.
+   - *Forward walk*. The slice's forward walk runs first, without building
+     the slice (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regiongraph.rs
+     (kuna_slice_visits)`). It stops at the first other live header it visits.
+     Pruning keeps every node that walk visits: each visited node is entered
+     from a visited node and has a successor that is visited or on the
+     frontier.
+   - *Slice*. Only then is the slice built and checked for a header, which
+     catches a header among the latching nodes.
+   - *Expansion*. The switch-case expansion runs only on a slice with no
+     other header. It only adds nodes, so any header the slice holds would
+     still be in the body and the attempt would still bail.
+
+   The slice itself (`kuna_regiongraph.rs (kuna_subgraph_between_nodes)`)
+   reads the cut of the head's in-edges off the graph. angr cuts them on a
+   copy of the whole graph each time; skipping the copy gives the same slice
+   (both are compared on random graphs). The regions, and so the output, are
+   unchanged: the same 6,445 attempts reach the same answers, and the
+   identification of that function drops from 423 s to 4.8 s.
 3. *Loop refinement* (`kuna_regionid.rs (KunaRegionIdentifier::refine_loop)`),
    which only runs when there is more than one exit (option
    `refine_loops_with_single_successor`, angr default false, would extend it
@@ -225,8 +253,9 @@ loop-refinement data is simply absent).
 
 *(kuna decompile-all watchdog)* One identification runs inside a single
 structuring action, which the action loop cannot interrupt, and on a big
-function's CFG it runs for minutes (CPython 3.11's `_PyEval_EvalFrameDefault`,
-62 KB, spends about 440 s in the cyclic phase). So the cyclic outer sweep,
+function's CFG it can still run long (before the step-2 ordering above,
+CPython 3.11's `_PyEval_EvalFrameDefault`, 62 KB, spent about 440 s in the
+cyclic phase). So the cyclic outer sweep,
 each loop header's `make_cyclic_region` attempt and each acyclic collapse first
 ask whether the drive's budget is spent (`kuna_regionid.rs (budget)`); once it
 is, the identification fails with a typed error naming `region
