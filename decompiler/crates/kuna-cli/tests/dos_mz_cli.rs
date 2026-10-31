@@ -32,6 +32,34 @@ fn dos_image(extra_header: &[u8]) -> Vec<u8> {
     header
 }
 
+/// A load module of 0x10004 bytes whose entry `0100:0000` (linear 0x11000
+/// once loaded at 0x1000) calls -0x1003 and returns far: IP 3 wraps inside the
+/// segment to `0100:F000`, linear 0x20000, past the 64 KiB line, where a
+/// decoder that ignored the segment would land on 0x0 (a 16-bit mask) or
+/// 0x10000 (the linear sum). `0100:F000` returns 7.
+fn segmented_dos_image() -> Vec<u8> {
+    let mut module = vec![0u8; 0x10004];
+    module[0x1000..0x1004].copy_from_slice(&[0xe8, 0xfd, 0xef, 0xcb]);
+    module[0x10000..0x10004].copy_from_slice(&[0xb8, 0x07, 0x00, 0xc3]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 7] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x14, 0x0000),
+        (0x16, 0x0100),
+        (0x18, 0x1c),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
 fn kuna(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).output().expect("run kuna")
 }
@@ -72,6 +100,26 @@ fn a_pklite_stub_is_named_on_load() {
     let path = written("dos-mz-pklite", &dos_image(b"PKLITE Copr. 1990"));
     let out = kuna(&["functions", path.to_str().unwrap()]);
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("PKLITE-compressed"));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("PKLITE-compressed") && stderr.contains("run `kuna unpack`"), "{stderr}");
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn a_near_call_wraps_inside_the_entry_code_segment() {
+    let path = written("dos-mz-segment", &segmented_dos_image());
+    let exe = path.to_str().unwrap();
+
+    let functions = kuna(&["functions", exe, "--json"]);
+    let listing = String::from_utf8_lossy(&functions.stdout);
+    assert!(functions.status.success(), "{listing}\n{}", String::from_utf8_lossy(&functions.stderr));
+    assert!(listing.contains("\"sub_20000\""), "the wrapped call target is missing: {listing}");
+    assert!(!listing.contains("\"sub_10000\""), "the linear sum is not the target: {listing}");
+
+    let out = kuna(&["decompile-all", exe, "--addr", "0x11000"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("sub_20000();"), "{text}");
+    assert!(text.contains(" = 3;"), "the CALL pushes IP 3, not the linear low half 0x1003: {text}");
     std::fs::remove_file(&path).unwrap();
 }

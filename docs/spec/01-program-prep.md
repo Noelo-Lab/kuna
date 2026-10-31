@@ -854,10 +854,18 @@ first module byte; an entry outside the module is refused. The dispatcher
 the relocated bytes to the raw-image path as one in-memory `CODE` mapping, with
 the `x86:LE:16:Real Mode:default` language unless the caller names another and
 the entry as its seed, so `rawdiscover` widens the inventory from it and the
-entry is reported as the image's. The header's minimum allocation is not mapped:
-a flow into uninitialized memory is a flow into nothing, not into zeros that
-decode as `ADD [BX+SI],AL`. A PKLITE or LZEXE stub is named on load, since its
-code is a decompressor in front of a packed body (issue #1288). Surfaces that
+entry is reported as the image's. It then states the code segments the image
+names to the 16-bit x86 decoder
+(`decompiler/crates/kuna-analysis/src/loader/kuna_realmodecs.rs (paint)`): the
+entry's CS from its `CS:IP`, and, for every relocation whose word is the segment
+of a far `CALL`/`JMP ptr16:16` (`9a`/`ea`, offset, segment) with a target in the
+module, that segment at the target (`MzImage::code_segments`). A segment holds
+from its point up to the next one, so a near branch in the entry's segment
+wraps IP inside that segment instead of taking the linear sum. The header's
+minimum allocation is not mapped: a flow into uninitialized memory is a flow
+into nothing, not into zeros that decode as `ADD [BX+SI],AL`. A PKLITE or LZEXE
+stub is named on load, since its code is a decompressor in front of a packed
+body (issue #1288); the note sends a PKLITE file to `kuna unpack`. Surfaces that
 need an `object::File` refuse an `MZ` input with a capability error, as they do
 a TE.
 

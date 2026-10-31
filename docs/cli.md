@@ -1131,11 +1131,14 @@ kuna decompile-project GAME.EXE -o out/
 ```
 
 Addresses are linear real-mode addresses, `segment * 16 + offset` with the load
-segment added. Only the load module is mapped: the header, any overlay past the
-image size, and the uninitialized memory the header asks for are not. A file
-packed with PKLITE or LZEXE loads too, but its code is the decompressor stub and
-a packed body, so kuna says so on stderr; unpack it first (for example with
-`deark -m pklite`). `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
+segment added. The decoder is told the entry's code segment and the segment of
+every relocated far call or jump target, so a near branch wraps inside its
+segment as the CPU's does. Only the load module is mapped: the header, any
+overlay past the image size, and the uninitialized memory the header asks for
+are not. A file packed with PKLITE or LZEXE loads too, but its code is the
+decompressor stub and a packed body, so kuna says so on stderr; unpack it first
+(`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
+`decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
 `decompile-project` and the console support MZ input; `strings`, `xrefs`,
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
 object-file view and refuse it with a capability error, as for a TE.

@@ -38,6 +38,10 @@ pub struct MzImage {
     pub skipped_relocations: usize,
     /// A recognized executable packer whose stub this image is.
     pub packer: Option<&'static str>,
+    /// The code segments the image states, as `(linear, CS)`: the entry's
+    /// `CS:IP`, and the target of every far `CALL`/`JMP ptr16:16` whose
+    /// segment word a relocation names, when it lies in the module.
+    pub code_segments: Vec<(u64, u16)>,
 }
 
 fn word(bytes: &[u8], off: usize) -> u16 {
@@ -117,6 +121,7 @@ impl MzImage {
         let table = usize::from(word(bytes, 0x18));
         let mut relocations = 0;
         let mut skipped_relocations = 0;
+        let mut sites = Vec::new();
         for i in 0..nrelocs {
             let at = table + 4 * i;
             let Some(entry) = bytes.get(at..at + 4) else {
@@ -129,6 +134,7 @@ impl MzImage {
                     let value = u16::from_le_bytes([slot[0], slot[1]]).wrapping_add(MZ_LOAD_SEGMENT);
                     slot.copy_from_slice(&value.to_le_bytes());
                     relocations += 1;
+                    sites.push(site);
                 }
                 None => skipped_relocations += 1,
             }
@@ -143,6 +149,11 @@ impl MzImage {
                 module.len()
             )));
         }
+        let entry_cs = MZ_LOAD_SEGMENT.wrapping_add(word(bytes, 0x16));
+        let mut code_segments = vec![(entry, entry_cs)];
+        code_segments.extend(far_targets(&module, base, &sites));
+        code_segments.sort_unstable();
+        code_segments.dedup();
         Ok(MzImage {
             module,
             base,
@@ -151,8 +162,25 @@ impl MzImage {
             relocations,
             skipped_relocations,
             packer: packer(bytes),
+            code_segments,
         })
     }
+}
+
+/// The `(linear, CS)` target of each far `CALL`/`JMP ptr16:16` (`9a`/`ea`
+/// followed by offset and segment) whose segment word sits at a relocated
+/// `site`, when the target lies in the module.
+fn far_targets<'a>(module: &'a [u8], base: u64, sites: &'a [usize]) -> impl Iterator<Item = (u64, u16)> + 'a {
+    let end = base + module.len() as u64;
+    sites.iter().filter_map(move |&site| {
+        let opcode = *module.get(site.checked_sub(3)?)?;
+        if !matches!(opcode, 0x9a | 0xea) || site + 2 > module.len() {
+            return None;
+        }
+        let segment = word(module, site);
+        let target = u64::from(segment) * 16 + u64::from(word(module, site - 2));
+        (base..end).contains(&target).then_some((target, segment))
+    })
 }
 
 #[cfg(test)]
@@ -195,6 +223,14 @@ mod tests {
         assert_eq!(mz.module.len(), 0x24, "the overlay past the image is not mapped");
         assert_eq!(&mz.module[6..8], &0x1002u16.to_le_bytes());
         assert_eq!((mz.relocations, mz.skipped_relocations, mz.packer), (1, 0, None));
+        assert_eq!(mz.code_segments, vec![(0x10000, 0x1000), (0x10020, 0x1002)]);
+    }
+
+    #[test]
+    fn a_far_target_outside_the_module_states_no_segment() {
+        let mut bytes = image();
+        bytes[0x24..0x26].copy_from_slice(&0x0100u16.to_le_bytes());
+        assert_eq!(MzImage::parse(&bytes).unwrap().code_segments, vec![(0x10000, 0x1000)]);
     }
 
     #[test]

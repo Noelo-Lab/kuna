@@ -4012,11 +4012,15 @@ pub fn bootstrap_from_mz_bytes(
     let image = MzImage::parse(bytes)
         .map_err(|error| KunaError::lowlevel(format!("{}; {MZ_RAW_IMAGE_HINT}", error.explain())))?;
     if let Some(packer) = image.packer {
+        let unpack = match packer {
+            "PKLITE" => "run `kuna unpack`",
+            _ => "for example with `deark -m lzexe`",
+        };
         kuna_base::notes::say_once(
             path,
             &format!(
                 "[kuna mz] {path}: {packer}-compressed; its code is the decompressor stub and \
-                 a packed body, so unpack it first (for example `deark -m pklite`)"
+                 a packed body, so unpack it first ({unpack})"
             ),
         );
     }
@@ -4040,6 +4044,9 @@ pub fn bootstrap_from_mz_bytes(
         spec_roots,
         Some(image.module),
     )?;
+    if let Some(space) = program.analysis_code_space.clone() {
+        kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
+    }
     program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
     Ok(program)
 }
