@@ -47,13 +47,14 @@ pub struct TypeOp {
     /// Cached pcode-op properties for this op-code (C++ `TypeOp::opflags`,
     /// the `PcodeOp::*` flag bits `setOpcode` ORs in).
     pub flags: uint4,
-    /// Symbol denoting this operation (C++ `TypeOp::name`).
-    pub name: String,
+    /// Symbol denoting this operation (C++ `TypeOp::name`).  Every op holds its
+    /// own TypeOp, so the architecture's static names are borrowed, not copied.
+    pub name: std::borrow::Cow<'static, str>,
 }
 
 impl TypeOp {
     /// Construct an opcode descriptor.
-    pub fn new(opcode: OpCode, flags: uint4, name: impl Into<String>) -> TypeOp {
+    pub fn new(opcode: OpCode, flags: uint4, name: impl Into<std::borrow::Cow<'static, str>>) -> TypeOp {
         TypeOp { opcode, flags, name: name.into() }
     }
 
