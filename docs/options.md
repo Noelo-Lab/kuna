@@ -1333,6 +1333,12 @@ Three tiers:
 | large global initializer exhausts memory during heritage | [`globalcallranges`](#globalcallranges) |
 | tiny constructors cause a quadratic number of global call guards | [`globalcallranges`](#globalcallranges) |
 | a function with many global assignments uses gigabytes before emitting C | [`globalcallranges`](#globalcallranges) |
+| a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls) |
+| decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls) |
+| thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls) |
+| a huge function exhausts memory during heritage | [`prunedssa`](#prunedssa) |
+| heritage builds millions of INDIRECTs and MULTIEQUALs that dead-code removal deletes | [`prunedssa`](#prunedssa) |
+| a mid-sized function with thousands of calls and string-instruction loops takes gigabytes to decompile | [`prunedssa`](#prunedssa) |
 
 ## Toggleable transforms
 
@@ -4065,6 +4071,22 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Keep it on for initializers that write many globals and call small constructors at distinct constant destinations. Flip off to compare the original all-globals-at-every-call guard placement. Unknown callee bodies and unresolved or overlapping actual pointers retain their existing guards.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option globalcallranges off`
+
+### `readonlycalls` -- on | off, default `on`
+
+- **Symptoms:** a function that reads many constant globals between calls exhausts memory during heritage; decompile of a huge function is killed before the first jump table is recovered; thousands of INDIRECTs over read-only globals survive in a large function's IR.
+- **What it does:** In a heritage pass that would guard at least 65,536 read-only-range and call pairs, give a call no INDIRECT guard over a read-only memory range the function never writes. A callee cannot change memory the image maps without write permission, so every read of such a range sees the value it had at entry and needs no definition per call. Upstream guards the range at every call with an unknown effect anyway: one INDIRECT per read-only global per call, plus the MULTIEQUALs their writes force at every join, and on a persistent range they survive dead-code removal; a large function that reads thousands of constants through thousands of calls builds millions of them. The threshold is the pass's calls times its new, read, read-only ranges in the default data space; below it every call keeps upstream's guard, whose chain the printer uses as a barrier (it keeps a copy of a read-only literal split per element, and an expression over a constant global from being printed again after a call). A read-only range the function itself writes keeps its guards, as does any range whose read-only property is unknown.
+- **When to flip:** On by default. Flip off to restore one call guard per read-only range per call in every function, for example to compare the SSA heritage builds for a large constant table read across calls.
+- **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
+- **Example:** `option readonlycalls off`
+
+### `prunedssa` -- on | off, default `on`
+
+- **Symptoms:** a huge function exhausts memory during heritage; heritage builds millions of INDIRECTs and MULTIEQUALs that dead-code removal deletes; a mid-sized function with thousands of calls and string-instruction loops takes gigabytes to decompile.
+- **What it does:** Build pruned SSA for ranges that are neither persistent nor address-tied: place a stack range's call INDIRECT only where a read of the range can follow the call, and a stack or unique-space MULTIEQUAL only at a join where the range is live. Liveness is a backward walk over the CFG from the range's reads, stopped by its full writes; calls and other INDIRECTs pass it through. The reads the guard pass adds itself count: input trials and overlapping outputs at their call, function output trials at every return. Pruning happens only on a pass whose dead-code removal may already delete those markers, and marks the space as having lost dead code, so a later read of the range restarts the function exactly as a dead-code removal would. Every marker it skips is one ActionDeadCode deletes right after the pass, so the IR after dead-code removal is the same up to op and varnode numbering, without the cross product of stack slots or reused unique temporaries times calls and joins that minimal SSA builds first. Register ranges keep every join, because the prototype passes read them before dead-code removal, and address-tied ranges keep every marker, because their guards survive dead-code removal once a direct write reaches them.
+- **When to flip:** On by default. Flip off to build minimal SSA, which places every guard and join and leaves their removal to ActionDeadCode, for example when comparing heritage's intermediate IR with upstream.
+- **Where / provenance:** P3/ssa-construction · kuna · performance · gh-1034
+- **Example:** `option prunedssa off`
 
 ## Programmatic use
 
