@@ -407,6 +407,9 @@ pub struct Funcdata {
     /// failed, and why, instead of blaming structuring (`PrintC::emit_function_document`).
     kuna_pipeline_failure: Option<String>,
     pub(crate) kuna_call_mechanisms: crate::kuna_callmechanisms::State,
+    /// The \e fspec handles this function's call-spec annotations registered
+    /// in the fspec-space side table, released when the function is dropped.
+    pub(crate) kuna_fspec_handles: Vec<kuna_base::types::uintb>,
     /// (kuna) The flow overrides `FlowInfo::process` asked for and
     /// [`Self::override_flow`] refused, as `(instruction, flow type, reason)`.
     ///
@@ -664,6 +667,16 @@ pub struct Funcdata {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct JumpTableId(pub u32);
 
+/// Releases the fspec-space entries the function's call specs registered: the
+/// handles are process-unique, so nothing else names them once it is gone.
+impl Drop for Funcdata {
+    fn drop(&mut self) {
+        for handle in self.kuna_fspec_handles.drain(..) {
+            kuna_base::space::fspec_unregister(handle);
+        }
+    }
+}
+
 impl Funcdata {
     /// C++ `Funcdata::Funcdata` (`funcdata.cc:34`).
     ///
@@ -792,6 +805,7 @@ impl Funcdata {
             kuna_field_calls: Vec::new(),
             kuna_pipeline_failure: None,
             kuna_call_mechanisms: Default::default(),
+            kuna_fspec_handles: Vec::new(),
             kuna_rejected_flow: Vec::new(),
             kuna_directive_symbols: Vec::new(),
             kuna_prior_names: Default::default(),
