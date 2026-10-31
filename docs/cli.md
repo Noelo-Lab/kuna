@@ -2297,8 +2297,35 @@ stub whose forwarding jump the walk could not decode), the answer is still for t
 selected address, and stderr says so with
 `warning: "NAME" also names 0x...; this answer is for 0x... only, query that address for the rest`.
 
-Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
-plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+Flags: `--json`, `--kind call,jump,data,read,write,pointer` (repeatable-by-comma
+filter), plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+
+**A pointer stored in data is a `pointer` row, not an instruction xref.** The
+`xrefs` rows are references an instruction makes. A word in `.data` that holds a
+function's address (an initialized function pointer, a vtable or callback table
+entry) is a different fact, and no instruction makes it, so it is reported apart:
+the image's own rebase/relocation metadata lists every such word, and `--to`
+answers each word holding the target's address, `--from` each word inside a data
+target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
+opcodes, ELF dynamic relocations, PE base relocations. `data_refs_coverage` names
+it, and is `none` when the image lists no pointer relocations (a non-PIE ELF, a PE
+without `.reloc`, a relocatable object): there an empty `data_refs` means "not
+enumerated", not "none stored". A word bound to an import is not listed; it holds
+an address of another image. On x86 a relocated word inside a decoded instruction
+that references the same address (a 32-bit PE's `push offset f`) is that
+instruction's row, not a stored pointer, and is left out; a word past the end of
+that instruction, such as a pointer table in `.text`, is still listed.
+
+```
+kuna xrefs fixture --to _audit_target
+# 1 reference to _audit_target @ 0x1000003c8
+0x1000003e4	call	_audit_direct_call+0x8	bl 0x1000003c8
+# 1 data-held pointer to _audit_target @ 0x1000003c8 (chained-fixups)
+0x100004008	pointer	_audit_func_ptr
+```
+
+`--kind` filters these rows too: `--kind pointer` gives only them, any other
+`--kind` list leaves them out.
 
 `--json` emits
 
@@ -2310,8 +2337,15 @@ plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
             "from_address","from_address_hex","to_address","to_address_hex",
             "from_function": {"name","address","address_hex"},
             "to_function":   {"name","address","address_hex"},
-            "instruction": "CALL 0x1030"}]}
+            "instruction": "CALL 0x1030"}],
+ "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|none",
+ "data_refs_count": N,
+ "data_refs": [{"kind": "pointer", "from_address","from_address_hex","from_name",
+                "to_address","to_address_hex","to_name","width","source"}]}
 ```
+
+`count` and `xrefs` are the instruction rows alone; `data_refs` carries the stored
+pointers, `from_address` being the word and `from_name` the data object holding it.
 
 Both ends of every edge are always spelled out, so a consumer never has to infer
 which one `address` meant; `address` itself is the end the query did not already
