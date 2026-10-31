@@ -89,11 +89,14 @@ and a code segment need not start on a 64 KiB boundary. The context variable
 `realCS*16 + ((IP + displacement) & 0xFFFF)`, and it commits `realCS` to that
 target (a SLEIGH `globalset`), so a callee decodes in its caller's segment. A
 far `CALL`/`JMP ptr16:16` commits the segment it names to its target. A near
-`CALL` pushes IP, not the low half of the linear address. An instruction
-outside the 64 KiB above `realCS*16` cannot be in that segment: there a near
-branch is the linear sum of the next address and the displacement, which is
-exact unless the branch was encoded through the wrap, and `CALL` pushes the low
-16 bits of its next address. A committed segment holds from its target up to
+`CALL` pushes IP, not the low half of the linear address, and the CS a `CS:`
+override or a near indirect `CALL`/`JMP` reads is `realCS`, so a `jmp
+[cs:bx+table]` reads its table from its own segment (upstream assumed the
+instruction's 64 KiB block). An instruction outside the 64 KiB above
+`realCS*16` cannot be in that segment: there a near branch is the linear sum of
+the next address and the displacement, which is exact unless the branch was
+encoded through the wrap, `CALL` pushes the low 16 bits of its next address,
+and CS is upstream's 64 KiB block. A committed segment holds from its target up to
 the next address the segment was set at, so this bound is what keeps a far
 target's segment from reaching unrelated code above it. With the default CS 0
 the first 64 KiB wrap as the GH-7418 mask did (a `.COM` program's

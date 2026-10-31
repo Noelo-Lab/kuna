@@ -6,10 +6,11 @@
 # A real-mode address is the linear CS*16 + IP. A near branch wraps IP inside
 # its 64 KiB segment, which need not start on a 64 KiB boundary, and passes
 # realCS on to its target; a far CALL/JMP ptr16:16 states its target's. A near
-# CALL pushes IP. An instruction outside the 64 KiB above realCS*16 cannot be
-# in that segment, so there the branch takes the linear sum of its next address
-# and displacement (exact unless it was encoded through the wrap) and CALL
-# pushes the low 16 bits of its next address.
+# CALL pushes IP, and CS (a CS: override, a near indirect CALL/JMP) reads
+# realCS. An instruction outside the 64 KiB above realCS*16 cannot be in that
+# segment, so there the branch takes the linear sum of its next address and
+# displacement (exact unless it was encoded through the wrap), CALL pushes the
+# low 16 bits of its next address, and CS is ia.sinc's 64 KiB block guess.
 #
 # In 16-bit protected mode an address is selector*0x10000 + offset and a near
 # branch wraps the offset inside its selector.
@@ -25,12 +26,15 @@
 @define REAL_IP_FITS "(1 / ((($(REAL_IP) >> 16) & 0xFFFF) + 1))"
 
 realNextIP: nextIP is epsilon [ nextIP = (inst_next - (realCS << 4) * $(REAL_IP_FITS)) & 0xFFFF; ] { export *[const]:2 nextIP; }
+# CS, or where realCS cannot hold the instruction, the 64 KiB block guess of ia.sinc's currentCS.
+realCurrentCS: segv is epsilon [ segv = realCS * $(REAL_IP_FITS) + ((inst_next >> 4) & 0xF000) * (1 - $(REAL_IP_FITS)); ] { export *[const]:2 segv; }
 
 rel8: reloc is simm8 & protectedMode=0 [ reloc = inst_next + simm8 - (((($(REAL_IP) + simm8) >> 16) << 16) * $(REAL_IP_FITS)); globalset(reloc, realCS); ] { export *[ram]:$(SIZE) reloc; }
 rel16: reloc is simm16 & protectedMode=0 [ reloc = inst_next + simm16 - (((($(REAL_IP) + simm16) >> 16) << 16) * $(REAL_IP_FITS)); globalset(reloc, realCS); ] { export *[ram]:$(SIZE) reloc; }
 rel16: reloc is simm16 & protectedMode=1 [ reloc = ((inst_next >> 16) << 16) | ((inst_next + simm16) & 0xFFFF); ] { export *[ram]:$(SIZE) reloc; }
-# ptr1616 is only reached with opsize=0 (CALLF/JMPF).
+# ptr1616 is only reached with opsize=0 (CALLF/JMPF), and VEX encodings do not exist in real mode.
 ptr1616: reloc is protectedMode=0 & opsize=0 & imm16; j16 [ reloc = j16*0x10 + imm16; realCS = j16; globalset(reloc, realCS); ] { CS = j16; export *[ram]:4 reloc; }
+currentCS: CS is protectedMode=0 & vexMode=0 & CS & realCurrentCS { CS = realCurrentCS; export CS; }
 
 with : lockprefx=0 {
 :CALL rel16 is $(LONGMODE_OFF) & vexMode=0 & addrsize=0 & opsize=0 & protectedMode=0 & byte=0xe8; rel16 & realNextIP { push22(realNextIP); call rel16; }

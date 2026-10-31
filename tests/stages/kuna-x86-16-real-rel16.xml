@@ -16,15 +16,18 @@
         00100  e8 00 90        CALL 0x9103   ; CS 0, IP 0x0103 - 0x7000 wraps
         40000  9a f8 00 58 2b  CALLF 2b58:00f8 (0x2b678)
         40005  9a f8 00 58 4b  CALLF 4b58:00f8 (0x4b678)
+        4000a  9a 80 01 58 2b  CALLF 2b58:0180 (0x2b700)
         2b678  e8 ae 93        CALL 0x34a29  ; CS 0x2b58, IP 0x00fb - 0x6c52 wraps
         4b678  e8 ae 93        CALL 0x54a29  ; CS 0x4b58, the same wrap
         5b680  e8 8d 49        CALL 0x60010  ; CS 0 cannot hold 0x5b680: linear sum
+        2b700  2e a1 10 00     MOV AX,CS:[0x10]  ; reads 2b58:0010, linear 0x2b590
 
     Stage: P1/P2 decode (x86 SLEIGH spec fix, no option). Without realCS the
     mask decodes 0x4a29 for both wrapped calls, the linear sum 0x24a29 and
     0x44a29, and the linear sum also decodes the first call to -0x6efd. A near
     CALL pushes IP inside its segment (0x00fb), not the low half of its linear
-    address (0xb67b).
+    address (0xb67b), and a CS: override reads CS 0x2b58, not the 64 KiB block
+    guess 0x2000.
 -->
 <bytechunk space="ram" offset="0x100">
 e80090c3
@@ -39,7 +42,10 @@ e8ae93c3
 b80700c3
 </bytechunk>
 <bytechunk space="ram" offset="0x40000">
-9af800582b9af800584bcb
+9af800582b9af800584b9a8001582bcb
+</bytechunk>
+<bytechunk space="ram" offset="0x2b700">
+2ea11000cb
 </bytechunk>
 <bytechunk space="ram" offset="0x4b678">
 e8ae93cb
@@ -62,6 +68,7 @@ b80700c3
 <symbol space="ram" offset="0x54a29" name="m"/>
 <symbol space="ram" offset="0x5b680" name="p"/>
 <symbol space="ram" offset="0x60010" name="q"/>
+<symbol space="ram" offset="0x2b700" name="r"/>
 </binaryimage>
 <script>
   <com>disassemble 0x100 0x104</com>
@@ -77,6 +84,9 @@ b80700c3
   <com>lo fu f</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu r</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>lo fu k</com>
   <com>decompile</com>
   <com>print C</com>
@@ -90,4 +100,6 @@ b80700c3
 <stringmatch name="real-rel16 #6: com_main, f and k call what they wrap to" min="3" max="3">^  (com_helper|g|m)\(\);$</stringmatch>
 <stringmatch name="real-rel16 #7: the CALLs in f and k push IP 0x00fb, not the linear low half 0xb67b" min="2" max="2">= 0xfb;$</stringmatch>
 <stringmatch name="real-rel16 #8: no CALL pushes the linear low half" min="0" max="0">= 0xb67b;$</stringmatch>
+<stringmatch name="real-rel16 #9: in CS 0x2b58 a CS: override reads 2b58:0010 (linear 0x2b590)" min="1" max="1">segment\(0x2b58,0x10\)|2b590</stringmatch>
+<stringmatch name="real-rel16 #10: the CS: read does not use the 64 KiB block guess 0x2000" min="0" max="0">segment\(0x2000,0x10\)|0x20010|_20010</stringmatch>
 </decompilertest>
