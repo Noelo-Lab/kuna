@@ -1544,7 +1544,9 @@ range heritage's guard placement visits and before each
 address the written-slot guard guards, every 256 new values a pointer walk of
 `stackstoreguard` visits, every 64 steps of a variable-merging pass
 (`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
-chapter 06), and again after the final layout checks: the drive
+chapter 06), before each region attempt of region identification (chapter
+07), before each call-argument trial `ActionActiveParam` scores and every 256
+steps of the trial's use walks (chapter 04), and again after the final layout checks: the drive
 publishes its deadline to
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
 so a walk inside one pass gives up rather than run past it. Flow-time
@@ -1561,8 +1563,13 @@ ran out: the first probe to see the expiry records its site
 and later ones leave it, so the site is the innermost polled loop that was
 running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
-(ActionPool::budget_site)`), heritage, variable merging, region structuring, a
-store-reachability walk or a jump-table step. While a flow-time table is being recovered
+(ActionPool::budget_site)`), heritage, variable merging, region identification,
+region structuring, `action activeparam`'s trial scoring, a
+store-reachability walk or a jump-table step. A walk that recurses too often
+to read the clock at each step probes through
+`decompile_drive.rs (budget_probe)`, which reads it every 256th call and,
+once it has seen the budget spent, answers at once for the rest of the drive;
+it names no site, so the loop driving the walk names it. While a flow-time table is being recovered
 (`decompile_drive.rs (JumpTableScope)`) a site from inside that recovery — an
 action of the reduced `jumptable` pipeline, say — is suffixed with the indirect
 jump's address. Each drive starts with no site and restores the enclosing

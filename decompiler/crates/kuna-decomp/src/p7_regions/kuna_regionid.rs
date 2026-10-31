@@ -49,6 +49,16 @@ use crate::kuna_regiongraph::{
     KunaNodeKey, KunaNodePool, KunaNodeSet, KunaRegionGraph, NodeKind, RegionPayloadId,
 };
 
+/// (kuna decompile-all watchdog) An error once the running drive's budget is
+/// spent. One region identification over a big function's CFG runs for
+/// minutes inside a single structuring action, so every region attempt asks.
+fn budget() -> KunaResult<()> {
+    if crate::decompile_drive::deadline_passed_in("region identification") {
+        return Err(KunaError::lowlevel("kuna regionid: stopped at the function's budget"));
+    }
+    Ok(())
+}
+
 /// Fixpoint iteration cap: `~2*n^2`, computed in 64-bit (C++ `kunaGuardCap`).
 ///
 /// The caps exist only to turn a mis-ported guard into an error instead of a
@@ -1339,6 +1349,7 @@ impl KunaRegionIdentifier {
         let guard_max = kuna_guard_cap(g.num_nodes());
         loop {
             // Outer: iteratively find and make loop regions.
+            budget()?;
             guard += 1;
             if guard > guard_max {
                 return Err(KunaError::lowlevel(
@@ -1376,6 +1387,7 @@ impl KunaRegionIdentifier {
                     if !g.contains_node(node) {
                         continue;
                     }
+                    budget()?;
                     let region = self.make_cyclic_region(node, g)?;
                     match region {
                         None => {
@@ -1444,6 +1456,7 @@ impl KunaRegionIdentifier {
             let mut failed_region_attempts: BTreeSet<(KunaNodeId, KunaNodeId)> = BTreeSet::new();
             let mut inner_guard: int8 = 0;
             loop {
+                budget()?;
                 let made =
                     self.make_acyclic_region(head, &mut sub, secondary.as_mut(), &mut failed_region_attempts, cyc)?;
                 if !made {
