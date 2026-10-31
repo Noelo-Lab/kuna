@@ -227,7 +227,7 @@ def _build_script(binary, target, by_address, bfd_target, raw, out_path,
     lines = []
     image = _console_path(binary)
     if bfd_target:
-        lines.append("load file %s %s" % (bfd_target, image))
+        lines.append("load file %s %s" % (_console_path(bfd_target), image))
     else:
         lines.append("load file %s" % image)
 
