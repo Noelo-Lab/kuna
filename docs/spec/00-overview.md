@@ -1593,7 +1593,10 @@ the rest of the run should be its result and the facts later functions read,
 not its working state: a `Funcdata` releases on drop the fspec-space entries
 its call specs registered under their process-unique handles
 (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::drop)`),
-which were otherwise kept for every call site of every function, and the
+which were otherwise kept for every call site of every function; an inlined
+callee's handles pass to the function it is inlined into, whose cloned call
+ops still name them
+(`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::inline_flow)`), and the
 per-callee summaries a run caches are stored compactly (04, `calleedeadarg`). A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
