@@ -6575,6 +6575,12 @@ impl LaneDivide {
     pub fn traced(&self) -> impl Iterator<Item = VarnodeId> + '_ {
         self.tm.original_varnodes()
     }
+
+    /// (kuna) Would [`Self::apply`] refuse the transform before rewriting
+    /// anything ([`TransformManager::check_free_fanout`])?
+    pub fn check_free_fanout(&self, data: &Funcdata) -> KunaResult<()> {
+        self.tm.check_free_fanout(data)
+    }
 }
 
 /// Perform SubfloatFlow analysis triggered by FLOAT_FLOAT2FLOAT (C++
