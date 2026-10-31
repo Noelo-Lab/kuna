@@ -302,6 +302,11 @@ pub struct Architecture {
     /// [`Self::litpool_const`]; `None` on a path without a section table. The
     /// caller evidence reads the landing pads from them.
     pub eh_sections: Option<Rc<Vec<(String, u64, u64)>>>,
+    /// (kuna `bejoin callers`) The `(address, size)` of each function symbol
+    /// whose symbol table states a size, sorted by address, which the object
+    /// bootstrap installs beside [`Self::eh_sections`]; empty on a path without
+    /// a symbol table. The caller evidence ends a function's extent there.
+    pub func_sizes: Rc<Vec<(u64, u64)>>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` (inclusive) byte ranges
     /// of the loaded sections a program's own data objects live in, as the
     /// object loader classifies them (`ObjectLoadImage::data_object_ranges`).
@@ -2917,6 +2922,7 @@ impl Architecture {
             dynreloc_const: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
             eh_sections: None,
+            func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
             litpoolconst: false,
             infer_pointers: false,

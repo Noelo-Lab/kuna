@@ -94,3 +94,73 @@ fn a_front_end_without_sections_is_blind_only_to_a_cxx_image() {
     assert!(read(Some(&secs), false, true, &code, &mut { none }).blind, "setjmp unwinding names no pads");
     assert!(!read(Some(&secs), false, false, &code, &mut { none }).blind);
 }
+
+/// A `zLR` CIE at `at` (absolute LSDA pointers, PC-relative FDE addresses).
+fn cie_at() -> Vec<u8> {
+    vec![0, 0, 0, 16, 0, 0, 0, 0, 1, b'z', b'L', b'R', 0, 4, 0x7c, 0x41, 2, 0x00, 0x1b, 0]
+}
+
+/// An FDE at `at` for the function at `func`, under the CIE at `cie`, whose
+/// LSDA is at `lsda`.
+fn fde_at(at: u64, cie: u64, func: u64, lsda: u32) -> Vec<u8> {
+    let mut v = vec![0, 0, 0, 20];
+    v.extend((((at + 4) - cie) as u32).to_be_bytes());
+    v.extend((func.wrapping_sub(at + 8) as u32).to_be_bytes());
+    v.extend(0x40u32.to_be_bytes());
+    v.push(4);
+    v.extend(lsda.to_be_bytes());
+    v.extend([0, 0, 0]);
+    v
+}
+
+#[test]
+fn an_fde_past_a_zero_terminator_is_still_read() {
+    let mut eh = cie_at();
+    eh.extend([0, 0, 0, 0]);
+    let at = 0x1000 + eh.len() as u64;
+    eh.extend(fde_at(at, 0x1000, 0x2000, 0x3000));
+    let lsda = vec![0xff, 0xff, 0x01, 4, 0x04, 0x08, 0x10, 0];
+    let parts = vec![(0x1000, eh.clone()), (0x3000, lsda)];
+    let secs = sections(&[(".eh_frame", 0x1000, eh.len() as u64), (".gcc_except_table", 0x3000, 8)]);
+    let got = read(Some(&secs), false, false, &code, &mut image(&parts));
+    assert_eq!(got, Landing { pads: vec![0x2010], unknown: vec![], blind: false });
+}
+
+#[test]
+fn call_site_tables_longer_than_their_sections_blind_the_image() {
+    let mut eh = cie_at();
+    let mut table = vec![0u8; 0x10000];
+    for i in 0..64u64 {
+        let at = 0x1000 + eh.len() as u64;
+        eh.extend(fde_at(at, 0x1000, 0x2000, 0x10000 + 16 * i as u32));
+        table[16 * i as usize..16 * i as usize + 6].copy_from_slice(&[0xff, 0xff, 0x01, 0x80, 0x80, 0x04]);
+    }
+    let parts = vec![(0x1000, eh.clone()), (0x10000, table)];
+    let secs = sections(&[(".eh_frame", 0x1000, eh.len() as u64), (".gcc_except_table", 0x10000, 0x10000)]);
+    let got = read(Some(&secs), false, false, &code, &mut image(&parts));
+    assert!(got.blind, "{got:?}");
+}
+
+#[test]
+fn exception_data_without_its_tables_is_blind() {
+    let none = |_: u64, _: &mut [u8]| false;
+    let secs = sections(&[(".gcc_except_table", 0x3000, 16)]);
+    assert!(read(Some(&secs), false, false, &code, &mut { none }).blind);
+    assert!(read(Some(&sections(&[])), true, false, &code, &mut { none }).blind, "a C++ runtime with no table at all");
+}
+
+#[test]
+fn a_compact_entry_with_descriptors_leaves_its_function_unknown() {
+    let rel = |from: u64, to: u64| (to.wrapping_sub(from) & 0x7fff_ffff) as u32;
+    let mut exidx = Vec::new();
+    exidx.extend(rel(0x5000, 0x2000).to_be_bytes());
+    exidx.extend(rel(0x5004, 0x6000).to_be_bytes());
+    let mut extab = Vec::new();
+    extab.extend(0x80b0_b0b0u32.to_be_bytes());
+    extab.extend(0x0004_0000u32.to_be_bytes());
+    extab.extend(0x0000_0021u32.to_be_bytes());
+    let parts = vec![(0x5000, exidx), (0x6000, extab)];
+    let secs = sections(&[(".ARM.exidx", 0x5000, 8), (".ARM.extab", 0x6000, 12)]);
+    let got = read(Some(&secs), false, false, &code, &mut image(&parts));
+    assert_eq!(got, Landing { pads: vec![], unknown: vec![0x2000], blind: false });
+}

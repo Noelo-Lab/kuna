@@ -9,7 +9,8 @@
 //! reads the value's low word.
 //!
 //! A function is proven by its callers when it starts a symbol of the image's
-//! own symbol table (its extent runs to the next one), its instructions reach
+//! own symbol table (its extent runs to the next one, and no further than the
+//! size the symbol table states for it), its instructions reach
 //! a RETURN or a branch into another function, it writes the second register
 //! (itself, through a direct callee that does, or by an indirect or unknown
 //! call, which the ABI lets clobber it), and some direct call to it, inside
@@ -47,8 +48,9 @@
 //! the caller jumps through a register, whose table may reach that code. Nor
 //! does one whose walk reaches a word the caller loads as data (a Thumb
 //! literal pool's `0x0008` decodes as `movs r0,r1`), or, before any branch,
-//! the target of a direct call (a function whose symbol `strip -x` removed),
-//! nor any in a part of a function gcc's hot/cold partition names `f.cold`,
+//! the target of a direct call (a function whose symbol `strip -x` removed;
+//! the stated sizes keep a walk out of one no direct call reaches), nor any
+//! in a part of a function gcc's hot/cold partition names `f.cold`,
 //! whose blocks the hot part enters. A C++ landing pad, which the unwinder
 //! enters with the selector in the second register, ends a site the same way
 //! on any path; the pads come from the image's exception tables
@@ -272,7 +274,8 @@ pub(super) struct Index {
     code: Rc<AddrSpace>,
     /// Does the instruction set have register windows (SPARC)?
     windows: bool,
-    /// `[start, end)` of each symbol, sorted.
+    /// `[start, end)` of each symbol, sorted: to the next symbol, or to the
+    /// end of the size the symbol table states for it.
     funcs: Vec<(u64, u64)>,
     /// `(target, site)` of each direct call to a symbol, sorted.
     calls: Vec<(u64, u64)>,
@@ -326,13 +329,19 @@ impl Index {
         if starts.is_empty() {
             return None;
         }
+        let mut sizes: BTreeMap<u64, u64> = BTreeMap::new();
+        for &(a, n) in arch.func_sizes.iter() {
+            let size = sizes.entry(a & mask).or_insert(0);
+            *size = (*size).max(n);
+        }
         let funcs: Vec<(u64, u64)> = starts
             .iter()
             .enumerate()
             .filter_map(|(i, &s)| {
                 let (_, hi) = range_of(s)?;
                 let next = starts.get(i + 1).copied().unwrap_or(u64::MAX);
-                Some((s, next.min(hi.saturating_add(1))))
+                let end = next.min(hi.saturating_add(1));
+                Some((s, sizes.get(&s).map_or(end, |&n| end.min(s.saturating_add(n)))))
             })
             .collect();
         let mut calls = Vec::new();

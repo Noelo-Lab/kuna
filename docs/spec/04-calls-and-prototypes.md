@@ -2444,7 +2444,16 @@ before it, and its first instructions read its second argument; a path that
 branches to such a target is a tail call and ends there), nor any site in a
 symbol named `f.cold` or `f.cold.N` (gcc's hot/cold partition,
 `-freorder-blocks-and-partition`, puts the rare blocks there and enters each
-from the hot part, so the block after a call need not follow it). Nor does a
+from the hot part, so the block after a call need not follow it). A
+function's extent also ends where the size its symbol table states for it
+does (`st_size`, which the object bootstrap hands over beside the symbols),
+so a walk never leaves the function the call is in: with the local symbols
+discarded, the static function after `bl hi; __builtin_unreachable()` that
+only a pointer or another function's tail call reaches (`add 3,3,4`, its
+second argument), and the rare part of a hot/cold split whose `f.cold`
+symbol went with them (`mr 3,4`), lie past the size, and a site in such a
+part lies in no function at all. A symbol with no stated size runs to the
+next symbol, as before. Nor does a
 site whose walk reaches a C++ landing pad on any path: gcc and clang lay the
 `catch` block out right after `f(); __builtin_unreachable();` inside a `try`,
 and the unwinder enters it with the exception's selector in the second return
@@ -2465,9 +2474,19 @@ has C++ exception tables (an LSDA, a `.gcc_except_table` or `.ARM.extab`
 section, or a symbol such as `__gxx_personality_v0`, `_Unwind_Resume` or
 `__cxa_begin_catch`) this cannot place: an FDE with an LSDA for an address
 outside the code (a PowerPC object, whose `R_PPC_REL32` FDE addresses the
-loader does not apply), tables that do not parse, a front end with no section
-table, or `setjmp` unwinding (`_Unwind_SjLj_*`), whose pads a dispatch the
-tables do not name reaches. A caller whose RETURN the register
+loader does not apply), tables that do not parse, no `.eh_frame` or
+`.ARM.exidx` section at all, a front end with no section table, or `setjmp`
+unwinding (`_Unwind_SjLj_*`), whose pads a dispatch the tables do not name
+reaches. A zero length word inside `.eh_frame` (the terminator of one linked
+object's records, when another object's follow it) is skipped, not taken for
+the section's end, since the unwinder's binary-search table still finds the
+FDEs after it. An ARM compact entry kept in `.ARM.extab` counts as having no
+pads only when its descriptor list is empty (a zero word right after its
+unwind opcodes, for `__aeabi_unwind_cpp_pr0` as for `pr1` and `pr2`). The
+LSDAs' call-site tables are read within a budget of eight times the
+exception-table sections' size plus 1 MiB; tables that declare more make the
+image blind, so lengths a hostile image declares cost time linear in its
+tables, not in its tables times its functions. A caller whose RETURN the register
 reaches untouched (`return f();` in a function that keeps a frame, so it is no
 tail call, and SPARC's `call f; restore`) proves `f` once that caller is
 proven itself, which for such a caller means by its own callers: the path

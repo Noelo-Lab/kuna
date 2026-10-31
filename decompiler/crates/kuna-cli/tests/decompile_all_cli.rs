@@ -9912,15 +9912,20 @@ fn bejoin_callers_read_a_pair_alike_in_every_run() {
 /// `u_pool`'s `bl hi` holds `0x00080123`, which decodes as `movs r0,r1`. In
 /// `bejoin_unreach_eh.cc`, built for PowerPC and ARM big-endian (linked, and
 /// as an ARM object), the `catch` landing pad follows `u_eh`'s call of `hi`
-/// and compares the selector the unwinder leaves in the second register.
+/// and compares the selector the unwinder leaves in the second register. In
+/// `bejoin_unreach_hidden.c`, linked with the local symbols discarded, a
+/// static function that only a pointer or a tail call reaches follows each
+/// `bl`, and on PowerPC so does the rare block of a `.cold` part whose symbol
+/// went with them; the sizes the symbols state keep the walk out of both.
 /// `c_hi` reads only the first register of each, so every function prints as
 /// with `bejoin evidence`, in a whole `decompile-all` and a single
 /// `kuna decompile`.
 #[test]
 fn bejoin_callers_ignore_code_a_call_does_not_return_to() {
+    const HIDDEN: &[&str] = &["hi_p", "hi_t", "hi_c", "u_ptr", "u_tl", "u_cold", "c_hi"];
     let sp = specs();
     let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
-    let cases: [(&str, &[&str], &str); 8] = [
+    let cases: [(&str, &[&str], &str); 10] = [
         ("bejoin_unreach_ppc32_O1", &["hi", "hj", "u_unr", "u_sw", "c_hi"], "return CONCAT44(a1 + a3,"),
         ("bejoin_unreach_arm32_be_O2", &["hi", "u_pool", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
         ("bejoin_unreach_strip_ppc32_O2", &["hi", "u_tail", "u_cold", "c_hi"], "return CONCAT44(a1 + a3,"),
@@ -9929,6 +9934,8 @@ fn bejoin_callers_ignore_code_a_call_does_not_return_to() {
         ("bejoin_unreach_eh_ppc32_O2", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
         ("bejoin_unreach_eh_arm32_be_O2", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
         ("bejoin_unreach_eh_arm32_be_O2_obj", &["hi", "u_eh", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+        ("bejoin_unreach_hidden_ppc32_O2", HIDDEN, "return v1 + v2 + 1 + hi_c(a0,a1,a2,a3);"),
+        ("bejoin_unreach_hidden_arm32_be_O2", HIDDEN, "return v1 + v2 + 1 + hi_c(a0,a1,a2,a3);"),
     ];
     for (fixture, funcs, expect) in cases {
         let bin = fixtures.join(fixture).to_str().unwrap().to_string();

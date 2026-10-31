@@ -9,7 +9,10 @@
 //! augmentation (PowerPC, MIPS, SPARC) and of each `.ARM.exidx` entry whose
 //! `.ARM.extab` data names a personality routine (ARM EHABI). An image whose
 //! tables say it has landing pads, but that this reader cannot place, is
-//! `blind`; a function whose LSDA does not decode is `unknown`.
+//! `blind`; a function whose LSDA does not decode is `unknown`. The call-site
+//! tables the LSDAs declare are read within a budget proportional to the
+//! tables' sections, past which the image is `blind`, so hostile lengths cost
+//! linear time.
 
 use std::collections::BTreeMap;
 
@@ -46,10 +49,14 @@ fn any_in(sorted: &[u64], lo: u64, hi: u64) -> bool {
 }
 
 /// The image's big-endian bytes, read through `read` a page at a time (a
-/// byte at a time on a page that does not read whole).
+/// byte at a time on a page that does not read whole), and how many bytes of
+/// call-site tables are still to be read (`budget`; `over` once one declared
+/// more).
 struct Mem<'a> {
     read: &'a mut dyn FnMut(u64, &mut [u8]) -> bool,
     pages: BTreeMap<u64, Vec<Option<u8>>>,
+    budget: u64,
+    over: bool,
 }
 
 impl Mem<'_> {
@@ -219,6 +226,11 @@ fn lsda(mem: &mut Mem, at: u64, func: u64, in_code: &dyn Fn(u64) -> bool) -> Opt
         return None;
     }
     let len = mem.uleb(&mut p)?;
+    if len > mem.budget {
+        mem.over = true;
+        return None;
+    }
+    mem.budget -= len;
     let end = p.checked_add(len)?;
     let mut pads = Vec::new();
     while p < end {
@@ -244,7 +256,8 @@ fn eh_frame(mem: &mut Mem, start: u64, end: u64, in_code: &dyn Fn(u64) -> bool, 
     while o + 4 <= end {
         let Some(len) = mem.word(o, 4) else { return false };
         if len == 0 {
-            break;
+            o += 4;
+            continue;
         }
         let Some(next) = o.checked_add(4 + len).filter(|&n| n <= end && len >= 4 && len != 0xffff_ffff) else { return false };
         let Some(id) = mem.word(o + 4, 4) else { return false };
@@ -304,7 +317,7 @@ fn exidx(mem: &mut Mem, start: u64, end: u64, in_code: &dyn Fn(u64) -> bool, out
         let Some(h) = mem.word(x, 4) else { return false };
         if h & 0x8000_0000 != 0 {
             let compact = match (h >> 24) & 0x7f {
-                0 => true,
+                0 => mem.word(x + 4, 4) == Some(0),
                 1 | 2 => mem.word(x + 4 * (1 + ((h >> 16) & 0xff)), 4) == Some(0),
                 _ => false,
             };
@@ -331,7 +344,11 @@ fn exidx(mem: &mut Mem, start: u64, end: u64, in_code: &dyn Fn(u64) -> bool, out
 /// section table), through `read` (big-endian bytes at an address). `named`
 /// says the image names a C++ personality routine or unwinder entry, and
 /// `sjlj` that it unwinds by `setjmp` (its pads come from a dispatch the
-/// tables do not name). `in_code` says an address lies in the code.
+/// tables do not name). `in_code` says an address lies in the code. An image
+/// with exception data (an LSDA, a `.gcc_except_table` or `.ARM.extab`
+/// section, `named` or `sjlj`) is blind when its tables do not parse, declare
+/// more call sites than the budget, are not there (no `.eh_frame` or
+/// `.ARM.exidx`), or it unwinds by `setjmp`.
 pub(super) fn read(
     sections: Option<&[(String, u64, u64)]>,
     named: bool,
@@ -344,7 +361,8 @@ pub(super) fn read(
         out.blind = named || sjlj;
         return out;
     };
-    let mut mem = Mem { read, pages: BTreeMap::new() };
+    let size = sections.iter().fold(0u64, |n, s| n.saturating_add(s.2));
+    let mut mem = Mem { read, pages: BTreeMap::new(), budget: size.saturating_mul(8).saturating_add(1 << 20), over: false };
     let mut found = false;
     let mut ok = true;
     for (name, start, size) in sections {
@@ -359,7 +377,8 @@ pub(super) fn read(
         || named
         || sjlj
         || sections.iter().any(|(n, _, _)| n.starts_with(".gcc_except_table") || n.starts_with(".ARM.extab"));
-    out.blind = present && (!ok || sjlj);
+    let tables = sections.iter().any(|(n, _, _)| n == ".eh_frame" || n.starts_with(".ARM.exidx"));
+    out.blind = present && (!ok || mem.over || sjlj || !tables);
     out.pads.sort_unstable();
     out.pads.dedup();
     out.unknown.sort_unstable();
