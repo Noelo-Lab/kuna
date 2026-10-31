@@ -136,6 +136,18 @@ fn is_mz(image: &[u8]) -> bool {
     matches!(image.get(..2), Some(b"MZ") | Some(b"ZM"))
 }
 
+/// A Windows or OS/2 program: `e_lfanew` names a `PE`, `NE`, `LE` or `LX`
+/// header. Its DOS stub may be PKLITE-compressed, but the program is the
+/// new-style executable, which PKLITE never packs.
+fn is_new_exe(image: &[u8]) -> bool {
+    let Some(&[a, b, c, d]) = image.get(0x3c..0x40) else {
+        return false;
+    };
+    let at = u32::from_le_bytes([a, b, c, d]) as usize;
+    image.get(at..at.saturating_add(4)) == Some(b"PE\0\0")
+        || matches!(image.get(at..at.saturating_add(2)), Some(b"NE" | b"LE" | b"LX"))
+}
+
 fn entry_bytes(image: &[u8], at: i64) -> Option<Vec<u8>> {
     let at = usize::try_from(at).ok().filter(|&a| a < image.len())?;
     let mut ep = image[at..image.len().min(at + EP_LEN)].to_vec();
@@ -148,6 +160,9 @@ fn entry_bytes(image: &[u8], at: i64) -> Option<Vec<u8>> {
 /// PKLITE writes), because it answers for files nobody asked to unpack.
 pub fn detect(image: &[u8]) -> bool {
     if is_mz(image) {
+        if is_new_exe(image) {
+            return false;
+        }
         let host = Exe::parse(image);
         let shape = stub::host_shape(&host);
         return shape != 0
@@ -203,6 +218,9 @@ struct Footer {
 }
 
 fn unpack_exe(image: &[u8]) -> Result<Unpacked, PkliteError> {
+    if is_new_exe(image) {
+        return Err(PkliteError::NotPacked);
+    }
     let mut host = Exe::parse(image);
     let patch = startup_patch(image, &host);
     if let Some(at) = patch {

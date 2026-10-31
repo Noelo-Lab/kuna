@@ -2819,8 +2819,9 @@ functions` goes from `count: 0` to 70, `main` included.
 Three packers are recognized, and which one is decided before anything is decoded,
 so the answer on a file that is none of them is unchanged. A **NEOLite** image
 announces itself with a `.NEOpack` section that owns the entry point; a **PKLITE**
-DOS program with its decompressor stub at the DOS entry point; everything else goes
-to the UPX arm, whose `no UPX PackHeader found` is still what an unpacked file gets.
+DOS program with its decompressor stub at the DOS entry point (a PE, NE, LE or LX
+program whose DOS stub is one is not); everything else goes to the UPX arm, whose
+`no UPX PackHeader found` is still what an unpacked file gets.
 
 It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
 wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it

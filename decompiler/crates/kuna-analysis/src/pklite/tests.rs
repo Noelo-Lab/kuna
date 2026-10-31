@@ -95,6 +95,26 @@ fn files_without_a_stub_are_not_packed() {
     assert_eq!(unpack(&com).err(), Some(PkliteError::NotPacked));
 }
 
+/// A Windows program whose DOS stub is a PKLITE file is the Windows program,
+/// so it goes to the other unpackers and gets no PKLITE hint.
+#[test]
+fn a_pklite_dos_stub_of_a_new_style_executable_is_not_packed() {
+    let (_, _, mut image) = packed("v1.00 large");
+    assert!(detect(&image));
+    while image.len() % 16 != 0 {
+        image.push(0);
+    }
+    let lfanew = image.len() as u32;
+    image[0x3c..0x40].copy_from_slice(&lfanew.to_le_bytes());
+    image.extend_from_slice(b"PE\0\0");
+    image.resize(image.len() + 0x100, 0);
+    assert!(!detect(&image));
+    assert_eq!(unpack(&image).err(), Some(PkliteError::NotPacked));
+    let at = lfanew as usize;
+    image[at..at + 4].copy_from_slice(b"NE\x05\x0a");
+    assert_eq!(unpack(&image).err(), Some(PkliteError::NotPacked));
+}
+
 #[test]
 fn a_stub_variant_nothing_matches_is_refused_by_name() {
     let (_, _, image) = packed("v1.00 large");

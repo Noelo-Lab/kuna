@@ -1089,7 +1089,10 @@ trade a right answer for a reachable one.
 
 (kuna) **PKLITE.** The DOS packer, recognized after NEOLite and before UPX by its
 decompressor stub at the DOS entry point, so a file without one reaches the UPX arm
-exactly as before. `decompiler/crates/kuna-analysis/src/pklite` is a port of deark's
+exactly as before. A Windows or OS/2 program (`e_lfanew` naming a `PE`, `NE`, `LE`
+or `LX` header) is never PKLITE's, even when its DOS stub is a PKLITE file: the
+program is the new-style executable, which PKLITE does not pack.
+`decompiler/crates/kuna-analysis/src/pklite` is a port of deark's
 `pklite` module (MIT; the notice is in the module header and `NOTICE`): `stub.rs`
 reads the parameters out of the stub, `decode.rs` is the decoder, and `mod.rs`
 rebuilds the file. A packed EXE enters at `FFF0:0100` -- the start of its code --
@@ -1126,8 +1129,8 @@ The rebuild uses the kept header copy only when its registers agree with the foo
 and its relocation count with the table; otherwise it writes a 28-byte header with
 the code 16-byte aligned, the footer's registers, `MAXALLOC` from the packed file
 and `MINALLOC` estimated from the stub's own free-memory check, as deark does.
-PKLITE does not record the bytes between the header and the relocation table or
-between the table and the code, so those are zero. An overlay is carried over when
+The kept copy runs up to the original relocation table, and PKLITE does not record
+the bytes between that table and the code, so those are zero. An overlay is carried over when
 the decompressed module ends exactly where the recovered header says. The format
 has no checksum, so the proofs are structural: the stream must end on its stop
 code, the relocation table must end where an 8-byte footer still fits before the end
