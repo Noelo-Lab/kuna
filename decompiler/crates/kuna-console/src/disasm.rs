@@ -51,6 +51,17 @@ pub const DERIVED_INSTRUCTION_CAP: usize = 1024;
 /// The mnemonic given to bytes the translator would not decode.
 pub const BAD_BYTE_MNEMONIC: &str = ".byte";
 
+/// How many decodes a budgeted `--follow` walk may spend per row it can print
+/// (plus [`FOLLOW_DECODE_SLACK`]). Keeping the lowest rows means a row decoded
+/// early can be displaced by a lower one flow reaches later, and a staircase of
+/// ever-lower branch targets would otherwise make a 1024-row listing decode
+/// its whole window.
+const FOLLOW_DECODES_PER_ROW: usize = 4;
+
+/// The fixed part of the `--follow` decode bound, so a tiny `--count` still
+/// has room to reach a target below its first rows.
+const FOLLOW_DECODE_SLACK: usize = 64;
+
 /// The widest resume grid [`resume_grid`] will infer from a listing's own rows.
 /// No instruction set aligns further than this, so a wider shared alignment is
 /// a coincidence of a short listing, not a grid.
@@ -187,7 +198,7 @@ pub fn walk(
         .collect();
     let stop = region.stop();
     let why = |t: u64| {
-        if !followed.named.contains(&t) {
+        if !followed.named.contains(&t) && !followed.exhausted {
             Skip::Unreached
         } else if stop.is_some_and(|end| t >= end) {
             Skip::PastWindow
@@ -234,7 +245,8 @@ pub enum Skip {
     /// straddling that end.
     PastWindow,
     /// Flow reaches it, and the row budget (`--count`, or the derived-length
-    /// cap) was spent on lower addresses first.
+    /// cap) was spent on lower addresses first; or the walk used up the decodes
+    /// that budget allows before it got there.
     PastBudget,
 }
 
@@ -303,14 +315,16 @@ pub fn skipped_targets(rows: &[Row], evidence: &FixedRefs) -> Vec<u64> {
 
 /// What [`follow_rows`] produced: the rows, whether the derived-length cap cut
 /// them short, the fixed-address evidence every row carries, every address a
-/// row flow reaches names, and the reached addresses whose bytes would not
-/// decode.
+/// row flow reaches names, the reached addresses whose bytes would not
+/// decode, and whether the decode bound stopped the walk before its worklist
+/// ran dry (so `named` is not every address flow reaches).
 struct Followed {
     rows: Vec<Row>,
     truncated: bool,
     evidence: FixedRefs,
     named: BTreeSet<u64>,
     undecodable: BTreeSet<u64>,
+    exhausted: bool,
 }
 
 /// `--follow`: the same window, decoded from every address its own reachable
@@ -336,7 +350,9 @@ struct Followed {
 /// rows it is going to print, and once the budget's worth of rows is decoded a
 /// run only continues below the highest of the lowest `budget` of them: a row
 /// above that could never be printed, while one below it still can, however
-/// late flow reaches it.
+/// late flow reaches it. The walk spends at most [`FOLLOW_DECODES_PER_ROW`]
+/// decodes per budgeted row, so the budget bounds the work as well as the
+/// listing; a target it did not get to is reported as past the budget.
 ///
 /// The second pass fills what flow never reached — the decoy byte a jump was
 /// over, the padding after a return, a handler nothing in this window calls — by
@@ -357,15 +373,25 @@ fn follow_rows(prog: &ConsoleProgram, region: &Window, count: Option<usize>) -> 
     // A row can only be printed once, so the printed budget bounds the claims;
     // an explicit range that asked for neither is bounded by the window itself.
     let budget = count.or(cap).unwrap_or(usize::MAX);
+    let mut work =
+        budget.saturating_mul(FOLLOW_DECODES_PER_ROW).saturating_add(FOLLOW_DECODE_SLACK);
     // Once `budget` rows are claimed: the highest of the lowest `budget`.
     let mut frontier: Option<u64> = None;
     let (mut mnem, mut body, mut raw) = (String::new(), String::new(), Vec::new());
     while let Some(Reverse(seed)) = seeds.pop() {
+        if work == 0 {
+            break;
+        }
         if !in_window(seed) || claimed.contains_key(&seed) || undecodable.contains(&seed) {
             continue;
         }
         let mut addr = seed;
-        while in_window(addr) && !claimed.contains_key(&addr) && frontier.is_none_or(|f| addr < f) {
+        while work > 0
+            && in_window(addr)
+            && !claimed.contains_key(&addr)
+            && frontier.is_none_or(|f| addr < f)
+        {
+            work -= 1;
             // No instruction may reach past mapped memory. The window's own end
             // is NOT a ceiling: the straight line lists the instruction
             // straddling it whole, and `--follow` must not list less.
@@ -409,7 +435,7 @@ fn follow_rows(prog: &ConsoleProgram, region: &Window, count: Option<usize>) -> 
     }
     let named = evidence.flow_targets.iter().copied().collect();
     let (rows, truncated) = fill_between(prog, region, claimed, count, cap, &mut evidence);
-    Followed { rows, truncated, evidence, named, undecodable }
+    Followed { rows, truncated, evidence, named, undecodable, exhausted: work == 0 }
 }
 
 /// Merge the claimed rows with a straight-line decode of everything between

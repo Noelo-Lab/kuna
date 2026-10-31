@@ -43,12 +43,24 @@ that it could not be re-anchored.
         eb 01           jmp  0x401044           <- nothing flows here
         b8 31 c0 c3 90  mov  eax,0x90c3c031     <- covers 0x401044
 
+    audit_staircase    0x401050  a staircase of 40 levels, each branching to the
+                                 one below it, entered from the top
+        e9 rel32        jmp  <top level>
+        74 01 b8 b8 2a 00 00 00 c3 c3           <- the lowest level: the
+                                                   audit_overlap bytes again
+        0f 84 rel32 90 90 c3                    <- every level above it, a
+                                                   `je` to the next one down
+        Each level flow reaches displaces the rows of the one above it from
+        the lowest `--count` rows, so keeping those rows exactly would cost a
+        decode per level; the walk's decode bound stops that, and a small
+        --count reports 0x401058 as past the budget.
+
 Functions are padded to 16 bytes with int3. No toolchain is needed; the ELF is
 assembled here byte by byte. Regenerate with:
 
     python3 followoverlap_x86_64.py
 
-Layout: PT_LOAD [0x401000, 0x401048) R+X, `.text` there, `.symtab` with one
+Layout: PT_LOAD [0x401000, 0x4011be) R+X, `.text` there, `.symtab` with one
 STT_FUNC per function (st_size = its bytes, without padding), e_entry =
 audit_overlap.
 """
@@ -75,6 +87,25 @@ FUNCS = [
         0xc3, 0xeb, 0x01, 0xb8, 0x31, 0xc0, 0xc3, 0x90,
     ])),
 ]
+
+
+def staircase(levels=40):
+    lowest = bytes([0x74, 0x01, 0xb8, 0xb8, 0x2a, 0x00, 0x00, 0x00, 0xc3, 0xc3])
+    step = 9
+
+    def at(k):
+        return 5 if k == levels - 1 else 5 + len(lowest) + (levels - 2 - k) * step
+
+    code = bytearray(b'\xe9' + struct.pack('<i', at(0) - 5))
+    code += lowest
+    for k in range(levels - 2, -1, -1):
+        here = len(code)
+        assert here == at(k)
+        code += b'\x0f\x84' + struct.pack('<i', at(k + 1) - (here + 6)) + b'\x90\x90\xc3'
+    return bytes(code)
+
+
+FUNCS.append(('audit_staircase', staircase()))
 
 SHT_PROGBITS, SHT_SYMTAB, SHT_STRTAB = 1, 2, 3
 SHF_ALLOC, SHF_EXECINSTR = 0x2, 0x4

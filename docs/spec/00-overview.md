@@ -566,11 +566,16 @@ Four front-ends drive one engine assembly:
   derived-length cap) is spent on the lowest addresses: once that many rows are
   decoded a run continues only below the highest of the lowest that many, so a
   target flow reaches late still gets its row if it is among the rows the listing
-  prints. What flow never reaches is then filled by the ordinary straight-line
-  walk between the followed rows, clipped so nothing crosses into one, which is
-  why `--follow` never lists less than the plain listing and both cover the same
-  span. A target still without a row is reported with the reason that is true of
-  it (`decompiler/crates/kuna-console/src/disasm.rs (Skip)`): named only by that
+  prints. Finding those rows is bounded too: the walk spends at most
+  `FOLLOW_DECODES_PER_ROW` (4) decodes per budgeted row plus a small fixed
+  slack, because each lower level of a staircase of branch targets displaces
+  the rows of the one above and would otherwise cost the whole window; a target
+  the walk did not get to is then reported as past the budget. What flow never
+  reaches is then filled by the ordinary straight-line walk between the followed
+  rows, clipped so nothing crosses into one, which is why `--follow` never lists
+  less than the plain listing and both cover the same span. A target still
+  without a row is reported with the reason that is true of it
+  (`decompiler/crates/kuna-console/src/disasm.rs (Skip)`): named only by that
   straight-line fill, not decodable, at or past the window's end, or past the row
   budget; the note on what `--follow` re-anchored counts only targets it actually
   started a row at that the straight line walked over. It is off by default

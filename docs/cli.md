@@ -2629,8 +2629,11 @@ rows overlap rather than tile
 Rows stay in address order, and `end` (with `bytes`) is one past the furthest
 byte any row covers, which under overlap need not be the last row's own end.
 `--count N` lists the N lowest-addressed rows, however late flow reaches one of
-them; as in the plain listing, a `--count` that runs out is the length you asked
-for and does not set `truncated`, which only the 1024-instruction cap below sets.
+them, spending at most four decodes per row to find them, so a staircase of
+ever-lower branch targets cannot make a short listing decode its whole window (a
+target the walk did not get to is reported as past the budget); as in the plain
+listing, a `--count` that runs out is the length you asked for and does not set
+`truncated`, which only the 1024-instruction cap below sets.
 
 A branch target `--follow` still has no row for is reported with the reason that
 is true of it, each with its own move, and is never also counted among the

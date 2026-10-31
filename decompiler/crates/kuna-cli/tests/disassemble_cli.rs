@@ -1322,3 +1322,25 @@ fn a_counted_follow_lists_its_lowest_rows_and_is_not_truncated() {
         assert_eq!(field(&parse_doc(&doc), "truncated"), &Json::Bool(false), "{follow:?}");
     }
 }
+
+/// `audit_staircase`: forty levels, each branching to the one below it, entered
+/// from the top. Every level flow reaches displaces the rows of the one above it
+/// from the lowest `--count` rows, so keeping those rows exactly would cost a
+/// decode per level, and a stair as long as the window would make a short
+/// listing decode all of it. The walk spends a few decodes per row it may
+/// print: a small `--count` stops short of the bottom and says the target there
+/// is past that budget, not unreached, and a `--count` the staircase fits in
+/// lists it.
+#[test]
+fn a_counted_follow_bounds_its_decodes_and_says_so() {
+    let bin = follow_overlap();
+    let (_, notes) = rendered(&[&bin, "0x401050", "--addr", "--count", "4", "--follow"]);
+    let budget = notes
+        .iter()
+        .find(|n| n.contains("no row starts") && n.contains("0x401058"))
+        .unwrap_or_else(|| panic!("no note names 0x401058: {notes:?}"));
+    assert!(budget.contains("--count 4 budget"), "{budget}");
+    let doc = listing(&[&bin, "0x401050", "--addr", "--count", "64", "--follow", "--json"]);
+    let rows = listed(&doc);
+    assert!(rows.contains(&(0x401058, "MOV EAX,0x2a".to_owned())), "{rows:?}");
+}

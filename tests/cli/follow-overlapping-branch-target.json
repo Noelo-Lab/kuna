@@ -18,8 +18,8 @@
   "repeat": 1,
   "target": {
     "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/followoverlap_x86_64",
-    "binary_sha256": "f2ffc67044f6248db473179eec8fb2b50b3bea049bf6302625e54bfe936e000f",
-    "binary_size": 768,
+    "binary_sha256": "16ce89d06dc8805fcd80ceee50c398ca28f2aa66abe1b05692e1dcabdb921b8c",
+    "binary_size": 1184,
     "binary_source": "in-repo",
     "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/followoverlap_x86_64",
     "selector": "audit_overlap",
