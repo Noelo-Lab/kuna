@@ -6,6 +6,7 @@
 pub mod funcdata_callsite;
 pub mod fspec;
 pub mod modelrules;
+mod kuna_aggregateabi;
 pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take

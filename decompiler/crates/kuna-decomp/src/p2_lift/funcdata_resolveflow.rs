@@ -159,6 +159,14 @@ impl Funcdata {
                 if is_lock && v.map(|v| Rc::ptr_eq(v.get_type(), parent)).unwrap_or(false) {
                     return Ok(-1); // COPY of the structure directly, use whole structure
                 }
+                if slot == 0 && self.get_func_proto().is_output_locked()
+                    && self.get_func_proto().get_output_type().is_some_and(|ty| Rc::ptr_eq(ty, parent))
+                    && o.get_in(0).is_some_and(|input| self.whole_container_copy(input, parent))
+                    && self.descend_snapshot(vn).iter().any(|&reader|
+                        self.obank().get(reader).is_some_and(|reader| reader.code() == OpCode::CPUI_RETURN))
+                {
+                    return Ok(-1);
+                }
             }
         } else if (opc == OpCode::CPUI_LOAD && slot == -1)
             || (opc == OpCode::CPUI_STORE && slot == 2)
@@ -173,6 +181,14 @@ impl Funcdata {
                         return Ok(-1); // LOAD/STORE of the structure directly, use whole structure
                     }
                 }
+            }
+        } else if opc == OpCode::CPUI_RETURN && slot >= 1 {
+            let proto = self.get_func_proto();
+            if proto.is_output_locked()
+                && proto.get_output_type().is_some_and(|ty| Rc::ptr_eq(ty, parent))
+                && o.get_in(slot).is_some_and(|value| self.whole_container_copy(value, parent))
+            {
+                return Ok(-1);
             }
         } else if o.is_call() {
             if let Some(idx) = self.get_call_specs_index(op) {
@@ -193,6 +209,24 @@ impl Funcdata {
             }
         }
         Ok(0) // In all other cases resolve to the component
+    }
+
+    /// A whole declared container survives a chain of equal-width copies.
+    fn whole_container_copy(&self, mut value: crate::context::VarnodeId, parent: &Rc<Datatype>) -> bool {
+        for _ in 0..16 {
+            let Some(vn) = self.vbank().get(value) else { return false; };
+            if vn.get_size() != parent.get_size() {
+                return false;
+            }
+            if vn.is_input() && vn.is_type_lock() && Rc::ptr_eq(vn.get_type(), parent) {
+                return true;
+            }
+            let Some(op) = vn.get_def().and_then(|id| self.obank().get(id)) else { return false; };
+            if op.code() != OpCode::CPUI_COPY { return false; }
+            let Some(input) = op.get_in(0) else { return false; };
+            value = input;
+        }
+        false
     }
 
     /// C++ `TypePartialUnion::resolveInFlow` (type.cc:2938-2976): walk the

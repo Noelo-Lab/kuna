@@ -964,9 +964,11 @@ impl ObjectLoadImage {
         // (F) Per-format import resolution goes through the boundary; for ELF
         // `ElfFormat::resolve_imports` just calls the unchanged
         // `elf_plt::resolve_plt_imports`.
-        let ppc32_names: std::collections::HashMap<_, _> = if is_elf && file.architecture() == object::Architecture::PowerPc {
-            funcsyms.iter().enumerate().map(|(i, s)| (s.addr, i)).collect()
-        } else { std::collections::HashMap::new() };
+        let import_names: std::collections::HashMap<_, _> = funcsyms.iter().enumerate()
+            .filter(|(_, s)| is_elf && (file.architecture() == Architecture::PowerPc
+                || (matches!(file.architecture(), Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32)
+                    && s.name == b"_MIPS_STUBS_")))
+            .map(|(i, s)| (s.addr, i)).collect();
         // A Mach-O export the symbol table already named is that name in its C
         // spelling (`audit_export_a` for `_audit_export_a`), which lookup accepts
         // anyway; it is a second name only where this stream named the address.
@@ -979,7 +981,7 @@ impl ObjectLoadImage {
                 }
                 let name = demangle_funcsym_name(p.name, namechars);
                 funcsyms.push(FuncSym { addr: p.addr, name, size: 0 });
-            } else if let Some(&i) = ppc32_names.get(&p.addr) {
+            } else if let Some(&i) = import_names.get(&p.addr) {
                 let name = demangle_funcsym_name(p.name, namechars);
                 let previous = std::mem::replace(&mut funcsyms[i].name, name);
                 aliases.push(FuncSym { addr: p.addr, name: previous, size: 0 });
@@ -1710,6 +1712,11 @@ fn language_id_for(
     if let Some(target) = target {
         return Ok(target.as_bytes().to_vec());
     }
+    if let Some(id) = crate::loader::kuna_mipsocteon::language_id(file)
+        .map_err(|error| KunaError::lowlevel(format!("File: {filename}: {error}; pass an explicit --target")))?
+    {
+        return Ok(id.into_bytes());
+    }
     let little = file.is_little_endian();
     let endian = if little { "LE" } else { "BE" };
     // (PR-8 §3.7) Pointer-auth arm64e spec selection, GATED + opt-in: an arm64e
@@ -2005,6 +2012,7 @@ pub fn elf_language_ids() -> Vec<String> {
             out.push(id);
         }
     }
+    out.extend(crate::loader::kuna_mipsocteon::language_ids());
     out.sort();
     out.dedup();
     out
@@ -3167,11 +3175,8 @@ mod tests {
         // layout (`DT_MIPS_LOCAL_GOTNO`/`DT_MIPS_GOTSYM`); `resolve_mips_imports`
         // names each import's `.MIPS.stubs` stub address (= the dynsym `st_value`).
         let syms = fixture_funcsyms("plt_mips32");
-        // `puts`/`printf` are the user-visible imports.  (`__libc_start_main`'s stub
-        // at 0x4007e0 == the `.MIPS.stubs` section start, so the `.symtab`
-        // `_MIPS_STUBS_` section label is registered there first and wins the dedup
-        // — a faithful, harmless overlap with a startup-only import.)
-        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf")] {
+        // The linker label at the section start is an alias of the first import.
+        for (addr, want) in [(0x400800u64, "puts"), (0x4007f0, "printf"), (0x4007e0, "__libc_start_main")] {
             assert_eq!(
                 syms.get(&addr).map(String::as_str),
                 Some(want),
@@ -3200,6 +3205,7 @@ mod tests {
         let starts: std::collections::HashSet<u64> = ranges.iter().map(|&(a, _)| a).collect();
         assert!(starts.contains(&0x411040), "puts GOT slot 0x411040 in {ranges:?}");
         assert!(starts.contains(&0x411044), "printf GOT slot 0x411044 in {ranges:?}");
+        assert!(!starts.contains(&0x41103c), "unresolved __gmon_start__ must remain dynamic: {ranges:?}");
     }
 
     #[test]

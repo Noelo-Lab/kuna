@@ -4438,9 +4438,15 @@ pub fn bootstrap_from_object_with_isa(
     // section; an entry that only carries the Thumb bit arms the
     // `entrythumbflow` walk, exactly as a TE with that shape does.
     let arch_id = sleigh.arch_id().to_string();
-    let parsed = is_arm32_language(&arch_id)
+    let parsed = (is_arm32_language(&arch_id) || arch_id.starts_with("MIPS:"))
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
+    let mips_entry = parsed.as_ref().and_then(|file| {
+        use object::{Architecture as A, Object};
+        (arch_id.starts_with("MIPS:") && file.format() == object::BinaryFormat::Elf
+            && matches!(file.architecture(), A::Mips | A::Mips64 | A::Mips64_N32))
+            .then_some((file.architecture() == A::Mips64_N32, file.is_little_endian()))
+    });
     let isa = isa.or_else(|| {
         let file = parsed.as_ref()?;
         kuna_analysis::loadimage_object::arm_isa_hint(file, &bytes).map(|thumb| {
@@ -4646,6 +4652,16 @@ pub fn bootstrap_from_object_with_isa(
     let description = sleigh.base().unwrap().get_description().to_string();
 
     let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    if let Some((n32, little)) = mips_entry {
+        if let Ok(loc) = prog.arch().get_register_varnode(b"t9") {
+            let image = prog.arch().translate().loader_rc();
+            prog.arch_mut().loader_mips_t9 = Some(Rc::new(move |entry| {
+                let val = kuna_analysis::loader::kuna_mipsentry::value(
+                    image.try_borrow_mut().ok()?.as_mut(), entry, n32, little)?;
+                Some(kuna_sleigh::globalcontext::TrackedContext { loc: loc.clone(), val })
+            }));
+        }
+    }
     prog.load_notes = load_notes;
     prog.symbols = SymbolStream::from_loader(symbols);
     prog.object_sections = object_sections;

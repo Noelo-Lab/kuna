@@ -36,11 +36,25 @@ use std::rc::Rc;
 const SOFT_FLOAT_MODEL: &str = "__stdcall_softfp";
 
 /// Whether the image passes floating-point arguments, doubles included, in
-/// floating-point registers: x86 and AArch64 always do; elsewhere only the
-/// convention the container states decides.
+/// floating-point registers: x86 and AArch64 always do; Octeon's selected
+/// compiler model is authoritative, including explicit target overrides;
+/// elsewhere the container's stated convention decides.
 pub fn image_evidence(arch: &Architecture) -> Option<bool> {
     if x86_or_aarch64(arch) {
         return Some(true);
+    }
+    if arch.archid.starts_with("MIPS:") {
+        let mut parts = arch.archid.split(':').skip(3);
+        let variant = parts.next().unwrap_or("");
+        if matches!(variant.strip_suffix("-32addr").unwrap_or(variant),
+                    "octeon" | "octeonplus" | "octeon2" | "octeon3") {
+            match parts.next() {
+                Some("hard") => return Some(true),
+                Some("default") => return Some(false),
+                Some("n32") if variant.ends_with("-32addr") => return Some(false),
+                _ => {}
+            }
+        }
     }
     arch.translate()
         .loader_rc()

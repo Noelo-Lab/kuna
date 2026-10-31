@@ -1432,7 +1432,12 @@ impl Rule for RulePieceStructure {
                 // Insert a COPY into a Varnode at the correct storage.
                 let node_op = node.get_op();
                 let copy_op = data.new_op(1, op_addr(data, node_op));
-                let new_vn = match data.new_varnode_out(vnsize, &addr, copy_op) {
+                let allocated = if addr.is_constant() {
+                    data.new_unique_out(vnsize, copy_op)
+                } else {
+                    data.new_varnode_out(vnsize, &addr, copy_op)
+                };
+                let new_vn = match allocated {
                     Ok(v) => v,
                     Err(_) => continue,
                 };

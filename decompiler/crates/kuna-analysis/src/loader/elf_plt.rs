@@ -88,7 +88,7 @@ fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
     // by relocations.  It therefore runs its own resolver (`resolve_mips_imports`)
     // *before* the relocation-driven path below, which would otherwise early-return
     // on the empty `build_got_name_map`.  See [`resolve_mips_imports`].
-    if matches!(arch, Architecture::Mips | Architecture::Mips64) {
+    if matches!(arch, Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32) {
         return resolve_mips_imports(file);
     }
 
@@ -214,6 +214,7 @@ fn resolve_from_dynamic_segment(file: &object::File, bytes: &[u8]) -> Vec<PltSym
         arch,
         Architecture::Mips
             | Architecture::Mips64
+            | Architecture::Mips64_N32
             | Architecture::PowerPc
             | Architecture::PowerPc64
     ) {
@@ -990,17 +991,18 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
 /// marked **constant** so the engine folds the `lw $t9, off($gp)` indirect-call
 /// load to the stub address (the analog of `setConstant` on the GOT pointer
 /// entries in Ghidra's `MIPS_ElfExtension.fixupGot`).  Empty off-MIPS or when the
-/// `DT_MIPS_*` tags are absent.  One slot per external dynamic symbol (FUNC or
-/// not — a constant GOT pointer is harmless for non-FUNC slots and matches
-/// Ghidra, which `setConstant`s every external GOT entry).
+/// `DT_MIPS_*` tags are absent. Only resolved function-stub slots qualify: a
+/// zero initializer for an unresolved import, including a weak function, is
+/// not a guarantee that the dynamic linker leaves the pointer null.
 pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
-    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64) {
+    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32) {
         return Vec::new();
     }
     let ptr = if file.is_64() { 8u64 } else { 4u64 };
     mips_external_got_entries(file)
         .into_iter()
-        .map(|e| (e.slot_addr, e.slot_addr.wrapping_add(ptr - 1)))
+        .filter(|e| e.stub_addr != 0)
+        .filter_map(|e| e.slot_addr.checked_add(ptr - 1).map(|end| (e.slot_addr, end)))
         .collect()
 }
 
@@ -1053,8 +1055,9 @@ fn mips_external_got_entries(file: &object::File) -> Vec<MipsExtGot> {
             Ok(n) if !n.is_empty() => strip_version(n),
             _ => continue,
         };
-        let got_index = local_gotno + (idx as u64 - gotsym);
-        let slot_addr = got_base.wrapping_add(got_index * ptr as u64);
+        let Some(slot_addr) = local_gotno.checked_add(idx as u64 - gotsym)
+            .and_then(|index| index.checked_mul(ptr as u64))
+            .and_then(|offset| got_base.checked_add(offset)) else { continue };
         let stub_addr = read_word_at_vma(file, slot_addr, ptr, le).unwrap_or(0);
         out.push(MipsExtGot { name, slot_addr, stub_addr });
     }

@@ -343,7 +343,7 @@ fn collect_members(
             fields.push(TypeField::new(fields.len() as int4, 0, m.name.clone(), ty));
             continue;
         }
-        let off = m.data_member_location.unwrap_or(0);
+        let Some(off) = m.data_member_location else { continue };
         if off < 0 || off > int4::MAX as i64 {
             continue;
         }

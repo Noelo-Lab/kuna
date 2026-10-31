@@ -1635,6 +1635,15 @@ walk that renders `name.field`, `name[index]`, a `(int4)name` truncation cast,
 or the artificial `name._8_4_` member when a Varnode covers only part of its
 mapped symbol (`printc.rs (PrintC::push_partial_symbol_ir)`).
 
+A single-field struct covering the whole access consults the operation's
+cached type resolution before descending into that field. A resolution to the
+whole struct stops the walk; a field resolution still emits the member. This
+keeps aggregate copies and returns whole and prevents an implied field access
+from being appended twice (for example, `x.a.d.d` instead of `x.a.d`).
+The walk also stops when it reaches the value's type at the current operation;
+a nested single-field container must not be resolved a second time through a
+cache lookup for a type that is not the value on that edge.
+
 (kuna) The character formatter prints a byte above 0x7f of a `signed char` or
 `unsigned char` type (a character type that is not the target's own `char`,
 chapter 01's DWARF reader makes them) as a number of the type's sign, not as

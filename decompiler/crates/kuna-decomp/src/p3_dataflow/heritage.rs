@@ -3930,41 +3930,32 @@ impl Heritage {
                 let leastsize =
                     fd.vbank().get(leasthalf).expect("split_join_write: leasthalf").get_size();
 
-                // First SUBPIECE: mosthalf = curvn >> leastsize.
-                let opaddr = if is_input {
-                    bb_start.clone()
-                } else {
-                    let prevop = op.expect("split_join_write: non-input has a def op");
-                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
-                };
-                let split = fd.new_op(2, opaddr);
-                fd.op_set_opcode(split, sub_typeop.clone());
-                fd.op_set_output(split, mosthalf).expect("split_join_write: set output most");
-                fd.op_set_input(split, curvn, 0).expect("split_join_write: set in0 most");
-                let c = fd.new_constant(4, leastsize as u64);
-                fd.op_set_input(split, c, 1).expect("split_join_write: set in1 most");
-                match op {
-                    None => fd.op_insert_begin(split, bb),
-                    Some(prevop) => fd.op_insert_after(split, prevop),
+                for (half, offset, high) in [(mosthalf, leastsize, true), (leasthalf, 0, false)] {
+                    if fd.vbank().get(half).is_some_and(|v| v.is_constant()) {
+                        continue;
+                    }
+                    let opaddr = if is_input {
+                        bb_start.clone()
+                    } else {
+                        let prevop = op.expect("split_join_write: non-input has a def op");
+                        fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone()
+                    };
+                    let split = fd.new_op(2, opaddr);
+                    fd.op_set_opcode(split, sub_typeop.clone());
+                    fd.op_set_output(split, half).expect("split_join_write: set output");
+                    fd.op_set_input(split, curvn, 0).expect("split_join_write: set input");
+                    let constant = fd.new_constant(4, offset as u64);
+                    fd.op_set_input(split, constant, 1).expect("split_join_write: set offset");
+                    match op {
+                        None => fd.op_insert_begin(split, bb),
+                        Some(prevop) => fd.op_insert_after(split, prevop),
+                    }
+                    if is_primitive {
+                        let value = fd.vbank_mut().get_mut(half).expect("split_join_write: half");
+                        if high { value.set_precis_hi(); } else { value.set_precis_lo(); }
+                    }
+                    op = Some(split);
                 }
-                op = Some(split); // Keep -op- as the latest op in the split construction
-
-                // Second SUBPIECE: leasthalf = curvn(0).
-                let prevop = op.expect("split_join_write: op anchors second SUBPIECE");
-                let opaddr2 =
-                    fd.obank().get(prevop).expect("split_join_write: op").get_addr().clone();
-                let split2 = fd.new_op(2, opaddr2);
-                fd.op_set_opcode(split2, sub_typeop.clone());
-                fd.op_set_output(split2, leasthalf).expect("split_join_write: set output least");
-                fd.op_set_input(split2, curvn, 0).expect("split_join_write: set in0 least");
-                let c0 = fd.new_constant(4, 0);
-                fd.op_set_input(split2, c0, 1).expect("split_join_write: set in1 least");
-                fd.op_insert_after(split2, prevop);
-                if is_primitive {
-                    fd.vbank_mut().get_mut(mosthalf).expect("split_join_write: mosthalf").set_precis_hi();
-                    fd.vbank_mut().get_mut(leasthalf).expect("split_join_write: leasthalf").set_precis_lo();
-                }
-                op = Some(split2); // latest op in the split construction
             }
             lastcombo = nextlev.into_iter().flatten().collect();
         }
@@ -7396,6 +7387,54 @@ mod tests {
     // level pushes the Varnode unchanged plus a `None` filler and advances
     // recnum by one — the 2-1 mapping must stay aligned across a 3-piece record
     // whose middle position is consumed exactly.
+    #[test]
+    fn join_padding_is_a_constant_read_and_never_a_written_location() {
+        for write in [false, true] {
+            let mut fd = build_fd_with_join();
+            let blocks = build_cfg(&mut fd, 1, &[]);
+            let ram = ram(&fd);
+            let constant = fd.get_arch().manage().get_constant_space().unwrap().clone();
+            let pieces = [vstore(&ram, 0x40, 4), vstore(&constant, 0, 4), vstore(&ram, 0x50, 8)];
+            let join = fd.get_arch().manage().find_add_join(&pieces, 0).unwrap();
+            let unified = join.get_unified();
+            let address = Address::new(unified.space.clone().unwrap(), unified.offset);
+            let h = Heritage::new();
+            if write {
+                let (_, value) = make_marker(&mut fd, blocks[0], TOpCode::CPUI_COPY, &address, 16, 1);
+                h.split_join_write(&mut fd, value, &join);
+            } else {
+                let (op, _) = make_marker(&mut fd, blocks[0], TOpCode::CPUI_COPY, &Address::new(ram.clone(), 0x100), 16, 1);
+                let value = fd.new_varnode(16, &address, None);
+                fd.op_set_input(op, value, 0).unwrap();
+                h.split_join_read(&mut fd, value, &join);
+            }
+            let mut fields = Vec::new();
+            let mut padding_read = false;
+            for (_, id) in fd.obank().iter_all() {
+                let op = fd.obank().get(id).unwrap();
+                if let Some(out) = op.get_out() {
+                    let value = fd.vbank().get(out).unwrap();
+                    assert!(!value.is_constant());
+                    if write && matches!(value.get_addr().get_offset(), 0x40 | 0x50) {
+                        fields.push((value.get_addr().get_offset(), value.get_size()));
+                    }
+                }
+                if !write && op.code() == TOpCode::CPUI_PIECE {
+                    padding_read |= (0..op.num_input()).any(|slot| {
+                        fd.vbank().get(op.get_in(slot).unwrap()).is_some_and(|v|
+                            v.is_constant() && v.get_size() == 4 && v.get_offset() == 0)
+                    });
+                }
+            }
+            if write {
+                fields.sort_unstable();
+                assert_eq!(fields, vec![(0x40, 4), (0x50, 8)]);
+            } else {
+                assert!(padding_read);
+            }
+        }
+    }
+
     #[test]
     fn w10_proto_cluster_split_join_level_equal_piece_fast_path() {
         let mut fd = build_fd_with_join();

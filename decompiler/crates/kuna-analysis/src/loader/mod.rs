@@ -90,6 +90,9 @@ pub mod macho_fat;
 pub mod macho_stubs;
 pub(crate) mod macho_trie;
 pub mod mips_markers;
+pub mod kuna_mipsentry;
+mod kuna_mipsabi;
+pub mod kuna_mipsocteon;
 // (kuna) Go toolchain version off the build-info blob (goreg shell layouts).
 pub mod gobuildinfo;
 pub mod noreturn;

@@ -3412,6 +3412,14 @@ DynamicHash symbol, consulted through
 override surface for this whole section (the `aggregate-union` row in
 `decompiler/crates/kuna-decomp/phases.toml`); (3) the scoring engine.
 
+Single-component structs and arrays retain the whole container when a RETURN
+value matches the function's locked output type and is an unchanged copy of a
+locked input of that container type. Equal-width COPY chains preserve this
+evidence, including the input edge of a copy directly feeding the return. A
+scalar used to construct a single-field return is still resolved to the field;
+the declared output alone does not establish a whole-container input. The
+return-address slot and unlocked or differently typed returns supply no evidence.
+
 **Facet trials and scoring.**
 `decompiler/crates/kuna-decomp/src/p5_types/unionresolve_run.rs
 (ScoreUnionFields)` fits every candidate field (plus "the union as a whole",

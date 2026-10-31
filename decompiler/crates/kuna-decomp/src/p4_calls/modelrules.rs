@@ -94,6 +94,8 @@ pub const ATTRIB_FILL_ALTERNATE: AttributeId = AttributeId::new("fillalternate",
 /// (kuna) `<join stackalign="false">`: the stack spill of a join ignores the
 /// data-type alignment and takes the next free slot.
 pub const ATTRIB_STACKALIGN: AttributeId = AttributeId::new("stackalign", 4002);
+/// Classify direct struct fields instead of recursively flattened primitives.
+pub const ATTRIB_DIRECTFIELDS: AttributeId = AttributeId::new("directfields", 4003);
 
 // Borrowed from fspec.cc / architecture.cc (their kuna ids are not yet defined;
 // the modelrules decode references them, so they are carried here with their
@@ -183,6 +185,7 @@ pub fn register_ids(reg: &mut kuna_base::marshal::IdRegistry) {
         &ATTRIB_AFTER_STORAGE,
         &ATTRIB_FILL_ALTERNATE,
         &ATTRIB_STACKALIGN,
+        &ATTRIB_DIRECTFIELDS,
         &ATTRIB_MAXSIZE,
         &ATTRIB_MINSIZE,
         &ATTRIB_STRATEGY,
@@ -524,6 +527,8 @@ pub enum DatatypeFilter {
     MetaType { meta_type: type_metatype, size: SizeRestriction },
     /// `HomogeneousAggregate` — an aggregate whose primitives are all the same.
     Homogeneous { meta_type: type_metatype, max_primitives: int4, size: SizeRestriction },
+    /// A struct with direct floating fields, allowing different precisions and padding.
+    FloatFields { max_primitives: int4, size: SizeRestriction },
 }
 
 /// The size-restriction state shared by every [`DatatypeFilter`] (C++
@@ -639,6 +644,10 @@ impl DatatypeFilter {
                 }
                 size.filter_on_size(dt)
             }
+            DatatypeFilter::FloatFields { max_primitives, size } => {
+                size.filter_on_size(dt)
+                    && super::kuna_aggregateabi::float_fields(dt, *max_primitives)
+            }
             // HomogeneousAggregate::filter (modelrules.cc:412-430).
             DatatypeFilter::Homogeneous { meta_type, max_primitives, size: _ } => {
                 let meta = dt.get_metatype();
@@ -676,6 +685,11 @@ impl DatatypeFilter {
         let nm = decoder.read_string_id(&ATTRIB_NAME)?;
         let mut filter = if nm == b"any" {
             DatatypeFilter::SizeRestricted(SizeRestriction::new_for_decode())
+        } else if nm == b"float-field-struct" {
+            DatatypeFilter::FloatFields {
+                max_primitives: 2,
+                size: SizeRestriction::new_for_decode(),
+            }
         } else if nm == b"homogeneous-float-aggregate" {
             DatatypeFilter::Homogeneous {
                 meta_type: type_metatype::TYPE_FLOAT,
@@ -700,7 +714,8 @@ impl DatatypeFilter {
         match self {
             DatatypeFilter::SizeRestricted(sz) => sz.decode(decoder),
             DatatypeFilter::MetaType { size, .. } => size.decode(decoder),
-            DatatypeFilter::Homogeneous { max_primitives, size, .. } => {
+            DatatypeFilter::Homogeneous { max_primitives, size, .. }
+            | DatatypeFilter::FloatFields { max_primitives, size } => {
                 // HomogeneousAggregate::decode (modelrules.cc:432-445).
                 size.decode(decoder)?;
                 decoder.rewind_attributes();
@@ -895,7 +910,12 @@ pub enum AssignAction {
         stack_entry: Option<usize>,
     },
     /// `MultiMemberAssign` — a register per primitive member.
-    MultiMemberAssign { resource_type: type_class, consume_from_stack: bool, consume_most_sig: bool },
+    MultiMemberAssign {
+        resource_type: type_class,
+        consume_from_stack: bool,
+        consume_most_sig: bool,
+        direct_fields: bool,
+    },
     /// `MultiSlotDualAssign` — consume from two storage classes.
     MultiSlotDualAssign {
         base_type: type_class,
@@ -905,6 +925,8 @@ pub enum AssignAction {
         consume_most_sig: bool,
         justify_right: bool,
         fill_alternate: bool,
+        direct_fields: bool,
+        enforce_alignment: bool,
         tile_size: int4,
         base_tiles: Vec<usize>,
         alt_tiles: Vec<usize>,
@@ -985,6 +1007,7 @@ impl AssignAction {
                 base_type,
                 alt_type,
                 consume_from_stack,
+                enforce_alignment,
                 tile_size,
                 base_tiles,
                 alt_tiles,
@@ -1012,6 +1035,12 @@ impl AssignAction {
                     return Err(KunaError::lowlevel(
                         "Cannot find matching stack resource for action: join_dual_class",
                     ));
+                }
+                if *enforce_alignment && (base_tiles.len() != alt_tiles.len()
+                    || base_tiles.iter().zip(alt_tiles.iter()).any(|(&a, &b)|
+                        entries[a].get_group() != entries[b].get_group()
+                        || entries[a].get_size() != entries[b].get_size())) {
+                    return Err(KunaError::lowlevel("Aligned join_dual_class requires shared argument slots"));
                 }
                 Ok(())
             }
@@ -1229,14 +1258,19 @@ impl AssignAction {
         resource: &ParamListStandard,
         manager: &AddrSpaceManager,
     ) -> KunaResult<AssignActionResponse> {
-        let (resource_type, consume_from_stack, consume_most_sig) = match self {
-            AssignAction::MultiMemberAssign { resource_type, consume_from_stack, consume_most_sig } => {
-                (*resource_type, *consume_from_stack, *consume_most_sig)
+        let (resource_type, consume_from_stack, consume_most_sig, direct_fields) = match self {
+            AssignAction::MultiMemberAssign { resource_type, consume_from_stack, consume_most_sig, direct_fields } => {
+                (*resource_type, *consume_from_stack, *consume_most_sig, *direct_fields)
             }
             _ => unreachable!(),
         };
         let mut tmp_status: Vec<int4> = status.to_vec();
         let mut pieces: Vec<VarnodeData> = Vec::new();
+        if direct_fields {
+            return super::kuna_aggregateabi::assign_fields(
+                dt, resource_type, status, res, resource, manager,
+            );
+        }
         let primitives = PrimitiveExtractor::new(dt, false, 0, 16);
         if !primitives.is_valid()
             || primitives.size() == 0
@@ -1282,13 +1316,14 @@ impl AssignAction {
         resource: &ParamListStandard,
         manager: &AddrSpaceManager,
     ) -> KunaResult<AssignActionResponse> {
-        let (is_big_endian, consume_from_stack, consume_most_sig, justify_right, base_tiles, alt_tiles, stack_entry) =
+        let (is_big_endian, consume_from_stack, consume_most_sig, justify_right, enforce_alignment, base_tiles, alt_tiles, stack_entry) =
             match self {
                 AssignAction::MultiSlotDualAssign {
                     is_big_endian,
                     consume_from_stack,
                     consume_most_sig,
                     justify_right,
+                    enforce_alignment,
                     base_tiles,
                     alt_tiles,
                     stack_entry,
@@ -1298,6 +1333,7 @@ impl AssignAction {
                     *consume_from_stack,
                     *consume_most_sig,
                     *justify_right,
+                    *enforce_alignment,
                     base_tiles,
                     alt_tiles,
                     *stack_entry,
@@ -1305,7 +1341,14 @@ impl AssignAction {
                 _ => unreachable!(),
             };
         let entries = resource.get_entry();
-        let primitives = PrimitiveExtractor::new(dt, false, 0, 1024);
+        let primitives = if matches!(self, AssignAction::MultiSlotDualAssign { direct_fields: true, .. }) {
+            let Some(fields) = super::kuna_aggregateabi::direct_fields(dt) else {
+                return Ok(RES_FAIL);
+            };
+            PrimitiveExtractor { primitives: fields, flags: 0 }
+        } else {
+            PrimitiveExtractor::new(dt, false, 0, 1024)
+        };
         if !primitives.is_valid() || primitives.size() == 0 || primitives.contains_holes() {
             return Ok(RES_FAIL);
         }
@@ -1317,6 +1360,22 @@ impl AssignAction {
         let mut size_left = type_size;
         let mut iter_base = 0usize;
         let mut iter_alt = 0usize;
+        if enforce_alignment {
+            let mut consumed = 0;
+            while iter_base < base_tiles.len() {
+                let entry = &entries[base_tiles[iter_base]];
+                let group = entry.get_group() as usize;
+                if tmp_status[group] == 0 {
+                    if align <= entry.get_size() || consumed % align == 0 {
+                        break;
+                    }
+                    tmp_status[group] = -1;
+                }
+                consumed += entry.get_size();
+                iter_base += 1;
+            }
+            iter_alt = iter_base;
+        }
         while size_left > 0 {
             let iter_type = self.get_tile_class(&primitives, type_size - size_left, &mut primitive_index);
             if iter_type < 0 {
@@ -1400,6 +1459,11 @@ impl AssignAction {
             }
             _ => unreachable!(),
         };
+        if matches!(self, AssignAction::MultiSlotDualAssign { direct_fields: true, .. }) {
+            return i32::from(primitives.primitives.iter().any(|field|
+                field.offset == off && field.dt.get_size() == tile_size
+                    && metatype2typeclass(field.dt.get_metatype()) == alt_type));
+        }
         let mut res = 1;
         let mut count = 0;
         let end_boundary = off + tile_size;
@@ -1679,6 +1743,7 @@ impl AssignAction {
                 resource_type: type_class::TYPECLASS_GENERAL,
                 consume_from_stack: false,
                 consume_most_sig: resource.is_big_endian(),
+                direct_fields: false,
             }
         } else if elem_id == ELEM_JOIN_DUAL_CLASS.get_id() {
             new_multi_slot_dual_default(resource)
@@ -1781,7 +1846,7 @@ impl AssignAction {
                 self.initialize(resource) // Need new firstIter
             }
             // MultiMemberAssign::decode (modelrules.cc:1049-1061).
-            AssignAction::MultiMemberAssign { resource_type, .. } => {
+            AssignAction::MultiMemberAssign { resource_type, direct_fields, .. } => {
                 let elem_id = decoder.open_element_id(&ELEM_JOIN_PER_PRIMITIVE)?;
                 loop {
                     let attrib_id = decoder.get_next_attribute_id()?;
@@ -1790,9 +1855,14 @@ impl AssignAction {
                     }
                     if attrib_id == ATTRIB_STORAGE {
                         *resource_type = read_typeclass(decoder)?;
+                    } else if attrib_id == ATTRIB_DIRECTFIELDS {
+                        *direct_fields = decoder.read_bool()?;
                     }
                 }
                 decoder.close_element(elem_id)?;
+                if *direct_fields && !matches!(resource.get_type(), ParamListType::StandardOut | ParamListType::RegisterOut) {
+                    return Err(KunaError::decoder("Direct-field member joins require output resources"));
+                }
                 Ok(())
             }
             // MultiSlotDualAssign::decode (modelrules.cc:1300-1330).
@@ -1803,6 +1873,8 @@ impl AssignAction {
                 justify_right,
                 consume_from_stack,
                 fill_alternate,
+                direct_fields,
+                enforce_alignment,
                 ..
             } => {
                 let elem_id = decoder.open_element_id(&ELEM_JOIN_DUAL_CLASS)?;
@@ -1827,6 +1899,10 @@ impl AssignAction {
                         *consume_from_stack = decoder.read_bool()?;
                     } else if attrib_id == ATTRIB_FILL_ALTERNATE {
                         *fill_alternate = decoder.read_bool()?;
+                    } else if attrib_id == ATTRIB_DIRECTFIELDS {
+                        *direct_fields = decoder.read_bool()?;
+                    } else if attrib_id == ATTRIB_ALIGN {
+                        *enforce_alignment = decoder.read_bool()?;
                     }
                 }
                 decoder.close_element(elem_id)?;
@@ -1960,6 +2036,8 @@ fn new_multi_slot_dual_default(resource: &ParamListStandard) -> AssignAction {
         consume_most_sig,
         justify_right,
         fill_alternate: false,
+        direct_fields: false,
+        enforce_alignment: false,
         tile_size: 0,
         base_tiles: Vec::new(),
         alt_tiles: Vec::new(),

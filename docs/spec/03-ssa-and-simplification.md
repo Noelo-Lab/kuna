@@ -79,6 +79,26 @@ parameter accounts for. A copy of those pieces to memory was then dead to
 `ActionDeadCode`, and `use3(&s)` printed as `use3(&v1)` with only `v1.z = s.z`
 stored. kuna splits the join on the first pass that heritages any of its pieces.
 
+An ABI join can contain zero constant pieces for logical padding that has no
+physical storage. Reading the join supplies those zeros; splitting a written
+join discards those pieces and writes only its physical fields. Padding must
+not acquire a register input or become a destination for a SUBPIECE. Structured
+PIECE recovery gives a padding assignment temporary storage rather than writing
+to the constant space. A structured concatenation with low zero bytes stays a
+PIECE for field recovery rather than becoming an integer shift.
+Join addresses use the join space's target byte order, including a partial join
+whose first piece is a constant. Byte positions within padding stay separate
+from its zero value, so slicing that padding neither invents nonzero constants
+nor shifts the adjacent physical fields.
+
+Cleanup splitting can extract fields from an already truncated aggregate. Its
+new SUBPIECEs immediately collapse nested truncations through the existing
+double-subpiece rule, preserving their total byte offset. The main
+simplification pool has already finished at this point; leaving the intermediate
+partial aggregate would prevent the emitter from naming the original fields.
+After replacing the original copy or store, the splitter removes unused
+truncations through the normal dead-code rule, retaining live and protected values.
+
 **Preferred register splits.** Heritage pass 0 also runs the compiler spec's
 `<prefersplit>` table (`PreferSplitManager`, ported from `prefersplit.cc`): each
 listed whole register is rewritten into two independent pieces, and a free or

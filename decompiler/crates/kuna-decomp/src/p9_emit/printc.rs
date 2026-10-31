@@ -9518,6 +9518,13 @@ impl PrintC {
         // taken out of.
         let mut unnamed_in: Option<std::rc::Rc<crate::dtype::Datatype>> = None;
         let volatile_annotation = fd.vbank().get(vn).is_some_and(|v| v.is_annotation() && v.is_volatile());
+        let facing_type = if slot >= 0 {
+            Some(fd.vn_type_read_facing(vn, op))
+        } else if fd.vbank().get(vn).is_some_and(|v| v.is_written()) {
+            Some(fd.vn_type_def_facing(vn))
+        } else {
+            None
+        };
 
         while let Some(cur) = ct.clone() {
             // (kuna arraycoverwidth) The upstream whole-symbol break exits the
@@ -9546,18 +9553,20 @@ impl PrintC {
                 && (sz == 0
                     || (sz == cur.get_size()
                         && (!cur.needs_resolution()
-                            || cur.get_metatype() == type_metatype::TYPE_PTR)))
+                            || cur.get_metatype() == type_metatype::TYPE_PTR
+                            || (cur.get_metatype() == type_metatype::TYPE_STRUCT
+                                && facing_type.as_ref().is_some_and(|ty| std::rc::Rc::ptr_eq(ty, &cur))))))
             {
                 break;
             }
             let mut succeeded = false;
             let meta = cur.get_metatype();
             if meta == type_metatype::TYPE_STRUCT {
-                // TypeStruct::findTruncation walks the field table (no cache).
-                // (printc.cc:2044-2056; the needsResolution()/findResolve guard at
-                // 2039-2043 only applies to a struct that itself needsResolution,
-                // which the corpus structs do not — it would require the union
-                // cache and is a no-op for a plain struct.)
+                if cur.needs_resolution() && cur.get_size() == sz
+                    && std::rc::Rc::ptr_eq(&cur, &fd.find_resolve_facing(&cur, op, slot))
+                {
+                    break;
+                }
                 match cur.find_truncation(off, sz, op, slot) {
                     Ok(Some((idx, newoff))) => {
                         if let Some(f) = cur.get_field(idx) {

@@ -261,6 +261,9 @@ pub struct Architecture {
     pub loader_entry_tracks:
         std::collections::BTreeMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
 
+    /// MIPS ELF t9 seed, supplied only where the loader recognizes PIC setup.
+    pub loader_mips_t9: Option<Rc<dyn Fn(&Address) -> Option<kuna_sleigh::globalcontext::TrackedContext>>>,
+
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
     pub trim_recurse_max: int4,
@@ -2962,6 +2965,7 @@ impl Architecture {
             input_arm_isa_override: false,
             arm_inventory_modes: Vec::new(),
             loader_entry_tracks: std::collections::BTreeMap::new(),
+            loader_mips_t9: None,
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
@@ -4736,11 +4740,17 @@ impl Architecture {
         // function entry address through the detached per-function skeleton.
         ctx.tracked_sets = self.with_context_db(|db| db.clone_trackbase());
         if let Some(entry) = entry {
-            if let Some(seeds) = self.loader_entry_tracks.get(entry) {
+            let mut seeds = self.loader_entry_tracks.get(entry).cloned().unwrap_or_default();
+            if self.analysis_mips_gp {
+                if let Some(seed) = self.loader_mips_t9.as_ref().and_then(|provider| provider(entry)) {
+                    seeds.push(seed);
+                }
+            }
+            if !seeds.is_empty() {
                 if let Some(stop) = entry.get_offset().checked_add(1) {
                     let end = Address::new(Rc::clone(entry.get_space().unwrap()), stop);
                     let mut track = ctx.tracked_sets.get_value(entry).clone();
-                    for seed in seeds {
+                    for seed in &seeds {
                         if !track.iter().any(|value| value.loc == seed.loc) {
                             track.push(seed.clone());
                         }
