@@ -305,7 +305,7 @@ impl Funcdata {
                 TypeOp::new(
                     opcode,
                     pcodeop_flags::binary | pcodeop_flags::commutative,
-                    "+".to_string(),
+                    "+",
                 ),
             );
             // for i: opSetInput(newop, op->getIn(i), i);

@@ -1819,7 +1819,7 @@ impl Funcdata {
     fn w6_type_op(opc: OpCode) -> TypeOp {
         use pcodeop_flags as f;
         // opflags transcribed verbatim from decompiler/cpp/typeop.cc.
-        let (flags, name): (uint4, &str) = match opc {
+        let (flags, name): (uint4, &'static str) = match opc {
             // TypeOpIntSless / TypeOpIntSlessEqual: binary | booloutput
             OpCode::CPUI_INT_SLESS => (f::binary | f::booloutput, "<"),
             // TypeOpIntLess / TypeOpIntLessEqual: binary | booloutput
@@ -1843,7 +1843,7 @@ impl Funcdata {
             // eval-type bits (load-bearing for `booloutput` consumers).
             _ => return crate::typeop::type_op_for(opc),
         };
-        TypeOp::new(opc, flags, name.to_string())
+        TypeOp::new(opc, flags, name)
     }
 
     // -----------------------------------------------------------------------
