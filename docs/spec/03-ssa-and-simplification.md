@@ -1142,16 +1142,15 @@ any Override. A stopped pass has recovered fewer of them: a duplicated
 variables differently. Over 29,103 functions (decbench O0/O2/O2-noinline
 binaries, three ARM firmware images, CrashLogger.dll, python314.dll) 31 take a
 dead-code restart and 5 print differently: two lose the duplicated tag and
-three fold a temporary into its use. hkxc.exe's 0x1406198f0 renumbers its
-locals, folds some temporaries and prints 289 eight-byte constant stores
-through a `char (*)[16]` result as eight byte stores each, the form it already
-prints at 136 other such stores. With the unlocked symbols and prototype inputs
-cleared on a restart, both orders print the same in all of these but the
-duplicated tag. An
-Override a later pass would have recorded is recorded by the restarted run
-itself, at the cost of another restart. A jump-table
-sub-decompilation never restarts, and with `earlyrestart off` the pass
-finishes first.
+three fold a temporary into its use; with the unlocked symbols and prototype
+inputs cleared on a restart, both orders print the same there but for the
+duplicated tag. hkxc.exe's 0x1406198f0 renumbers its locals, folds some
+temporaries and prints 289 eight-byte constant stores through a
+`char (*)[16]` result as eight byte stores each, the form it already prints at
+136 other such stores. An Override a later pass would have recorded is
+recorded by the restarted run itself, at the cost of another restart. A
+jump-table sub-decompilation never restarts, and with `earlyrestart off` the
+pass finishes first.
 
 **Free-varnode failure mode.** After `remove_revisited_markers`, a free read
 being guarded must have exactly one reader; a free varnode with multiple reads
