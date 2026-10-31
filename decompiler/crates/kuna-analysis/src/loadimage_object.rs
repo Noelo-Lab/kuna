@@ -933,10 +933,14 @@ impl ObjectLoadImage {
         }
 
         // A Mach-O export-trie name in code the symbol table lacks (a dylib
-        // after `strip -N`), spelled as the symbol table spells its names.
+        // after `strip -N`), spelled as the symbol table spells its names; at an
+        // entry another name holds, it is an alias.
         for (addr, name) in crate::loader::macho_stubs::trie_functions(&file) {
+            let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
-                funcsyms.push(FuncSym { addr, name: demangle_funcsym_name(name, namechars), size: 0 });
+                funcsyms.push(FuncSym { addr, name, size: 0 });
+            } else {
+                aliases.push(FuncSym { addr, name, size: 0 });
             }
         }
 
@@ -3254,6 +3258,21 @@ mod tests {
                 img.data_exports()
             );
         }
+    }
+
+    /// (GH #1349) A dylib whose `nlist` keeps one of three exports: the trie
+    /// names the unnamed entry, and its second name at the named entry is an
+    /// alias.
+    #[test]
+    fn macho_trie_names_fill_a_partial_symbol_table() {
+        let path =
+            format!("{}/tests/fixtures/macho_trie_partial_arm64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let mut primary = img.func_symbols();
+        primary.sort_unstable();
+        assert_eq!(primary, vec![(0x240, "_audit_export_a".into()), (0x248, "_audit_caller".into())]);
+        assert_eq!(img.func_symbol_aliases(), vec![(0x240, "_audit_export_b".to_string())]);
     }
 
     /// (GH #1349) A dylib stripped of every `nlist` entry still exports its

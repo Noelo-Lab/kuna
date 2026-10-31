@@ -957,6 +957,14 @@ of its functions. Source `macho_trie_exports.c`; recipe, toolchain and SHA-256 i
 (macho_trie_names_survive_a_stripped_symbol_table)` and
 `kuna-cli/tests/macho_trie_names_cli.rs`.
 
+`macho_trie_partial_arm64` (arm64, 17 KB) is the partly stripped shape: its
+`nlist` keeps `_audit_export_a`@`0x240` and its trie also names
+`_audit_export_b` (same entry) and `_audit_caller`@`0x248`. Linked from
+`macho_trie_partial.s`, then `macho_trie_partial_arm64.py` drops the other two
+`nlist` entries; recipe and SHA-256 in `macho_trie_partial_arm64.provenance`.
+Pinned by `loadimage_object.rs (macho_trie_names_fill_a_partial_symbol_table)`
+and `kuna-cli/tests/macho_trie_names_cli.rs`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design

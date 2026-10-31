@@ -3,10 +3,11 @@
 //! them, `decompile` selects by them in either spelling, and a call to one reads
 //! by name, as on the unstripped dylib.
 //!
-//! Fixtures: `macho_trie_exports_arm64` (chained fixups, `LC_DYLD_EXPORTS_TRIE`)
-//! and `macho_trie_exports_info_arm64` (the classic `LC_DYLD_INFO_ONLY` trie and
-//! no `LC_FUNCTION_STARTS`). Integration tests require the built processor
-//! specs under `specs/`.
+//! Fixtures: `macho_trie_exports_arm64` (chained fixups, `LC_DYLD_EXPORTS_TRIE`),
+//! `macho_trie_exports_info_arm64` (the classic `LC_DYLD_INFO_ONLY` trie and no
+//! `LC_FUNCTION_STARTS`) and `macho_trie_partial_arm64` (an `nlist` that keeps
+//! one of three exports). Integration tests require the built processor specs
+//! under `specs/`.
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -73,5 +74,23 @@ fn trie_names_list_and_select_on_a_stripped_dylib() {
         let stderr = String::from_utf8_lossy(&out.stderr);
         assert!(!out.status.success(), "{name}: a data export is not a function");
         assert!(stderr.contains("it names data at 0x4000 in __data"), "{name}:\n{stderr}");
+    }
+}
+
+/// A symbol table that keeps one of three exports: the trie names the entry it
+/// lost, and the second name at the entry it kept selects that entry.
+#[test]
+fn trie_names_fill_a_partial_symbol_table() {
+    let image = fixture("macho_trie_partial_arm64");
+    let out = kuna(&["functions", &image]);
+    let listing = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(listing.contains("0x240\t_audit_export_a\t(sub_240, _audit_export_b)"), "{listing}");
+    assert!(listing.contains("0x248\t_audit_caller\t(sub_248)"), "{listing}");
+    for selector in ["_audit_export_b", "audit_export_b"] {
+        let out = kuna(&["decompile", &image, selector]);
+        let c = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{selector}: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(c.contains("return a0 + 7;"), "{selector}:\n{c}");
     }
 }

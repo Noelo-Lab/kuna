@@ -575,7 +575,8 @@ entries beside a trie of 219 names. `macho_trie.rs (exports)` walks the trie and
 does not already hold at that address. The trie's names take the `nlist` exports'
 rule: one in a code section is a function entry, spelled as the symbol table spells
 its names (`_audit_exported_function`), so a stripped image lists what its
-unstripped original lists and the C spelling resolves the same way; any other is a
+unstripped original lists and the C spelling resolves the same way (at an entry
+another name already holds, it is a lookup alias of that entry); any other is a
 lookup name and, inside a non-code section, a `datasyms` entry sized like an `nlist`
 symbol. A re-export names another image's symbol and is skipped, a
 stub-and-resolver export names its stub, a thread-local export its descriptor, and
