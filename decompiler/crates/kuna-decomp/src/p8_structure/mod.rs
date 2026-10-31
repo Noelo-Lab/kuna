@@ -24,6 +24,7 @@ pub mod kuna_outline;
 pub mod kuna_earlyreturn;
 pub mod kuna_returndup;
 pub mod kuna_retsplitglobal;
+pub mod kuna_retsplitlimit;
 pub mod kuna_switchreturn;
 pub mod kuna_taildup;
 pub mod region_structurer;

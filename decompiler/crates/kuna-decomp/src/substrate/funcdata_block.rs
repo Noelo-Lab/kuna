@@ -3016,6 +3016,17 @@ impl Funcdata {
         )
     }
 
+    /// The number of ops in basic block `b`.
+    fn bb_op_count(&self, b: BlockId) -> usize {
+        let mut n = 0;
+        let mut cur = self.bb_op_head(b);
+        while let Some(op) = cur {
+            n += 1;
+            cur = self.obank().get(op).and_then(|o| o.basic_neighbours().1);
+        }
+        n
+    }
+
     /// Split the epilog of the function (C++ `ActionReturnSplit::apply`,
     /// `blockaction.cc:2265`).  Returns the number of edges split (the action's
     /// change count).
@@ -3049,6 +3060,7 @@ impl Funcdata {
             }
 
             let mut splitcount = 0;
+            let first = retnode.len();
             // splitedge holds edges to split, biggest index first, so edge removal
             // does not shift the index of remaining edges.
             let size_in = self.bblocks_ref().block(parent).size_in();
@@ -3075,6 +3087,15 @@ impl Funcdata {
             if size_in == splitcount {
                 splitedge.pop();
                 retnode.pop();
+            }
+            // (kuna `retsplitlimit`) a block too big to clone this many times keeps its gotos.
+            if crate::p8_structure::kuna_retsplitlimit::split_is_declined(
+                self.get_arch().ret_split_limit,
+                self.bb_op_count(parent),
+                retnode.len() - first,
+            ) {
+                splitedge.truncate(first);
+                retnode.truncate(first);
             }
         }
 

@@ -653,6 +653,10 @@ pub struct Architecture {
     /// a 72-store epilogue is not cloned into each predecessor (option
     /// `retsplitglobal`).  See [`crate::p8_structure::kuna_retsplitglobal`].
     pub ret_split_global: bool,
+    /// (kuna) The most ops `ActionReturnSplit` may clone out of one return block,
+    /// `None` for no limit (option `retsplitlimit`).  See
+    /// [`crate::p8_structure::kuna_retsplitlimit`].
+    pub ret_split_limit: Option<u64>,
     /// (kuna) Resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
     /// to the source lane it selects (option `simdlane`).  See
     /// [`crate::p3_dataflow::kuna_simdlane`].
@@ -2998,6 +3002,7 @@ impl Architecture {
             const_space_load_fold: false,
             drop_call_push: false,
             ret_split_global: false,
+            ret_split_limit: None,
             input_varnode_adjust: false,
             ret_input_half: false, // (kuna) option retinputhalf; reset_defaults sets the shipped default
             ret_pushed_half: false, // (kuna) option retpushedhalf; reset_defaults sets the shipped default
@@ -3421,6 +3426,7 @@ impl Architecture {
         self.fold_boolean_mask = true; // (kuna) DIV-2 default-on (GH-1282)
         self.cancel_byte_arithmetic = true; // (kuna) DIV-174 default-on: exact low-byte modular cancellation; corpus evidence is recorded with the feature
         self.ret_split_global = true; // (kuna) DIV-PENDING default-on: a shared RETURN block that stores to GLOBALS is not the bare epilogue `ActionReturnSplit::isSplittable` assumes, so it is no longer cloned into every predecessor. One-directional (it can only decline a split) and byte-identical (0/675) on the datatest corpus; restore the upstream predicate with `option retsplitglobal off`
+        self.ret_split_limit = Some(crate::p8_structure::kuna_retsplitlimit::DEFAULT_LIMIT); // (kuna) GH-1034 default-on: a return block whose split would clone more than 2^20 ops keeps its gotos
         self.simd_lane_fold = true; // (kuna) DIV-PENDING default-on: an exact identity (pshufb with a constant mask IS a byte permutation), so a lane read resolves to the source lane instead of an opaque CALLOTHER temporary. Byte-identical (0/675) on the datatest corpus; restore the opaque rendering with `option simdlane off`
         self.const_space_load_fold = true; // (kuna) DIV-PENDING default-on: a LOAD from the CONSTANT space is the address-is-value identity `RuleLoadVarnode` already applies to a constant pointer, and it does not stop holding for a temporary, so a SLEIGH dynamic const export is no longer left as a pointer-shaped LOAD for `ActionLaneDivide` to slice into near-null lane reads. Byte-identical (0/675) on the datatest corpus; restore the upstream rendering with `option constspaceload off`
         self.drop_call_push = true; // (kuna) callpush default-on: a call's own return-address push through an untracked stack pointer (an alloca frame) is deleted; the tracked case was already a dead stack store. Restore the upstream statement with `option callpush off`
@@ -4304,6 +4310,7 @@ impl Architecture {
         ctx.const_space_load_fold = self.const_space_load_fold; // constspaceload
         ctx.drop_call_push = self.drop_call_push; // callpush
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
+        ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
         // rule can name a CALLOTHER through the ArchSeam (the boundary
         // ArchContext carries no userop table).
