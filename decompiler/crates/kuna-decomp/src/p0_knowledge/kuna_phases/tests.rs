@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_347() {
-    assert_eq!(kuna_num_settables(), 347);
-    assert_eq!(SETTABLE_TABLE.len(), 347);
+fn settable_count_is_348() {
+    assert_eq!(kuna_num_settables(), 348);
+    assert_eq!(SETTABLE_TABLE.len(), 348);
 }
 
 #[test]
-fn tier_counts_are_124_core_131_transform_92_analysis() {
+fn tier_counts_are_125_core_131_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_124_core_131_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (124, 131, 92));
+    assert_eq!((core, transform, analysis), (125, 131, 92));
 }
 
 #[test]
@@ -757,6 +757,9 @@ fn option_values_live_value_present_for_155() {
                             // (kuna) `gobool` takes the same MODE shape; its
                             // live value is `Architecture::go_bool`.
                             | "gobool"
+                            // (kuna) `fpuemu` takes the same MODE shape; its
+                            // live value is `Architecture::fpu_emu`.
+                            | "fpuemu"
                             // (kuna) `gowritebarrier`: the same MODE shape;
                             // its live value is `Architecture::go_write_barrier`.
                             | "gowritebarrier"
@@ -1134,7 +1137,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `loadguardreads`; its P3 row sits after `prunedssa`.
     // +1 for `mzsweep`; its P1 row sits beside `rawdiscover`.
     // +1 for `readonlyreturns`; its P3 row sits after `loadguardreads`.
-    assert_eq!(json.matches("},\n").count(), 346);
+    // +1 for `fpuemu`; its P2 row sits beside `decodehalt`.
+    assert_eq!(json.matches("},\n").count(), 347);
 }
 
 #[test]

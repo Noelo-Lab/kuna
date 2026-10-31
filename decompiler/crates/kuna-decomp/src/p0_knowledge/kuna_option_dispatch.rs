@@ -166,6 +166,12 @@ kuna_options! { self, p1;
         self.apply_segmentize();
         Ok(msg)
     },
+    "fpuemu" => {
+        let (mode, msg) = crate::kuna_fpuemu::parse_fpuemu_mode(p1).map_err(KunaError::parse)?;
+        self.fpu_emu = mode.as_u8();
+        crate::kuna_fpuemu::apply(self);
+        Ok(msg)
+    },
     "syscallregs" => {
         let (mode, msg) = crate::kuna_syscallregs::OptionSyscallRegs.apply(p1)?;
         self.syscall_regs = mode;

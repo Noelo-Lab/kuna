@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3320,
-    3320
+    3331,
+    3331
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -973,7 +973,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 347 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 348 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2439,6 +2439,17 @@
     "data:formal rename does not produce an uninitialized body shadow",
     "data:formal rename survives consecutive backing initializers",
     "data:formal rename survives consecutive rebuilds in the signature",
+    "data:fpuemu #10: on, segment bits 11 are ES",
+    "data:fpuemu #11: on, INT 3Dh is FWAIT",
+    "data:fpuemu #1: off, the emulated FLD, FLD1 and FWAIT are calls through swi(0x39), swi(0x35), swi(0x3d)",
+    "data:fpuemu #2: off, FLD1's ModR/M byte E8 reads as a CALL to a phantom function",
+    "data:fpuemu #3: off, INT 3Ch is an interrupt",
+    "data:fpuemu #4: on, scale takes its double argument",
+    "data:fpuemu #5: on, scale computes 1 + a0 * k into res",
+    "data:fpuemu #6: on, fles loads the float its far pointer names",
+    "data:fpuemu #7: on, segment bits 00 are DS",
+    "data:fpuemu #8: on, segment bits 01 are SS",
+    "data:fpuemu #9: on, segment bits 10 are CS",
     "data:frame publications retain the declared queue pointer",
     "data:frame publications store scalar pointer bits",
     "data:frame versions: cached word remains independent",

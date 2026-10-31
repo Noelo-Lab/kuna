@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1288: a DOS program linked with the 8087 emulator (DAZZLE.EXE,
+    Turbo C) carries no x87 opcodes. The linker turns each WAIT+ESC pair into
+    a software interrupt the emulator services: INT 34h+n stands for ESC
+    D8h+n and is followed by the ModR/M and displacement, INT 3Ch by a byte
+    holding the segment override (bits 6-7: DS SS CS ES) and the ESC opcode,
+    and INT 3Dh is FWAIT. kuna decoded them as interrupts, so the operand
+    bytes became garbage instructions: FLD1 (CD 35 E8) read as INT 35h and a
+    near CALL to a phantom function.
+
+    Independently assembled (nasm -f bin, org 0), each 9B Dx / 9B seg Dx /
+    90 9B rewritten the way the emulator fixups rewrite them:
+      0x00 start: calls fles(far ptr) and scale(3.0)
+      0x25 scale: fld qword [bp+4]; fmul qword [k]; fld1; faddp;
+                  fstp qword [res]; fwait
+      0x40 fles:  les bx,[bp+4]; fld dword [es:bx]; fstp qword [res]; fwait
+      0x53 segs:  fld dword [ds:bx]; fld dword [ss:bx]; fld qword [cs:k];
+                  fld dword [es:di]; fwait
+      0x68 k = 2.5, 0x70 res, 0x78 arg = 3.0
+
+    Stage: P2 decode context (option fpuemu, default auto). A bytechunk has
+    no MS-DOS executable for auto to read evidence from, so it decodes as
+    off; the CLI test dos_fpuemu_cli covers auto on a synthetic MZ. Pass one
+    is option fpuemu off: asserts 1-3 show the interrupts, the phantom call
+    FLD1 decodes to, and INT 3Ch read as an interrupt. Pass two is option
+    fpuemu on: asserts 4-6 are the float arithmetic, asserts 7-10 the four
+    segment forms of INT 3Ch and assert 11 the emulated FWAIT.
+-->
+<bytechunk space="ram" offset="0x0">
+1e687800e8390083c404ff367e00ff367c00ff367a00ff367800e8080083c408
+b8004ccd215589e5cd394604cd380e6800cd35e8cd3ac1cd391e7000cd3d5dc3
+5589e5c45e04cd3cd907cd391e7000cd3d5dc3cd3c1907cd3c5907cd3c9d0668
+00cd3cd905cd3dc3000000000000044000000000000000000000000000000840
+</bytechunk>
+<symbol space="ram" offset="0x0" name="start"/>
+<symbol space="ram" offset="0x25" name="scale"/>
+<symbol space="ram" offset="0x40" name="fles"/>
+<symbol space="ram" offset="0x53" name="segs"/>
+</binaryimage>
+<script>
+  <com>option fpuemu off</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>disassemble 0x53 0x68</com>
+  <com>option fpuemu on</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fles</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>disassemble 0x53 0x68</com>
+  <com>quit</com>
+</script>
+<stringmatch name="fpuemu #1: off, the emulated FLD, FLD1 and FWAIT are calls through swi(0x39), swi(0x35), swi(0x3d)" min="3" max="3">\(\*\(code \*\)swi\(0x3[59d]\)\)\(\);</stringmatch>
+<stringmatch name="fpuemu #2: off, FLD1's ModR/M byte E8 reads as a CALL to a phantom function" min="1" max="1">sub_3b03\(\);</stringmatch>
+<stringmatch name="fpuemu #3: off, INT 3Ch is an interrupt" min="1" max="1">^0x00000053: INT\s+0x3c</stringmatch>
+<stringmatch name="fpuemu #4: on, scale takes its double argument" min="1" max="1">void scale\(float8 a0\)</stringmatch>
+<stringmatch name="fpuemu #5: on, scale computes 1 + a0 * k into res" min="1" max="1">\*\(float8 \*\)0x70 = \(float8\)\(\(float10\)1 \+ \(float10\)a0 \* \(float10\)\*\(float8 \*\)0x68\);</stringmatch>
+<stringmatch name="fpuemu #6: on, fles loads the float its far pointer names" min="1" max="1">\*\(float8 \*\)0x70 = \(float8\)\*a0;</stringmatch>
+<stringmatch name="fpuemu #7: on, segment bits 00 are DS" min="1" max="1">^0x00000053: FLD\s+float ptr DS:\[BX\]</stringmatch>
+<stringmatch name="fpuemu #8: on, segment bits 01 are SS" min="1" max="1">^0x00000057: FLD\s+float ptr SS:\[BX\]</stringmatch>
+<stringmatch name="fpuemu #9: on, segment bits 10 are CS" min="1" max="1">^0x0000005b: FLD\s+double ptr CS:\[0x68\]</stringmatch>
+<stringmatch name="fpuemu #10: on, segment bits 11 are ES" min="1" max="1">^0x00000061: FLD\s+float ptr ES:\[DI\]</stringmatch>
+<stringmatch name="fpuemu #11: on, INT 3Dh is FWAIT" min="1" max="1">^0x00000065: WAIT</stringmatch>
+</decompilertest>

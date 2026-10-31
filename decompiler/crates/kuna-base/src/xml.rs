@@ -2127,7 +2127,8 @@ mod tests {
         // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
         // and kuna-dedup-goto-arm / a goto into an arm unwrapped by a suffix hoist keeps a live target
         // and kuna-readonlyreturns / no return guard on read-only memory nothing writes (option readonlyreturns)
-        assert_eq!(count, 605, "corpus file count drifted");
+        // and kuna-x86-16-fpuemu / the 8087 emulator's INT 34h-3Dh decode as x87 (option fpuemu)
+        assert_eq!(count, 606, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

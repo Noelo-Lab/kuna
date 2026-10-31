@@ -4046,6 +4046,7 @@ pub fn bootstrap_from_mz_bytes(
         image.module.clone(),
         image.relocated_words.clone(),
     );
+    let fpu_emu_evidence = kuna_decomp::kuna_fpuemu::emulator_evidence(&image.module);
     let mut program = bootstrap_raw_image(
         path,
         target,
@@ -4058,6 +4059,8 @@ pub fn bootstrap_from_mz_bytes(
     if let Some(space) = program.analysis_code_space.clone() {
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
     }
+    program.arch_mut().fpu_emu_evidence = fpu_emu_evidence;
+    kuna_decomp::kuna_fpuemu::apply(program.arch());
     program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
     program.mz_evidence = Some(evidence);
     Ok(program)
