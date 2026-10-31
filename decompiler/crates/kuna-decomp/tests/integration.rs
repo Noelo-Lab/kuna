@@ -206,6 +206,9 @@ mod verify_w10_spacebase_render;
 #[path = "verify_w10_stackslot_ssa.rs"]
 mod verify_w10_stackslot_ssa;
 
+#[path = "multicollapse_witness.rs"]
+mod multicollapse_witness;
+
 #[path = "verify_w10_stackbyte_store.rs"]
 mod verify_w10_stackbyte_store;
 
