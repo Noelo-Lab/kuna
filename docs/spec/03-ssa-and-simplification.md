@@ -1130,11 +1130,16 @@ action group that ran the bumping heritage stops right after it
 context abandons the pass as on an expired deadline and requests the re-flow,
 and the drive skips the stack-store-guard layout check for the stopped pass
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
-The restarted run is the one that is printed in both orders. What the stopped
-part would have left behind for it is gone: comments a later pass of the first
-run would have added (a duplicated `// return-dupe` tag is the one seen), and
-any Override a later pass of the first run would have recorded, which the
-restarted run then records itself, at the cost of another restart. A jump-table
+The restarted run is the one that is printed in both orders, but it is not
+independent of the first: comments, the frame-slot evidence, the re-declared
+stack objects and the stack records a pass gathers all survive
+`Funcdata::clear`, and so does any Override. What the stopped part of the first
+run would have left behind is therefore gone: a duplicated `// return-dupe`
+tag, and in a huge function the slot and object evidence later passes would
+have added, so the restarted run can type and merge some locals differently
+(hkxc.exe's 0x1406198f0 prints one 8-byte store as eight byte stores and folds
+some temporaries into their uses). An Override a later pass would have recorded
+is recorded by the restarted run itself, at the cost of another restart. A jump-table
 sub-decompilation never restarts, and with `earlyrestart off` the pass
 finishes first.
 
