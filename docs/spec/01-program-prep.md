@@ -854,7 +854,8 @@ first module byte; an entry outside the module is refused. The dispatcher
 the relocated bytes to the raw-image path as one in-memory `CODE` mapping, with
 the `x86:LE:16:Real Mode:default` language unless the caller names another and
 the entry as its seed, so `rawdiscover` widens the inventory from it and the
-entry is reported as the image's. It then states the code segments the image
+entry is reported as the image's, together with the relocated words the call
+sweep reads (`mzsweep`, below). It then states the code segments the image
 names to the 16-bit x86 decoder
 (`decompiler/crates/kuna-analysis/src/loader/kuna_realmodecs.rs (paint)`): the
 entry's CS from its `CS:IP`, and, for every relocation whose word is the segment
@@ -5447,6 +5448,38 @@ cannot recover is what the input does not record: a function no direct call
 reaches and no seed names stays undiscovered, and `--define-function` remains
 the way to assert it. Raw-container only, so every object-format result is
 byte-identical; `--option rawdiscover off` restores the seeds-only inventory.
+
+(kuna) **On an MS-DOS executable the sweep keeps only the calls a DOS program
+can make** (`mzsweep`, default-on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_mzsweep.rs (MzEvidence)`). An
+`MZ` load reaches this pass as a raw image (§1.2), but unlike a
+firmware image its load module is mostly data: a large-model program's far data
+segments (bitmaps, fonts, tables) and its DGROUP sit beside its code, the sweep
+decodes them like code, and every `e8`/`9a` byte pattern it reads there becomes
+a call whose target is minted as a function, most often a run of zero fill that
+decompiles as repeated `ADD [BX+SI],AL`. The loader therefore hands the sweep
+its relocated module and the linear address of every word a relocation entry
+adjusted, and three rules apply to the sweep alone. A far `CALL`/`JMP
+ptr16:16` counts only when the relocation table names its segment word: the
+linker cannot know the paragraph DOS loads the module at, so an unrelocated
+segment is absolute and does not land in the module. A call read in a
+straight-line run (the decode stream since the last call, branch or return)
+that also read zero fill or an undecodable byte does not count, since it is a
+decode of data rather than a call an instruction makes. And a target counts
+only when its own straight-line run, read up to its first control transfer (at
+most 32 instructions), reads no zero fill and no undecodable byte and does not
+end in an unrelocated far branch: a function opens with code. `HLT`, which
+SLEIGH lifts as a branch to itself, does not end a run, because the CPU resumes
+after it. The seeds are never filtered, and the recursive descent still
+promotes every target that code it reaches calls, so a refused call drops only
+a target nothing else names. On the deark-unpacked DAZZLE.EXE of issue #1288
+this removes the 24 swept entries IDA classifies as data (23 in the four far
+data segments in front of the code, one in DGROUP; 321 functions become 297,
+functions whose decode hits bad instruction data go from 15 to 3, and the
+zero-run bodies from 15 to none) and keeps every function IDA has; the bodies
+of every function that stays are byte-identical. `MZ` loads only, so every other
+input, `--raw-image` included, is byte-identical; `--option mzsweep off`
+restores the whole-module sweep.
 
 Table-derived roots are committed but are deliberately not fed through a
 second recursive walk. Thus the bounded path obtains direct-call closure and

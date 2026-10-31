@@ -94,6 +94,48 @@ fn two_segment_dos_image() -> Vec<u8> {
     header
 }
 
+/// Code at `1000:0000` and a data region behind it. The entry near-calls
+/// `0x20`; the code at `0x40`, which only the linear call sweep reads, near-calls
+/// `0x60` and far-calls `0007:0000` (linear 0x10070) through a relocated
+/// segment word. The data region at `0x100` holds three calls a decode of it
+/// finds: one after zero fill (to `0x200`), one into zero fill (`0x300`) and a
+/// far call through a segment word no relocation names (`1000:0400`, linear
+/// 0x10400). `0x200` and `0x400` read as `inc ax; inc ax; ret`.
+fn data_segment_dos_image() -> Vec<u8> {
+    let mut module = vec![0x90u8; 0x100];
+    module[..9].copy_from_slice(&[0xe8, 0x1d, 0x00, 0xb8, 0x00, 0x4c, 0xcd, 0x21, 0xcb]);
+    module[0x20..0x24].copy_from_slice(&[0xb8, 0x01, 0x00, 0xc3]);
+    module[0x40..0x4d].copy_from_slice(&[0x55, 0x8b, 0xec, 0xe8, 0x1a, 0x00, 0x9a, 0x00, 0x00, 0x07, 0x00, 0x5d, 0xc3]);
+    module[0x60..0x64].copy_from_slice(&[0xb8, 0x02, 0x00, 0xc3]);
+    module[0x70..0x74].copy_from_slice(&[0xb8, 0x03, 0x00, 0xcb]);
+    module.resize(0x410, 0);
+    module[0x110..0x11e].copy_from_slice(&[
+        0xe8, 0xed, 0x00, 0xc3, // call 0x200 after zero fill; ret
+        0xe8, 0xe9, 0x01, 0xc3, // call 0x300, which is zero fill; ret
+        0x9a, 0x00, 0x04, 0x00, 0x10, 0xc3, // callf 1000:0400, not relocated; ret
+    ]);
+    module[0x200..0x203].copy_from_slice(&[0x40, 0x40, 0xc3]);
+    module[0x400..0x403].copy_from_slice(&[0x40, 0x40, 0xc3]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 8] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x06, 1),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+        (0x1c, 0x0049),
+        (0x1e, 0x0000),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
 fn kuna(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).output().expect("run kuna")
 }
@@ -175,5 +217,31 @@ fn a_relocated_far_call_states_its_segment_and_a_far_pointer_load_does_not() {
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
     assert!(text.contains("sub_21000();"), "{text}");
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn the_call_sweep_keeps_code_calls_and_drops_calls_decoded_from_data() {
+    let path = written("dos-mz-data-segment", &data_segment_dos_image());
+    let exe = path.to_str().unwrap();
+    let list = |extra: &[&str]| {
+        let out = kuna(&[&["functions", exe, "--json"][..], extra].concat());
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        text
+    };
+
+    let kept = list(&[]);
+    for name in ["\"sub_10000\"", "\"sub_10020\"", "\"sub_10060\"", "\"sub_10070\""] {
+        assert!(kept.contains(name), "missing {name}: {kept}");
+    }
+    for name in ["\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
+        assert!(!kept.contains(name), "{name} is a call decoded from data: {kept}");
+    }
+
+    let swept = list(&["--option", "mzsweep", "off"]);
+    for name in ["\"sub_10060\"", "\"sub_10070\"", "\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
+        assert!(swept.contains(name), "missing {name} from the whole-module sweep: {swept}");
+    }
     std::fs::remove_file(&path).unwrap();
 }

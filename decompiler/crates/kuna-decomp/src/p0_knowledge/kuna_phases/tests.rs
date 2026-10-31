@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_344() {
-    assert_eq!(kuna_num_settables(), 344);
-    assert_eq!(SETTABLE_TABLE.len(), 344);
+fn settable_count_is_345() {
+    assert_eq!(kuna_num_settables(), 345);
+    assert_eq!(SETTABLE_TABLE.len(), 345);
 }
 
 #[test]
-fn tier_counts_are_122_core_131_transform_91_analysis() {
+fn tier_counts_are_122_core_131_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_122_core_131_transform_91_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (122, 131, 91));
+    assert_eq!((core, transform, analysis), (122, 131, 92));
 }
 
 #[test]
@@ -381,6 +381,10 @@ fn option_values_live_value_present_for_155() {
         // gate read console-side via kuna_live_value, like the gates around it.
         // Default-ON, raw-container only.
         "rawdiscover",
+        // (kuna #1288) The MS-DOS evidence for rawdiscover's call sweep -- an
+        // analysis-tier gate read console-side via kuna_live_value. Default-ON,
+        // MZ loads only.
+        "mzsweep",
         "noreturn_disc",
         // (kuna, GH-312) The positive-evidence-only tally for `noreturn_disc` -- a
         // sub-rule gate with no codegen live reader (read console-side via
@@ -1121,7 +1125,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +2 for `readonlycalls` and `prunedssa`; their P3 rows sit at the end.
     // +1 for `segmentize`; its P3 row sits beside `x64syscall`.
     // +1 for `gowalkprune`; its P1 row sits beside `gonoreturn`.
-    assert_eq!(json.matches("},\n").count(), 343);
+    assert_eq!(json.matches("},\n").count(), 344);
 }
 
 #[test]

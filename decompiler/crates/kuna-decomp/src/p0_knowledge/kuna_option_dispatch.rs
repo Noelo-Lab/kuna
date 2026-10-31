@@ -1220,6 +1220,9 @@ kuna_options! { self, p1;
     "rawdiscover" => {
         on_off!(analysis_rawdiscover, "Raw-image recursive function discovery")
     },
+    "mzsweep" => {
+        on_off!(analysis_mzsweep, "MS-DOS executable call-sweep evidence")
+    },
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")
     },
