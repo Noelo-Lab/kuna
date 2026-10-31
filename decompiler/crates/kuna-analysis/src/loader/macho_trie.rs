@@ -64,9 +64,10 @@ const NAMES_PER_BYTE: usize = 16;
 /// The exports a thin Mach-O's trie defines, sorted by address and name.
 /// Empty for any other file, an image without a trie, or a trie outside the
 /// file. A 32-bit ARM image's trie marks a Thumb function with the low address
-/// bit, which its `nlist` entry does not carry; it is cleared, so both name the
-/// same entry.
-pub(crate) fn exports(file: &object::File) -> Vec<TrieExport> {
+/// bit, which its `nlist` entry does not carry; it is cleared where the even
+/// address lies in `code` (`(start, size)` ranges), so both name the same
+/// entry, and kept on data, which may sit at an odd address.
+pub(crate) fn exports(file: &object::File, code: &[(u64, u64)]) -> Vec<TrieExport> {
     use object::read::Object;
     let found = match file {
         object::File::MachO64(m) => locate(m),
@@ -76,13 +77,13 @@ pub(crate) fn exports(file: &object::File) -> Vec<TrieExport> {
     let Some((base, blob)) = found else {
         return Vec::new();
     };
-    let thumb = if file.architecture() == object::Architecture::Arm { !1 } else { !0 };
+    let arm = file.architecture() == object::Architecture::Arm;
     let mut out: Vec<TrieExport> = walk(blob)
         .into_iter()
         .filter_map(|(name, kind, value)| {
             let addr = match kind {
                 ExportKind::Absolute => value,
-                ExportKind::Regular => base.checked_add(value)? & thumb,
+                ExportKind::Regular => thumb_entry(base.checked_add(value)?, arm, code),
                 ExportKind::ThreadLocal => base.checked_add(value)?,
             };
             Some(TrieExport { name, addr, kind })
@@ -90,6 +91,16 @@ pub(crate) fn exports(file: &object::File) -> Vec<TrieExport> {
         .collect();
     out.sort_unstable_by(|a, b| (a.addr, &a.name).cmp(&(b.addr, &b.name)));
     out
+}
+
+/// `addr` without a Thumb state bit: on 32-bit ARM, an odd address whose even
+/// neighbour lies in `code` is that Thumb function's entry.
+fn thumb_entry(addr: u64, arm: bool, code: &[(u64, u64)]) -> u64 {
+    if arm && addr & 1 != 0 && super::macho_stubs::in_ranges(code, addr & !1) {
+        addr & !1
+    } else {
+        addr
+    }
 }
 
 /// The file bytes a thin Mach-O's exports are read from: the header and load

@@ -291,3 +291,15 @@ fn mutated_tries_stay_bounded() {
         assert!(kept <= trie.len() * NAMES_PER_BYTE);
     }
 }
+
+/// A 32-bit ARM trie's odd address is a Thumb entry only where its even
+/// neighbour is code: an exported byte at an odd data address keeps its
+/// address, and nothing changes off ARM.
+#[test]
+fn the_thumb_bit_is_cleared_only_in_code() {
+    let code = [(0x83a8, 0x1f48)];
+    assert_eq!(thumb_entry(0x83ef, true, &code), 0x83ee);
+    assert_eq!(thumb_entry(0x83ee, true, &code), 0x83ee);
+    assert_eq!(thumb_entry(0xc9e5, true, &code), 0xc9e5);
+    assert_eq!(thumb_entry(0x83ef, false, &code), 0x83ef);
+}

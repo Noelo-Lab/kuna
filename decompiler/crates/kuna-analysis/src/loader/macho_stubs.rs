@@ -364,7 +364,7 @@ fn read_named_exports(neutral: &object::File) -> Vec<NamedExport> {
             absolute: false,
         })
         .collect();
-    let trie = super::macho_trie::exports(neutral);
+    let trie = super::macho_trie::exports(neutral, &code);
     let mut held = vec![false; trie.len()];
     for e in &out {
         if let Ok(i) = trie.binary_search_by(|t| (t.addr, t.name.as_slice()).cmp(&(e.addr, e.name.as_slice()))) {

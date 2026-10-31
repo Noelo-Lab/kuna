@@ -580,7 +580,11 @@ another name already holds, it is a lookup alias of that entry); any other is a
 lookup name and, inside a non-code section, a `datasyms` entry sized like an `nlist`
 symbol. A re-export names another image's symbol and is skipped, a
 stub-and-resolver export names its stub, a thread-local export its descriptor, and
-an absolute export is a value, never an entry or a global. A trie name in code is
+an absolute export is a value, never an entry or a global. On 32-bit ARM the trie
+marks a Thumb function with the low address bit, which the `nlist` does not
+carry, so an odd address whose even neighbour lies in a code section names that
+even entry; an odd address in data keeps its bit, since an exported byte may sit
+there. A trie name in code is
 also a discovery seed: an `LC_UNIXTHREAD` executable with no `LC_FUNCTION_STARTS`
 exports its crt `start`, which is how its entry is found at all. An exported
 `_main` is a real symbol at the `LC_MAIN` entry, so `machomain` (§1.5) stands down
