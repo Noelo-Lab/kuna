@@ -699,7 +699,6 @@ fn descend(
     // processor). `None` when the program has no data space: no varnode can
     // match it, so the direct-access projection simply contributes nothing.
     let data_space = arch.manage().get_default_data_space().cloned();
-    let return_addr = arch.default_return_addr().cloned();
 
     // (kuna) `picbase`: the module's PIC base register, when the program has one
     // this can prove. Detected before the walk because the base a function
@@ -1108,8 +1107,8 @@ fn descend(
                 Vec::new()
             } else {
                 let fall_through = vma.wrapping_add(len as u64);
-                let (pool, ret) = (pool.as_ref(), return_addr.as_ref());
-                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool, ret)
+                let delayed = || has_delay_slot(translate, vma, &code_space, len);
+                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref(), &delayed)
             };
             // (kuna) `regcarry`: the address a register pair forms across
             // instructions. See [`super::kuna_regcarry`].
@@ -1889,15 +1888,16 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// `blr` lift `x30 = inst_start + 4` to one `INT_ADD` of two constants — so in
 /// an instruction that [`links`], an op that adds two constants into the
 /// fall-through is the same return address, and neither half of it (the first
-/// is the `bl`'s own address) is a reference. `ret` is the compiler spec's
-/// return-address storage.
+/// is the `bl`'s own address) is a reference. `delayed` says whether the
+/// instruction ends past a delay slot ([`has_delay_slot`]); it is asked only of
+/// an instruction that moves its fall-through whole without linking.
 fn data_refs(
     ops: &[FullOp],
     data_space: Option<&Rc<AddrSpace>>,
     mapped: &[(u64, u64)],
     fall_through: u64,
     pool: Option<&PoolImage>,
-    ret: Option<&VarnodeData>,
+    delayed: &dyn Fn() -> bool,
 ) -> Vec<(u64, XrefKind)> {
     let mut out = Vec::new();
     let linked = links(ops);
@@ -1973,7 +1973,7 @@ fn data_refs(
             };
             if kind == XrefKind::Data
                 && value == fall_through
-                && is_return_address(op, i, linked, ret)
+                && is_return_address(op, i, linked, delayed)
             {
                 continue;
             }
@@ -2014,19 +2014,26 @@ pub(super) fn links(ops: &[FullOp]) -> bool {
 /// address it forms (GH #1360)? An instruction that [`links`] (`linked`) leaves
 /// one. One that does not forms its fall-through only where it moves that
 /// constant whole — `adr x0,.+4` and `lea rax,[rip]` copy it into a register,
-/// `push offset next` stores it — and not into `ret`, the compiler spec's
-/// return-address register, which MIPS `nal` writes without branching. A
-/// fall-through combined with another constant is one half of a link value: A32
-/// `mov lr,pc` lifts to `lr = inst_next + 4` for the `bx` after it, microMIPS
-/// `bgezal` to `ra = inst_next | 1`.
-fn is_return_address(op: &FullOp, slot: usize, linked: bool, ret: Option<&VarnodeData>) -> bool {
+/// `push offset next` stores it — and is no branch. A fall-through combined
+/// with another constant is one half of a link value: A32 `mov lr,pc` lifts to
+/// `lr = inst_next + 4` for the `bx` after it, microMIPS `bgezal` to `ra =
+/// inst_next | 1`. MIPS `nal` (`bltzal $zero`) is a branch never taken, which
+/// lifts to nothing but `ra = inst_next`; only its delay slot (`delayed`) says
+/// it is one, on MIPS64 as on MIPS32.
+fn is_return_address(op: &FullOp, slot: usize, linked: bool, delayed: &dyn Fn() -> bool) -> bool {
     let whole = op.ins.len() == 1 || (op.opcode == OpCode::CPUI_STORE && slot == 2);
-    let into_ret = op.out.as_ref().zip(ret).is_some_and(|(o, r)| {
-        matches!((&o.space, &r.space), (Some(a), Some(b)) if Rc::ptr_eq(a, b))
-            && o.offset < r.offset.saturating_add(u64::from(r.size))
-            && r.offset < o.offset.saturating_add(u64::from(o.size))
-    });
-    linked || !whole || into_ret
+    linked || !whole || delayed()
+}
+
+/// Does the instruction at `vma` end past a delay slot? Its `len` is where it
+/// falls through to, and only a branch has a slot between its own encoding and
+/// that address.
+fn has_delay_slot(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>, len: u32) -> bool {
+    let addr = Address::new(Rc::clone(code_space), vma);
+    let own = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        translate.instruction_length(&addr)
+    }));
+    matches!(own, Ok(Ok(n)) if n > 0 && (n as u32) < len)
 }
 
 /// Does `op` add two constants into `fall_through` (AArch64's `x30 =
@@ -2222,7 +2229,7 @@ mod tests {
     /// Run [`data_refs`] with `ram` as the default data space and a fall-through
     /// no op under test materializes.
     fn refs(ram: &Rc<AddrSpace>, ops: &[FullOp]) -> Vec<(u64, XrefKind)> {
-        data_refs(ops, Some(ram), &MAPPED, 0, None, None)
+        data_refs(ops, Some(ram), &MAPPED, 0, None, &|| false)
     }
 
     /// The shape a constant-address memory operand actually lifts to: a direct
@@ -2352,8 +2359,8 @@ mod tests {
     /// `BRANCH` of x86 `call $+5` and PowerPC `bcl 20,31,$+4`, the `BRANCHIND`
     /// of a RISC-V PLT's `jalr t1,t3`, or x86-64 `syscall`'s `CALLOTHER`; nor
     /// where nothing branches but the value is a link: A32 `mov lr,pc` adds the
-    /// fall-through to 4, and MIPS `nal` copies it into the compiler spec's
-    /// return-address register.
+    /// fall-through to 4, and MIPS `nal` copies it into `ra` from behind a delay
+    /// slot.
     #[test]
     fn a_calls_own_return_address_is_never_a_data_reference() {
         let (ram, cst) = spaces();
@@ -2386,18 +2393,18 @@ mod tests {
             ("A32 mov lr,pc", vec![op(OpCode::CPUI_INT_ADD, Some(r(0x58)), vec![fall(), vn(&cst, 4)])]),
         ];
         for (what, ops) in &links {
-            assert!(data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, None).is_empty(), "{what}");
+            let decoded = || panic!("{what}: a link needs no second decode");
+            assert!(data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &decoded).is_empty(), "{what}");
         }
-        let ra = r(0x7c);
-        let nal = [op(OpCode::CPUI_COPY, Some(ra.clone()), vec![fall()])];
-        assert!(data_refs(&nal, Some(&ram), &MAPPED, 0x1104, None, Some(&ra)).is_empty());
+        let nal = [op(OpCode::CPUI_COPY, Some(r(0x7c)), vec![fall()])];
+        assert!(data_refs(&nal, Some(&ram), &MAPPED, 0x1104, None, &|| true).is_empty());
     }
 
     /// An instruction that transfers no control and moves its own fall-through
     /// whole has formed that address (GH #1360): AArch64 `adr x0,.+4` and x86-64
     /// `lea rax,[rip]` copy it, `mov eax,offset next` zero-extends it, `push
     /// offset next` stores it, and a predicated A32 `adreq` only branches to skip
-    /// itself. A register other than the return-address one is a plain register.
+    /// itself.
     #[test]
     fn an_address_formed_at_the_fall_through_is_a_data_reference() {
         let (ram, cst) = spaces();
@@ -2422,10 +2429,9 @@ mod tests {
                 ],
             ),
         ];
-        let ra = r(0x7c);
         for (what, ops) in &formed {
             assert_eq!(
-                data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, Some(&ra)),
+                data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &|| false),
                 vec![(0x1104, XrefKind::Data)],
                 "{what}"
             );
@@ -2447,13 +2453,13 @@ mod tests {
             op(OpCode::CPUI_INT_ADD, Some(x30), vec![vn(&cst, 0x1100), vn(&cst, 4)]),
             op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x1180)]),
         ];
-        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None, None).is_empty());
+        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None, &|| false).is_empty());
         let adr = [op(OpCode::CPUI_COPY, Some(x0.clone()), vec![vn(&cst, 0x1100)])];
-        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None, None), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
         let add_pc = [op(OpCode::CPUI_INT_ADD, Some(x0.clone()), vec![vn(&cst, 0x1100), vn(&cst, 0x10)])];
-        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None, None), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
         let pc_read = [op(OpCode::CPUI_INT_ADD, Some(x0), vec![vn(&cst, 0x1100), vn(&cst, 4)])];
-        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None, None), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
     }
 
     /// (kuna) `poolref`: a pointer-sized read of a read-only word files the
@@ -2472,7 +2478,7 @@ mod tests {
             vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
         );
         assert_eq!(
-            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), None),
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
             vec![(0x1000, XrefKind::Read), (0x4000, XrefKind::Data), (0x4020, XrefKind::Write)]
         );
     }
@@ -2492,7 +2498,7 @@ mod tests {
             vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
         );
         assert_eq!(
-            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), None),
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
             vec![(0x1000, XrefKind::Read), (0x4020, XrefKind::Write)]
         );
     }
@@ -2507,7 +2513,7 @@ mod tests {
         src.size = 4;
         let copy = op(OpCode::CPUI_COPY, None, vec![src]);
         assert_eq!(
-            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool), None),
+            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
             vec![(0x1008, XrefKind::Read), (0x4010, XrefKind::Data)]
         );
     }

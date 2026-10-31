@@ -6613,12 +6613,6 @@ impl Architecture {
         &self.split_records
     }
 
-    /// Where the compiler spec's top-level `<returnaddress>` says a function's
-    /// return address lives, if it says (MIPS `ra`, x86 the stack top).
-    pub fn default_return_addr(&self) -> Option<&kuna_num::pcoderaw::VarnodeData> {
-        self.default_return_addr.as_ref()
-    }
-
     /// Enter a decompile drive.  Every [`decompile_func_full_with_objects`] call
     /// nests one deeper; the drive that started from 0 is the outermost one.
     ///

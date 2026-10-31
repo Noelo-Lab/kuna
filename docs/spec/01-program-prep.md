@@ -6226,9 +6226,14 @@ address in `rcx` beside a `CALLOTHER`. The AArch64 sum rule above applies in
 the same instructions. An instruction that does not branch can still leave a
 link value, in two shapes. A32 `mov lr,pc` lifts `lr = inst_next + 4` for the `bx` after it, so a
 fall-through combined with another constant in one op is not an address the
-instruction forms. MIPS `nal` copies the fall-through into `ra` with no branch,
-so a value written into the compiler spec's `<returnaddress>` register is a link
-too. Anything else that moves the fall-through whole — a copy or an extension
+instruction forms. MIPS `nal` (`bltzal $zero`) is a branch that is never taken
+and lifts to nothing but `ra = inst_next`; it is told apart by its delay slot
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (has_delay_slot)`): its
+fall-through lies past the slot, beyond its own encoding, and only a branch has
+one. The compiler spec is no help here, since MIPS64's names no
+`<returnaddress>`; the slot is asked only of an instruction that moves the
+fall-through whole without linking, so the walk pays the second decode almost
+nowhere. Anything else that moves the fall-through whole — a copy or an extension
 of it, or a store of it — files it as `Data`: AArch64 and A32 `adr`, Thumb-2
 `adr.w`, x86-64 `lea rax,[rip]`, `mov eax,offset next`, `push offset next`. The
 register-pair carry and the PIC base harvest below made the same assumption
@@ -6237,8 +6242,9 @@ carry) or links (the harvest), so an `auipc`+`addi` pair that ends right before
 the label it forms files the label. Over 112 images (x86-64, i386 ELF and PE,
 AArch64 ELF and arm64 Mach-O, A32/Thumb, MIPS, PowerPC, RISC-V) no row changes:
 armel libc's 1,130 `mov lr,pc`, PowerPC libc's `bcl` thunks, x86-64 libc's 436
-`syscall`s and every RISC-V PLT `jalr t1,t3` still file nothing, and no image
-there forms an address at its own fall-through, so only the fixtures gain rows.
+`syscall`s, every RISC-V PLT `jalr t1,t3` and the `nal` in MIPS64 `ld.so.1`'s
+`_dl_start` still file nothing, and no image there forms an address at its own
+fall-through, so only the fixtures gain rows.
 Emitted C is unchanged; the query is not on the decompile path.
 
 (kuna) An edge also has to survive being resolved to a **node**, and the walk's

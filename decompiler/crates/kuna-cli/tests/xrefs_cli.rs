@@ -256,11 +256,12 @@ fn an_address_of_the_next_instruction_is_a_data_reference() {
 /// link: beside a `CALL` (`bl`, `blr`, `blx`, `call`, `jal`, `jalr`, `bctrl`),
 /// a `BRANCH` (x86 `call $+5`, PowerPC `bcl 20,31` and `bl` to the next, RISC-V
 /// `jal t0`, MIPS `bal` past its delay slot) or a `CALLOTHER` (`syscall`), or
-/// with no branch at all (A32 `mov lr,pc`, MIPS `nal`). Each pair is a link and
-/// its fall-through.
+/// with no branch at all (A32 `mov lr,pc`, MIPS `nal`, on MIPS64 too, whose
+/// compiler spec names no return-address register). Each pair is a link and its
+/// fall-through.
 #[test]
 fn no_link_references_the_return_address_it_leaves() {
-    let cases: [(&str, &[(&str, &str)]); 6] = [
+    let cases: [(&str, &[(&str, &str)]); 7] = [
         ("adrnext_aarch64", &[("0x210140", "0x210144"), ("0x210148", "0x21014c"), ("0x21014c", "0x210150")]),
         ("adrnext_x86_64", &[
             ("0x201137", "0x20113c"),
@@ -293,10 +294,18 @@ fn no_link_references_the_return_address_it_leaves() {
             ("0x20188", "0x20190"),
             ("0x20198", "0x201a0"),
         ]),
+        ("adrnext_mips64", &[
+            ("0x20214", "0x2021c"),
+            ("0x2022c", "0x20234"),
+            ("0x20248", "0x20250"),
+            ("0x20258", "0x20260"),
+        ]),
     ];
     for (bin, links) in cases {
+        let target: &[&str] = if bin == "adrnext_mips64" { &["--target", "MIPS:BE:64:default"] } else { &[] };
         for &(site, fall) in links {
-            let doc = xrefs(&[&fixture(bin), "--to", fall, "--json"]);
+            let path = fixture(bin);
+            let doc = xrefs(&[&[path.as_str(), "--to", fall, "--json"], target].concat());
             let leaked = (site.to_owned(), fall.to_owned(), "data".to_owned());
             assert!(!edges(&doc).contains(&leaked), "{bin}: the link at {site} references {fall}:\n{doc}");
         }

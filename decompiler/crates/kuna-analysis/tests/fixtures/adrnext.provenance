@@ -16,10 +16,12 @@ What they are
   adrnext_ppc32        static PPC32 ELF: bcl 20,31 and bl to the next, bl, bctrl.
   adrnext_mips         static MIPS32 BE ELF: bal past its delay slot, bltzal
                        $zero (SLEIGH's nal), jal, jalr.
+  adrnext_mips64       static MIPS64 BE (n64) ELF, the same four links; read
+                       with --target MIPS:BE:64:default.
   Sources: adrnext_<arch>.S, adrnext_macho.s.
 
 Why they are vendored
-  They are assembled and linked for six foreign targets, which CI has no
+  They are assembled and linked for seven foreign targets, which CI has no
   toolchain for.
 
 Where they came from
@@ -33,6 +35,7 @@ Where they came from
       clang -target riscv64-linux-gnu -c adrnext_rv64.S -o rv64.o
       clang -target powerpc-linux-gnu -c adrnext_ppc32.S -o ppc32.o
       clang -target mips-linux-gnu -mno-abicalls -fno-pic -c adrnext_mips.S -o mips.o
+      clang -target mips64-linux-gnuabi64 -mno-abicalls -fno-pic -c adrnext_mips64.S -o mips64.o
       ld.lld -static -nostdlib -e main --build-id=none --no-relax <arch>.o \
           -o adrnext_<arch>
       clang -target arm64-apple-macos11 -c adrnext_macho.s -o macho.o
@@ -47,4 +50,5 @@ Where they came from
     6d3b761c7f2c6b954c7a34b0384b3e2428c8a57c0f67f607b0667fb7caf64bbe  adrnext_rv64
     1283f5088734c9f26c9d5992903a5ed217f91624314a65852e389fb624602548  adrnext_ppc32
     a2299c7afcfe56e14863924bdd93622258ec728de39cbf6b3fb0f35375efced8  adrnext_mips
+    3d8323fda445c28afcc94cffd44de9ca66f75f29d5b2ca34a92fee48afdeca8d  adrnext_mips64
   Never executed.
