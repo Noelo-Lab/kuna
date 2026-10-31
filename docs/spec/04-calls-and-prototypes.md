@@ -2404,10 +2404,13 @@ reads it in an instruction of its own: a move, a store, an operation, a
 compare (`c_add` on PowerPC stores `r4` as the low word of a `long long`
 global). A call (an argument the next callee may not take), a RETURN, a
 branch, a register window's copy of every register, a register XORed with or
-subtracted from itself do not read it, nor does an instruction whose writes,
-stores and branches come out the same whatever the register holds (run over
-pseudo-random inputs with two values of it): gcc's PowerPC `subfe 4,4,4`
-makes `xer_ca - 1` and only names `r4`, and SQLite's `int
+subtracted from itself do not read it, nor does an instruction none of whose
+writes outside its temporaries, stores, loads or branches depends on the
+register's value:
+the dependence follows each of the instruction's operations, except that one
+over the same varnode twice (`x - x`, `x < x`) depends on nothing and a sum
+keeps the register's multiple, so terms that cancel depend on nothing. gcc's
+PowerPC `subfe 4,4,4` makes `xer_ca - 1` and only names `r4`, and SQLite's `int
 sqlite3FindInIndex` and `growOp3` read as wide that way, with the `int` and
 pointer callers whose own proof waited on them. Neither does a store of two or
 more registers or of a register pair once the path has taken a branch: gcc
@@ -2431,7 +2434,20 @@ instruction another branch of the caller targets, when a branch after the
 call tests a flag that nothing set since the call (a call clobbers the flags),
 or when the caller jumps through a register (a jump table may reach the code
 after the call; Lua's `luaV_execute` and bash's `param_expand` give no
-evidence this way). A caller whose RETURN the register
+evidence this way). Nor does a site whose walk reaches a word the caller loads
+as data (its PC-relative literals: on big-endian Thumb the literal pool after
+such a call holds `0x00080123`, whose first halfword decodes as `movs r0,r1`),
+or whose fall-through reaches, before any branch, the target of a direct call
+anywhere in the image (with the local symbols discarded, `strip -x` or
+`-Wl,-x`, a static function's entry lies inside the extent of the function
+before it, and its first instructions read its second argument; a path that
+branches to such a target is a tail call and ends there), nor any site in a
+symbol named `f.cold` or `f.cold.N` (gcc's hot/cold partition,
+`-freorder-blocks-and-partition`, puts the rare blocks there and enters each
+from the hot part, so the block after a call need not follow it). A C++
+landing pad laid out right after such a call (the unwinder enters it with the
+selector in the second register) still reads as a caller's read; nothing in
+the bytes the walk reads tells the two apart. A caller whose RETURN the register
 reaches untouched (`return f();` in a function that keeps a frame, so it is no
 tail call, and SPARC's `call f; restore`) proves `f` once that caller is
 proven itself, which for such a caller means by its own callers: the path

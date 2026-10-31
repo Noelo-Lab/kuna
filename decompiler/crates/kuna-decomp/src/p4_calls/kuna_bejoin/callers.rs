@@ -44,7 +44,12 @@
 //! its fall-through reaches, before any branch, an instruction a branch of
 //! the caller targets, when a branch after it tests a flag nothing set since
 //! the call (an ARM literal pool's words decode as `andeq r0,r1,..`), or when
-//! the caller jumps through a register, whose table may reach that code.
+//! the caller jumps through a register, whose table may reach that code. Nor
+//! does one whose walk reaches a word the caller loads as data (a Thumb
+//! literal pool's `0x0008` decodes as `movs r0,r1`), or, before any branch,
+//! the target of a direct call (a function whose symbol `strip -x` removed),
+//! nor any in a part of a function gcc's hot/cold partition names `f.cold`,
+//! whose blocks the hot part enters.
 //!
 //! The call sites come from one scan of the executable bytes for the
 //! direct-call encodings (PowerPC `bl`, MIPS `jal` and `bal`, SPARC `call`,
@@ -256,6 +261,12 @@ pub(super) struct Index {
     funcs: Vec<(u64, u64)>,
     /// `(target, site)` of each direct call to a symbol, sorted.
     calls: Vec<(u64, u64)>,
+    /// The target of every direct call into the executable ranges other than
+    /// itself (an object's unrelocated `bl .`), sorted: a function's entry,
+    /// whether or not a symbol starts it.
+    entries: Vec<u64>,
+    /// The symbols gcc's hot/cold partition names `f.cold`, sorted.
+    cold: Vec<u64>,
 }
 
 impl Index {
@@ -271,6 +282,7 @@ impl Index {
         let mask = if matches!(isa, Isa::Arm { .. }) { !1u64 } else { !0u64 };
         let loader = arch.translate().loader_rc();
         let mut starts = Vec::new();
+        let mut cold = Vec::new();
         {
             let l = loader.borrow();
             l.open_symbols();
@@ -278,10 +290,15 @@ impl Index {
             while l.get_next_symbol(&mut rec) {
                 if rec.address.get_space().is_some_and(|s| Rc::ptr_eq(s, &code)) {
                     starts.push(rec.address.get_offset() & mask);
+                    if rec.name.ends_with(b".cold") || rec.name.windows(6).any(|w| w == b".cold.") {
+                        cold.push(rec.address.get_offset() & mask);
+                    }
                 }
             }
             l.close_symbols();
         }
+        cold.sort_unstable();
+        cold.dedup();
         let range_of = |a: u64| ranges.iter().find(|&&(lo, hi)| lo <= a && a <= hi).copied();
         starts.retain(|&s| range_of(s).is_some());
         starts.sort_unstable();
@@ -316,10 +333,13 @@ impl Index {
                 }
             }
         }
+        let mut entries: Vec<u64> = calls.iter().filter(|c| c.0 != c.1 && range_of(c.0).is_some()).map(|c| c.0).collect();
+        entries.sort_unstable();
+        entries.dedup();
         calls.retain(|(t, _)| funcs.binary_search_by_key(t, |f| f.0).is_ok());
         calls.sort_unstable();
         calls.dedup();
-        Some(Index { code, windows: isa == Isa::Sparc, funcs, calls })
+        Some(Index { code, windows: isa == Isa::Sparc, funcs, calls, entries, cold })
     }
 
     fn start(&self, entry: u64) -> Option<(u64, u64)> {
@@ -342,6 +362,11 @@ impl Index {
         self.calls[lo..].iter().take_while(move |c| c.0 == target).map(|c| c.1)
     }
 
+    /// Does a direct call target `at`?
+    fn entry(&self, at: u64) -> bool {
+        self.entries.binary_search(&at).is_ok()
+    }
+
     fn at(&self, off: u64) -> Address {
         Address::new(Rc::clone(&self.code), off)
     }
@@ -360,7 +385,7 @@ pub(super) struct Cache {
     facts: BTreeMap<u64, Facts>,
     scans: BTreeMap<u64, Scan>,
     clobbers: BTreeMap<u64, bool>,
-    joins: BTreeMap<u64, Option<BTreeSet<u64>>>,
+    layouts: BTreeMap<u64, Option<Layout>>,
 }
 
 impl Cache {
@@ -391,7 +416,7 @@ impl Cache {
         let facts = match self.facts.get(&key.1) {
             Some(f) => f.clone(),
             None => {
-                let f = facts(arch, index, lo, key.1, &mut self.joins);
+                let f = facts(arch, index, lo, key.1, &mut self.layouts);
                 self.facts.insert(key.1, f.clone());
                 f
             }
@@ -418,15 +443,15 @@ impl Cache {
 }
 
 /// Read every call site of `callee` ([`site_use`]).
-fn facts(arch: &Architecture, index: &Index, lo: Key, callee: u64, joins: &mut BTreeMap<u64, Option<BTreeSet<u64>>>) -> Facts {
+fn facts(arch: &Architecture, index: &Index, lo: Key, callee: u64, layouts: &mut BTreeMap<u64, Option<Layout>>) -> Facts {
     let mut out = Facts::default();
     if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &index.at(callee)) {
         return out;
     }
     for site in index.sites(callee).take(MAX_SITES) {
         let Some(caller) = index.containing(site) else { continue };
-        let Some(joins) = joins.entry(caller.0).or_insert_with(|| joins_of(arch, index, caller)) else { continue };
-        match site_use(arch, index, lo, callee, site, caller, joins) {
+        let Some(layout) = layouts.entry(caller.0).or_insert_with(|| layout_of(arch, index, caller)) else { continue };
+        match site_use(arch, index, lo, callee, site, caller, layout) {
             Use::Read => {
                 out.read = true;
                 out.returned.clear();
@@ -889,9 +914,11 @@ fn delay_slot(arch: &Architecture, index: &Index, at: u64, insn: &Insn) -> Optio
 /// under the same condition too (`ldrne r1,[sp,#0x1c]; orrnes r2,r1,r0`). A
 /// site that does not decode to that call says nothing, nor does one whose
 /// fall-through reaches, before any branch, an instruction another branch of
-/// the caller targets (`joins`), or one after which a branch tests a flag
-/// nothing set since the call: the call need not return there.
-fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64, caller: (u64, u64), joins: &BTreeSet<u64>) -> Use {
+/// the caller targets or a direct call's target ([`Layout`]), one whose walk
+/// reaches a word the caller loads as data, or one after which a branch tests
+/// a flag nothing set since the call: the call need not return there. A path
+/// that branches to a direct call's target is a tail call and ends there.
+fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64, caller: (u64, u64), layout: &Layout) -> Use {
     let Some(insn) = decode(arch, &index.at(site)) else { return Use::Dead };
     let Some(k) = insn
         .ops
@@ -925,8 +952,16 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
         }
     };
     while let Some((at, insn, mut op, mut facts, mut deriv, branched)) = todo.pop() {
-        if !branched && at != site && joins.contains(&at) {
-            return Use::Dead;
+        if at != site && op == 0 {
+            if layout.data.range(at..at + insn.len.max(1)).next().is_some() || (!branched && layout.joins.contains(&at)) {
+                return Use::Dead;
+            }
+            if index.entry(at) {
+                if !branched {
+                    return Use::Dead;
+                }
+                continue;
+            }
         }
         let mut fall = true;
         let mut forked = branched;
@@ -1082,17 +1117,32 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
     out
 }
 
+/// What a walk after a call in one function must not take for its
+/// continuation ([`layout_of`]).
+#[derive(Debug, Default)]
+struct Layout {
+    /// The instructions a branch of the function targets.
+    joins: BTreeSet<u64>,
+    /// The bytes inside the function it reads as data (a literal pool).
+    data: BTreeSet<u64>,
+}
+
 /// The instructions of the function `func` that a branch of its own targets,
-/// other than the next instruction (a conditional instruction's skip);
-/// `None` when it jumps through a register (a jump table, whose targets the
-/// walk does not know) or is too long to walk.
-fn joins_of(arch: &Architecture, index: &Index, func: (u64, u64)) -> Option<BTreeSet<u64>> {
+/// other than the next instruction (a conditional instruction's skip), and
+/// the bytes of its own extent it reads (an ARM literal pool's words); `None`
+/// when it jumps through a register (a jump table, whose targets the walk
+/// does not know), when it is the `.cold` part of a function (whose blocks
+/// the hot part enters), or when it is too long to walk.
+fn layout_of(arch: &Architecture, index: &Index, func: (u64, u64)) -> Option<Layout> {
     let (start, end) = func;
+    if index.cold.binary_search(&start).is_ok() {
+        return None;
+    }
     let base = tracked(arch, index, start);
     let noreturn = |t: u64| crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &index.at(t));
     let mut todo = vec![start];
     let mut seen: BTreeSet<u64> = BTreeSet::new();
-    let mut out = BTreeSet::new();
+    let mut out = Layout::default();
     while let Some(at) = todo.pop() {
         if !seen.insert(at) {
             continue;
@@ -1105,11 +1155,20 @@ fn joins_of(arch: &Architecture, index: &Index, func: (u64, u64)) -> Option<BTre
         if ops.iter().any(|&i| insn.ops[i].0 == OpCode::CPUI_BRANCHIND) {
             return None;
         }
+        for &i in &ops {
+            let (opc, _, ins) = &insn.ops[i];
+            let skip = usize::from(matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH | OpCode::CPUI_CALL));
+            for v in ins.iter().skip(skip) {
+                if let Some(a) = index.target(v).filter(|&a| a >= start && a < end) {
+                    out.data.extend(a..a.saturating_add(u64::from(v.size)).min(end));
+                }
+            }
+        }
         let next = at + insn.len;
         for t in targets {
             if t > start && t < end {
                 if t != next {
-                    out.insert(t);
+                    out.joins.insert(t);
                 }
                 todo.push(t);
             }
