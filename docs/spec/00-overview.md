@@ -3673,4 +3673,6 @@ cost rather than which rendered uses belong to a variable.
 The `raw-pcode` CLI query lifts each instruction directly through SLEIGH before
 the decompiler pipeline, exposing opcode and ordered varnode tuples. Its linear
 window is bounded by the resolved inventory extent or the caller; it does not
-follow control flow or claim that every decoded byte is reachable code.
+follow control flow or claim that every decoded byte is reachable code. If a
+later instruction fails, the query returns the decoded prefix, its exclusive end,
+the failure address and a nonzero exit status.

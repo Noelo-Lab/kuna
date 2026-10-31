@@ -1204,8 +1204,16 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
     let next = format!("0x{:x}", doc["end"].as_u64().unwrap());
     let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, &next, "--bytes", "1"]);
     assert_ne!(code, 0);
-    assert!(stdout.is_empty());
-    assert!(stderr.contains("crosses the requested or mapped boundary"), "{stderr}");
+    assert!(stderr.is_empty(), "{stderr}");
+    assert!(stdout.contains("crosses the requested or mapped boundary"), "{stdout}");
+    let (partial, stderr, code) = run_kuna(&["raw-pcode", &binary, "main", "--bytes", "2", "--json"]);
+    assert_eq!(code, 1, "{stderr}");
+    let partial: Json = serde_json::from_str(&partial).unwrap();
+    assert_eq!(partial["stop_reason"], "decode_error");
+    assert_eq!(partial["instructions"].as_array().unwrap().len(), 1);
+    assert_eq!(partial["end"], doc["end"]);
+    assert_eq!(partial["error"]["address"], doc["end"]);
+    assert_eq!(doc["stop_reason"], "instruction_limit");
 }
 
 #[test]

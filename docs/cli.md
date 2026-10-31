@@ -2320,7 +2320,11 @@ The range and function extent use the same inventory as `disassemble`; absent a
 known extent, the default window is 64 bytes, and derived walks stop at 1024
 instructions. `--count` and `--bytes` bound the walk. This is a linear listing,
 not a control-flow walk: it can encounter data inside a function and does not
-follow branches. An undecodable or boundary-crossing instruction is an error.
+follow branches. `stop_reason` is `range_end`, `instruction_limit`, `mapped_end`,
+or `decode_error`. On an undecodable or boundary-crossing instruction the
+command exits nonzero, while retaining decoded instructions in stdout; JSON
+`error` reports the failure address and message, and `end` is the exclusive
+end of the successfully decoded prefix.
 `decompile --raw` instead prints the decompiler's current IR after its passes.
 
 ## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough
