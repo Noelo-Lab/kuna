@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3350,
-    3350
+    3353,
+    3353
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1399,6 +1399,9 @@
     "data:OWNRETURN #9: the high word is never returned alone",
     "data:Observer receives the complete array record",
     "data:Observer receives the complete global record",
+    "data:Octeon N64 #1 fixed struct field reaches return",
+    "data:Octeon N64 #2 first, last and stack float reach return",
+    "data:Octeon N64 #3 no uninitialized register-half return",
     "data:P1: TOTAL shared() epilogue count across both passes is 3 (off clones to 2, on dedups to 1)",
     "data:P1: default (crossjumprevert off) emits the condensed cross-jump goto",
     "data:P1: on recovers three constant early returns from the shared epilogue (off merges to none)",

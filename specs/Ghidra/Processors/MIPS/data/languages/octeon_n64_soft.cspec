@@ -54,16 +54,14 @@
         </pentry>
         <rule>
           <datatype name="float" />
-          <varargs first="0" />
+          <join stackspill="false" />
+        </rule>
+        <rule>
+          <datatype name="float" />
           <join reversejustify="true" />
         </rule>
         <rule>
           <datatype name="struct" />
-          <varargs first="0" />
-          <join reversejustify="true" />
-        </rule>
-        <rule>
-          <datatype name="float" />
           <join reversejustify="true" />
         </rule>
         <rule>

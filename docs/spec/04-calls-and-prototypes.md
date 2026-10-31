@@ -566,6 +566,19 @@ stack object occupies twelve or sixteen bytes. Stack resources, general
 register resources and aggregate types retain their aligned object size.
 The declared datatype and its alignment remain unchanged.
 
+The Octeon N64 soft-float model passes small structs and unions in the leading
+bytes of each eight-byte GPR or stack slot, for both fixed and variadic
+arguments. A scalar `float` instead occupies the low four bytes of a GPR, but
+the leading four bytes of a stack slot. Its input rules therefore try an
+ordinary GPR join with `stackspill="false"` first, then a left-justified join
+when no register remains. A failed first rule consumes no slots. Ordinary
+32-bit integers keep low-word placement in registers and at stack-slot offset
+four. Scalar results use the low word of v0; small aggregate results use its
+leading bytes. These distinctions are exercised by the GCC/DWARF fixture and
+storage assertions in `decompiler/crates/kuna-console/tests/octeon_n64_arguments.rs`.
+Removing hard-float register rules must preserve aggregate placement and must
+not turn the hard-float stack fallback into a GPR allocation rule.
+
 ### Recovery: trials → parameters
 
 The recovery direction runs on `ParamTrial`/`ParamActive`
