@@ -229,6 +229,21 @@ impl SegmentDef {
     }
 }
 
+/// Does a jump table of segmented code target bytes the load image lacks?  A
+/// `jmp [cs:bx+table]` in a code segment the spec's 64 KiB `currentCS` guess gets
+/// wrong reads arbitrary words; such a table is rejected whole (the jump stays a
+/// jump-as-call), since truncating would keep the rows before the first miss.
+pub fn table_leaves_image(fd: &crate::funcdata::Funcdata, addresstable: &[Address]) -> bool {
+    let arch = fd.get_arch();
+    if arch.num_segment_ops() == 0 {
+        return false;
+    }
+    let Some(loader) = arch.loader.as_ref() else { return false };
+    let Ok(mut loader) = loader.try_borrow_mut() else { return false };
+    let mut probe = [0u8; 1];
+    addresstable.iter().any(|addr| loader.load_fill(&mut probe, addr).is_err())
+}
+
 /// The values the option changes outside the per-function snapshot, kept so
 /// `off` can put them back.
 #[derive(Debug, Clone)]

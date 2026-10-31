@@ -1843,9 +1843,15 @@ puts the saved sizes and space properties back.
 
 The real-mode spec's code segment is `currentCS = (inst_next >> 4) & 0xf000`, the
 instruction address rounded down to 64 KiB. For code in a segment that is not
-64 KiB aligned a cs-relative table is read from the wrong segment; with the
-option on its entries are followed as code, where off left the jump a call
-through `segment(...)`. Ghidra mode has no local `.sla` to compile the snippet,
+64 KiB aligned a cs-relative table is read from the wrong segment, and its
+entries are whatever words sit there. A table of the program's own branches
+never targets bytes the image does not have, so while a segment op is active
+`JumpBasic`'s sanity check rejects a table with any target outside the load image
+(`kuna_segmentize.rs (table_leaves_image)`), where upstream only truncates at a
+far unloadable row: the jump stays a jump-as-call, as with the option off,
+instead of decoding junk or failing the function on a fall-through off the end
+of the image. A wrong-segment table whose words all happen to land inside the
+image is still followed. Ghidra mode has no local `.sla` to compile the snippet,
 so there the segment ops are not decoded and the CALLOTHER stays.
 
 ## 3.3 Sub-variable flow

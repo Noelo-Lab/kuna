@@ -4968,6 +4968,9 @@ impl JumpModel for JumpBasicModel {
                 }
             }
         }
+        if crate::kuna_segmentize::table_leaves_image(fd, addresstable) {
+            return Ok(false);
+        }
         Ok(true)
     }
 

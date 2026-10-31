@@ -41,12 +41,12 @@
     its RET reads the slot at entry + 2, and no raw stack-pointer local is
     left (both failed before the fix, with `h` decompiled on its own).
 
-    The asserts read the stack and memory accesses as segment() calls, so the
-    script pins option segmentize off (see kuna-segmentize.xml for the default).
-    Assert 2 relies on the solver's guess for the call to g2 being upstream's
-    constant 4, which is what g2's RET 2 pops; the default guess is the two
-    bytes a near call stores, so the script also pins option calleepop off
-    (see kuna-calleepop-x86-16.xml).
+    Pass one pins option segmentize off, so the stack accesses read as
+    segment() calls. Assert 2 relies on the solver's guess for the call to g2
+    being upstream's constant 4, which is what g2's RET 2 pops; the default
+    guess is the two bytes a near call stores (see kuna-calleepop-x86-16.xml),
+    so pass one also pins option calleepop off. Pass two is the default, where
+    no stack access is left in the C: asserts 1 and 3 count both passes.
 -->
 <bytechunk space="ram" offset="0x0">
 4ce80c0085c075f9c390909090909090c3c20200909090909090909090909090
@@ -66,9 +66,17 @@
   <com>lo fu h</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option segmentize on</com>
+  <com>option calleepop on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted" min="1" max="1">^  \} while \(g\(\)\);$</stringmatch>
+<stringmatch name="stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted in both passes" min="2" max="2">^  \} while \(g\(\)\);$</stringmatch>
 <stringmatch name="stacksolver-unsolved #2: h, which terminated before, reads its return address two bytes above the entry slot" min="1" max="1">segment\(v\d+,\*\(unsigned short \*\)segment\(v\d+,&amp;Stack0002\)\);$</stringmatch>
 <stringmatch name="stacksolver-unsolved #3: no raw stack-pointer local is left" min="0" max="0">// sp$</stringmatch>
 </decompilertest>

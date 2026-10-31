@@ -3679,8 +3679,13 @@ value. "Computed" is a bounded walk back through the operations that only *move*
 value — copies, phis, indirects, piece/subpiece reshaping — stopping at the first
 one that produces one. An unwritten Varnode and an INDIRECT creation are
 uncomputed; a constant is computed, because returning a literal is a real return;
-anything the walk cannot classify is computed, so an unfamiliar shape keeps
-today's answer. The RETURN is then rewritten to the surviving half and the dead
+an unwritten global (a persistent RAM Varnode) is computed too, because a value
+read out of the program's own data is one the function chose to return, and no
+restore or clobber shape leaves a global behind — `mov ax,[g]; mov dx,[g+2]; ret`
+returns `CONCAT22(dat_g2,dat_g)`, where taking the global for a leftover kept
+`AX` alone, and an i386 `mov edx,5; mov eax,[g]; ret` lost the whole return
+under the `EDX:EAX` rule below; anything the walk cannot classify is computed, so
+an unfamiliar shape keeps today's answer. The RETURN is then rewritten to the surviving half and the dead
 concatenation destroyed.
 
 Timing is the load-bearing detail. At recovery time the restore is still

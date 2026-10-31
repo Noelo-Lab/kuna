@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3249,
-    3249
+    3254,
+    3254
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2693,11 +2693,13 @@
     "data:nested PPC operand: full rotation and mask",
     "data:no fabricated zero multiplication",
     "data:no shifted field store",
-    "data:nodejoin #1: shared exit emits a complete body",
+    "data:nodejoin #1: shared exit emits a complete body in both passes",
     "data:nodejoin #2: the loop survives the shared-exit repair",
     "data:nodejoin #3: the final memory read remains in the body",
     "data:nodejoin #4: the returned high and low words survive",
     "data:nodejoin #5: the pipeline does not abort",
+    "data:nodejoin #6: with the default segmentize the loop survives the shared-exit repair",
+    "data:nodejoin #7: with the default segmentize the final read is the global and both returned words survive",
     "data:nonzero overwrite survives",
     "data:noreturn_extern #1: neighbour call leaks past the no-return call (pass 1 off only)",
     "data:noreturn_extern #3: __stack_chk_fail is the bounding call (both passes)",
@@ -2887,6 +2889,9 @@
     "data:second cursor snapshot is explicit",
     "data:second index uses second snapshot",
     "data:second object name selects the same physical word",
+    "data:segmentize #10: a long read out of global memory is returned whole in DX:AX",
+    "data:segmentize #11: a cs-relative table read from the wrong segment, whose words leave the image, is not followed",
+    "data:segmentize #12: no flow reaches the table's out-of-image targets",
     "data:segmentize #1: with the option off each RET is a bare segment() statement, once per function",
     "data:segmentize #2: with the option off the video store goes through segment(0xb800,0x10)",
     "data:segmentize #3: the stack is seen through the segment op, so the frame parameters are recovered",
@@ -2988,7 +2993,7 @@
     "data:stack lifetimes: unknown memory observers remain in both modes",
     "data:stackarggap #1: option off invents a fourth and fifth argument to reach a stack slot (bug reproduced)",
     "data:stackarggap #2: option on ends the argument list at the register the caller never wrote",
-    "data:stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted",
+    "data:stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted in both passes",
     "data:stacksolver-unsolved #2: h, which terminated before, reads its return address two bytes above the entry slot",
     "data:stacksolver-unsolved #3: no raw stack-pointer local is left",
     "data:stackstruct #10: structdefs prints the record above the function",
