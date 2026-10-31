@@ -95,6 +95,9 @@ mod verify_w10_cast_strategy_adversarial;
 #[path = "verify_w10_charptr_signedness.rs"]
 mod verify_w10_charptr_signedness;
 
+#[path = "infertypes_join_edges.rs"]
+mod infertypes_join_edges;
+
 #[path = "verify_w10_concat_piece.rs"]
 mod verify_w10_concat_piece;
 
