@@ -1,0 +1,26 @@
+macho_datawidth_arm64 -- arm64 Mach-O whose data symbols are read at their width.
+
+What it is
+  A linked arm64 MH_EXECUTE (33,488 bytes, SHA-256
+  6aadb7392f61110a58502406df6a11dda79e4f81eb78d6c18221312b1a4a276d) built from
+  macho_datawidth.c:
+    struct pt origin = {1, 2};  -> _origin  @ 0x100004000 (__DATA,__data, 8 bytes)
+    int counter = 5;            -> _counter @ 0x100004008 (__DATA,__data, last, 4 bytes)
+    _bump @ 0x100000378 reads and increments both with 32-bit loads and stores.
+  An nlist records no size, so kuna sizes each data symbol to the next symbol of
+  its section (or the section end), capped at 8 bytes: _origin is 8 bytes and
+  _counter 4.
+
+How it was built (no macOS SDK; host clang + the rustup-bundled ld64.lld)
+  clang -target arm64-apple-macos11 -O1 -g0 -fno-inline -c macho_datawidth.c -o w.o
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  "$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o macho_datawidth_arm64 w.o
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). Prebuilt because CI
+  has no Mach-O linker.
+
+What it pins
+  kuna decompile macho_datawidth_arm64 _bump names both globals at their access
+  width (`_counter += 1;`), and the in-place increment of origin.x, a 4-byte
+  access to the 8-byte _origin, renders the store form `*(int *)&_origin += 1;`
+  rather than the cast `(int)_origin += 1;`, which is not C.

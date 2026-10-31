@@ -1,5 +1,5 @@
-//! `kuna unpack` -- statically unpack a UPX-packed executable so the rest of the
-//! CLI has a real program to analyze.
+//! `kuna unpack` -- statically unpack a UPX-, NEOLite- or PKLITE-packed
+//! executable so the rest of the CLI has a real program to analyze.
 //!
 //! ```text
 //!   kuna unpack <binary> [-o OUT] [--json]
@@ -48,6 +48,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use kuna_analysis::neolite::{self, NeoliteError};
+use kuna_analysis::pklite::{self, PkliteError};
 use kuna_analysis::upx::lzma;
 use kuna_analysis::upx::{self, UpxError};
 use object::{Object, ObjectSection};
@@ -115,13 +116,22 @@ pub fn run(argv: &[String]) -> i32 {
     if neolite::detect(&image) {
         return run_neolite(&args, &image);
     }
+    // PKLITE is recognized by its stub at the DOS entry point; anything without
+    // one falls through to the UPX arm exactly as before.
+    match pklite::unpack(&image) {
+        Err(PkliteError::NotPacked) => {}
+        result => return run_pklite(&args, &image, result),
+    }
 
     let unpacked = match upx::unpack(&image) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("error: {}: {e}", args.binary);
             if matches!(e, UpxError::NotPacked) {
-                eprintln!("note: kuna unpack handles UPX-packed executables; this file is not one");
+                eprintln!(
+                    "note: kuna unpack handles UPX-, NEOLite- and PKLITE-packed executables; \
+                     this file is none of them"
+                );
             }
             return 1;
         }
@@ -184,6 +194,153 @@ fn run_neolite(args: &Args, image: &[u8]) -> i32 {
         render_neolite(&args.binary, &out_path, &unpacked, image.len())
     };
     crate::output::emit_with_status(&text, 0)
+}
+
+/// The PKLITE arm: a DOS EXE rebuilt with its original header (or one
+/// reconstructed from the footer), relocation table, load module and overlay,
+/// or a COM decompressed whole.
+fn run_pklite(args: &Args, image: &[u8], result: Result<pklite::Unpacked, PkliteError>) -> i32 {
+    let unpacked = match result {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("error: {}: {e}", args.binary);
+            if let PkliteError::Unsupported(_) = e {
+                eprintln!(
+                    "note: the file carries a PKLITE decompressor stub but not a variant this \
+                     build can unpack"
+                );
+            }
+            return 1;
+        }
+    };
+
+    let out_path = args
+        .output
+        .clone()
+        .unwrap_or_else(|| default_output(&args.binary).to_string_lossy().into_owned());
+    if let Err(e) = std::fs::write(&out_path, &unpacked.bytes) {
+        eprintln!("error: could not write {out_path}: {e}");
+        return 1;
+    }
+
+    let text = if args.json {
+        format!(
+            "{}\n",
+            dumps_indent2(&pklite_json(&args.binary, &out_path, &unpacked, image.len()))
+        )
+    } else {
+        render_pklite(&args.binary, &out_path, &unpacked, image.len())
+    };
+    crate::output::emit_with_status(&text, 0)
+}
+
+fn pklite_header(u: &pklite::Unpacked) -> (&'static str, Option<usize>) {
+    match u.header {
+        pklite::HeaderSource::Original(at) => ("original", Some(at)),
+        pklite::HeaderSource::Reconstructed => ("reconstructed", None),
+        pklite::HeaderSource::None => ("none", None),
+    }
+}
+
+fn render_pklite(binary: &str, out_path: &str, u: &pklite::Unpacked, packed_size: usize) -> String {
+    let mut s = String::new();
+    let _ = writeln!(s, "unpacked {binary} -> {out_path}");
+    let detected = u.detected_version.as_deref().unwrap_or("version not determined");
+    let _ = writeln!(s, "  packer:      PKLITE {detected} (header says {})", u.reported_version);
+    let mut mode = vec![if u.large { "large" } else { "small" }];
+    match u.extra {
+        pklite::Extra::None => {}
+        pklite::Extra::BitCount => mode.push("extra (-e)"),
+        pklite::Extra::Complement => mode.push("extra (complemented literals)"),
+    }
+    if u.v120 {
+        mode.push("v1.20 codes");
+    }
+    if u.scrambled {
+        mode.push("scrambled stub");
+    }
+    let _ = writeln!(s, "  compression: {}", mode.join(", "));
+    let _ = writeln!(
+        s,
+        "  compressed:  {} bytes at {:#x} (packed file {packed_size} bytes)",
+        u.compressed_end - u.compressed_offset,
+        u.compressed_offset
+    );
+    if u.container == pklite::Container::Com {
+        let _ = writeln!(s, "  container:   COM");
+    } else {
+        let _ = writeln!(s, "  load module: {} bytes, {} relocations", u.load_module, u.relocations);
+        let _ = match pklite_header(u) {
+            (_, Some(at)) => writeln!(s, "  header:      original (PKLITE's copy at {at:#x})"),
+            (name, None) => writeln!(s, "  header:      {name} from the footer"),
+        };
+        let _ = writeln!(
+            s,
+            "  entry:       {:04x}:{:04x}, stack {:04x}:{:04x}",
+            u.cs, u.ip, u.ss, u.sp
+        );
+        let _ = writeln!(
+            s,
+            "  alloc:       min {:#06x}, max {:#06x} paragraphs",
+            u.min_alloc, u.max_alloc
+        );
+        if u.overlay > 0 {
+            let _ = writeln!(s, "  overlay:     {} bytes", u.overlay);
+        }
+    }
+    let _ = writeln!(s, "  unpacked:    {} bytes", u.bytes.len());
+    for w in &u.warnings {
+        let _ = writeln!(s, "  warning:     {w}");
+    }
+    s
+}
+
+fn pklite_json(binary: &str, out_path: &str, u: &pklite::Unpacked, packed_size: usize) -> Json {
+    let (header, copy_at) = pklite_header(u);
+    let opt_str = |v: Option<String>| v.map(Json::Str).unwrap_or(Json::Null);
+    Json::Object(vec![
+        ("binary".into(), Json::Str(binary.into())),
+        ("output".into(), Json::Str(out_path.into())),
+        ("packer".into(), Json::Str("pklite".into())),
+        (
+            "container".into(),
+            Json::Str(if u.container == pklite::Container::Com { "com" } else { "exe" }.into()),
+        ),
+        ("reported_version".into(), Json::Str(u.reported_version.clone())),
+        ("detected_version".into(), opt_str(u.detected_version.clone())),
+        ("large".into(), Json::Bool(u.large)),
+        (
+            "extra".into(),
+            Json::Str(
+                match u.extra {
+                    pklite::Extra::None => "none",
+                    pklite::Extra::BitCount => "xor",
+                    pklite::Extra::Complement => "complement",
+                }
+                .into(),
+            ),
+        ),
+        ("v120".into(), Json::Bool(u.v120)),
+        ("scrambled".into(), Json::Bool(u.scrambled)),
+        ("compressed_offset".into(), num(u.compressed_offset as u64)),
+        ("compressed_offset_hex".into(), Json::Str(format!("{:#x}", u.compressed_offset))),
+        ("compressed_size".into(), num((u.compressed_end - u.compressed_offset) as u64)),
+        ("load_module_size".into(), num(u.load_module as u64)),
+        ("relocations".into(), num(u.relocations as u64)),
+        ("header".into(), Json::Str(header.into())),
+        ("header_copy_offset".into(), copy_at.map_or(Json::Null, |at| num(at as u64))),
+        ("entry".into(), Json::Str(format!("{:04x}:{:04x}", u.cs, u.ip))),
+        ("stack".into(), Json::Str(format!("{:04x}:{:04x}", u.ss, u.sp))),
+        ("min_alloc".into(), num(u64::from(u.min_alloc))),
+        ("max_alloc".into(), num(u64::from(u.max_alloc))),
+        ("overlay_size".into(), num(u.overlay as u64)),
+        ("packed_size".into(), num(packed_size as u64)),
+        ("unpacked_size".into(), num(u.bytes.len() as u64)),
+        (
+            "warnings".into(),
+            Json::Array(u.warnings.iter().map(|w| Json::Str(w.clone())).collect()),
+        ),
+    ])
 }
 
 fn render_neolite(

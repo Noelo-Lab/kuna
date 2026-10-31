@@ -556,6 +556,25 @@ is a union but the high's preferred type is scalar. The operand then prints as
 `storage.integer` rather than a cast of the whole `storage` union, which C
 rejects. Only an existing selection is copied; no field is chosen anew.
 
+**A float stored into unknown bytes (kuna).** `cast_standard` needs no cast
+into `TYPE_UNKNOWN`, so upstream prints a float stored through a pointer to
+unknown bytes as `*puVar1 = fVar2`, a bit copy into an `undefined4`. kuna's C
+declares unknown bytes as an integer, and the same assignment is C's numeric
+float-to-integer conversion: a pointer whose other stores are integer bit
+patterns (clang stores a `1.0f` constant as `0x3f800000` from an integer
+register) printed its `vstr`, `movss` or `str s0` store as `v1[2] = a0 * a1 +
+0.5f;` beside `unsigned int *v1`. At the STORE's pointer slot, when the
+pointee (through typedefs and qualifiers) is unknown bytes and the stored value
+is a float of the same size, `get_input_cast_store` asks for a pointer to the
+value's type with the pointee's qualifiers (`kuna_floatstore.rs (pointer)`),
+and the store prints as `*(float *)&v1[2] = a0 * a1 + 0.5f;`; the value slot
+then matches its pointee and takes no cast. It applies only while unknown bytes
+print as an integer (`realtypes` on, or an output language with no
+unknown-bytes type, such as Rust's `*mut u32`): with `realtypes` off in C the
+pointee prints as `xunknown4`, upstream's bit copy, and the store keeps
+upstream's text. A float narrower than C's `float` (a half float) has no C type
+to point at and is left alone. This is a correctness fix with no option.
+
 **A signed read of an unsigned-printing expression (kuna).** The `U` suffix
 `mark_explicit_unsigned` gives a constant makes its whole C expression
 unsigned (`a0 - 1U`), and so does an operand declared `unsigned` or
@@ -1378,6 +1397,30 @@ The whole-document entry is `printc.rs (PrintC::doc_function_full)`, driven by
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs` after analysis
 completes.
 
+**A render that panics.** The architecture owns the printer, and a render needs
+the printer mutably while it reads the rest of the architecture, so every render
+runs inside `decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(Architecture::with_print)`, which lends the printer out and moves it back. It
+moves back on every exit, a panic included: the printer is first cleared of the
+partial document by `printc.rs (PrintC::clear)` (the emitter's indent and paren
+levels and pending brace, the RPN stacks, the pushed mods and scopes, the scoped
+`Funcdata` pointer, unflushed end-of-line warnings, the declared locals and
+pointer-argument record, and a markup back-end, which returns to plain text),
+keeping every option; its printing modifiers go back to the ones in force when
+the render began; then the panic resumes. Upstream `docFunction` catches, calls
+`clear()` and rethrows the same way, but its `clear()` takes the modifiers from
+the bottom of the pushed stack, which misses a modifier saved and set without a
+push: a panic while a load's pointer prints under `print_load_value` would
+leave it on, and every later function would drop the `&` from its array
+element addresses. A batch that contains a
+render panic as that one function's error record
+(`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`, serial or
+inside a `--jobs` worker) therefore renders every later function with the
+printer settings the run configured (`indentincrement`, `arraynotation`,
+`truthycond`, ...), not a default printer's. The test-only
+`KUNA_RENDER_FAULT=<addr>` (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_renderfault.rs`)
+panics the render of the function at that entry just after its opening brace.
+
 A HighVariable linked to a local Symbol is classified for declaration emission
 by that Symbol's category. A linked parameter whose name belongs to the
 prototype is emitted only in the signature. A later register local may have
@@ -2002,7 +2045,11 @@ default-ON with the `emitInplaceOp` consumer ported: a standalone statement
 `out = out OP y` whose first input is the same HighVariable as the output
 renders as the compound assignment `out OP= y` for the ten integer
 operators, and a negative signed INT_ADD addend folds to `out -= c`;
-comma contexts — for-loop headers and condition-block side effects — keep
+when the variable covers only part of its mapped symbol (a 4-byte field of
+an 8-byte global), its read form is a cast (`(int)origin`) and not an
+lvalue, so the left side renders from the statement's output in the store
+form a plain assignment uses (`*(int *)&origin += 1`,
+`printc.rs (inplace_target)`); comma contexts — for-loop headers and condition-block side effects — keep
 the spelled-out upstream form, so `for (...; i = i + 1)` is unchanged;
 `option inplaceops off` restores everything, exercised by
 `tests/stages/kuna-cnorm-compoundassign.xml`), and
@@ -2117,7 +2164,19 @@ HighVariable, exactly one counter); parameters with no recovered name are
 `a0`, `a1`, … by signature slot; global data reads `dat_<addr>` (lowercase
 bare hex), unnamed callees `sub_<addr>`, goto targets `label_<addr>`
 (`printc.rs (PrintC::block_label_name)`, from the target block's entry
-address so goto and label always agree). Under `ghidra` the upstream scheme
+address so goto and label always agree). Two printed labels can start at
+the same address: `ActionReturnSplit` clones a shared return block once per
+goto edge, each clone keeping the original's address cover, and a clone
+spliced into its predecessor still starts at the return block's address.
+When two such copies are both goto targets, each would print
+`label_<addr>:`, a duplicate label (a C compile error) that leaves every
+goto to either copy ambiguous. Before the body prints,
+`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::assign_label_names)`
+walks the structured tree in child order over the leaves that print a
+label; the first leaf with a given name keeps it and the n-th takes
+`label_<addr>_<n>` (`LAB_%08x_<n>` in ghidra mode). A goto resolves its
+target's front leaf through the same table, so it names the copy it jumps
+to. A function with no shared label prints exactly as before. Under `ghidra` the upstream scheme
 returns: `param_N`, type-prefixed `iVar1`/`uVar2`-style locals
 (`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
 (kuna_default_local_name)`), `func_`/`code_` addresses. Both schemes are
@@ -2568,6 +2627,15 @@ storage-backed or name-backed evidence was found
 (parameter_reference_varrefs)`). `option paramrefdecl off` restores the distinct
 body object, but the function-scope uniqueness invariant gives it a suffix
 instead of re-declaring the parameter's identifier.
+
+*(kuna perf)* Whether a high is a reference, piece or strict partial whose
+declaration belongs to a same-named sibling (the whole symbol, the storage local
+a `&symbol` reference points at, the group's owner) is answered from the
+function's named highs grouped by name once per declaration walk, each group in
+the high bank's own order (`printc.rs (SameNamed)`). Each test walks only its
+name's group instead of every high of the function, and finds the same first
+sibling it found before. With the other GH-1034 fixes in, serde-hkx's 174 KB
+deserializer drops from 238 s to 152 s, nearly all of it in these walks.
 
 **(angr) dedupvardecls — collapsing duplicate declarations.** kuna's
 declaration emitter walks HighVariables, not the upstream symbol table (which

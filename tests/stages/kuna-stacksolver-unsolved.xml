@@ -1,0 +1,82 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1288: decompiling a PKLITE-packed DOS executable grew memory without
+    bound. Its compressed body decodes as code, and stray 0x4c bytes are
+    `DEC SP`.
+
+    `ActionStackPtrFlow`'s `StackSolver` marked an unsolved variable with the
+    value 65535 (C++ `coreaction.cc` `StackSolver::propagate`). Equation
+    constants are the stack pointer's unsigned offset, so on a 16-bit stack
+    pointer `DEC SP` (`SP + 0xffff`) solves to exactly 65535 and reads back as
+    unsolved. Here the loop-head MULTIEQUAL, the DEC SP and the call's
+    INDIRECT all solve to 65535 and re-pushed each other forever:
+
+        0000  4c           DEC  SP
+        0001  e8 0c 00     CALL 0x10
+        0004  85 c0        TEST AX,AX
+        0006  75 f9        JNZ  0x1
+        0008  c3           RET
+        0010  c3           RET            ; g
+        0011  c2 02 00     RET  2         ; g2
+
+    Where the old solve did finish it still read a real 65535 as unsolved: it
+    left that producer unrewritten and the frame offsets past it unsolved. `h`
+    reaches entry-1 with PUSH BX after INC SP; it decompiled, but kept a raw
+    `char *v3; // sp` local and read its return address through `&v3[-1]`:
+
+        0020  44           INC  SP
+        0021  53           PUSH BX        ; SP = entry - 1, solution 65535
+        0022  58           POP  AX
+        0023  e8 eb ff     CALL 0x11      ; g2 pops 4
+        0026  4c           DEC  SP        ; SP = entry + 2
+        0027  c3           RET
+
+    Stage: P6 variables, `coreaction_stackptr.rs (StackSolver)`, scheduled in
+    `stackstall`. No option: a strict fix, since a solution is now an Option
+    and each variable is solved and pushed at most once.
+
+    Assert 1 is the fix: the decompile finishes and prints the loop around
+    the call. Before it, this test never finished. Asserts 2 and 3 are `h`:
+    its RET reads the slot at entry + 2, and no raw stack-pointer local is
+    left (both failed before the fix, with `h` decompiled on its own).
+
+    Pass one pins option segmentize off, so the stack accesses read as
+    segment() calls. Assert 2 relies on the solver's guess for the call to g2
+    being upstream's constant 4, which is what g2's RET 2 pops; the default
+    guess is the two bytes a near call stores (see kuna-calleepop-x86-16.xml),
+    so pass one also pins option calleepop off. Pass two is the default, where
+    no stack access is left in the C: asserts 1 and 3 count both passes.
+-->
+<bytechunk space="ram" offset="0x0">
+4ce80c0085c075f9c390909090909090c3c20200909090909090909090909090
+445358e8ebff4cc3
+</bytechunk>
+<symbol space="ram" offset="0x0" name="f"/>
+<symbol space="ram" offset="0x10" name="g"/>
+<symbol space="ram" offset="0x11" name="g2"/>
+<symbol space="ram" offset="0x20" name="h"/>
+</binaryimage>
+<script>
+  <com>option segmentize off</com>
+  <com>option calleepop off</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option segmentize on</com>
+  <com>option calleepop on</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="stacksolver-unsolved #1: the solve terminates and the loop around the call is emitted in both passes" min="2" max="2">^  \} while \(g\(\)\);$</stringmatch>
+<stringmatch name="stacksolver-unsolved #2: h, which terminated before, reads its return address two bytes above the entry slot" min="1" max="1">segment\(v\d+,\*\(unsigned short \*\)segment\(v\d+,&amp;Stack0002\)\);$</stringmatch>
+<stringmatch name="stacksolver-unsolved #3: no raw stack-pointer local is left" min="0" max="0">// sp$</stringmatch>
+</decompilertest>

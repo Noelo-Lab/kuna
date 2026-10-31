@@ -16,6 +16,11 @@
     The call, stack change, shared finish and loop exercise the reported failing
     path without bytes from Dazzle. Before the fix decompilation panics; the
     assertions require a complete body with its loop and final memory read.
+
+    Pass one pins option segmentize off, where asserts 2-4 read the stack and
+    memory accesses as segment() calls; pass two is the default (see
+    kuna-segmentize.xml), where the final read folds to the global dat_ba72
+    and both returned words survive (asserts 6-7).
 -->
 <bytechunk space="ram" offset="0x1000">
 067507e81000f7e37607268a17e302e2fe2ea172bac3c3
@@ -24,13 +29,20 @@
 <symbol space="ram" offset="0x1016" name="helper"/>
 </binaryimage>
 <script>
+  <com>option segmentize off</com>
+  <com>lo fu late_phi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option segmentize on</com>
   <com>lo fu late_phi</com>
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="nodejoin #1: shared exit emits a complete body" min="1" max="1">late_phi\(</stringmatch>
+<stringmatch name="nodejoin #1: shared exit emits a complete body in both passes" min="2" max="2">late_phi\(</stringmatch>
 <stringmatch name="nodejoin #2: the loop survives the shared-exit repair" min="1" max="1">for \(; v2; v2 = v2 \+ -1\)</stringmatch>
 <stringmatch name="nodejoin #3: the final memory read remains in the body" min="1" max="1">segment\(0,0xba72\)</stringmatch>
 <stringmatch name="nodejoin #4: the returned high and low words survive" min="1" max="1">return CONCAT22\(v3,\*v1\);</stringmatch>
 <stringmatch name="nodejoin #5: the pipeline does not abort" min="0" max="0">Skipping|LOSS-131</stringmatch>
+<stringmatch name="nodejoin #6: with the default segmentize the loop survives the shared-exit repair" min="1" max="1">for \(; v1; v1 = v1 \+ -1\)</stringmatch>
+<stringmatch name="nodejoin #7: with the default segmentize the final read is the global and both returned words survive" min="1" max="1">^  return CONCAT22\(v2,dat_ba72\);$</stringmatch>
 </decompilertest>

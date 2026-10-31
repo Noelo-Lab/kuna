@@ -526,12 +526,24 @@ impl Emulate for EmulateFunction<'_> {
         Ok(())
     }
 
-    /// C++ `EmulatePcodeOp::executeSegmentOp`: segment ops are unported in the
-    /// jump-table emulator (the corpus switches do not use them) — a faithful
-    /// "Segment operand missing definition" error on the path forces the
-    /// recovery to fall back, never a wrong address.
+    /// C++ `EmulatePcodeOp::executeSegmentOp`: run the segment op's snippet on
+    /// the two operand values.
     fn execute_segment_op(&mut self) -> KunaResult<()> {
-        Err(KunaError::lowlevel("Segment operand missing definition"))
+        let op = self.current_op.expect("executeSegmentOp: no current op");
+        let in0 = self.in_vn(op, 0)?;
+        let index = self.fd.vbank().get(in0).map(|v| v.get_offset() as int4).unwrap_or(-1);
+        let glb = std::rc::Rc::clone(self.fd.get_arch());
+        let segdef = glb
+            .get_segment_op(index)
+            .ok_or_else(|| KunaError::lowlevel("Segment operand missing definition"))?;
+        let in1 = self.in_vn(op, 1)?;
+        let in2 = self.in_vn(op, 2)?;
+        let v1 = self.get_varnode_value(in1)?;
+        let v2 = self.get_varnode_value(in2)?;
+        let res = segdef.execute(&[v1, v2])?;
+        let outvn = self.out_vn(op)?;
+        self.set_varnode_value(outvn, res);
+        Ok(())
     }
 
     /// C++ `EmulatePcodeOp::executeCpoolRef`: ignore.

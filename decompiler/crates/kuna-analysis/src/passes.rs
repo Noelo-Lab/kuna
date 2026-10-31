@@ -726,6 +726,19 @@ pub fn run_listing_consumers_replaying(
         return Vec::new();
     }
     let mut seeds = listing_seeds_for_language(&file, bytes, Some(arch.get_description()));
+    // (kuna `gowalkprune`) The fast inventory walk leaves out the functions a Go
+    // pclntab names, but only where the `gopclntab` pass ran and commits them:
+    // the pass set follows the load-time verdict, not a later `sourcelang` force.
+    // See `pclntab::function_entries`.
+    if arch.analysis_gowalkprune
+        && arch.analysis_fast_funcdisc
+        && !arch.analysis_listing
+        && arch.analysis_gopclntab
+        && arch.source_lang_detected == kuna_decomp::kuna_sourcelang::SourceLang::Go
+    {
+        let go = crate::pclntab::function_entries(&file);
+        seeds.retain(|seed| go.binary_search(seed).is_err());
+    }
     let bracket_evidence = std::cell::OnceCell::new();
     let bracket = |exec: &[(u64, u64)]| arch.analysis_aifbracket.then(|| {
         bracket_evidence.get_or_init(|| crate::aif::kuna_aifbracket::BracketEvidence::from_object(&file, exec))

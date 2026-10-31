@@ -1,0 +1,75 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 heritage markers, options readonlycalls and prunedssa.
+     churn reads 256 read-only table words between 256 calls and copies a
+     struct with rep movsb every fourth step; escaped hands the address of
+     each of 64 stack structs to a call. Pass 1 is upstream placement (both
+     options off): every read-only word is guarded at every call, and every
+     join of the REP-loop unique temporaries gets a MULTIEQUAL. Pass 2 turns
+     prunedssa on: no MULTIEQUAL where a unique temporary is not live, 704
+     joins dead-code removal deletes, so churn's live IR is unchanged.
+     escaped's slots are address-tied, so they keep every guard in every
+     pass. Pass 3 is the default: churn's 256 read-only ranges at its 321
+     calls (82,176 guards) reach readonlycalls' 65,536-guard threshold, the
+     guards on read-only memory the function never writes go, and churn's
+     live IR drops from 90311 to 8135 ops. Each function prints the same body
+     in all three passes. Two more passes count churn's ops only: at
+     readonlycalls 82177, one guard more than churn would build, it keeps
+     them; at readonlycalls on it drops them. The fixture's source,
+     provenance and native oracle are beside it.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prunedssa_x86_64</com>
+  <com>read symbols</com>
+  <com>option prunedssa off</com>
+  <com>option readonlycalls off</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>load function escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option prunedssa on</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>load function escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option readonlycalls 65536</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>load function escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option readonlycalls 82177</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>count pcode</com>
+  <com>option readonlycalls on</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="prunedssa #1: all three passes print churn" min="3" max="3">^uint8 churn\(int8 a0,char \*a1\)$</stringmatch>
+<stringmatch name="prunedssa #2: all three passes keep churn's 256 calls" min="768" max="768">sink\(</stringmatch>
+<stringmatch name="prunedssa #3: all three passes keep churn's 64 struct copies" min="192" max="192">take\(</stringmatch>
+<stringmatch name="prunedssa #4: all three passes keep escaped's 64 calls" min="192" max="192">reg\(0x[0-9a-f]+,</stringmatch>
+<stringmatch name="prunedssa #5: all three passes keep the 64 struct writes each callee may read" min="192" max="192">^  v[0-9]+\[0\] = (0x)?[0-9a-f]+;$</stringmatch>
+<stringmatch name="prunedssa #6: upstream placement keeps the read-only guards in churn's live IR" min="3" max="3">Count - pcode = 90311</stringmatch>
+<stringmatch name="prunedssa #7: upstream placement builds every guard and join for churn" min="1" max="1">Count - created = 118816</stringmatch>
+<stringmatch name="prunedssa #8: prunedssa builds no dead joins for churn" min="2" max="2">Count - created = 118112</stringmatch>
+<stringmatch name="prunedssa #9: readonlycalls drops the read-only guards from churn's live IR" min="2" max="2">Count - pcode = 8135</stringmatch>
+<stringmatch name="prunedssa #10: the default builds the fewest ops for churn" min="2" max="2">Count - created = 35936</stringmatch>
+<stringmatch name="prunedssa #11: escaped's address-tied slots keep every guard in every pass" min="3" max="3">Count - created = 12578</stringmatch>
+<stringmatch name="prunedssa #12: escaped's live IR is the same in all three passes" min="3" max="3">Count - pcode = 4812</stringmatch>
+</decompilertest>

@@ -1108,11 +1108,58 @@ fn kuna_append_scc(
 // subgraph_between_nodes
 //
 
+/// The checks shared by [`kuna_subgraph_between_nodes`] and
+/// [`kuna_slice_visits`]: `source` and every frontier node are in `g`.
+fn check_slice_ends(g: &KunaRegionGraph, source: KunaNodeId, frontier: &KunaNodeSet) -> KunaResult<()> {
+    if !g.contains_node(source) {
+        return Err(KunaError::lowlevel("kuna regiongraph: slice source not in graph"));
+    }
+    for fk in frontier.iter() {
+        if !g.contains_node(fk.id) {
+            return Err(KunaError::lowlevel("kuna regiongraph: slice frontier node not in graph"));
+        }
+    }
+    Ok(())
+}
+
+/// The nodes that still reach `frontier` once the edges into `source` are cut:
+/// one reverse BFS from the frontier set (replaces angr's per-successor
+/// `networkx.has_path` probes; equivalent since the cut graph is not mutated).
+fn reaching_frontier(
+    g: &KunaRegionGraph,
+    source: KunaNodeId,
+    frontier: &KunaNodeSet,
+) -> KunaResult<FxHashSet<KunaNodeId>> {
+    let mut can_reach: FxHashSet<KunaNodeId> = FxHashSet::default(); // Membership only
+    let mut queue: Vec<KunaNodeId> = Vec::new();
+    for fk in frontier.iter() {
+        if can_reach.insert(fk.id) {
+            queue.push(fk.id);
+        }
+    }
+    let mut pos = 0;
+    while pos < queue.len() {
+        let cur = queue[pos];
+        pos += 1;
+        if cur == source {
+            continue;
+        }
+        for &p in g.get_preds(cur)? {
+            if can_reach.insert(p) {
+                queue.push(p);
+            }
+        }
+    }
+    Ok(can_reach)
+}
+
 /// (kuna) Slice of `g` from `source` up to (optionally including) `frontier`
 /// (port of `subgraph_between_nodes`).
 ///
-/// Copy the graph, cut edges into `source`, BFS forward keeping only paths that
-/// can still reach the frontier, then iteratively prune dangling nodes.
+/// Cut edges into `source`, BFS forward keeping only paths that can still reach
+/// the frontier, then iteratively prune dangling nodes. The cut is read off
+/// `g` rather than made on a copy of it (angr copies the graph), so one slice
+/// costs the nodes it walks, not the whole graph.
 /// Returns `Err` if `source` or a frontier node is not in the graph (angr
 /// raises `KeyError`).
 pub fn kuna_subgraph_between_nodes(
@@ -1123,66 +1170,23 @@ pub fn kuna_subgraph_between_nodes(
     include_frontier: bool,
     res: &mut KunaRegionGraph,
 ) -> KunaResult<()> {
-    if !g.contains_node(source) {
-        return Err(KunaError::lowlevel("kuna regiongraph: slice source not in graph"));
-    }
-    for fk in frontier.iter() {
-        if !g.contains_node(fk.id) {
-            return Err(KunaError::lowlevel("kuna regiongraph: slice frontier node not in graph"));
-        }
-    }
-
-    let mut graph = g.clone(); // Working copy
-    {
-        let mut src_in: Vec<(KunaNodeId, KunaNodeId)> = Vec::new();
-        graph.in_edges(source, &mut src_in)?;
-        for (a, b) in src_in {
-            graph.remove_edge(a, b);
-        }
-    }
-
-    // One reverse BFS from the frontier set: which nodes can still reach it?
-    // (replaces angr's per-successor networkx.has_path probes; equivalent since
-    // `graph` is not mutated below).
-    let mut can_reach: BTreeSet<KunaNodeId> = BTreeSet::new(); // Membership only
-    {
-        let mut queue: Vec<KunaNodeId> = Vec::new();
-        for fk in frontier.iter() {
-            if !can_reach.contains(&fk.id) {
-                can_reach.insert(fk.id);
-                queue.push(fk.id);
-            }
-        }
-        let mut pos = 0;
-        while pos < queue.len() {
-            let cur = queue[pos];
-            pos += 1;
-            let preds: Vec<KunaNodeId> = graph.get_preds(cur)?.to_vec();
-            for p in preds {
-                if !can_reach.contains(&p) {
-                    can_reach.insert(p);
-                    queue.push(p);
-                }
-            }
-        }
-    }
+    check_slice_ends(g, source, frontier)?;
+    let can_reach = reaching_frontier(g, source, frontier)?;
 
     // Forward FIFO BFS from source, adding edges to the slice.
     {
         let mut queue: Vec<KunaNodeId> = Vec::new();
-        let mut traversed: BTreeSet<KunaNodeId> = BTreeSet::new(); // Membership only
+        let mut traversed: FxHashSet<KunaNodeId> = FxHashSet::default(); // Membership only
         queue.push(source);
         let mut pos = 0;
         while pos < queue.len() {
             let node = queue[pos];
             pos += 1;
-            if traversed.contains(&node) {
+            if !traversed.insert(node) {
                 continue;
             }
-            traversed.insert(node);
-            let succs: Vec<KunaNodeId> = graph.get_succs(node)?.to_vec();
-            for succ in succs {
-                if res.has_edge(node, succ) {
+            for &succ in g.get_succs(node)? {
+                if succ == source || res.has_edge(node, succ) {
                     continue;
                 }
                 res.add_edge(pool, node, succ);
@@ -1230,6 +1234,49 @@ pub fn kuna_subgraph_between_nodes(
         }
     }
     Ok(())
+}
+
+/// (kuna) Whether the forward walk of [`kuna_subgraph_between_nodes`] from
+/// `source` visits a node `hit` accepts, stopping at the first.
+///
+/// Every node that walk visits stays in the slice: `source` aside, it is
+/// entered over an edge from a visited node, and it reaches the frontier, so
+/// one of its successors is a frontier node or is visited too, and pruning
+/// only removes nodes with no successors or no predecessors in the slice.
+/// A `true` answer therefore says the slice, frontier included, holds such a
+/// node, without building it. A `false` one says nothing about the frontier
+/// nodes.
+pub fn kuna_slice_visits(
+    g: &KunaRegionGraph,
+    pool: &KunaNodePool,
+    source: KunaNodeId,
+    frontier: &KunaNodeSet,
+    mut hit: impl FnMut(KunaNodeId) -> bool,
+) -> KunaResult<bool> {
+    check_slice_ends(g, source, frontier)?;
+    let can_reach = reaching_frontier(g, source, frontier)?;
+    let mut queue: Vec<KunaNodeId> = vec![source];
+    let mut traversed: FxHashSet<KunaNodeId> = FxHashSet::default(); // Membership only
+    let mut pos = 0;
+    while pos < queue.len() {
+        let node = queue[pos];
+        pos += 1;
+        if !traversed.insert(node) {
+            continue;
+        }
+        if hit(node) {
+            return Ok(true);
+        }
+        for &succ in g.get_succs(node)? {
+            if succ == source || traversed.contains(&succ) || frontier.contains(&pool.key(succ)) {
+                continue;
+            }
+            if can_reach.contains(&succ) {
+                queue.push(succ);
+            }
+        }
+    }
+    Ok(false)
 }
 
 //
@@ -2038,6 +2085,126 @@ mod tests {
         assert!(!res2.contains_node(e));
     }
 
+    /// angr's `subgraph_between_nodes` as first ported: cut the edges into
+    /// `source` on a copy of the graph, then walk the copy.
+    fn slice_on_a_copy(
+        pool: &KunaNodePool,
+        g: &KunaRegionGraph,
+        source: KunaNodeId,
+        frontier: &KunaNodeSet,
+        include_frontier: bool,
+    ) -> KunaRegionGraph {
+        let mut graph = g.clone();
+        let mut src_in = Vec::new();
+        graph.in_edges(source, &mut src_in).unwrap();
+        for (a, b) in src_in {
+            graph.remove_edge(a, b);
+        }
+        let mut can_reach = BTreeSet::new();
+        let mut queue: Vec<KunaNodeId> = frontier.iter().map(|k| k.id).collect();
+        can_reach.extend(queue.iter().copied());
+        let mut pos = 0;
+        while pos < queue.len() {
+            let cur = queue[pos];
+            pos += 1;
+            for p in graph.get_preds(cur).unwrap().to_vec() {
+                if can_reach.insert(p) {
+                    queue.push(p);
+                }
+            }
+        }
+        let mut res = KunaRegionGraph::new();
+        let mut queue = vec![source];
+        let mut traversed = BTreeSet::new();
+        let mut pos = 0;
+        while pos < queue.len() {
+            let node = queue[pos];
+            pos += 1;
+            if !traversed.insert(node) {
+                continue;
+            }
+            for succ in graph.get_succs(node).unwrap().to_vec() {
+                if res.has_edge(node, succ) {
+                    continue;
+                }
+                res.add_edge(pool, node, succ);
+                if !traversed.contains(&succ) && !frontier.contains(&pool.key(succ)) && can_reach.contains(&succ) {
+                    queue.push(succ);
+                }
+            }
+        }
+        loop {
+            let dangling: Vec<KunaNodeId> = res
+                .iter_adj()
+                .filter(|(k, adj)| {
+                    k.id != source && !frontier.contains(k) && (adj.succs.is_empty() || adj.preds.is_empty())
+                })
+                .map(|(k, _)| k.id)
+                .collect();
+            if dangling.is_empty() {
+                break;
+            }
+            for n in dangling {
+                res.remove_node(n);
+            }
+        }
+        if !include_frontier {
+            for fk in frontier.iter() {
+                res.remove_node(fk.id);
+            }
+        }
+        res
+    }
+
+    #[test]
+    fn a_slice_matches_the_slice_of_a_copy_and_holds_every_node_its_walk_visits() {
+        let mut random = 0x9c1d_44e2_0b7f_35a1u64;
+        let mut next = |n: u64| {
+            random = random.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (random >> 33) % n
+        };
+        let mut visited_any = 0;
+        for sample in 0..300 {
+            let mut b = Builder::new();
+            let nodes: Vec<_> = (0..3 + sample % 9).map(|n| b.node(0x10 * (n % 5))).collect();
+            let mut edges = Vec::new();
+            for &from in &nodes {
+                for &to in &nodes {
+                    if next(4) == 0 {
+                        edges.push((from, to));
+                    }
+                }
+            }
+            let g = b.graph(&edges, &nodes);
+            for &source in &nodes {
+                let picked: Vec<_> = nodes.iter().copied().filter(|_| next(3) == 0).collect();
+                let frontier = b.set(&picked);
+                for include in [true, false] {
+                    let mut res = KunaRegionGraph::new();
+                    kuna_subgraph_between_nodes(&b.pool, &g, source, &frontier, include, &mut res).unwrap();
+                    let copy = slice_on_a_copy(&b.pool, &g, source, &frontier, include);
+                    assert_eq!(format!("{res:?}"), format!("{copy:?}"), "graph {sample}");
+                }
+                let mut res = KunaRegionGraph::new();
+                kuna_subgraph_between_nodes(&b.pool, &g, source, &frontier, true, &mut res).unwrap();
+                let mut visited = Vec::new();
+                let hit = kuna_slice_visits(&g, &b.pool, source, &frontier, |n| {
+                    visited.push(n);
+                    false
+                });
+                assert!(!hit.unwrap());
+                for n in visited.iter().filter(|&&n| n != source) {
+                    assert!(res.contains_node(*n), "graph {sample}: visited {n:?} is not in the slice");
+                    visited_any += 1;
+                }
+                let target = visited.last().copied();
+                let stops = kuna_slice_visits(&g, &b.pool, source, &frontier, |n| Some(n) == target);
+                assert_eq!(stops.unwrap(), target.is_some());
+            }
+        }
+        assert!(visited_any > 500, "{visited_any}");
+    }
+
     #[test]
     fn subgraph_between_nodes_errors() {
         let mut b = Builder::new();
@@ -2053,6 +2220,8 @@ mod tests {
         let bad_front = b.set(&[orphan]);
         assert!(kuna_subgraph_between_nodes(&b.pool, &g, a, &bad_front, true, &mut KunaRegionGraph::new())
             .is_err());
+        assert!(kuna_slice_visits(&g, &b.pool, orphan, &empty, |_| true).is_err());
+        assert!(kuna_slice_visits(&g, &b.pool, a, &bad_front, |_| true).is_err());
     }
 
     #[test]

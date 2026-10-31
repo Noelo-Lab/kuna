@@ -117,6 +117,7 @@ pub(super) struct PeHeader {
     /// Offset of the `PE\0\0` signature within its own buffer.
     pub at: usize,
     pub opt_size: usize,
+    pub optional_magic: u16,
     /// COFF characteristics.
     pub flags: u16,
     pub code_size: u32,
@@ -147,22 +148,25 @@ impl PeHeader {
         let nsec = le16(b, at + 6)? as usize;
         let opt_size = le16(b, at + 20)? as usize;
         let opt = at + 24;
-        if le16(b, opt)? != 0x10b {
-            return Err(unsupported("PE32+ image -- only 32-bit win32/pe is implemented"));
-        }
+        let optional_magic = le16(b, opt)?;
+        let (ndirs_offset, dirs_offset) = match optional_magic {
+            0x10b => (92, 96),
+            0x20b => (108, 112),
+            magic => return Err(unsupported(format!("PE optional header magic {magic:#x}"))),
+        };
         if nsec == 0 || nsec > 96 {
             return Err(corrupt(format!("PE header declares {nsec} sections")));
         }
-        if opt_size < 96 {
+        if opt_size < dirs_offset {
             return Err(corrupt(format!("optional header is {opt_size} bytes")));
         }
-        let ndirs = le32(b, opt + 92)? as usize;
-        if ndirs > 16 || opt_size < 96 + 8 * ndirs {
+        let ndirs = le32(b, opt + ndirs_offset)? as usize;
+        if ndirs > 16 || opt_size < dirs_offset + 8 * ndirs {
             return Err(corrupt(format!("optional header declares {ndirs} data directories")));
         }
         let mut dirs = Vec::with_capacity(ndirs);
         for i in 0..ndirs {
-            dirs.push((le32(b, opt + 96 + 8 * i)?, le32(b, opt + 100 + 8 * i)?));
+            dirs.push((le32(b, opt + dirs_offset + 8 * i)?, le32(b, opt + dirs_offset + 4 + 8 * i)?));
         }
         let table = at + 24 + opt_size;
         let mut sections = Vec::with_capacity(nsec);
@@ -172,12 +176,20 @@ impl PeHeader {
         Ok(PeHeader {
             at,
             opt_size,
+            optional_magic,
             flags: le16(b, at + 22)?,
             code_size: le32(b, opt + 4)?,
             code_base: le32(b, opt + 20)?,
             sections,
             dirs,
         })
+    }
+
+    fn require_pe32(&self) -> Result<(), UpxError> {
+        if self.optional_magic != 0x10b {
+            return Err(unsupported("PE32+ image -- only 32-bit win32/pe is implemented"));
+        }
+        Ok(())
     }
 }
 
@@ -212,10 +224,10 @@ impl<'a> Image<'a> {
     /// The NUL-terminated string at image address `rva`, capped so a missing
     /// terminator cannot run the whole file into a symbol name.
     fn cstr_at_rva(&self, rva: u32) -> Result<&'a [u8], UpxError> {
-        let off = self
+        let tail = self
             .file_offset(rva)
+            .and_then(|off| self.bytes.get(off..self.bytes.len().min(off + 512)))
             .ok_or_else(|| corrupt(format!("import name at {rva:#x} is outside the image")))?;
-        let tail = &self.bytes[off..self.bytes.len().min(off + 512)];
         let end = tail
             .iter()
             .position(|&c| c == 0)
@@ -282,6 +294,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
             super::format_name(info.format)
         )));
     }
+    img.hdr.require_pe32()?;
     let last = img.hdr.sections.last().expect("parse rejects an empty section table");
     let packed_end = last.rawptr as usize + last.rawsize as usize;
     if packed_end < img.bytes.len() {
@@ -312,6 +325,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
         .ok_or_else(|| corrupt("block is too short to carry a trailer"))?;
     let skip = le32(&obuf, trailer_end)? as usize;
     let mut oh = PeHeader::parse(&obuf, skip)?;
+    oh.require_pe32()?;
     let rvamin = oh.sections[0].vaddr;
     let extra = oh.section_table_at() + oh.sections.len() * SECTION_HEADER_SIZE;
     if extra > trailer_end {
@@ -351,20 +365,15 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
     // proof that the original image needed a step this build did not run -- and
     // that whatever was rebuilt after it read the wrong bytes.
     if trailer != trailer_end {
+        let left = trailer_end
+            .checked_sub(trailer)
+            .ok_or_else(|| corrupt("trailer records run past the end of the trailer"))?;
         return Err(unsupported(format!(
-            "trailer has {} bytes this build cannot account for -- the image uses a PE feature UPX rebuilds and kuna does not",
-            trailer_end - trailer
+            "trailer has {left} bytes this build cannot account for -- the image uses a PE feature UPX rebuilds and kuna does not"
         )));
     }
 
-    let bytes = assemble(img, &obuf, &oh, rvamin, skip)?;
-    if bytes.len() as u32 != info.u_file_size {
-        return Err(corrupt(format!(
-            "rebuilt {} bytes, PackHeader declares an original of {}",
-            bytes.len(),
-            info.u_file_size
-        )));
-    }
+    let bytes = assemble(img, &obuf, &oh, rvamin, skip, info.u_file_size as usize)?;
     let block = Block {
         offset: data,
         u_len: info.u_len,
@@ -424,7 +433,10 @@ fn rebuild_imports(
 
     let mut names = Vec::with_capacity(dlls.len());
     for d in &dlls {
-        names.push(img.cstr_at_rva(desc_base + d.name_off)?);
+        let at = desc_base
+            .checked_add(d.name_off)
+            .ok_or_else(|| corrupt("DLL name offset overflows the image"))?;
+        names.push(img.cstr_at_rva(at)?);
     }
     let dll_names_len: usize = names.iter().map(|n| n.len() + 1).sum();
     let mut dll_name_rva = inamespos;
@@ -530,13 +542,10 @@ fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<Imp
 /// A set comparison. The loader table holds one descriptor per distinct DLL,
 /// while the original image may import one DLL across several descriptors, so
 /// the two lists differ in length whenever a binary does that.
-fn table_names_dlls(table: &[u32], base: u32, dlls: &[ImportDll]) -> bool {
-    if table.is_empty() {
-        return false;
-    }
-    let wanted: BTreeSet<u32> =
-        dlls.iter().filter_map(|d| base.checked_add(d.name_off)).collect();
-    table.iter().copied().collect::<BTreeSet<u32>>() == wanted
+fn table_names_dlls(table: &[u32], base: u32, wanted: &BTreeSet<u32>) -> bool {
+    !table.is_empty()
+        && table.iter().map(|n| n.checked_sub(base)).collect::<Option<BTreeSet<u32>>>().as_ref()
+            == Some(wanted)
 }
 
 /// Find the packed loader's own import descriptor table, which is what the
@@ -552,45 +561,62 @@ fn table_names_dlls(table: &[u32], base: u32, dlls: &[ImportDll]) -> bool {
 /// descriptor per distinct DLL, while the original image may import the same
 /// DLL from several descriptors, so the two lists differ in length whenever a
 /// binary does that and a positional walk can never agree.
+///
+/// The scan reads only section bytes the file holds, and gives up after two
+/// descriptor reads per four file bytes. An honest image, whose sections do not
+/// overlap in the file, rejects nearly every candidate on its first descriptor,
+/// so it needs about half that; a region of descriptors that all name wanted
+/// DLLs would otherwise cost a full table walk per candidate.
 fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxError> {
-    let agrees = |base: u32| -> bool {
+    let wanted: BTreeSet<u32> = dlls.iter().map(|d| d.name_off).collect();
+    if wanted.len() > MAX_LOADER_DLLS {
+        return Err(unsupported(format!(
+            "trailer names {} DLLs; this build follows loader tables of at most {MAX_LOADER_DLLS}",
+            wanted.len()
+        )));
+    }
+    let mut reads = img.bytes.len() / 2 + img.hdr.sections.len() + 2 * (MAX_LOADER_DLLS + 1);
+    let mut agrees = |base: u32| -> Result<bool, UpxError> {
         let mut names = Vec::new();
         for k in 0..=MAX_LOADER_DLLS {
+            reads = reads
+                .checked_sub(1)
+                .ok_or_else(|| corrupt("packed image holds too many candidate loader tables to scan"))?;
             let Some(at) = base.checked_add((k * IMPORT_DESC_SIZE) as u32) else {
-                return false;
+                return Ok(false);
             };
             let Some(desc) = img.at_rva(at, IMPORT_DESC_SIZE) else {
-                return false;
+                return Ok(false);
             };
             if desc.iter().all(|&b| b == 0) {
-                return table_names_dlls(&names, base, dlls);
+                return Ok(table_names_dlls(&names, base, &wanted));
             }
             let name = u32::from_le_bytes([desc[12], desc[13], desc[14], desc[15]]);
             // Nearly every position a scan tries fails on its first descriptor;
             // the set comparison alone would walk each one on to a terminator.
-            if !dlls.iter().any(|d| base.checked_add(d.name_off) == Some(name)) {
-                return false;
+            if !name.checked_sub(base).is_some_and(|o| wanted.contains(&o)) {
+                return Ok(false);
             }
             names.push(name);
         }
-        false
+        Ok(false)
     };
     let declared = img.hdr.dir(DIR_IMPORT).0;
-    if declared != 0 && agrees(declared) {
+    if declared != 0 && agrees(declared)? {
         return Ok(declared);
     }
     let mut found = None;
     for s in &img.hdr.sections {
-        if s.rawsize == 0 {
-            continue;
-        }
-        let mut rva = s.vaddr;
-        while rva < s.vaddr + s.rawsize {
-            if agrees(rva) {
-                if found.is_some_and(|f| f != rva) {
+        let present = img.bytes.len().saturating_sub(s.rawptr as usize);
+        let end = (u64::from(s.vaddr) + (s.rawsize as usize).min(present) as u64).min(1 << 32);
+        let mut rva = u64::from(s.vaddr);
+        while rva < end {
+            let at = rva as u32;
+            if agrees(at)? {
+                if found.is_some_and(|f| f != at) {
                     return Err(corrupt("packed image has more than one loader import table"));
                 }
-                found = Some(rva);
+                found = Some(at);
             }
             rva += 4;
         }
@@ -660,13 +686,13 @@ fn rebuild_resources(
         .ok_or_else(|| corrupt("packed resource directory is outside the image"))?;
     let mut tree = tree_src.to_vec();
 
-    let mut leaves = Vec::new();
-    let mut extent = 0u32;
-    walk_resource_dir(&tree, 0, 0, &mut extent, &mut leaves)?;
-    confine_to_section(oh, res_rva, extent, "rebuilt resource directory")?;
+    let mut walk = ResourceWalk::default();
+    walk_resource_dir(&tree, 0, 0, 0, &mut walk)?;
+    confine_to_section(oh, res_rva, walk.extent, "rebuilt resource directory")?;
 
     let mut icondir_count = icondir_count;
-    for leaf in leaves {
+    let mut moved = 0usize;
+    for (leaf, ty) in walk.leaves {
         let at = leaf as usize;
         let (data_rva, size) = (le32(&tree, at)?, le32(&tree, at + 4)?);
         if data_rva <= packed_rva {
@@ -675,79 +701,83 @@ fn rebuild_resources(
             continue;
         }
         let orig = le32(
-            img.at_rva(data_rva - 4, 4).ok_or_else(|| corrupt("moved resource has no back-pointer"))?,
+            data_rva
+                .checked_sub(4)
+                .and_then(|r| img.at_rva(r, 4))
+                .ok_or_else(|| corrupt("moved resource has no back-pointer"))?,
             0,
         )?;
+        moved = moved.saturating_add(size as usize);
+        if moved > img.bytes.len() {
+            return Err(corrupt("moved resources add up to more than the packed file"));
+        }
         let body = img
             .at_rva(data_rva, size as usize)
             .ok_or_else(|| corrupt("moved resource runs past the packed image"))?;
         tree[at..at + 4].copy_from_slice(&orig.to_le_bytes());
         write_at(obuf, rvamin, orig, body)?;
-        if icondir_count != 0 && resource_type_of(&tree, leaf)? == RT_GROUP_ICON {
+        if icondir_count != 0 && ty == RT_GROUP_ICON {
             write_at(obuf, rvamin, orig.saturating_add(4), &icondir_count.to_le_bytes())?;
             icondir_count = 0;
         }
     }
-    write_at(obuf, rvamin, res_rva, &tree[..extent as usize])?;
+    let dir = tree
+        .get(..walk.extent as usize)
+        .ok_or_else(|| corrupt("resource directory runs past its packed copy"))?;
+    write_at(obuf, rvamin, res_rva, dir)?;
     Ok(())
 }
 
-/// Depth-first walk of an `IMAGE_RESOURCE_DIRECTORY` tree, collecting the
-/// offsets of its data entries and the extent of everything it reaches. The
-/// depth cap is UPX's own three levels (type / name / language) plus slack; the
-/// tree is attacker-controlled, so a cycle must terminate the walk.
+/// What a walk of a resource tree reached: one past the last byte any
+/// directory, entry or data entry occupies, and each data entry's offset with
+/// the top-level type it sits under, in walk order.
+#[derive(Default)]
+struct ResourceWalk {
+    extent: u32,
+    leaves: Vec<(u32, u32)>,
+    seen: BTreeSet<u32>,
+}
+
+/// Depth-first walk of an `IMAGE_RESOURCE_DIRECTORY` tree. The depth cap is
+/// UPX's own three levels (type / name / language) plus slack; the tree is
+/// attacker-controlled, so a cycle must terminate the walk, and a directory or
+/// data entry reached twice is refused. UPX never writes one: its packer lays
+/// the directory out afresh with every node once, even when the original shared
+/// a subtree, and following one would let a small tree fan out into an
+/// exponential walk.
 fn walk_resource_dir(
     tree: &[u8],
     at: u32,
     depth: u32,
-    extent: &mut u32,
-    leaves: &mut Vec<u32>,
+    ty: u32,
+    walk: &mut ResourceWalk,
 ) -> Result<(), UpxError> {
     if depth > 4 {
         return Err(corrupt("resource directory nests deeper than a PE allows"));
+    }
+    if !walk.seen.insert(at | 0x8000_0000) {
+        return Err(corrupt("resource directory reaches one subdirectory twice"));
     }
     let named = u32::from(le16(tree, at as usize + 12)?);
     let ids = u32::from(le16(tree, at as usize + 14)?);
     let count = named + ids;
     let entries = at.saturating_add(16);
-    *extent = (*extent).max(entries.saturating_add(8 * count));
+    walk.extent = walk.extent.max(entries.saturating_add(8 * count));
     for i in 0..count {
         let e = (entries + 8 * i) as usize;
         let child = le32(tree, e + 4)?;
         if child & 0x8000_0000 != 0 {
-            walk_resource_dir(tree, child & 0x7fff_ffff, depth + 1, extent, leaves)?;
+            let ty = if depth == 0 { le32(tree, e)? & 0x7fff_ffff } else { ty };
+            walk_resource_dir(tree, child & 0x7fff_ffff, depth + 1, ty, walk)?;
         } else {
-            if leaves.contains(&child) {
+            if !walk.seen.insert(child) {
                 return Err(corrupt("resource directory reaches one data entry twice"));
             }
-            *extent = (*extent).max(child.saturating_add(RESOURCE_DATA_ENTRY_SIZE));
-            leaves.push(child);
+            walk.extent = walk.extent.max(child.saturating_add(RESOURCE_DATA_ENTRY_SIZE));
+            walk.leaves.push((child, ty));
         }
     }
     Ok(())
-}
-
-/// The top-level type id owning a data entry -- the level UPX's icon fixup keys
-/// off. Only entries reachable in three levels are attributed, which is every
-/// entry a compiler-produced `.rsrc` has.
-fn resource_type_of(tree: &[u8], leaf: u32) -> Result<u32, UpxError> {
-    let named = u32::from(le16(tree, 12)?);
-    let ids = u32::from(le16(tree, 14)?);
-    for i in 0..named + ids {
-        let e = (16 + 8 * i) as usize;
-        let ty = le32(tree, e)?;
-        let child = le32(tree, e + 4)?;
-        if child & 0x8000_0000 == 0 {
-            continue;
-        }
-        let mut ext = 0;
-        let mut sub = Vec::new();
-        walk_resource_dir(tree, child & 0x7fff_ffff, 1, &mut ext, &mut sub)?;
-        if sub.contains(&leaf) {
-            return Ok(ty & 0x7fff_ffff);
-        }
-    }
-    Ok(0)
 }
 
 /// Write into the recovered image at address `rva`, refusing anything that
@@ -790,13 +820,16 @@ fn confine_to_section(oh: &PeHeader, rva: u32, len: u32, what: &str) -> Result<(
 /// has thrown the original's away: `e_lfanew` no longer exists to be rewritten,
 /// and the recovered PE header would sit at an offset nothing points at. That is
 /// refused here rather than written out, and the assembled file is re-read at the
-/// end to prove it is a PE a loader can follow.
+/// end to prove it is a PE a loader can follow. The layout is sized, and checked
+/// against the `original_len` the PackHeader declares, before anything is
+/// allocated for it.
 fn assemble(
     img: &Image<'_>,
     obuf: &[u8],
     oh: &PeHeader,
     rvamin: u32,
     skip: usize,
+    original_len: usize,
 ) -> Result<Vec<u8>, UpxError> {
     if img.pe_off < 0x40 {
         return Err(unsupported(format!(
@@ -804,12 +837,12 @@ fn assemble(
             img.pe_off
         )));
     }
-    let mut out = img.bytes[..img.pe_off].to_vec();
     let table = oh.sections.len() * SECTION_HEADER_SIZE;
-    out.extend_from_slice(
-        obuf.get(skip..skip + oh.header_size() + table)
-            .ok_or_else(|| corrupt("recovered PE header runs past the block"))?,
-    );
+    let header = obuf
+        .get(skip..skip + oh.header_size() + table)
+        .ok_or_else(|| corrupt("recovered PE header runs past the block"))?;
+    let mut end = img.pe_off + header.len();
+    let mut raw = Vec::with_capacity(oh.sections.len());
     for s in &oh.sections {
         if s.rawsize == 0 {
             continue;
@@ -829,11 +862,19 @@ fn assemble(
         if ptr.checked_add(size).is_none() || ptr + size > 512 * 1024 * 1024 {
             return Err(corrupt(format!("section raw range at {ptr:#x} is not credible")));
         }
-        if out.len() < ptr {
-            out.resize(ptr, 0);
-        }
-        out.resize(out.len().max(ptr + size), 0);
-        out[ptr..ptr + size].copy_from_slice(&obuf[src..src + size]);
+        end = end.max(ptr + size);
+        raw.push((ptr, &obuf[src..src + size]));
+    }
+    if end != original_len {
+        return Err(corrupt(format!(
+            "rebuilt {end} bytes, PackHeader declares an original of {original_len}"
+        )));
+    }
+    let mut out = vec![0u8; end];
+    out[..img.pe_off].copy_from_slice(&img.bytes[..img.pe_off]);
+    out[img.pe_off..img.pe_off + header.len()].copy_from_slice(header);
+    for (ptr, data) in raw {
+        out[ptr..ptr + data.len()].copy_from_slice(data);
     }
     // A section whose raw data starts inside the headers would have overwritten
     // what was just written there, so read the result back the way a loader
@@ -858,6 +899,10 @@ mod tests {
             .collect()
     }
 
+    fn offsets(name_offs: &[u32]) -> BTreeSet<u32> {
+        name_offs.iter().copied().collect()
+    }
+
     /// The regression: a 32-bit MSVC crackme importing seven DLLs across
     /// thirteen descriptors (KERNEL32 four times, three others twice). Its
     /// loader table holds one descriptor per distinct DLL, so the two lists are
@@ -870,15 +915,15 @@ mod tests {
             .iter()
             .map(|o| base + o)
             .collect();
-        let repeated = dlls(&[224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297]);
-        assert!(table_names_dlls(&table, base, &repeated));
+        let repeated = [224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297];
+        assert!(table_names_dlls(&table, base, &offsets(&repeated)));
     }
 
     #[test]
     fn one_descriptor_per_dll_still_matches() {
         let base = 0x1000;
         let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
-        assert!(table_names_dlls(&table, base, &dlls(&[16, 32, 48])));
+        assert!(table_names_dlls(&table, base, &offsets(&[16, 32, 48])));
     }
 
     /// Set equality both ways: a table naming a DLL the trailer never asks for
@@ -887,9 +932,9 @@ mod tests {
     fn a_table_whose_names_differ_is_rejected() {
         let base = 0x1000;
         let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
-        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32])));
-        assert!(!table_names_dlls(&table, base, &dlls(&[16, 32, 48, 64])));
-        assert!(!table_names_dlls(&[], base, &dlls(&[16])));
+        assert!(!table_names_dlls(&table, base, &offsets(&[16, 32])));
+        assert!(!table_names_dlls(&table, base, &offsets(&[16, 32, 48, 64])));
+        assert!(!table_names_dlls(&[], base, &offsets(&[16])));
     }
 
     /// A minimal PE header at `skip` inside a block: one section, sixteen data
@@ -954,6 +999,142 @@ mod tests {
         let (r, oh, _) = relocs(0, 0, (0, 0));
         r.unwrap();
         assert_eq!(oh.flags, 0);
+    }
+
+    fn put(b: &mut [u8], at: usize, v: u32) {
+        b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// Where [`tiny_pe`] writes its one section header and its data directories.
+    const TINY_SECTION: usize = 0x40 + 24 + 224;
+    const TINY_DIRS: usize = 0x40 + 24 + 96;
+
+    /// A packed image with one section mapping `body` at 0x1000 from file
+    /// offset 0x200, and no data directories set.
+    fn tiny_pe(body: &[u8]) -> Vec<u8> {
+        let mut b = vec![0u8; 0x200];
+        b[..2].copy_from_slice(b"MZ");
+        put(&mut b, 0x3c, 0x40);
+        b[0x40..0x44].copy_from_slice(b"PE\0\0");
+        b[0x46..0x48].copy_from_slice(&1u16.to_le_bytes());
+        b[0x54..0x56].copy_from_slice(&224u16.to_le_bytes());
+        b[0x58..0x5a].copy_from_slice(&0x10bu16.to_le_bytes());
+        put(&mut b, 0x58 + 92, 16);
+        let len = body.len() as u32;
+        for (field, v) in [(8, len), (12, 0x1000), (16, len), (20, 0x200)] {
+            put(&mut b, TINY_SECTION + field, v);
+        }
+        b.extend_from_slice(body);
+        b
+    }
+
+    /// Replay the resource rebuild of a packed image whose one section, at
+    /// `packed_rva`, is the resource directory `tree`, into a recovered image
+    /// whose `.rsrc` starts at 0x1000.
+    fn rebuild_tree(tree: &[u8], packed_rva: u32) -> Result<(), UpxError> {
+        let mut bytes = tiny_pe(tree);
+        put(&mut bytes, TINY_SECTION + 12, packed_rva);
+        put(&mut bytes, TINY_DIRS + 8 * DIR_RESOURCE, packed_rva);
+        put(&mut bytes, TINY_DIRS + 8 * DIR_RESOURCE + 4, tree.len() as u32);
+        let img = Image::new(&bytes).unwrap();
+        let mut dirs = vec![(0, 0); 16];
+        dirs[DIR_RESOURCE] = (0x1000, tree.len() as u32);
+        let rsrc = Section { vsize: 0x10000, vaddr: 0x1000, rawsize: 0x10000, rawptr: 0x400 };
+        let oh = PeHeader {
+            at: 0,
+            opt_size: 224,
+            optional_magic: 0x10b,
+            flags: 0,
+            code_size: 0,
+            code_base: 0x1000,
+            sections: vec![rsrc],
+            dirs,
+        };
+        let mut obuf = vec![0u8; 0x20000];
+        let mut trailer = obuf.len() - 2;
+        rebuild_resources(&img, &mut obuf, &oh, 0x1000, &mut trailer)
+    }
+
+    /// A root directory with one entry naming the data entry at 24, which
+    /// holds `data_rva` and a zero size; `len` pads the tree.
+    fn one_leaf_tree(data_rva: u32, len: usize) -> Vec<u8> {
+        let mut tree = vec![0u8; len];
+        tree[14..16].copy_from_slice(&1u16.to_le_bytes());
+        put(&mut tree, 16, 3);
+        put(&mut tree, 20, 24);
+        put(&mut tree, 24, data_rva);
+        tree
+    }
+
+    /// A data entry whose last eight bytes lie past the packed directory's
+    /// copy used to be sliced out of it anyway.
+    #[test]
+    fn a_resource_data_entry_past_its_packed_copy_is_refused() {
+        let err = rebuild_tree(&one_leaf_tree(0, 32), 0x1000).expect_err("a truncated entry");
+        assert!(format!("{err}").contains("runs past its packed copy"), "{err}");
+        rebuild_tree(&one_leaf_tree(0, 40), 0x1000).expect("the whole entry is there");
+    }
+
+    /// A moved leaf's back-pointer sits four bytes before its data, so a leaf
+    /// at address 1 has none -- it used to underflow the address instead.
+    #[test]
+    fn a_moved_resource_below_address_four_has_no_back_pointer() {
+        let err = rebuild_tree(&one_leaf_tree(1, 40), 0).expect_err("no back-pointer");
+        assert!(format!("{err}").contains("no back-pointer"), "{err}");
+    }
+
+    /// A section whose raw data lies past the end of the file maps no bytes,
+    /// so a DLL name it claims to hold is an error, not a slice past the end.
+    #[test]
+    fn a_section_past_the_end_of_the_file_holds_no_import_name() {
+        let mut bytes = tiny_pe(&[0x11; 0x40]);
+        put(&mut bytes, TINY_SECTION + 20, 0x10_0000);
+        let img = Image::new(&bytes).unwrap();
+        let err = img.cstr_at_rva(0x1000).expect_err("nothing is there");
+        assert!(format!("{err}").contains("outside the image"), "{err}");
+    }
+
+    /// A section mapped at the top of the address space must not wrap the
+    /// loader-table scan back to address zero (endless in release) or
+    /// overflow its end address.
+    #[test]
+    fn a_section_at_the_top_of_the_address_space_does_not_wrap_the_loader_scan() {
+        for rawsize in [0xf, 0x40] {
+            let mut bytes = tiny_pe(&[0x11; 0x40]);
+            put(&mut bytes, TINY_SECTION + 12, 0xffff_fff0);
+            put(&mut bytes, TINY_SECTION + 16, rawsize);
+            let img = Image::new(&bytes).unwrap();
+            let err = loader_import_table(&img, &dlls(&[0x80])).expect_err("no loader table");
+            assert!(format!("{err}").contains("cannot find"), "{err}");
+        }
+    }
+
+    /// More distinct DLLs than a candidate table is followed for is this
+    /// build's limit, not damage: UPX packs up to 4096 import descriptors, and
+    /// older releases any number.
+    #[test]
+    fn more_dlls_than_the_scan_follows_is_unsupported() {
+        let img_bytes = tiny_pe(&[0; 0x40]);
+        let img = Image::new(&img_bytes).unwrap();
+        let wanted: Vec<u32> = (0..=MAX_LOADER_DLLS as u32).map(|k| 0x40 + 20 * k).collect();
+        let err = loader_import_table(&img, &dlls(&wanted)).expect_err("too many DLLs");
+        assert!(matches!(err, UpxError::Unsupported(_)), "{err}");
+    }
+
+    /// A section whose every word names a wanted DLL relative to the candidate
+    /// four bytes before it would make each candidate a full table walk; the
+    /// scan's reads are bounded by the file instead.
+    #[test]
+    fn a_region_of_matching_descriptors_exhausts_the_scan_not_the_clock() {
+        let mut body = vec![0u8; 0x10000];
+        for q in (0..body.len()).step_by(4) {
+            put(&mut body, q, 0x1000 + q as u32 - 12 + 0x40);
+        }
+        let img_bytes = tiny_pe(&body);
+        let img = Image::new(&img_bytes).unwrap();
+        let wanted: Vec<u32> = (0..MAX_LOADER_DLLS as u32).map(|k| 0x40 + 20 * k).collect();
+        let err = loader_import_table(&img, &dlls(&wanted)).expect_err("no table, many walks");
+        assert!(format!("{err}").contains("too many candidate loader tables"), "{err}");
     }
 
     /// An eight-byte directory is the empty block "some tricky dlls use", which

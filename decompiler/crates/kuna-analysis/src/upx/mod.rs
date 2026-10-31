@@ -588,6 +588,48 @@ mod tests {
         assert_eq!(info.overlay_offset, 0);
     }
 
+    fn pe32plus_header(format: u8) -> Vec<u8> {
+        let mut image = vec![0u8; 0x500];
+        image[..2].copy_from_slice(b"MZ");
+        image[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        image[0x80..0x84].copy_from_slice(b"PE\0\0");
+        image[0x86..0x88].copy_from_slice(&2u16.to_le_bytes());
+        image[0x94..0x96].copy_from_slice(&240u16.to_le_bytes());
+        image[0x98..0x9a].copy_from_slice(&0x20bu16.to_le_bytes());
+        let second_section = 0x80 + 24 + 240 + 40;
+        image[second_section + 20..second_section + 24].copy_from_slice(&0x400u32.to_le_bytes());
+        image[0x400..0x404].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+        let checksum = adler32(1, &image[0x400..0x404]);
+        let header = &mut image[0x3e0..0x400];
+        header[..4].copy_from_slice(b"UPX!");
+        header[4..8].copy_from_slice(&[13, format, 2, 8]);
+        header[12..16].copy_from_slice(&checksum.to_le_bytes());
+        header[16..20].copy_from_slice(&16u32.to_le_bytes());
+        header[20..24].copy_from_slice(&4u32.to_le_bytes());
+        header[24..28].copy_from_slice(&3072u32.to_le_bytes());
+        header[31] = pack_header_checksum(&header[..31]);
+        image
+    }
+
+    #[test]
+    fn detects_pe32plus_but_refuses_to_reconstruct_it() {
+        let image = pe32plus_header(36);
+        let info = detect(&image).expect("PE32+ UPX header is recognized");
+        assert_eq!(info.format_name(), "win64/pe");
+        assert_eq!(info.overlay_offset, 0);
+        assert!(
+            matches!(unpack(&image), Err(UpxError::Unsupported(message)) if message.contains("win64/pe"))
+        );
+    }
+
+    #[test]
+    fn refuses_pe32plus_even_if_its_pack_header_claims_pe32() {
+        let image = pe32plus_header(9);
+        assert!(
+            matches!(unpack(&image), Err(UpxError::Unsupported(message)) if message.contains("PE32+"))
+        );
+    }
+
     /// The end-to-end contract: a PE whose sections, import table and resource
     /// directory are all back, not merely a file of the right length.
     #[test]
@@ -655,6 +697,170 @@ mod tests {
         bytes[pe + 24 + 96 + 8..pe + 24 + 96 + 12].copy_from_slice(&0u32.to_le_bytes());
         let out = unpack(&bytes).expect("a blanked import directory is not fatal");
         assert_eq!(out.bytes, good);
+    }
+
+    /// The witness's packed section table and its first section header.
+    fn pe_sections(bytes: &[u8]) -> (usize, usize) {
+        let pe = u32::from_le_bytes(bytes[0x3c..0x40].try_into().unwrap()) as usize;
+        let table = pe + 24 + u16::from_le_bytes([bytes[pe + 20], bytes[pe + 21]]) as usize;
+        (pe, table)
+    }
+
+    fn put32(b: &mut [u8], at: usize, v: u32) {
+        b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// The witness's empty `.text` remapped over the DLL names of its loader
+    /// import table, with its raw data past the end of the file: the names
+    /// are gone, which is an error -- it used to slice past the end and panic.
+    #[test]
+    fn dll_names_in_a_section_past_the_end_of_the_file_are_refused() {
+        let mut bytes = pe_fixture();
+        let (_, table) = pe_sections(&bytes);
+        put32(&mut bytes, table + 12, 0xf478);
+        put32(&mut bytes, table + 16, 0x100);
+        put32(&mut bytes, table + 20, 0x10_0000);
+        let err = unpack(&bytes).expect_err("the DLL names are not in the file");
+        assert!(format!("{err}").contains("outside the image"), "{err}");
+    }
+
+    /// The witness's empty `.text` moved to the top of the address space: the
+    /// loader-table scan used to wrap past it (endless in release), and the
+    /// field changes nothing about the original.
+    #[test]
+    fn a_packed_section_at_the_top_of_the_address_space_unpacks_unchanged() {
+        let good = unpack(&pe_fixture()).expect("fixture unpacks").bytes;
+        let mut bytes = pe_fixture();
+        let (_, table) = pe_sections(&bytes);
+        put32(&mut bytes, table + 12, 0xffff_fff0);
+        put32(&mut bytes, table + 16, 0xf);
+        assert_eq!(unpack(&bytes).expect("a hostile empty section is not fatal").bytes, good);
+    }
+
+    /// Five resource directories of 300 entries that all name the next one:
+    /// walking every path is 300^4 visits, which used to hang the unpack. A
+    /// subdirectory reached twice is refused instead.
+    #[test]
+    fn a_resource_tree_that_shares_subdirectories_is_refused_not_walked_forever() {
+        let (n, levels) = (300usize, 5usize);
+        let dsz = 16 + 8 * n;
+        let mut tree = vec![0u8; dsz * levels];
+        for k in 0..levels - 1 {
+            let o = k * dsz;
+            tree[o + 14..o + 16].copy_from_slice(&(n as u16).to_le_bytes());
+            for i in 0..n {
+                put32(&mut tree, o + 16 + 8 * i, i as u32 + 1);
+                put32(&mut tree, o + 20 + 8 * i, 0x8000_0000 | ((k + 1) * dsz) as u32);
+            }
+        }
+        // Grow the last packed section (it ends the file) by the tree, and
+        // point the packed resource directory at it.
+        let mut bytes = pe_fixture();
+        let (pe, table) = pe_sections(&bytes);
+        let nsec = u16::from_le_bytes([bytes[pe + 6], bytes[pe + 7]]) as usize;
+        let last = table + 40 * (nsec - 1);
+        let rd = |b: &[u8], at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+        let (vaddr, rawsize) = (rd(&bytes, last + 12), rd(&bytes, last + 16));
+        assert_eq!((rd(&bytes, last + 20) + rawsize) as usize, bytes.len());
+        bytes.extend_from_slice(&tree);
+        let grown = rawsize + tree.len() as u32;
+        put32(&mut bytes, last + 8, grown);
+        put32(&mut bytes, last + 16, grown);
+        put32(&mut bytes, pe + 24 + 96 + 16, vaddr + rawsize);
+        put32(&mut bytes, pe + 24 + 100 + 16, tree.len() as u32);
+        let err = unpack(&bytes).expect_err("a shared subdirectory");
+        assert!(format!("{err}").contains("subdirectory twice"), "{err}");
+    }
+
+    /// `data` as an NRV2B_LE32 stream of nothing but literals, then the end
+    /// marker: a match offset whose gamma-coded high part is 0xffffff.
+    fn nrv2b_literals(data: &[u8]) -> Vec<u8> {
+        struct Bits {
+            out: Vec<u8>,
+            word_at: usize,
+            word: u32,
+            left: u32,
+        }
+        impl Bits {
+            fn bit(&mut self, b: u32) {
+                if self.left == 0 {
+                    self.word_at = self.out.len();
+                    self.out.extend_from_slice(&[0; 4]);
+                    (self.word, self.left) = (0, 32);
+                }
+                self.left -= 1;
+                self.word |= b << self.left;
+                self.out[self.word_at..self.word_at + 4].copy_from_slice(&self.word.to_le_bytes());
+            }
+        }
+        let mut w = Bits { out: Vec::new(), word_at: 0, word: 0, left: 0 };
+        for &x in data {
+            w.bit(1);
+            w.out.push(x);
+        }
+        w.bit(0);
+        for i in (0..24).rev() {
+            w.bit((0x100_0002 >> i) & 1);
+            w.bit(u32::from(i == 0));
+        }
+        w.out.push(0xff);
+        w.out
+    }
+
+    /// The PE witness with its one block decompressed, edited by `edit`, and
+    /// stored back as a literal-only stream: the sections after the stream move
+    /// by the growth rounded to the file alignment, and the PackHeader's
+    /// lengths, checksums and method are resealed.
+    fn repacked_pe_fixture(edit: impl FnOnce(&mut Vec<u8>)) -> Vec<u8> {
+        let bytes = pe_fixture();
+        let info = detect(&bytes).expect("fixture is UPX-packed");
+        let (at, c_len) = (info.pack_header_offset, info.c_len as usize);
+        let data = at + PACK_HEADER_SIZE;
+        let mut obuf = elf::method_codec(info.method)
+            .unwrap()
+            .decompress(&bytes[data..data + c_len], info.u_len as usize)
+            .unwrap();
+        edit(&mut obuf);
+        let stream = nrv2b_literals(&obuf);
+        let (pe, table) = pe_sections(&bytes);
+        let rd = |at: usize| u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap());
+        let align = rd(pe + 24 + 36) as usize;
+        let grow = (stream.len() - c_len).div_ceil(align) * align;
+        let mut out = bytes[..data].to_vec();
+        out.extend_from_slice(&stream);
+        out.resize(data + c_len + grow, 0);
+        out.extend_from_slice(&bytes[data + c_len..]);
+        let nsec = u16::from_le_bytes([bytes[pe + 6], bytes[pe + 7]]) as usize;
+        for i in 0..nsec {
+            let ptr = table + 40 * i + 20;
+            if rd(ptr) as usize >= data + c_len {
+                put32(&mut out, ptr, rd(ptr) + grow as u32);
+            }
+        }
+        put32(&mut out, at + 8, adler32(1, &obuf));
+        put32(&mut out, at + 12, adler32(1, &stream));
+        put32(&mut out, at + 16, obuf.len() as u32);
+        put32(&mut out, at + 20, stream.len() as u32);
+        out[at + 6] = 2;
+        out[at + 31] = pack_header_checksum(&out[at..at + 31]);
+        out
+    }
+
+    /// Dropping the trailer's last record makes the resource rebuild read its
+    /// icon count out of the pointer that ends the block, two bytes past the
+    /// trailer -- which used to underflow the leftover count instead of being
+    /// refused. A repack that edits nothing still unpacks to the original.
+    #[test]
+    fn trailer_records_that_run_past_the_trailer_are_refused() {
+        let good = unpack(&pe_fixture()).expect("fixture unpacks").bytes;
+        assert_eq!(unpack(&repacked_pe_fixture(|_| {})).expect("an identity repack").bytes, good);
+        let short = repacked_pe_fixture(|obuf| {
+            let end = obuf.len();
+            obuf.copy_within(end - 4.., end - 6);
+            obuf.truncate(end - 2);
+        });
+        let err = unpack(&short).expect_err("the records overrun the trailer");
+        assert!(format!("{err}").contains("run past the end of the trailer"), "{err}");
     }
 
     /// The same guard the ELF arm has: an LZ stream has no internal integrity,

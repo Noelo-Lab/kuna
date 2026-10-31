@@ -442,6 +442,14 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna `pltlocal`) The function the PLT stub at a direct-call `entry` is
+    /// bound to by the image's own relocations, which the call spec is built at.
+    /// The default shell has no loader and reports `None`. See
+    /// [`crate::p4_calls::kuna_pltlocal`].
+    fn query_call_definition(&self, _entry: &Address) -> Option<Address> {
+        None
+    }
+
     /// Does the function at the direct-call `entry` address have its prototype
     /// marked \e noreturn? (C++ `FlowInfo::queryCall` →
     /// `fspecs.copyFlowEffects(otherfunc->getFuncProto())` →
@@ -2879,7 +2887,14 @@ truncating the fall-through here"
     /// \e fspec annotation in0 + register the printed name.
     fn build_call_specs(&mut self, op: OpId, entry: Address, indirect: bool) -> KunaResult<()> {
         use crate::fspec::FuncCallSpecs;
-        let mut fc = FuncCallSpecs::new(op, entry.clone());
+        let callee = (!indirect && !entry.is_invalid())
+            .then(|| self.env.query_call_definition(&entry))
+            .flatten()
+            .unwrap_or_else(|| entry.clone());
+        let mut fc = FuncCallSpecs::new(op, callee.clone());
+        if callee != entry {
+            fc.set_plt_stub(entry.clone());
+        }
         // C++ `data.getOverride().applyPrototype(data, *res)` (flow.cc:706 direct /
         // flow.cc:732 indirect, BEFORE `queryCall`): an `override prototype <addr>
         // <decl>` keyed by the call op's address copies its parsed prototype onto
@@ -2907,7 +2922,7 @@ truncating the fall-through here"
         // postponed to ActionDefaultParams).
         if !indirect && !entry.is_invalid() {
             if let Some(name) = self.env.query_call(&entry) {
-                let _ = fc.set_funcdata(entry.clone(), &name);
+                let _ = fc.set_funcdata(callee.clone(), &name);
             }
             // C++ queryCall: fspecs.copyFlowEffects(otherfunc->getFuncProto()) —
             // copies the IS_INLINE / NO_RETURN flow effects from the callee proto.
@@ -2960,7 +2975,9 @@ truncating the fall-through here"
                 let callee_proto = if entry.is_invalid() {
                     None
                 } else {
-                    self.data.get_arch().query_callee_proto(&entry)
+                    let arch = self.data.get_arch();
+                    arch.query_callee_proto(&entry)
+                        .or_else(|| (callee != entry).then(|| arch.query_callee_proto(&callee)).flatten())
                 };
                 if let Some(callee_proto) = callee_proto {
                     fc.proto_mut().copy(&callee_proto);
@@ -3062,7 +3079,9 @@ truncating the fall-through here"
     /// into \b this function via [`inline_ez_clone`](Self::inline_ez_clone) (a
     /// straight-line leaf, the \e easy model) or
     /// [`inline_clone`](Self::inline_clone) (the \e hard model, preserving
-    /// addresses and replacing RETURN with a BRANCH).
+    /// addresses and replacing RETURN with a BRANCH). The callee's fspec
+    /// handles pass to \b this function, whose cloned varnodes still name them
+    /// once `inlinefd` is dropped.
     ///
     /// Returns 0 for the easy model, 1 for the hard model, -1 if inlining was not
     /// successful (`callop` is the site of the injection).
@@ -3177,6 +3196,7 @@ truncating the fall-through here"
         self.data.obank_mut().set_uniq_id(inline_uniq);
         // Move the (now spent) callee data back out.
         *inlinefd = inlineflow.data;
+        self.data.kuna_fspec_handles.append(&mut inlinefd.kuna_fspec_handles);
         Ok(res)
     }
 

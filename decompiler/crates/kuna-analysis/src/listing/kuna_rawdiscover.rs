@@ -28,6 +28,8 @@
 //! must land inside the executable ranges, the sweep resynchronizes on the
 //! instruction alignment after a failed decode rather than cascading, and every
 //! surviving root is then re-walked by the descent, which decodes it for real.
+//! An MS-DOS executable, whose load module is mostly data, also hands the
+//! sweep its relocations ([`super::kuna_mzsweep`], `--option mzsweep`).
 //! `--option rawdiscover off` restores the seeds-only inventory, and
 //! `--define-function` remains the way to assert a boundary neither oracle
 //! found.
@@ -40,6 +42,7 @@ use kuna_sleigh::translate::Translate;
 
 use crate::listing::classify::classify;
 use crate::listing::decode::decode_one;
+use crate::listing::kuna_mzsweep::{self, MzEvidence, SweepRun};
 use crate::listing::{Listing, ListingDetail};
 
 /// Every function entry a raw image yields: the seeds, the targets of every
@@ -51,19 +54,34 @@ use crate::listing::{Listing, ListingDetail};
 ///
 /// `exec_ranges` bounds every decode. An address outside it is not decoded and
 /// contributes no successor, so a call into unmapped space is dropped rather
-/// than walked into the void.
+/// than walked into the void. `mz`, an MS-DOS executable's evidence, holds the
+/// sweep to the calls [`super::kuna_mzsweep`] keeps and the targets that open
+/// with code.
 pub fn discover(
     arch: &Architecture,
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
     seeds: &[u64],
+    mz: Option<&MzEvidence>,
 ) -> Vec<u64> {
     if seeds.is_empty() || exec_ranges.is_empty() {
         return seeds.to_vec();
     }
     let mut roots: Vec<u64> = seeds.to_vec();
-    roots.extend(sweep_call_targets(translate, code_space, exec_ranges));
+    roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
+        let swept = sweep_call_targets(translate, code_space, exec_ranges, mz);
+        match mz {
+            Some(mz) => swept
+                .into_iter()
+                .filter(|&target| {
+                    seeds.contains(&target)
+                        || kuna_mzsweep::opens_as_code(translate, code_space, exec_ranges, mz, target)
+                })
+                .collect(),
+            None => swept,
+        }
+    }));
     roots.sort_unstable();
     roots.dedup();
 
@@ -99,10 +117,15 @@ pub fn discover(
 /// Only *statically* derivable targets count: an indirect call through a
 /// register contributes nothing, because there is no address to contribute.
 /// Targets outside `exec_ranges` are dropped.
+///
+/// [`discover`] runs it with x86 real-mode segment commits masked off
+/// ([`crate::loader::kuna_realmodecs::without_commits`]): a branch decoded from
+/// data must not move the segment the code after its target decodes in.
 fn sweep_call_targets(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     exec_ranges: &[(u64, u64)],
+    mz: Option<&MzEvidence>,
 ) -> Vec<u64> {
     // An instruction can never start off the language's alignment, so that is
     // both the smallest honest resynchronization step and the one that keeps a
@@ -112,17 +135,24 @@ fn sweep_call_targets(
     let mut out: Vec<u64> = Vec::new();
     for &(lo, hi) in exec_ranges {
         let mut vma = lo;
+        let mut run = SweepRun::default();
         while vma < hi {
             let Ok(decoded) = decode_one(translate, vma, code_space, false, false) else {
+                run.undecodable();
                 vma = next_aligned(vma, step);
                 continue;
             };
             if decoded.len == 0 {
+                run.undecodable();
                 vma = next_aligned(vma, step);
                 continue;
             }
             let c = classify(&decoded.ops, vma, decoded.len);
-            if c.flow.is_call {
+            let counts = match mz {
+                Some(mz) => run.step(mz, vma, decoded.len, &c.flow),
+                None => c.flow.is_call,
+            };
+            if counts {
                 out.extend(
                     c.flows.iter().copied().filter(|t| in_ranges(exec_ranges, *t)),
                 );

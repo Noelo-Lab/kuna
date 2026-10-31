@@ -344,7 +344,9 @@ fn check_errors(
     // missing bytes remain selection failures.
     if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
-            if reason.contains("per-function decompile budget exceeded") {
+            if reason.contains("per-function decompile budget exceeded")
+                || reason.contains("per-function memory limit exceeded")
+            {
                 return Some(format!("decompilation failed for {target} in {binary}: {reason}"));
             }
             return Some(reason);
@@ -532,6 +534,15 @@ fn pipeline_refusal(out: &str, line: &str) -> Option<String> {
 /// body and an empty stderr.
 fn decompile_command_failure(out: &str) -> Option<String> {
     match command_failure(out, "decompile") {
+        Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
+        _ => None,
+    }
+}
+
+/// Why `print C` refused to render, e.g. a function whose rendering ran past
+/// what the drive left of `--max-fn-seconds`; `None` when it did not refuse.
+fn print_command_failure(out: &str) -> Option<String> {
+    match command_failure(out, "print C") {
         Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
         _ => None,
     }
@@ -747,6 +758,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     name: args.target.clone(),
                     interior: None,
                 });
+            }
+            if let Some(reason) = print_command_failure(&stdout_text) {
+                let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
+                return Err((format!("decompilation failed for {func} in {binary}: {reason}"), false));
             }
             return Err((
                 format!(
@@ -1277,10 +1292,12 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
             decompile_all::zero_discovery_error(&args.binary)
                 .unwrap_or_else(|| format!("no function {target:?} in {}", args.binary))
         } else {
-            format!(
-                "no function {target:?} in {}; for a stripped binary pass an address with --addr",
-                args.binary
-            )
+            let hint = prog
+                .resolve_entry(&kuna_console::engine::EntrySelector::Name(target.to_string()))
+                .err()
+                .and_then(|error| decompile_all::name_miss_hint(&error))
+                .unwrap_or_else(|| "for a stripped binary pass an address with --addr".to_string());
+            format!("no function {target:?} in {}; {hint}", args.binary)
         });
     }
 
@@ -2112,6 +2129,33 @@ Execution error: No symbol named: v9
                 "openfile write \"/tmp/out dir/kuna.c\"\nprint C\nprint raw\nclosefile\n",
                 "openfile write \"/tmp/out dir/regions.txt\"\nregion blocks\nregion tree\nclosefile\nquit\n",
             ));
+    }
+
+    /// The x86 real-mode language id contains a space; the load line quotes it
+    /// so the console does not read `Mode:default` as the next argument.
+    #[test]
+    fn build_script_quotes_a_target_containing_a_space() {
+        for raw_image in [true, false] {
+            let script = build_script(
+                &super::DecompileArgs {
+                    by_address: true,
+                    raw_image,
+                    base: raw_image.then_some(0),
+                    bfd_target: Some("x86:LE:16:Real Mode:default".into()),
+                    ..script_args("/tmp/dazzle.exe", "0x70")
+                },
+                Path::new("/tmp/kuna.c"),
+                LISTING,
+                None,
+            );
+            let load = script.lines().next().unwrap();
+            let expected = if raw_image {
+                "load raw \"x86:LE:16:Real Mode:default\" 0x0 0x70 /tmp/dazzle.exe"
+            } else {
+                "load file \"x86:LE:16:Real Mode:default\" /tmp/dazzle.exe"
+            };
+            assert_eq!(load, expected);
+        }
     }
 
     /// A checked-in fixture path, so the architecture classification behind the

@@ -1,0 +1,21 @@
+floatstore_x86_64_O2.o, floatstore_a64_O2.o -- the x86-64 and AArch64 halves of
+tests/stages/kuna-floatstore.xml.
+
+What they are
+  floatstore.c (beside them) compiled to relocatable objects. mat_param stores
+  the 1.0f constants as integer bit patterns (movl $0x3f800000 / str w8) and the
+  computed float with a float store (movss %xmm0,8(%rdi) / str s0,[x0,#8]), so
+  the pointer's pointee is unknown bytes and the float store must print as a
+  float store, not as an assignment C converts numerically.
+
+Where they came from
+  Ubuntu clang version 14.0.0-1ubuntu1.1:
+
+      clang-14 -O2 -c floatstore.c -o floatstore_x86_64_O2.o
+      clang-14 --target=aarch64-linux-gnu -O2 -c floatstore.c -o floatstore_a64_O2.o
+
+  Prebuilt so the test does not depend on the host compiler's code generation.
+
+  sha256
+    289fbdd58ee04c22c4a1a3cce3a159195beac7a7a4f34cbd002710938ec67450  floatstore_x86_64_O2.o
+    7b6ecff2d8b5bced967f8c172230a138086733185e40c368e2bbc0e92187addf  floatstore_a64_O2.o

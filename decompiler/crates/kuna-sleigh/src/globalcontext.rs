@@ -588,43 +588,49 @@ pub trait ContextDatabase {
     /// \param point is the code address
     /// \return the tracked value or zero
     fn get_tracked_value(&self, mem: &VarnodeData, point: &Address) -> u64 {
-        let tset = self.get_tracked_set(point);
-        // C++ `mem.offset + mem.size - 1`: defined unsigned wraparound
-        let endoff = mem.offset.wadd(u64::from(mem.size)).wsub(1);
-        for tcont in tset.iter() {
-            // tcont must contain -mem- (space comparison is by pointer)
-            if !space_ptr_eq(&tcont.loc.space, &mem.space) {
-                continue;
-            }
-            if tcont.loc.offset > mem.offset {
-                continue;
-            }
-            let tendoff = tcont.loc.offset.wadd(u64::from(tcont.loc.size)).wsub(1);
-            if tendoff < endoff {
-                continue;
-            }
-            let mut res = tcont.val;
-            // If we have proper containment, trim value based on endianness.
-            // (C++ dereferences the space pointer here: null is UB.)
-            let spc = tcont
-                .loc
-                .space
-                .as_ref()
-                .expect("getTrackedValue: null tracked space pointer (C++ UB)");
-            // Shift amounts below stay < 64 for tracked registers of size
-            // <= 8; anything larger is C++ UB (oversized shift).
-            if spc.is_big_endian() {
-                if endoff != tendoff {
-                    res >>= 8 * (tendoff - mem.offset);
-                }
-            } else if mem.offset != tcont.loc.offset {
-                res >>= 8 * (mem.offset - tcont.loc.offset);
-            }
-            res &= calc_mask(mem.size as i32); // Final trim based on size (cast: uint4 -> int4 as in C++)
-            return res;
-        }
-        0
+        tracked_value(self.get_tracked_set(point), mem)
     }
+}
+
+/// The value a tracked set gives the storage `mem`: the containing entry's
+/// value trimmed to `mem`, or 0 when no entry contains it (the body of C++
+/// `ContextDatabase::getTrackedValue`, shared with snapshots of the tracked sets).
+pub fn tracked_value(tset: &TrackedSet, mem: &VarnodeData) -> u64 {
+    // C++ `mem.offset + mem.size - 1`: defined unsigned wraparound
+    let endoff = mem.offset.wadd(u64::from(mem.size)).wsub(1);
+    for tcont in tset.iter() {
+        // tcont must contain -mem- (space comparison is by pointer)
+        if !space_ptr_eq(&tcont.loc.space, &mem.space) {
+            continue;
+        }
+        if tcont.loc.offset > mem.offset {
+            continue;
+        }
+        let tendoff = tcont.loc.offset.wadd(u64::from(tcont.loc.size)).wsub(1);
+        if tendoff < endoff {
+            continue;
+        }
+        let mut res = tcont.val;
+        // If we have proper containment, trim value based on endianness.
+        // (C++ dereferences the space pointer here: null is UB.)
+        let spc = tcont
+            .loc
+            .space
+            .as_ref()
+            .expect("getTrackedValue: null tracked space pointer (C++ UB)");
+        // Shift amounts below stay < 64 for tracked registers of size
+        // <= 8; anything larger is C++ UB (oversized shift).
+        if spc.is_big_endian() {
+            if endoff != tendoff {
+                res >>= 8 * (tendoff - mem.offset);
+            }
+        } else if mem.offset != tcont.loc.offset {
+            res >>= 8 * (mem.offset - tcont.loc.offset);
+        }
+        res &= calc_mask(mem.size as i32); // Final trim based on size (cast: uint4 -> int4 as in C++)
+        return res;
+    }
+    0
 }
 
 // ---------------------------------------------------------------------------

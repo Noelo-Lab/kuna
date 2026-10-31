@@ -71,6 +71,7 @@
 use kuna_base::address::Address;
 use kuna_base::error::KunaResult;
 use kuna_base::marshal::ElementId;
+use kuna_base::space::AddrSpace;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
 
@@ -155,6 +156,35 @@ pub fn guess_extra_pop(
         return RETURN_ADDRESS_ONLY;
     }
     RETURN_ADDRESS_ONLY + bytes
+}
+
+/// The bytes the call instruction at `call_addr` itself stored: its return
+/// address (two bytes for an x86 16-bit near call, four for a far call or an
+/// x86-32 call), whether the store is still a STORE or already a COPY into
+/// `stack`.  `None` when the call stores nothing, as a call through a link
+/// register does.
+pub fn return_address_bytes(data: &Funcdata, stack: &AddrSpace, call_addr: &Address) -> Option<int4> {
+    let mut pushed: int4 = 0;
+    for (_, id) in data.obank().iter_at(call_addr) {
+        let Some(op) = data.obank().get(id) else { continue };
+        if op.is_dead() {
+            continue;
+        }
+        let stored = match op.code() {
+            OpCode::CPUI_STORE => op.get_in(2),
+            OpCode::CPUI_COPY => op.get_out().filter(|&out| {
+                data.vbank()
+                    .get(out)
+                    .and_then(|v| v.get_addr().get_space().map(|s| s.get_index() == stack.get_index()))
+                    .unwrap_or(false)
+            }),
+            _ => None,
+        };
+        if let Some(v) = stored.and_then(|v| data.vbank().get(v)) {
+            pushed += v.get_size();
+        }
+    }
+    (pushed > 0 && pushed <= MAX_ARG_BYTES).then_some(pushed)
 }
 
 /// Is the callee an imported function?

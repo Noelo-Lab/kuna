@@ -19,10 +19,12 @@
 //!     `INT_ADD` constant.
 //!
 //! Faithfulness: every numeric is `u64`/`int4` per the C++ widths, wrapping ops
-//! match the unsigned C++ arithmetic, and the magic constants (`65535` unknown
-//! marker, the `4` extra-pop guess, the `-1` multiply test) are the verbatim C++
-//! literals.  The two surfaces the merged tree does not yet build — the
-//! per-call `FuncCallSpecs` (`getCallSpecs`/`setEffectiveExtraPop`, a W6/W7 boundary,
+//! match the unsigned C++ arithmetic, and the magic constants (the `4` extra-pop
+//! guess, the `-1` multiply test) are the verbatim C++ literals.  One deliberate
+//! departure: the C++ marks an unsolved variable with the value `65535`, which a
+//! 16-bit stack pointer reaches (`DEC SP` adds `0xffff`); a variable solved to it
+//! read back as unsolved and was re-pushed without end.  `soln` is an `Option`.
+//! The two surfaces the merged tree does not yet build — the per-call `FuncCallSpecs` (`getCallSpecs`/`setEffectiveExtraPop`, a W6/W7 boundary,
 //! `numCalls()==0` here) and the IOP-space `getOpFromConst` decode (W3-varnode
 //! boundary) — are reached exactly where the C++ reaches them: with no call specs
 //! the INDIRECT companion takes the C++ `fc==0` *guess* branch (`rhs=4`), and the
@@ -51,9 +53,6 @@ use crate::context::{OpId, VarnodeId};
 #[cfg(test)]
 mod tests;
 
-/// The C++ `65535` sentinel for "no solution yet" in [`StackSolver::soln`].
-const UNKNOWN_SOLN: int4 = 65535;
-
 /// One equation `var1 - var2 = rhs` (C++ `struct StackEqn`, `coreaction.cc:40`).
 #[derive(Clone, Copy)]
 struct StackEqn {
@@ -77,8 +76,9 @@ struct StackSolver {
     /// Index of the companion input for an INDIRECT-produced variable (C++
     /// `companion`).
     companion: Vec<int4>,
-    /// Collected solutions, parallel to `vnlist` (C++ `soln`).
-    soln: Vec<int4>,
+    /// Collected solutions, parallel to `vnlist` (C++ `soln`, whose `65535`
+    /// "unsolved" sentinel is a reachable 16-bit stack offset; `None` is not).
+    soln: Vec<Option<int4>>,
     /// Number of variables missing an equation (C++ `missedvariables`).
     missedvariables: int4,
     /// (kuna) `calleepopslot`: the pops settled so far, by INDIRECT output.
@@ -105,11 +105,12 @@ impl StackSolver {
 
     /// C++ `StackSolver::propagate` (`coreaction.cc:82`): given a solution for
     /// one variable, walk the (sorted) equations propagating new solutions.
+    /// Each variable is solved, and so pushed, at most once.
     fn propagate(&mut self, varnum: int4, val: int4) {
-        if self.soln[varnum as usize] != UNKNOWN_SOLN {
-            return; // This variable already specified
+        if self.soln[varnum as usize].is_some() {
+            return;
         }
-        self.soln[varnum as usize] = val;
+        self.soln[varnum as usize] = Some(val);
 
         let mut workstack: Vec<int4> = Vec::with_capacity(self.soln.len());
         workstack.push(varnum);
@@ -122,8 +123,8 @@ impl StackSolver {
             while top < self.eqs.len() && self.eqs[top].var1 == cur {
                 let var2 = self.eqs[top].var2;
                 let rhs = self.eqs[top].rhs;
-                if self.soln[var2 as usize] == UNKNOWN_SOLN {
-                    self.soln[var2 as usize] = self.soln[cur as usize] - rhs;
+                if self.soln[var2 as usize].is_none() {
+                    self.soln[var2 as usize] = self.soln[cur as usize].map(|s| s.wrapping_sub(rhs));
                     workstack.push(var2);
                 }
                 top += 1;
@@ -137,7 +138,7 @@ impl StackSolver {
         let size = self.eqs.len();
         for i in 0..size {
             let e = self.eqs[i];
-            self.eqs.push(StackEqn { var1: e.var2, var2: e.var1, rhs: -e.rhs });
+            self.eqs.push(StackEqn { var1: e.var2, var2: e.var1, rhs: e.rhs.wrapping_neg() });
         }
         self.eqs.sort_by(Self::compare); // stable_sort
     }
@@ -145,7 +146,7 @@ impl StackSolver {
     /// C++ `StackSolver::solve` (`coreaction.cc:127`).
     fn solve(&mut self) {
         self.soln.clear();
-        self.soln.resize(self.vnlist.len(), UNKNOWN_SOLN);
+        self.soln.resize(self.vnlist.len(), None);
         self.duplicate();
 
         self.propagate(0, 0); // We know one variable (the input)
@@ -157,14 +158,11 @@ impl StackSolver {
                 let var1 = self.guess[i].var1;
                 let var2 = self.guess[i].var2;
                 let rhs = self.guess[i].rhs;
-                let s1 = self.soln[var1 as usize];
-                let s2 = self.soln[var2 as usize];
-                if s1 != UNKNOWN_SOLN && s2 == UNKNOWN_SOLN {
-                    self.propagate(var2, s1 - rhs);
-                } else if s1 == UNKNOWN_SOLN && s2 != UNKNOWN_SOLN {
-                    self.propagate(var1, s2 + rhs);
-                } else if s1 == UNKNOWN_SOLN && s2 == UNKNOWN_SOLN {
-                    count += 1;
+                match (self.soln[var1 as usize], self.soln[var2 as usize]) {
+                    (Some(s1), None) => self.propagate(var2, s1.wrapping_sub(rhs)),
+                    (None, Some(s2)) => self.propagate(var1, s2.wrapping_add(rhs)),
+                    (None, None) => count += 1,
+                    (Some(_), Some(_)) => {}
                 }
             }
             if count == lastcount {
@@ -322,8 +320,21 @@ impl StackSolver {
                     // Otherwise make a guess.  (kuna) `calleepop`: upstream's
                     // constant 4 assumes the callee pops nothing, which is
                     // wrong for the majority of calls under a spec whose
-                    // default model is `__stdcall extrapop="unknown"`.
-                    let mut rhs = crate::kuna_calleepop::RETURN_ADDRESS_ONLY;
+                    // default model is `__stdcall extrapop="unknown"`, and is
+                    // the x86-32 return-address size: the call's own pushes are
+                    // the measure.
+                    use crate::kuna_calleepop::RETURN_ADDRESS_ONLY;
+                    let ret_bytes = match (data.get_arch().callee_pop, callee) {
+                        (true, Some(fc_idx)) => {
+                            let call = data.get_call_specs(fc_idx).get_op();
+                            data.obank().get(call).map(|c| c.get_addr().clone()).and_then(|at| {
+                                crate::kuna_calleepop::return_address_bytes(data, id, &at)
+                            })
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or(RETURN_ADDRESS_ONLY);
+                    let mut rhs = RETURN_ADDRESS_ONLY;
                     if data.get_arch().callee_pop {
                         let out = data.obank().get(op).and_then(|o| o.get_out());
                         if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
@@ -351,6 +362,7 @@ impl StackSolver {
                             }
                         }
                     }
+                    rhs += ret_bytes - RETURN_ADDRESS_ONLY;
                     self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs });
                 }
                 OpCode::CPUI_MULTIEQUAL => {
@@ -736,12 +748,11 @@ pub(crate) fn analyze_extra_pop(
     let mut changed: int4 = 0;
     for i in 1..solver.vnlist.len() {
         let vn = solver.vnlist[i];
-        let soln = solver.soln[i];
-        if soln == UNKNOWN_SOLN {
+        let Some(soln) = solver.soln[i] else {
             // C++ warns "Unable to track spacebase fully" once here; omitted
             // (cosmetic, see above) — the variable is simply left unsolved.
             continue;
-        }
+        };
         let op = match data.vbank().get(vn).and_then(|v| v.get_def()) {
             Some(o) => o,
             None => continue,
@@ -771,8 +782,11 @@ pub(crate) fn analyze_extra_pop(
                     let iop = crate::funcdata_varnode::op_iop_decode(off);
                     if let Some(fc_idx) = data.get_call_specs_index(iop) {
                         let comp = solver.companion[i];
-                        let soln2 = if comp >= 0 { solver.soln[comp as usize] } else { 0 };
-                        data.get_call_specs_mut(fc_idx).set_effective_extra_pop(soln - soln2);
+                        let soln2 = if comp >= 0 { solver.soln[comp as usize] } else { Some(0) };
+                        if let Some(soln2) = soln2 {
+                            data.get_call_specs_mut(fc_idx)
+                                .set_effective_extra_pop(soln.wrapping_sub(soln2));
+                        }
                     }
                 }
             }
