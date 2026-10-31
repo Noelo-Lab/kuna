@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3279,
-    3279
+    3281,
+    3281
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2904,6 +2904,8 @@
     "data:returncopysplit #4: the real copy site still reads the literal's high half per byte",
     "data:returncopysplit #5: the rule-off pass pins the unsplit whole-half rendering",
     "data:returncopysplit #6: every reference to the literal in the transcript is a read (16 in pass 1, 2 in pass 2)",
+    "data:returnglobal-sparc #1: each function returns its 4-byte int",
+    "data:returnglobal-sparc #2: the global left in %o1 is not joined into the return",
     "data:reused parameter bytes have complete native definitions",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
