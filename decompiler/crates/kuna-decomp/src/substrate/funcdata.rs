@@ -268,6 +268,9 @@ pub struct Funcdata {
     /// (kuna `condstmts`) Block start addresses the final structure folded into a
     /// condition operand over the cap.
     kuna_condstmts_hits: std::collections::BTreeSet<Address>,
+    /// (kuna decompile-all watchdog) What was left of the per-function budget
+    /// when the drive handed this function back; rendering it may use no more.
+    render_budget: Option<std::time::Duration>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -773,6 +776,7 @@ impl Funcdata {
             stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
+            render_budget: None,
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: Default::default(),
@@ -2467,6 +2471,16 @@ impl Funcdata {
     /// (kuna `condstmts`) Block starts the final structure folded over the cap.
     pub fn condstmts_hits(&self) -> &std::collections::BTreeSet<Address> {
         &self.kuna_condstmts_hits
+    }
+
+    /// (kuna decompile-all watchdog) What the drive left of the budget for rendering.
+    pub fn render_budget(&self) -> Option<std::time::Duration> {
+        self.render_budget
+    }
+
+    /// (kuna decompile-all watchdog) Record what the drive left of the budget.
+    pub fn set_render_budget(&mut self, left: Option<std::time::Duration>) {
+        self.render_budget = left;
     }
 
     /// (kuna `condstmts`) Record a block start folded over the cap.

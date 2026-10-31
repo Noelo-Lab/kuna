@@ -3264,7 +3264,10 @@ impl PrintC {
             s
         };
         let vlist: Vec<crate::context::VarnodeId> = fd.vbank().iter_loc().collect();
-        for vn in vlist {
+        for (k, vn) in vlist.into_iter().enumerate() {
+            if k % 256 == 0 && crate::decompile_drive::deadline_passed_in("rendering C") {
+                break;
+            }
             let high = match fd.vbank().get(vn).and_then(|v| v.get_high()) {
                 Some(h) => h,
                 None => continue,
@@ -5693,6 +5696,9 @@ impl PrintC {
         let mut separator = false;
         let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
         while let Some(inst) = cur {
+            if crate::decompile_drive::deadline_passed_in("rendering C") {
+                break;
+            }
             cur = fd.bb_op_next(inst);
             let o = match fd.obank().get(inst) {
                 Some(o) => o,
