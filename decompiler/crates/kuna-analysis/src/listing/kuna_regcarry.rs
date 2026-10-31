@@ -27,13 +27,14 @@
 //!
 //! A register an instruction leaves holding a constant that could be an address
 //! or its high part — the `checkOperands` floor: at least 4096 and not a byte
-//! mask — is carried to the instruction's fall-through, and each instruction
-//! that receives it evaluates its own p-code with the carried values seeded. A
-//! carried value lives for at most [`MAX_HOPS`] instructions, is dropped when its
-//! register is written with anything the evaluation cannot follow, and survives
-//! a call only in a register the calling convention preserves and the call
-//! instruction itself did not write (a link register). Three shapes are read, as
-//! [`super::kuna_picbase`] reads them:
+//! mask — or a value relative to the PC of any size, is carried to the
+//! instruction's fall-through, and each instruction that receives it evaluates
+//! its own p-code with the carried values seeded. A carried value lives for at
+//! most [`MAX_HOPS`] instructions, is dropped when its register is written with
+//! anything the evaluation cannot follow, and survives a call only in a register
+//! the calling convention preserves and the call instruction itself did not
+//! write (a link register). Three shapes are read, as [`super::kuna_picbase`]
+//! reads them:
 //!
 //!  * the address a `LOAD` reads, a [`XrefKind::Read`];
 //!  * the address a `STORE` writes, a [`XrefKind::Write`];
@@ -56,6 +57,15 @@
 //!    — is a step, not an address;
 //!  * an access that writes its own address back (`ldr pc,[ip,#0x2f0]!`, `lwzu`)
 //!    is one reference, the access.
+//!
+//! The floor tells a number from an address among immediates, so a value
+//! computed from the PC is exempt from it everywhere (GH #1364): in a zero-based
+//! image `adrp x0,0x0; add x0,x0,#0x378` forms `0x378`. A PC-relative value is
+//! one [`super::kuna_pcform`] recomputed from the instruction's encoding
+//! (`adrp`'s page 0), or the instruction's own address as the operand of an add
+//! (`auipc`'s `(imm << 12) + inst_start`), plus or minus a value that is not
+//! one. A difference of two (`sub eax,r13d` after two `lea [rip]`) is a
+//! distance, and a mask or shift of one is a number.
 //!
 //! An ELF `ET_DYN` image is relocated as a whole, so an absolute immediate in it
 //! is a number, never an address: `lui s2,0x3; addi s2,s2,-5` in a RISC-V shared
@@ -89,6 +99,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use smallvec::SmallVec;
 
+use super::kuna_pcform::Formed;
 use super::kuna_poolref::PoolImage;
 use super::xrefs::{in_range, looks_like_address, FullOp, XrefKind};
 
@@ -114,6 +125,7 @@ struct Held {
     /// How many instructions it has reached since it was formed.
     age: u8,
     pc: bool,
+    addr: bool,
     /// The [`Found`] `Data` row that formed it, if one did.
     formed: Option<usize>,
 }
@@ -174,8 +186,10 @@ impl<'a> Machine<'a> {
         vn.space.as_ref().is_some_and(|s| Rc::ptr_eq(s, &self.reg))
     }
 
-    fn admits(&self, v: u64) -> bool {
-        looks_like_address(v) && in_range(self.mapped, v)
+    /// Could `v` be the address a reference names? A PC-relative value
+    /// ([`Val::addr`]) is one whatever its size.
+    fn admits(&self, v: u64, addr: bool) -> bool {
+        (addr || looks_like_address(v)) && in_range(self.mapped, v)
     }
 }
 
@@ -212,6 +226,9 @@ pub(super) struct Insn<'a> {
     pub branches: &'a [u64],
     /// Some op is a `CALL` or `CALLIND`.
     pub calls: bool,
+    /// The values the instruction folded from its own address
+    /// ([`super::kuna_pcform`]).
+    pub formed: Formed,
 }
 
 /// A value inside one instruction's evaluation.
@@ -228,6 +245,14 @@ struct Val {
     age: u8,
     /// Computed from the instruction's own address.
     pc: bool,
+    /// An address relative to the PC: a value [`super::kuna_pcform`] folded,
+    /// or the PC plus or minus something that is not one ([`fold`]). Exempt
+    /// from the `checkOperands` floor.
+    addr: bool,
+    /// The constant is this instruction's address as SLEIGH spells its PC
+    /// (`inst_start`, Thumb's `+ 4`, A32's `+ 8`), which an add or subtract
+    /// turns into an [`Val::addr`].
+    own: bool,
     /// The [`Found`] `Data` row that formed exactly this value.
     formed: Option<usize>,
     /// The formed value this one was computed from.
@@ -314,20 +339,14 @@ fn has_seed(m: &Machine, insn: &Insn) -> bool {
             }
             let v = vn.offset & mask(vn.size);
             pc |= v.wrapping_sub(insn.vma) < PC_WINDOW;
-            seed |= looks_like_address(v) && sign_extend(v, vn.size) as i64 > 0;
+            seed |= insn.formed.contains(v)
+                || adds(op.opcode) && is_own(insn.vma, v)
+                || looks_like_address(v) && sign_extend(v, vn.size) as i64 > 0;
         }
         if !seed && constants {
-            let konst = |vn: &VarnodeData| Val {
-                v: vn.offset & mask(vn.size),
-                carried: false,
-                composed: None,
-                age: 0,
-                pc: false,
-                formed: None,
-                base: None,
-            };
+            let konst = |vn: &VarnodeData| constant(insn.vma, &insn.formed, vn);
             seed = fold(op, op.ins.first().map(konst), op.ins.get(1).map(konst))
-                .is_some_and(|v| looks_like_address(v.v));
+                .is_some_and(|v| v.addr || looks_like_address(v.v));
         }
         if seed && pc {
             return insn.ops.iter().any(|op| {
@@ -338,6 +357,32 @@ fn has_seed(m: &Machine, insn: &Insn) -> bool {
         }
     }
     false
+}
+
+/// Is `v` the instruction at `vma` reading its own address, as SLEIGH spells
+/// the PC: `inst_start` (RISC-V `auipc`), Thumb's `inst_start + 4`, A32's `+ 8`?
+fn is_own(vma: u64, v: u64) -> bool {
+    [vma, vma.wrapping_add(4), vma.wrapping_add(8)].contains(&v)
+}
+
+fn adds(code: OpCode) -> bool {
+    matches!(code, OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB)
+}
+
+/// The constant `vn` in the instruction at `vma`.
+fn constant(vma: u64, formed: &Formed, vn: &VarnodeData) -> Val {
+    let v = vn.offset & mask(vn.size);
+    Val {
+        v,
+        carried: false,
+        composed: None,
+        age: 0,
+        pc: v.wrapping_sub(vma) < PC_WINDOW,
+        addr: formed.contains(v),
+        own: is_own(vma, v),
+        formed: None,
+        base: None,
+    }
 }
 
 /// Does `op` branch inside its own instruction — a p-code-relative target, or
@@ -352,6 +397,7 @@ fn branches_within(op: &FullOp, fall: u64) -> bool {
 #[derive(Default)]
 struct Frame {
     vma: u64,
+    formed: Formed,
     regs: Vec<(u64, u32, Val)>,
     temps: Vec<(u64, u32, Val)>,
     written: Vec<(u64, u32)>,
@@ -361,18 +407,7 @@ impl Frame {
     fn read(&self, m: &Machine, vn: &VarnodeData) -> Option<Val> {
         let space = vn.space.as_ref()?;
         match space.get_type() {
-            spacetype::IPTR_CONSTANT => {
-                let v = vn.offset & mask(vn.size);
-                Some(Val {
-                    v,
-                    carried: false,
-                    composed: None,
-                    age: 0,
-                    pc: v.wrapping_sub(self.vma) < PC_WINDOW,
-                    formed: None,
-                    base: None,
-                })
-            }
+            spacetype::IPTR_CONSTANT => Some(constant(self.vma, &self.formed, vn)),
             spacetype::IPTR_INTERNAL => self
                 .temps
                 .iter()
@@ -390,7 +425,7 @@ impl Frame {
                     }
                     let shift = if m.big_endian { end - hi } else { lo - o };
                     let v = val.v.checked_shr((8 * shift) as u32).unwrap_or(0) & mask(vn.size);
-                    Some(Val { v, composed: None, ..val })
+                    Some(Val { v, composed: None, addr: val.addr && shift == 0, ..val })
                 })
             }
             _ => None,
@@ -422,14 +457,15 @@ fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
     let a = a?;
     let resized = out.size != op.ins.first()?.size;
     let unary = |v: u64| {
-        Some(Val { v: v & mask(out.size), composed: if resized { None } else { a.composed }, ..a })
+        Some(Val { v: v & mask(out.size), composed: if resized { None } else { a.composed }, own: false, ..a })
     };
     match op.opcode {
         OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT | OpCode::CPUI_CAST => unary(a.v),
         OpCode::CPUI_INT_SEXT => unary(sign_extend(a.v, op.ins.first()?.size)),
         OpCode::CPUI_SUBPIECE => {
             let by = b?.v;
-            unary(a.v.checked_shr(u32::try_from(by.checked_mul(8)?).ok()?).unwrap_or(0))
+            let low = unary(a.v.checked_shr(u32::try_from(by.checked_mul(8)?).ok()?).unwrap_or(0))?;
+            Some(Val { addr: a.addr && by == 0, ..low })
         }
         OpCode::CPUI_INT_ADD
         | OpCode::CPUI_INT_SUB
@@ -463,7 +499,14 @@ fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
             };
             let input = if a.carried { a } else { b };
             let (formed, base) = if moved { (input.formed, input.base) } else { (None, input.formed.or(input.base)) };
-            Some(Val { v, carried, composed, age: a.age.max(b.age), pc: a.pc || b.pc, formed, base })
+            let (pa, pb) = (a.addr || a.own, b.addr || b.own);
+            let addr = match op.opcode {
+                OpCode::CPUI_INT_ADD => pa != pb,
+                OpCode::CPUI_INT_SUB => pa && !pb,
+                _ => false,
+            };
+            let (age, pc) = (a.age.max(b.age), a.pc || b.pc);
+            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base })
         }
         _ => None,
     }
@@ -512,8 +555,9 @@ impl Tracker {
 
     fn evaluate(&mut self, m: &Machine, insn: &Insn, carry: Carry) {
         let Tracker { pending, found, scratch: frame, hits, .. } = self;
-        let &Insn { vma, ops, fall, .. } = insn;
+        let &Insn { vma, ops, fall, formed, .. } = insn;
         frame.vma = vma;
+        frame.formed = formed;
         frame.regs.clear();
         frame.temps.clear();
         frame.written.clear();
@@ -525,6 +569,8 @@ impl Tracker {
                 composed: None,
                 age: h.age.saturating_add(1),
                 pc: h.pc,
+                addr: h.addr,
+                own: false,
                 formed: h.formed,
                 base: None,
             };
@@ -543,7 +589,7 @@ impl Tracker {
                 OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                     let load = op.opcode == OpCode::CPUI_LOAD;
                     if let Some(a) = op.ins.get(1).and_then(|vn| frame.read(m, vn)) {
-                        if a.carried && !joined && from_data() && m.admits(a.v) {
+                        if a.carried && !joined && from_data() && m.admits(a.v, a.addr) {
                             let kind = if load { XrefKind::Read } else { XrefKind::Write };
                             let base = base_of(found, &a, a.v);
                             hits.push(Hit { to: a.v, kind, age: a.age, base });
@@ -583,7 +629,7 @@ impl Tracker {
                             && v.composed == Some(out.size)
                             && m.is_register(out)
                             && v.v != fall_vma
-                            && m.admits(v.v)
+                            && m.admits(v.v, v.addr)
                         {
                             let base = base_of(found, v, v.v);
                             hits.push(Hit { to: v.v, kind: XrefKind::Data, age: v.age, base });
@@ -613,12 +659,12 @@ impl Tracker {
         let mut held: SmallVec<[Held; MAX_TRACKED]> = SmallVec::new();
         for &(off, size, v) in &frame.regs {
             let keep = usize::from(v.age) < MAX_HOPS
-                && looks_like_address(v.v)
+                && (v.addr || looks_like_address(v.v))
                 && (v.carried || v.pc || !m.pc_only)
                 && !(conditional && frame.written.iter().any(|&w| overlaps(w, (off, size))));
             if keep {
                 let age = if v.carried { v.age } else { 0 };
-                held.push(Held { off, size, v: v.v, age, pc: v.pc, formed: v.formed });
+                held.push(Held { off, size, v: v.v, age, pc: v.pc, addr: v.addr, formed: v.formed });
             }
         }
         if held.is_empty() {
@@ -744,11 +790,64 @@ mod tests {
         for (i, ops) in insns.iter().enumerate() {
             let vma = 0x20000 + 4 * i as u64;
             let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
-            t.step(m, Insn { vma, ops, fall: Some(vma + 4), branches: &[], calls });
+            t.step(m, Insn { vma, ops, fall: Some(vma + 4), branches: &[], calls, formed: Formed::default() });
         }
         let mut out = t.finish(&BTreeSet::from([0x20000]));
         out.sort_unstable();
         out
+    }
+
+    /// A zero-based image's first pages.
+    const LOW: [(u64, u64); 1] = [(0x200, 0x2000)];
+
+    /// [`walk`] over [`LOW`] from 0x1000, each instruction with the value it
+    /// folded from its own address ([`super::super::kuna_pcform`]), if any.
+    fn walk_low(isa: &Isa, pc_only: bool, insns: &[(Vec<FullOp>, Option<u64>)]) -> Vec<(u64, u64, XrefKind)> {
+        let m = Machine { mapped: &LOW, ..isa.machine(pc_only) };
+        let mut t = Tracker::default();
+        for (i, (ops, formed)) in insns.iter().enumerate() {
+            let vma = 0x1000 + 4 * i as u64;
+            let formed = formed.map_or_else(Formed::default, Formed::one);
+            t.step(&m, Insn { vma, ops, fall: Some(vma + 4), branches: &[], calls: false, formed });
+        }
+        let mut out = t.finish(&BTreeSet::from([0x1000]));
+        out.sort_unstable();
+        out
+    }
+
+    /// GH #1364: `adrp x0, 0x0` leaves page 0, no address on its own, and the
+    /// `add` that completes it forms one below the `checkOperands` floor. The
+    /// same pair after a `mov x0, #0` builds a number.
+    #[test]
+    fn a_pc_relative_page_below_the_floor_forms_an_address() {
+        let isa = Isa::new();
+        let pair = |formed| vec![(isa.set(0, 0), formed), (isa.add(0, 0, 0x378), None)];
+        assert_eq!(walk_low(&isa, false, &pair(Some(0))), vec![(0x1004, 0x378, XrefKind::Data)]);
+        assert!(walk_low(&isa, false, &pair(None)).is_empty());
+    }
+
+    /// RISC-V `auipc` keeps its own address in the p-code (`(imm << 12) +
+    /// inst_start`), which is all a shared object's pair below the floor needs.
+    #[test]
+    fn an_auipc_pair_below_the_floor_forms_an_address() {
+        let isa = Isa::new();
+        let auipc = vec![
+            op(OpCode::CPUI_INT_LEFT, Some(isa.t(0)), vec![isa.k(0), vn(&isa.c, 0xc, 4)]),
+            op(OpCode::CPUI_INT_ADD, Some(isa.x(0)), vec![isa.t(0), isa.k(0x1000)]),
+        ];
+        let got = walk_low(&isa, true, &[(auipc, None), (isa.add(0, 0, 0xffff_ffff_ffff_f378), None)]);
+        assert_eq!(got, vec![(0x1004, 0x378, XrefKind::Data)]);
+    }
+
+    /// The difference of two PC-relative values is a distance, not an address:
+    /// `lea r13,[rip+a]; lea rax,[rip+b]; sub eax,r13d` in a switch.
+    #[test]
+    fn the_difference_of_two_pc_relative_values_is_not_an_address() {
+        let isa = Isa::new();
+        let sub = vec![op(OpCode::CPUI_INT_SUB, Some(isa.x(0)), vec![isa.x(0), isa.x(1)])];
+        let insns = [(isa.set(1, 0x1100), Some(0x1100)), (isa.set(0, 0x1500), Some(0x1500)), (sub, None)];
+        let got = walk_low(&isa, false, &insns);
+        assert!(got.is_empty(), "{got:?}");
     }
 
     #[test]
