@@ -6231,11 +6231,14 @@ and lifts to nothing but `ra = inst_next`; it is told apart by its delay slot
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (has_delay_slot)`): its
 fall-through lies past the slot, beyond its own encoding, and only a branch has
 one. The compiler spec is no help here, since MIPS64's names no
-`<returnaddress>`; the slot is asked only of an instruction that moves the
-fall-through whole without linking, so the walk pays the second decode almost
-nowhere. Anything else that moves the fall-through whole — a copy or an extension
+`<returnaddress>`. A slot behind an instruction that does branch — a `RETURN`
+or a `CBRANCH` to an address (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (branches)`)
+— is an ordinary instruction, so SuperH `rts; mova` and `bt/s; mova`, which form
+the address right after the slot, file it. The slot is asked only of an
+instruction that moves the fall-through whole and does not branch, so the walk
+pays the second decode almost nowhere. Anything else that moves the fall-through whole — a copy or an extension
 of it, or a store of it — files it as `Data`: AArch64 and A32 `adr`, Thumb-2
-`adr.w`, x86-64 `lea rax,[rip]`, `mov eax,offset next`, `push offset next`. The
+`adr.w`, x86-64 `lea rax,[rip]`, `mov eax,offset next`, `push offset next`, SuperH `mova`. The
 register-pair carry and the PIC base harvest below made the same assumption
 about a value they compose, and skip it only in an instruction that calls (the
 carry) or links (the harvest), so an `auipc`+`addi` pair that ends right before

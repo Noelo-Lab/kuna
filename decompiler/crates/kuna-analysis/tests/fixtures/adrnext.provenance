@@ -18,11 +18,14 @@ What they are
                        $zero (SLEIGH's nal), jal, jalr.
   adrnext_mips64       static MIPS64 BE (n64) ELF, the same four links; read
                        with --target MIPS:BE:64:default.
-  Sources: adrnext_<arch>.S, adrnext_macho.s.
+  adrnext_sh4          synthetic static SuperH-4 LE ELF: mova to the next
+                       address alone and in the delay slot of rts and bt/s;
+                       bsr. Read with --target SuperH4:LE:32:default.
+  Sources: adrnext_<arch>.S, adrnext_macho.s, adrnext_sh4.py.
 
 Why they are vendored
   They are assembled and linked for seven foreign targets, which CI has no
-  toolchain for.
+  toolchain for; the SuperH one is generated so its bytes stay fixed.
 
 Where they came from
   Ubuntu clang 14.0.0 assembles; LLD 23.1.4 (docker image mstorsjo/llvm-mingw)
@@ -41,6 +44,7 @@ Where they came from
       clang -target arm64-apple-macos11 -c adrnext_macho.s -o macho.o
       ld64.lld -dylib -arch arm64 -platform_version macos 11.0 11.0 \
           -o adrnext_macho_arm64 macho.o
+      python3 adrnext_sh4.py
 
   sha256:
     485435b481aecd7f6b3aeba8611fb0e9e268c3642654943d06bf39b23a8a7cb0  adrnext_aarch64
@@ -51,4 +55,5 @@ Where they came from
     1283f5088734c9f26c9d5992903a5ed217f91624314a65852e389fb624602548  adrnext_ppc32
     a2299c7afcfe56e14863924bdd93622258ec728de39cbf6b3fb0f35375efced8  adrnext_mips
     3d8323fda445c28afcc94cffd44de9ca66f75f29d5b2ca34a92fee48afdeca8d  adrnext_mips64
+    ade3b1cd76f53f0b4608a0e474bfe0e3e68bf7e8dd471ddfd473da3040365c4d  adrnext_sh4
   Never executed.

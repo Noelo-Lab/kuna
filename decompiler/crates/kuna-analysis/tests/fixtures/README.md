@@ -946,16 +946,19 @@ partial access whose left side must render as a store
 SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
 `kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
 
-`adrnext_{aarch64,macho_arm64,x86_64,arm,rv64,ppc32,mips,mips64}` (each under 2 KB but
+`adrnext_{aarch64,macho_arm64,x86_64,arm,rv64,ppc32,mips,mips64,sh4}` (each under 2 KB but
 the 16 KB dylib) are GH #1360's witnesses: an instruction that forms the
 address of the instruction after it (`adr x0,.+4`, `lea rax,[rip]`, `mov
-eax,offset`, `adr.w`, an `auipc`+`addi` that ends right before its label) beside
+eax,offset`, `adr.w`, an `auipc`+`addi` that ends right before its label,
+SuperH `mova` alone and in the delay slot of `rts` and `bt/s`) beside
 every spelling of a link whose return address must not be a reference (`bl`,
 `blr`, `blx`, `call`, `call $+5`, `syscall`, `mov lr,pc`, `jal t0`, `bcl 20,31`,
-a `bl` to the next instruction, MIPS `bal` and `nal`, and MIPS64 `nal`, whose
-compiler spec names no return-address register). Sources
-`adrnext_<arch>.S` and `adrnext_macho.s` (the issue's own assembly); recipe,
-toolchains and SHA-256s in `adrnext.provenance`. Pinned by
+a `bl` to the next instruction, MIPS `bal` and `nal`, MIPS64 `nal`, whose
+compiler spec names no return-address register, and SuperH `bsr`). Sources
+`adrnext_<arch>.S` and `adrnext_macho.s` (the issue's own assembly); the SuperH
+image is synthetic, written by `adrnext_sh4.py` (regenerate with `python3
+adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
+`adrnext.provenance`. Pinned by
 `kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
 no_link_references_the_return_address_it_leaves)`.
 

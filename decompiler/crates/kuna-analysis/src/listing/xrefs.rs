@@ -1890,7 +1890,8 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// fall-through is the same return address, and neither half of it (the first
 /// is the `bl`'s own address) is a reference. `delayed` says whether the
 /// instruction ends past a delay slot ([`has_delay_slot`]); it is asked only of
-/// an instruction that moves its fall-through whole without linking.
+/// an instruction that moves its fall-through whole and does not branch
+/// ([`links`], [`branches`]).
 fn data_refs(
     ops: &[FullOp],
     data_space: Option<&Rc<AddrSpace>>,
@@ -1901,6 +1902,7 @@ fn data_refs(
 ) -> Vec<(u64, XrefKind)> {
     let mut out = Vec::new();
     let linked = links(ops);
+    let never_taken = || !branches(ops) && delayed();
     // (kuna) `poolref`: the second edge a literal-pool load forms, from this same
     // instruction to the address the pool word holds. See [`super::kuna_poolref`].
     // `width` is how many bytes the instruction READ, which a `LOAD`'s address
@@ -1973,7 +1975,7 @@ fn data_refs(
             };
             if kind == XrefKind::Data
                 && value == fall_through
-                && is_return_address(op, i, linked, delayed)
+                && is_return_address(op, i, linked, &never_taken)
             {
                 continue;
             }
@@ -2018,11 +2020,26 @@ pub(super) fn links(ops: &[FullOp]) -> bool {
 /// with another constant is one half of a link value: A32 `mov lr,pc` lifts to
 /// `lr = inst_next + 4` for the `bx` after it, microMIPS `bgezal` to `ra =
 /// inst_next | 1`. MIPS `nal` (`bltzal $zero`) is a branch never taken, which
-/// lifts to nothing but `ra = inst_next`; only its delay slot (`delayed`) says
-/// it is one, on MIPS64 as on MIPS32.
-fn is_return_address(op: &FullOp, slot: usize, linked: bool, delayed: &dyn Fn() -> bool) -> bool {
+/// lifts to nothing but `ra = inst_next`; only a delay slot behind an
+/// instruction with no branch (`never_taken`) says it is one, on MIPS64 as on
+/// MIPS32. A delay slot behind a branch is just another instruction: SuperH
+/// `rts; mova` forms the address after it.
+fn is_return_address(op: &FullOp, slot: usize, linked: bool, never_taken: &dyn Fn() -> bool) -> bool {
     let whole = op.ins.len() == 1 || (op.opcode == OpCode::CPUI_STORE && slot == 2);
-    linked || !whole || delayed()
+    linked || !whole || never_taken()
+}
+
+/// Does the instruction leave for an address other than by [`links`]: a
+/// `CBRANCH` there, or a `RETURN`? A p-code-relative `CBRANCH` (MIPS `movz`)
+/// stays inside the instruction.
+fn branches(ops: &[FullOp]) -> bool {
+    ops.iter().any(|op| match op.opcode {
+        OpCode::CPUI_RETURN => true,
+        OpCode::CPUI_CBRANCH => op.ins.first().is_some_and(|vn| {
+            vn.space.as_ref().is_some_and(|s| s.get_type() != spacetype::IPTR_CONSTANT)
+        }),
+        _ => false,
+    })
 }
 
 /// Does the instruction at `vma` end past a delay slot? Its `len` is where it
@@ -2398,6 +2415,32 @@ mod tests {
         }
         let nal = [op(OpCode::CPUI_COPY, Some(r(0x7c)), vec![fall()])];
         assert!(data_refs(&nal, Some(&ram), &MAPPED, 0x1104, None, &|| true).is_empty());
+        let nal_movz = [
+            op(OpCode::CPUI_COPY, Some(r(0x7c)), vec![fall()]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&cst, 2), r(0x200)]),
+        ];
+        assert!(data_refs(&nal_movz, Some(&ram), &MAPPED, 0x1104, None, &|| true).is_empty());
+    }
+
+    /// A delay slot behind a branch is an ordinary instruction: SuperH `rts;
+    /// mova` and `bt/s; mova` form the address right after the slot in `r0`.
+    #[test]
+    fn an_address_formed_in_a_branchs_delay_slot_is_a_data_reference() {
+        let (ram, cst) = spaces();
+        let reg = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR));
+        let r = |offset| VarnodeData { space: Some(Rc::clone(&reg)), offset, size: 4 };
+        let mova = op(OpCode::CPUI_COPY, Some(r(0)), vec![vn(&cst, 0x1104)]);
+        for (what, flow) in [
+            ("rts", op(OpCode::CPUI_RETURN, None, vec![r(0x188)])),
+            ("bt/s", op(OpCode::CPUI_CBRANCH, None, vec![vn(&ram, 0x1180), r(0x200)])),
+        ] {
+            let ops = [mova.clone(), flow];
+            assert_eq!(
+                data_refs(&ops, Some(&ram), &MAPPED, 0x1104, None, &|| true),
+                vec![(0x1104, XrefKind::Data)],
+                "{what}"
+            );
+        }
     }
 
     /// An instruction that transfers no control and moves its own fall-through

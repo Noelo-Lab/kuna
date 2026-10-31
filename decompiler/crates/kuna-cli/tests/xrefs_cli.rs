@@ -229,8 +229,9 @@ fn edges(doc: &str) -> Vec<(String, String, String)> {
 /// An instruction that forms the address of the instruction right after it
 /// references it, exactly as one forming its own address or the one after next
 /// does (GH #1360): AArch64 `adr` on ELF and on the issue's own Mach-O, x86-64
-/// `lea rax,[rip]` and `mov eax,offset`, A32 `adr`, Thumb-2 `adr.w`, and a RISC-V
-/// `auipc`+`addi` pair that ends right before its label.
+/// `lea rax,[rip]` and `mov eax,offset`, A32 `adr`, Thumb-2 `adr.w`, a RISC-V
+/// `auipc`+`addi` pair that ends right before its label, and SuperH `mova` in
+/// and out of a branch's delay slot (`rts; mova`, `bt/s; mova`).
 #[test]
 fn an_address_of_the_next_instruction_is_a_data_reference() {
     for (bin, func, from, to) in [
@@ -250,6 +251,16 @@ fn an_address_of_the_next_instruction_is_a_data_reference() {
         let want = (from.to_owned(), to.to_owned(), "data".to_owned());
         assert!(edges(&doc).contains(&want), "{bin} {func}: no data {from} -> {to}:\n{doc}");
     }
+    let sh4 = fixture("adrnext_sh4");
+    for (func, from, to) in [
+        ("rts_mova", "0x10000", "0x10004"),
+        ("bts_mova", "0x1000c", "0x10010"),
+        ("mova_next", "0x1001a", "0x1001c"),
+    ] {
+        let doc = xrefs(&[&sh4, "--from", func, "--json", "--target", "SuperH4:LE:32:default"]);
+        let want = (from.to_owned(), to.to_owned(), "data".to_owned());
+        assert!(edges(&doc).contains(&want), "adrnext_sh4 {func}: no data {from} -> {to}:\n{doc}");
+    }
 }
 
 /// A link's return address is never a reference, however SLEIGH spells the
@@ -257,11 +268,11 @@ fn an_address_of_the_next_instruction_is_a_data_reference() {
 /// a `BRANCH` (x86 `call $+5`, PowerPC `bcl 20,31` and `bl` to the next, RISC-V
 /// `jal t0`, MIPS `bal` past its delay slot) or a `CALLOTHER` (`syscall`), or
 /// with no branch at all (A32 `mov lr,pc`, MIPS `nal`, on MIPS64 too, whose
-/// compiler spec names no return-address register). Each pair is a link and its
-/// fall-through.
+/// compiler spec names no return-address register), and SuperH `bsr` past its
+/// delay slot. Each pair is a link and its fall-through.
 #[test]
 fn no_link_references_the_return_address_it_leaves() {
-    let cases: [(&str, &[(&str, &str)]); 7] = [
+    let cases: [(&str, &[(&str, &str)]); 8] = [
         ("adrnext_aarch64", &[("0x210140", "0x210144"), ("0x210148", "0x21014c"), ("0x21014c", "0x210150")]),
         ("adrnext_x86_64", &[
             ("0x201137", "0x20113c"),
@@ -300,9 +311,14 @@ fn no_link_references_the_return_address_it_leaves() {
             ("0x20248", "0x20250"),
             ("0x20258", "0x20260"),
         ]),
+        ("adrnext_sh4", &[("0x10020", "0x10024")]),
     ];
     for (bin, links) in cases {
-        let target: &[&str] = if bin == "adrnext_mips64" { &["--target", "MIPS:BE:64:default"] } else { &[] };
+        let target: &[&str] = match bin {
+            "adrnext_mips64" => &["--target", "MIPS:BE:64:default"],
+            "adrnext_sh4" => &["--target", "SuperH4:LE:32:default"],
+            _ => &[],
+        };
         for &(site, fall) in links {
             let path = fixture(bin);
             let doc = xrefs(&[&[path.as_str(), "--to", fall, "--json"], target].concat());
