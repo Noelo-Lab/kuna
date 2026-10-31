@@ -2125,7 +2125,8 @@ mod tests {
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
         // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
-        assert_eq!(count, 603, "corpus file count drifted");
+        // and kuna-dedup-goto-arm / a goto into an arm unwrapped by a suffix hoist keeps a live target
+        assert_eq!(count, 604, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
