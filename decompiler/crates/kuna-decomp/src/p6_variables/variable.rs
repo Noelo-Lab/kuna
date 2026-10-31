@@ -2502,11 +2502,7 @@ mod tests {
         bank.get_mut(id).unwrap().inst.push(vid(2));
         bank.get_mut(id).unwrap().highflags |= high_flags::coverdirty;
 
-        let op_pt = |u: u64| CoverPoint::Op {
-            id: crate::context::OpId::from(KeyData::from_ffi(u + 1)),
-            uindex: u as kuna_base::types::uintm,
-            code: kuna_num::opcodes::OpCode::CPUI_COPY,
-        };
+        let op_pt = |u: u64| CoverPoint::Op { uindex: u as kuna_base::types::uintm, multiequal: false };
         let mut c1 = Cover::new();
         c1.add_def_point(Some((0, op_pt(5))), false);
         let mut c2 = Cover::new();
