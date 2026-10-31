@@ -315,6 +315,8 @@ pub struct RawLoadImage {
     vma: u64,
     /// Main file stream for image (C++ `ifstream *`, null until `open`)
     thefile: Option<File>,
+    /// (kuna) In-memory image bytes, read instead of `thefile` when present
+    bytes: Option<Vec<u8>>,
     /// Total number of bytes in the loadimage/file
     filesize: u64,
     /// Address space that the file bytes are mapped to (C++ raw pointer,
@@ -331,10 +333,20 @@ impl RawLoadImage {
             filename: f.to_string(),
             vma: 0,
             thefile: None,
+            bytes: None,
             filesize: 0,
             spaceid: None,
             cursection: Cell::new(false),
         }
+    }
+
+    /// (kuna) An already-open image over bytes built in memory, such as a DOS
+    /// load module with its relocations applied.
+    pub fn from_bytes(f: &str, bytes: Vec<u8>) -> RawLoadImage {
+        let mut image = RawLoadImage::new(f);
+        image.filesize = bytes.len() as u64;
+        image.bytes = Some(bytes);
+        image
     }
 
     /// Attach the raw image to a particular space
@@ -356,7 +368,7 @@ impl RawLoadImage {
     ///
     /// The file is opened and its size immediately recovered.
     pub fn open(&mut self) -> KunaResult<()> {
-        if self.thefile.is_some() {
+        if self.thefile.is_some() || self.bytes.is_some() {
             return Err(KunaError::lowlevel("loadimage is already open"));
         }
         // C++ `new ifstream(filename.c_str())`: default (text) mode, which
@@ -398,10 +410,14 @@ impl LoadImage for RawLoadImage {
         curaddr = curaddr.wsub(self.vma); // Get relative offset of first byte
         // C++ dereferences the (possibly null) `thefile` pointer — UB when
         // loadFill is called before open() (ADR 0004: panic)
-        let file = self
-            .thefile
-            .as_mut()
-            .expect("RawLoadImage::loadFill before open() (C++ null ifstream deref)");
+        let mut file = match self.bytes {
+            Some(_) => None,
+            None => Some(
+                self.thefile
+                    .as_mut()
+                    .expect("RawLoadImage::loadFill before open() (C++ null ifstream deref)"),
+            ),
+        };
         while size > 0 {
             if curaddr >= self.filesize {
                 if offset == 0 {
@@ -421,16 +437,21 @@ impl LoadImage for RawLoadImage {
                 // Adjust to biggest possible read
                 readsize = self.filesize.wsub(curaddr);
             }
-            // C++ ignores the stream state; an OS-level I/O failure (no
-            // oracle behavior) surfaces as a LowlevelError here.
-            file.seek(SeekFrom::Start(curaddr)).map_err(|e| {
-                KunaError::lowlevel(format!("I/O error reading raw image file: {e}"))
-            })?;
             // cast: offset/readsize are within the slice length here
-            file.read_exact(&mut ptr[offset as usize..(offset.wadd(readsize)) as usize])
-                .map_err(|e| {
+            let dest = &mut ptr[offset as usize..(offset.wadd(readsize)) as usize];
+            if let Some(file) = file.as_mut() {
+                // C++ ignores the stream state; an OS-level I/O failure (no
+                // oracle behavior) surfaces as a LowlevelError here.
+                file.seek(SeekFrom::Start(curaddr)).map_err(|e| {
                     KunaError::lowlevel(format!("I/O error reading raw image file: {e}"))
                 })?;
+                file.read_exact(dest).map_err(|e| {
+                    KunaError::lowlevel(format!("I/O error reading raw image file: {e}"))
+                })?;
+            } else if let Some(bytes) = &self.bytes {
+                // cast: curaddr + readsize <= filesize == bytes.len() here
+                dest.copy_from_slice(&bytes[curaddr as usize..(curaddr + readsize) as usize]);
+            }
             offset = offset.wadd(readsize);
             size -= readsize as i32; // cast: readsize <= size (an int4) here
             curaddr = curaddr.wadd(readsize);
@@ -550,6 +571,22 @@ mod tests {
         assert_eq!(loaded, vec![5, 6, 7]);
 
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn raw_load_image_from_bytes_reads_like_the_file() {
+        let m = manager(1);
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let mut img = RawLoadImage::from_bytes("module", (0u8..16).collect());
+        img.attach_to_space(Rc::clone(&ram));
+        img.adjust_vma(0x10000);
+        assert!(img.open().is_err(), "an in-memory image is already open");
+        assert_eq!(img.file_size(), 16);
+        let mut buf = [0xaau8; 8];
+        img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), 0x1000c)).unwrap();
+        assert_eq!(buf, [12, 13, 14, 15, 0, 0, 0, 0]);
+        let mut buf = [0xaau8; 2];
+        assert!(img.load_fill(&mut buf, &Address::new(Rc::clone(&ram), 0xfffe)).is_err());
     }
 
     #[test]
