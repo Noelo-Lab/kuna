@@ -1,0 +1,28 @@
+xrefpairs_rv32 -- the RV32 ELF fixture for `kuna xrefs` over an address a
+register pair forms (decompiler/crates/kuna-cli/tests/xrefs_address_pairs.rs).
+
+What it is
+  A 14,588-byte static RV32 ELF linked at 0x10000 from xrefpairs.c at -O0 (lui +
+  lw, lui + sw and lui + addi of a label and a global, the shapes clang emits
+  for non-PIC code) and xrefpairs_riscv.S (lui + lw, lui + addi, lui + sw,
+  auipc + addi, auipc + ld/lw, and two lui bases meeting at a join, which must
+  NOT compose).
+
+Why it is vendored
+  The pairs depend on the code model and on linker relaxation (which rewrites
+  them against gp when it can), so the binary is checked in rather than built
+  at test time.
+
+Where it came from
+  Ubuntu clang 14.0.0 compiles, LLD 23.1.4 (docker image mstorsjo/llvm-mingw)
+  links:
+
+      clang --target=riscv32-unknown-elf -march=rv32imafdc -mabi=ilp32d \
+          -O0 -fno-pic -ffreestanding -mno-relax -c xrefpairs.c -o a.o
+      clang --target=riscv32-unknown-elf -march=rv32imafdc -mabi=ilp32d \
+          -c xrefpairs_riscv.S -o b.o
+      ld.lld -static -nostdlib -e main --build-id=none --no-relax a.o b.o \
+          -o xrefpairs_rv32
+
+  sha256 1339bfeb689dc57aa3552c6273c8b8874037130441ac19bf133fd286aa52e504.
+  Never executed.

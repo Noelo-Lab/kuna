@@ -80,6 +80,7 @@ use super::context::ContextPainter;
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
 use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_poolref::PoolImage;
+use super::kuna_regcarry::{self, Machine as CarryMachine};
 use super::kuna_switchtable;
 use super::model::{FlowKind, RawOp};
 #[path = "kuna_prefixreuse.rs"]
@@ -739,6 +740,15 @@ fn descend(
         got: got.as_ref(),
         preserved: &preserved,
     });
+    // (kuna) `regcarry`: the register space a carried constant lives in.
+    let carry_machine = CarryMachine::new(
+        file,
+        arch.manage().get_space_by_name("register"),
+        data_space.as_ref(),
+        &preserved,
+        &mapped,
+        pool.as_ref(),
+    );
     // (kuna) `picpool`: odd composed addresses held for the Thumb-bit decision.
     let mut thumb_refs: Vec<(u64, u64, XrefKind, String)> = Vec::new();
     // (kuna) `switchtable`: the dispatches whose read stopped for want of a
@@ -995,6 +1005,7 @@ fn descend(
         // (kuna) `picpool`: `poolref` rows for pool words still in flight, filed
         // once the body drains unless a PC fold consumed the word.
         let mut held: Vec<(u64, u64, String)> = Vec::new();
+        st.carry.begin_body();
         // (kuna) `switchtable`: a dispatch can be decoded before the code that
         // falls into it -- breadth-first, or by a `.cold` fragment's jump back
         // into its parent's loop ahead of the parent's own walk -- and the slice
@@ -1098,6 +1109,16 @@ fn descend(
                 let fall_through = vma.wrapping_add(len as u64);
                 data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref())
             };
+            // (kuna) `regcarry`: the address a register pair forms across
+            // instructions. See [`super::kuna_regcarry`].
+            if let Some(m) = &carry_machine {
+                st.carry.step(m, kuna_regcarry::Insn {
+                    vma,
+                    ops: cap.ops(),
+                    fall: c.fall_through,
+                    branches: if c.flow.is_call { &[] } else { &c.flows },
+                });
+            }
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
             // which is in neither of its two instructions on its own. See
             // [`super::kuna_picpool`].
@@ -1279,6 +1300,20 @@ fn descend(
                 }
             }
             let _ = ctx;
+        }
+    }
+    // (kuna) `regcarry`: a carried reference holds only where nothing joined
+    // the run that carried it, which the whole walk has to have been seen for.
+    let mut carried_text: HashMap<u64, String> = HashMap::new();
+    for (vma, to, kind) in st.carry.finish(&st.funcs) {
+        let text = carried_text
+            .entry(vma)
+            .or_insert_with(|| assembly(translate, vma, &code_space))
+            .clone();
+        if arm && to & 1 == 1 && in_range(&exec_set, to & !1) {
+            thumb_refs.push((vma, to, kind, text));
+        } else {
+            st.file(vma, to, kind, &text);
         }
     }
     // A focus address that did not decode is not a function: recording it as one
@@ -1556,6 +1591,9 @@ struct State {
     /// The frame's own edges into one are in no other body's record, so a body
     /// that decodes it later cannot trust what it carries there.
     refused: HashSet<u64>,
+    /// (kuna) `regcarry`: the register constants in flight and the references
+    /// they wait to file.
+    carry: kuna_regcarry::Tracker,
 }
 
 impl State {
@@ -1572,6 +1610,7 @@ impl State {
             }),
             switches: Vec::new(),
             refused: HashSet::new(),
+            carry: kuna_regcarry::Tracker::default(),
         }
     }
 
@@ -1601,6 +1640,7 @@ impl State {
             flow.jumps.extend(cases.iter().map(|&to| (vma, to)));
         }
         for &target in cases {
+            self.carry.enter(target);
             self.file(vma, target, XrefKind::Jump, text);
         }
     }
@@ -2368,6 +2408,7 @@ mod tests {
             flow: None,
             switches: Vec::new(),
             refused: HashSet::new(),
+            carry: kuna_regcarry::Tracker::default(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -2426,6 +2467,7 @@ mod tests {
             flow: None,
             switches: Vec::new(),
             refused: HashSet::new(),
+            carry: kuna_regcarry::Tracker::default(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new(), false);
@@ -2462,6 +2504,7 @@ mod tests {
             }),
             switches: Vec::new(),
             refused: HashSet::new(),
+            carry: kuna_regcarry::Tracker::default(),
         };
         let index = st.finish(BTreeMap::new(), true);
         assert_eq!(index.function_containing(0x1001), Some(0x1000));
