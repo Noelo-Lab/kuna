@@ -292,7 +292,15 @@ kuna decompile ./mre zork
 ```
 
 `kuna functions` lists them. A near spelling is the same identifier under a
-different ABI decoration, never a merely similar name.
+different ABI decoration, never a merely similar name. A name that labels a
+global instead (a data symbol, a PE or Mach-O data export) is answered as data,
+not lifted as code:
+
+```bash
+kuna decompile ./mre audit_global
+#   error: no function "audit_global" in ./mre; it names data at 0x100004000
+#          in __data, not code -- `kuna read` shows its bytes
+```
 
 **An import name selects the code half.** A dynamically linked image spells an
 import's name twice — on the forwarding veneer a direct `call` targets, and on

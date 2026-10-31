@@ -28,8 +28,8 @@
     },
     "stdout_is_json": true,
     "stdout_matches": [
-      "\"count\": 6",
-      "\"total\": 6",
+      "\"count\": 5",
+      "\"total\": 5",
       "\"reachable_from_entry\": 2",
       "\"address_hex\": \"0x1000005b0\""
     ],
@@ -37,5 +37,5 @@
       "Unsupported file format"
     ]
   },
-  "notes": "Desired: the --summary call graph loads the same fat/universal Mach-O the plain inventory does. Witness: crackmes.one 5ab77f5633c5d40ad448c29b, where functions --json returned 84 and --summary exited 1 with \"Unsupported file format\". Retargeted onto the vendored macho_fat fixture (no dataset in CI). count/total must equal the plain inventory's 6 -- an EMPTY summary also exits 0."
+  "notes": "Desired: the --summary call graph loads the same fat/universal Mach-O the plain inventory does. Witness: crackmes.one 5ab77f5633c5d40ad448c29b, where functions --json returned 84 and --summary exited 1 with \"Unsupported file format\". Retargeted onto the vendored macho_fat fixture (no dataset in CI). count/total must equal the plain inventory's 5 -- an EMPTY summary also exits 0."
 }

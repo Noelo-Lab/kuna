@@ -922,6 +922,28 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
        -undefined dynamic_lookup -e _call_slots -o macho_import_slots m.o
 ```
 
+`macho_datasyms_arm64` (arm64, 33 KB) is GH #1339's witness: two external
+`__DATA,__data` globals (`_audit_global`@`0x100004000`, `_audit_message`@`0x100004008`)
+beside `_audit_read`@`0x1000003c8` and `_main`@`0x1000003d4`. An external
+defined `nlist` entry is a Mach-O export, so before the fix both globals entered
+the function stream and decompiled by name; `__mh_execute_header`@`0x100000000`
+(numbered into `__text`, addressed before it) did too. Source
+`macho_datasyms.c`; recipe, toolchain and SHA-256 in
+`macho_datasyms_arm64.provenance` (the `macho_imports` recipe with
+`-fixup_chains`). Pinned by `loadimage_object.rs
+(macho_data_exports_are_not_function_entries)` and
+`kuna-cli/tests/name_miss_cli.rs`.
+
+`macho_datawidth_arm64` (arm64, 33 KB) reads two external `__DATA,__data`
+globals with 32-bit accesses: `_origin`@`0x100004000` (an 8-byte struct) and
+`_counter`@`0x100004008`. An `nlist` has no size, so the data symbol's guessed
+extent (to the next symbol, at most 8 bytes) is what lets `_counter += 1` and
+the struct's first field read by name; the field's in-place increment is a
+partial access whose left side must render as a store
+(`*(int *)&_origin += 1`). Source `macho_datawidth.c`; recipe, toolchain and
+SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
+`kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
