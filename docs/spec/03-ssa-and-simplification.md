@@ -770,6 +770,36 @@ address-forcing boundary ops, marks those outputs `addrforce` when they fall
 inside a guarded window, and propagates every load-guard COPY away again —
 so what reaches the output is the mark the COPY earned, not the COPY.
 
+Under `option loadguardreads` (default on) the pass does not build those
+COPYs while it places guards. A guard discovered in this pass still covers the
+whole stack, because the value-set analysis that narrows it runs after
+renaming, so upstream's pass builds a COPY and two Varnodes for every indexed
+LOAD times every address-tied stack range, and propagates them all away again
+(40,442 LOADs times about 212 ranges, 8.58 million COPYs, in one pass of a
+194 KB function). `guard_loads` and `guard_global_loads` record each
+LOAD-range pair instead (`kuna_loadguardreads.rs (Reads)`); renaming reads the
+top of each pair's range stack at its LOAD, creating an input when nothing
+reaches it, exactly as it would read the COPY's input
+(`heritage.rs (Heritage::rename_load_guards)`). After renaming, each distinct
+Varnode those reads reached gets one `addrforce` COPY in front of the first
+LOAD that reached it (`heritage.rs (Heritage::place_load_guard_reads)`). The
+later steps of the pass see it as a reader of that Varnode, as they see
+upstream's COPYs: a store-guard INDIRECT they delete moves it to the
+INDIRECT's input, and `handle_new_load_copies` walks back from it to the same
+writes and propagates it away. Upstream's COPY for any other pair reads
+either another guard COPY's output or a Varnode an earlier COPY already reads,
+so its walk marks nothing new. Renaming also notes each read that upstream
+links to a guard COPY's output, because the COPY stands between the read and
+the value it reached: at the end of the pass those reads move to the back of
+their Varnode's readers, ordered by when upstream built the COPY, which is
+where propagating the COPYs away appends them
+(`kuna_loadguardreads.rs (Reads::read)`), so the later passes walk every
+Varnode's readers in upstream's order. The read
+locations that branch-scope trimming (chapter 06, `guardedreadtrim`) records
+for the stack guard COPYs are recorded once per block and range
+(`kuna_stackreadscope.rs (mark_guarded_read)`). With the option off, every
+COPY is built as upstream builds it.
+
 At `global`, the default, the LOAD guard runs and so does the global half of
 upstream's STORE guard (`heritage.rs (Heritage::guard_global_stores)`): every
 live STORE into the range's own space (`kuna_indexaliasguard.rs (stores_into)`)

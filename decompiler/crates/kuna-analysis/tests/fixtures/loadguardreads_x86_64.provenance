@@ -1,0 +1,22 @@
+loadguardreads_x86_64 -- the GH-1034 LOAD guard fixture for option `loadguardreads`
+(tests/stages/kuna-loadguardreads.xml).
+
+What it is
+  A 24,224-byte x86-64 ELF built from loadguardreads_x86_64.c, which is
+  generated straight-line C. `gather` hands the address of its 64-word table
+  `t` and of each of 64 stack structs to `reg`, so every stack slot is
+  address-tied, then reads `t` at 256 data-dependent indexes: 256 indexed stack
+  LOADs that heritage guards against every address-tied stack range.
+
+Why it is vendored
+  The op counts the stage test pins depend on the exact code layout, so the
+  binary is checked in rather than built at test time (CI's gcc 15 would lay the
+  function out differently).
+
+Where it came from
+  gcc 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.3), GNU ld 2.38, x86-64 Linux:
+
+      gcc -O2 -fno-pie -no-pie -fno-inline -fstack-reuse=none -o loadguardreads_x86_64 loadguardreads_x86_64.c
+
+  sha256 2e158e856298d176b68e5661ba0bb37de8e23da930354e776b045dca9600382b.
+  Run with no arguments it prints 100734.

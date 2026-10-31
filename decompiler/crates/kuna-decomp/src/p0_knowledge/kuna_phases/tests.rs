@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_343() {
-    assert_eq!(kuna_num_settables(), 343);
-    assert_eq!(SETTABLE_TABLE.len(), 343);
+fn settable_count_is_344() {
+    assert_eq!(kuna_num_settables(), 344);
+    assert_eq!(SETTABLE_TABLE.len(), 344);
 }
 
 #[test]
-fn tier_counts_are_122_core_130_transform_91_analysis() {
+fn tier_counts_are_123_core_130_transform_91_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_122_core_130_transform_91_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (122, 130, 91));
+    assert_eq!((core, transform, analysis), (123, 130, 91));
 }
 
 #[test]
@@ -907,7 +907,8 @@ fn option_values_live_value_present_for_154() {
     // 152 -> 153: +1 for `callwide` (live_field = call_wide).
     // 153 -> 154: +1 for `pairrefine` (live_field = pair_refine).
     // 154 -> 156: +2 for `readonlycalls` and `prunedssa` (readonly_calls, pruned_ssa).
-    assert_eq!(with_live, 156);
+    // 156 -> 157: +1 for `loadguardreads` (load_guard_reads).
+    assert_eq!(with_live, 157);
 }
 
 #[test]
@@ -1119,7 +1120,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `swiftdemangle`; its P1 row sits beside `sourcelang`.
     // +2 for `readonlycalls` and `prunedssa`; their P3 rows sit at the end.
     // +1 for `gowalkprune`; its P1 row sits beside `gonoreturn`.
-    assert_eq!(json.matches("},\n").count(), 342);
+    // +1 for `loadguardreads`; its P3 row sits after `prunedssa`.
+    assert_eq!(json.matches("},\n").count(), 343);
 }
 
 #[test]
