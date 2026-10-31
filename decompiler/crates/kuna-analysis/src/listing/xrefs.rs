@@ -1841,7 +1841,11 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// call materializes its own return address, and every architecture spells that
 /// as this instruction's fall-through — x86 stores the constant to the stack,
 /// ARM copies it into `LR`, MIPS into `$ra`. Reported, it would put a phantom
-/// data reference on the instruction after every single call site.
+/// data reference on the instruction after every single call site. AArch64
+/// spells it as a sum instead — `bl` and `blr` lift `x30 = inst_start + 4` to
+/// one `INT_ADD` of two constants — so in a call, an op that adds two constants
+/// into the fall-through is the same return address, and neither half of it
+/// (the first is the `bl`'s own address) is a reference.
 fn data_refs(
     ops: &[FullOp],
     data_space: Option<&Rc<AddrSpace>>,
@@ -1850,6 +1854,7 @@ fn data_refs(
     pool: Option<&PoolImage>,
 ) -> Vec<(u64, XrefKind)> {
     let mut out = Vec::new();
+    let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
     // (kuna) `poolref`: the second edge a literal-pool load forms, from this same
     // instruction to the address the pool word holds. See [`super::kuna_poolref`].
     // `width` is how many bytes the instruction READ, which a `LOAD`'s address
@@ -1877,6 +1882,9 @@ fn data_refs(
             if in_data_space(vn) {
                 out.push((vn.offset, XrefKind::Write));
             }
+        }
+        if calls && is_return_address_sum(op, fall_through) {
+            continue;
         }
         for (i, vn) in op.ins.iter().enumerate() {
             let is_target_slot = i == 0
@@ -1929,6 +1937,21 @@ fn data_refs(
     out.sort_unstable();
     out.dedup();
     out
+}
+
+/// Does `op` add two constants into `fall_through` (AArch64's `x30 =
+/// inst_start + 4`)? Only a call's link value: a Thumb-2 `vldr s0,[pc,#8]` reads
+/// `pc` as the same sum, and that is not a return address. See [`data_refs`].
+fn is_return_address_sum(op: &FullOp, fall_through: u64) -> bool {
+    let constant = |vn: &VarnodeData| {
+        vn.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT)
+    };
+    let (Some(out), [a, b]) = (&op.out, op.ins.as_slice()) else { return false };
+    let mask = if out.size >= 8 { u64::MAX } else { (1u64 << (8 * out.size)) - 1 };
+    op.opcode == OpCode::CPUI_INT_ADD
+        && constant(a)
+        && constant(b)
+        && a.offset.wrapping_add(b.offset) & mask == fall_through
 }
 
 /// How many single-instruction `COPY`s may stand between a `CALLIND` and the
@@ -2250,6 +2273,30 @@ mod tests {
             data_refs(&x86, Some(&ram), &MAPPED, 0x1104, None),
             vec![(0x4010, XrefKind::Read)]
         );
+    }
+
+    /// An AArch64 `bl`/`blr` lifts its link value as `x30 = inst_start + 4`: the
+    /// sum is the fall-through, so neither constant is the instruction
+    /// referencing itself. A real self-reference (`adr x0,.`), a PC-relative sum
+    /// that is not the fall-through, and the same sum outside a call (Thumb-2's
+    /// `pc` read) are reported as before.
+    #[test]
+    fn an_aarch64_link_value_is_never_a_data_reference() {
+        let (ram, cst) = spaces();
+        let reg = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR));
+        let x30 = VarnodeData { space: Some(Rc::clone(&reg)), offset: 0xf0, size: 8 };
+        let x0 = VarnodeData { space: Some(Rc::clone(&reg)), offset: 0, size: 8 };
+        let bl = [
+            op(OpCode::CPUI_INT_ADD, Some(x30), vec![vn(&cst, 0x1100), vn(&cst, 4)]),
+            op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x1180)]),
+        ];
+        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None).is_empty());
+        let adr = [op(OpCode::CPUI_COPY, Some(x0.clone()), vec![vn(&cst, 0x1100)])];
+        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None), vec![(0x1100, XrefKind::Data)]);
+        let add_pc = [op(OpCode::CPUI_INT_ADD, Some(x0.clone()), vec![vn(&cst, 0x1100), vn(&cst, 0x10)])];
+        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None), vec![(0x1100, XrefKind::Data)]);
+        let pc_read = [op(OpCode::CPUI_INT_ADD, Some(x0), vec![vn(&cst, 0x1100), vn(&cst, 4)])];
+        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None), vec![(0x1100, XrefKind::Data)]);
     }
 
     /// (kuna) `poolref`: a pointer-sized read of a read-only word files the
