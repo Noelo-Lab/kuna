@@ -277,6 +277,9 @@ Three tiers:
 | a long global-filling epilogue is duplicated once per path that reaches the return | [`retsplitglobal`](#retsplitglobal) |
 | option returndup off does not stop a shared epilogue from being cloned | [`retsplitglobal`](#retsplitglobal) |
 | 46% of a function's text is three copies of one exit block | [`retsplitglobal`](#retsplitglobal) |
+| a huge function exhausts memory right after its return blocks are split | [`retsplitlimit`](#retsplitlimit) |
+| millions of COPY ops of a global into itself fill a large function's IR | [`retsplitlimit`](#retsplitlimit) |
+| a function with hundreds of gotos to one return and thousands of globals takes gigabytes to decompile | [`retsplitlimit`](#retsplitlimit) |
 | goto to a shared free(p); return; style epilogue | [`taildup`](#taildup) |
 | cleanup-call return tail reached via label instead of duplicated inline | [`taildup`](#taildup) |
 | flip off when many error checks share one cleanup block (the goto out; idiom) | [`taildup`](#taildup) |
@@ -1958,6 +1961,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Keep it on when the same long run of `dat_<addr> = ...` statements is emitted two or three times in one function, once per path that reaches the exit -- a compiler-shared epilogue that fills message or table globals, where the reader has to notice the blocks are identical before any of them can be read. Flip OFF to restore upstream's predicate and get the per-predecessor private epilogues back (byte-identical to upstream), which is the right call when you are following one path at a time and want each exit's stores inline rather than merged behind a phi. Inert unless a shared RETURN block stores to more than eight distinct globals, so a small epilogue still splits exactly as upstream, and inert on any function whose epilogue only moves registers however long it is.
 - **Where / provenance:** P8/goto-quality · kuna · presentation-default · repipe-simd-constant-string-initializer
 - **Example:** `option retsplitglobal off`
+
+### `retsplitlimit` -- off | <n>, default `1048576`
+
+- **Symptoms:** a huge function exhausts memory right after its return blocks are split; millions of COPY ops of a global into itself fill a large function's IR; a function with hundreds of gotos to one return and thousands of globals takes gigabytes to decompile.
+- **What it does:** Keep the gotos into a shared RETURN block when splitting it would clone more than <n> ops (default 1,048,576). ActionReturnSplit gives every goto into a RETURN block its own copy of the whole block, every op once per split edge. A bare epilogue is a few ops, but a RETURN block also carries one `glob = glob` guard COPY per global the function reads (Heritage::guardReturns), so a huge function that reads thousands of globals and reaches one return from hundreds of gotos clones millions of ops, which every later pass and the variable merge then walk: serde-hkx's 194 KB deserializer has two return blocks of 4,524 ops reached by 674 and 658 gotos, 6.0 million cloned ops (8.75 million ops in the function right after the split, 7.19 million of them guard COPYs). The cost is the block's op count times its split edges; a block under the limit splits exactly as upstream, so the C changes only in a function that would have cloned more, where those paths print `goto` to the shared return instead of their own `return`. `off` restores the unlimited split.
+- **When to flip:** On by default at 1048576. Lower it to keep a large function's return gotos when splitting them costs memory, or set it off to always give every goto its own return, as upstream does.
+- **Where / provenance:** P8/goto-quality · kuna · performance · gh-1034
+- **Example:** `option retsplitlimit off`
 
 ### `taildup` -- on | off, default `on`
 

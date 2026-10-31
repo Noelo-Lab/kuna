@@ -807,6 +807,8 @@ pub struct ArchContext {
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
     /// the predicate both `ActionReturnSplit` and `ActionReturnDup` consult.
     pub ret_split_global: bool,
+    /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
+    pub ret_split_limit: Option<u64>,
     /// (kuna) resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
     /// to the source lane it selects (`simdlane`).  Read by
     /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane).
@@ -1870,6 +1872,7 @@ impl ArchContext {
             global_array_anchor: false,
             cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
+            ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
             const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
             drop_call_push: false,        // callpush (the ArchSeam carries the real default)
