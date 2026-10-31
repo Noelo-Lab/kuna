@@ -3,6 +3,8 @@ mod common;
 
 #[path = "octeon_n64_arguments.rs"]
 mod octeon_n64_arguments;
+#[path = "octeon_abi.rs"]
+mod octeon_abi;
 
 #[path = "setup_commands.rs"]
 mod setup_commands;

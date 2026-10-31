@@ -1,0 +1,16 @@
+<decompilertest>
+<!-- P2 Octeon review: GNU as -64 -march=octeon2 lai $8,($4), followed
+     by jr ra/nop. The old inherited restore changed SP and loaded registers.
+     Unsupported atomics must stop decoding. Original bytes, no vendor input. -->
+<binaryimage arch="MIPS:BE:64:octeon2:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">7080409f03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="unsupported_atomic"/>
+</binaryimage>
+<script>
+<com>option decodehalt on</com>
+<com>lo fu unsupported_atomic</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Octeon atomic refusal: explicit bad-instruction halt" min="1" max="1">halt_baddata\(\)</stringmatch>
+<stringmatch name="Octeon atomic refusal: no restore-derived memory reads" min="0" max="0">\*\(|\*a[0-9]|\*v[0-9]</stringmatch>
+</decompilertest>

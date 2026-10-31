@@ -1770,6 +1770,7 @@ define pcodeop SYNC;
 	signalReservedInstruction(immed:2);
 }
 
+@ifndef OCTEON
 rsRa:							is svrs_ra=0 {}
 rsRa: ra						is svrs_ra=1 & ra {
 	tsp = tsp-$(REGSIZE);
@@ -1990,4 +1991,5 @@ svFramesize: ,val						is svrs_frame_hi & svrs_frame_low [val = ((svrs_frame_hi 
 	
 	sp = sp+zext(tmp);
 }
+@endif
 @include "mipsfloat.sinc"

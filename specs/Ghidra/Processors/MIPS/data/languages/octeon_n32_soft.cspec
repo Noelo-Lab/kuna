@@ -20,6 +20,7 @@
       <entry size="2" alignment="2" />
       <entry size="4" alignment="4" />
       <entry size="8" alignment="8" />
+      <entry size="16" alignment="16" />
     </size_alignment_map>
   </data_organization>
   <stackpointer register="sp" space="ram" />
@@ -59,14 +60,53 @@
         <pentry minsize="1" maxsize="500" align="8">
           <addr offset="0" space="stack" />
         </pentry>
+        <rule>
+          <datatype name="float" />
+          <join align="true" stackspill="false" />
+        </rule>
+        <rule>
+          <datatype name="float" />
+          <join align="true" reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="struct" />
+          <join align="true" reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="union" />
+          <join align="true" reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="any" />
+          <join align="true" />
+        </rule>
       </input>
       <output>
         <pentry minsize="1" maxsize="8" extension="sign">
           <register name="v0" />
         </pentry>
-        <pentry minsize="9" maxsize="16">
-          <addr space="join" piece1="v0" piece2="v1" />
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="v1" />
         </pentry>
+        <pentry minsize="16" maxsize="16" metatype="float">
+          <addr space="join" piece1="v0" piece2="a0" />
+        </pentry>
+        <rule>
+          <datatype name="float" minsize="16" maxsize="16" />
+          <consume storage="float" />
+        </rule>
+        <rule>
+          <datatype name="struct" />
+          <join reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="union" />
+          <join reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="any" />
+          <join />
+        </rule>
       </output>
       <unaffected>
         <register name="s0" />

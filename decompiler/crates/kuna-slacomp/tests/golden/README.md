@@ -21,6 +21,12 @@ move source line numbers stored in the element stream. That compiler reproduces
 the old MIPS digests on the previous sources; the generic constructors retain
 their meanings. The Rust compiler matches all six new element streams.
 
+The Octeon save/restore exclusion updates these six entries again: the generic
+MIPS streams reflect moved source locations, and the Octeon streams exclude the
+colliding constructors. The recorded native compiler reproduces all six prior
+digests on the prior sources and supplies all six replacement digests. The
+atomic-refusal and generic save/restore tests also run against its output.
+
 The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
 `fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
 compiler on the corrected sources, which reproduces the previous hashes on the

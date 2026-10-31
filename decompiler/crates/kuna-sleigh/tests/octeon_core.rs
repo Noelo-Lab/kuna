@@ -100,6 +100,86 @@ fn read_sla(spec: &str) -> Vec<u8> {
 const SPECS: [&str; 4] = ["octeonbe", "octeonplusbe", "octeon2be", "octeon3be"];
 
 #[test]
+fn unsupported_atomics_never_decode_as_generic_save_restore() {
+    use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
+    use kuna_sleigh::translate::{AssemblyEmit, PcodeEmit};
+    #[derive(Default)]
+    struct Output {
+        mnemonic: String,
+        ops: usize,
+    }
+    impl AssemblyEmit for Output {
+        fn dump(&mut self, _: &Address, mnemonic: &str, _: &str) {
+            self.mnemonic = mnemonic.into();
+        }
+    }
+    impl PcodeEmit for Output {
+        fn dump(&mut self, _: &Address, _: OpCode, _: Option<&VarnodeData>, _: &[VarnodeData]) {
+            self.ops += 1;
+        }
+    }
+    // GNU as -64 -march=octeon2: lai/laid/lad/ladd/las/lasd/lac/lacd,
+    // laa/laad/law/lawd $8,($4)[,$5], followed by saa/saad $5,($4).
+    let words = [
+        0x7080409fu32,
+        0x708040df,
+        0x7080419f,
+        0x708041df,
+        0x7080429f,
+        0x708042df,
+        0x7080439f,
+        0x708043df,
+        0x7085449f,
+        0x708544df,
+        0x7085459f,
+        0x708545df,
+        0x70850018,
+        0x70850019,
+        0x7080609f,
+        0x7085649f,
+    ];
+    for spec in SPECS {
+        let bytes = words.iter().flat_map(|w| w.to_be_bytes()).collect();
+        let mut sleigh = Sleigh::new(Box::new(Bytes(bytes)), Box::new(ContextInternal::new()));
+        sleigh.initialize_from_sla(&read_sla(spec)).unwrap();
+        let ram = Rc::clone(sleigh.base().manager().get_space_by_name("ram").unwrap());
+        for (i, word) in words.iter().enumerate() {
+            let addr = Address::new(Rc::clone(&ram), 0x1000 + i as u64 * 4);
+            let mut out = Output::default();
+            assert!(
+                sleigh.print_assembly(&mut out, &addr).is_err(),
+                "{spec} {word:08x}: {}",
+                out.mnemonic
+            );
+            assert!(
+                sleigh.one_instruction(&mut out, &addr).is_err(),
+                "{spec} {word:08x} lifted"
+            );
+            assert_eq!(
+                out.ops, 0,
+                "a rejected atomic must emit no stack side effects"
+            );
+        }
+    }
+    for (word, expected) in [(0x7080409fu32, "restore"), (0x7080609f, "save")] {
+        let mut sleigh = Sleigh::new(
+            Box::new(Bytes(word.to_be_bytes().to_vec())),
+            Box::new(ContextInternal::new()),
+        );
+        sleigh.initialize_from_sla(&read_sla("mips64be")).unwrap();
+        let ram = Rc::clone(sleigh.base().manager().get_space_by_name("ram").unwrap());
+        let mut out = Output::default();
+        sleigh
+            .print_assembly(&mut out, &Address::new(ram, 0x1000))
+            .unwrap();
+        assert_eq!(
+            out.mnemonic, expected,
+            "generic MIPS must retain its constructors"
+        );
+    }
+}
+
+#[test]
 fn generic_mips_and_generation_boundaries_remain_distinct() {
     use kuna_sleigh::translate::AssemblyEmit;
     #[derive(Default)]

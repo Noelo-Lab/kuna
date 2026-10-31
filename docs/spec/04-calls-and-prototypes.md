@@ -566,18 +566,31 @@ stack object occupies twelve or sixteen bytes. Stack resources, general
 register resources and aggregate types retain their aligned object size.
 The declared datatype and its alignment remain unchanged.
 
-The Octeon N64 soft-float model passes small structs and unions in the leading
+The Octeon N32 and N64 soft-float models pass small structs and unions in the leading
 bytes of each eight-byte GPR or stack slot, for both fixed and variadic
 arguments. A scalar `float` instead occupies the low four bytes of a GPR, but
 the leading four bytes of a stack slot. Its input rules therefore try an
 ordinary GPR join with `stackspill="false"` first, then a left-justified join
 when no register remains. A failed first rule consumes no slots. Ordinary
 32-bit integers keep low-word placement in registers and at stack-slot offset
-four. Scalar results use the low word of v0; small aggregate results use its
-leading bytes. These distinctions are exercised by the GCC/DWARF fixture and
+four. Scalars up to eight bytes return in v0 (using its low bytes when smaller);
+small aggregate results use its leading bytes. These distinctions are exercised by the GCC/DWARF fixture and
 storage assertions in `decompiler/crates/kuna-console/tests/octeon_n64_arguments.rs`.
 Removing hard-float register rules must preserve aggregate placement and must
 not turn the hard-float stack fallback into a GPR allocation rule.
+
+Both models join aggregate arguments across consecutive eight-byte registers,
+including a final register plus a stack tail when registers run out. A two-word
+aggregate with eight-byte alignment can start at an odd argument register.
+Sixteen-byte scalars and aggregates containing them have sixteen-byte alignment
+in type layout and argument allocation: aligned joins skip an odd register and
+align stack slots, preserving the position of later arguments. Quad scalar
+results use the soft-float GCC v0/a0 pair, selected by a sixteen-byte floating
+type rule. Sixteen-byte integer and aggregate results keep v0/v1; this includes
+a struct containing one long double. The joined quad output entry follows its
+overlapping v0 resource so the compiler-spec decoder can resolve the overlap.
+`decompiler/crates/kuna-console/tests/octeon_abi.rs` checks the actual models,
+register exhaustion, following arguments, type layout and original GCC DWARF.
 
 ### Recovery: trials → parameters
 

@@ -12,6 +12,7 @@
       <entry size="2" alignment="2" />
       <entry size="4" alignment="4" />
       <entry size="8" alignment="8" />
+      <entry size="16" alignment="16" />
     </size_alignment_map>
     <wchar_size value="4" />
   </data_organization>
@@ -54,23 +55,23 @@
         </pentry>
         <rule>
           <datatype name="float" />
-          <join stackspill="false" />
+          <join align="true" stackspill="false" />
         </rule>
         <rule>
           <datatype name="float" />
-          <join reversejustify="true" />
+          <join align="true" reversejustify="true" />
         </rule>
         <rule>
           <datatype name="struct" />
-          <join reversejustify="true" />
+          <join align="true" reversejustify="true" />
         </rule>
         <rule>
           <datatype name="union" />
-          <join reversejustify="true" />
+          <join align="true" reversejustify="true" />
         </rule>
         <rule>
           <datatype name="any" />
-          <join />
+          <join align="true" />
         </rule>
       </input>
       <output>
@@ -80,6 +81,13 @@
         <pentry minsize="4" maxsize="8">
           <register name="v1" />
         </pentry>
+        <pentry minsize="16" maxsize="16" metatype="float">
+          <addr space="join" piece1="v0" piece2="a0" />
+        </pentry>
+        <rule>
+          <datatype name="float" minsize="16" maxsize="16" />
+          <consume storage="float" />
+        </rule>
         <rule>
           <datatype name="struct" />
           <join reversejustify="true" />
