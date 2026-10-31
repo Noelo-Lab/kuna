@@ -356,7 +356,7 @@ fn untouched_summary<'a>(
         return None;
     }
     let entry = fc.get_entry_address();
-    if entry.is_invalid() {
+    if entry.is_invalid() || fc.plt_stub().is_some() {
         return None;
     }
     let w = data.kuna_callee_ret_writes(entry)?;

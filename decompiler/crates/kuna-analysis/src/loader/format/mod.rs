@@ -99,6 +99,13 @@ pub trait ObjectFormat {
     /// ignores it.
     fn resolve_imports(&self, file: &object::File, bytes: &[u8]) -> Vec<ImportSym>;
 
+    /// `(stub, definition)` for each import stub the image's own relocations
+    /// bind to a function it defines (`pltlocal`); ELF only, ascending by stub.
+    /// See [`crate::loader::kuna_pltlocal`].
+    fn local_import_targets(&self, _file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
+        Vec::new()
+    }
+
     /// The image's header page, if the format maps one outside its sections.
     ///
     /// PE only (`SizeOfHeaders` bytes at `ImageBase`); every other format

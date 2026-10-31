@@ -508,6 +508,11 @@ kuna_options! { self, p1;
         self.pass_through = val;
         Ok(msg)
     },
+    "pltlocal" => {
+        let (val, msg) = crate::p4_calls::kuna_pltlocal::OptionPltLocal.apply(p1)?;
+        self.plt_local_calls = val;
+        Ok(msg)
+    },
     "mixedtailret" => {
         let (val, msg) = crate::p4_calls::kuna_mixedtailret::OptionMixedTailRet.apply(p1)?;
         self.mixed_tail_ret = val;

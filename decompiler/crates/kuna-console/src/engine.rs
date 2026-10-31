@@ -4414,6 +4414,9 @@ pub fn bootstrap_from_object_with_isa(
     // FunctionSymbol at each of them for call naming, and the whole-binary
     // enumeration needs to know those addresses hold a pointer, not a body.
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
+    // (kuna `pltlocal`) The PLT stubs the image's own relocations bind to a
+    // function it defines, so a call through one is built at the definition.
+    let plt_local: Vec<(u64, u64)> = loader.plt_local_targets().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
     let elf_functions = loader.elf_function_provenance().clone();
     let loader_aliases = loader.func_symbol_aliases();
@@ -4589,6 +4592,7 @@ pub fn bootstrap_from_object_with_isa(
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = std::rc::Rc::new(ranges);
     }
+    prog.arch_mut().plt_local = std::rc::Rc::new(plt_local);
 
     // (kuna `litpoolconst`) ... and the executable read-only regions the in-code
     // literal pools live in. Already sorted, disjoint and merged by
