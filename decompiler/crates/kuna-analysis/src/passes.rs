@@ -266,6 +266,8 @@ pub fn passes_for(compiler: Compiler, format: object::BinaryFormat) -> Vec<Box<d
         // untouched). Always-on, like arm_markers/mips_gp; `--option mips_isa off`
         // restores the un-painted (MIPS32-misdecoded) rendering.
         Box::new(crate::loader::mips_markers::MipsIsaModePass),
+        // PPC32 ELF relocation metadata; self-gated like the register passes.
+        Box::new(crate::loader::kuna_ppc32_imports::PicSlotsPass),
         // S1 DWARF: recover function/global names and TYPED function signatures
         // from `.debug_*` sections (the kuna analog of Ghidra's `DWARFAnalyzer`).
         // Registered AFTER LibProtoPass so for any name both emit, the DWARF

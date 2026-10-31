@@ -156,6 +156,8 @@ pub struct XrefIndex {
     /// Outgoing edges, keyed by the entry of the function the source lies in;
     /// sorted by target then source.
     by_source_function: BTreeMap<u64, Vec<Xref>>,
+    /// Entry contexts proving each scoped `(instruction, target)` call edge.
+    scoped_callers: BTreeMap<(u64, u64), BTreeSet<u64>>,
     /// Every instruction VMA the walk decoded (membership only).
     decoded: HashSet<u64>,
     /// Every function entry the walk seeded or discovered, in address order.
@@ -286,6 +288,30 @@ pub struct SwitchTable {
 }
 
 impl XrefIndex {
+    /// Add a call proved in one entry's register context. This does not create a
+    /// veneer alias: another entry may use the same stub with a different base.
+    pub fn add_scoped_call(&mut self, arch: &Architecture, function: u64, from: u64, to: u64) {
+        self.scoped_callers.entry((from, to)).or_default().insert(function);
+        let instruction = self.by_source.get(&from).and_then(|r| r.first())
+            .map(|r| r.instruction.clone()).filter(|text| !text.is_empty())
+            .unwrap_or_else(|| arch.manage().get_default_code_space()
+                .map(|space| assembly(arch.translate(), from, space)).unwrap_or_default());
+        let edge = Xref { from, to, kind: XrefKind::Call, instruction };
+        for (edges, by_source) in [
+            (self.by_target.entry(to).or_default(), true),
+            (self.by_source.entry(from).or_default(), false),
+            (self.by_source_function.entry(function).or_default(), false),
+        ] {
+            edges.push(edge.clone());
+            sort_dedup(edges, by_source);
+        }
+    }
+
+    /// Proving entries for a scoped call, independent of physical containment.
+    pub fn scoped_callers(&self, from: u64, to: u64) -> Option<&BTreeSet<u64>> {
+        self.scoped_callers.get(&(from, to))
+    }
+
     /// Everything that references `vma` — call sites, branches, and data
     /// references — sorted by source VMA.
     pub fn refs_to(&self, vma: u64) -> &[Xref] {
@@ -1792,6 +1818,7 @@ impl State {
             by_target: self.by_target,
             by_source: self.by_source,
             by_source_function,
+            scoped_callers: BTreeMap::new(),
             decoded: self.decoded,
             funcs: self.funcs,
             body_owners,
@@ -1862,6 +1889,7 @@ fn empty() -> XrefIndex {
         by_target: BTreeMap::new(),
         by_source: BTreeMap::new(),
         by_source_function: BTreeMap::new(),
+        scoped_callers: BTreeMap::new(),
         decoded: HashSet::new(),
         funcs: BTreeSet::new(),
         body_owners: None,

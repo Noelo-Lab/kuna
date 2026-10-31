@@ -813,6 +813,10 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    follow_flow_with_pic(arch, fd, true)
+}
+
+fn follow_flow_with_pic(arch: &mut Architecture, fd: Funcdata, prove_pic: bool) -> KunaResult<Funcdata> {
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -893,6 +897,14 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // C++ startProcessing also calls sortCallSpecs() (dominance order for the
     // call-spec list); now that qlst exists, sort it.
     data.sort_call_specs();
+    if prove_pic {
+        let bindings = crate::kuna_ppc32piccalls::prove(&data, arch);
+        if !bindings.is_empty() {
+            data.clear();
+            data.ppc32_pic_calls = bindings;
+            return follow_flow_with_pic(arch, data, false);
+        }
+    }
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
@@ -904,6 +916,9 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // program-wide comment database.
     let func_addr = data.get_address().clone();
     if arch.kuna_drive_publishes() {
+        if !arch.ppc32_pic_imports.is_empty() {
+            crate::kuna_ppc32piccalls::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+        }
         if arch.mapped_flow_boundary_image {
             crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
         }
