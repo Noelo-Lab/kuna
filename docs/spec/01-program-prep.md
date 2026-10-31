@@ -6936,6 +6936,54 @@ rest is the new rows themselves, rendering each one's instruction text (about
 2 µs a row on AArch64) and filing it (the 9,331 rows of a RISC-V PJSIP library).
 Emitted C is unchanged.
 
+(kuna) **Addresses below the floor** (GH #1364). The `checkOperands` floor tells a
+number from an address among *immediates*, and a zero-based image keeps real
+addresses under it: an arm64 Mach-O dylib's `__TEXT` starts at 0, ld.lld puts an
+ELF shared object's or PIE's `.rodata` in its first page, GNU ld an older x86-64
+or AArch64 PIE's `.text`, and firmware is linked at 0. There the floor dropped
+every address a program formed into that page — `adrp x0,0x0; add x0,x0,#0x378`
+naming a dylib's first function, `_start`'s `lea rdi,[rip+0xe6]` passing `main`.
+Lowering the floor is no answer: `mov w0,#0x378` and `add x1,x1,#0x378` carry the
+same constant, and in such an image nearly every small immediate lands in a mapped
+byte (with no floor at all, the sweep below gained some 13,000 rows, almost all
+`mov`/`cmp`/displacement immediates landing in `.dynsym`, `.rela` and their
+neighbours). What separates the two is the PC, so a value computed from the
+instruction's own address is exempt from the floor and has only to land in a
+mapped section — the rule PIC pool composition already applies. SLEIGH folds most
+PC-relative operands at decode time and leaves a plain constant in the p-code, so
+**PC-relative forms** (`decompiler/crates/kuna-analysis/src/listing/kuna_pcform.rs`)
+recognises them from the instruction's encoding and recomputes their value from
+its bytes: AArch64 `adr`/`adrp`; x86-64 RIP-relative `lea`, whose value is the
+fall-through plus its last four bytes (an instruction that ends in an `imm32`
+would need the value `next + imm32`, which it never carries); A32 and Thumb `adr`,
+a four-byte ARM word being read both ways because the value must match. Only a
+constant equal to the recomputed value is exempt, both in the one-instruction
+scan and as a carried value. Register pair carrying also takes an instruction's
+own address as SLEIGH spells the PC (`inst_start`, Thumb's `+ 4`, A32's `+ 8`) to
+be PC-relative where an add or subtract reads it (RISC-V `auipc`), and keeps a
+value PC-relative through an add or subtract of something that is not; the
+difference of two (a switch's `sub eax,r13d` after two RIP-relative `lea`s) is a
+distance, and a mask or a shift of one is a number. PIC base folding exempts what
+it composes through the proven base for the same reason (an ld.lld i386 PIE's
+`lea eax,[ebx-0x3088]` into its first page). The recogniser is built only for an
+image that maps something below the floor, so any other image's walk is unchanged;
+nor does a folded `adr` change which constants may *start* a carry in an `ET_DYN`
+image (only a visible PC does), which keeps the internal address register of
+SLEIGH's `ldm` out of an ARM shared object's rows.
+
+Measured over 375 images (the 127 above, 220 zero-based ELF images from the angr
+test corpus and the vendored fixtures, 30 decbench x86-64 PIEs, and zlib linked
+for seven targets by ld.lld and two by GNU ld): no row is lost, and 700 rows are
+added in 67 images, each a PC-relative formation — 236 x86-64 `lea [rip]`, 179
+A32 and Thumb `adr` and the 170 PLT slot reads they start, 39 AArch64 `adrp`
+pairs and `adr`, and 76 RISC-V `auipc` pairs and the loads through them. 682
+match an independent capstone evaluation of the instruction and its straight-line
+predecessors; the other 18 match GNU objdump's `auipc` pair annotation or were
+checked by hand. A PIE whose first page holds only metadata (every decbench x86-64
+image) gains nothing. The walk costs no measurable time: an in-process interleaved
+A/B over x86-64, AArch64, ARM and RISC-V C libraries and bash stays within ±1.5%,
+the same spread an A/A run shows. Emitted C is unchanged.
+
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
 The descent's successors are `classify`'s static targets plus fall-through, and a
