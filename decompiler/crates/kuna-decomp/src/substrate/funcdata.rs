@@ -272,6 +272,9 @@ pub struct Funcdata {
     /// dead-op removal took out and the Varnodes it read
     /// (`infra/action.rs (ActionPool::apply_wave)`).
     dead_wave_log: Option<(Vec<OpId>, Vec<VarnodeId>)>,
+    /// (kuna decompile-all watchdog) What was left of the per-function budget
+    /// when the drive handed this function back; rendering it may use no more.
+    render_budget: Option<std::time::Duration>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -781,6 +784,7 @@ impl Funcdata {
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             dead_wave_log: None,
+            render_budget: None,
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: Default::default(),
@@ -2514,6 +2518,16 @@ impl Funcdata {
         };
         log.0.push(op);
         log.1.extend((0..o.num_input()).filter_map(|k| o.get_in(k)));
+    }
+
+    /// (kuna decompile-all watchdog) What the drive left of the budget for rendering.
+    pub fn render_budget(&self) -> Option<std::time::Duration> {
+        self.render_budget
+    }
+
+    /// (kuna decompile-all watchdog) Record what the drive left of the budget.
+    pub fn set_render_budget(&mut self, left: Option<std::time::Duration>) {
+        self.render_budget = left;
     }
 
     /// (kuna `condstmts`) Record a block start folded over the cap.
