@@ -8,6 +8,10 @@ use kuna_base::space::{
 use std::rc::Rc;
 
 fn fixture(big_endian: bool) -> (Funcdata, BlockId) {
+    fixture_with(big_endian, true)
+}
+
+fn fixture_with(big_endian: bool, trunc_ptr_flow: bool) -> (Funcdata, BlockId) {
     let mut manager = AddrSpaceManager::new();
     manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
     manager
@@ -31,10 +35,12 @@ fn fixture(big_endian: bool) -> (Funcdata, BlockId) {
     manager.set_default_code_space(2).unwrap();
     manager.truncate_space("ram", 4).unwrap();
     let entry = Address::new(Rc::clone(manager.get_default_code_space().unwrap()), 0x1000);
+    let mut arch = ArchContext::new(manager);
+    arch.trunc_ptr_flow = trunc_ptr_flow;
     let mut fd = Funcdata::new(
         "probe",
         "probe",
-        Rc::new(ArchContext::new(manager)),
+        Rc::new(arch),
         entry,
         0x10000000,
         0x40,
@@ -108,7 +114,7 @@ fn address_uses_take_low_bytes_without_rewriting_other_uses() {
                 fd.op_set_input(observer, full, 0).unwrap();
                 fd.new_unique_out(8, observer).unwrap();
                 fd.op_insert_after(observer, op);
-                let mut rule = RulePtrFlow::new();
+                let mut rule = RulePtrFlow::new(true);
                 assert_eq!(rule.apply_op(op, &mut fd), 1);
                 let narrow = fd.obank().get(op).unwrap().get_in(slot).unwrap();
                 let value = fd.vbank().get(narrow).unwrap();
@@ -149,12 +155,24 @@ fn address_uses_take_low_bytes_without_rewriting_other_uses() {
 }
 
 #[test]
+fn option_off_leaves_address_uses_untouched() {
+    for opcode in [OpCode::CPUI_LOAD, OpCode::CPUI_STORE, OpCode::CPUI_CALLIND] {
+        let (mut fd, block) = fixture_with(true, false);
+        let full = input(&mut fd, "register", 8);
+        let (op, slot) = access(&mut fd, block, opcode, full, "ram");
+        assert_eq!(RulePtrFlow::new(true).apply_op(op, &mut fd), 0);
+        assert_eq!(fd.obank().get(op).unwrap().get_in(slot), Some(full));
+        assert!(!fd.vbank().get(full).unwrap().is_ptr_flow());
+    }
+}
+
+#[test]
 fn each_access_uses_its_space_width_without_widening_small_pointers() {
     for (space, pointer_size) in [("wide", 8), ("ram", 4), ("ram", 2)] {
         let (mut fd, block) = fixture(false);
         let pointer = input(&mut fd, "register", pointer_size);
         let (op, slot) = access(&mut fd, block, OpCode::CPUI_LOAD, pointer, space);
-        RulePtrFlow::new().apply_op(op, &mut fd);
+        RulePtrFlow::new(true).apply_op(op, &mut fd);
         assert_eq!(fd.obank().get(op).unwrap().get_in(slot), Some(pointer));
         assert_eq!(fd.vbank().get(pointer).unwrap().get_size(), pointer_size);
     }
@@ -191,7 +209,7 @@ fn pointer_subpieces_do_not_narrow_full_width_consumers() {
                 fd.new_unique_out(1, observer).unwrap();
             }
             fd.op_insert_after(observer, load);
-            RulePtrFlow::new().apply_op(load, &mut fd);
+            RulePtrFlow::new(true).apply_op(load, &mut fd);
             let narrow = fd.obank().get(load).unwrap().get_in(1).unwrap();
             assert!(fd.vbank().get(narrow).unwrap().is_ptr_flow());
             let trunc = fd.vbank().get(narrow).unwrap().get_def().unwrap();

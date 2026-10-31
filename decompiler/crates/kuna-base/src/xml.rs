@@ -2137,7 +2137,8 @@ mod tests {
         // and kuna-floatstore / a float stored into unknown bytes is a float store
         // and kuna-haltloopguard / a store before a loop the function never leaves is kept (option haltloopguard)
         // and kuna-octeon-core / explicit Octeon integer variants
-        assert_eq!(count, 620, "corpus file count drifted");
+        // and kuna-truncptrflow / pointer flow on a truncated address space (option truncptrflow)
+        assert_eq!(count, 621, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

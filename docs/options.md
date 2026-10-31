@@ -940,6 +940,11 @@ Three tiers:
 | a memory-mapped register write before while (true) {} is missing | [`haltloopguard`](#haltloopguard) |
 | a reset or watchdog write before a halt loop disappears | [`haltloopguard`](#haltloopguard) |
 | a store inside a for (;;) loop the function never leaves is missing | [`haltloopguard`](#haltloopguard) |
+| a MIPS N32 function saves registers through *(unsigned long long *)(vN + 0x48) after vN = (int)vM | [`truncptrflow`](#truncptrflow) |
+| stack arguments print as v1->field_0x0 of an sp struct on a 32-bit-address target with 64-bit registers | [`truncptrflow`](#truncptrflow) |
+| pointers on MIPS N32 or AArch64 ilp32 carry (long long)(int) casts | [`truncptrflow`](#truncptrflow) |
+| a PowerPC e500 switch warns that flow reaches unmapped memory at 0x1xxxxxxxx | [`truncptrflow`](#truncptrflow) |
+| a local commented // sp holds the stack pointer as a value | [`truncptrflow`](#truncptrflow) |
 | &pxVar[-0x1000] page-probe noise in a large-frame function | [`stackprobeloop`](#stackprobeloop) |
 | calls rendered argument-less because the stack pointer never resolved to a constant offset | [`stackprobeloop`](#stackprobeloop) |
 | gcc stack-clash probe loop leaves the frame layout unrecovered | [`stackprobeloop`](#stackprobeloop) |
@@ -3381,6 +3386,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Leave on. A store to a global or a memory-mapped register right before an infinite loop, or inside one, is missing from the output (`DataSynchronizationBarrier(0xf); DataSynchronizationBarrier(0xf); while (true) {}` with the AIRCR write between the barriers gone). Turn off to reproduce upstream's output.
 - **Where / provenance:** P3/heritage-guard · ghidra · correctness-fix · GH-1344
 - **Example:** `option haltloopguard off`
+
+### `truncptrflow` -- on | off, default `on`
+
+- **Symptoms:** a MIPS N32 function saves registers through *(unsigned long long *)(vN + 0x48) after vN = (int)vM; stack arguments print as v1->field_0x0 of an sp struct on a 32-bit-address target with 64-bit registers; pointers on MIPS N32 or AArch64 ilp32 carry (long long)(int) casts; a PowerPC e500 switch warns that flow reaches unmapped memory at 0x1xxxxxxxx; a local commented // sp holds the stack pointer as a value.
+- **What it does:** On an architecture whose default data space is truncated, so that its addresses are narrower than the registers that hold them (MIPS 64-32addr and N32, PowerPC e500 and the 32addr variants, AArch64 ilp32), run upstream's RulePtrFlow and rebuild a wide stack register at entry. RulePtrFlow narrows each LOAD/STORE address to its space's address size and each CALLIND/BRANCHIND target to the code space's, through a SUBPIECE of the low bytes (a constant is masked), and marks the values that reach those addresses as pointers. Every other use keeps the full value, and unlike upstream the mark does not put sub-variable flow into its aggressive mode, so a 64-bit value that is also used as an address keeps its upper bits. Prototype setup defines a stack register wider than its stack space as PIECE(upper bytes, logical stack pointer) at entry, where upstream zero-extends the logical pointer, so full-register arithmetic on sp reaches the stack base without inventing zero upper bits; a declared pointer parameter as wide as the code space starts as pointer flow. While this is live, RuleSelectCse also skips an op whose output is not yet heritaged: truncation leaves hundreds of fresh SUBPIECEs of one register in a pass, and rebuilding their sibling list at every visit made large functions quadratic. Stack frames, locals and stack arguments are then recovered, and jump tables resolve to mapped targets. An architecture whose default data space is not truncated reaches none of these steps. The port had RulePtrFlow stubbed out; off restores that output byte for byte.
+- **When to flip:** Leave on. Turn off to reproduce the earlier output of a truncated-address target, or when such a target decompiles too slowly: there the narrowing adds work to every address use and a whole binary costs 10-80% more CPU (MIPS N32 17-24%, AArch64 ilp32 18%, PowerPC 64-32addr 52%, PowerPC e500 10-77%; about 28% over the measured set). Off leaves the stack pointer as a sign-extended local (`v16 = (int)v17;` followed by register saves through `*(unsigned long long *)(v16 + 0x48)`), stack arguments as fields of an sp struct, pointers behind `(long long)(int)` casts, and PowerPC e500 jump tables flowing to unmapped 0x1xxxxxxxx targets.
+- **Where / provenance:** P3/pointer-flow · ghidra-upstream · correctness-fix · GH-1346
+- **Example:** `option truncptrflow off`
 
 ### `stackprobeloop` -- on | off, default `on`
 

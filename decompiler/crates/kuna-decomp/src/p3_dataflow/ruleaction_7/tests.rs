@@ -61,6 +61,7 @@ fn build_fd_nan(ignore_nan: bool) -> Funcdata {
     context.floatformats = [4, 8].into_iter().map(kuna_num::float::FloatFormat::new).collect();
     context.int_float_round = true;
     context.nan_ignore_all = ignore_nan;
+    context.trunc_ptr_flow = true;
     let glb = Rc::new(context);
     let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
     let addr = Address::new(ram, 0x1000);
@@ -698,7 +699,7 @@ fn ptrflow_copy_propagates_when_flagged() {
     // Mark the COPY as ptrflow (precondition of the COPY arm).
     fd.obank_mut().get_mut(copyop).unwrap().set_ptr_flow();
 
-    let mut rule = RulePtrFlow::new();
+    let mut rule = RulePtrFlow::new(true);
     assert_eq!(rule.apply_op(copyop, &mut fd), 1, "ptrflow COPY must report a change");
     // copyout varnode is now ptrflow.
     assert!(fd.vbank().get(copyout).unwrap().is_ptr_flow(), "out varnode marked ptrflow");
@@ -713,8 +714,14 @@ fn ptrflow_copy_not_flagged_is_noop() {
     let (copyop, _copyout) = make_op(&mut fd, 0x200, OpCode::CPUI_COPY, 1, 8);
     wire(&mut fd, src, copyop, 0);
     // NOT marked ptrflow -> early return 0.
-    let mut rule = RulePtrFlow::new();
+    let mut rule = RulePtrFlow::new(true);
     assert_eq!(rule.apply_op(copyop, &mut fd), 0, "un-flagged COPY -> no change");
+}
+
+#[test]
+fn ptrflow_oplist_empty_without_truncations() {
+    assert!(RulePtrFlow::new(false).get_op_list().is_empty());
+    assert_eq!(RulePtrFlow::new(true).get_op_list().len(), 10);
 }
 
 #[test]
@@ -724,7 +731,7 @@ fn ptrflow_leaves_nontruncated_architectures_unchanged() {
     let (op, out) = make_op(&mut fd, 0x200, OpCode::CPUI_COPY, 1, 8);
     wire(&mut fd, src, op, 0);
     fd.obank_mut().get_mut(op).unwrap().set_ptr_flow();
-    assert_eq!(RulePtrFlow::new().apply_op(op, &mut fd), 0);
+    assert_eq!(RulePtrFlow::new(true).apply_op(op, &mut fd), 0);
     assert!(!fd.vbank().get(out).unwrap().is_ptr_flow());
 }
 
@@ -779,7 +786,7 @@ fn clone_respects_group_membership() {
 
     // RulePtrFlow belongs to "subvar"; RuleSegment to "segment".
     let subvar = ActionGroupList::from_names(["subvar"]);
-    assert!(RulePtrFlow::new().clone_rule(&subvar).is_some());
+    assert!(RulePtrFlow::new(true).clone_rule(&subvar).is_some());
     let segment = ActionGroupList::from_names(["segment"]);
     assert!(RuleSegment::new().clone_rule(&segment).is_some());
 }

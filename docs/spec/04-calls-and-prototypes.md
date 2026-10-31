@@ -334,15 +334,20 @@ assertion. Locked models retain priority. Compiler-mechanism templates that
 reference instruction-specific placeholders such as `inst_next` are rejected;
 these boundaries do not supply an instruction-length context.
 
-When a stack register is wider than its logical stack address, prototype setup
+When a stack register is wider than its logical stack address (`option
+truncptrflow`, default on, chapter 03), prototype setup
 seeds the narrow input register and the remaining physical upper bytes as
 separate inputs, reconstructing the full register with PIECE at function entry.
 This links lifted full-register arithmetic to the modeled stack base before
 SSA recovery without assuming zero or sign-extended upper bits. For example,
 BE N32 uses the low four bytes of its eight-byte SP as its stack address while
 an integer read of SP retains all eight physical bytes. Equal-width stack
-registers receive no synthetic reconstruction. Declared pointers matching a truncated
+registers receive no synthetic reconstruction. Upstream instead defines the
+full register as `INT_ZEXT` of the logical stack pointer, which invents zero
+upper bits. Declared pointers matching a truncated
 code space also seed pointer flow; chapter 03 describes address-use trimming.
+With the option off neither input is seeded, the stack register stays one wide
+input, and no parameter starts with pointer flow.
 
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any

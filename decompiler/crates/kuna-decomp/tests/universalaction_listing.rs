@@ -26,7 +26,7 @@ fn decompile_tree_dump_is_byte_equal_to_snapshot() {
         UNPORTED_ALLOWLIST.iter().map(|e| e.name).collect::<Vec<_>>()
     );
 
-    let sched = universal_sched(None, None, vec![]);
+    let sched = universal_sched(None, None, vec![], false);
     let filter = ActionListFilter::from_names(DECOMPILE_GROUPS.iter().copied());
     let rust_dump = sched.list_action_dump(&filter);
 

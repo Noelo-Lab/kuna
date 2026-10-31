@@ -1547,17 +1547,24 @@ fn find_contiguous_whole(data: &Funcdata, vn1: VarnodeId) -> Option<VarnodeId> {
 // =============================================================================
 
 /// `RulePtrFlow` — mark Varnode/PcodeOp objects carrying or operating on
-/// pointers when the default data space is truncated.
-///
-/// The schedule has no architecture argument for rule constructors, so the
-/// truncated-space gate is checked when applying the rule.
-pub struct RulePtrFlow;
+/// pointers when the default data space is truncated (`option truncptrflow`).
+pub struct RulePtrFlow {
+    /// C++ `hasTruncations`: an untruncated architecture installs the rule on
+    /// no opcode. The option itself is read when the rule applies.
+    has_truncations: bool,
+}
 
 impl RulePtrFlow {
-    /// Rule `RulePtrFlow` (name "ptrflow").
-    ///
-    pub fn new() -> RulePtrFlow {
-        RulePtrFlow
+    /// Rule `RulePtrFlow` (name "ptrflow"); `has_truncations` is C++
+    /// `glb->getDefaultDataSpace()->isTruncated()`.
+    pub fn new(has_truncations: bool) -> RulePtrFlow {
+        RulePtrFlow { has_truncations }
+    }
+
+    /// Whether `option truncptrflow` is on and the default data space is truncated.
+    pub(crate) fn is_live(data: &Funcdata) -> bool {
+        data.get_arch().trunc_ptr_flow
+            && data.get_arch().manage().get_default_data_space().is_some_and(|s| s.is_truncated())
     }
 
     /// Narrow only the address operand; other uses of the full value retain it.
@@ -1648,12 +1655,15 @@ impl RulePtrFlow {
 
 impl Default for RulePtrFlow {
     fn default() -> Self {
-        RulePtrFlow::new()
+        RulePtrFlow::new(false)
     }
 }
 
 impl Rule for RulePtrFlow {
     fn get_op_list(&self) -> Vec<OpCode> {
+        if !self.has_truncations {
+            return Vec::new();
+        }
         vec![
             OpCode::CPUI_STORE,
             OpCode::CPUI_LOAD,
@@ -1670,14 +1680,14 @@ impl Rule for RulePtrFlow {
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
         if grouplist.contains("subvar") {
-            Some(Box::new(RulePtrFlow))
+            Some(Box::new(RulePtrFlow::new(self.has_truncations)))
         } else {
             None
         }
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if !data.get_arch().manage().get_default_data_space().is_some_and(|s| s.is_truncated()) {
+        if !Self::is_live(data) {
             return 0;
         }
         let mut made_change = 0;
@@ -2571,7 +2581,7 @@ pub fn specs() -> Vec<RuleSpec> {
         RuleSpec { group: "analysis", ctor: || Box::new(RuleSignMod2Opt::new()) },
         RuleSpec { group: "analysis", ctor: || Box::new(RuleSignMod2nOpt2::new()) },
         RuleSpec { group: "segment", ctor: || Box::new(RuleSegment::new()) },
-        RuleSpec { group: "subvar", ctor: || Box::new(RulePtrFlow::new()) },
+        RuleSpec { group: "subvar", ctor: || Box::new(RulePtrFlow::new(false)) },
         RuleSpec { group: "analysis", ctor: || Box::new(RuleNegateNegate::new()) },
         RuleSpec { group: "conditionalexe", ctor: || Box::new(RuleConditionalMove::new()) },
         RuleSpec { group: "floatprecision", ctor: || Box::new(RuleFloatCast::new()) },

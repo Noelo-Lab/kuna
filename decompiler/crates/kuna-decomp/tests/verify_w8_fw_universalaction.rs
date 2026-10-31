@@ -34,7 +34,7 @@ fn name_of(line: &str) -> &str {
 #[test]
 fn w8_fw_universalaction_firstpass_drop_and_stacked_blanks_match_cpp() {
     let f = ActionListFilter::from_names(["base"]);
-    let dump = universal_sched(None, None, vec![]).list_action_dump(&f);
+    let dump = universal_sched(None, None, vec![], false).list_action_dump(&f);
 
     // Survivors, in order, keeping ONLY group=="base" leaves and the containers
     // that transitively hold one (universal / fullloop / mainloop / stackstall).
@@ -98,13 +98,13 @@ fn w8_fw_universalaction_firstpass_drop_and_stacked_blanks_match_cpp() {
 #[test]
 fn w8_fw_universalaction_empty_or_unmatched_filter_drops_whole_tree() {
     let empty = ActionListFilter::from_names(Vec::<String>::new());
-    let none = universal_sched(None, None, vec![]).list_action_dump(&empty);
+    let none = universal_sched(None, None, vec![], false).list_action_dump(&empty);
     assert_eq!(none, "", "empty filter must render nothing (root drops)");
 
     // A single group that no leaf carries: still empty.  ("xyzzy" is not a real
     // group; even `start` is group "base".)
     let bogus = ActionListFilter::from_names(["xyzzy_not_a_group"]);
-    let none2 = universal_sched(None, None, vec![]).list_action_dump(&bogus);
+    let none2 = universal_sched(None, None, vec![], false).list_action_dump(&bogus);
     assert_eq!(none2, "", "unmatched filter must render nothing");
 }
 
@@ -112,7 +112,7 @@ fn w8_fw_universalaction_empty_or_unmatched_filter_drops_whole_tree() {
 #[test]
 fn w8_fw_universalaction_allgroups_full_order_count_head_tail() {
     let f = ActionListFilter::from_names(ALL_GROUPS.iter().copied());
-    let dump = universal_sched(None, None, vec![]).list_action_dump(&f);
+    let dump = universal_sched(None, None, vec![], false).list_action_dump(&f);
     let lines: Vec<&str> = dump.lines().collect();
     let nonblank = lines.iter().filter(|l| !l.is_empty()).count();
 
@@ -180,7 +180,7 @@ fn w8_fw_universalaction_allowlist_empty_and_formerly_unported_passes_render() {
     ];
 
     let f = ActionListFilter::from_names(ALL_GROUPS.iter().copied());
-    let dump = universal_sched(None, None, vec![]).list_action_dump(&f);
+    let dump = universal_sched(None, None, vec![], false).list_action_dump(&f);
     let rendered: BTreeSet<&str> = dump.lines().map(name_of).collect();
 
     for (n, _g) in formerly_unported {
@@ -200,7 +200,7 @@ fn w8_fw_universalaction_allowlist_empty_and_formerly_unported_passes_render() {
 #[test]
 fn w8_fw_universalaction_register_root_drops_cleanup_pool_and_keeps_oppool_subset() {
     let f = ActionListFilter::from_names(["base", "analysis", "canonicalcompare", "subvar"]);
-    let dump = universal_sched(None, None, vec![]).list_action_dump(&f);
+    let dump = universal_sched(None, None, vec![], false).list_action_dump(&f);
     let names: BTreeSet<&str> = dump.lines().map(name_of).collect();
 
     // oppool1 survives (has analysis rules); these analysis/canonical/subvar
