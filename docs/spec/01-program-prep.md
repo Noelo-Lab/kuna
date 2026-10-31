@@ -814,11 +814,17 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   than reading a wrong address. The loader writes the resolved values into the
   image it maps (`dynrelocs`, §1.3). The header is the image's own bytes, so the
   walk is bounded by the file rather than by its counts: a `seg_count` stops at
-  the end of the blob, every address computation wraps instead of overflowing,
-  and the walk as a whole hops at most once per 4-byte word of the file
-  (`chained.rs (Walk)`). An honest image visits each slot once and never reaches
-  that; a hostile one with 65535 tiny pages all starting inside one long chain
-  would otherwise walk it once per page.
+  the end of the blob, every address computation wraps instead of overflowing, a
+  chain stops at a file word the walk already decoded, and the walk reads at most
+  one page start per 2-byte entry of the blob (`chained.rs (Walk)`). An honest
+  image decodes each slot once and reads each page start once, so neither bound
+  changes what it yields; a hostile one with 65535 tiny pages all starting inside
+  one long chain would otherwise walk it once per page, and thousands of segments
+  sharing one 65535-entry start table would read it once per segment. Only the
+  import records a bind uses are read, and their names, which an honest pool
+  holds once each, are read from at most the pool's own length in total
+  (`chained.rs (read_imports)`): a table whose names all run on to the pool's end
+  would otherwise copy the pool once per import.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is

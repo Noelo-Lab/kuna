@@ -41,6 +41,8 @@
 //! already the unslid values — every existing x86-64 `macho_objc`/`macho_imports`
 //! fixture), or an unparsable header yields an **empty** overlay.
 
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use object::read::macho::{LoadCommandVariant, MachHeader, Segment};
 use object::FileKind;
@@ -73,9 +75,10 @@ mod ptr_format {
 /// One bind fixup: the import a slot is bound to at load time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainedBind {
-    /// The imported symbol's name as the image spells it (`_printf`); empty
-    /// when the ordinal is out of range or the names are compressed.
-    pub name: Vec<u8>,
+    /// The imported symbol's name as the image spells it (`_printf`), shared
+    /// by every bind of that import; empty when the ordinal is out of range,
+    /// the names are compressed or the name is not terminated in the pool.
+    pub name: Arc<[u8]>,
     /// The bind's addend plus its import record's.
     pub addend: i64,
     /// A weak import: dyld leaves the slot 0 when no image defines it.
@@ -243,21 +246,50 @@ where
     };
 
     let mut out = ChainedFixups::default();
-    let mut walk = Walk { segs: &segs, file: bytes, hops: bytes.len() / 4 + 1 };
+    let mut walk = Walk::new(&segs, bytes, blob);
     walk_fixups(blob, imagebase, &mut walk, &mut out);
     out.sort_slots();
     out
 }
 
-/// The image a chain walk reads, and the hops it has left. Every honest fixup
-/// slot is a distinct 4-byte-aligned word of the file, so a walk that hops more
-/// than `file.len() / 4` times is revisiting slots: a hostile header (many
-/// tiny pages, overlapping starts) would otherwise multiply one long chain by
-/// every page that points into it.
+/// The image a chain walk reads, the file words it has decoded, and the page
+/// starts it may still read. The counts come from the image, so both ends are
+/// bounded by its size: a chain stops at a word it already decoded (the word
+/// and its `next` are the ones already followed), so no slot is decoded twice
+/// however many pages or starts point into one chain; and an honest image
+/// reads each page start once, one 2-byte entry of the blob, so `blob.len() /
+/// 2` of them cover it, while segments sharing one start table stop there.
 struct Walk<'a> {
     segs: &'a [SegInfo],
     file: &'a [u8],
-    hops: usize,
+    seen: Vec<u64>,
+    starts: usize,
+}
+
+impl<'a> Walk<'a> {
+    fn new(segs: &'a [SegInfo], file: &'a [u8], blob: &[u8]) -> Self {
+        Walk { segs, file, seen: vec![0; file.len() / 256 + 1], starts: blob.len() / 2 + 1 }
+    }
+
+    /// Spend one page start; `false` once none are left.
+    fn start(&mut self) -> bool {
+        let left = self.starts > 0;
+        self.starts = self.starts.saturating_sub(1);
+        left
+    }
+
+    /// Mark the 4-byte file word at `fo` decoded; `false` if it already was.
+    /// Two slots that do not overlap never begin in one word.
+    fn first_visit(&mut self, fo: u64) -> bool {
+        let word = fo / 4;
+        let Some(bits) = usize::try_from(word / 64).ok().and_then(|i| self.seen.get_mut(i)) else {
+            return false;
+        };
+        let bit = 1u64 << (word % 64);
+        let fresh = *bits & bit == 0;
+        *bits |= bit;
+        fresh
+    }
 }
 
 /// `dyld_chained_fixups_header` (fixup-chains.h): `fixups_version`,
@@ -281,15 +313,21 @@ fn walk_fixups(blob: &[u8], imagebase: u64, walk: &mut Walk, out: &mut ChainedFi
     if binds.is_empty() {
         return;
     }
-    let imports = read_imports(blob);
+    let mut ordinals: Vec<u32> = binds.iter().map(|&(_, ordinal, _)| ordinal).collect();
+    ordinals.sort_unstable();
+    ordinals.dedup();
+    let imports = read_imports(blob, &ordinals);
     for (slot, ordinal, addend) in binds {
-        let bind = match imports.get(ordinal as usize) {
-            Some(import) => ChainedBind {
-                name: import.name.clone(),
-                addend: addend.wrapping_add(import.addend),
-                weak: import.weak,
-            },
-            None => ChainedBind { name: Vec::new(), addend, weak: false },
+        let bind = match imports.binary_search_by_key(&ordinal, |(at, _)| *at) {
+            Ok(i) => {
+                let import = &imports[i].1;
+                ChainedBind {
+                    name: Arc::clone(&import.name),
+                    addend: addend.wrapping_add(import.addend),
+                    weak: import.weak,
+                }
+            }
+            Err(_) => ChainedBind { name: Arc::from(&[][..]), addend, weak: false },
         };
         out.binds.push((slot, bind));
     }
@@ -297,7 +335,7 @@ fn walk_fixups(blob: &[u8], imagebase: u64, walk: &mut Walk, out: &mut ChainedFi
 
 /// One `dyld_chained_import*` record, its name resolved.
 struct Import {
-    name: Vec<u8>,
+    name: Arc<[u8]>,
     addend: i64,
     weak: bool,
 }
@@ -307,7 +345,14 @@ struct Import {
 /// addend) or `_ADDEND64` (3, a `u64` `lib_ordinal:16 weak:1 reserved:15
 /// name_offset:32` plus a `u64` addend). Names are read from the uncompressed
 /// symbol pool (`symbols_format` 0); a compressed pool leaves them empty.
-fn read_imports(blob: &[u8]) -> Vec<Import> {
+///
+/// Only the records at `ordinals` (sorted, distinct: the ones a bind uses) are
+/// read, as `(ordinal, import)`. An honest pool holds each name once, so the
+/// names read never total more than the pool; the scans stop there, and a name
+/// with no terminator inside that allowance is empty. The counts and offsets
+/// come from the image, and a table of names that all run on to the end of the
+/// pool would otherwise copy the pool once per import.
+fn read_imports(blob: &[u8], ordinals: &[u32]) -> Vec<(u32, Import)> {
     let (Some(imports_offset), Some(symbols_offset), Some(count), Some(format), Some(symbols_format)) = (
         rd_u32(blob, 8),
         rd_u32(blob, 12),
@@ -323,18 +368,40 @@ fn read_imports(blob: &[u8]) -> Vec<Import> {
         3 => 16,
         _ => return Vec::new(),
     };
-    let name_at = |offset: u64| -> Vec<u8> {
+    let mut names: HashMap<u64, Arc<[u8]>> = HashMap::new();
+    let mut allowance = blob.len().saturating_sub(symbols_offset as usize);
+    let mut name_at = |offset: u64| -> Arc<[u8]> {
         if symbols_format != 0 {
-            return Vec::new();
+            return Arc::from(&[][..]);
         }
-        let start = (symbols_offset as u64).saturating_add(offset) as usize;
-        blob.get(start..)
-            .map(|tail| tail.iter().take_while(|&&b| b != 0).copied().collect())
-            .unwrap_or_default()
+        if let Some(name) = names.get(&offset) {
+            return Arc::clone(name);
+        }
+        let start = (symbols_offset as u64).saturating_add(offset);
+        let tail = usize::try_from(start).ok().and_then(|s| blob.get(s..)).unwrap_or(&[]);
+        let window = &tail[..tail.len().min(allowance)];
+        let name: Arc<[u8]> = match window.iter().position(|&b| b == 0) {
+            Some(len) => {
+                allowance -= len + 1;
+                Arc::from(&window[..len])
+            }
+            None => {
+                allowance -= window.len();
+                Arc::from(&[][..])
+            }
+        };
+        names.insert(offset, Arc::clone(&name));
+        name
     };
     let mut out = Vec::new();
-    for i in 0..count as usize {
-        let at = imports_offset as usize + i * stride;
+    for &ordinal in ordinals {
+        if ordinal >= count {
+            break;
+        }
+        let Some(at) = (ordinal as usize).checked_mul(stride).and_then(|o| o.checked_add(imports_offset as usize))
+        else {
+            break;
+        };
         let record = match format {
             3 => rd_u64(blob, at).map(|raw| Import {
                 name: name_at(raw >> 32),
@@ -352,7 +419,7 @@ fn read_imports(blob: &[u8]) -> Vec<Import> {
             }),
         };
         let Some(record) = record else { break };
-        out.push(record);
+        out.push((ordinal, record));
     }
     out
 }
@@ -400,6 +467,9 @@ fn walk_segment(
     const START_MULTI: u16 = 0x8000;
     const START_LAST: u16 = 0x8000;
     for pi in 0..page_count as usize {
+        if !walk.start() {
+            return;
+        }
         let Some(page_start) = rd_u16(blob, p + 22 + 2 * pi) else { continue };
         if page_start == START_NONE {
             continue;
@@ -413,9 +483,11 @@ fn walk_segment(
         }
         let mut overflow = usize::from(page_start & !START_MULTI);
         while let Some(start) = rd_u16(blob, p + 22 + 2 * overflow) {
+            if !walk.start() {
+                return;
+            }
             let first = page.wrapping_add(u64::from(start & !START_LAST));
-            walk_chain(walk, first, stride, &format, out, binds);
-            if start & START_LAST != 0 || walk.hops == 0 {
+            if !walk_chain(walk, first, stride, &format, out, binds) || start & START_LAST != 0 {
                 break;
             }
             overflow += 1;
@@ -432,7 +504,10 @@ struct Format {
 
 /// Follow one fixup chain from `first_va`, hopping `next * stride` until `next ==
 /// 0`, recording each rebase and bind. `next` only moves forward, so a chain
-/// cannot cycle; each hop spends one of the walk's budget ([`Walk`]).
+/// cannot cycle, and it stops at a word the walk already decoded ([`Walk`]).
+/// `false` when its first word is unmapped or already decoded: an honest page's
+/// starts each head a chain of their own, so a 32-bit page's list of starts
+/// stops there.
 fn walk_chain(
     walk: &mut Walk,
     first_va: u64,
@@ -440,17 +515,21 @@ fn walk_chain(
     format: &Format,
     out: &mut ChainedFixups,
     binds: &mut Vec<(u64, u32, i64)>,
-) {
+) -> bool {
     let mut va = first_va;
-    while walk.hops > 0 {
-        walk.hops -= 1;
-        let Some(fo) = va_to_fileoff(walk.segs, va) else { return };
+    let mut first = true;
+    loop {
+        let Some(fo) = va_to_fileoff(walk.segs, va) else { return !first };
+        if !walk.first_visit(fo) {
+            return !first;
+        }
+        first = false;
         let raw = if format.pointer_format == ptr_format::PTR_32 {
             rd_u32(walk.file, fo as usize).map(u64::from)
         } else {
             rd_u64(walk.file, fo as usize)
         };
-        let Some(raw) = raw else { return };
+        let Some(raw) = raw else { return true };
         let (next, fixup) = decode_ptr(raw, format);
         match fixup {
             Some(Fixup::Rebase(target)) => out.rebases.push((va, target)),
@@ -458,7 +537,7 @@ fn walk_chain(
             None => {}
         }
         if next == 0 {
-            return;
+            return true;
         }
         va = va.wrapping_add(next * stride);
     }
@@ -696,13 +775,41 @@ mod tests {
                 }
             }
             blob.extend_from_slice(b"\0_printf\0_environ\0");
-            let imports = read_imports(&blob);
+            let imports = read_imports(&blob, &[0, 1, 2]);
             assert_eq!(imports.len(), 2, "format {format}");
-            assert_eq!(imports[0].name, b"_printf");
-            assert_eq!(imports[1].name, b"_environ");
-            assert!(imports[1].weak && !imports[0].weak, "format {format}");
-            assert_eq!(imports[1].addend, if format == 1 { 0 } else { 16 }, "format {format}");
+            assert_eq!((imports[0].0, &*imports[0].1.name), (0, &b"_printf"[..]));
+            assert_eq!((imports[1].0, &*imports[1].1.name), (1, &b"_environ"[..]));
+            assert!(imports[1].1.weak && !imports[0].1.weak, "format {format}");
+            assert_eq!(imports[1].1.addend, if format == 1 { 0 } else { 16 }, "format {format}");
+            assert_eq!(read_imports(&blob, &[1]).len(), 1, "only the bound ordinals are read");
         }
+    }
+
+    /// A table whose names all run on to the end of the pool reads each byte of
+    /// the pool at most once: the unterminated names are empty, and imports
+    /// sharing a name share one copy.
+    #[test]
+    fn imports_table_reads_the_pool_once() {
+        const N: u32 = 1000;
+        let symbols_offset = 28 + 4 * N;
+        let mut blob = vec![0u8; 28];
+        for (i, v) in [0u32, 0, 28, symbols_offset, N, 1, 0].iter().enumerate() {
+            blob[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for _ in 0..N {
+            blob.extend_from_slice(&1u32.to_le_bytes());
+        }
+        blob.extend_from_slice(&[b'A'; 4096]);
+        let ordinals: Vec<u32> = (0..N).collect();
+        let imports = read_imports(&blob, &ordinals);
+        assert_eq!(imports.len(), N as usize);
+        assert!(imports.iter().all(|(_, import)| import.name.is_empty()));
+
+        let last = blob.len() - 1;
+        blob[last] = 0;
+        let imports = read_imports(&blob, &ordinals);
+        assert_eq!(imports[0].1.name.len(), 4095);
+        assert!(imports.iter().all(|(_, import)| Arc::ptr_eq(&import.name, &imports[0].1.name)));
     }
 
     /// The fixture's chains: two rebases, and one bind named through the
@@ -718,7 +825,7 @@ mod tests {
             rebases.sort_unstable();
             assert_eq!(rebases, vec![(0x100004000, 0x100000440), (0x100004008, 0x1000003c8)], "{name}");
             let binds: Vec<(u64, &ChainedBind)> = fixups.binds().collect();
-            let want = ChainedBind { name: b"_audit_imported".to_vec(), addend: 0, weak: false };
+            let want = ChainedBind { name: Arc::from(&b"_audit_imported"[..]), addend: 0, weak: false };
             assert_eq!(binds, vec![(0x100004010, &want)], "{name}");
             assert_eq!(fixups.slot_width(), 8);
         }
@@ -739,10 +846,10 @@ mod tests {
     }
 
     /// A hostile header: 65535 eight-byte pages, each starting a chain inside
-    /// one 4097-word chain. The walk records the chain once and stops when it
-    /// has spent one hop per file word, instead of walking it once per page.
+    /// one 4097-word chain. The walk decodes the chain once: every later page
+    /// start lands on a word already decoded, or outside the file.
     #[test]
-    fn overlapping_page_starts_spend_a_bounded_budget() {
+    fn overlapping_page_starts_decode_each_slot_once() {
         let mut file = Vec::new();
         for _ in 0..4096 {
             file.extend_from_slice(&(2u64 << 51).to_le_bytes());
@@ -750,12 +857,60 @@ mod tests {
         file.extend_from_slice(&0u64.to_le_bytes());
         let segs = [SegInfo { vmaddr: BASE, fileoff: 0, filesize: file.len() as u64 }];
         let blob = starts_blob(8, ptr_format::PTR_64, 0, 0xFFFF);
-        let mut walk = Walk { segs: &segs, file: &file, hops: file.len() / 4 + 1 };
+        let mut walk = Walk::new(&segs, &file, &blob);
         let mut out = ChainedFixups::default();
         walk_fixups(&blob, BASE, &mut walk, &mut out);
-        out.sort_slots();
-        assert_eq!(walk.hops, 0, "the overlapping chains exhaust the budget");
-        assert_eq!(out.rebases.len(), 4097, "every slot of the chain is still recorded");
+        assert_eq!(out.rebases.len(), 4097, "each slot of the chain is recorded once");
+        assert_eq!(walk.starts, blob.len() / 2 + 1 - 0xFFFF, "one start read per page");
+    }
+
+    /// A hostile header: four 32-bit pages sharing one list of starts that
+    /// never sets `START_LAST` and runs on to the end of the blob. Each page
+    /// walks its own chain once and its list stops at the first start that
+    /// heads no new chain.
+    #[test]
+    fn thirty_two_bit_start_lists_stop_at_a_revisited_start() {
+        let mut file = vec![0u8; 0x4000];
+        for page in 0..4usize {
+            let at = page * 0x1000;
+            file[at..at + 4].copy_from_slice(&((1u32 << 26) | 0x100).to_le_bytes());
+            file[at + 4..at + 8].copy_from_slice(&0x200u32.to_le_bytes());
+        }
+        let segs = [SegInfo { vmaddr: BASE, fileoff: 0, filesize: file.len() as u64 }];
+        let mut blob = starts_blob(0x1000, ptr_format::PTR_32, 0, 4);
+        for page in 0..4usize {
+            blob[58 + 2 * page..60 + 2 * page].copy_from_slice(&0x8004u16.to_le_bytes());
+        }
+        blob.extend_from_slice(&[0u8; 2000]);
+        let mut walk = Walk::new(&segs, &file, &blob);
+        let mut out = ChainedFixups::default();
+        walk_fixups(&blob, BASE, &mut walk, &mut out);
+        assert_eq!(out.rebases.len(), 8, "two slots on each of the four pages");
+        assert_eq!(walk.starts, blob.len() / 2 + 1 - 4 - 4 * 2, "two list entries per page");
+    }
+
+    /// A hostile header: 4096 segments sharing one table of 65535 page
+    /// starts. The walk reads at most one start per 2-byte entry of the blob,
+    /// not 4096 * 65535 of them.
+    #[test]
+    fn segments_sharing_a_start_table_stop_at_the_blob_size() {
+        let segs = [SegInfo { vmaddr: BASE, fileoff: 0, filesize: 0 }];
+        let mut blob = starts_blob(0x4000, ptr_format::PTR_64, 0, 0xFFFF);
+        let pages = blob.split_off(36);
+        blob.truncate(32);
+        let seg_count = 4096u32;
+        blob[28..32].copy_from_slice(&seg_count.to_le_bytes());
+        let table = 4 + 4 * seg_count;
+        for _ in 0..seg_count {
+            blob.extend_from_slice(&table.to_le_bytes());
+        }
+        blob.extend_from_slice(&pages);
+        let file = blob.clone();
+        let mut walk = Walk::new(&segs, &file, &blob);
+        let mut out = ChainedFixups::default();
+        walk_fixups(&blob, BASE, &mut walk, &mut out);
+        assert_eq!(walk.starts, 0, "the shared table spends the blob's starts");
+        assert!(out.rebases.is_empty());
     }
 
     /// A `seg_count` past the end of the blob stops at the blob's end, and a
@@ -768,7 +923,7 @@ mod tests {
         let mut blob = vec![0u8; 32];
         blob[4..8].copy_from_slice(&28u32.to_le_bytes());
         blob[28..32].copy_from_slice(&u32::MAX.to_le_bytes());
-        let mut walk = Walk { segs: &segs, file: &file, hops: 17 };
+        let mut walk = Walk::new(&segs, &file, &blob);
         let mut out = ChainedFixups::default();
         walk_fixups(&blob, BASE, &mut walk, &mut out);
         assert!(out.rebases.is_empty() && out.binds.is_empty());
