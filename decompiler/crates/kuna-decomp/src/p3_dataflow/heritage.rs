@@ -1372,6 +1372,7 @@ impl Heritage {
         }
         ovr.insert_deadcode_delay(spc, spc.get_deadcode_delay() + 1);
         fd.set_restart_pending(true);
+        fd.kuna_set_restart_now();
         // kunaRecordRestart(*fd,krestart_deadcode_bump,spc->getName());  (kuna)
         let name = spc.get_name().to_string();
         restartlog.record(fd, KunaRestartReason::DeadcodeBump, &name);

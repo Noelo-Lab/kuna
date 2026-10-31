@@ -826,6 +826,10 @@ pub struct Architecture {
     /// `option unrolledguard` needs to see an already-recovered sibling table
     /// (C++ has no equivalent flag — this is the upstream shape vs kuna's).
     pub jumptable_share_partial: bool,
+    /// (kuna `earlyrestart`) Stop a pass as soon as heritage bumps a space's
+    /// dead-code delay, and re-follow flow at once
+    /// (`infra/decompile_drive.rs (run_pipeline)`).
+    pub early_restart: bool,
     /// (kuna `deadwaves`) After a rule-pool pass whose only change was dead-op
     /// removal, the next pass revisits only the ops next to what it removed
     /// (`infra/action.rs (ActionPool::apply_wave)`).
@@ -3051,6 +3055,7 @@ impl Architecture {
             switch_multi_pred: false,
             unrolled_guard: false,
             jumptable_share_partial: true,
+            early_restart: true,
             pool_dead_waves: true,
             noreturn_extern_match: true, // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon)
             stack_alias_deadstore: false,
@@ -3477,6 +3482,7 @@ impl Architecture {
         self.switch_multi_pred = true; // (kuna) DIV-13 default-on (angr multi-predecessor unrolled-guard jump-table; 0/675 ablation)
         self.unrolled_guard = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.jumptable_share_partial = true; // (kuna) DIV: the upstream stageJumpTable shape
+        self.early_restart = true;
         self.pool_dead_waves = true;
         self.noreturn_extern_match = true; // (kuna) DIV-13 default-on (angr incorrect-duplication-chcon; clean 0/675 ablation)
         self.stack_views = false;

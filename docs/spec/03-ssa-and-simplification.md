@@ -1119,6 +1119,40 @@ exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
 (IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
 Override is `Heritage::bump_deadcode_delay`.
 
+(kuna `earlyrestart`, default on) Upstream finishes the pass that asked for
+the restart: every later mainloop iteration, the merges and the structuring of
+IR known to be missing data flow, all of which the restart throws away. A bump
+also marks the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::kuna_set_restart_now)`, cleared by `Funcdata::clear`), and when the
+outer drive will re-follow flow (fewer than its eight re-flows so far) the
+action group that ran the bumping heritage stops right after it
+(`decompiler/crates/kuna-decomp/src/infra/action.rs (ActionGroup::apply)`): the
+context abandons the pass as on an expired deadline and requests the re-flow,
+and the drive skips the stack-store-guard layout check for the stopped pass
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
+The restarted run is the one that is printed in both orders, but it is not
+independent of the first. Upstream's `Funcdata::clear` also drops the local
+scope's unlocked symbols and the prototype's unlocked output (inputs go with
+the scope), and `clearAnalysis` drops the warning comments; kuna's
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::clear)`)
+does neither yet, so the parameter and local symbols, the prototype inputs and
+the pending comments the first run recovered seed the restarted one, as does
+any Override. A stopped pass has recovered fewer of them: a duplicated
+`// return-dupe` tag is gone, and the restarted run can merge and type some
+variables differently. Over 29,103 functions (decbench O0/O2/O2-noinline
+binaries, three ARM firmware images, CrashLogger.dll, python314.dll) 31 take a
+dead-code restart and 5 print differently: two lose the duplicated tag and
+three fold a temporary into its use; with the unlocked symbols and prototype
+inputs cleared on a restart, both orders print the same there but for the
+duplicated tag. hkxc.exe's 0x1406198f0 renumbers its locals, folds some
+temporaries, prints 289 eight-byte constant stores through a `char (*)[16]`
+result as eight byte stores each (the form it already prints at 136 other such
+stores, and the one the off order prints too once the unlocked output is
+cleared as well) and swaps base and index in 12 pointer additions. An Override a later pass would have recorded is
+recorded by the restarted run itself, at the cost of another restart. A
+jump-table sub-decompilation never restarts, and with `earlyrestart off` the
+pass finishes first.
+
 **Free-varnode failure mode.** After `remove_revisited_markers`, a free read
 being guarded must have exactly one reader; a free varnode with multiple reads
 is an IR invariant violation and `heritage.rs (Heritage::guard)` deliberately
