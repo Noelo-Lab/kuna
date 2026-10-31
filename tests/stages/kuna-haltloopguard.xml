@@ -22,9 +22,24 @@
         movw r0,#0; movt r0,#0x2000; movs r1,#9; str r1,[r0]
         wfi; b <wfi>
 
-    Pass 1 (option haltloopguard off) reproduces the bug: both stores vanish,
+    toggle (0x8000080) flips a GPIO output bit forever. The loop reads the
+    register, but only to write it back, so the read keeps nothing alive:
+
+        movw r1,#0x100c; movt r1,#0x4001
+        ldr r2,[r1]; eor r2,r2,#0x2000; str r2,[r1]; b <ldr>
+
+    irred (0x80000a0) is an irreducible loop entered at either store. Once dead
+    code is gone, each of its two blocks holds nothing but a join, so a mark on
+    a join was dropped when its block was removed:
+
+        movw r3,#0; movt r3,#0x2000; cbnz r0,L2
+        L1: movs r2,#1; str r2,[r3,#4]
+        L2: movs r2,#2; str r2,[r3,#4]; b L1
+
+    Pass 1 (option haltloopguard off) reproduces the bug: every store vanishes,
     leaving the barriers and the loops. Pass 2 (on, the default) keeps the
-    AIRCR write between the two barriers and the RAM store before the wfi loop.
+    AIRCR write between the two barriers, the RAM store before the wfi loop,
+    the toggle, and the store the irreducible loop is entered with.
 -->
 <bytechunk space="ram" offset="0x8020500" readonly="true">
 4ef60c50cef20000bff34f8f0168042201f4e061c0f2fa5211430160bff34f8f
@@ -33,7 +48,15 @@ fee7
 <bytechunk space="ram" offset="0x8000054" readonly="true">
 40f20000c2f200000921016030bffde7
 </bytechunk>
+<bytechunk space="ram" offset="0x8000080" readonly="true">
+41f20c01c4f201010a6882f400520a60fae7
+</bytechunk>
+<bytechunk space="ram" offset="0x80000a0" readonly="true">
+40f20003c2f2000308b901225a6002225a60fae7
+</bytechunk>
 <symbol space="ram" offset="0x8020500" name="sysreset"/>
+<symbol space="ram" offset="0x8000080" name="toggle"/>
+<symbol space="ram" offset="0x80000a0" name="irred"/>
 <symbol space="ram" offset="0x8000054" name="park"/>
 </binaryimage>
 <script>
@@ -45,11 +68,23 @@ fee7
   <com>lo fu park</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu toggle</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu irred</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>option haltloopguard on</com>
   <com>lo fu sysreset</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu park</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu toggle</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu irred</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -65,4 +100,6 @@ while\( true \) \{</stringmatch>
 while\( true \) \{
 WaitForInterrupt\(\);</stringmatch>
 <stringmatch name="HALTLOOPGUARD #5: both passes keep the wfi loop" min="2" max="2">WaitForInterrupt\(\);</stringmatch>
+<stringmatch name="HALTLOOPGUARD #6: ON keeps the toggle of a register the loop reads only to write back (pass 2 only)" min="1" max="1">^    [a-z_0-9]+4001100c \^= 0x2000;$</stringmatch>
+<stringmatch name="HALTLOOPGUARD #7: ON keeps a store of the irreducible loop (pass 2 only)" min="1" max="1">^    [a-z_0-9]+20000004 = [12];$</stringmatch>
 </decompilertest>

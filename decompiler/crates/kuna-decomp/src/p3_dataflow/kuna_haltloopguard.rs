@@ -11,15 +11,17 @@
 //! long as the loop runs.
 //!
 //! [`exitless_loops`] finds each cycle of the basic-block graph that has no edge
-//! out of it. For each persistent range the function writes and such a loop does
-//! not read, [`guard`] records a block of the loop, and when renaming reaches
-//! that block's entry [`mark`] makes the range's current value `addrforce`, as
-//! the RETURN guard's COPY output is: the store before the loop, or the
-//! MULTIEQUAL that joins it with the loop's own stores. No operation is added,
-//! so nothing prints and no block changes. A loop that reads the range already
-//! keeps the stores that reach it alive.
+//! out of it and the block through which it is entered. For each persistent
+//! range the function writes, [`guard`] records that block, and renaming records
+//! the range's value at the block's entry. Once renaming is done, [`mark`] makes
+//! the writes behind that value `addrforce`, as the RETURN guard's COPY output
+//! is: the store before the loop and the loop's own stores that the MULTIEQUALs
+//! there join. No operation is added, so nothing prints and no block changes.
+//! A read inside the loop is no substitute: it may only feed the loop's own
+//! stores (`for (;;) *odr ^= 0x2000;`), a cycle with no other reader, or fold
+//! into a constant once the store reaches it.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use kuna_base::address::Address;
 use kuna_base::types::{int4, uint4};
@@ -27,22 +29,13 @@ use kuna_num::opcodes::OpCode;
 
 use crate::context::{BlockId, VarnodeId};
 use crate::funcdata::Funcdata;
+use crate::kuna_fasthash::FxHashSet;
 use crate::varnode::varnode_flags;
 
-/// A strongly connected component of the basic-block graph that holds a cycle
-/// and has no edge out of it.
-#[derive(Debug)]
-pub(crate) struct ExitlessLoop {
-    /// The block the guard goes in: the first one the walk reaches that no
-    /// cleanup can remove as doing nothing ([`keeps_block`]), else the one
-    /// through which the walk entered.
-    at: BlockId,
-    /// The index of every block in the loop, sorted.
-    members: Vec<usize>,
-}
-
-/// Each [`ExitlessLoop`] reached from the function's start block.
-pub(crate) fn exitless_loops(fd: &Funcdata) -> Vec<ExitlessLoop> {
+/// The entry block of each strongly connected component of the basic-block
+/// graph reached from the function's start block that holds a cycle and has no
+/// edge out of it: the block through which a depth-first walk entered it.
+pub(crate) fn exitless_loops(fd: &Funcdata) -> Vec<BlockId> {
     let g = fd.bblocks_ref();
     let Some(root) = g.root else { return Vec::new() };
     let n = g.block(root).get_size() as usize;
@@ -110,44 +103,22 @@ pub(crate) fn exitless_loops(fd: &Funcdata) -> Vec<ExitlessLoop> {
             }
         }
         if sink && cyclic {
-            members.sort_by_key(|&m| order[m]);
-            let kept = members.iter().copied().find(|&m| keeps_block(fd, blocks[m])).unwrap_or(v);
-            members.sort_unstable();
-            heads.push(ExitlessLoop { at: blocks[kept], members });
+            heads.push(blocks[v]);
         }
     }
     heads
 }
 
-/// Can no cleanup remove block `bl` as one that does nothing? It branches more
-/// than one way or back to itself, or holds an operation with an effect.
-fn keeps_block(fd: &Funcdata, bl: BlockId) -> bool {
-    let b = fd.bblocks_ref().block(bl);
-    if b.size_out() != 1 || b.get_out(0) == bl {
-        return true;
-    }
-    fd.bb_ops(bl).into_iter().any(|op| {
-        fd.obank().get(op).is_some_and(|o| {
-            matches!(
-                o.code(),
-                OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER | OpCode::CPUI_STORE
-                    | OpCode::CPUI_BRANCHIND
-            )
-        })
-    })
-}
-
-/// Record, for each loop in `heads` that none of the range's `read`s is in, the
-/// block whose entry [`mark`] keeps the range alive at, when the range at `addr`
-/// is persistent (`fl`) and the function stores to it.
+/// Record each loop entry in `heads` as a block whose entry [`mark`] keeps the
+/// range at `addr` alive at, when the range is persistent (`fl`) and the
+/// function stores to it.
 pub(crate) fn guard(
     fd: &Funcdata,
-    heads: &[ExitlessLoop],
+    heads: &[BlockId],
     fl: uint4,
     addr: &Address,
-    read: &[VarnodeId],
     write: &[VarnodeId],
-    marks: &mut HashMap<usize, Vec<Address>>,
+    marks: &mut BTreeMap<usize, Vec<Address>>,
 ) {
     if heads.is_empty() || (fl & varnode_flags::persist) == 0 || !fd.get_arch().halt_loop_guard {
         return;
@@ -162,27 +133,32 @@ pub(crate) fn guard(
     if !stored {
         return;
     }
-    let read_blocks: Vec<usize> = read
-        .iter()
-        .filter_map(|&vn| fd.vbank().get(vn)?.descend_iter().next())
-        .filter_map(|op| fd.obank().get(op)?.get_parent())
-        .map(|bl| fd.bblocks_ref().block(bl).get_index() as usize)
-        .collect();
-    for lp in heads {
-        if read_blocks.iter().any(|b| lp.members.binary_search(b).is_ok()) {
-            continue;
-        }
-        let index = fd.bblocks_ref().block(lp.at).get_index() as usize;
+    for &head in heads {
+        let index = fd.bblocks_ref().block(head).get_index() as usize;
         marks.entry(index).or_default().push(addr.clone());
     }
 }
 
-/// Make each value in `reaching`, the definitions renaming has current at a
-/// marked block's entry, `addrforce`, which `ActionDeadCode` keeps alive with
-/// the stores that reach it. An input the function never wrote needs nothing.
+/// Make the writes behind each value in `reaching`, the definitions renaming
+/// had current at a marked block's entry, `addrforce`, which `ActionDeadCode`
+/// keeps alive with what they read. A MULTIEQUAL is looked through to the
+/// writes it joins rather than marked itself: the block holding it may do
+/// nothing once dead code is gone, and removing that block drops it. An input
+/// the function never wrote needs nothing.
 pub(crate) fn mark(fd: &mut Funcdata, reaching: &[VarnodeId]) {
-    for &vn in reaching {
-        if let Some(v) = fd.vbank_mut().get_mut(vn).filter(|v| v.is_written()) {
+    let mut seen: FxHashSet<VarnodeId> = FxHashSet::default();
+    let mut work: Vec<VarnodeId> = reaching.to_vec();
+    while let Some(vn) = work.pop() {
+        if !seen.insert(vn) {
+            continue;
+        }
+        let Some(def) = fd.vbank().get(vn).and_then(|v| v.get_def()) else { continue };
+        let Some(op) = fd.obank().get(def) else { continue };
+        if op.code() == OpCode::CPUI_MULTIEQUAL {
+            work.extend((0..op.num_input()).filter_map(|i| op.get_in(i)));
+            continue;
+        }
+        if let Some(v) = fd.vbank_mut().get_mut(vn) {
             v.set_addr_force();
         }
     }

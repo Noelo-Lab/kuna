@@ -722,20 +722,24 @@ cores while the loop runs, and upstream already reads globals at halt RETURNs
 (no-return calls). Once per heritage pass, the first time a range needs it,
 `kuna_haltloopguard.rs (exitless_loops)` finds each strongly connected
 component of the block graph reachable from the start block that holds a cycle
-and has no out edge, and picks one of its blocks: the first, in depth-first
-order from the block through which the walk entered it, that branches more than
-one way or back to itself or holds a call, a user operation, a STORE or an
-indirect branch, so that no do-nothing cleanup removes it; else the entry
-block. For each new persistent range that the function stores to (a write whose
-definition is neither a marker nor a return copy) and that the loop does not
-read, `kuna_haltloopguard.rs (guard)` records that block; a loop that reads the
-range already keeps the stores that reach the read alive. When renaming reaches
-the recorded block, after its MULTIEQUALs, `kuna_haltloopguard.rs (mark)` makes
-the range's current definition `addrforce`, as the RETURN guard's COPY output
-is: the store before the loop, the INDIRECT of a call before it, or the
-MULTIEQUAL that joins either with the loop's own stores. `ActionDeadCode` then
-keeps it and everything it reads. No operation is added, so nothing new prints
-and no block changes. `off` deletes those stores, as upstream does.
+and has no out edge, and takes the block through which the depth-first walk
+entered it. For each new persistent range that the function stores to (a write
+whose definition is neither a marker nor a return copy),
+`kuna_haltloopguard.rs (guard)` records that block, and renaming records the
+range's current definition at the block's entry, after its MULTIEQUALs. A read
+of the range inside the loop does not exempt it: the read may only feed the
+loop's own stores (`for (;;) *odr ^= 0x2000;` is a cycle nothing else reads), or
+fold into a constant once the store before the loop reaches it. Once renaming
+has filled every MULTIEQUAL, `kuna_haltloopguard.rs (mark)` follows each
+recorded definition through the MULTIEQUALs it reaches and makes every other
+definition behind it `addrforce`, as the RETURN guard's COPY output is: the
+store before the loop, the INDIRECT of a call before it, and the loop's own
+stores. A MULTIEQUAL is not marked itself: once dead code is gone its block may
+do nothing, and removing that block drops it with the mark (an irreducible loop
+of two such blocks lost every store that way), and an `addrforce` join merged a
+register and two globals into one variable. `ActionDeadCode` then keeps the
+marked writes and everything they read. No operation is added, so nothing new
+prints and no block changes. `off` deletes those stores, as upstream does.
 
 **LOAD/STORE guards.** Ranges in the stack space can be aliased by indexed
 LOADs/STOREs (`stack[i]`). Once per space per function

@@ -879,10 +879,13 @@ pub struct Heritage {
     /// unguarded at calls ([`Heritage::readonly_cross_product`]).
     readonly_unguarded: bool,
     /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
-    halt_loops: Option<Vec<super::kuna_haltloopguard::ExitlessLoop>>,
+    halt_loops: Option<Vec<BlockId>>,
     /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
     /// block's entry, keyed by the block's index, read at renaming.
-    halt_loop_marks: std::collections::HashMap<usize, Vec<Address>>,
+    halt_loop_marks: BTreeMap<usize, Vec<Address>>,
+    /// (kuna `haltloopguard`) The definitions renaming had current at those
+    /// entries, marked once renaming has filled every MULTIEQUAL.
+    halt_loop_reach: Vec<crate::context::VarnodeId>,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
     store_frame_unresolved: Option<bool>,
@@ -945,7 +948,8 @@ impl Heritage {
             global_call_ranges: Default::default(),
             readonly_unguarded: false,
             halt_loops: None,
-            halt_loop_marks: std::collections::HashMap::new(),
+            halt_loop_marks: BTreeMap::new(),
+            halt_loop_reach: Vec::new(),
             store_frame_unresolved: None,
             store_frame_guarded: false,
             global_store_guards: 0,
@@ -1613,7 +1617,7 @@ impl Heritage {
             self.guard_returns(fd, fl, addr, size, write);
             if fd.get_arch().halt_loop_guard && (fl & varnode_flags::persist) != 0 {
                 let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
-                super::kuna_haltloopguard::guard(fd, heads, fl, addr, read, write, &mut self.halt_loop_marks);
+                super::kuna_haltloopguard::guard(fd, heads, fl, addr, write, &mut self.halt_loop_marks);
             }
             // (kuna `indexaliasguard`) `Architecture::highPtrPossible`
             // (architecture.hh:408) is `space type != IPTR_INTERNAL &&
@@ -4108,13 +4112,11 @@ impl Heritage {
         self.infolist[info_idx].has_call_placeholders = false;
     }
 
-    /// (kuna `haltloopguard`) Keep each range in `addrs` alive at this point of
-    /// renaming: its current definition on `varstack`.
+    /// (kuna `haltloopguard`) Record each range in `addrs`'s current definition
+    /// on `varstack`, the value it holds at this point of renaming.
     #[allow(clippy::mutable_key_type)]
-    fn mark_halt_loop(fd: &mut crate::funcdata::Funcdata, varstack: &VariableStack, addrs: &[Address]) {
-        let reaching: Vec<crate::context::VarnodeId> =
-            addrs.iter().filter_map(|a| varstack.get(a)?.last().copied()).collect();
-        super::kuna_haltloopguard::mark(fd, &reaching);
+    fn mark_halt_loop(&mut self, varstack: &VariableStack, addrs: &[Address]) {
+        self.halt_loop_reach.extend(addrs.iter().filter_map(|a| varstack.get(a)?.last().copied()));
     }
 
     /// The heart of the renaming algorithm (C++ `Heritage::renameRecurse`,
@@ -4163,7 +4165,7 @@ impl Heritage {
             let code = fd.obank().get(op).expect("rename_recurse: stale op").code();
             if code != OpCode::CPUI_MULTIEQUAL {
                 if let Some(addrs) = halt_marks.take() {
-                    Self::mark_halt_loop(fd, varstack, &addrs);
+                    self.mark_halt_loop(varstack, &addrs);
                 }
                 // First replace reads with top of stack.
                 let ninput = fd.obank().get(op).expect("rename_recurse: stale op").num_input();
@@ -4250,7 +4252,7 @@ impl Heritage {
         }
 
         if let Some(addrs) = halt_marks.take() {
-            Self::mark_halt_loop(fd, varstack, &addrs);
+            self.mark_halt_loop(varstack, &addrs);
         }
         // Fill successor MULTIEQUAL inputs (the merge-block phi in-edges).
         let size_out = fd.bblocks_ref().block(bl).size_out();
@@ -4434,6 +4436,9 @@ impl Heritage {
         let start = bblocks.block(root).get_block(0);
         let mut varstack: VariableStack = VariableStack::new();
         self.rename_recurse(fd, start, &mut varstack)?;
+        if !self.halt_loop_reach.is_empty() {
+            super::kuna_haltloopguard::mark(fd, &std::mem::take(&mut self.halt_loop_reach));
+        }
         self.disjoint.clear();
         Ok(())
     }
@@ -4900,6 +4905,7 @@ impl Heritage {
         self.readonly_unguarded = self.readonly_cross_product(fd);
         self.halt_loops = None;
         self.halt_loop_marks.clear();
+        self.halt_loop_reach.clear();
         let mut idx = 0usize;
         while idx < self.disjoint.len() {
             if self.deadline_passed() {
