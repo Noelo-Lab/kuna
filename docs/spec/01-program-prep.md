@@ -550,18 +550,20 @@ inside a code section.
 Mach-O data symbols then join the `datasyms` stream themselves
 (`macho_stubs.rs (data_symbols)`): every named `N_SECT` symbol inside a non-code
 section, local ones included, plus the header symbol, demangled as the function
-stream's names are. An `nlist` records no size, so each is installed **one byte
-wide**. That is the only extent that never claims a byte the object does not own:
-the gap to the next symbol includes alignment padding, and in an image stripped
-of its local symbols (`-x`) an unnamed object behind a named one, and a wider
-symbol renders a narrower access to it as a cast, a store as an assignment to a
-cast. One byte names the object's address, so every pointer to it renders
-`&name` (`MetaClass(&gMetaClass)`, `&original_NSManagedObject_init`), and every
-byte-wide access; a wider scalar access stays `dat_<addr>`, as an unsized datum
-does in every format. On arm64 the old false function symbol was four bytes (the
-minimum the AArch64 alignment gives a function symbol), so a 32-bit read of an
-*exported* global rendered its name, and that one case now renders
-`dat_<addr>`.
+stream's names are. An `nlist` records no size, so each extends to the next
+symbol of its section or the section's end, the way `lldb` sizes Mach-O symbols,
+**capped at 8 bytes** (`MAX_DATA_EXTENT`, one 64-bit scalar or pointer). The
+extent is what lets the covering-symbol query find the name at the access width,
+so `counter += 1` and `return audit_global` read by name, and every pointer to
+the object renders `&name` (`MetaClass(&gMetaClass)`,
+`&original_NSManagedObject_init`). The cap exists because the gap is a guess: a
+release image is stripped of its local symbols (`-x`), so the gap after an
+exported object often holds unnamed data (Swift's lazy metadata caches follow
+`__dyld_private`), and Go's region markers (`runtime.rodata`, `go:string.*`)
+label hundreds of kilobytes; uncapped, every access there would render as an
+offset into the wrong name. Inside the cap the guess can still cover alignment
+padding, so an access narrower than the extent renders as a partial access of
+the named object (`(short)half`, `*(char *)&flag = 1`).
 
 A **declared extent is never trusted to be representable.** `st_size` is a 64-bit
 field of the image that no header check validates, while the type factory sizes

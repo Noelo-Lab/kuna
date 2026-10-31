@@ -5890,6 +5890,7 @@ impl PrintC {
         // which is what upstream would have seen had the copy been propagated.
         // Only an IMPLIED input qualifies: an explicit one has a name of its own
         // and the statement really is `out = <that name>`.
+        let stmt = op;
         let (opc, in0, in1, num_input, op) = match self.inplace_through_copy(fd, opc, in0, num_input) {
             Some((inner_op, i0, i1)) => (
                 fd.obank().get(inner_op).map(|o| o.code()).unwrap_or(opc),
@@ -5960,7 +5961,8 @@ impl PrintC {
                     {
                         let mag = (!val).wrapping_add(1) & mask;
                         self.push_op(&tokens::MINUSEQUAL, Some(op_key(op)));
-                        self.push_vn_explicit_ir(fd, arch, in0, op);
+                        let (lhs, lhs_op) = self.inplace_target(fd, (in0, op), (out, stmt));
+                        self.push_vn_explicit_ir(fd, arch, lhs, lhs_op);
                         self.push_constant_ir_fmt_sign(mag, sz, op, 0, true);
                         return true;
                     }
@@ -5968,9 +5970,30 @@ impl PrintC {
             }
         }
         self.push_op(tok, Some(op_key(op)));
-        self.push_vn_explicit_ir(fd, arch, in0, op);
+        let (lhs, lhs_op) = self.inplace_target(fd, (in0, op), (out, stmt));
+        self.push_vn_explicit_ir(fd, arch, lhs, lhs_op);
         self.push_vn_ir(fd, arch, in1, op);
         true
+    }
+
+    /// The varnode an in-place `out OP= y` renders on its left, with the op it
+    /// renders against: `in0` as its op reads it, unless it covers only part of
+    /// its mapped symbol, whose read form is a cast (`(int)origin`) and not an
+    /// lvalue; the statement's output then renders the store form an ordinary
+    /// assignment uses (`*(int *)&origin`).
+    fn inplace_target(
+        &self,
+        fd: &Funcdata,
+        read: (VarnodeId, OpId),
+        write: (VarnodeId, OpId),
+    ) -> (VarnodeId, OpId) {
+        let partial = fd.vbank().get(read.0).is_some_and(|v| {
+            v.get_high()
+                .and_then(|high| self.emitted_high_symbol(fd, high))
+                .and_then(|(_, off, ty)| ty.map(|ty| off > 0 || v.get_size() < ty.get_size()))
+                .unwrap_or(false)
+        });
+        if partial { write } else { read }
     }
 
     /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,

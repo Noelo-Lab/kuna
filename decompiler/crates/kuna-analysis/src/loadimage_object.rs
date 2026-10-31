@@ -928,11 +928,10 @@ impl ObjectLoadImage {
             }
         }
 
-        // A Mach-O `nlist` records no size, and a guessed extent would claim the
-        // padding after a scalar or an unnamed neighbour, so each data symbol
-        // names one byte: its address and the accesses that start there at
-        // byte width. Its name is demangled as the function stream's are.
-        for (addr, name) in crate::loader::macho_stubs::data_symbols(&file) {
+        // A Mach-O `nlist` records no size; `data_symbols` guesses one from
+        // the next symbol of its section, capped at 8 bytes. Demangled as the
+        // function stream's names are.
+        for (addr, name, size) in crate::loader::macho_stubs::data_symbols(&file) {
             let name = match std::str::from_utf8(&name).ok().and_then(crate::demangle::demangle_name) {
                 Some(demangled) => demangled.into_bytes(),
                 None => name,
@@ -940,7 +939,7 @@ impl ObjectLoadImage {
             let data_mode = if namechars == NameChars::Ident { NameChars::Safe } else { namechars };
             let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
             if !name.is_empty() && seen_data.insert(addr) {
-                datasyms.push(DataSym { addr, name, size: 1 });
+                datasyms.push(DataSym { addr, name, size });
             }
         }
 
@@ -3174,9 +3173,10 @@ mod tests {
     }
 
     /// (GH #1339) A Mach-O export outside every code section names data: the
-    /// `__DATA,__data` globals of `macho_datasyms_arm64` are one-byte data
-    /// symbols and lookup names, not function entries, and neither is the Mach
-    /// header symbol at the image base.
+    /// `__DATA,__data` globals of `macho_datasyms_arm64` are data symbols and
+    /// lookup names, not function entries, and neither is the Mach header
+    /// symbol at the image base. `_audit_global` extends to `_audit_message`
+    /// eight bytes on, which runs to the end of `__data`.
     #[test]
     fn macho_data_exports_are_not_function_entries() {
         let syms = fixture_funcsyms("macho_datasyms_arm64");
@@ -3190,10 +3190,10 @@ mod tests {
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
         let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
         let data = img.data_symbols();
-        for want in [(0x100004000u64, "_audit_global"), (0x100004008, "_audit_message")] {
+        for want in [(0x100004000u64, "_audit_global", 8), (0x100004008, "_audit_message", 8)] {
             assert!(
-                data.contains(&(want.0, want.1.to_string(), 1)),
-                "{want:?} must be a one-byte data symbol: {data:?}"
+                data.contains(&(want.0, want.1.to_string(), want.2)),
+                "{want:?} must be a data symbol of that extent: {data:?}"
             );
         }
         for (addr, name) in [

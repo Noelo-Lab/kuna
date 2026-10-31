@@ -933,6 +933,16 @@ the function stream and decompiled by name; `__mh_execute_header`@`0x100000000`
 (macho_data_exports_are_not_function_entries)` and
 `kuna-cli/tests/name_miss_cli.rs`.
 
+`macho_datawidth_arm64` (arm64, 33 KB) reads two external `__DATA,__data`
+globals with 32-bit accesses: `_origin`@`0x100004000` (an 8-byte struct) and
+`_counter`@`0x100004008`. An `nlist` has no size, so the data symbol's guessed
+extent (to the next symbol, at most 8 bytes) is what lets `_counter += 1` and
+the struct's first field read by name; the field's in-place increment is a
+partial access whose left side must render as a store
+(`*(int *)&_origin += 1`). Source `macho_datawidth.c`; recipe, toolchain and
+SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
+`kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design

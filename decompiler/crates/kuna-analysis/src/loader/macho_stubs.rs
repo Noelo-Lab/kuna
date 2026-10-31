@@ -365,13 +365,22 @@ pub fn data_exports(file: &object::File) -> Vec<(u64, Vec<u8>)> {
     out
 }
 
-/// The defined Mach-O symbols that name data, as `(address, raw name)`: each
-/// named `N_SECT` symbol inside its own section when that section is not code
-/// ([`code_ranges`]), plus a symbol at the image base, which labels the Mach
-/// header (`__mh_execute_header`, numbered into `__text` but addressed before
-/// it). Spelled as the symbol table spells them (`_audit_global`). Empty for a
+/// The widest extent [`data_symbols`] guesses for a Mach-O data symbol: one
+/// 64-bit scalar or pointer. A release image strips its local symbols, so the
+/// gap after an exported object often holds unnamed data a wider guess would
+/// name after it.
+const MAX_DATA_EXTENT: u64 = 8;
+
+/// The defined Mach-O symbols that name data, as `(address, raw name, size)`:
+/// each named `N_SECT` symbol inside its own section when that section is not
+/// code ([`code_ranges`]), plus a symbol at the image base, which labels the
+/// Mach header (`__mh_execute_header`, numbered into `__text` but addressed
+/// before it). Spelled as the symbol table spells them (`_audit_global`). An
+/// `nlist` records no size, so a symbol extends to the next symbol of its
+/// section or the section's end, as `lldb` sizes them, but at most
+/// [`MAX_DATA_EXTENT`] bytes; the header symbol is one byte. Empty for a
 /// non-Mach-O image.
-pub fn data_symbols(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+pub fn data_symbols(file: &object::File) -> Vec<(u64, Vec<u8>, u64)> {
     use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
     if file.format() != object::BinaryFormat::MachO {
         return Vec::new();
@@ -384,7 +393,8 @@ pub fn data_symbols(file: &object::File) -> Vec<(u64, Vec<u8>)> {
         .min();
     let mut sections: std::collections::HashMap<usize, Option<(u64, u64)>> =
         std::collections::HashMap::new();
-    let mut out = Vec::new();
+    let mut starts: std::collections::HashMap<usize, Vec<u64>> = std::collections::HashMap::new();
+    let mut named = Vec::new();
     for sym in file.symbols() {
         if sym.is_undefined() || sym.kind() == object::SymbolKind::Section {
             continue;
@@ -395,15 +405,37 @@ pub fn data_symbols(file: &object::File) -> Vec<(u64, Vec<u8>)> {
             file.section_by_index(index).ok().map(|sec| (sec.address(), sec.size()))
         });
         let inside = bounds.is_some_and(|(lo, size)| addr >= lo && addr - lo < size);
+        if inside {
+            starts.entry(index.0).or_default().push(addr);
+        }
         if !(inside || Some(addr) == header) || in_ranges(&code, addr) {
             continue;
         }
         match sym.name_bytes() {
-            Ok(name) if !name.is_empty() => out.push((addr, name.to_vec())),
+            Ok(name) if !name.is_empty() => named.push((addr, name.to_vec(), inside.then_some(index.0))),
             _ => {}
         }
     }
-    out
+    for list in starts.values_mut() {
+        list.sort_unstable();
+        list.dedup();
+    }
+    named
+        .into_iter()
+        .map(|(addr, name, section)| {
+            let size = section
+                .and_then(|index| {
+                    let (lo, len) = sections.get(&index).copied().flatten()?;
+                    let end = lo + len;
+                    let next = starts.get(&index).and_then(|list| {
+                        list.get(list.partition_point(|&start| start <= addr)).copied()
+                    });
+                    Some((next.unwrap_or(end).min(end) - addr).min(MAX_DATA_EXTENT))
+                })
+                .unwrap_or(1);
+            (addr, name, size)
+        })
+        .collect()
 }
 
 /// Strip the single leading `_` the C ABI prepends to Mach-O symbol names

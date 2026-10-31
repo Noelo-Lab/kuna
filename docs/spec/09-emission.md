@@ -2026,7 +2026,11 @@ default-ON with the `emitInplaceOp` consumer ported: a standalone statement
 `out = out OP y` whose first input is the same HighVariable as the output
 renders as the compound assignment `out OP= y` for the ten integer
 operators, and a negative signed INT_ADD addend folds to `out -= c`;
-comma contexts — for-loop headers and condition-block side effects — keep
+when the variable covers only part of its mapped symbol (a 4-byte field of
+an 8-byte global), its read form is a cast (`(int)origin`) and not an
+lvalue, so the left side renders from the statement's output in the store
+form a plain assignment uses (`*(int *)&origin += 1`,
+`printc.rs (inplace_target)`); comma contexts — for-loop headers and condition-block side effects — keep
 the spelled-out upstream form, so `for (...; i = i + 1)` is unchanged;
 `option inplaceops off` restores everything, exercised by
 `tests/stages/kuna-cnorm-compoundassign.xml`), and

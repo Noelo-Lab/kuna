@@ -133,3 +133,24 @@ fn a_macho_data_name_is_reported_as_data() {
         "the JSON document must carry the same answer:\n{stdout}"
     );
 }
+
+/// (GH #1339) A Mach-O data symbol names the accesses an object of its width
+/// makes: an `nlist` has no size, so the symbol extends to the next one (at most
+/// 8 bytes), and a 32-bit increment of a global reads by name. The in-place
+/// increment of a struct's first field covers part of the symbol, and its left
+/// side is the store form, never a cast.
+#[test]
+fn a_macho_global_reads_by_name_at_its_width() {
+    let (stdout, stderr, ok) = decompile("macho_datawidth_arm64", "_bump");
+    assert!(ok, "decompile failed:\n{stderr}");
+    assert!(stdout.contains("_counter += 1;"), "the 32-bit global reads by name:\n{stdout}");
+    assert!(
+        stdout.contains("*(int *)&_origin += 1;"),
+        "the first field's increment is a store to part of _origin:\n{stdout}"
+    );
+    assert!(!stdout.contains("(int)_origin +="), "a cast is not an lvalue:\n{stdout}");
+    assert!(!stdout.contains("dat_10000400"), "both globals are named:\n{stdout}");
+
+    let (stdout, _, ok) = decompile("macho_datasyms_arm64", "_audit_read");
+    assert!(ok && stdout.contains("_audit_global") && !stdout.contains("dat_100004000"), "{stdout}");
+}
