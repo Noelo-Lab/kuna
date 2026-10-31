@@ -95,6 +95,9 @@ mod verify_w10_cast_strategy_adversarial;
 #[path = "verify_w10_charptr_signedness.rs"]
 mod verify_w10_charptr_signedness;
 
+#[path = "infertypes_join_edges.rs"]
+mod infertypes_join_edges;
+
 #[path = "verify_w10_concat_piece.rs"]
 mod verify_w10_concat_piece;
 
@@ -205,6 +208,9 @@ mod verify_w10_spacebase_render;
 
 #[path = "verify_w10_stackslot_ssa.rs"]
 mod verify_w10_stackslot_ssa;
+
+#[path = "multicollapse_witness.rs"]
+mod multicollapse_witness;
 
 #[path = "verify_w10_stackbyte_store.rs"]
 mod verify_w10_stackbyte_store;
