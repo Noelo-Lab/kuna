@@ -1105,10 +1105,10 @@ impl TransformManager {
         Ok(())
     }
 
-    /// (kuna) Reject a transform that would give a free Varnode a second reader
-    /// (`Varnode::addDescend`'s error), which `place_inputs` would otherwise
-    /// raise after `remove_old` has already destroyed IR.
-    fn check_free_fanout(&self, fd: &Funcdata) -> KunaResult<()> {
+    /// (kuna) Reject a transform that would give a free Varnode it creates a
+    /// second reader (`Varnode::addDescend`'s error), which `place_inputs`
+    /// would otherwise raise after `remove_old` has already destroyed IR.
+    pub fn check_free_fanout(&self, fd: &Funcdata) -> KunaResult<()> {
         let mut readers: BTreeMap<TVarRef, usize> = BTreeMap::new();
         for op in &self.new_ops {
             for rvn in op.input.iter().flatten() {
