@@ -4946,7 +4946,7 @@ impl JumpModel for JumpBasicModel {
     fn sanity_check(
         &mut self,
         fd: &mut Funcdata,
-        _indop: OpId,
+        indop: OpId,
         addresstable: &mut Vec<Address>,
         loadpoints: &mut Vec<LoadTable>,
         loadcounts: Option<&Vec<int4>>,
@@ -4967,6 +4967,9 @@ impl JumpModel for JumpBasicModel {
                     loadpoints.truncate(lc[i - 1] as usize);
                 }
             }
+        }
+        if crate::kuna_segmentize::table_leaves_image(fd, indop, addresstable) {
+            return Ok(false);
         }
         Ok(true)
     }

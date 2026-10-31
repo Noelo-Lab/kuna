@@ -3062,7 +3062,9 @@ truncating the fall-through here"
     /// into \b this function via [`inline_ez_clone`](Self::inline_ez_clone) (a
     /// straight-line leaf, the \e easy model) or
     /// [`inline_clone`](Self::inline_clone) (the \e hard model, preserving
-    /// addresses and replacing RETURN with a BRANCH).
+    /// addresses and replacing RETURN with a BRANCH). The callee's fspec
+    /// handles pass to \b this function, whose cloned varnodes still name them
+    /// once `inlinefd` is dropped.
     ///
     /// Returns 0 for the easy model, 1 for the hard model, -1 if inlining was not
     /// successful (`callop` is the site of the injection).
@@ -3177,6 +3179,7 @@ truncating the fall-through here"
         self.data.obank_mut().set_uniq_id(inline_uniq);
         // Move the (now spent) callee data back out.
         *inlinefd = inlineflow.data;
+        self.data.kuna_fspec_handles.append(&mut inlinefd.kuna_fspec_handles);
         Ok(res)
     }
 

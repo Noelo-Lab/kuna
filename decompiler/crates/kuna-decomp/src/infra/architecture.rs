@@ -478,6 +478,15 @@ pub struct Architecture {
     /// argument registers unconditionally.  See
     /// [`kuna_x64syscall`](crate::kuna_x64syscall).
     pub x64_syscall: crate::kuna_x64syscall::X64SyscallMode,
+    /// (kuna `segmentize`) Apply the processor's `<segmentop>`: segmentize its
+    /// CALLOTHERs, resolve constant near/far pointers through it and size near
+    /// and far pointers from it.  See [`kuna_segmentize`](crate::kuna_segmentize).
+    pub segmentize: bool,
+    /// (kuna `segmentize`) The compiled `<segmentop>` definitions by
+    /// address-space index (C++ `userops.segmentop`), built at the end of boot.
+    segment_defs: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
+    /// (kuna `segmentize`) What applying the option changed, for `off`.
+    segment_saved: Option<crate::kuna_segmentize::SegmentSaved>,
     /// (kuna `syscallregs`) When the ARM/AArch64/RISC-V/MIPS/PowerPC system-call
     /// user-op writes its result register and reads the registers the function
     /// sets up for it: `off`, `auto` (the default: only on an image the loader
@@ -2931,6 +2940,9 @@ impl Architecture {
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
             x64_syscall: crate::kuna_x64syscall::X64SyscallMode::Off, // (kuna) option x64syscall; reset_defaults sets the shipped default
+            segmentize: false, // (kuna) option segmentize; reset_defaults sets the shipped default
+            segment_defs: Vec::new(),
+            segment_saved: None,
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
@@ -3356,6 +3368,8 @@ impl Architecture {
         self.int3_pad = crate::kuna_int3pad::Int3PadMode::Warn; // (kuna) DIV-128 default `warn`: ADDS A COMMENT ONLY. Names the `int3` pad control ran into, which x86 SLEIGH lifts to `intloc = swi(3); call [intloc]` and the printer renders as an ordinary indirect call. Shape-gated on a `swi` CALLOTHER with the 1-byte constant vector 3, so it is structurally inert wherever no `int3` is decoded and byte-identical on the datatest corpus (0/675); `option int3pad halt` also ends the flow at the pad, `option int3pad off` restores the unannotated rendering
         self.syscall_regs = crate::kuna_syscallregs::SyscallRegsMode::Auto; // (kuna) default `auto`: on an image the loader identified as an operating system's user-space program, the system call writes its result register and reads the number register and the leading argument registers the function writes on every path to it. Gated on that loader fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option syscallregs on` acts on any image, `off` restores the zero-effect CALLOTHER
         self.x64_syscall = crate::kuna_x64syscall::X64SyscallMode::Off; // (kuna) default-OFF: with a RUNTIME syscall number nothing can say how many argument registers the callee reads, so both answers the option offers are modelling judgements rather than facts; ON in the `aggressive` preset, which `auto` selects under 500 KiB
+        self.segmentize = true; // (kuna) default-ON, as upstream: a processor spec's `<segmentop>` segmentizes its CALLOTHERs and resolves constant pointers through it. Only x86 16-bit, Z80 and HCS12 declare one and no datatest uses them (0/675); `option segmentize off` keeps the bare `segment(...)` calls
+        self.apply_segmentize();
         self.peb_names = crate::kuna_pebnames::PebNamesMode::Auto; // (kuna) DIV-175 default `auto`: TYPES ONLY. Types the Windows TEB segment base (`GS_OFFSET`/`FS_OFFSET`) as `TEB *teb` so PEB/TEB field reads render by name. Gated on a Windows compiler spec AND the loader's user-mode-PE fact, which the XML bootstrap never sets, so it is structurally inert on the datatest corpus (0/675); `option pebnames on` trusts the compiler spec alone, `off` restores the untyped register
         self.struct_synth = crate::kuna_structsynth::StructSynthMode::Locals; // (kuna) structsynth default `locals`: a pointer parameter, or a pointer a call returned, read at two or more constant offsets is declared `struct_N *` and the reads render as fields. Moves 0/675 datatest assertions; `option structsynth param` restores parameters only, `off` the raw offset arithmetic
         self.struct_merge = crate::kuna_structmerge::StructMergeMode::Off; // (kuna) structmerge default `off`: a freshly measured layout that agrees with a held record is answered with the union of the two, so a field one reader proved is kept for the others. Off because at the agreement floor two records that merely begin alike are indistinguishable; `option structmerge siblings` turns it on
@@ -4114,6 +4128,9 @@ impl Architecture {
         let manage = self.translate.manager_rc();
         let mut ctx = ArchContext::new_shared(manage);
         ctx.call_mechanisms = Rc::clone(&self.call_mechanisms);
+        if self.segmentize {
+            ctx.segment_ops = self.segment_defs.clone();
+        }
         ctx.call_mechanism_effects = self.call_mechanism_effects; // callmechanisms
         ctx.min_laned_register_size = self.get_minimum_laned_register_size();
         // Carry the laned-register table so the per-function Funcdata reaches
@@ -4855,7 +4872,97 @@ impl Architecture {
         point: &Address,
         full_encoding: &mut uintb,
     ) -> KunaResult<Address> {
+        if let Some(seg) = self.segment_def(spc.get_index()) {
+            return Ok(seg.resolve(val, sz, point, full_encoding, |mem, at| {
+                self.with_context_db(|db| db.get_tracked_value(mem, at))
+            }));
+        }
         self.manage().resolve_constant(spc, val, sz, point, full_encoding)
+    }
+
+    /// (kuna `segmentize`) The live segment definition for the space with index
+    /// `i`, or `None` when the option is off or the space has none.
+    fn segment_def(&self, i: int4) -> Option<&Rc<crate::kuna_segmentize::SegmentDef>> {
+        if !self.segmentize {
+            return None;
+        }
+        usize::try_from(i).ok().and_then(|i| self.segment_defs.get(i)).and_then(|s| s.as_ref())
+    }
+
+    /// Compile each registered `<segmentop>` into a [`SegmentDef`] and apply
+    /// the option (the kuna half of C++ `initializeSegments`; the resolvers it
+    /// installs live in the per-function snapshot).  A segment op whose snippet
+    /// has no local template (ghidra mode) is left out.
+    ///
+    /// [`SegmentDef`]: crate::kuna_segmentize::SegmentDef
+    fn initialize_segments(&mut self) -> KunaResult<()> {
+        let mut defs: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>> = Vec::new();
+        for i in 0..self.userops.num_segment_ops() {
+            let Some(op) = self.userops.get_segment_op(i) else { continue };
+            let Some(seg) = op.as_segment() else { continue };
+            let Some(tpl) = self.pcodeinjectlib.get_tpl(seg.inject_id) else { continue };
+            let payload = self.pcodeinjectlib.get_payload(seg.inject_id);
+            let def = crate::kuna_segmentize::SegmentDef::build(
+                seg,
+                op.get_index(),
+                payload,
+                tpl,
+                self,
+                self.translate.manager_rc(),
+                &self.opbehaviors,
+            )?;
+            while defs.len() <= i as usize {
+                defs.push(None);
+            }
+            defs[i as usize] = Some(Rc::new(def));
+        }
+        self.segment_defs = defs;
+        self.apply_segmentize();
+        Ok(())
+    }
+
+    /// Put the boot-time effects of `segmentize` in place or take them back:
+    /// the near-pointer marking of each inferable space with a resolvable segment
+    /// op (C++ `cacheAddrSpaceProperties` -> `markNearPointers`) and the far-pointer
+    /// data organization of the default data space (C++ `TypeFactory::setupSizes`).
+    pub fn apply_segmentize(&mut self) {
+        if !self.segmentize {
+            if let Some(saved) = self.segment_saved.take() {
+                self.types.set_size_of_pointer(saved.size_of_pointer);
+                self.types.set_size_of_alt_pointer(saved.size_of_alt_pointer);
+                for (spc, had_near, minimum) in saved.spaces {
+                    if !had_near {
+                        spc.clear_flags(kuna_base::space::addrspace_flags::has_nearpointers);
+                    }
+                    spc.set_minimum_pointer_size(minimum);
+                }
+            }
+            return;
+        }
+        if self.segment_saved.is_some() || self.segment_defs.iter().all(Option::is_none) {
+            return;
+        }
+        let mut saved = crate::kuna_segmentize::SegmentSaved {
+            size_of_pointer: self.types.get_size_of_pointer(),
+            size_of_alt_pointer: self.types.get_size_of_alt_pointer(),
+            spaces: Vec::new(),
+        };
+        for spc in self.infer_ptr_spaces.clone() {
+            let Some(seg) = self.segment_def(spc.get_index()).filter(|s| s.has_resolve()) else { continue };
+            saved.spaces.push((Rc::clone(&spc), spc.has_near_pointers(), spc.get_minimum_ptr_size()));
+            self.manage().mark_near_pointers(&spc, seg.innerinsize);
+        }
+        let data_seg = self
+            .manage()
+            .get_default_data_space()
+            .and_then(|spc| self.segment_def(spc.get_index()))
+            .filter(|s| s.has_resolve() && s.supportsfarpointer)
+            .cloned();
+        if let Some(seg) = data_seg {
+            self.types.set_size_of_pointer(seg.innerinsize);
+            self.types.set_size_of_alt_pointer(seg.innerinsize + seg.baseinsize);
+        }
+        self.segment_saved = Some(saved);
     }
 
     /// Determine the minimum pointer size for each space and set up the ordered,
@@ -5212,6 +5319,14 @@ impl Architecture {
             return Err(e);
         }
 
+        // 1b. parseProcessorConfig ELEM_SEGMENTOP (architecture.cc:1195):
+        //     userops.decodeSegmentOp(decoder,this) for each pspec `<segmentop>`.
+        let pspec = self.pspec_xml.clone();
+        if let Err(e) = self.decode_segment_ops(&mut userops, pspec.as_deref(), "processor_spec") {
+            self.userops = userops;
+            return Err(e);
+        }
+
         // 2. parseCompilerConfig: dispatch each cspec `<callotherfixup>` child to
         //    userops.decodeCallOtherFixup(decoder,this).
         let fixup_res = (|| -> KunaResult<()> {
@@ -5239,6 +5354,11 @@ impl Architecture {
             }
             Ok(())
         })();
+        // parseCompilerConfig ELEM_SEGMENTOP (architecture.cc:1273): the cspec's.
+        let fixup_res = fixup_res.and_then(|()| {
+            let cspec = self.cspec_xml.clone();
+            self.decode_segment_ops(&mut userops, cspec.as_deref(), "compiler_spec")
+        });
         self.userops = userops;
         fixup_res?;
 
@@ -5277,6 +5397,49 @@ impl Architecture {
         }
         self.pcodeinjectlib = lib;
         parse_res
+    }
+
+    /// Register each `<segmentop>` child of the spec document `xml` (root
+    /// `root_name`) as a [`SegmentOp`](crate::userop::SegmentOp) (C++
+    /// `UserOpManage::decodeSegmentOp`).  The `<pcode>` snippet joins the inject
+    /// library and is compiled with the rest by `parse_inject_all`.  Skipped in
+    /// ghidra mode, which has no local `.sla` to compile the snippet against.
+    fn decode_segment_ops(
+        &mut self,
+        userops: &mut UserOpManage,
+        xml: Option<&[u8]>,
+        root_name: &str,
+    ) -> KunaResult<()> {
+        use kuna_base::marshal::{IdRegistry, XmlDecode};
+        use kuna_base::xml::DocumentStorage;
+        let Some(xml) = xml else { return Ok(()) };
+        if self.translate.as_sleigh().is_none() {
+            return Ok(());
+        }
+        let mut store = DocumentStorage::new();
+        let root = store.parse_document(xml)?.get_root().clone();
+        let spec = if root.get_name() == root_name {
+            root
+        } else {
+            match find_child(&root, root_name) {
+                Some(el) => el,
+                None => return Ok(()),
+            }
+        };
+        let segops: Vec<Rc<kuna_base::xml::Element>> =
+            spec.get_children().iter().filter(|c| c.get_name() == "segmentop").cloned().collect();
+        if segops.is_empty() {
+            return Ok(());
+        }
+        let manager = self.translate.manager_rc();
+        let mut registry = IdRegistry::with_base_ids();
+        crate::pcodeinject::register_ids(&mut registry);
+        crate::userop::register_ids(&mut registry);
+        for el in segops.iter() {
+            let mut decoder = XmlDecode::new_with_root(&manager, &registry, el, 0);
+            userops.decode_segment_op(&mut decoder, self)?;
+        }
+        Ok(())
     }
 
     /// (kuna `cortexmpriv`) Install the `isCurrentModePrivileged` callother-fixup
@@ -7305,6 +7468,9 @@ impl Architecture {
         // space (fspec/iop/join/stack) exists, so the sort/dedup/filter sees the
         // final space set and the default data space (`ram`) leads `inferPtrSpaces`.
         self.cache_addr_space_properties();
+        // C++ `initializeSegments` (end of parseCompilerConfig); run last, once the
+        // inject library is compiled and the op behaviors exist for the snippets.
+        self.initialize_segments()?;
         Ok(())
     }
 }
