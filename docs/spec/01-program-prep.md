@@ -3275,7 +3275,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   `runtime.*` instead of `sub_<addr>`. It is format-neutral: the table is located
   by its ELF `.gopclntab` / Mach-O `__gopclntab` section, or the
   `.lrodata_gopclntab` / `__lrodata_gopcln` section a link that splits out large
-  read-only data gives it, or a scan of the data sections Go places it in. The
+  read-only data gives it, or a scan of the data sections Go places it in. An
+  internally linked ELF PIE from go1.25 or older keeps the table in
+  `.data.rel.ro.gopclntab` (the relro spelling of `.gopclntab`, which no scanned
+  section covers), so that name is on the section list too. The
   scan is the only route on a PE, whose linker writes no pclntab section and
   keeps the table inside `.rdata` among every other rodata symbol, so `.rdata`
   is on the list; and because a PE scan walks megabytes of other data before

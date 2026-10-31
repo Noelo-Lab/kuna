@@ -626,6 +626,81 @@ fn macho_lrodata_gopcln_section_is_found_and_decoded() {
     );
 }
 
+// --- ELF relro container -----------------------------------------------------
+//
+// An internally linked go1.25-or-older ELF PIE keeps the table in
+// `.data.rel.ro.gopclntab`, the relro spelling of `.gopclntab`, which no scanned
+// section covers: only the name finds it.
+
+/// A minimal x86-64 `ET_DYN` ELF: executable `.text` at `text_vma`, then one
+/// writable PROGBITS section `name` holding `blob` at `vma`.
+fn build_elf(text_vma: u64, text_size: usize, name: &str, vma: u64, blob: &[u8]) -> Vec<u8> {
+    use object::elf::*;
+    use object::write::elf::{FileHeader, SectionHeader, Writer};
+    let mut buf = Vec::new();
+    let mut w = Writer::new(object::Endianness::Little, true, &mut buf);
+    w.reserve_file_header();
+    w.reserve_null_section_index();
+    let text_name = w.add_section_name(b".text");
+    let blob_name = w.add_section_name(name.as_bytes());
+    w.reserve_section_index();
+    w.reserve_section_index();
+    w.reserve_shstrtab_section_index();
+    let text_off = w.reserve(text_size, 16);
+    let blob_off = w.reserve(blob.len(), 16);
+    w.reserve_shstrtab();
+    w.reserve_section_headers();
+    w.write_file_header(&FileHeader {
+        os_abi: ELFOSABI_NONE,
+        abi_version: 0,
+        e_type: ET_DYN,
+        e_machine: EM_X86_64,
+        e_entry: text_vma,
+        e_flags: 0,
+    })
+    .expect("file header");
+    w.write_align(16);
+    w.write(&vec![0xc3; text_size]);
+    w.write_align(16);
+    w.write(blob);
+    w.write_shstrtab();
+    w.write_null_section_header();
+    let progbits = |name, flags: u32, sh_addr, sh_offset: usize, sh_size: usize| SectionHeader {
+        name: Some(name),
+        sh_type: SHT_PROGBITS,
+        sh_flags: (SHF_ALLOC | flags) as u64,
+        sh_addr,
+        sh_offset: sh_offset as u64,
+        sh_size: sh_size as u64,
+        sh_link: 0,
+        sh_info: 0,
+        sh_addralign: 16,
+        sh_entsize: 0,
+    };
+    w.write_section_header(&progbits(text_name, SHF_EXECINSTR, text_vma, text_off, text_size));
+    w.write_section_header(&progbits(blob_name, SHF_WRITE, vma, blob_off, blob.len()));
+    w.write_shstrtab_section_header();
+    buf
+}
+
+#[test]
+fn elf_relro_gopclntab_section_is_found_and_decoded() {
+    let text_vma = 0x1000u64;
+    let funcs = [(0x10u32, "main.main"), (0x80u32, "main.compute"), (0x200u32, "runtime.gopanic")];
+    let blob = build_go118_image(0, text_vma, &funcs);
+    let bytes = build_elf(text_vma, 0x400, ".data.rel.ro.gopclntab", 0x13_5100, &blob);
+    let file = object::File::parse(&bytes[..]).expect("hand-built ELF must parse");
+    assert_eq!(file.format(), object::BinaryFormat::Elf);
+    assert_eq!(
+        recover_go_functions(&file),
+        vec![
+            GoFunc { addr: text_vma + 0x10, name: "main.main".into() },
+            GoFunc { addr: text_vma + 0x80, name: "main.compute".into() },
+            GoFunc { addr: text_vma + 0x200, name: "runtime.gopanic".into() },
+        ]
+    );
+}
+
 // A Go PE has no pclntab section (the Windows linker keeps the table inside
 // `.rdata`) and no build-info section (the blob heads `.data`).
 
