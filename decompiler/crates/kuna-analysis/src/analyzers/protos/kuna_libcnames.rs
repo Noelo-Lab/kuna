@@ -622,6 +622,9 @@ mod tests {
 
     #[test]
     fn every_entry_matches_a_signature_slot_for_slot() {
+        let _gate = super::super::kuna_libctypes::tests::ENV_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let tables = super::super::LIBC
             .iter()
             .chain(super::super::kuna_libcsigs::LIBC_EXT.iter())
