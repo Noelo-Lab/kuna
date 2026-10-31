@@ -986,11 +986,12 @@ impl ConsoleProgram {
     /// Append the loader's alias names at `vma` that neither `name` nor `aliases`
     /// already spells.
     fn push_loader_aliases(&self, vma: u64, name: &str, aliases: &mut Vec<String>) {
-        for alias in self.loader_aliases.get(&vma).into_iter().flatten() {
-            if alias != name && !aliases.contains(alias) {
-                aliases.push(alias.clone());
-            }
-        }
+        let Some(names) = self.loader_aliases.get(&vma) else { return };
+        let mut known: std::collections::HashSet<&str> =
+            aliases.iter().map(String::as_str).chain([name]).collect();
+        let fresh: Vec<String> =
+            names.iter().filter(|alias| known.insert(alias.as_str())).cloned().collect();
+        aliases.extend(fresh);
     }
 
     /// (kuna, `functions-json-size`) The byte extent of an arbitrary address,

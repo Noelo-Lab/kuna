@@ -932,6 +932,18 @@ impl ObjectLoadImage {
             }
         }
 
+        // A Mach-O export-trie name in code the symbol table lacks (a dylib
+        // after `strip -N`), spelled as the symbol table spells its names; at an
+        // entry another name holds, it is an alias.
+        for (addr, name) in crate::loader::macho_stubs::trie_functions(&file) {
+            let name = demangle_funcsym_name(name, namechars);
+            if seen.insert(addr) {
+                funcsyms.push(FuncSym { addr, name, size: 0 });
+            } else {
+                aliases.push(FuncSym { addr, name, size: 0 });
+            }
+        }
+
         // A Mach-O `nlist` records no size; `data_symbols` guesses one from
         // the next symbol of its section, capped at 8 bytes. Demangled as the
         // function stream's names are.
@@ -3245,6 +3257,49 @@ mod tests {
                 "{name} @ {addr:#x} must be a data lookup name: {:?}",
                 img.data_exports()
             );
+        }
+    }
+
+    /// (GH #1349) A dylib whose `nlist` keeps one of three exports: the trie
+    /// names the unnamed entry, and its second name at the named entry is an
+    /// alias.
+    #[test]
+    fn macho_trie_names_fill_a_partial_symbol_table() {
+        let path =
+            format!("{}/tests/fixtures/macho_trie_partial_arm64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let mut primary = img.func_symbols();
+        primary.sort_unstable();
+        assert_eq!(primary, vec![(0x240, "_audit_export_a".into()), (0x248, "_audit_caller".into())]);
+        assert_eq!(img.func_symbol_aliases(), vec![(0x240, "_audit_export_b".to_string())]);
+    }
+
+    /// (GH #1349) A dylib stripped of every `nlist` entry still exports its
+    /// names through the export trie: its two functions are entries under the
+    /// symbol-table spelling, in either trie layout, and its data export is a
+    /// data symbol and a lookup name, as in the unstripped dylib.
+    #[test]
+    fn macho_trie_names_survive_a_stripped_symbol_table() {
+        for fixture in ["macho_trie_exports_arm64", "macho_trie_exports_info_arm64"] {
+            let mut entries: Vec<(u64, String)> = fixture_funcsyms(fixture).into_iter().collect();
+            entries.sort_unstable();
+            assert_eq!(
+                entries,
+                vec![(0x328, "_audit_exported_function".into()), (0x340, "_audit_caller".into())],
+                "{fixture}"
+            );
+            let path = format!("{}/tests/fixtures/{}", env!("CARGO_MANIFEST_DIR"), fixture);
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+            assert_eq!(img.data_symbols(), vec![(0x4000, "_audit_exported_data".to_string(), 4)], "{fixture}");
+            for name in ["audit_exported_data", "_audit_exported_data"] {
+                assert!(
+                    img.data_exports().contains(&(0x4000, name.to_string())),
+                    "{fixture}: {name} must be a data lookup name: {:?}",
+                    img.data_exports()
+                );
+            }
         }
     }
 
