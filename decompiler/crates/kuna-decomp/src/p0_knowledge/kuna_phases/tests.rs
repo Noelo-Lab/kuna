@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_345() {
-    assert_eq!(kuna_num_settables(), 345);
-    assert_eq!(SETTABLE_TABLE.len(), 345);
+fn settable_count_is_346() {
+    assert_eq!(kuna_num_settables(), 346);
+    assert_eq!(SETTABLE_TABLE.len(), 346);
 }
 
 #[test]
-fn tier_counts_are_122_core_131_transform_92_analysis() {
+fn tier_counts_are_123_core_131_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_122_core_131_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (122, 131, 92));
+    assert_eq!((core, transform, analysis), (123, 131, 92));
 }
 
 #[test]
@@ -645,6 +645,9 @@ fn option_values_live_value_present_for_155() {
                             // the same reason `pebnames` is here. Its live value
                             // is `Architecture::ptr_from_use`.
                             | "ptrfromuse"
+                            // (kuna) `readonlycalls` takes `off|on|<n>`, a guard
+                            // count; its live value is `Architecture::readonly_calls`.
+                            | "readonlycalls"
                             // (kuna) `narrowargs` takes `off|on|callers`; its
                             // live value is the pair `Architecture::narrow_args`
                             // and `Architecture::narrow_args_callers`.
@@ -912,6 +915,8 @@ fn option_values_live_value_present_for_155() {
     // 153 -> 154: +1 for `pairrefine` (live_field = pair_refine).
     // 154 -> 156: +2 for `readonlycalls` and `prunedssa` (readonly_calls, pruned_ssa).
     // 156 -> 157: +1 for `segmentize` (live_field = segmentize).
+    // 157 -> 158: +1 for `loadguardreads` (load_guard_reads).
+    // 158 -> 157: `readonlycalls` takes `off|on|<n>` and has no live_field.
     assert_eq!(with_live, 157);
 }
 
@@ -1125,7 +1130,9 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +2 for `readonlycalls` and `prunedssa`; their P3 rows sit at the end.
     // +1 for `segmentize`; its P3 row sits beside `x64syscall`.
     // +1 for `gowalkprune`; its P1 row sits beside `gonoreturn`.
-    assert_eq!(json.matches("},\n").count(), 344);
+    // +1 for `loadguardreads`; its P3 row sits after `prunedssa`.
+    // +1 for `mzsweep`; its P1 row sits beside `rawdiscover`.
+    assert_eq!(json.matches("},\n").count(), 345);
 }
 
 #[test]

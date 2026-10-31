@@ -1348,9 +1348,13 @@ Three tiers:
 | a function that reads many constant globals between calls exhausts memory during heritage | [`readonlycalls`](#readonlycalls) |
 | decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls) |
 | thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls) |
+| a function prints read-only literals differently once it grows past the readonlycalls threshold | [`readonlycalls`](#readonlycalls) |
 | a huge function exhausts memory during heritage | [`prunedssa`](#prunedssa) |
 | heritage builds millions of INDIRECTs and MULTIEQUALs that dead-code removal deletes | [`prunedssa`](#prunedssa) |
 | a mid-sized function with thousands of calls and string-instruction loops takes gigabytes to decompile | [`prunedssa`](#prunedssa) |
+| a huge function exhausts memory in the heritage pass that first heritages its stack | [`loadguardreads`](#loadguardreads) |
+| millions of COPY ops are built and destroyed in one heritage pass | [`loadguardreads`](#loadguardreads) |
+| a function with many indexed stack array reads and many address-taken locals takes gigabytes to decompile | [`loadguardreads`](#loadguardreads) |
 
 ## Toggleable transforms
 
@@ -4108,11 +4112,11 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option globalcallranges off`
 
-### `readonlycalls` -- on | off, default `on`
+### `readonlycalls` -- off | on | <n>, default `65536`
 
-- **Symptoms:** a function that reads many constant globals between calls exhausts memory during heritage; decompile of a huge function is killed before the first jump table is recovered; thousands of INDIRECTs over read-only globals survive in a large function's IR.
-- **What it does:** In a heritage pass that would guard at least 65,536 read-only-range and call pairs, give a call no INDIRECT guard over a read-only memory range the function never writes. A callee cannot change memory the image maps without write permission, so every read of such a range sees the value it had at entry and needs no definition per call. Upstream guards the range at every call with an unknown effect anyway: one INDIRECT per read-only global per call, plus the MULTIEQUALs their writes force at every join, and on a persistent range they survive dead-code removal; a large function that reads thousands of constants through thousands of calls builds millions of them. The threshold is the pass's calls times its new, read, read-only ranges in the default data space; below it every call keeps upstream's guard, whose chain the printer uses as a barrier (it keeps a copy of a read-only literal split per element, and an expression over a constant global from being printed again after a call). A read-only range the function itself writes keeps its guards, as does any range whose read-only property is unknown.
-- **When to flip:** On by default. Flip off to restore one call guard per read-only range per call in every function, for example to compare the SSA heritage builds for a large constant table read across calls.
+- **Symptoms:** a function that reads many constant globals between calls exhausts memory during heritage; decompile of a huge function is killed before the first jump table is recovered; thousands of INDIRECTs over read-only globals survive in a large function's IR; a function prints read-only literals differently once it grows past the readonlycalls threshold.
+- **What it does:** In a heritage pass that would guard at least N read-only-range and call pairs (default 65,536), give a call no INDIRECT guard over a read-only memory range the function never writes. A callee cannot change memory the image maps without write permission, so every read of such a range sees the value it had at entry and needs no definition per call. Upstream guards the range at every call with an unknown effect anyway: one INDIRECT per read-only global per call, plus the MULTIEQUALs their writes force at every join, and on a persistent range they survive dead-code removal; a large function that reads thousands of constants through thousands of calls builds millions of them. The count is the pass's calls times its new, read, read-only ranges in the default data space; below it every call keeps upstream's guard, whose chain the printer uses as a barrier (it keeps a copy of a read-only literal split per element, and an expression over a constant global from being printed again after a call), so the same function can print differently on either side of N. `on` leaves read-only ranges unguarded in every pass with a call, and `off` keeps every guard. A read-only range the function itself writes keeps its guards, as does any range whose read-only property is unknown.
+- **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes. Set `on` to print every function as one above the threshold prints (no per-element copies of read-only literals, constant globals read again after calls), a smaller N to lower the size at which that starts, a larger N or `off` to keep upstream's guards in larger functions, for example to compare the SSA heritage builds for a large constant table read across calls.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option readonlycalls off`
 
@@ -4123,6 +4127,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Flip off to build minimal SSA, which places every guard and join and leaves their removal to ActionDeadCode, for example when comparing heritage's intermediate IR with upstream.
 - **Where / provenance:** P3/ssa-construction · kuna · performance · gh-1034
 - **Example:** `option prunedssa off`
+
+### `loadguardreads` -- on | off, default `on`
+
+- **Symptoms:** a huge function exhausts memory in the heritage pass that first heritages its stack; millions of COPY ops are built and destroyed in one heritage pass; a function with many indexed stack array reads and many address-taken locals takes gigabytes to decompile.
+- **What it does:** Guard an indexed LOAD by reading each address-tied range it may alias while renaming, instead of building a COPY of the range in front of the LOAD. Upstream places one address-forced COPY per guarded range per LOAD, renames them, walks back from them to mark the writes that reach them address forced, and propagates every one away before the pass ends, so the COPYs never outlive the pass. A new guard covers the whole stack until value-set analysis bounds it after renaming, so the pass that first meets a function's indexed stack LOADs builds a COPY and two Varnodes for every LOAD times every address-tied stack range. Here the pass records the pairs, renaming reads the top of each range's stack at the LOAD exactly as it reads a COPY's input, and each distinct Varnode a guard read reaches gets one address-forced COPY in front of the first LOAD that reached it. The rest of the pass reads those as it reads upstream's COPYs, the walk back from them marks the same writes, and they are propagated away the same way; a read upstream links to a guard COPY's output still reads that pair's COPY, built in front of its LOAD when renaming first meets such a read, and those COPYs are propagated in upstream's order. So the IR after the pass is the same, readers in the same order, without the cross product. The global arm of `indexaliasguard` is read the same way.
+- **When to flip:** On by default. Flip off to build upstream's LOAD guard COPYs, for example to compare heritage's intermediate IR with upstream.
+- **Where / provenance:** P3/load-guard · kuna · performance · gh-1034
+- **Example:** `option loadguardreads off`
 
 ## Programmatic use
 

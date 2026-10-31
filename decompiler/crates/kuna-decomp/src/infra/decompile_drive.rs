@@ -1987,18 +1987,16 @@ pub fn print_c(arch: &mut Architecture, fd: &Funcdata) -> String {
     // the structured-block body (the if/else hierarchy + per-statement RPN
     // expressions) when `sblocks` is present.  `doc_function_full` needs both the
     // printer (`arch.print_mut()`) and the architecture (for register-name
-    // resolution); split the borrows by moving the printer out, driving it, and
-    // moving it back (the printer is owned by `arch`).
-    let mut printer = arch.take_print();
-    let out = if cookie_calls.is_empty() {
-        printer.doc_function_full(fd, arch)
-    } else {
-        let (out, mut markup) =
-            printer.doc_function_full_with_statement_provenance(fd, arch);
-        rewrite_cookie_literal_returns(out, &cookie_calls, &mut markup)
-    };
-    arch.put_print(printer);
-    out
+    // resolution); `with_print` splits the borrows.
+    arch.with_print(|printer, arch| {
+        if cookie_calls.is_empty() {
+            printer.doc_function_full(fd, arch)
+        } else {
+            let (out, mut markup) =
+                printer.doc_function_full_with_statement_provenance(fd, arch);
+            rewrite_cookie_literal_returns(out, &cookie_calls, &mut markup)
+        }
+    })
 }
 
 /// Inline the caller's literal return assignment across a checker call only
@@ -2165,10 +2163,9 @@ pub fn print_c_with_provenance(
     fd: &Funcdata,
 ) -> (String, CodeProvenance) {
     let cookie_calls = exact_cookie_call_evidence(fd, arch);
-    let mut printer = arch.take_print();
-    let out = printer.doc_function_full(fd, arch);
-    let mut markup = printer.doc_function_provenance(fd, arch);
-    arch.put_print(printer);
+    let (out, mut markup) = arch.with_print(|printer, arch| {
+        (printer.doc_function_full(fd, arch), printer.doc_function_provenance(fd, arch))
+    });
     let out = rewrite_cookie_literal_returns(out, &cookie_calls, &mut markup);
     align_markup_to_trimmed(&mut markup, &out);
     (
@@ -2199,10 +2196,9 @@ pub fn print_c_with_srcmap(
     fd: &Funcdata,
 ) -> (String, CodeProvenance, Vec<crate::prettyprint::EmitToken>) {
     let cookie_calls = exact_cookie_call_evidence(fd, arch);
-    let mut printer = arch.take_print();
-    let out = printer.doc_function_full(fd, arch);
-    let (mut markup, mut tokens) = printer.doc_function_tokens(fd, arch);
-    arch.put_print(printer);
+    let (out, (mut markup, mut tokens)) = arch.with_print(|printer, arch| {
+        (printer.doc_function_full(fd, arch), printer.doc_function_tokens(fd, arch))
+    });
     let (out, edits) = rewrite_cookie_literal_returns_with_edits(out, &cookie_calls, &mut markup);
     crate::kuna_srcmap::apply_cookie_rewrites(&mut tokens, &edits);
     align_markup_to_trimmed(&mut markup, &out);
@@ -2213,12 +2209,9 @@ pub fn print_c_with_srcmap(
 /// factory as C definitions (the `PrintC::docTypeDefinitions` port,
 /// [`crate::printc::PrintC::doc_type_definitions`]) — the type-definition
 /// block of the `kuna decompile-project` `.h` artifact.  Same
-/// take/put split-borrow dance as [`print_c`] (the printer is owned by `arch`).
+/// [`Architecture::with_print`] split borrow as [`print_c`].
 pub fn print_c_types(arch: &mut Architecture) -> String {
-    let mut printer = arch.take_print();
-    let out = printer.doc_type_definitions(arch);
-    arch.put_print(printer);
-    out
+    arch.with_print(|printer, arch| printer.doc_type_definitions(arch))
 }
 
 /// (kuna) Render ONLY the decompiled function's prototype declaration —
@@ -2229,10 +2222,7 @@ pub fn print_c_types(arch: &mut Architecture) -> String {
 /// render of the same `Funcdata`).  A function whose prototype was never
 /// recovered (no proto store) renders as `void <name>(void);`.
 pub fn print_c_prototype(arch: &mut Architecture, fd: &Funcdata) -> String {
-    let mut printer = arch.take_print();
-    let out = printer.doc_prototype(fd, arch);
-    arch.put_print(printer);
-    out
+    arch.with_print(|printer, arch| printer.doc_prototype(fd, arch))
 }
 
 /// (kuna) The generated recompile prelude for a `kuna decompile-project` `.h`:

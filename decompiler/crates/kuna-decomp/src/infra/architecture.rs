@@ -948,10 +948,13 @@ pub struct Architecture {
     /// `calleepreserves`).  See [`crate::p4_calls::kuna_calleepreserves`].
     pub callee_preserves: bool,
     pub global_call_ranges: bool,
-    /// (kuna) Give a call no guard over read-only memory (option `readonlycalls`).
-    pub readonly_calls: bool,
+    /// (kuna) Give a call no guard over read-only memory once a pass would build
+    /// this many such guards, `None` to keep them all (option `readonlycalls`).
+    pub readonly_calls: Option<u64>,
     /// (kuna) Place heritage markers only where the range is live (option `prunedssa`).
     pub pruned_ssa: bool,
+    /// (kuna) Read LOAD guards at renaming instead of through COPY ops (option `loadguardreads`).
+    pub load_guard_reads: bool,
     /// (kuna) Let the callee's decoded body answer for the call's RETURN
     /// register too (option `calleeretpreserves`).  See
     /// [`crate::p4_calls::kuna_calleeretpreserves`].
@@ -3058,8 +3061,9 @@ impl Architecture {
             zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
-            readonly_calls: true,
+            readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             pruned_ssa: true,
+            load_guard_reads: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,
             indirect_anchor: true,
@@ -3468,8 +3472,9 @@ impl Architecture {
         self.zero_fill_return = true; // (kuna) default-on (0/675 ablation): the zero a narrow write leaves in a returned q register's upper half is no part of the value
         self.zero_call_regs = true; // (kuna) default-on (0/675 ablation): a register a -fzero-call-used-regs epilogue clears before the return is no part of the value
         self.global_call_ranges = true;
-        self.readonly_calls = true;
+        self.readonly_calls = Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT);
         self.pruned_ssa = true;
+        self.load_guard_reads = true;
         self.callee_preserves = true; // (kuna) DIV-124 default-on: a fully decoded, call-free callee's own writes narrow the cspec killedbycall set, so a value that crosses a get-PC thunk survives (0/675 ablation)
         self.callee_ret_preserves = true; // (kuna) DIV-PENDING default-on: a fully decoded callee body that never writes the call's return register also answers for that register, so an MSVC /GS `main` returns the zero it set instead of the cookie check's invented result (0/675 ablation)
         self.callee_scratch_body = true; // (kuna) DIV-149 default-on: a decoded callee that clobbers only SCRATCH registers still counts as a body for calleepreserves, so the value a caller sets before MSVC's out-of-line stack probe survives it (0/675 ablation)
@@ -4368,6 +4373,7 @@ impl Architecture {
         ctx.global_call_ranges = self.global_call_ranges;
         ctx.readonly_calls = self.readonly_calls;
         ctx.pruned_ssa = self.pruned_ssa;
+        ctx.load_guard_reads = self.load_guard_reads;
         ctx.callee_preserves = self.callee_preserves; // calleepreserves
         ctx.callee_ret_preserves = self.callee_ret_preserves; // calleeretpreserves
         ctx.callee_scratch_body = self.callee_scratch_body; // calleescratchbody
@@ -5597,17 +5603,27 @@ impl Architecture {
         Ok(())
     }
 
-    /// Move the printer out of `self` (replacing it with a fresh default), so a
-    /// caller can drive `PrintC::doc_function_full(fd, &self)` — which needs an
-    /// immutable borrow of the rest of the architecture (register-name lookup)
-    /// while it mutates the printer.  Pair with [`put_print`](Architecture::put_print).
-    pub fn take_print(&mut self) -> PrintC {
-        std::mem::take(&mut self.print)
-    }
-
-    /// Move a printer back into `self` (the partner of [`take_print`]).
-    pub fn put_print(&mut self, print: PrintC) {
+    /// Run `render` with the printer moved out of `self` (a fresh default stands
+    /// in meanwhile), so it can drive `PrintC::doc_function_full(fd, &self)`,
+    /// which needs an immutable borrow of the rest of the architecture
+    /// (register-name lookup) while it mutates the printer, then move it back.
+    ///
+    /// The printer goes back on every exit. A panic in `render` returns it
+    /// cleared of the partial document ([`PrintC::clear`], C++ `docFunction`'s
+    /// `catch { clear(); throw; }`) with the printing modifiers it had before
+    /// `render`, then resumes unwinding, so a caller that contains the panic
+    /// renders every later function with the printer the run configured, not
+    /// the default.
+    pub fn with_print<R>(&mut self, render: impl FnOnce(&mut PrintC, &Architecture) -> R) -> R {
+        let mut print = std::mem::take(&mut self.print);
+        let mods = print.context.mods();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(&mut print, self)));
+        if result.is_err() {
+            print.clear();
+            print.context.set_mods(mods);
+        }
         self.print = print;
+        result.unwrap_or_else(|payload| std::panic::resume_unwind(payload))
     }
 
     /// Install the load image (C++ `glb->loader`; owned inside the engine in

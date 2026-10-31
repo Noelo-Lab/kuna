@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3298,
-    3298
+    3305,
+    3305
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2653,6 +2653,13 @@
     "data:libcnames #8: a value used inside an expression names nothing",
     "data:libcnames #9: fopen's result is fp",
     "data:load retains declared array",
+    "data:loadguardreads #1: both passes print gather",
+    "data:loadguardreads #2: both passes keep the 65 calls to reg",
+    "data:loadguardreads #3: both passes keep the 64 struct writes each callee may read",
+    "data:loadguardreads #4: both passes read the table at all 256 indexes",
+    "data:loadguardreads #5: both passes keep the same live IR",
+    "data:loadguardreads #6: upstream placement builds a guard COPY per LOAD per range",
+    "data:loadguardreads #7: the default builds a guard COPY only per Varnode reached and per guard read again",
     "data:local aggregate is passed by value",
     "data:localstackviews off folds the frame read across an escaped write",
     "data:localstackviews off retains the incompatible pointer assignment",
