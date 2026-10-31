@@ -8,9 +8,9 @@
 
         1fff0  e8 00 70     CALL 0x16ff3      ; selector 1, offset 0xfff3 + 0x7000 wraps to 0x6ff3
 
-    Stage: P1/P2 decode (x86 SLEIGH spec fix, no option). Without a 0x66
-    prefix in protected mode `rel16` keeps the upper 16 bits of the address,
-    upstream's formula.
+    Stage: P1/P2 decode (x86-16 SLEIGH spec, no option). In 16-bit
+    protected mode `rel16` keeps the upper 16 bits of the address, upstream's
+    formula.
 
     Assert 1 is the wrapped target inside selector 1; assert 2 forbids the
     selector-0 address.

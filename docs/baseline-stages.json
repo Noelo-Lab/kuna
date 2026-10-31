@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3242,
-    3242
+    3246,
+    3246
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2803,10 +2803,14 @@
     "data:ptrfromuse #7: a parameter that is shifted before it is dereferenced is refused in all three passes",
     "data:ptrfromuse #8: and a parameter that upstream already typed is untouched in all three",
     "data:ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes",
-    "data:real-rel16 #1: CALL rel16 at 0x2b680 (CS 0x2b58) reaches the linear target 0x30010 across the 64 KiB line",
-    "data:real-rel16 #2: the target is not masked into the first 64 KiB (0x10)",
-    "data:real-rel16 #3: the target is not wrapped into the call's own 64 KiB block (0x20010)",
-    "data:real-rel16 #4: f calls g",
+    "data:real-rel16 #1: with CS 0 a CALL at 0x100 wraps IP below 0 to 0x9103",
+    "data:real-rel16 #2: in CS 0x2b58, which a far CALL states, a CALL at 0x2b678 wraps IP inside its segment to 0x34a29",
+    "data:real-rel16 #3: the same CALL in CS 0x4b58 wraps to 0x54a29",
+    "data:real-rel16 #4: no wrapped call lands in the first 64 KiB (mask) or 64 KiB short (linear sum)",
+    "data:real-rel16 #5: an instruction CS 0 cannot hold takes the linear sum (0x5b680 to 0x60010)",
+    "data:real-rel16 #6: com_main, f and k call what they wrap to",
+    "data:real-rel16 #7: the CALLs in f and k push IP 0x00fb, not the linear low half 0xb67b",
+    "data:real-rel16 #8: no CALL pushes the linear low half",
     "data:realtypes-pointee #1: the callback-struct parameter declares its 8-byte pointee, not void",
     "data:realtypes-pointee #2: no unknown pointee collapses to void in either pass",
     "data:realtypes-pointee #3: the 4-byte errno store keeps its access width",

@@ -95,3 +95,5 @@ pub mod kuna_armfuncmode;
 pub mod kuna_floatabi;
 // (kuna) does an arm64 image's platform have the callee extend a narrow return?
 pub mod kuna_returnext;
+// (kuna #1288) the x86 real-mode code segment a loader paints into the decode context.
+pub mod kuna_realmodecs;

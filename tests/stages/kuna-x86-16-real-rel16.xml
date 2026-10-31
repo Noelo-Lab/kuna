@@ -1,55 +1,93 @@
 <decompilertest>
 <binaryimage arch="x86:LE:16:Real Mode">
 <!--
-    kuna #1288: in an x86 real-mode image, every near CALL/JMP/Jcc rel16 above
-    linear 0x10000 branched into the first 64 KiB.
+    kuna #1288: an x86 real-mode near branch wraps IP inside its code segment,
+    and a real-mode address is the linear CS*16 + IP, where CS need not be a
+    multiple of 0x1000. kuna's GH-7418 fix (tests/stages/
+    gh7418-x86-call-rel16-mask.xml) masked every rel16 target to its low 16
+    bits, which is right only for CS 0, so a DOS program loaded at segment
+    0x1000 lost all but 12 of its 330 functions. The linear sum is right only
+    when IP does not wrap.
 
-    Real-mode addresses are linear, CS*16 + IP, and a code segment need not
-    start on a 64 KiB boundary. kuna's GH-7418 fix (tests/stages/
-    gh7418-x86-call-rel16-mask.xml) masks a rel16 target to its low 16 bits,
-    which is right for a 0x66-prefixed branch in 32-bit code but was also
-    applied to 16-bit code: a DOS program loaded at segment 0x1000 lost every
-    call target, so discovery found 12 of its functions instead of 330, and
-    calls landed in data as phantom functions.
+    16-bit x86 decodes with x86-16.sla, which keeps CS in the context variable
+    realCS (default 0). A far CALL states its target's CS; 0x2b58 is the main
+    code segment of that program:
 
-    The bytes sit where that program's main code segment does (CS 0x2b58,
-    linear 0x2b580), which spans the 64 KiB line at 0x30000:
+        00100  e8 00 90        CALL 0x9103   ; CS 0, IP 0x0103 - 0x7000 wraps
+        40000  9a f8 00 58 2b  CALLF 2b58:00f8 (0x2b678)
+        40005  9a f8 00 58 4b  CALLF 4b58:00f8 (0x4b678)
+        2b678  e8 ae 93        CALL 0x34a29  ; CS 0x2b58, IP 0x00fb - 0x6c52 wraps
+        4b678  e8 ae 93        CALL 0x54a29  ; CS 0x4b58, the same wrap
+        5b680  e8 8d 49        CALL 0x60010  ; CS 0 cannot hold 0x5b680: linear sum
 
-        2b680  e8 8d 49     CALL 0x30010      ; CS:0100, 0x0103 + 0x498d = IP 0x4a90
-        2b683  c3           RET
-        30010  b8 07 00     MOV  AX,0x7
-        30013  c3           RET
-
-    Stage: P1/P2 decode (x86 SLEIGH spec fix, no option). `rel16` now splits
-    on the decode mode: with a 0x66 prefix (32-bit code) the GH-7418 mask
-    stays; in real mode the target is the linear sum; in 16-bit protected
-    mode the offset wraps inside its selector, as upstream computes it (see
-    kuna-x86-16-protected-rel16.xml). The decoder does not know CS, so a
-    branch that wraps IP past 0xffff is not modeled.
-
-    Assert 1 is the decoded target, assert 2 forbids the masked 0x10,
-    assert 3 forbids 0x20010 (upstream's wrap inside the 64 KiB block of the
-    call, which assumes CS is a multiple of 0x1000), and assert 4 is the call
-    reaching the function that is there.
+    Stage: P1/P2 decode (x86 SLEIGH spec fix, no option). Without realCS the
+    mask decodes 0x4a29 for both wrapped calls, the linear sum 0x24a29 and
+    0x44a29, and the linear sum also decodes the first call to -0x6efd. A near
+    CALL pushes IP inside its segment (0x00fb), not the low half of its linear
+    address (0xb67b).
 -->
-<bytechunk space="ram" offset="0x2b680">
-e88d49c3
+<bytechunk space="ram" offset="0x100">
+e80090c3
 </bytechunk>
-<bytechunk space="ram" offset="0x30010">
+<bytechunk space="ram" offset="0x9103">
 b80700c3
 </bytechunk>
-<symbol space="ram" offset="0x2b680" name="f"/>
-<symbol space="ram" offset="0x30010" name="g"/>
+<bytechunk space="ram" offset="0x2b678">
+e8ae93c3
+</bytechunk>
+<bytechunk space="ram" offset="0x34a29">
+b80700c3
+</bytechunk>
+<bytechunk space="ram" offset="0x40000">
+9af800582b9af800584bcb
+</bytechunk>
+<bytechunk space="ram" offset="0x4b678">
+e8ae93cb
+</bytechunk>
+<bytechunk space="ram" offset="0x54a29">
+b80700c3
+</bytechunk>
+<bytechunk space="ram" offset="0x5b680">
+e88d49c3
+</bytechunk>
+<bytechunk space="ram" offset="0x60010">
+b80700c3
+</bytechunk>
+<symbol space="ram" offset="0x100" name="com_main"/>
+<symbol space="ram" offset="0x9103" name="com_helper"/>
+<symbol space="ram" offset="0x2b678" name="f"/>
+<symbol space="ram" offset="0x34a29" name="g"/>
+<symbol space="ram" offset="0x40000" name="far_caller"/>
+<symbol space="ram" offset="0x4b678" name="k"/>
+<symbol space="ram" offset="0x54a29" name="m"/>
+<symbol space="ram" offset="0x5b680" name="p"/>
+<symbol space="ram" offset="0x60010" name="q"/>
 </binaryimage>
 <script>
-  <com>disassemble 0x2b680 0x2b684</com>
+  <com>disassemble 0x100 0x104</com>
+  <com>disassemble 0x5b680 0x5b684</com>
+  <com>lo fu com_main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu far_caller</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>disassemble 0x2b678 0x2b67c</com>
+  <com>disassemble 0x4b678 0x4b67c</com>
   <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="real-rel16 #1: CALL rel16 at 0x2b680 (CS 0x2b58) reaches the linear target 0x30010 across the 64 KiB line" min="1" max="1">^0x0002b680: CALL +0x30010$</stringmatch>
-<stringmatch name="real-rel16 #2: the target is not masked into the first 64 KiB (0x10)" min="0" max="0">CALL +0x10$</stringmatch>
-<stringmatch name="real-rel16 #3: the target is not wrapped into the call's own 64 KiB block (0x20010)" min="0" max="0">0x20010</stringmatch>
-<stringmatch name="real-rel16 #4: f calls g" min="1" max="1">^  g\(\);$</stringmatch>
+<stringmatch name="real-rel16 #1: with CS 0 a CALL at 0x100 wraps IP below 0 to 0x9103" min="1" max="1">^0x00000100: CALL\s+0x9103$</stringmatch>
+<stringmatch name="real-rel16 #2: in CS 0x2b58, which a far CALL states, a CALL at 0x2b678 wraps IP inside its segment to 0x34a29" min="1" max="1">^0x0002b678: CALL\s+0x34a29$</stringmatch>
+<stringmatch name="real-rel16 #3: the same CALL in CS 0x4b58 wraps to 0x54a29" min="1" max="1">^0x0004b678: CALL\s+0x54a29$</stringmatch>
+<stringmatch name="real-rel16 #4: no wrapped call lands in the first 64 KiB (mask) or 64 KiB short (linear sum)" min="0" max="0">CALL\s+(0x4a29|0x24a29|0x44a29|-0x6efd)$</stringmatch>
+<stringmatch name="real-rel16 #5: an instruction CS 0 cannot hold takes the linear sum (0x5b680 to 0x60010)" min="1" max="1">^0x0005b680: CALL\s+0x60010$</stringmatch>
+<stringmatch name="real-rel16 #6: com_main, f and k call what they wrap to" min="3" max="3">^  (com_helper|g|m)\(\);$</stringmatch>
+<stringmatch name="real-rel16 #7: the CALLs in f and k push IP 0x00fb, not the linear low half 0xb67b" min="2" max="2">= 0xfb;$</stringmatch>
+<stringmatch name="real-rel16 #8: no CALL pushes the linear low half" min="0" max="0">= 0xb67b;$</stringmatch>
 </decompilertest>

@@ -1141,6 +1141,15 @@ half-open range is rejected. Duplicate entries collapse. ARM32 raw input require
 even byte address before validation. Other addresses retain every input bit, so
 an odd ARM data or property address still selects the odd byte.
 
+An x86 real-mode image (`x86:LE:16:Real Mode`) also needs its code segment, the
+CS that a linear address is CS*16 + IP in. A file that ends inside the first
+64 KiB runs with CS 0 (a `.COM` program at `--base 0x100`, a boot sector at
+`0x7c00`); any other file of at most 64 KiB is one segment that starts at its
+base paragraph (`--base 0xf0000` is `F000:0000`). A larger file states no
+segment: its near branches past the first 64 KiB decode as the linear sum of
+the next address and the displacement, until a far call or jump names the
+segment of its target.
+
 Raw images carry no symbols, so there is no object-backed discovery tier to
 run; `--option rawdiscover off` leaves the inventory at the explicit seeds.
 On (the default) `rawdiscover` sweeps the executable bytes for direct call
@@ -2065,8 +2074,9 @@ apply to `kuna functions` — which never spawns a pool — exactly as they do t
 
   The gate group, decided before any thread is spawned, so nothing is wasted:
   `language commits context` (the loaded `.sla` has a `globalset`, so a decode at one address
-  changes how another decodes — ARM, MIPS, PowerPC, PA-RISC, PIC and friends,
-  while x86, x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass), `language has
+  changes how another decodes — ARM, MIPS, PowerPC, PA-RISC, PIC, 16-bit x86 and
+  friends, while 32-bit x86, x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass),
+  `language has
   delay slots`, `no rebuildable decode engine`, `loader cannot share its bytes`,
   `per-address decode context`, `executable range not fully mapped`, `executable
   image too small` (under 8 MiB of executable bytes the engine builds cost more

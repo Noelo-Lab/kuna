@@ -19,11 +19,3 @@ with : lockprefx=0 {
 @include "cet.sinc"
 @include "rdrand.sinc"
 }
-
-# (kuna #1288) rel16 in 16-bit code, after every other constructor so the unique-space layout of the rest is unchanged.
-# Real mode: the linear CS*16 + IP + rel, since a segment need not start on a 64K boundary.
-# Protected mode: selector:offset, the offset wraps within the selector.
-@ifndef IA64
-rel16: reloc is simm16 & prefix_66=0 & protectedMode=0 [ reloc=inst_next + simm16; ] { export *[ram]:$(SIZE) reloc; }
-rel16: reloc is simm16 & prefix_66=0 & protectedMode=1 [ reloc=((inst_next >> 16) << 16) | ((inst_next + simm16) & 0xFFFF); ] { export *[ram]:$(SIZE) reloc; }
-@endif
