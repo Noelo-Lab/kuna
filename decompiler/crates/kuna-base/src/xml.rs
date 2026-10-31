@@ -2134,7 +2134,8 @@ mod tests {
         // and kuna-earlyrestart / a pass stops at a dead-code delay bump and restarts at once (option earlyrestart)
         // and kuna-duplabels / two copies of one block print distinct labels
         // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype (option pltlocal)
-        assert_eq!(count, 611, "corpus file count drifted");
+        // and kuna-floatstore / a float stored into unknown bytes is a float store
+        assert_eq!(count, 612, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
