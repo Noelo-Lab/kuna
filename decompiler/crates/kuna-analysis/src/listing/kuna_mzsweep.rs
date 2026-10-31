@@ -19,7 +19,11 @@
 //!     transfer is a decode of data, not a call some instruction makes.
 //!  3. A function opens with code. A target whose straight-line run up to its
 //!     first control transfer decodes zero fill or an undecodable byte, or ends
-//!     in a far branch rule 1 refuses, is not one.
+//!     in a far branch rule 1 refuses, is not one. The far-branch arm needs a
+//!     relocation table: a module whose header lists no relocation (EXEPACK's,
+//!     or one an unpacker stripped) applies its own fixups, so every far call
+//!     its code makes is unrelocated and says nothing about whether the bytes
+//!     before it are code.
 //!
 //! The rules act on the sweep only. The recursive descent still walks every
 //! target a kept call reaches, so a function a refused call names is found
@@ -90,6 +94,13 @@ impl MzEvidence {
             && self.relocated_words.binary_search(&(vma + u64::from(len) - 2)).is_err()
     }
 
+    /// Whether the far branch of `len` bytes at `vma` that ends a target's
+    /// opening run refuses the target: its segment word is unrelocated in a
+    /// module whose relocation table names any word.
+    fn refuses_opening(&self, vma: u64, len: u32) -> bool {
+        !self.relocated_words.is_empty() && self.is_unrelocated_far_branch(vma, len)
+    }
+
     /// Whether `flow`, the flow of the instruction of `len` bytes at `vma`,
     /// ends a straight-line run.
     fn ends_run(&self, vma: u64, len: u32, flow: &FlowType) -> bool {
@@ -126,7 +137,7 @@ impl SweepRun {
 
 /// Whether the straight-line run from `target` up to its first control
 /// transfer decodes as code: no zero fill, no undecodable byte, no step out of
-/// `exec_ranges`, and no far branch whose segment no relocation names.
+/// `exec_ranges`, and no far branch [`MzEvidence::refuses_opening`] refuses.
 pub(super) fn opens_as_code(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -146,7 +157,7 @@ pub(super) fn opens_as_code(
             return false;
         }
         if mz.ends_run(vma, decoded.len, &classify(&decoded.ops, vma, decoded.len).flow) {
-            return !mz.is_unrelocated_far_branch(vma, decoded.len);
+            return !mz.refuses_opening(vma, decoded.len);
         }
         vma = vma.saturating_add(u64::from(decoded.len));
     }
@@ -192,6 +203,16 @@ mod tests {
         run.undecodable();
         assert!(!run.step(&mz, 0x10000, 5, &call()));
         assert!(mz.is_zero_fill(0x1000a, 2) && !mz.is_zero_fill(0x10012, 1) && !mz.is_zero_fill(0x10040, 2));
+    }
+
+    #[test]
+    fn an_opening_far_branch_refuses_a_target_only_where_relocations_exist() {
+        let mz = evidence();
+        assert!(!mz.refuses_opening(0x10000, 5), "a relocated far call");
+        assert!(mz.refuses_opening(0x10005, 5));
+        let unrelocated = MzEvidence::new(0x10000, mz.module.clone(), Vec::new());
+        assert!(unrelocated.is_unrelocated_far_branch(0x10000, 5));
+        assert!(!unrelocated.refuses_opening(0x10000, 5), "a module with no relocation table fixes its own far calls");
     }
 
     #[test]

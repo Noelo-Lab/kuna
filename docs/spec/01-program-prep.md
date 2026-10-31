@@ -5468,7 +5468,18 @@ that also read zero fill or an undecodable byte does not count, since it is a
 decode of data rather than a call an instruction makes. And a target counts
 only when its own straight-line run, read up to its first control transfer (at
 most 32 instructions), reads no zero fill and no undecodable byte and does not
-end in an unrelocated far branch: a function opens with code. `HLT`, which
+end in an unrelocated far branch: a function opens with code. The far-branch
+arm needs a relocation table. A module whose header lists no relocation
+(EXEPACK's, whose fixups its stub applies after unpacking, or one an unpacker
+stripped) carries its far calls unrelocated, so there a function that opens
+with one, as a large-model prologue's `call far __chkstk` does, is still
+code; the far call itself still counts for nothing, since its segment was
+never moved to the load address and its target is not where the call goes.
+The second rule does cost a real call now and then: a
+function that only the sweep reaches and whose first call follows data in the
+code segment (a switch table that decodes to an undecodable byte) with no
+decoded branch in between loses that call, and its callee goes with it when
+nothing else names it. `HLT`, which
 SLEIGH lifts as a branch to itself, does not end a run, because the CPU resumes
 after it. The seeds are never filtered, and the recursive descent still
 promotes every target that code it reaches calls, so a refused call drops only

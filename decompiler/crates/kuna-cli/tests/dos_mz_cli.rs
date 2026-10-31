@@ -136,6 +136,33 @@ fn data_segment_dos_image() -> Vec<u8> {
     header
 }
 
+/// A module whose header lists no relocation, as an EXEPACK-packed or
+/// relocation-stripped program's does: its code applies its own fixups, so its
+/// far calls are unrelocated. The entry exits; the code at `0x40`, which only
+/// the linear call sweep reads, near-calls `0x60`, which opens like a
+/// large-model function: `push bp; mov bp, sp; mov ax, 6; callf 0000:0080`.
+fn unrelocated_dos_image() -> Vec<u8> {
+    let mut module = vec![0x90u8; 0x80];
+    module[..6].copy_from_slice(&[0xb8, 0x00, 0x4c, 0xcd, 0x21, 0xcb]);
+    module[0x40..0x48].copy_from_slice(&[0x55, 0x8b, 0xec, 0xe8, 0x1a, 0x00, 0x5d, 0xc3]);
+    module[0x60..0x6d].copy_from_slice(&[0x55, 0x8b, 0xec, 0xb8, 0x06, 0x00, 0x9a, 0x80, 0x00, 0x00, 0x00, 0x5d, 0xc3]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 5] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
 fn kuna(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).output().expect("run kuna")
 }
@@ -243,5 +270,16 @@ fn the_call_sweep_keeps_code_calls_and_drops_calls_decoded_from_data() {
     for name in ["\"sub_10060\"", "\"sub_10070\"", "\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
         assert!(swept.contains(name), "missing {name} from the whole-module sweep: {swept}");
     }
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn without_relocations_an_unrelocated_far_call_does_not_refuse_the_function_it_opens() {
+    let path = written("dos-mz-unrelocated", &unrelocated_dos_image());
+    let exe = path.to_str().unwrap();
+    let out = kuna(&["functions", exe, "--json"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("\"sub_10060\""), "a function opening with a far call is code: {text}");
     std::fs::remove_file(&path).unwrap();
 }
