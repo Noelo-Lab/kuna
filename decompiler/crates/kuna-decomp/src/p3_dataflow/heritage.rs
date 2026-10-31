@@ -792,9 +792,9 @@ mod stacknode_flags {
     pub const dynamic_stack: uint4 = 4;
 }
 
-/// (kuna `readonlycalls`) The read-only-range by call guard count at which a
-/// heritage pass leaves read-only ranges unguarded.
-const READONLY_CROSS_PRODUCT: usize = 1 << 16;
+/// (kuna `readonlycalls`) The default read-only-range by call guard count at
+/// which a heritage pass leaves read-only ranges unguarded.
+pub const READONLY_CROSS_PRODUCT: u64 = 1 << 16;
 
 // =============================================================================
 // Heritage (heritage.hh:207)
@@ -4984,18 +4984,22 @@ impl Heritage {
     /// (kuna `readonlycalls`) Does this pass guard enough read-only RAM ranges
     /// at enough calls to leave them unguarded? The product of the calls and
     /// the pass's new, read, read-only ranges in the default data space must
-    /// reach [`READONLY_CROSS_PRODUCT`] guards: below it every call keeps
-    /// upstream's guard, whose chain the printer reads as a barrier.
+    /// reach the option's threshold ([`READONLY_CROSS_PRODUCT`] by default):
+    /// below it every call keeps upstream's guard, whose chain the printer
+    /// reads as a barrier.
     fn readonly_cross_product(&self, fd: &crate::funcdata::Funcdata) -> bool {
-        let calls = fd.num_calls().max(0) as usize;
-        if !fd.get_arch().readonly_calls || calls == 0 || calls * self.disjoint.len() < READONLY_CROSS_PRODUCT {
+        let Some(threshold) = fd.get_arch().readonly_calls else {
+            return false;
+        };
+        let calls = fd.num_calls().max(0) as u64;
+        if calls == 0 || calls.saturating_mul(self.disjoint.len() as u64) < threshold {
             return false;
         }
         let Some(ram) = fd.get_arch().manage().get_default_data_space() else {
             return false;
         };
         let usepoint = Address::new_invalid();
-        let mut ranges = 0usize;
+        let mut ranges = 0u64;
         for i in 0..self.disjoint.len() {
             let range = self.disjoint.get(i);
             if !range.new_addresses() || range.addr.get_space().map(|s| s.get_index()) != Some(ram.get_index()) {
@@ -5012,7 +5016,7 @@ impl Heritage {
             });
             if read {
                 ranges += 1;
-                if ranges * calls >= READONLY_CROSS_PRODUCT {
+                if ranges.saturating_mul(calls) >= threshold {
                     return true;
                 }
             }
