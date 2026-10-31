@@ -288,11 +288,19 @@ impl Action for ActionPrototypeTypes {
                     }
                     let input = data.new_varnode(narrow.size as int4, &narrow.get_addr(), None);
                     let input = data.set_input_varnode(input).expect("stack base input");
-                    let op = data.new_op(1, data.bblocks_block_start(top));
+                    let high_addr = if full.get_addr().is_big_endian() {
+                        full.get_addr()
+                    } else {
+                        &full.get_addr() + i64::from(narrow.size)
+                    };
+                    let high = data.new_varnode((full.size - narrow.size) as int4, &high_addr, None);
+                    let high = data.set_input_varnode(high).expect("physical stack upper input");
+                    let op = data.new_op(2, data.bblocks_block_start(top));
                     data.new_varnode_out(full.size as int4, &full.get_addr(), op)
                         .expect("full stack base output");
-                    data.op_set_opcode_code(op, OpCode::CPUI_INT_ZEXT);
-                    data.op_set_input(op, input, 0).expect("stack base extension");
+                    data.op_set_opcode_code(op, OpCode::CPUI_PIECE);
+                    data.op_set_input(op, high, 0).expect("physical stack upper bits");
+                    data.op_set_input(op, input, 1).expect("logical stack address");
                     data.op_insert_begin(op, top);
                     self.base.count += 1;
                 }
@@ -2345,6 +2353,9 @@ pub fn proto_actions(g: &str) -> Vec<Box<dyn Action>> {
         ActionPrototypeWarnings::boxed(g),
     ]
 }
+
+#[cfg(test)]
+mod stack_input_tests;
 
 #[cfg(test)]
 mod tests {

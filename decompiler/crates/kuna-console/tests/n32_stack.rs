@@ -108,3 +108,70 @@ fn gcc_scalar_stack_slots_and_wide_values_remain_distinct() {
         );
     }
 }
+
+#[test]
+fn gcc_pointer_uses_preserve_inferred_integers_and_physical_sp() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    for variant in ["octeon", "octeonplus", "octeon2", "octeon3"] {
+        for inferred in [false, true] {
+            let suffix = if inferred { "-inferred" } else { "" };
+            let target = format!("MIPS:BE:64:{variant}-32addr:default");
+            let mut prog = bootstrap_from_object(
+                root.join(format!(
+                    "tests/fixtures/mips-n32-stack/width-n32{suffix}.elf"
+                ))
+                .to_str()
+                .unwrap(),
+                &target,
+                &[root.join("specs").to_string_lossy().into_owned()],
+            )
+            .unwrap();
+            prog.arch_mut().set_kuna_option("ctypes", "on").unwrap();
+            prog.commit_pending_analysis().unwrap();
+            for (name, inferred_contract, declared_contract) in [
+                (
+                    "compare_bits",
+                    "compare_bits(long long a0,long long a1)",
+                    "raw == expected",
+                ),
+                (
+                    "return_bits",
+                    "unsigned long long return_bits(unsigned long long a0,",
+                    "return raw;",
+                ),
+                (
+                    "add_bits",
+                    "add_bits(long long a0,long long a1,long long a2)",
+                    "raw + delta == expected",
+                ),
+                ("sp_high", "// sp_hi", "// sp_hi"),
+                ("sp_full", "CONCAT44(", "CONCAT44("),
+                ("sp_and_stack", "// sp_hi", "+ ninth;"),
+            ] {
+                let entry = prog
+                    .resolve_entry(&EntrySelector::Name(name.into()))
+                    .unwrap();
+                let result = decompile_targets(&mut prog, vec![entry], false, false, false);
+                assert!(
+                    result[0].error.is_none(),
+                    "{target} {name}: {:?}",
+                    result[0].error
+                );
+                let code = result[0].code.as_ref().unwrap();
+                let expected = if inferred {
+                    inferred_contract
+                } else {
+                    declared_contract
+                };
+                assert!(
+                    code.contains(expected),
+                    "{target} inferred={inferred} {name}: {code}"
+                );
+                if name.starts_with("sp_") {
+                    assert!(code.contains("// sp_hi"), "{target} {name}: {code}");
+                    assert!(!code.contains("return 0;"), "{target} {name}: {code}");
+                }
+            }
+        }
+    }
+}

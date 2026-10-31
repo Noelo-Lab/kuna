@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3365,
-    3365
+    3372,
+    3372
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1302,6 +1302,13 @@
     "data:N32 stack: inferred ten arguments reach addition",
     "data:N32 stack: integer argument keeps low slot bytes",
     "data:N32 stack: pointer argument reaches load",
+    "data:N32 width: full SP contains both physical halves",
+    "data:N32 width: high SP read is never invented zero",
+    "data:N32 width: inferred address arithmetic keeps 64 bits",
+    "data:N32 width: inferred comparison keeps both 64-bit inputs",
+    "data:N32 width: inferred raw return retains 64 bits",
+    "data:N32 width: physical SP and stack argument coexist",
+    "data:N32 width: physical SP high bytes remain inputs",
     "data:NARROWARGS #1: default declares the uint16_t parameter unsigned short",
     "data:NARROWARGS #2: off keeps the register-wide parameter",
     "data:NARROWARGS #3: a left shift is not narrow evidence",

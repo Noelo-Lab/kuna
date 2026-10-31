@@ -2030,9 +2030,12 @@ On architectures with a truncated default data space, `RulePtrFlow` narrows
 LOAD/STORE address operands to their referenced space's address width and
 indirect branch/call targets to the code-space width. A SUBPIECE takes the low
 bytes (with storage adjusted for endianness); constants are masked directly.
-Other uses retain the full value. Pointer-flow marks let sub-variable analysis
-propagate the required width through arithmetic, copies and merges. In N32,
-this works with the entry stack-register extension (chapter 04) to recover
+Other uses retain the full value. Pointer-flow marks describe address uses;
+they do not prove that upper integer bits are zero or unused. SUBPIECE- and
+INT_ZEXT-triggered sub-variable analysis must apply its normal consumption and
+value-range checks even to marked pointers, including comparisons, returns
+and other consumers reached through arithmetic, copies or merges. In N32,
+this works with the entry stack-register reconstruction (chapter 04) to recover
 stack arguments and locals without truncating their 64-bit contents. Narrow
 operands are never widened, and untruncated architectures keep their existing
 behavior.

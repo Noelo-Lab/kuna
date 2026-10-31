@@ -1,0 +1,33 @@
+<decompilertest>
+<!-- Original GCC 7.3 N32 instructions from tests/fixtures/mips-n32-stack/width.c.
+     Integer consumers are inferred; physical-SP probes also lock their return. -->
+<binaryimage arch="MIPS:BE:64:octeon-32addr:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">000410007085202adc42000003e000080082102d000000000004180000801025dc63000003e00008fca30000000000000085202d000410007086202adc42000003e000080082102d03a0102503e000080002103e0000000003a0102503e00008000000000000000003a01025dfa300000002103e03e000080043102d00000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="compare_bits"/>
+<symbol space="ram" offset="0x100018" name="return_bits"/>
+<symbol space="ram" offset="0x100030" name="add_bits"/>
+<symbol space="ram" offset="0x100048" name="sp_high"/>
+<symbol space="ram" offset="0x100058" name="sp_full"/>
+<symbol space="ram" offset="0x100068" name="sp_and_stack"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>lo fu compare_bits</com><com>decompile</com><com>print C</com>
+<com>lo fu return_bits</com><com>decompile</com><com>print C</com>
+<com>lo fu add_bits</com><com>decompile</com><com>print C</com>
+<com>parse line extern unsigned long long sp_high(void);</com>
+<com>lo fu sp_high</com><com>decompile</com><com>print C</com>
+<com>parse line extern unsigned long long sp_full(void);</com>
+<com>lo fu sp_full</com><com>decompile</com><com>print C</com>
+<com>parse line extern unsigned long long sp_and_stack(unsigned long long a,unsigned long long b,unsigned long long c,unsigned long long d,unsigned long long e,unsigned long long f,unsigned long long g,unsigned long long h,unsigned long long ninth);</com>
+<com>lo fu sp_and_stack</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="N32 width: inferred comparison keeps both 64-bit inputs" min="1" max="1">compare_bits\(long long a0,long long a1\)</stringmatch>
+<stringmatch name="N32 width: inferred raw return retains 64 bits" min="1" max="1">unsigned long long return_bits\(unsigned long long a0,</stringmatch>
+<stringmatch name="N32 width: inferred address arithmetic keeps 64 bits" min="1" max="1">add_bits\(long long a0,long long a1,long long a2\)</stringmatch>
+<stringmatch name="N32 width: physical SP high bytes remain inputs" min="3" max="3">// sp_hi</stringmatch>
+<stringmatch name="N32 width: full SP contains both physical halves" min="1" max="1">CONCAT44\(</stringmatch>
+<stringmatch name="N32 width: physical SP and stack argument coexist" min="1" max="1">return v1 \+ ninth;</stringmatch>
+<stringmatch name="N32 width: high SP read is never invented zero" min="0" max="0">return 0;</stringmatch>
+</decompilertest>

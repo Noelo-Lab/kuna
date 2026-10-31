@@ -159,3 +159,74 @@ fn each_access_uses_its_space_width_without_widening_small_pointers() {
         assert_eq!(fd.vbank().get(pointer).unwrap().get_size(), pointer_size);
     }
 }
+
+#[test]
+fn pointer_subpieces_do_not_narrow_full_width_consumers() {
+    use crate::subflow::RuleSubvarSubpiece;
+
+    for be in [false, true] {
+        for consumer in [
+            OpCode::CPUI_INT_EQUAL,
+            OpCode::CPUI_INT_LESS,
+            OpCode::CPUI_RETURN,
+        ] {
+            let (mut fd, block) = fixture(be);
+            let full = input(&mut fd, "register", 8);
+            fd.vbank_mut().get_mut(full).unwrap().set_consume(u64::MAX);
+            let (load, _) = access(&mut fd, block, OpCode::CPUI_LOAD, full, "ram");
+            let observer = fd.new_op(2, fd.get_address().clone());
+            fd.op_set_opcode_code(observer, consumer);
+            let other = fd.new_constant(
+                8,
+                if consumer == OpCode::CPUI_RETURN {
+                    0
+                } else {
+                    7
+                },
+            );
+            let slot = i32::from(consumer == OpCode::CPUI_RETURN);
+            fd.op_set_input(observer, full, slot).unwrap();
+            fd.op_set_input(observer, other, 1 - slot).unwrap();
+            if consumer != OpCode::CPUI_RETURN {
+                fd.new_unique_out(1, observer).unwrap();
+            }
+            fd.op_insert_after(observer, load);
+            RulePtrFlow::new().apply_op(load, &mut fd);
+            let narrow = fd.obank().get(load).unwrap().get_in(1).unwrap();
+            assert!(fd.vbank().get(narrow).unwrap().is_ptr_flow());
+            let trunc = fd.vbank().get(narrow).unwrap().get_def().unwrap();
+            assert_eq!(
+                RuleSubvarSubpiece::new("subvar").apply_op(trunc, &mut fd),
+                0
+            );
+            assert_eq!(fd.obank().get(observer).unwrap().get_in(slot), Some(full));
+            assert_eq!(fd.vbank().get(full).unwrap().get_size(), 8);
+        }
+    }
+}
+
+#[test]
+fn extended_pointer_comparison_keeps_the_other_operands_upper_bits() {
+    use crate::subflow::RuleSubvarZext;
+
+    let (mut fd, block) = fixture(true);
+    let low = input(&mut fd, "register", 4);
+    fd.vbank_mut().get_mut(low).unwrap().set_ptr_flow();
+    let zext = fd.new_op(1, fd.get_address().clone());
+    fd.op_set_opcode_code(zext, OpCode::CPUI_INT_ZEXT);
+    fd.op_set_input(zext, low, 0).unwrap();
+    let full = fd.new_unique_out(8, zext).unwrap();
+    fd.vbank_mut().get_mut(full).unwrap().set_consume(u64::MAX);
+    fd.op_insert_begin(zext, block);
+    let other = input(&mut fd, "unique", 8);
+    fd.vbank_mut().get_mut(other).unwrap().set_consume(u64::MAX);
+    let compare = fd.new_op(2, fd.get_address().clone());
+    fd.op_set_opcode_code(compare, OpCode::CPUI_INT_EQUAL);
+    fd.op_set_input(compare, full, 0).unwrap();
+    fd.op_set_input(compare, other, 1).unwrap();
+    fd.new_unique_out(1, compare).unwrap();
+    fd.op_insert_after(compare, zext);
+    assert_eq!(RuleSubvarZext::new("subvar").apply_op(zext, &mut fd), 0);
+    assert_eq!(fd.obank().get(compare).unwrap().get_in(1), Some(other));
+    assert_eq!(fd.vbank().get(other).unwrap().get_size(), 8);
+}

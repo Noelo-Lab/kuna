@@ -32,3 +32,19 @@ The N64 copy is the control with equal register and address widths.
 `indirect_frame` also exposes a separate, pre-existing N32 call-result recovery
 defect. It is retained for comparison, but excluded from N32 execution passes;
 the stack fix alone does not recover its return value correctly.
+
+`width.c` adds independent integer consumers of narrowed addresses and physical
+SP observations. Build `width-n32.elf` and `width-64.elf` with the commands
+above, replacing `stack.c` with `width.c`, the output basename with `width`,
+and the entry symbol with `compare_bits`. Produce the inferred-prototype copies
+using `"$OCTEON_STRIP" --strip-debug -o "width-$abi-inferred.elf" "width-$abi.elf"`;
+`OCTEON_STRIP` is the matching GNU multiarch strip. Symbols remain, DWARF does
+not. Declared and inferred cases must both preserve full-width comparisons,
+arithmetic and return values after the same input is used as a 32-bit address.
+
+The SP probes deliberately read the physical register using inline assembly.
+Its upper bytes are unknown machine inputs, not C parameters or an assumed
+extension of the logical stack address. `sp_and_stack` observes both the upper
+SP bytes and a stack argument. Original instruction execution with SP set to
+`0xffffffff80001000` must give `0xffffffff` for `sp_high`; a separate input
+preservation test covers arbitrary upper bits and both endiannesses.
