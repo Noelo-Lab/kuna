@@ -1223,7 +1223,7 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
 #[test]
 fn raw_pcode_rejects_unmapped_addresses_and_unsupported_walks() {
     let binary = fauxware();
-    for args in [vec!["raw-pcode", &binary, "0xffffffffffffffff"], vec!["raw-pcode", &binary, "main", "--follow"]] {
+    for args in [vec!["raw-pcode", &binary, "0xffffffffffffffff"], vec!["raw-pcode", &binary, "main", "--as", "data"]] {
         let (_, stderr, code) = run_kuna(&args);
         assert_ne!(code, 0);
         assert!(stderr.contains("error:"));
@@ -1271,4 +1271,92 @@ fn raw_pcode_mips_return_includes_delay_slot() {
     let delay = ops.iter().position(|op| op["opcode"] == "INT_OR").unwrap();
     let return_op = ops.iter().position(|op| op["opcode"] == "RETURN").unwrap();
     assert!(delay < return_op);
+}
+
+
+fn raw_flow_fixture(bytes: &[u8]) -> String {
+    use object::write::{Object, Symbol, SymbolSection};
+    use object::{Architecture, BinaryFormat, Endianness, SectionKind, SymbolFlags, SymbolKind, SymbolScope};
+    let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+    let section = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    obj.append_section_data(section, bytes, 16);
+    obj.add_symbol(Symbol { name: b"probe".to_vec(), value: 0, size: bytes.len() as u64,
+        kind: SymbolKind::Text, scope: SymbolScope::Linkage, weak: false,
+        section: SymbolSection::Section(section), flags: SymbolFlags::None });
+    let path = common::scratch_file("raw-flow", "o");
+    std::fs::write(&path, obj.write().unwrap()).unwrap();
+    path.to_str().unwrap().to_string()
+}
+
+#[test]
+fn raw_pcode_follow_skips_inline_data_and_follows_both_paths() {
+    // jmp +2; ud2 (unreachable); je +1; ret; ret
+    let binary = raw_flow_fixture(&[0xeb, 0x02, 0x0f, 0x0b, 0x74, 0x01, 0xc3, 0xc3]);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--follow", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["complete"], true, "{doc}");
+    let start = doc["start"].as_u64().unwrap();
+    let blocks = doc["blocks"].as_array().unwrap();
+    let addresses: Vec<u64> = blocks.iter().flat_map(|block| block["instructions"].as_array().unwrap())
+        .map(|row| row["address"].as_u64().unwrap()).collect();
+    assert_eq!(addresses, [start, start + 4, start + 6, start + 7]);
+    let conditional = blocks.iter().find(|b| b["start"] == start + 4).unwrap();
+    let successors = conditional["successors"].as_array().unwrap();
+    assert!(successors.iter().any(|edge| edge["target"] == start + 6));
+    assert!(successors.iter().any(|edge| edge["target"] == start + 7));
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--follow", "--count", "1", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let limited: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(limited["complete"], false);
+    assert!(limited["issues"].as_array().unwrap().iter().any(|issue| issue["reason"] == "instruction_limit"));
+}
+
+#[test]
+fn raw_pcode_follow_reports_unresolved_indirect_jump() {
+    let binary = raw_flow_fixture(&[0xff, 0xe0]); // jmp rax
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--follow", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["complete"], false);
+    assert!(doc["issues"].as_array().unwrap().iter().any(|issue| issue["reason"] == "indirect_branch"));
+}
+
+#[test]
+fn raw_pcode_follow_preserves_arm_modes_and_mips_delay_slots() {
+    for (name, target, expected, bytes, count) in [
+        ("arm_interwork_le32", "0x2000041", "0x2000040", "0720", 2),
+        ("bejoin_order_mips32_O2", "widen", "0x400130", "000417c3", 2),
+    ] {
+        let binary = fixture(name);
+        let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, target, "--follow", "--json"]);
+        assert_eq!(code, 0, "{stderr}");
+        let doc: Json = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(doc["complete"], true, "{doc}");
+        assert_eq!(doc["instruction_count"], count);
+        assert_eq!(doc["start_hex"], expected);
+        assert_eq!(doc["blocks"][0]["instructions"][0]["bytes"], bytes);
+        if name.starts_with("bejoin") {
+            assert_eq!(doc["blocks"][0]["instructions"][1]["bytes"], "03e0000800801825");
+        }
+    }
+}
+
+#[test]
+fn raw_pcode_follow_preserves_out_of_range_edges_and_partial_errors() {
+    let external = raw_flow_fixture(&[0xeb, 0x7f]);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &external, "probe", "--follow", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["complete"], false);
+    assert!(doc["issues"].as_array().unwrap().iter().any(|issue| issue["reason"] == "out_of_range" && issue["target"].as_u64().is_some()));
+    assert!(doc["blocks"][0]["successors"].as_array().unwrap().iter().any(|edge| edge["target"].as_u64().is_some()));
+
+    let boundary = raw_flow_fixture(&[0x90, 0x0f]);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &boundary, "probe", "--follow", "--json"]);
+    assert_eq!(code, 1, "{stderr} {stdout}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["complete"], false);
+    assert_eq!(doc["instruction_count"], 1);
+    assert!(doc["issues"].as_array().unwrap().iter().any(|issue| issue["reason"] == "decode_error"));
 }

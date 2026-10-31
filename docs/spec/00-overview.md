@@ -3679,3 +3679,9 @@ the failure address and a nonzero exit status. Each row carries the exact loaded
 bytes consumed by the translator alongside the operations. A lift that includes
 a delay slot reports the combined byte span and the slot's operations in the
 same row.
+
+The raw p-code `--follow` query walks only known direct intra-window successors
+and fallthrough, groups the resulting lifts into basic blocks, and reports
+unresolved, out-of-window, overlapping or undecodable paths explicitly. Its
+completeness flag is scoped to this bounded walk and does not prove all dynamic
+execution paths.

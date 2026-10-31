@@ -17,3 +17,8 @@ or claim of general reachability is made. Linear mode remains unchanged.
 Tests use an x86 jump over inline bytes with a conditional join, an indirect
 branch and a bounded decode; existing ARM/Thumb and MIPS tests protect mode and
 delay-slot behaviour. Validate the JSON and text output and both parity corpora.
+
+On this macOS host, five release CLI invocations of `fauxware main --count 5
+--json` had median wall times of 49.1 ms for linear and 46.3 ms for `--follow`
+(-5.7%). The modes visit different paths, so this small, load-dominated sample
+is a command cost check, not a benchmark of equal work.

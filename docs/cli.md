@@ -2308,6 +2308,7 @@ malformed command line is exit `2` with the usage block.
 kuna raw-pcode ./a.out main --count 10
 kuna raw-pcode ./a.out 0x401000 --count 1 --json
 kuna raw-pcode ./a.out 0x401000-0x401020 --json
+kuna raw-pcode ./a.out main --follow --json
 ```
 
 This linearly lifts each instruction directly with SLEIGH, before decompiler
@@ -2338,6 +2339,22 @@ also spelled as hexadecimal strings for consumers without exact 64-bit numbers.
 When SLEIGH includes a delay slot in one lift (for example a MIPS `jr`), the
 row's size and bytes cover the branch and its delay slot, and its ops include
 the slot's operations before the branch. `--count` counts such a lift as one.
+
+With `--follow`, the command instead visits direct intra-range branches and
+fallthrough from the entry, and groups lifts into blocks. Calls are assumed to
+return and are not followed into callees. The count caps lifts; the function
+inventory or an explicit range bounds addresses. JSON `mode: "flow"` contains
+`blocks`, each with `start`, `start_hex`, `instructions`, and `successors`.
+An edge has a `kind` and a numeric `target` plus `target_hex`, or null for an
+unknown target. `range_end` is an exclusive address bound, not a claim that all
+bytes below it were decoded. `instruction_count` counts the lifts visited.
+`complete` means this bounded direct-flow walk encountered no known gaps, not
+that all runtime execution paths are proven. The `issues` array reports
+`indirect_branch`, `unsupported_pcode_flow`, `out_of_range`,
+`overlapping_instruction`, `instruction_limit`, and `decode_error`, with the
+source address and any target or error message. Decode errors exit nonzero
+while preserving the graph already built. Indirect targets, exception paths and
+callee no-return behavior are not inferred.
 
 `decompile --raw` instead prints the decompiler's current IR after its passes.
 

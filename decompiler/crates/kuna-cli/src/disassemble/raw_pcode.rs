@@ -1,12 +1,14 @@
 //! Instruction-level SLEIGH output before the decompiler changes it.
 
+mod flow;
+
 use super::*;
 use kuna_console::engine::RawPcodeVarnode;
 use serde_json::{json, Value};
 
 pub fn run(argv: &[String]) -> i32 {
     if argv.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("usage: kuna raw-pcode <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--json] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]");
+        println!("usage: kuna raw-pcode <binary> <name|0xaddr|0xstart-0xend> [--addr] [--count N] [--bytes N] [--json] [--follow] [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]");
         return 0;
     }
     let args = match parse_args(argv) {
@@ -16,11 +18,16 @@ pub fn run(argv: &[String]) -> i32 {
             return 2;
         }
     };
-    if args.follow || args.view.is_some() {
-        eprintln!("error: --follow and --as do not apply to raw-pcode");
+    if args.view.is_some() {
+        eprintln!("error: --as does not apply to raw-pcode");
         return 2;
     }
-    match render_raw(&args) {
+    let result = if args.follow {
+        flow::render(&args)
+    } else {
+        render_raw(&args)
+    };
+    match result {
         Ok((text, status)) => crate::output::emit_with_status(&text, status),
         Err(e) => {
             eprintln!("error: {e}");
