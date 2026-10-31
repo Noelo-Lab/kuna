@@ -834,6 +834,48 @@ sections, and symbols, and is also used when analysis or a CLI inspection
 command reopens the image. It retains the typed reader's header and section
 validation; it does not rewrite the machine bytes to another architecture.
 
+(kuna) **MS-DOS `MZ` executables load as relocated real-mode images.**
+`decompiler/crates/kuna-analysis/src/loadimage_mz.rs (MzImage)` claims a file
+with an `MZ` (or `ZM`) header that is not the stub of a newer format: a `PE\0\0`
+signature at `e_lfanew`, an `NE`/`LE`/`LX` one there past the old header, or an
+image the `object` crate opens as PE keeps the object path. Bytes 0x3c..0x40 are
+read as `e_lfanew` for the `NE`/`LE`/`LX` test only when the header reaches past
+them and the relocation table does not cover them (deark's rule); otherwise they
+are code or a relocation entry, and a stray `LE` they happen to point at does not
+turn a DOS program away. The load module is
+the file from the header's paragraph count to the size its page fields declare
+(an overlay past that is not mapped), and it is placed at segment 0x1000, linear
+0x10000, as DOS would place it at some free paragraph: each relocation-table
+entry adds 0x1000 to the word it names, and one that names a word outside the
+module is skipped and reported. The entry is `(0x1000 + CS) * 16 + IP`, with the
+segment add wrapping as the CPU's does, so PKLITE's `FFF0:0100` lands on the
+first module byte; an entry outside the module is refused. The dispatcher
+(`decompiler/crates/kuna-console/src/engine.rs (bootstrap_from_mz_bytes)`) hands
+the relocated bytes to the raw-image path as one in-memory `CODE` mapping, with
+the `x86:LE:16:Real Mode:default` language unless the caller names another and
+the entry as its seed, so `rawdiscover` widens the inventory from it and the
+entry is reported as the image's. It then states the code segments the image
+names to the 16-bit x86 decoder
+(`decompiler/crates/kuna-analysis/src/loader/kuna_realmodecs.rs (paint)`): the
+entry's CS from its `CS:IP`, and, for every relocation whose word is the segment
+of a far `CALL`/`JMP ptr16:16` (`9a`/`ea`, offset, segment) with a target in the
+module, that segment at the target (`MzImage::code_segments`). The target must
+also lie below the next segment the image names (every relocated word, and the
+entry's CS): a far branch lands in its own segment, while a `9a`/`ea` byte that
+is the tail of another instruction (`b8 9a 10 ba ..` is `mov ax, 0x109a; mov
+dx, seg x`) implies a target past that segment, in code another CS runs, and
+stating that CS there would wrap its near branches in the wrong segment. A
+segment holds from its point up to the next one, so a near branch in the
+entry's segment wraps IP inside that segment instead of taking the linear sum,
+and the raw-image call sweep, which runs before the descent, already decodes a
+far-called segment with its own CS. The header's
+minimum allocation is not mapped: a flow into uninitialized memory is a flow
+into nothing, not into zeros that decode as `ADD [BX+SI],AL`. A PKLITE or LZEXE
+stub is named on load, since its code is a decompressor in front of a packed
+body (issue #1288); the note sends a PKLITE file to `kuna unpack`. Surfaces that
+need an `object::File` refuse an `MZ` input with a capability error, as they do
+a TE.
+
 (kuna) **UEFI TE images take a bounded container path of their own.**
 `decompiler/crates/kuna-analysis/src/loadimage_te.rs (TeLoadImage)` parses a
 file the format probe claims. That probe reads more than the `VZ` signature —
