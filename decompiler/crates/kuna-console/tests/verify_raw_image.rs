@@ -295,7 +295,8 @@ fn console_load_raw_preserves_whitespace_in_final_filename() {
 /// (kuna #1288) A raw x86 real-mode image states its code segment when one
 /// segment holds it: CS 0 in the first 64 KiB, else its base paragraph. A near
 /// CALL wraps IP inside that segment and pushes IP; a larger image states none
-/// and takes the linear sum above 64 KiB.
+/// and takes the linear sum above 64 KiB. The default `segmentize` folds the
+/// push into the frame, so the pushed IP is read with the option off.
 #[test]
 fn raw_real_mode_images_decode_near_calls_in_their_code_segment() {
     let image = |size: usize, code: &[(usize, &[u8])]| {
@@ -350,11 +351,16 @@ fn raw_real_mode_images_decode_near_calls_in_their_code_segment() {
         program.commit_pending_analysis().unwrap();
         assert!(program.find_entry_at(callee).is_some(), "{stem}: no function at {callee:#x}");
         let entry = program.find_entry_at(caller).expect("seeded raw entry must resolve");
-        let results = decompile_targets(&mut program, vec![entry], true, false, false);
-        assert!(results[0].error.is_none(), "{stem}: {:?}", results[0].error);
-        let code = results[0].code.as_deref().unwrap();
-        assert!(code.contains(&format!("sub_{callee:x}();")), "{stem}:\n{code}");
-        assert!(code.contains(pushed), "{stem}:\n{code}");
+        for segmentize in ["on", "off"] {
+            program.arch_mut().set_kuna_option("segmentize", segmentize).expect("segmentize flips");
+            let results = decompile_targets(&mut program, vec![entry.clone()], true, false, false);
+            assert!(results[0].error.is_none(), "{stem}: {:?}", results[0].error);
+            let code = results[0].code.as_deref().unwrap();
+            assert!(code.contains(&format!("sub_{callee:x}();")), "{stem}:\n{code}");
+            if segmentize == "off" {
+                assert!(code.contains(pushed), "{stem}:\n{code}");
+            }
+        }
     }
 }
 
