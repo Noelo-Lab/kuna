@@ -2226,6 +2226,10 @@ impl Funcdata {
         let mut reached_match = false;
         let mut i = 0;
         while i < varlist.len() {
+            if crate::decompile_drive::budget_probe() {
+                res = false;
+                break;
+            }
             let (vn, base_flags, forced) = varlist[i];
             // Snapshot the descend list (we mutate marks while iterating).
             let descend: Vec<OId> = match self.vbank().get(vn) {
@@ -2453,7 +2457,7 @@ impl Funcdata {
         main_flags: kuna_base::types::uint4,
     ) -> bool {
         use crate::expression::traverse_flags;
-        if maxlevel == 0 {
+        if maxlevel == 0 || crate::decompile_drive::budget_probe() {
             return false;
         }
         let written = self.vbank().get(invn).map(|v| v.is_written()).unwrap_or(false);
