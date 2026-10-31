@@ -282,25 +282,125 @@ fn is_imported_indirect_symbol(raw: u32) -> bool {
     raw & (INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS) == 0
 }
 
-/// Append the Mach-O exports (name + address) as additive funcsyms, so a call to
-/// an exported function of this image resolves. Shared tail of every `collect`
-/// exit path (including the early-return error arms), mirroring `pe_iat`'s
-/// export append.
+/// Append the Mach-O exports that lie in code as additive funcsyms, so a call
+/// to an exported function of this image resolves. Shared tail of every
+/// `collect` exit path (including the early-return error arms), mirroring
+/// `pe_iat`'s export append. An export outside every code section (a
+/// `__DATA` global, an Objective-C class object, an `N_ABS` value) names data,
+/// not an entry; [`data_exports`] reports those.
 fn finish_with_exports(
     neutral: &object::File,
     mut out: MachOIndirectSymbols,
 ) -> MachOIndirectSymbols {
+    for (addr, name, code) in named_exports(neutral) {
+        if code {
+            let name = strip_leading_underscore(&name);
+            out.imports.push(ImportSym { addr, name, kind: ImportSymKind::Export });
+        }
+    }
+    out
+}
+
+/// The image's named exports as `(address, raw name, in_code)`, where `in_code`
+/// says the address lies inside a section the loader classifies as code
+/// ([`code_ranges`]).
+fn named_exports(neutral: &object::File) -> Vec<(u64, Vec<u8>, bool)> {
     use object::read::Object;
-    if let Ok(exports) = neutral.exports() {
-        for e in exports {
-            let name = e.name();
-            if !name.is_empty() {
-                out.imports.push(ImportSym {
-                    addr: e.address(),
-                    name: strip_leading_underscore(name),
-                    kind: ImportSymKind::Export,
-                });
-            }
+    let Ok(exports) = neutral.exports() else {
+        return Vec::new();
+    };
+    let code = code_ranges(neutral);
+    exports
+        .into_iter()
+        .filter(|e| !e.name().is_empty())
+        .map(|e| {
+            let addr = e.address();
+            (addr, e.name().to_vec(), in_ranges(&code, addr))
+        })
+        .collect()
+}
+
+/// The `[start, start+size)` extents of the Mach-O sections the loader
+/// classifies as code (`MachOFormat::section_bits` `CODE`: an
+/// `S_ATTR_PURE_INSTRUCTIONS` section or `__TEXT,__text`).
+pub(crate) fn code_ranges(neutral: &object::File) -> Vec<(u64, u64)> {
+    use object::read::{Object, ObjectSection};
+    use super::format::ObjectFormat;
+    let fmt = super::format::macho::MachOFormat;
+    neutral
+        .sections()
+        .filter(|sec| {
+            fmt.section_bits(sec.name().unwrap_or(""), sec.kind(), sec.flags())
+                & kuna_sleigh::loadimage::section_flags::CODE
+                != 0
+        })
+        .map(|sec| (sec.address(), sec.size()))
+        .collect()
+}
+
+/// Whether `addr` lies inside one of `ranges` (`(start, size)` pairs).
+pub(crate) fn in_ranges(ranges: &[(u64, u64)], addr: u64) -> bool {
+    ranges.iter().any(|&(start, size)| addr >= start && addr - start < size)
+}
+
+/// The Mach-O exports that name data rather than code, as `(address, name)`:
+/// each named export outside every code section, under both its symbol-table
+/// spelling (`_audit_global`) and the C spelling the export resolver gives a
+/// function (`audit_global`). Empty for a non-Mach-O image.
+pub fn data_exports(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    if file.format() != object::BinaryFormat::MachO {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (addr, name, code) in named_exports(file) {
+        if code {
+            continue;
+        }
+        let stripped = strip_leading_underscore(&name);
+        if stripped != name && !stripped.is_empty() {
+            out.push((addr, stripped));
+        }
+        out.push((addr, name));
+    }
+    out
+}
+
+/// The defined Mach-O symbols that name data, as `(address, raw name)`: each
+/// named `N_SECT` symbol inside its own section when that section is not code
+/// ([`code_ranges`]), plus a symbol at the image base, which labels the Mach
+/// header (`__mh_execute_header`, numbered into `__text` but addressed before
+/// it). Spelled as the symbol table spells them (`_audit_global`). Empty for a
+/// non-Mach-O image.
+pub fn data_symbols(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
+    if file.format() != object::BinaryFormat::MachO {
+        return Vec::new();
+    }
+    let code = code_ranges(file);
+    let header = file
+        .segments()
+        .filter(|seg| seg.file_range().1 != 0)
+        .map(|seg| seg.address())
+        .min();
+    let mut sections: std::collections::HashMap<usize, Option<(u64, u64)>> =
+        std::collections::HashMap::new();
+    let mut out = Vec::new();
+    for sym in file.symbols() {
+        if sym.is_undefined() || sym.kind() == object::SymbolKind::Section {
+            continue;
+        }
+        let Some(index) = sym.section_index() else { continue };
+        let addr = sym.address();
+        let bounds = *sections.entry(index.0).or_insert_with(|| {
+            file.section_by_index(index).ok().map(|sec| (sec.address(), sec.size()))
+        });
+        let inside = bounds.is_some_and(|(lo, size)| addr >= lo && addr - lo < size);
+        if !(inside || Some(addr) == header) || in_ranges(&code, addr) {
+            continue;
+        }
+        match sym.name_bytes() {
+            Ok(name) if !name.is_empty() => out.push((addr, name.to_vec())),
+            _ => {}
         }
     }
     out

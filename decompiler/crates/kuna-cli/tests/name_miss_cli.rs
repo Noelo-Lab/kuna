@@ -84,3 +84,52 @@ fn a_stripped_image_still_gets_the_addr_advice() {
         "the by-address advice must survive:\n{stderr}"
     );
 }
+
+/// (GH #1339) A Mach-O global is data: `functions` does not list it, and a
+/// decompile by either spelling of its name says what it is instead of lifting
+/// its bytes as code.
+#[test]
+fn a_macho_data_name_is_reported_as_data() {
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env_remove("KUNA_DECOMP_DBG")
+        .env_remove("KUNA_DECOMP_TEST")
+        .env_remove("KUNA_SLACOMP")
+        .args(["functions", &fixture("macho_datasyms_arm64"), "--sleighpath", &specs()])
+        .output()
+        .expect("run kuna functions");
+    let listing = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "functions failed: {}", String::from_utf8_lossy(&out.stderr));
+    let names: Vec<&str> = listing.lines().filter_map(|l| l.split('\t').nth(1)).collect();
+    assert_eq!(names, ["_audit_read", "_main"], "only the two code entries:\n{listing}");
+
+    for name in ["audit_global", "_audit_global"] {
+        let (stdout, stderr, ok) = decompile("macho_datasyms_arm64", name);
+        assert!(!ok, "{name} names data, not a function:\n{stdout}");
+        assert!(
+            stderr.contains("it names data at 0x100004000 in __data"),
+            "the miss must say what {name} is:\n{stderr}"
+        );
+        assert!(!stdout.contains("UndefinedInstructionException"), "{stdout}");
+    }
+
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .env_remove("KUNA_DECOMP_DBG")
+        .env_remove("KUNA_DECOMP_TEST")
+        .env_remove("KUNA_SLACOMP")
+        .args([
+            "decompile",
+            &fixture("macho_datasyms_arm64"),
+            "audit_message",
+            "--json",
+            "--sleighpath",
+            &specs(),
+        ])
+        .output()
+        .expect("run kuna decompile --json");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!out.status.success(), "audit_message names data:\n{stdout}");
+    assert!(
+        stdout.contains("it names data at 0x100004008 in __data") && stdout.contains("\"functions\": []"),
+        "the JSON document must carry the same answer:\n{stdout}"
+    );
+}
