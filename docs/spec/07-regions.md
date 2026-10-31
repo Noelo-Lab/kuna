@@ -223,6 +223,16 @@ and the chapter-08 structurer treats a failed identification as non-fatal (it
 structures the `sblocks` topology without region guidance, and the
 loop-refinement data is simply absent).
 
+*(kuna decompile-all watchdog)* One identification runs inside a single
+structuring action, which the action loop cannot interrupt, and on a big
+function's CFG it runs for minutes (CPython 3.11's `_PyEval_EvalFrameDefault`,
+62 KB, spends about 440 s in the cyclic phase). So the cyclic outer sweep,
+each loop header's `make_cyclic_region` attempt and each acyclic collapse first
+ask whether the drive's budget is spent (`kuna_regionid.rs (budget)`); once it
+is, the identification fails with a typed error naming `region
+identification` as the budget's site, the structurer stops at its own budget
+check, and the drive reports the budget. Without a budget nothing is polled.
+
 ## 7.3 kuna passes at the region tier: stackguard (angr)
 
 The folder's one scheduled, output-changing pass:

@@ -3138,7 +3138,12 @@ thread_local! {
     static FN_DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
     static FN_BUDGET_SITE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     static FN_TABLE_AT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+    static FN_PROBES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+    static FN_SPENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
+
+/// How many [`budget_probe`] calls between clock reads.
+const PROBE_STRIDE: u32 = 256;
 
 /// The wall-clock budget, in seconds, of a drive whose architecture sets none
 /// (`decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes); 0 arms none.
@@ -3165,6 +3170,27 @@ fn fn_budget(arch: &Architecture) -> Option<std::time::Duration> {
 /// boundary interrupts, to give up early.
 pub(crate) fn deadline_passed() -> bool {
     FN_DEADLINE.with(|d| d.get().is_some_and(budget_spent))
+}
+
+/// (kuna decompile-all watchdog) [`deadline_passed`] for a walk that recurses
+/// or loops too often to read the clock at every step: every
+/// [`PROBE_STRIDE`]th call reads it, and once one has seen the budget spent
+/// every call answers `true` at once until the drive ends. It names no site;
+/// the loop that drives the walk does.
+pub(crate) fn budget_probe() -> bool {
+    if FN_SPENT.with(std::cell::Cell::get) {
+        return true;
+    }
+    let n = FN_PROBES.with(|c| {
+        let n = c.get().wrapping_add(1);
+        c.set(n);
+        n
+    });
+    if n % PROBE_STRIDE != 0 || !deadline_passed() {
+        return false;
+    }
+    FN_SPENT.with(|s| s.set(true));
+    true
 }
 
 /// [`deadline_passed`], naming `site` (see [`note_budget_site`]) when it has.
@@ -3274,14 +3300,16 @@ impl RenderBudget {
 }
 
 /// Publishes a drive's deadline to [`deadline_passed`], with no budget site
-/// named yet, and restores the ones before it when the drive ends.
-struct DeadlineScope(Option<std::time::Instant>, Option<String>);
+/// named yet and no [`budget_probe`] spent, and restores the ones before it
+/// when the drive ends.
+struct DeadlineScope(Option<std::time::Instant>, Option<String>, bool);
 
 impl DeadlineScope {
     fn enter(deadline: Option<std::time::Instant>) -> Self {
         DeadlineScope(
             FN_DEADLINE.with(|d| d.replace(deadline)),
             FN_BUDGET_SITE.with(|s| s.borrow_mut().take()),
+            FN_SPENT.with(|s| s.replace(false)),
         )
     }
 }
@@ -3290,5 +3318,6 @@ impl Drop for DeadlineScope {
     fn drop(&mut self) {
         FN_DEADLINE.with(|d| d.set(self.0));
         FN_BUDGET_SITE.with(|s| *s.borrow_mut() = self.1.take());
+        FN_SPENT.with(|s| s.set(self.2));
     }
 }
