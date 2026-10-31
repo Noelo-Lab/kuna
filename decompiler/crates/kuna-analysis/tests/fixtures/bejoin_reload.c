@@ -10,3 +10,6 @@ i64 ll_copy(const i64 *p) { i64 v = *p; return v; }
 i64 ll_kept(const i64 *p) { i64 r = ll_copy(p); return r; }
 i64 ll_passed(const i64 *p) { return ll_copy(p); }
 int hi_kept(const i64 *p) { i64 r = ll_copy(p); int h = r >> 32; return h; }
+u64 __atomic_load_8(const volatile void *p, int m) { (void)m; return *(const volatile u64 *)p; }
+u32 hi_atomic(u64 *p) { return __atomic_load_n(p, __ATOMIC_RELAXED) >> 32; }
+u64 ll_atomic(u64 *p) { return __atomic_load_n(p, __ATOMIC_RELAXED); }

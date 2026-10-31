@@ -9789,7 +9789,9 @@ fn a_value_only_a_no_return_path_reads_proves_nothing() {
 /// and their caller print as with `bejoin off`, while `ll_copy`, the `long
 /// long` itself, still joins high word first. `hi_kept` does the same to
 /// `ll_copy`'s pair and is not proven either; `ll_kept` and `ll_passed` move
-/// both of its words back into place and return it whole.
+/// both of its words back into place and return it whole. `hi_atomic` moves
+/// `__atomic_load_8`'s pair back whole, as `ll_atomic` does, and then its
+/// `int` back into `r0` once more, so it is not proven either.
 #[test]
 fn an_int_kept_in_a_stack_slot_proves_no_loaded_pair() {
     let sp = specs();
@@ -9816,6 +9818,10 @@ fn an_int_kept_in_a_stack_slot_proves_no_loaded_pair() {
     }
     let hk = callrettype_functions(&evidence, &["hi_kept"]);
     assert!(!hk.is_empty() && !hk.contains("return ll_copy(a0);"), "hi_kept moves only its int back:\n{hk}");
+    let la = callrettype_functions(&evidence, &["ll_atomic"]);
+    assert!(la.contains("return __atomic_load_8(a0,0);"), "ll_atomic hands __atomic_load_8's pair back whole:\n{la}");
+    let ha = callrettype_functions(&evidence, &["hi_atomic"]);
+    assert!(!ha.is_empty() && !ha.contains("return __atomic_load_8(a0,0);"), "hi_atomic moves its int back once more:\n{ha}");
 }
 
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low

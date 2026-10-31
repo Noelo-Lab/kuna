@@ -2288,21 +2288,27 @@ unchanged). A function is proven when every path end proves or fits, at least
 one proves, and every callee those ends depend on is proven; the driver takes
 those verdicts first, walking each function still once per image, and a
 function whose verdict depends on its own, through any chain of callees, is
-not proven, whichever function of the cycle is asked about first. When one
-pair register's latest write moved in the value the register already held,
-directly or out of a stack slot it was stored to, and the other's did not,
-the RETURN proves only by the first three shapes: gcc -O0 lowers `(u32)(v >>
-32)` of a reloaded 64-bit temporary as `ldmia r1,{r0,r1}; mov r3,r0; mov
-r0,r3` on ARM big-endian, or, with the `int` kept in a local, `mov r3,r0;
-str r3,[fp,#-20]; ...; ldr r3,[fp,#-20]; mov r0,r3`, which leaves both loaded
-words in the pair, the second where the reload put it. A RETURN whose two
-registers were both moved back hands back the pair the function held, and
-is judged by what that pair holds: gcc -O0 returns a `long long` local it
-spilled a call's pair to as `str r0,[fp,#-12]; str r1,[fp,#-8]; ...; ldm
-r3,{r2,r3}; mov r1,r3; mov r0,r2`, and `return g()` as `mov r3,r1; mov
-r2,r0; mov r1,r3; mov r0,r2`, and clang keeps the pair in `r4:r5` across a
-call only one path makes (`if (v < 0) ext(); return v;`); an `int` that
-returns the high word has no reason to move the low word back.
+not proven, whichever function of the cycle is asked about first. When the
+high register's latest writes moved in the value it already held, directly or
+out of a stack slot it was stored to, more times in a row than the low
+register's, or only the low register's did, the RETURN proves only by the
+first three shapes: gcc -O0 lowers `(u32)(v >> 32)` of a reloaded 64-bit
+temporary as `ldmia r1,{r0,r1}; mov r3,r0; mov r0,r3` on ARM big-endian, or,
+with the `int` kept in a local, `mov r3,r0; str r3,[fp,#-20]; ...; ldr
+r3,[fp,#-20]; mov r0,r3`, which leaves both loaded words in the pair, the
+second where the reload put it. A RETURN whose two registers were otherwise
+both moved back hands back the pair the function held, and is judged by what
+that pair holds: gcc -O0 returns a `long long` local it spilled a call's pair
+to as `str r0,[fp,#-12]; str r1,[fp,#-8]; ...; ldm r3,{r2,r3}; mov r1,r3; mov
+r0,r2`, and `return g()` as `mov r3,r1; mov r2,r0; mov r1,r3; mov r0,r2`, and
+clang keeps the pair in `r4:r5` across a call only one path makes (`if (v < 0)
+ext(); return v;`), and clang -O0 first copies a call's low word out and back
+(`mov r2,r1; mov r1,r2`) before it stores a `volatile long long` local it
+returns. An `int` that returns the high word has no reason to move the low
+word back, except as part of the whole pair: gcc -O0 moves a libcall's pair
+back whole the same way before it works on it, so on ARMv5, which calls
+`__atomic_load_8` for it, `(u32)(__atomic_load_n(p, 0) >> 32)` moves `r0` back
+once more than `r1` (`mov r1,r3; mov r0,r2; ...; mov r3,r0; ...; mov r0,r3`).
 
 Every read counts, on every path, a path that ends in a call that does not
 return included: gcc -Os hoists an error path's computation into a branch

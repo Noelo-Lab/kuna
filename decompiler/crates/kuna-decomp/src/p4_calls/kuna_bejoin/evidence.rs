@@ -53,12 +53,15 @@
 //! tail branch proves it when its callee does. A function is proven when
 //! every path end proves or fits, at least one proves, and every callee those
 //! ends depend on is proven ([`verdict`] takes those first; a cycle is not
-//! proven). A pair one of whose registers' latest write moved in the value
-//! it already held, directly or through a stack slot, and the other's not
-//! (gcc -O0 lowering `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3` over a
-//! reloaded 64-bit temporary), proves only by the first three shapes. Both
-//! moved back is the pair the function held handed back whole (gcc -O0's
-//! `return v` of a spilled `long long` local, `mov r1,r3; mov r0,r2`).
+//! proven). A pair whose high register was moved back to the value it
+//! already held, directly or through a stack slot, more times in a row than
+//! the low one (gcc -O0 lowering `(u32)(v >> 32)` as `mov r3,r0; mov r0,r3`
+//! over a reloaded 64-bit temporary, or over a libcall's pair it first moved
+//! back whole), or whose low register alone was, proves only by the first
+//! three shapes. Both moved back otherwise is the pair the function held
+//! handed back whole (gcc -O0's `return v` of a spilled `long long` local,
+//! `mov r1,r3; mov r0,r2`; clang -O0 first copies a call's low word out and
+//! back, `mov r2,r1; mov r1,r2`).
 //!
 //! "Nothing reads" counts every path, a path ending in a call that does not
 //! return included: gcc -Os hoists an error path's computation into a branch
@@ -298,8 +301,9 @@ struct Path {
     /// What the path stored into its own stack frame: offset from the entry
     /// stack pointer, size, value.
     mem: Vec<(i64, u32, usize)>,
-    /// Locations whose latest write moved in the value they already held.
-    redundant: Vec<Key>,
+    /// Locations whose latest writes moved in the value they already held,
+    /// with how many such writes in a row.
+    redundant: Vec<(Key, u32)>,
 }
 
 /// Where a branch goes.
@@ -311,8 +315,8 @@ enum Dest {
 
 /// What one RETURN reached holds in the pair, with the instruction that
 /// last wrote the low register and the one that made its value, and whether
-/// one register's latest write, but not the other's, moved in the value it
-/// already held.
+/// the high register's latest writes moved in the value it already held more
+/// times in a row than the low register's, or only the low register's did.
 struct Site {
     hi: usize,
     lo: usize,
@@ -694,7 +698,7 @@ impl<'a> Walk<'a> {
 
     fn put(path: &mut Path, k: Key, t: usize, by: u64) {
         path.regs.retain(|(r, _, _)| !overlaps(r, &k));
-        path.redundant.retain(|r| !overlaps(r, &k));
+        path.redundant.retain(|r| !overlaps(&r.0, &k));
         path.regs.push((k, t, by));
     }
 
@@ -784,9 +788,11 @@ impl<'a> Walk<'a> {
                                 && Self::key(o).is_some_and(|k| {
                                     path.regs.iter().rev().find(|(r, _, _)| overlaps(r, &k)).is_some_and(|&(r, held, _)| r == k && self.unwrap(held) == self.unwrap(t))
                                 });
+                            let k = Self::key(o);
+                            let moves = 1 + path.redundant.iter().find(|r| Some(r.0) == k).map_or(0, |r| r.1);
                             self.write(&mut path, o, t, by);
                             if same {
-                                path.redundant.extend(Self::key(o));
+                                path.redundant.extend(k.map(|k| (k, moves)));
                             }
                         }
                     }
@@ -991,8 +997,9 @@ impl<'a> Walk<'a> {
         }
         let (hi, lo) = (self.read(path, &self.hi.clone()), self.read(path, &self.lo.clone()));
         let lo_writer = path.regs.iter().rev().find(|(r, _, _)| *r == self.lo).map(|r| r.2);
-        let moved_back = |k: &Key| path.redundant.iter().any(|r| overlaps(r, k));
-        let redundant = moved_back(&self.hi) != moved_back(&self.lo);
+        let moved_back = |k: &Key| path.redundant.iter().filter(|r| overlaps(&r.0, k)).map(|r| r.1).max().unwrap_or(0);
+        let (h, l) = (moved_back(&self.hi), moved_back(&self.lo));
+        let redundant = h > l || (h == 0 && l > 0);
         Some(Site { hi, lo, lo_writer, lo_made: path.made_at.get(&lo).copied(), redundant })
     }
 
