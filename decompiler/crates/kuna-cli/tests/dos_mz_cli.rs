@@ -139,6 +139,8 @@ fn a_pklite_stub_is_named_on_load() {
     std::fs::remove_file(&path).unwrap();
 }
 
+/// `segmentize` folds the pushed IP into the stack frame, so the store that
+/// shows it is read with the option off.
 #[test]
 fn a_near_call_wraps_inside_the_entry_code_segment() {
     let path = written("dos-mz-segment", &segmented_dos_image());
@@ -150,7 +152,7 @@ fn a_near_call_wraps_inside_the_entry_code_segment() {
     assert!(listing.contains("\"sub_20000\""), "the wrapped call target is missing: {listing}");
     assert!(!listing.contains("\"sub_10000\""), "the linear sum is not the target: {listing}");
 
-    let out = kuna(&["decompile-all", exe, "--addr", "0x11000"]);
+    let out = kuna(&["decompile-all", exe, "--addr", "0x11000", "--option", "segmentize", "off"]);
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
     assert!(text.contains("sub_20000();"), "{text}");
