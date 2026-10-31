@@ -111,6 +111,7 @@ use std::rc::Rc;
 use kuna_base::address::{bit_transitions, Address};
 use kuna_base::space::AddrSpace;
 use kuna_base::types::uintb;
+use kuna_base::error::{KunaError, KunaResult};
 
 use crate::action::{ruleflags, Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
 use crate::dtype::{type_metatype, Datatype};
@@ -232,7 +233,7 @@ impl Action for ActionLaneDivide {
         }
         Some(Box::new(ActionLaneDivide { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ coreaction.cc:600 — ActionLaneDivide::apply
         let mut count = 0;
         data.set_laned_reg_generated();
@@ -253,15 +254,23 @@ impl Action for ActionLaneDivide {
                         idx += 1;
                         continue;
                     }
-                    if lane_divide_process_varnode(data, vn, laned_reg, mode) {
-                        count += 1;
-                        // Recalculate the loc bounds after a split.
-                        viter = data.vbank().iter_loc_size_addr(*sz, addr).collect();
-                        idx = 0;
-                        all_varnodes_processed = true;
-                    } else {
-                        idx += 1;
-                        all_varnodes_processed = false;
+                    match lane_divide_process_varnode(data, vn, laned_reg, mode) {
+                        Ok(true) => {
+                            count += 1;
+                            // Recalculate the loc bounds after a split.
+                            viter = data.vbank().iter_loc_size_addr(*sz, addr).collect();
+                            idx = 0;
+                            all_varnodes_processed = true;
+                        }
+                        Ok(false) => {
+                            idx += 1;
+                            all_varnodes_processed = false;
+                        }
+                        Err(error) => {
+                            data.clear_laned_access_map();
+                            ctx.error = Some(error);
+                            return -1;
+                        }
                     }
                 }
                 if !all_varnodes_processed {
@@ -329,13 +338,15 @@ fn lane_divide_collect_lane_sizes(
 ///
 /// `mode` selects the lane-size search strategy (0: putative sizes from local
 /// ops; 1: same, allowing SUBPIECE downcasts; 2: default pointer-derived size).
-/// Returns `true` if the Varnode (and its data-flow) was successfully split.
+/// Returns `true` if the Varnode (and its data-flow) was successfully split. A
+/// split that fails part way has already rewritten the function, so the error
+/// fails the function, as the C++ exception does.
 fn lane_divide_process_varnode(
     data: &mut Funcdata,
     vn: VarnodeId,
     laned_register: &LanedRegister,
     mode: int4,
-) -> bool {
+) -> KunaResult<bool> {
     let mut check_lanes = LanedRegister::new(); // Lanes we are going to try, no lanes initially
     let allow_downcast = mode > 0;
     if mode < 2 {
@@ -357,18 +368,13 @@ fn lane_divide_process_varnode(
         let description = LaneDescription::uniform(whole_size, cur_size);
         let mut lane_divide = LaneDivide::new(data, vn, description, allow_downcast);
         if lane_divide.do_trace(data) {
-            // The C++ unconditionally applies once the trace succeeds; the merged
-            // TransformManager::apply reaches `glb->inst[opc]` (the W6 stub) for
-            // the COPY/PIECE/SUBPIECE/MULTIEQUAL lane ops.  A stub error degrades
-            // to "no split" (return false) exactly as a failed trace would, so a
-            // partially-built transform is never half-applied.
-            if lane_divide.apply(data).is_err() {
-                return false;
-            }
-            return true; // Indicate a change was made
+            lane_divide.apply(data).map_err(|e| {
+                KunaError::lowlevel(format!("laned register split failed part way: {e}"))
+            })?;
+            return Ok(true); // Indicate a change was made
         }
     }
-    false
+    Ok(false)
 }
 
 // =============================================================================
