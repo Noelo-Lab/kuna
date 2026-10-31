@@ -150,7 +150,8 @@ entry. A merge block where it is not live gets no MULTIEQUAL. An INDIRECT is
 neither a read nor a write for this walk: its input read is the chain, not a
 use. Minimal SSA would place those MULTIEQUALs and `ActionDeadCode` would
 delete them before anything reads them, so the IR after dead-code removal is
-the same; what changes is that the joins are never built. This matters where
+the same up to op and varnode numbering; what changes is that the joins are
+never built. This matters where
 one unique location is written in many blocks and read only next to each
 write, as the loop temporaries of REP-prefixed string instructions are (the
 `prunedssa` fixture's 64 `rep movsb` loops share them): its iterated dominance
@@ -162,7 +163,13 @@ an argument register's join). The pruning runs only on a pass whose dead-code
 removal may already remove from the space (pass at least the space's
 dead-code delay), and it records dead code for the space, so a read of the
 range that a later pass finds takes the same deadcode-delay restart a
-dead-code removal would have caused.
+dead-code removal would have caused. Because the numbering differs, a later
+pass that breaks a tie by varnode order can still choose the other way: the
+lowered-switch detector takes the first of two equally long compare cascades
+on one variable, so bash's `do_redirection_internal` at -O0 recovers its
+four-case `switch (ri)` with the option on and keeps the compare tree with it
+off. The reduced `firstpass` and `register` pipelines run no `ActionDeadCode`,
+so there the pruned markers are absent rather than deleted later.
 
 An invalid entry-input range, including one crossing the end of its address
 space, returns a recoverable error from any of the three input-creation paths
