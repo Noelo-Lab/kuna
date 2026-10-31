@@ -2133,8 +2133,9 @@ mod tests {
         // and kuna-deadwaves / a pass after a removal-only pass visits only what it touched (option deadwaves)
         // and kuna-earlyrestart / a pass stops at a dead-code delay bump and restarts at once (option earlyrestart)
         // and kuna-duplabels / two copies of one block print distinct labels
+        // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype (option pltlocal)
         // and kuna-haltloopguard / a store before a loop the function never leaves is kept (option haltloopguard)
-        assert_eq!(count, 611, "corpus file count drifted");
+        assert_eq!(count, 612, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

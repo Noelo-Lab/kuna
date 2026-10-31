@@ -6841,6 +6841,9 @@ pub struct FuncCallSpecs {
     /// into this tail call.  Its value is the callee's own address, so input
     /// recovery never takes it as an argument.
     jump_target_storage: Option<(Address, int4)>,
+    /// (kuna `pltlocal`) The PLT stub a call through it was built past, at the
+    /// definition the stub is bound to. See [`crate::p4_calls::kuna_pltlocal`].
+    plt_stub: Option<Address>,
 }
 
 impl FuncCallSpecs {
@@ -6876,6 +6879,7 @@ impl FuncCallSpecs {
             zext_trimmed: Vec::new(),        // (kuna) truncarg
             format_arity: None,              // (kuna) formatstring
             jump_target_storage: None,       // (kuna) tailcalljump
+            plt_stub: None,                  // (kuna) pltlocal
         }
     }
 
@@ -6907,6 +6911,7 @@ impl FuncCallSpecs {
         res.proto.copy(&self.proto); // Copy the FuncProto portion
         res.format_arity = self.format_arity;
         res.jump_target_storage = self.jump_target_storage.clone();
+        res.plt_stub = self.plt_stub.clone();
         res
     }
 
@@ -7251,6 +7256,16 @@ impl FuncCallSpecs {
     /// (kuna `formatstring`) Set or clear [`Self::format_arity`].
     pub fn set_format_arity(&mut self, arity: Option<int4>) {
         self.format_arity = arity;
+    }
+
+    /// (kuna `pltlocal`) The PLT stub this call was built past, if any.
+    pub fn plt_stub(&self) -> Option<&Address> {
+        self.plt_stub.as_ref()
+    }
+
+    /// (kuna `pltlocal`) Record the PLT stub this call was built past.
+    pub fn set_plt_stub(&mut self, stub: Address) {
+        self.plt_stub = Some(stub);
     }
 
     /// (kuna `tailcalljump`) Record the register that carried this tail call's

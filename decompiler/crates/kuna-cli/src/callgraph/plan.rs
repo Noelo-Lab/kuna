@@ -8,8 +8,10 @@ use super::CallGraph;
 
 /// Return `(target index, may park recovered types)` in callee-first order.
 /// Tarjan walks roots and neighbors in target-index order and emits components
-/// after their callees. Recursive functions park only under `cycles`, which
-/// orders each recursive component with [`cycle_order`].
+/// after their callees. A call through a bound PLT stub is an edge to the
+/// definition it is built at ([`CallGraph::call_target`]). Recursive functions
+/// park only under `cycles`, which orders each recursive component with
+/// [`cycle_order`].
 pub(crate) fn callee_first_plan(
     graph: &CallGraph,
     targets: &[FunctionEntry],
@@ -26,7 +28,7 @@ pub(crate) fn callee_first_plan(
     for (i, t) in targets.iter().enumerate() {
         let mut out: Vec<usize> = Vec::new();
         for (callee, _kind) in graph.callees_of(t.addr.get_offset()) {
-            let Some(&j) = index_of.get(&callee) else {
+            let Some(&j) = index_of.get(&graph.call_target(callee)) else {
                 continue;
             };
             if j == i {

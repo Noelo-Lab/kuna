@@ -465,7 +465,10 @@ and it is a positive finding rather than an absence. This register-preservation
 arm answers only processor-space ranges, because a callee's memory writes are `STORE`s through an
 address the walk cannot follow; only *killed by call* is downgraded, never
 promoted; and a prototype carrying its own effect-record override has had a
-deliberate statement made about it and is left alone.
+deliberate statement made about it and is left alone. A call built past a PLT stub at the
+definition the stub is bound to (`pltlocal`, chapter 04) takes no proof either:
+the compiler that emitted `bl name@plt` could not rely on what one definition
+leaves alone, since the lazy resolver runs first and another may win.
 
 The call guard also reuses the same cached body summary to preserve caller stack
 unaliased slots across a direct helper that performs no memory writes
@@ -529,7 +532,8 @@ no write to the return storage proves the call has no return value at all
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeretpreserves.rs
 (callee_preserves_return_storage)`). For an exact range the effect is downgraded
 to *unaffected*, the output-active arm is skipped, and the caller's own
-definition flows across the call.
+definition flows across the call. A call built past a PLT stub (`pltlocal`) takes no such proof,
+for the reason given above for `calleepreserves`.
 
 Three conditions bound it. The range must characterize as the call's *output*.
 For a locked `void` declaration, which intentionally has no concrete output

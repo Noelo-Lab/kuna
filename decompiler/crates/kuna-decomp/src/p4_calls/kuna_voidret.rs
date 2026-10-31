@@ -331,6 +331,9 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             file_use(arch, callee, used);
         }
         let Some(storage) = read else { continue };
+        if let Some(stub) = fc.plt_stub().and_then(key) {
+            file_claim(arch, own, stub, storage.clone());
+        }
         file_claim(arch, own, callee, storage);
     }
     for (callee, storage) in data.kuna_forced_claims().to_vec() {

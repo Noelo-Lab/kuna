@@ -298,6 +298,9 @@ mod partial_global_load_guard;
 #[path = "passthrough_own_return.rs"]
 mod passthrough_own_return;
 
+#[path = "pltlocal_cli.rs"]
+mod pltlocal_cli;
+
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
