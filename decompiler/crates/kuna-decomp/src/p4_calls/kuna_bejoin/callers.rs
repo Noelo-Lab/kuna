@@ -24,8 +24,10 @@
 //! by its own callers.
 //!
 //! A call (an argument the callee may not take), a RETURN, a branch, a
-//! register window's copy of every register, and a register XORed with or
-//! subtracted from itself do not read it, nor, once the path took a branch,
+//! register window's copy of every register, a register XORed with or
+//! subtracted from itself, and an instruction nothing of which depends on
+//! the register's value (PowerPC's `subfe 4,4,4`, which makes `xer_ca - 1`)
+//! do not read it, nor, once the path took a branch,
 //! a store of several registers or a register pair (gcc's merged `std %o0`
 //! or `stm`, whose second word can be dead at a join), nor the delay slot of
 //! a conditional branch, which may come from the branch target. The walk
@@ -35,6 +37,14 @@
 //! function whose first instruction stores the second register (one that
 //! saves the argument registers to give them back, as `__gnu_mcount_nc`
 //! does) says nothing.
+//!
+//! A call kuna does not know never returns lays unrelated code out after it
+//! (`bl f; __builtin_unreachable()` is followed by the block a `bne`
+//! reaches, which reads `r4` for its own value), so a site says nothing when
+//! its fall-through reaches, before any branch, an instruction a branch of
+//! the caller targets, when a branch after it tests a flag nothing set since
+//! the call (an ARM literal pool's words decode as `andeq r0,r1,..`), or when
+//! the caller jumps through a register, whose table may reach that code.
 //!
 //! The call sites come from one scan of the executable bytes for the
 //! direct-call encodings (PowerPC `bl`, MIPS `jal` and `bal`, SPARC `call`,
@@ -350,6 +360,7 @@ pub(super) struct Cache {
     facts: BTreeMap<u64, Facts>,
     scans: BTreeMap<u64, Scan>,
     clobbers: BTreeMap<u64, bool>,
+    joins: BTreeMap<u64, Option<BTreeSet<u64>>>,
 }
 
 impl Cache {
@@ -377,7 +388,14 @@ impl Cache {
         if index.code.get_index() != key.0 || index.start(key.1).is_none() {
             return (false, Vec::new());
         }
-        let facts = self.facts.entry(key.1).or_insert_with(|| facts(arch, index, lo, key.1)).clone();
+        let facts = match self.facts.get(&key.1) {
+            Some(f) => f.clone(),
+            None => {
+                let f = facts(arch, index, lo, key.1, &mut self.joins);
+                self.facts.insert(key.1, f.clone());
+                f
+            }
+        };
         if !facts.read && facts.returned.is_empty() {
             return (false, Vec::new());
         }
@@ -400,14 +418,15 @@ impl Cache {
 }
 
 /// Read every call site of `callee` ([`site_use`]).
-fn facts(arch: &Architecture, index: &Index, lo: Key, callee: u64) -> Facts {
+fn facts(arch: &Architecture, index: &Index, lo: Key, callee: u64, joins: &mut BTreeMap<u64, Option<BTreeSet<u64>>>) -> Facts {
     let mut out = Facts::default();
     if crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &index.at(callee)) {
         return out;
     }
     for site in index.sites(callee).take(MAX_SITES) {
         let Some(caller) = index.containing(site) else { continue };
-        match site_use(arch, index, lo, callee, site, caller) {
+        let Some(joins) = joins.entry(caller.0).or_insert_with(|| joins_of(arch, index, caller)) else { continue };
+        match site_use(arch, index, lo, callee, site, caller, joins) {
             Use::Read => {
                 out.read = true;
                 out.returned.clear();
@@ -478,6 +497,105 @@ fn reads(insn: &Insn, opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData
     let merged = opc == OpCode::CPUI_STORE && branched && stores_many(insn, lo.2);
     let ins = if opc == OpCode::CPUI_CBRANCH { &ins[1..] } else { ins };
     ins.iter().enumerate().any(|(i, v)| !(is_const(v) || (merged && i == 2)) && key(v).is_some_and(|k| overlaps(&k, lo)))
+}
+
+/// The bytes `k` covers.
+fn bytes(k: Key) -> impl Iterator<Item = (i32, u64)> {
+    (0..u64::from(k.2)).map(move |i| (k.0, k.1.wrapping_add(i)))
+}
+
+/// How a value inside one instruction depends on the second register: not
+/// at all, as `c` times it plus something that does not, or otherwise.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Taint {
+    Clean,
+    Lin(i64),
+    Dirty,
+}
+
+/// Does anything `insn` writes outside its temporaries, stores, loads from or
+/// branches on depend on the value of `lo`? Dependence follows every
+/// operation, except that an operation over one varnode twice (`x - x`,
+/// `x < x`) depends on nothing and sums keep `lo`'s multiple, so terms that
+/// cancel depend on nothing: PowerPC's `subfe 4,4,4` names `r4` and makes
+/// `xer_ca - 1`.
+fn depends(insn: &Insn, lo: &Key) -> bool {
+    let mut vals: BTreeMap<Key, Taint> = BTreeMap::from([(*lo, Taint::Lin(1))]);
+    let mut dirty: BTreeSet<(i32, u64)> = (0..u64::from(lo.2)).map(|i| (lo.0, lo.1 + i)).collect();
+    let get = |v: &VarnodeData, vals: &BTreeMap<Key, Taint>, dirty: &BTreeSet<(i32, u64)>| -> Taint {
+        let Some(k) = key(v).filter(|_| !is_const(v)) else { return Taint::Clean };
+        match vals.get(&k) {
+            Some(&t) => t,
+            None if bytes(k).any(|b| dirty.contains(&b)) => Taint::Dirty,
+            None => Taint::Clean,
+        }
+    };
+    let temp = |v: &VarnodeData| v.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL);
+    let mask = |c: i64, size: u32| if size >= 8 { c } else { c & ((1i64 << (8 * size)) - 1) };
+    for (opc, out, ins) in &insn.ops {
+        let t: Vec<Taint> = ins.iter().map(|v| get(v, &vals, &dirty)).collect();
+        let any = t.iter().any(|&x| x != Taint::Clean);
+        let same = ins.len() == 2 && ins[0] == ins[1] && !is_const(&ins[0]);
+        let lin = |x: Taint| match x {
+            Taint::Clean => Some(0),
+            Taint::Lin(c) => Some(c),
+            Taint::Dirty => None,
+        };
+        let size = out.as_ref().map_or(0, |o| o.size);
+        let r = match opc {
+            OpCode::CPUI_STORE | OpCode::CPUI_LOAD | OpCode::CPUI_CBRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
+                if any =>
+            {
+                return true;
+            }
+            OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_XOR
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+            | OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESSEQUAL
+            | OpCode::CPUI_INT_SBORROW
+            | OpCode::CPUI_BOOL_XOR
+                if same =>
+            {
+                Taint::Clean
+            }
+            _ if !any => Taint::Clean,
+            OpCode::CPUI_COPY => t[0],
+            OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB => match (lin(t[0]), lin(t[1])) {
+                (Some(a), Some(b)) => {
+                    let c = mask(if *opc == OpCode::CPUI_INT_ADD { a.wrapping_add(b) } else { a.wrapping_sub(b) }, size);
+                    if c == 0 { Taint::Clean } else { Taint::Lin(c) }
+                }
+                _ => Taint::Dirty,
+            },
+            OpCode::CPUI_INT_2COMP | OpCode::CPUI_INT_NEGATE => match lin(t[0]) {
+                Some(a) => Taint::Lin(mask(a.wrapping_neg(), size)),
+                None => Taint::Dirty,
+            },
+            _ => Taint::Dirty,
+        };
+        if let Some(o) = out.as_ref() {
+            let Some(k) = key(o) else { return true };
+            vals.retain(|v, _| !overlaps(v, &k));
+            vals.insert(k, r);
+            for b in bytes(k) {
+                if r == Taint::Clean {
+                    dirty.remove(&b);
+                } else {
+                    dirty.insert(b);
+                }
+            }
+            if r != Taint::Clean && !temp(o) {
+                return true;
+            }
+        } else if any && !matches!(opc, OpCode::CPUI_BRANCH | OpCode::CPUI_CALL) {
+            return true;
+        }
+    }
+    false
 }
 
 /// The literal `v` holds inside one instruction, from the literals its
@@ -606,15 +724,28 @@ impl Cond {
             Cond::And(a, b) | Cond::Or(a, b) | Cond::Eq(a, b) => a.mentions(k) || b.mentions(k),
         }
     }
+
+    /// Does the condition test a flag (a one-byte register) nothing in `set`
+    /// wrote?
+    fn stale(&self, set: &BTreeSet<Key>) -> bool {
+        match self {
+            Cond::Reg(r) => r.2 == 1 && !set.iter().any(|w| overlaps(w, r)),
+            Cond::Lit(_) | Cond::Unknown => false,
+            Cond::Not(a) => a.stale(set),
+            Cond::And(a, b) | Cond::Or(a, b) | Cond::Eq(a, b) => a.stale(set) || b.stale(set),
+        }
+    }
 }
 
 /// What one path learned from the branches it took: the values of one-byte
 /// registers (the flags a conditional instruction tests) and the outcome of
-/// each condition it decided, until a write of a register they read.
+/// each condition it decided, until a write of a register they read, and the
+/// one-byte registers written since the call (`set`).
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct PathFacts {
     regs: BTreeMap<Key, u64>,
     conds: BTreeMap<Cond, bool>,
+    set: BTreeSet<Key>,
 }
 
 impl PathFacts {
@@ -724,6 +855,9 @@ fn derive(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], deriv: &m
     };
     if is_reg(o) {
         facts.forget(&k);
+        if k.2 == 1 {
+            facts.set.insert(k);
+        }
         deriv.remove(&k);
         if let (Cond::Lit(v), 1) = (&c, k.2) {
             facts.regs.insert(k, *v);
@@ -753,8 +887,11 @@ fn delay_slot(arch: &Architecture, index: &Index, at: u64, insn: &Insn) -> Optio
 /// Each path keeps what its branches decided about the flags, so a
 /// conditional instruction that skips a write of `lo` skips the later reads
 /// under the same condition too (`ldrne r1,[sp,#0x1c]; orrnes r2,r1,r0`). A
-/// site that does not decode to that call says nothing.
-fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64, caller: (u64, u64)) -> Use {
+/// site that does not decode to that call says nothing, nor does one whose
+/// fall-through reaches, before any branch, an instruction another branch of
+/// the caller targets (`joins`), or one after which a branch tests a flag
+/// nothing set since the call: the call need not return there.
+fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64, caller: (u64, u64), joins: &BTreeSet<u64>) -> Use {
     let Some(insn) = decode(arch, &index.at(site)) else { return Use::Dead };
     let Some(k) = insn
         .ops
@@ -767,6 +904,7 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
     for (key, v) in tracked(arch, index, caller.0) {
         if key.2 == 1 {
             entry.regs.insert(key, v);
+            entry.set.insert(key);
         }
     }
     let mut facts = entry.clone();
@@ -787,15 +925,19 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
         }
     };
     while let Some((at, insn, mut op, mut facts, mut deriv, branched)) = todo.pop() {
+        if !branched && at != site && joins.contains(&at) {
+            return Use::Dead;
+        }
         let mut fall = true;
         let mut forked = branched;
         let counts = |i: &Insn| i.ops.iter().filter(|(opc, out, ins)| reads(i, *opc, out, ins, &lo, branched)).count();
         let slot = delay_slot(arch, index, at, &insn).map_or(0, |d| counts(&d));
         let genuine = slot == 0 || counts(&insn) > slot;
+        let mut dep = None;
         while op < insn.ops.len() {
             let (opc, out, ins) = &insn.ops[op];
             op += 1;
-            if genuine && reads(&insn, *opc, out, ins, &lo, branched) {
+            if genuine && reads(&insn, *opc, out, ins, &lo, branched) && (at == site || *dep.get_or_insert_with(|| depends(&insn, &lo))) {
                 return Use::Read;
             }
             if matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
@@ -820,6 +962,9 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
                     } else {
                         Cond::Lit(1)
                     };
+                    if c.stale(&facts.set) {
+                        return Use::Dead;
+                    }
                     let taken = facts.truth(&c);
                     if taken == Some(false) {
                         continue;
@@ -935,6 +1080,45 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
     out.calls.sort_unstable();
     out.calls.dedup();
     out
+}
+
+/// The instructions of the function `func` that a branch of its own targets,
+/// other than the next instruction (a conditional instruction's skip);
+/// `None` when it jumps through a register (a jump table, whose targets the
+/// walk does not know) or is too long to walk.
+fn joins_of(arch: &Architecture, index: &Index, func: (u64, u64)) -> Option<BTreeSet<u64>> {
+    let (start, end) = func;
+    let base = tracked(arch, index, start);
+    let noreturn = |t: u64| crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &index.at(t));
+    let mut todo = vec![start];
+    let mut seen: BTreeSet<u64> = BTreeSet::new();
+    let mut out = BTreeSet::new();
+    while let Some(at) = todo.pop() {
+        if !seen.insert(at) {
+            continue;
+        }
+        if seen.len() > MAX_SCAN_INSNS {
+            return None;
+        }
+        let Some(insn) = decode(arch, &index.at(at)) else { continue };
+        let (ops, targets, falls) = reached(&insn, &base, index, &noreturn);
+        if ops.iter().any(|&i| insn.ops[i].0 == OpCode::CPUI_BRANCHIND) {
+            return None;
+        }
+        let next = at + insn.len;
+        for t in targets {
+            if t > start && t < end {
+                if t != next {
+                    out.insert(t);
+                }
+                todo.push(t);
+            }
+        }
+        if falls && next < end {
+            todo.push(next);
+        }
+    }
+    Some(out)
 }
 
 /// Does the function at `entry` write the second register as its caller sees

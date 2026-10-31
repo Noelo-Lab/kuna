@@ -9895,6 +9895,58 @@ fn bejoin_callers_read_a_pair_alike_in_every_run() {
     }
 }
 
+/// A call kuna does not know never returns is followed by code of another
+/// path, which reads the second return register for a value of its own, so
+/// it is no caller reading the callee's pair. In `bejoin_unreach.c`, built
+/// for PowerPC, `hi` and `hj` return the high word of a 64-bit sum, and each
+/// is called once ahead of `__builtin_unreachable()`: gcc lays out the block
+/// a `bne` reaches right after `u_unr`'s `bl hi` (`add 3,7,4`), and the jump
+/// table's next case right after `u_sw`'s `bl hj` (`mulli 3,4,3`). In
+/// `bejoin_unreach_arm.c`, built for ARM big-endian, the literal pool follows
+/// `u_pool`'s `bl hi`, and its first word decodes as `andeq r0,r2,r0,lsl r1`.
+/// `c_hi` reads only the first register of each, so every function prints as
+/// with `bejoin evidence`, in a whole `decompile-all` and a single
+/// `kuna decompile`.
+#[test]
+fn bejoin_callers_ignore_code_a_call_does_not_return_to() {
+    let sp = specs();
+    let fixtures = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures");
+    let cases: [(&str, &[&str], &str); 2] = [
+        ("bejoin_unreach_ppc32_O1", &["hi", "hj", "u_unr", "u_sw", "c_hi"], "return CONCAT44(a1 + a3,"),
+        ("bejoin_unreach_arm32_be_O2", &["hi", "u_pool", "c_hi"], "return hi(a0,a1,a2,a3) + 1;"),
+    ];
+    for (fixture, funcs, expect) in cases {
+        let bin = fixtures.join(fixture).to_str().unwrap().to_string();
+        let run = |extra: &[&str]| {
+            let mut args = vec!["decompile-all", bin.as_str(), "--sleighpath", sp.as_str()];
+            args.extend_from_slice(extra);
+            let (out, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile-all {fixture} {extra:?} failed: {stderr}");
+            out
+        };
+        let body = |listing: &str, f: &str| {
+            let text = callrettype_functions(listing, &[f]);
+            text.split_once('\n').map(|(_, b)| b.trim().to_string()).unwrap_or_default()
+        };
+        let single = |f: &str, extra: &[&str]| {
+            let mut args = vec!["decompile", bin.as_str(), f, "--sleighpath", sp.as_str()];
+            args.extend_from_slice(extra);
+            let (out, stderr, ok) = run_kuna(&args);
+            assert!(ok, "kuna decompile {fixture} {f} failed: {stderr}");
+            out.trim().to_string()
+        };
+        let evidence = ["--option", "bejoin", "evidence"];
+        let (full, narrow) = (run(&[]), run(&evidence));
+        for f in funcs {
+            let text = body(&full, f);
+            assert!(!text.is_empty(), "{fixture}: {f} prints:\n{full}");
+            assert_eq!(text, body(&narrow, f), "{fixture}: {f} prints as with bejoin evidence:\n{full}");
+            assert_eq!(single(f, &[]), single(f, &evidence), "{fixture}: {f} prints as with bejoin evidence in a single decompile");
+        }
+        assert!(full.contains(expect), "{fixture}: expected `{expect}`:\n{full}");
+    }
+}
+
 /// gcc -Os on MIPS computes `chk`'s exit argument from `b + 1`, made in the
 /// delay slot of the branch to the RETURN (`beqz a0; addiu v1,a1,1`), so
 /// `return 0` finds `b + 1` in `$3` beside the zero in `$2`, the shape of a

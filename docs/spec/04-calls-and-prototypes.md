@@ -2404,7 +2404,12 @@ reads it in an instruction of its own: a move, a store, an operation, a
 compare (`c_add` on PowerPC stores `r4` as the low word of a `long long`
 global). A call (an argument the next callee may not take), a RETURN, a
 branch, a register window's copy of every register, a register XORed with or
-subtracted from itself do not read it, and neither does a store of two or
+subtracted from itself do not read it, nor does an instruction whose writes,
+stores and branches come out the same whatever the register holds (run over
+pseudo-random inputs with two values of it): gcc's PowerPC `subfe 4,4,4`
+makes `xer_ca - 1` and only names `r4`, and SQLite's `int
+sqlite3FindInIndex` and `growOp3` read as wide that way, with the `int` and
+pointer callers whose own proof waited on them. Neither does a store of two or
 more registers or of a register pair once the path has taken a branch: gcc
 merges two stack stores into SPARC's `std %o0,[%fp-0x138]` (or ARM's `stm`)
 at a join where the second word is dead on the path from the call, and
@@ -2414,11 +2419,23 @@ conditional branch (SPARC, MIPS) does not read it either, unless the branch's
 own condition does (`bnez $3`): the delay slot filler moves an instruction
 there from the branch target, so what it reads holds on that path only (gcc
 fills `bne` with the target's `std %o0`, whose `%o1` is dead on the path that
-falls through, and SQLite's `int sqlite3VdbeCheckFk` read as wide that way). A caller whose RETURN the register
+falls through, and SQLite's `int sqlite3VdbeCheckFk` read as wide that way).
+A call that kuna does not know never returns is followed by unrelated code,
+which may read the register for a value of its own: gcc compiles `if (c == 5)
+{ f(a, c); __builtin_unreachable(); } return b + c;` on PowerPC as `bl f`
+followed at once by the `add 3,5,4` that the `bne` reaches, where `r4` is `b`
+(gnulib's `error` with a constant status compiles the same way), and on ARM a
+literal pool laid out after such a call decodes as `andeq r0,r1,..`. So a site
+gives no evidence when its fall-through reaches, before any branch, an
+instruction another branch of the caller targets, when a branch after the
+call tests a flag that nothing set since the call (a call clobbers the flags),
+or when the caller jumps through a register (a jump table may reach the code
+after the call; Lua's `luaV_execute` and bash's `param_expand` give no
+evidence this way). A caller whose RETURN the register
 reaches untouched (`return f();` in a function that keeps a frame, so it is no
 tail call, and SPARC's `call f; restore`) proves `f` once that caller is
 proven itself, which for such a caller means by its own callers: the path
-that hands the pair back leaves its own proof waiting on `f`. The first 64
+that hands the pair back leaves its own proof waiting on `f`. The first 16
 call sites of a callee, by address, are read. So a 64-bit sum (`addc 4,4,6; adde 3,3,5` on PowerPC, `addu`
 and `sltu` on MIPS, `addcc`/`addx` on SPARC, `adds`/`adc` on ARM big-endian),
 ARMv7's single `umull r1,r0,r1,r0`, `smull` or `umlal`, and a wrapper that
@@ -2464,7 +2481,9 @@ of the pair's width, so ARM's flag-setting instructions, which copy four
 one-byte flags, are no window. The verdict is the least fixed point of the
 three rules (proven on its own once the callees it waits on are, a caller's
 read, a proven caller handing the pair back) over the functions it reaches, up
-to 64 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
+to 32 functions and 48 call sites, following a pair back through at most two
+callers in a row
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
 (by_callers)`). Each fact it reads is a function of the image alone, cached
 per image, and only the function asked about keeps its verdict, so a whole
 `decompile-all`, `--functions`, `--jobs N`, a single `kuna decompile` and a
