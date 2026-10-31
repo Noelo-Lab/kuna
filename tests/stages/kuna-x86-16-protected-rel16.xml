@@ -1,0 +1,28 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Protected Mode">
+<!--
+    kuna #1288 companion to kuna-x86-16-real-rel16.xml. An x86 16-bit
+    protected-mode address is selector*0x10000 + offset, and a near branch
+    wraps its offset inside the selector. kuna's GH-7418 mask dropped the
+    selector, so selector 1's branches decoded into selector 0.
+
+        1fff0  e8 00 70     CALL 0x16ff3      ; selector 1, offset 0xfff3 + 0x7000 wraps to 0x6ff3
+
+    Stage: P1/P2 decode (x86-16 SLEIGH spec, no option). In 16-bit
+    protected mode `rel16` keeps the upper 16 bits of the address, upstream's
+    formula.
+
+    Assert 1 is the wrapped target inside selector 1; assert 2 forbids the
+    selector-0 address.
+-->
+<bytechunk space="ram" offset="0x1fff0">
+e80070c3
+</bytechunk>
+</binaryimage>
+<script>
+  <com>disassemble 0x1fff0 0x1fff4</com>
+  <com>quit</com>
+</script>
+<stringmatch name="protected-rel16 #1: CALL rel16 wraps its offset inside selector 1 (0x16ff3)" min="1" max="1">^0x0001fff0: CALL +0x16ff3</stringmatch>
+<stringmatch name="protected-rel16 #2: the branch does not leave its selector for 0x6ff3" min="0" max="0">CALL +0x6ff3</stringmatch>
+</decompilertest>

@@ -63,7 +63,9 @@ pub fn discover(
         return seeds.to_vec();
     }
     let mut roots: Vec<u64> = seeds.to_vec();
-    roots.extend(sweep_call_targets(translate, code_space, exec_ranges));
+    roots.extend(crate::loader::kuna_realmodecs::without_commits(arch, translate, || {
+        sweep_call_targets(translate, code_space, exec_ranges)
+    }));
     roots.sort_unstable();
     roots.dedup();
 
@@ -99,6 +101,10 @@ pub fn discover(
 /// Only *statically* derivable targets count: an indirect call through a
 /// register contributes nothing, because there is no address to contribute.
 /// Targets outside `exec_ranges` are dropped.
+///
+/// [`discover`] runs it with x86 real-mode segment commits masked off
+/// ([`crate::loader::kuna_realmodecs::without_commits`]): a branch decoded from
+/// data must not move the segment the code after its target decodes in.
 fn sweep_call_targets(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
