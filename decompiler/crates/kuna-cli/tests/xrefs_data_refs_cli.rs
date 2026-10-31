@@ -83,3 +83,14 @@ fn coverage_is_reported_per_image() {
     assert_eq!(plain["data_refs_coverage"], "none");
     assert_eq!(plain["data_refs_count"], 0);
 }
+
+/// A shared object stores its exported function in a table through an absolute
+/// relocation against the symbol; that word is a pointer row too.
+#[test]
+fn a_shared_objects_exported_function_table_is_listed() {
+    let doc = json(&[&fixture("dataptrs_so_x86_64.so"), "--to", "audit_target"]);
+    assert_eq!(doc["data_refs_coverage"], "dynamic-relocations");
+    assert_eq!(doc["data_refs_count"], 1, "{doc}");
+    assert_eq!(doc["data_refs"][0]["from_address_hex"], "0x4030");
+    assert_eq!(doc["data_refs"][0]["from_name"], "exported_tab");
+}

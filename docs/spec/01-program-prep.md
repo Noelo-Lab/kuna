@@ -1353,8 +1353,13 @@ funcsym stream:
   one up: a chained-fixup Mach-O threads them on its chains (the rebase carries
   its target), a classic Mach-O lists them in its `LC_DYLD_INFO` rebase opcodes
   (interpreted here; the slot already holds the unslid target), a
-  position-independent ELF carries a dynamic relocation for each (valued by
-  `kuna_dynrelocs.rs (resolve)`), and a PE lists them in `.reloc`. The list keeps
+  position-independent ELF carries a dynamic relocation for each, and a PE lists
+  them in `.reloc`. The ELF list is read here, not through `dynrelocs` (whose
+  writes are an option of the loaded image): a `RELATIVE` word holds `B + A`, and
+  an absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
+  holds `S + A`. The absolute kind is how a shared object stores its own exported
+  functions, which are preemptible (`R_X86_64_64 audit_target` for the first entry
+  of a callback table). The list keeps
   each word whose target is in an allocated section, and says which metadata it
   came from. An image that lists none (a non-PIE ELF, whose own pointers carry no
   relocation, a PE without base relocations, a relocatable object) reports
@@ -1362,7 +1367,11 @@ funcsym stream:
   and guessing would make an empty answer mean two things. A bound slot is not
   listed, since it holds an address of another image. `kuna xrefs` reports these
   as separate `pointer` rows with that coverage, never merged into the
-  instruction rows or the call graph (`docs/cli.md`).
+  instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
+  embed an absolute address, so a 32-bit PE's `.reloc` also lists every
+  `push offset f` and `jmp [slot]` operand in `.text`; a word that is the operand
+  of a decoded instruction referencing the same address is that instruction's row
+  and is left out (`xrefs.rs (data_rows)`).
 - **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and

@@ -77,3 +77,21 @@ fn rebase_opcodes_interpret() {
     let got = interpret_rebase(&ops, &[0x1000, 0x4000], 8);
     assert_eq!(got, vec![0x4010, 0x4018, 0x4020, 0x4030, 0x4040]);
 }
+
+/// A shared object's table of its own exported function is an absolute
+/// relocation against the preemptible symbol (`R_X86_64_64`), listed beside the
+/// `RELATIVE` words and the `.got` slot of a data symbol.
+#[test]
+fn a_shared_objects_absolute_relocations_are_data_pointers() {
+    let got = pointers("dataptrs_so_x86_64.so");
+    assert_eq!(got.coverage, Coverage::DynamicRelocations);
+    assert_eq!(
+        got.pointers,
+        vec![
+            DataPointer { slot: 0x3ff8, target: 0x4030, width: 8 },
+            DataPointer { slot: 0x4020, target: 0x2000, width: 8 },
+            DataPointer { slot: 0x4030, target: 0x1000, width: 8 },
+            DataPointer { slot: 0x4038, target: 0x1010, width: 8 },
+        ]
+    );
+}

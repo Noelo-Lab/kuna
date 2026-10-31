@@ -292,8 +292,12 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         .filter(|r| args.instructions && (args.kinds.is_empty() || args.kinds.contains(&r.kind)))
         .collect();
     let data = kuna_analysis::loader::kuna_dataptrs::data_pointers(&file, &bytes);
+    let operands = matches!(
+        object::Object::architecture(&file),
+        object::Architecture::I386 | object::Architecture::X86_64 | object::Architecture::X86_64_X32
+    );
     let pointers = if args.pointers {
-        data_rows(&prog, &index, &names, &target, args.direction, &data.pointers)
+        data_rows(&prog, &index, &names, &target, args.direction, &data.pointers, operands)
     } else {
         Vec::new()
     };
@@ -327,6 +331,11 @@ struct DataRef {
 /// The stored pointers `--to` answers (each word holding an address of the
 /// target's class) or `--from` answers (each word inside the target, when the
 /// target is data rather than code: its symbol's extent, else one word).
+///
+/// With `operands` (x86, whose instructions embed absolute addresses), a word
+/// that is the operand of a decoded instruction referencing the same address
+/// is that instruction's row, not a stored pointer: a 32-bit PE's base
+/// relocations list every `push offset f` and `jmp [slot]` in `.text`.
 fn data_rows(
     prog: &ConsoleProgram,
     index: &XrefIndex,
@@ -334,6 +343,7 @@ fn data_rows(
     target: &Target,
     direction: Direction,
     pointers: &[kuna_analysis::loader::kuna_dataptrs::DataPointer],
+    operands: bool,
 ) -> Vec<DataRef> {
     let in_code = |vma: u64| {
         prog.sections().iter().any(|&(lo, size, flags)| {
@@ -356,6 +366,12 @@ fn data_rows(
                 .collect()
         }
     };
+    let operand = |p: &kuna_analysis::loader::kuna_dataptrs::DataPointer| {
+        operands
+            && (p.slot.saturating_sub(15)..=p.slot)
+                .any(|at| index.refs_from_instruction(at).iter().any(|r| r.to == p.target))
+    };
+    let selected: Vec<_> = selected.into_iter().filter(|p| !operand(p)).collect();
     if selected.is_empty() {
         return Vec::new();
     }

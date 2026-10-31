@@ -10,8 +10,9 @@
 //!   each rebase carrying its target ([`crate::loader::format::macho::chained`]);
 //! - a classic Mach-O lists them in its `LC_DYLD_INFO` rebase opcodes, the slot
 //!   already holding the unslid target;
-//! - a position-independent ELF carries a dynamic relocation for each, whose
-//!   value [`crate::loader::kuna_dynrelocs::resolve`] computes;
+//! - a position-independent ELF carries a dynamic relocation for each: a
+//!   `RELATIVE` one for a local target, an absolute word or `GLOB_DAT` /
+//!   `JUMP_SLOT` one for a symbol this image defines and exports;
 //! - a PE lists them in its `.reloc` base relocations, the slot holding the
 //!   preferred-base target.
 //!
@@ -25,8 +26,8 @@
 use object::pe::{IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_HIGHLOW};
 use object::read::macho::{LoadCommandVariant, MachHeader, Segment as MachSegment};
 use object::read::pe::{ImageNtHeaders, PeFile};
-use object::read::{Object, ObjectSection, ObjectSegment};
-use object::{BinaryFormat, FileKind, ObjectKind};
+use object::read::{Object, ObjectSection, ObjectSegment, ObjectSymbol};
+use object::{BinaryFormat, FileKind, ObjectKind, RelocationFlags, RelocationTarget};
 
 /// Which relocation metadata listed an image's data pointers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +86,7 @@ pub fn data_pointers(file: &object::File, bytes: &[u8]) -> DataPointers {
     }
     let (coverage, mut pointers) = match file.format() {
         BinaryFormat::MachO => macho(file, bytes),
-        BinaryFormat::Elf if file.kind() == ObjectKind::Dynamic => elf(file, bytes),
+        BinaryFormat::Elf if file.kind() == ObjectKind::Dynamic => elf(file),
         BinaryFormat::Pe => match file {
             object::File::Pe32(pe) => pe_relocated(file, pe),
             object::File::Pe64(pe) => pe_relocated(file, pe),
@@ -255,16 +256,57 @@ fn interpret_rebase(ops: &[u8], segments: &[u64], ptr: u64) -> Vec<u64> {
 }
 
 /// A position-independent ELF's dynamic relocations whose value is an address
-/// of this image ([`crate::loader::kuna_dynrelocs::resolve`]).
-fn elf(file: &object::File, bytes: &[u8]) -> (Coverage, Vec<DataPointer>) {
-    if file.dynamic_relocations().is_none() {
+/// of this image: `RELATIVE` (`B + A`, the bias 0 at the vaddrs kuna maps), and
+/// an absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image
+/// defines (`S + A`). A shared object's table of its own exported functions is
+/// the absolute kind (`R_X86_64_64`), the symbol being preemptible. An undefined
+/// symbol is an import. Read here rather than through `dynrelocs`, whose writes
+/// are an option of the loaded image, not of the metadata.
+fn elf(file: &object::File) -> (Coverage, Vec<DataPointer>) {
+    use object::elf;
+    let Some(relocs) = file.dynamic_relocations() else {
         return (Coverage::None, Vec::new());
-    }
-    let pointers = crate::loader::kuna_dynrelocs::resolve(file, bytes)
-        .writes
-        .into_iter()
-        .map(|w| DataPointer { slot: w.vma, target: w.value, width: w.width })
+    };
+    let Some((relative, glob_dat, jump_slot)) =
+        crate::loader::kuna_dynrelocs::reloc_triple(file.architecture())
+    else {
+        return (Coverage::None, Vec::new());
+    };
+    let absolute = match file.architecture() {
+        object::Architecture::X86_64 => elf::R_X86_64_64,
+        object::Architecture::Aarch64 => elf::R_AARCH64_ABS64,
+        object::Architecture::I386 => elf::R_386_32,
+        _ => elf::R_ARM_ABS32,
+    };
+    let width: u8 = if file.is_64() { 8 } else { 4 };
+    let mask = if width == 8 { u64::MAX } else { u64::from(u32::MAX) };
+    let defined: std::collections::HashMap<usize, u64> = file
+        .dynamic_symbols()
+        .filter(|sym| !sym.is_undefined())
+        .map(|sym| (sym.index().0, sym.address()))
         .collect();
+    let mut pointers = Vec::new();
+    for (slot, reloc) in relocs {
+        let RelocationFlags::Elf { r_type } = reloc.flags() else { continue };
+        let implicit = reloc.has_implicit_addend();
+        let addend = if implicit {
+            let Some(word) = read_word(file, slot, width as usize) else { continue };
+            word
+        } else {
+            reloc.addend() as u64
+        };
+        let target = if r_type == relative {
+            addend
+        } else if r_type == absolute || r_type == glob_dat || r_type == jump_slot {
+            let RelocationTarget::Symbol(index) = reloc.target() else { continue };
+            let Some(&symbol) = defined.get(&index.0) else { continue };
+            let addend = if implicit && r_type != absolute { 0 } else { addend };
+            symbol.wrapping_add(addend)
+        } else {
+            continue;
+        };
+        pointers.push(DataPointer { slot, target: target & mask, width });
+    }
     (Coverage::DynamicRelocations, pointers)
 }
 

@@ -2281,7 +2281,9 @@ opcodes, ELF dynamic relocations, PE base relocations. `data_refs_coverage` name
 it, and is `none` when the image lists no pointer relocations (a non-PIE ELF, a PE
 without `.reloc`, a relocatable object): there an empty `data_refs` means "not
 enumerated", not "none stored". A word bound to an import is not listed; it holds
-an address of another image.
+an address of another image. On x86 a relocated word inside a decoded instruction
+that references the same address (a 32-bit PE's `push offset f`) is that
+instruction's row, not a stored pointer, and is left out.
 
 ```
 kuna xrefs fixture --to _audit_target
