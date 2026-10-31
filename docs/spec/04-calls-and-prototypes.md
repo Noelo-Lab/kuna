@@ -6100,12 +6100,12 @@ Everything downstream then sees a call to the definition, as it would in a
 callers through the stub (`decompiler/crates/kuna-cli/src/callgraph.rs
 (CallGraph::call_target)`), `--reachable-from` reaches it, `passthrough` and
 the body probes read its body, and its recovered return and parameter types
-type the call. Two facts are not carried across a stub. The definition's body
-answers what it reads and returns, never what it leaves alone: a compiler that
+type the call. One kind of fact is not carried across a stub. The definition's
+body answers what it reads and returns, never what it leaves alone: a compiler that
 emits `bl name@plt` cannot keep a value in a call-clobbered register across it
 (the lazy resolver runs first, and another definition may win), so the
 `calleepreserves` and `calleeretpreserves` proofs (chapter 03) are not taken for
-such a call. And `voidret` files a caller's read of the call result against the
+such a call. `voidret` files a caller's read of the call result against the
 stub as well as the definition, so the stub's own decompile keeps the return
 its callers read.
 
@@ -6117,8 +6117,8 @@ Over 67 shared objects (the 18 decbench x86-64 `.so` files, 13 x86-64 system
 libraries, 13 AArch64 and 9 ARM Thumb-2 Debian bookworm libraries, and 14
 fixtures and reproducers), 46 change. The call sites the change touched gained
 808 arguments, each within the definition's own recovered arity, and lost 7
-down to it. The 14 that exceed
-it are behaviors a direct call shows as well: `calleereadarg` reading a register
+down to it. The 14 that exceed it are behaviors a direct call shows as well:
+`calleereadarg` reading a register
 an instruction with an internal p-code branch writes (AArch64 `cneg` in
 libgcc's `__floatsitf`), libgcc's unwinder saving the EH data registers, and a
 definition kuna under-recovers. `option pltlocal off` restores the stub as the
