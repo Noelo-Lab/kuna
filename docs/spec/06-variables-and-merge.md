@@ -380,6 +380,28 @@ address, appends one list to the other instead of re-merging both
 (`variable.rs (HighVariableBank::merge_inst_lists)`). None of this changes
 which Varnodes merge.
 
+*(kuna perf)* `merge_op`'s tests repeat themselves on a wide join. Upstream
+tests each input's high against the high of every earlier input, and a
+repeated high only repeats a test: the op is edited only by a trim, which ends
+that input's tests, so `merge_op` tests the distinct earlier highs in
+first-input order. The cover tests of one pass over the op's highs
+(`merge.rs (Merge::merge_test)`) see no edit between them either. Each high is
+listed once, and a repeat is tested against itself alone. That pair can still
+be refused by `kuna_tiedphitrim`'s exclusion; every other repeated pair would
+return the answer its first test cached. While such a pass runs, a high with 64
+or more instances is indexed by block
+(`variable.rs (HighIntersectTest::begin_instance_blocks)`): each block lists
+the instances whose Cover has that block, in instance order. A block test
+reads an instance only through that Cover's entry for the block, so upstream's
+scan over every instance for every block the two highs share selects the same
+instances in the same order. A refreshed high drops its index with its cached
+tests (`variable.rs (HighIntersectTest::purge_high)`), and the index ends with
+the pass. On CPython 3.11's `_PyEval_EvalFrameDefault`, a stack slot's
+HighVariable grows past 19,000 instances while `merge_marker` merges the
+slot's joins of about 187 inputs. A trim that renumbers a block's ops clears
+the cached tests, so a re-test pass could scan those instances again for every
+input; single joins took 3 to 30 s. None of this changes a test's answer.
+
 **Copy and speculative merges.** After the forced merges and explicit/implied
 marking (below), three passes fuse variables to reduce clutter:
 

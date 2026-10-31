@@ -868,19 +868,56 @@ pub fn compare_copy_by_in_varnode(ctx: &dyn MergeContext, op1: OpId, op2: OpId) 
 /// `HighIntersectTest::{intersection,updateHigh,blockIntersection,…}`).
 pub struct MergeIntersect;
 
+/// (kuna) A high with at least this many instances is looked up by block
+/// while a run of tests is open ([`HighIntersectTest::begin_instance_blocks`]).
+const INDEXED_INSTANCES: int4 = 64;
+
 impl MergeIntersect {
+    /// The instances of `a` that can meet block `blk`, in instance order, when
+    /// `a` is indexed by block; `None` means every instance.
+    ///
+    /// A block test reads an instance only through its Cover's entry for that
+    /// block, and an instance with no entry is never selected. Upstream scans
+    /// every instance for every block the two highs share; a high with many
+    /// instances is indexed by block once per open run of tests instead.
+    fn instances_on<'c>(
+        ctx: &dyn MergeContext,
+        cache: &'c mut HighIntersectTest,
+        a: HighVariableId,
+        blk: int4,
+    ) -> Option<&'c [VarnodeId]> {
+        let n = ctx.high_num_instances(a);
+        if n < INDEXED_INSTANCES {
+            return None;
+        }
+        let build = || {
+            let mut blocks = crate::variable::InstanceBlocks::default();
+            for i in 0..n {
+                let vn = ctx.high_get_instance(a, i);
+                for (b, _) in ctx.vn_cover_ref(vn).iter() {
+                    blocks.entry(b).or_default().push(vn);
+                }
+            }
+            blocks
+        };
+        let blocks = cache.instance_blocks(a, build)?;
+        Some(blocks.get(&blk).map_or(&[], Vec::as_slice))
+    }
+
     /// Gather instance Varnodes of `a` that intersect `cover` on block `blk` above
     /// a point (C++ `HighIntersectTest::gatherBlockVarnodes`, `variable.cc:960`).
     fn gather_block_varnodes(
         ctx: &dyn MergeContext,
+        cache: &mut HighIntersectTest,
         a: HighVariableId,
         blk: int4,
         cover: &Cover,
         res: &mut Vec<VarnodeId>,
     ) {
-        let n = ctx.high_num_instances(a);
+        let listed = Self::instances_on(ctx, cache, a, blk);
+        let n = listed.map_or_else(|| ctx.high_num_instances(a), |l| l.len() as int4);
         for i in 0..n {
-            let vn = ctx.high_get_instance(a, i);
+            let vn = listed.map_or_else(|| ctx.high_get_instance(a, i), |l| l[i as usize]);
             let vncover = ctx.vn_cover_ref(vn);
             if 1 < vncover.intersect_by_block(blk, cover) {
                 res.push(vn);
@@ -893,15 +930,17 @@ impl MergeIntersect {
     /// `variable.cc:981-1002`).  Returns `true` if a merging intersection is found.
     fn test_block_intersection(
         ctx: &dyn MergeContext,
+        cache: &mut HighIntersectTest,
         a: HighVariableId,
         blk: int4,
         cover: &Cover,
         rel_off: int4,
         blist: &[VarnodeId],
     ) -> bool {
-        let n = ctx.high_num_instances(a);
+        let listed = Self::instances_on(ctx, cache, a, blk);
+        let n = listed.map_or_else(|| ctx.high_num_instances(a), |l| l.len() as int4);
         for i in 0..n {
-            let vn = ctx.high_get_instance(a, i);
+            let vn = listed.map_or_else(|| ctx.high_get_instance(a, i), |l| l[i as usize]);
             let vncover = ctx.vn_cover_ref(vn);
             if 2 > vncover.intersect_by_block(blk, cover) {
                 continue;
@@ -927,6 +966,7 @@ impl MergeIntersect {
     /// `variable.cc:1011-1053`).
     fn block_intersection(
         ctx: &dyn MergeContext,
+        cache: &mut HighIntersectTest,
         a: HighVariableId,
         b: HighVariableId,
         blk: int4,
@@ -934,8 +974,8 @@ impl MergeIntersect {
         let mut blist: Vec<VarnodeId> = Vec::new();
         let a_cover = ctx.high_get_cover(a);
         let b_cover = ctx.high_get_cover(b);
-        Self::gather_block_varnodes(ctx, b, blk, &a_cover, &mut blist);
-        if Self::test_block_intersection(ctx, a, blk, &b_cover, 0, &blist) {
+        Self::gather_block_varnodes(ctx, cache, b, blk, &a_cover, &mut blist);
+        if Self::test_block_intersection(ctx, cache, a, blk, &b_cover, 0, &blist) {
             return true;
         }
         // a's pieces
@@ -945,7 +985,7 @@ impl MergeIntersect {
                 let inter = ctx.piece_intersection(a_piece, i);
                 let off = ctx.piece_offset(inter) - base_off;
                 let inter_high = ctx.piece_high(inter);
-                if Self::test_block_intersection(ctx, inter_high, blk, &b_cover, off, &blist) {
+                if Self::test_block_intersection(ctx, cache, inter_high, blk, &b_cover, off, &blist) {
                     return true;
                 }
             }
@@ -958,8 +998,8 @@ impl MergeIntersect {
                 let b_inter = ctx.piece_intersection(b_piece, i);
                 let b_off = ctx.piece_offset(b_inter) - b_base_off;
                 let b_inter_high = ctx.piece_high(b_inter);
-                Self::gather_block_varnodes(ctx, b_inter_high, blk, &a_cover, &mut blist);
-                if Self::test_block_intersection(ctx, a, blk, &b_cover, -b_off, &blist) {
+                Self::gather_block_varnodes(ctx, cache, b_inter_high, blk, &a_cover, &mut blist);
+                if Self::test_block_intersection(ctx, cache, a, blk, &b_cover, -b_off, &blist) {
                     return true;
                 }
                 if let Some(a_piece) = ctx.high_piece(a) {
@@ -977,7 +1017,7 @@ impl MergeIntersect {
                             continue;
                         }
                         let inter_high = ctx.piece_high(inter);
-                        if Self::test_block_intersection(ctx, inter_high, blk, &b_cover, off, &blist) {
+                        if Self::test_block_intersection(ctx, cache, inter_high, blk, &b_cover, off, &blist) {
                             return true;
                         }
                     }
@@ -1058,7 +1098,7 @@ impl MergeIntersect {
         let mut blockisect: Vec<int4> = Vec::new();
         a_cover.intersect_list(&mut blockisect, &b_cover, 2);
         for &blk in &blockisect {
-            if Self::block_intersection(ctx, a, b, blk) {
+            if Self::block_intersection(ctx, cache, a, b, blk) {
                 res = true;
                 break;
             }
@@ -1279,6 +1319,13 @@ impl Merge {
     /// Test for intersections between `high` and a list of others (C++
     /// `Merge::mergeTest`, `merge.cc:1657-1669`).  Appends `high` and returns
     /// `true` if there are no pairwise intersections.
+    ///
+    /// `tmplist` holds each high once. Upstream appends a high again when one
+    /// of an op's inputs repeats it, and later tests then repeat the pairs
+    /// already tested against its first entry; nothing edits the function
+    /// between the tests of one list, so a repeat gives the cached answer of its
+    /// first test. A high already listed is tested only against itself (which
+    /// `kuna_tiedphitrim` can refuse) and is not listed twice.
     pub fn merge_test(
         &mut self,
         ctx: &mut dyn MergeContext,
@@ -1287,6 +1334,9 @@ impl Merge {
     ) -> bool {
         if !ctx.high_has_cover(high) {
             return false;
+        }
+        if tmplist.contains(&high) {
+            return !crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high, high);
         }
         let others: Vec<HighVariableId> = tmplist.clone();
         for a in others {
@@ -1575,31 +1625,40 @@ impl Merge {
 
     /// Force the merge of all input and output Varnodes of a generic op (C++
     /// `Merge::mergeOp`, `merge.cc:719-772`), snipping data-flow as needed.
+    ///
+    /// Upstream tests each input's high against the high of every earlier
+    /// input. Only a trim edits the op, and it ends that input's tests, so the
+    /// earlier inputs are tested by distinct high, in first-input order: a
+    /// repeated high answers as its first test did.
     fn merge_op(&mut self, ctx: &mut dyn MergeContext, op: OpId) -> KunaResult<()> {
         let max = if ctx.op_code(op) == OpCode::CPUI_INDIRECT { 1 } else { ctx.op_num_input(op) };
         let out_vn = ctx.op_out(op).expect("mergeOp: op has no output");
         let high_out = ctx.vn_high(out_vn).expect("mergeOp: out no high");
 
         // First deal with non-cover related merge restrictions.
+        let mut earlier: Vec<HighVariableId> = Vec::new();
         for i in 0..max {
             let in_vn = ctx.op_in(op, i).expect("mergeOp: null input");
             let high_in = ctx.vn_high(in_vn).expect("mergeOp: in no high");
             if !Self::merge_test_required(ctx, high_out, high_in) {
                 self.trim_op_input(ctx, op, i)?;
-                continue;
-            }
-            for j in 0..i {
-                let jvn = ctx.op_in(op, j).expect("mergeOp: null input j");
-                let jhigh = ctx.vn_high(jvn).expect("mergeOp: in j no high");
-                if !Self::merge_test_required(ctx, jhigh, high_in) {
-                    self.trim_op_input(ctx, op, i)?;
-                    break;
+            } else {
+                for &jhigh in &earlier {
+                    if !Self::merge_test_required(ctx, jhigh, high_in) {
+                        self.trim_op_input(ctx, op, i)?;
+                        break;
+                    }
                 }
+            }
+            let ihigh = ctx.vn_high(ctx.op_in(op, i).expect("mergeOp: null input")).expect("mergeOp: in no high");
+            if !earlier.contains(&ihigh) {
+                earlier.push(ihigh);
             }
         }
 
         // Test if a merge violates cover restrictions.
         let mut testlist: Vec<HighVariableId> = Vec::new();
+        self.test_cache.begin_instance_blocks();
         self.merge_test(ctx, high_out, &mut testlist);
         let mut i = 0;
         while i < max {
@@ -1609,6 +1668,7 @@ impl Merge {
             }
             i += 1;
         }
+        self.test_cache.end_instance_blocks();
 
         if i != max {
             // Cover restrictions: trim one branch at a time and retest.
@@ -1616,6 +1676,7 @@ impl Merge {
             while nexttrim < max {
                 self.trim_op_input(ctx, op, nexttrim)?;
                 testlist.clear();
+                self.test_cache.begin_instance_blocks();
                 self.merge_test(ctx, high_out, &mut testlist);
                 let mut i2 = 0;
                 while i2 < max {
@@ -1625,6 +1686,7 @@ impl Merge {
                     }
                     i2 += 1;
                 }
+                self.test_cache.end_instance_blocks();
                 if i2 == max {
                     break; // successfully test-merged everything
                 }
@@ -2573,6 +2635,7 @@ mod tests {
         op_parent_idx: BTreeMap<u64, int4>,
         op_order: BTreeMap<u64, uintm>,
         op_in0: BTreeMap<u64, VarnodeId>,
+        vn_cover: BTreeMap<u64, Cover>,
         copy_shadow: bool,
         merged: Vec<(HighVariableId, HighVariableId, bool)>,
     }
@@ -2589,6 +2652,7 @@ mod tests {
                 op_parent_idx: BTreeMap::new(),
                 op_order: BTreeMap::new(),
                 op_in0: BTreeMap::new(),
+                vn_cover: BTreeMap::new(),
                 copy_shadow: false,
                 merged: Vec::new(),
             }
@@ -2843,8 +2907,8 @@ mod tests {
         fn vn_offset(&self, _vn: VarnodeId) -> u64 {
             0
         }
-        fn vn_cover_ref(&self, _vn: VarnodeId) -> Cow<'_, Cover> {
-            Cow::default()
+        fn vn_cover_ref(&self, vn: VarnodeId) -> Cow<'_, Cover> {
+            self.vn_cover.get(&vkey(vn)).map(Cow::Borrowed).unwrap_or_default()
         }
         fn vn_create_index(&self, vn: VarnodeId) -> u64 {
             self.vn_create.get(&vkey(vn)).copied().unwrap_or(0)
@@ -3319,6 +3383,57 @@ mod tests {
         // The result is cached symmetrically.
         assert_eq!(cache.cached(hid(1), hid(2)), Some(false));
         assert_eq!(cache.cached(hid(2), hid(1)), Some(false));
+    }
+
+    /// Two highs whose instances each cover one random range of one of `blocks`
+    /// blocks; a high's Cover is the union of its instances'.
+    fn random_highs(seed: u64, blocks: u64) -> Mock {
+        let mut x = seed.wrapping_mul(0x9e3779b97f4a7c15) | 1;
+        let mut next = move |n: u64| {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x % n
+        };
+        let mut m = Mock::new();
+        let mut vn = 1u64;
+        for (h, count) in [(1u32, 64 + next(150)), (2u32, 1 + next(90))] {
+            let mut st = HighState::default();
+            for _ in 0..count {
+                let start = next(40) as uintm;
+                let c = cover_block(next(blocks) as int4, start, start + next(6) as uintm);
+                st.cover.merge(&c);
+                m.vn_cover.insert(vkey(vid(vn)), c);
+                m.vn_high.insert(vkey(vid(vn)), hid(h));
+                st.instances.push(vid(vn));
+                vn += 1;
+            }
+            st.has_cover = true;
+            add_high(&mut m, h, st);
+        }
+        m
+    }
+
+    #[test]
+    fn indexing_a_high_by_block_gives_every_test_the_scan_answer() {
+        let fresh = || HighIntersectTest::new(PcodeOpSet::new(Box::new(Vec::new), Box::new(|_, _| true)));
+        let mut answers = [0usize; 2];
+        for seed in 1..=400u64 {
+            for shadow in [false, true] {
+                let mut m = random_highs(seed, 2 + seed % 40);
+                m.copy_shadow = shadow;
+                let scanned = MergeIntersect::intersection(&mut m, &mut fresh(), hid(1), hid(2));
+                let mut cache = fresh();
+                cache.begin_instance_blocks();
+                let indexed = MergeIntersect::intersection(&mut m, &mut cache, hid(1), hid(2));
+                let reversed = MergeIntersect::intersection(&mut m, &mut fresh(), hid(2), hid(1));
+                cache.end_instance_blocks();
+                assert_eq!(indexed, scanned, "seed {seed} shadow {shadow}");
+                assert_eq!(reversed, scanned, "seed {seed} shadow {shadow}");
+                answers[usize::from(scanned)] += 1;
+            }
+        }
+        assert!(answers[0] > 50 && answers[1] > 50, "{answers:?}");
     }
 
     #[test]
