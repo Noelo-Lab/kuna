@@ -41,7 +41,6 @@
 //! already the unslid values — every existing x86-64 `macho_objc`/`macho_imports`
 //! fixture), or an unparsable header yields an **empty** overlay.
 
-use std::collections::HashMap;
 
 use object::read::macho::{LoadCommandVariant, MachHeader, Segment};
 use object::FileKind;
@@ -99,10 +98,11 @@ enum Fixup {
 /// strict no-op.
 #[derive(Default, Debug, Clone)]
 pub struct ChainedFixups {
-    /// `slot_vma → resolved_pointer` for every plain/auth **rebase** fixup.
-    rebases: HashMap<u64, u64>,
-    /// `slot_vma → import` for every **bind** fixup.
-    binds: HashMap<u64, ChainedBind>,
+    /// `(slot_vma, resolved_pointer)` for every plain/auth **rebase** fixup,
+    /// sorted by slot.
+    rebases: Vec<(u64, u64)>,
+    /// `(slot_vma, import)` for every **bind** fixup, sorted by slot.
+    binds: Vec<(u64, ChainedBind)>,
     /// The slot width in bytes: 4 for `DYLD_CHAINED_PTR_32`, else 8.
     width: u8,
 }
@@ -117,27 +117,38 @@ impl ChainedFixups {
     /// The resolved pointer at slot `va`, if `va` was a rebase fixup. `None` for a
     /// non-fixup slot (the consumer then reads the raw section word) or a bind.
     pub fn resolved_ptr(&self, va: u64) -> Option<u64> {
-        self.rebases.get(&va).copied()
+        let at = self.rebases.binary_search_by_key(&va, |&(slot, _)| slot).ok()?;
+        Some(self.rebases[at].1)
     }
 
-    /// Every resolved rebase target, in no particular order.
+    /// Every resolved rebase target, in slot order.
     pub fn targets(&self) -> impl Iterator<Item = u64> + '_ {
-        self.rebases.values().copied()
+        self.rebases.iter().map(|&(_, target)| target)
     }
 
-    /// Every rebase as `(slot, target)`, in no particular order.
+    /// Every rebase as `(slot, target)`, in slot order.
     pub fn rebases(&self) -> impl Iterator<Item = (u64, u64)> + '_ {
-        self.rebases.iter().map(|(&slot, &target)| (slot, target))
+        self.rebases.iter().copied()
     }
 
-    /// Every bind as `(slot, import)`, in no particular order.
+    /// Every bind as `(slot, import)`, in slot order.
     pub fn binds(&self) -> impl Iterator<Item = (u64, &ChainedBind)> + '_ {
-        self.binds.iter().map(|(&slot, bind)| (slot, bind))
+        self.binds.iter().map(|(slot, bind)| (*slot, bind))
     }
 
     /// The import bound at slot `va`, if `va` is a bind fixup.
     pub fn bind_at(&self, va: u64) -> Option<&ChainedBind> {
-        self.binds.get(&va)
+        let at = self.binds.binary_search_by_key(&va, |(slot, _)| *slot).ok()?;
+        Some(&self.binds[at].1)
+    }
+
+    /// Sort both lists by slot, keeping one entry per slot (a hostile header
+    /// can start two chains on one word).
+    fn sort_slots(&mut self) {
+        self.rebases.sort_by_key(|&(slot, _)| slot);
+        self.rebases.dedup_by_key(|(slot, _)| *slot);
+        self.binds.sort_by_key(|(slot, _)| *slot);
+        self.binds.dedup_by_key(|(slot, _)| *slot);
     }
 
     /// The width in bytes of every fixup slot this image carries.
@@ -232,21 +243,28 @@ where
     };
 
     let mut out = ChainedFixups::default();
-    walk_fixups(blob, &segs, imagebase, bytes, &mut out);
+    let mut walk = Walk { segs: &segs, file: bytes, hops: bytes.len() / 4 + 1 };
+    walk_fixups(blob, imagebase, &mut walk, &mut out);
+    out.sort_slots();
     out
+}
+
+/// The image a chain walk reads, and the hops it has left. Every honest fixup
+/// slot is a distinct 4-byte-aligned word of the file, so a walk that hops more
+/// than `file.len() / 4` times is revisiting slots: a hostile header (many
+/// tiny pages, overlapping starts) would otherwise multiply one long chain by
+/// every page that points into it.
+struct Walk<'a> {
+    segs: &'a [SegInfo],
+    file: &'a [u8],
+    hops: usize,
 }
 
 /// `dyld_chained_fixups_header` (fixup-chains.h): `fixups_version`,
 /// `starts_offset`, `imports_offset`, `symbols_offset`, `imports_count`,
 /// `imports_format`, `symbols_format` — seven `u32`. Walks every segment's
 /// chains, then names each bind through the imports table.
-fn walk_fixups(
-    blob: &[u8],
-    segs: &[SegInfo],
-    imagebase: u64,
-    file: &[u8],
-    out: &mut ChainedFixups,
-) {
+fn walk_fixups(blob: &[u8], imagebase: u64, walk: &mut Walk, out: &mut ChainedFixups) {
     let Some(starts_offset) = rd_u32(blob, 4) else { return };
     let sio = starts_offset as usize;
 
@@ -254,11 +272,11 @@ fn walk_fixups(
     let Some(seg_count) = rd_u32(blob, sio) else { return };
     let mut binds: Vec<(u64, u32, i64)> = Vec::new();
     for i in 0..seg_count as usize {
-        let Some(seg_info_off) = rd_u32(blob, sio + 4 + 4 * i) else { continue };
+        let Some(seg_info_off) = rd_u32(blob, sio + 4 + 4 * i) else { break };
         if seg_info_off == 0 {
             continue;
         }
-        walk_segment(blob, sio + seg_info_off as usize, segs, imagebase, file, out, &mut binds);
+        walk_segment(blob, sio + seg_info_off as usize, imagebase, walk, out, &mut binds);
     }
     if binds.is_empty() {
         return;
@@ -273,7 +291,7 @@ fn walk_fixups(
             },
             None => ChainedBind { name: Vec::new(), addend, weak: false },
         };
-        out.binds.insert(slot, bind);
+        out.binds.push((slot, bind));
     }
 }
 
@@ -343,9 +361,8 @@ fn read_imports(blob: &[u8]) -> Vec<Import> {
 fn walk_segment(
     blob: &[u8],
     p: usize,
-    segs: &[SegInfo],
     imagebase: u64,
-    file: &[u8],
+    walk: &mut Walk,
     out: &mut ChainedFixups,
     binds: &mut Vec<(u64, u32, i64)>,
 ) {
@@ -387,15 +404,18 @@ fn walk_segment(
         if page_start == START_NONE {
             continue;
         }
-        let page = imagebase + segment_offset + (pi as u64) * (page_size as u64);
+        let page = imagebase
+            .wrapping_add(segment_offset)
+            .wrapping_add((pi as u64) * (page_size as u64));
         if page_start & START_MULTI == 0 || pointer_format != ptr_format::PTR_32 {
-            walk_chain(file, segs, page + u64::from(page_start), stride, &format, out, binds);
+            walk_chain(walk, page.wrapping_add(u64::from(page_start)), stride, &format, out, binds);
             continue;
         }
         let mut overflow = usize::from(page_start & !START_MULTI);
         while let Some(start) = rd_u16(blob, p + 22 + 2 * overflow) {
-            walk_chain(file, segs, page + u64::from(start & !START_LAST), stride, &format, out, binds);
-            if start & START_LAST != 0 {
+            let first = page.wrapping_add(u64::from(start & !START_LAST));
+            walk_chain(walk, first, stride, &format, out, binds);
+            if start & START_LAST != 0 || walk.hops == 0 {
                 break;
             }
             overflow += 1;
@@ -411,11 +431,10 @@ struct Format {
 }
 
 /// Follow one fixup chain from `first_va`, hopping `next * stride` until `next ==
-/// 0`, recording each rebase and bind. Bounded against a corrupt `next` cycle by
-/// a hop cap.
+/// 0`, recording each rebase and bind. `next` only moves forward, so a chain
+/// cannot cycle; each hop spends one of the walk's budget ([`Walk`]).
 fn walk_chain(
-    file: &[u8],
-    segs: &[SegInfo],
+    walk: &mut Walk,
     first_va: u64,
     stride: u64,
     format: &Format,
@@ -423,19 +442,18 @@ fn walk_chain(
     binds: &mut Vec<(u64, u32, i64)>,
 ) {
     let mut va = first_va;
-    for _ in 0..0x10000u32 {
-        let Some(fo) = va_to_fileoff(segs, va) else { return };
+    while walk.hops > 0 {
+        walk.hops -= 1;
+        let Some(fo) = va_to_fileoff(walk.segs, va) else { return };
         let raw = if format.pointer_format == ptr_format::PTR_32 {
-            rd_u32(file, fo as usize).map(u64::from)
+            rd_u32(walk.file, fo as usize).map(u64::from)
         } else {
-            rd_u64(file, fo as usize)
+            rd_u64(walk.file, fo as usize)
         };
         let Some(raw) = raw else { return };
         let (next, fixup) = decode_ptr(raw, format);
         match fixup {
-            Some(Fixup::Rebase(target)) => {
-                out.rebases.insert(va, target);
-            }
+            Some(Fixup::Rebase(target)) => out.rebases.push((va, target)),
             Some(Fixup::Bind { ordinal, addend }) => binds.push((va, ordinal, addend)),
             None => {}
         }
@@ -533,8 +551,8 @@ fn decode_ptr(raw: u64, format: &Format) -> (u64, Option<Fixup>) {
 /// arithmetic). `None` for a VMA outside every mapped segment.
 fn va_to_fileoff(segs: &[SegInfo], va: u64) -> Option<u64> {
     for s in segs {
-        if va >= s.vmaddr && va < s.vmaddr + s.filesize {
-            return Some(s.fileoff + (va - s.vmaddr));
+        if va >= s.vmaddr && va - s.vmaddr < s.filesize {
+            return s.fileoff.checked_add(va - s.vmaddr);
         }
     }
     None
@@ -543,13 +561,13 @@ fn va_to_fileoff(segs: &[SegInfo], va: u64) -> Option<u64> {
 // --- little-endian scalar readers over a byte slice (bounds-checked) ---
 
 fn rd_u16(b: &[u8], off: usize) -> Option<u16> {
-    b.get(off..off + 2).map(|s| u16::from_le_bytes(s.try_into().unwrap()))
+    b.get(off..off.checked_add(2)?).map(|s| u16::from_le_bytes(s.try_into().unwrap()))
 }
 fn rd_u32(b: &[u8], off: usize) -> Option<u32> {
-    b.get(off..off + 4).map(|s| u32::from_le_bytes(s.try_into().unwrap()))
+    b.get(off..off.checked_add(4)?).map(|s| u32::from_le_bytes(s.try_into().unwrap()))
 }
 fn rd_u64(b: &[u8], off: usize) -> Option<u64> {
-    b.get(off..off + 8).map(|s| u64::from_le_bytes(s.try_into().unwrap()))
+    b.get(off..off.checked_add(8)?).map(|s| u64::from_le_bytes(s.try_into().unwrap()))
 }
 
 #[cfg(test)]
@@ -704,6 +722,61 @@ mod tests {
             assert_eq!(binds, vec![(0x100004010, &want)], "{name}");
             assert_eq!(fixups.slot_width(), 8);
         }
+    }
+
+    /// A chained-fixups blob with one segment's starts at offset 36: `page_size`,
+    /// `pointer_format`, `segment_offset` and `page_count` page starts of 0.
+    fn starts_blob(page_size: u16, pointer_format: u16, segment_offset: u64, page_count: u16) -> Vec<u8> {
+        let mut blob = vec![0u8; 36 + 22 + 2 * page_count as usize];
+        blob[4..8].copy_from_slice(&28u32.to_le_bytes());
+        blob[28..32].copy_from_slice(&1u32.to_le_bytes());
+        blob[32..36].copy_from_slice(&8u32.to_le_bytes());
+        blob[40..42].copy_from_slice(&page_size.to_le_bytes());
+        blob[42..44].copy_from_slice(&pointer_format.to_le_bytes());
+        blob[44..52].copy_from_slice(&segment_offset.to_le_bytes());
+        blob[56..58].copy_from_slice(&page_count.to_le_bytes());
+        blob
+    }
+
+    /// A hostile header: 65535 eight-byte pages, each starting a chain inside
+    /// one 4097-word chain. The walk records the chain once and stops when it
+    /// has spent one hop per file word, instead of walking it once per page.
+    #[test]
+    fn overlapping_page_starts_spend_a_bounded_budget() {
+        let mut file = Vec::new();
+        for _ in 0..4096 {
+            file.extend_from_slice(&(2u64 << 51).to_le_bytes());
+        }
+        file.extend_from_slice(&0u64.to_le_bytes());
+        let segs = [SegInfo { vmaddr: BASE, fileoff: 0, filesize: file.len() as u64 }];
+        let blob = starts_blob(8, ptr_format::PTR_64, 0, 0xFFFF);
+        let mut walk = Walk { segs: &segs, file: &file, hops: file.len() / 4 + 1 };
+        let mut out = ChainedFixups::default();
+        walk_fixups(&blob, BASE, &mut walk, &mut out);
+        out.sort_slots();
+        assert_eq!(walk.hops, 0, "the overlapping chains exhaust the budget");
+        assert_eq!(out.rebases.len(), 4097, "every slot of the chain is still recorded");
+    }
+
+    /// A `seg_count` past the end of the blob stops at the blob's end, and a
+    /// segment offset or segment table near the top of the address space wraps
+    /// into no mapped slot rather than overflowing.
+    #[test]
+    fn hostile_counts_and_offsets_are_inert() {
+        let file = vec![0u8; 64];
+        let segs = [SegInfo { vmaddr: u64::MAX - 4, fileoff: u64::MAX, filesize: 16 }];
+        let mut blob = vec![0u8; 32];
+        blob[4..8].copy_from_slice(&28u32.to_le_bytes());
+        blob[28..32].copy_from_slice(&u32::MAX.to_le_bytes());
+        let mut walk = Walk { segs: &segs, file: &file, hops: 17 };
+        let mut out = ChainedFixups::default();
+        walk_fixups(&blob, BASE, &mut walk, &mut out);
+        assert!(out.rebases.is_empty() && out.binds.is_empty());
+
+        let blob = starts_blob(0x4000, ptr_format::PTR_64, u64::MAX - 0x10, 4);
+        walk_fixups(&blob, BASE, &mut walk, &mut out);
+        assert!(out.rebases.is_empty());
+        assert_eq!(va_to_fileoff(&segs, u64::MAX - 2), None);
     }
 
     /// `resolve_chained_fixups` is a strict no-op on a non-Mach-O input.

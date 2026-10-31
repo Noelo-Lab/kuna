@@ -812,7 +812,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   stripped) plus the import each bind names, read through the chained imports
   table. A bind resolves to no pointer, so a consumer misses and falls back rather
   than reading a wrong address. The loader writes the resolved values into the
-  image it maps (`dynrelocs`, §1.3).
+  image it maps (`dynrelocs`, §1.3). The header is the image's own bytes, so the
+  walk is bounded by the file rather than by its counts: a `seg_count` stops at
+  the end of the blob, every address computation wraps instead of overflowing,
+  and the walk as a whole hops at most once per 4-byte word of the file
+  (`chained.rs (Walk)`). An honest image visits each slot once and never reaches
+  that; a hostile one with 65535 tiny pages all starting inside one long chain
+  would otherwise walk it once per page.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
