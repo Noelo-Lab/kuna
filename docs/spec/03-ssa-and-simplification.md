@@ -1145,9 +1145,10 @@ dead-code restart and 5 print differently: two lose the duplicated tag and
 three fold a temporary into its use; with the unlocked symbols and prototype
 inputs cleared on a restart, both orders print the same there but for the
 duplicated tag. hkxc.exe's 0x1406198f0 renumbers its locals, folds some
-temporaries and prints 289 eight-byte constant stores through a
-`char (*)[16]` result as eight byte stores each, the form it already prints at
-136 other such stores. An Override a later pass would have recorded is
+temporaries, prints 289 eight-byte constant stores through a `char (*)[16]`
+result as eight byte stores each (the form it already prints at 136 other such
+stores, and the one the off order prints too once the unlocked output is
+cleared as well) and swaps base and index in 12 pointer additions. An Override a later pass would have recorded is
 recorded by the restarted run itself, at the cost of another restart. A
 jump-table sub-decompilation never restarts, and with `earlyrestart off` the
 pass finishes first.
