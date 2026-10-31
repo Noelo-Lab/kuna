@@ -46,6 +46,8 @@
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uintm};
 
+use std::borrow::Cow;
+
 use crate::cover::Cover;
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::variable::{HighContext, HighIntersectTest};
@@ -182,9 +184,9 @@ pub trait MergeContext: HighContext {
     /// `high->getInstance(i)`.
     fn high_get_instance(&self, high: HighVariableId, i: int4) -> VarnodeId;
     /// `high->getCover()` (internal or extended; the `getCover` accessor).
-    fn high_get_cover(&self, high: HighVariableId) -> Cover;
+    fn high_get_cover(&self, high: HighVariableId) -> Cow<'_, Cover>;
     /// `high->internalCover` (the inflateTest cover-to-include).
-    fn high_internal_cover(&self, high: HighVariableId) -> Cover;
+    fn high_internal_cover(&self, high: HighVariableId) -> Cow<'_, Cover>;
     /// Drive `bank.update_cover(high)` across the bank-split (the `updateHigh`
     /// rebuild step; the cache purge stays in [`MergeIntersect`]).
     fn bank_update_cover_for(&mut self, high: HighVariableId);
@@ -297,8 +299,8 @@ pub trait MergeContext: HighContext {
     fn vn_is_global_load(&self, _vn: VarnodeId) -> bool {
         false
     }
-    /// `vn->getCover()` — the member's (already rebuilt) Cover, or `None`.
-    fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover>;
+    /// `vn->getCover()` — the member's (already rebuilt) Cover, empty if it has none.
+    fn vn_cover_ref(&self, vn: VarnodeId) -> Cow<'_, Cover>;
     /// `vn->getCreateIndex()`.
     fn vn_create_index(&self, vn: VarnodeId) -> u64;
     /// `vn->getSymbolEntry()->getOffset()` (the CONCAT-tree base offset).
@@ -879,7 +881,7 @@ impl MergeIntersect {
         let n = ctx.high_num_instances(a);
         for i in 0..n {
             let vn = ctx.high_get_instance(a, i);
-            let vncover = ctx.vn_cover_ref(vn).unwrap_or_default();
+            let vncover = ctx.vn_cover_ref(vn);
             if 1 < vncover.intersect_by_block(blk, cover) {
                 res.push(vn);
             }
@@ -900,12 +902,12 @@ impl MergeIntersect {
         let n = ctx.high_num_instances(a);
         for i in 0..n {
             let vn = ctx.high_get_instance(a, i);
-            let vncover = ctx.vn_cover_ref(vn).unwrap_or_default();
+            let vncover = ctx.vn_cover_ref(vn);
             if 2 > vncover.intersect_by_block(blk, cover) {
                 continue;
             }
             for &vn2 in blist {
-                let vn2cover = ctx.vn_cover_ref(vn2).unwrap_or_default();
+                let vn2cover = ctx.vn_cover_ref(vn2);
                 if 1 < vn2cover.intersect_by_block(blk, &vncover) {
                     if ctx.vn_size(vn) == ctx.vn_size(vn2) {
                         if !ctx.vn_copy_shadow(vn, vn2) {
@@ -1307,7 +1309,7 @@ impl Merge {
         };
         MergeIntersect::update_high(ctx, &mut self.test_cache, high);
         // const Cover &highCover( high->internalCover )
-        let high_cover = ctx.high_internal_cover(high);
+        let high_cover = ctx.high_internal_cover(high).into_owned();
 
         let n = ctx.high_num_instances(ahigh);
         for i in 0..n {
@@ -1315,7 +1317,7 @@ impl Merge {
             if ctx.vn_copy_shadow(b, a) {
                 continue; // Intersection with a or shadows of a is allowed
             }
-            let bcover = ctx.vn_cover_ref(b).unwrap_or_default();
+            let bcover = ctx.vn_cover_ref(b);
             if 2 == bcover.intersect(&high_cover) {
                 return true;
             }
@@ -1334,7 +1336,7 @@ impl Merge {
                     if ctx.vn_partial_copy_shadow(b, a, off) {
                         continue;
                     }
-                    let bcover = ctx.vn_cover_ref(b).unwrap_or_default();
+                    let bcover = ctx.vn_cover_ref(b);
                     if 2 == bcover.intersect(&high_cover) {
                         return true;
                     }
@@ -2076,14 +2078,14 @@ impl Merge {
                 // instance of `high`, and `bank_update_cover` rebuilds each
                 // member's cover before re-deriving the high's.
                 ctx.bank_update_cover(high);
-                let vn2cover = ctx.vn_cover_ref(vn2).unwrap_or_default();
+                let vn2cover = ctx.vn_cover_ref(vn2);
                 if single_contain_varnode_def(&vn2cover, ctx, vn1) == 1 {
                     let def1 = ctx.vn_def(vn1).unwrap();
                     ctx.op_set_input(def1, vn2, 0)?;
                     res = true;
                     break;
                 }
-                let vn1cover = ctx.vn_cover_ref(vn1).unwrap_or_default();
+                let vn1cover = ctx.vn_cover_ref(vn1);
                 if single_contain_varnode_def(&vn1cover, ctx, vn2) == 1 {
                     let def2 = ctx.vn_def(vn2).unwrap();
                     ctx.op_set_input(def2, vn1, 0)?;
@@ -2394,13 +2396,13 @@ impl Merge {
     fn shadowed_varnode(ctx: &dyn MergeContext, vn: VarnodeId) -> bool {
         let high = ctx.vn_high(vn).expect("shadowedVarnode: vn no high");
         let num = ctx.high_num_instances(high);
-        let vncover = ctx.vn_cover_ref(vn).unwrap_or_default();
+        let vncover = ctx.vn_cover_ref(vn);
         for i in 0..num {
             let othervn = ctx.high_get_instance(high, i);
             if othervn == vn {
                 continue;
             }
-            let othercover = ctx.vn_cover_ref(othervn).unwrap_or_default();
+            let othercover = ctx.vn_cover_ref(othervn);
             if vncover.intersect(&othercover) == 2 {
                 return true;
             }
@@ -2616,7 +2618,7 @@ mod tests {
                 create_index: 0,
             }
         }
-        fn vn_cover(&self, _vn: VarnodeId) -> Option<Cover> {
+        fn vn_cover(&self, _vn: VarnodeId) -> Option<&Cover> {
             None
         }
         fn vn_has_cover(&self, _vn: VarnodeId) -> bool {
@@ -2691,11 +2693,11 @@ mod tests {
         fn high_get_instance(&self, h: HighVariableId, i: int4) -> VarnodeId {
             self.hs(h).instances[i as usize]
         }
-        fn high_get_cover(&self, h: HighVariableId) -> Cover {
-            self.hs(h).cover.clone()
+        fn high_get_cover(&self, h: HighVariableId) -> Cow<'_, Cover> {
+            Cow::Borrowed(&self.hs(h).cover)
         }
-        fn high_internal_cover(&self, h: HighVariableId) -> Cover {
-            self.hs(h).cover.clone()
+        fn high_internal_cover(&self, h: HighVariableId) -> Cow<'_, Cover> {
+            Cow::Borrowed(&self.hs(h).cover)
         }
         fn bank_update_cover_for(&mut self, h: HighVariableId) {
             self.hs_mut(h).cover_dirty = false;
@@ -2841,8 +2843,8 @@ mod tests {
         fn vn_offset(&self, _vn: VarnodeId) -> u64 {
             0
         }
-        fn vn_cover_ref(&self, _vn: VarnodeId) -> Option<Cover> {
-            None
+        fn vn_cover_ref(&self, _vn: VarnodeId) -> Cow<'_, Cover> {
+            Cow::default()
         }
         fn vn_create_index(&self, vn: VarnodeId) -> u64 {
             self.vn_create.get(&vkey(vn)).copied().unwrap_or(0)

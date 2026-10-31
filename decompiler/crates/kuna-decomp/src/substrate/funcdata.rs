@@ -327,6 +327,9 @@ pub struct Funcdata {
     /// [`Self::ensure_covermerge`].  `pub(crate)` so the `funcdata_merge` bridge
     /// module can take/replace it.
     pub(crate) covermerge: Option<crate::merge::Merge>,
+    /// (kuna perf) The block table every Cover walk shares while a merge pass
+    /// runs ([`Self::with_covermerge`]), which edits ops but never blocks.
+    pub(crate) cover_blocks: Option<BlockTable>,
     /// Revision of the call/store set and its basic-block positions.
     affecting_ops_revision: u64,
     /// Overrides of data-flow, prototypes, etc. that are local to \b this function
@@ -788,6 +791,7 @@ impl Funcdata {
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
             covermerge: None,
+            cover_blocks: None,
             affecting_ops_revision: 0,
             localoverride: crate::overrides::Override::new(),
             union_map: std::collections::BTreeMap::new(),
@@ -5411,7 +5415,7 @@ pub(crate) type BlockTable = std::cell::OnceCell<Vec<Option<BlockId>>>;
 
 impl<'a> FuncdataCoverCtx<'a> {
     pub(crate) fn new(fd: &'a Funcdata) -> Self {
-        FuncdataCoverCtx { fd, own: BlockTable::new(), shared: None }
+        FuncdataCoverCtx { fd, own: BlockTable::new(), shared: fd.cover_blocks.as_ref() }
     }
 
     /// A view keeping its block table in `table`, for a run of Cover walks over
@@ -5920,8 +5924,11 @@ impl<'a> HighContext for HighReadView<'a> {
             create_index: v.get_create_index(),
         }
     }
-    fn vn_cover(&self, vn: VarnodeId) -> Option<Cover> {
-        self.vbank.get(vn).and_then(|v| v.cover().cloned())
+    fn vn_flags(&self, vn: VarnodeId) -> uint4 {
+        self.vbank.get(vn).expect("vn_flags: stale vn").get_flags()
+    }
+    fn vn_cover(&self, vn: VarnodeId) -> Option<&Cover> {
+        self.vbank.get(vn).and_then(|v| v.cover())
     }
     fn vn_has_cover(&self, vn: VarnodeId) -> bool {
         self.vbank.get(vn).map(|v| v.has_cover()).unwrap_or(false)
