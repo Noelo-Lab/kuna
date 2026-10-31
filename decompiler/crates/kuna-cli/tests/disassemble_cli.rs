@@ -1173,3 +1173,47 @@ fn follow_covers_the_same_bytes_as_the_straight_line() {
     );
     assert_eq!(plain, (0x10000, 0x1003d), "the whole mapped run");
 }
+
+#[test]
+fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
+    let binary = fauxware();
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "main", "--count", "1", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    let instructions = doc["instructions"].as_array().unwrap();
+    assert_eq!(instructions.len(), 1);
+    assert_eq!(doc["truncated"], true);
+    let ops = instructions[0]["ops"].as_array().unwrap();
+    assert_eq!(instructions[0]["mnemonic"], "PUSH");
+    assert_eq!(ops.iter().map(|op| op["opcode"].as_str().unwrap()).collect::<Vec<_>>(), ["COPY", "INT_SUB", "STORE"]);
+    assert_eq!(ops[1]["inputs"][1]["space"], "const");
+    assert_eq!(ops[1]["inputs"][1]["offset"], 8);
+    assert_eq!(ops[2]["output"], Json::Null);
+    for op in ops {
+        assert!(op["opcode"].as_str().is_some());
+        for vn in op["inputs"].as_array().unwrap() {
+            assert!(vn["space"].as_str().is_some());
+            assert!(vn["offset"].as_u64().is_some());
+            assert!(vn["size"].as_u64().is_some());
+        }
+    }
+    let (text, stderr, code) = run_kuna(&["raw-pcode", &binary, "main", "--count", "1"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(text.contains(ops[0]["opcode"].as_str().unwrap()));
+    assert!(text.contains("# truncated at"));
+    let next = format!("0x{:x}", doc["end"].as_u64().unwrap());
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, &next, "--bytes", "1"]);
+    assert_ne!(code, 0);
+    assert!(stdout.is_empty());
+    assert!(stderr.contains("crosses the requested or mapped boundary"), "{stderr}");
+}
+
+#[test]
+fn raw_pcode_rejects_unmapped_addresses_and_unsupported_walks() {
+    let binary = fauxware();
+    for args in [vec!["raw-pcode", &binary, "0xffffffffffffffff"], vec!["raw-pcode", &binary, "main", "--follow"]] {
+        let (_, stderr, code) = run_kuna(&args);
+        assert_ne!(code, 0);
+        assert!(stderr.contains("error:"));
+    }
+}

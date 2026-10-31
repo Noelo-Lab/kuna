@@ -86,6 +86,8 @@
 //! about the decode changes: the same walk, the same bytes, a different view of
 //! them.
 
+pub(crate) mod raw_pcode;
+
 use kuna_console::disasm::{
     self, hex, mapped_run_end, read_upto, CodeWalk, Row, Window, DERIVED_INSTRUCTION_CAP,
 };

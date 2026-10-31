@@ -3669,3 +3669,8 @@ to the stack space's signed address width. Reused storage still requires a uniqu
 high variable or a unique matching name. The existing named-high and address-taken
 parameter fallbacks remain in their original order, so the index changes lookup
 cost rather than which rendered uses belong to a variable.
+
+The `raw-pcode` CLI query lifts each instruction directly through SLEIGH before
+the decompiler pipeline, exposing opcode and ordered varnode tuples. Its linear
+window is bounded by the resolved inventory extent or the caller; it does not
+follow control flow or claim that every decoded byte is reachable code.

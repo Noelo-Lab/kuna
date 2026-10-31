@@ -2302,6 +2302,27 @@ A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
 
+## `kuna raw-pcode` — instruction-level SLEIGH output
+
+```
+kuna raw-pcode ./a.out main --count 10
+kuna raw-pcode ./a.out 0x401000 --count 1 --json
+kuna raw-pcode ./a.out 0x401000-0x401020 --json
+```
+
+This linearly lifts each instruction directly with SLEIGH, before decompiler
+analysis, simplification, or SSA construction. Each operation carries an opcode,
+an optional output, and ordered input varnodes, each with its address space,
+offset and size in bytes. The JSON result groups operations by instruction and
+reports the exclusive end and whether the instruction limit or mapped-image
+boundary truncated the walk.
+The range and function extent use the same inventory as `disassemble`; absent a
+known extent, the default window is 64 bytes, and derived walks stop at 1024
+instructions. `--count` and `--bytes` bound the walk. This is a linear listing,
+not a control-flow walk: it can encounter data inside a function and does not
+follow branches. An undecodable or boundary-crossing instruction is an error.
+`decompile --raw` instead prints the decompiler's current IR after its passes.
+
 ## `kuna disassemble` / `kuna read` — instructions or bytes, when the pseudocode is not enough
 
 ```bash

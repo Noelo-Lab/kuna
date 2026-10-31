@@ -242,6 +242,49 @@ struct WholeOp {
     ins: Vec<VarnodeData>,
 }
 
+/// One unmodified operation emitted by SLEIGH for a machine instruction.
+pub struct RawPcodeOp {
+    pub opcode: &'static str,
+    pub output: Option<RawPcodeVarnode>,
+    pub inputs: Vec<RawPcodeVarnode>,
+}
+
+/// A SLEIGH address-space, offset and byte-size tuple.
+pub struct RawPcodeVarnode {
+    pub space: String,
+    pub offset: u64,
+    pub size: u32,
+}
+
+impl From<&VarnodeData> for RawPcodeVarnode {
+    fn from(v: &VarnodeData) -> Self {
+        Self {
+            space: v.space.as_ref().map_or("<none>", |s| s.get_name()).to_string(),
+            offset: v.offset,
+            size: v.size,
+        }
+    }
+}
+
+#[derive(Default)]
+struct RawPcodeEmit(Vec<RawPcodeOp>);
+
+impl kuna_sleigh::translate::PcodeEmit for RawPcodeEmit {
+    fn dump(
+        &mut self,
+        _: &Address,
+        opcode: OpCode,
+        output: Option<&VarnodeData>,
+        inputs: &[VarnodeData],
+    ) {
+        self.0.push(RawPcodeOp {
+            opcode: kuna_num::opcodes::get_opname(opcode),
+            output: output.map(RawPcodeVarnode::from),
+            inputs: inputs.iter().map(RawPcodeVarnode::from).collect(),
+        });
+    }
+}
+
 /// (kuna) Every FIXED address a RANGE of instructions names, in the two flavours
 /// a listing needs to tell code from data — plus the decode buffer the walk
 /// filling it reuses.
@@ -1791,6 +1834,17 @@ impl ConsoleProgram {
         );
         let addr = Address::new(code_space, vma);
         self.arch().translate().print_assembly_into(&addr, mnem, body)
+    }
+
+    /// Lift exactly one instruction, before decompiler passes or SSA construction.
+    pub fn raw_pcode_at(&self, vma: u64) -> KunaResult<(int4, Vec<RawPcodeOp>)> {
+        let space = Rc::clone(
+            self.arch().manage().get_default_code_space()
+                .ok_or_else(|| KunaError::lowlevel("no default code space"))?,
+        );
+        let mut emit = RawPcodeEmit::default();
+        let len = self.arch().translate().one_instruction(&mut emit, &Address::new(space, vma))?;
+        Ok((len, emit.0))
     }
 
     /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift
