@@ -1349,6 +1349,9 @@ Three tiers:
 | a huge function exhausts memory during heritage | [`prunedssa`](#prunedssa) |
 | heritage builds millions of INDIRECTs and MULTIEQUALs that dead-code removal deletes | [`prunedssa`](#prunedssa) |
 | a mid-sized function with thousands of calls and string-instruction loops takes gigabytes to decompile | [`prunedssa`](#prunedssa) |
+| a huge function exhausts memory in the heritage pass that first heritages its stack | [`loadguardreads`](#loadguardreads) |
+| millions of COPY ops are built and destroyed in one heritage pass | [`loadguardreads`](#loadguardreads) |
+| a function with many indexed stack array reads and many address-taken locals takes gigabytes to decompile | [`loadguardreads`](#loadguardreads) |
 
 ## Toggleable transforms
 
@@ -4113,6 +4116,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Flip off to build minimal SSA, which places every guard and join and leaves their removal to ActionDeadCode, for example when comparing heritage's intermediate IR with upstream.
 - **Where / provenance:** P3/ssa-construction · kuna · performance · gh-1034
 - **Example:** `option prunedssa off`
+
+### `loadguardreads` -- on | off, default `on`
+
+- **Symptoms:** a huge function exhausts memory in the heritage pass that first heritages its stack; millions of COPY ops are built and destroyed in one heritage pass; a function with many indexed stack array reads and many address-taken locals takes gigabytes to decompile.
+- **What it does:** Guard an indexed LOAD by reading each address-tied range it may alias while renaming, instead of building a COPY of the range in front of the LOAD. Upstream places one address-forced COPY per guarded range per LOAD, renames them, walks back from them to mark the writes that reach them address forced, and propagates every one away before the pass ends, so the COPYs never outlive the pass. A new guard covers the whole stack until value-set analysis bounds it after renaming, so the pass that first meets a function's indexed stack LOADs builds a COPY and two Varnodes for every LOAD times every address-tied stack range. Here the pass records the pairs, renaming reads the top of each range's stack at the LOAD exactly as it reads a COPY's input, and each distinct Varnode a guard read reaches gets one address-forced COPY in front of the first LOAD that reached it. The rest of the pass reads those as it reads upstream's COPYs, the walk back from them marks the same writes, and they are propagated away the same way; a read upstream links to a guard COPY's output still reads that pair's COPY, built in front of its LOAD when renaming first meets such a read, and those COPYs are propagated in upstream's order. So the IR after the pass is the same, readers in the same order, without the cross product. The global arm of `indexaliasguard` is read the same way.
+- **When to flip:** On by default. Flip off to build upstream's LOAD guard COPYs, for example to compare heritage's intermediate IR with upstream.
+- **Where / provenance:** P3/load-guard · kuna · performance · gh-1034
+- **Example:** `option loadguardreads off`
 
 ## Programmatic use
 

@@ -312,6 +312,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
+    "loadguardreads" => on_off!(load_guard_reads, "LOAD guards read at renaming"),
     "localstackviews" => on_off!(local_stack_views, "Bounded local stack views"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;

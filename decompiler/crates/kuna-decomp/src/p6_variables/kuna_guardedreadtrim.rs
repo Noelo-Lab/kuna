@@ -75,8 +75,7 @@ pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> O
     }
     for read in data
         .kuna_guarded_reads
-        .lowered
-        .values()
+        .reads()
         .filter(|read| read.space == space.get_index())
     {
         if read.size <= 0
@@ -96,8 +95,7 @@ pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> O
     if !machine_reads.iter().any(|read| overlaps(&read))
         || !data
             .kuna_guarded_reads
-            .lowered
-            .values()
+            .reads()
             .any(|read| overlaps(&read))
     {
         return None;
@@ -108,8 +106,7 @@ pub(crate) fn guarded_block(data: &Funcdata, vn: VarnodeId, reads: &[OpId]) -> O
             candidate != origin
                 && data
                     .kuna_guarded_reads
-                    .lowered
-                    .values()
+                    .reads()
                     .filter(overlaps)
                     .all(|read| {
                         read.block != origin

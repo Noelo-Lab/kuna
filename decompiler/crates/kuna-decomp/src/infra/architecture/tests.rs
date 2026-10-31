@@ -513,3 +513,35 @@ fn jumptablemax_defaults_to_1024_and_parses_strictly() {
     }
     assert_eq!(arch.max_jumptable_size, 100000);
 }
+
+/// A render that panics hands the printer back with the run's settings and
+/// none of the partial document: the indent increment and integer format
+/// survive, and so do the modifiers in force before the render, even when the
+/// panic hit between a modifier's save and restore with nothing pushed.
+#[test]
+fn with_print_hands_back_the_configured_printer_after_a_render_panic() {
+    use crate::printlanguage::modifiers;
+    use crate::prettyprint::Emit;
+    let mut arch = Architecture::new("t", bare_sleigh());
+    arch.print_mut().context.set_integer_format("hex").unwrap();
+    arch.print_mut().emit.set_indent_increment(4);
+    for pushed in [false, true] {
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            arch.with_print(|printer, _| {
+                let save = printer.context.mods();
+                printer.context.set_mods(save | modifiers::PRINT_LOAD_VALUE);
+                if pushed {
+                    printer.context.push_mod();
+                    printer.context.set_mod(modifiers::NO_BRANCH);
+                }
+                printer.emit.start_indent();
+                panic!("render fault");
+            })
+        }));
+        assert!(caught.is_err(), "the panic resumes");
+        let print = arch.print();
+        assert_eq!(print.context.mods(), modifiers::FORCE_HEX, "pushed {pushed}");
+        assert_eq!(print.emit.get_indent_increment(), 4);
+        assert_eq!(print.emit.state().indentlevel, 0);
+    }
+}

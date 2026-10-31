@@ -1685,7 +1685,19 @@ classified:
   is taken from the driver right after the flow build — the per-function
   architecture handle the pipeline runs against carries the load image but no
   translator — and cached per callee entry, so each distinct body is decoded
-  once per run. `off` restores the pre-option rendering.
+  once per run. A cached summary lives for the rest of the run, so its byte
+  sets are stored as the runs of consecutive bytes they cover
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg/byteset.rs (ByteSet)`)
+  rather than one set entry per byte: a register write covers its bytes in one
+  stretch, so a path that wrote several hundred bytes is a few dozen runs. The
+  forward-transfer answer `argclobber` caches keeps only the meet of its
+  terminators' written sets (`kuna_calleedeadarg.rs (ForwardTransfer::cut)`),
+  since a range is free exactly when every one of them contains it. Both are
+  storage only and answer every query as before; kept as one tree entry per
+  byte and one set per terminator, the summaries of a whole-binary run grew its
+  heap by tens of KiB to megabytes per probed callee, which a `--max-fn-memory`
+  limit then charged to whichever later function crossed it. `off` restores the
+  pre-option rendering.
 - **Hidden-return register** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_hiddenretarg.rs`):
   every AArch64 cspec (Linux, Apple, Windows) lists `x8`, the indirect-result
   register, as the `hiddenret` input entry, and trial scoring treats it like
