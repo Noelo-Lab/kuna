@@ -21,6 +21,7 @@ pub mod stringmanage;
 pub mod kuna_naming;
 pub mod kuna_varsources;
 mod kuna_calltransport;
+mod kuna_lanetrace;
 pub mod kuna_arraynotation;
 pub mod kuna_declhightype;
 pub mod kuna_castsign; // (kuna) signed declarations for frame locals and the readers signedness vetoes

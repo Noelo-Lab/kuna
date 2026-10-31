@@ -2074,6 +2074,20 @@ per-field transfers using recovered types — described with the type system in
 chapter 05, as is lane division (`ActionLaneDivide` in stackstall, over
 `subflow.rs (LaneDivide)` (built over `transform.rs (TransformManager)`)).
 
+`ActionLaneDivide` scans the Varnodes of each laned storage location in
+location order and, as upstream does, starts the scan over after every split.
+Upstream then traces every Varnode that failed before again, so a function
+with a thousand splits traces each failing Varnode a thousand times (hkxc's
+0x1401cd7a0: 146,912 traces for 1,001 splits, 37 s). A failed trace changes
+nothing, and what it reads is bounded: the Varnodes it reached and every input
+and output of the ops that define and read them
+(`decompiler/crates/kuna-decomp/src/p9_emit/kuna_lanetrace.rs (footprint)`). A
+split rewrites only within its own trace's footprint, taken before it is
+applied. So the rescan skips a Varnode whose failed trace read nothing a later
+split's footprint holds, which would fail the same way, and traces again every
+other one (`kuna_lanetrace.rs (FailedTraces)`); the splits, and their order,
+are upstream's. On 0x1401cd7a0 lane division takes 4 s.
+
 When lane division may downcast and meets a `SUBPIECE` narrower than the lane
 it reads, it keeps that `SUBPIECE` as a terminator on the lane where its bytes
 start. The `SUBPIECE` offset counts from its own input, which can hold only the
