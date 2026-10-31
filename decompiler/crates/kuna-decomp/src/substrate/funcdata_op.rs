@@ -587,10 +587,8 @@ impl Funcdata {
     ///
     /// `stackptr` reuses an existing stack-pointer reference, or `None` to build a
     /// new `newSpacebasePtr`.  The `off` is byte-to-address scaled by the space's
-    /// word size.  The SEGMENTOP container arm (`getSegmentOp`) is unreached on
-    /// flat stacks (no segmented user-op on the x86 spacebase) — a faithful stub
-    /// (the Rust tree has no `SegmentOp` user-op surface yet); the plain INT_ADD
-    /// reference is the path the stack-relative parameter recovery exercises.
+    /// word size.  When the stack's containing space has a segment op (option
+    /// `segmentize`), the reference is wrapped in `SEGMENTOP(contain, 0, ref)`.
     pub fn create_stack_ref(
         &mut self,
         spc: &Rc<AddrSpace>,
@@ -614,7 +612,7 @@ impl Funcdata {
             .ok_or_else(|| KunaError::lowlevel("createStackRef: stale op"))?
             .get_addr()
             .clone();
-        let addop = self.new_op(2, op_addr);
+        let addop = self.new_op(2, op_addr.clone());
         self.op_set_opcode_code(addop, OpCode::CPUI_INT_ADD);
         let addout = self.new_unique_out(addrsize, addop)?;
         self.op_set_input(addop, stackptr, 0)?;
@@ -626,10 +624,21 @@ impl Funcdata {
         } else {
             self.op_insert_before(addop, op);
         }
-        // STUB(flat-stack): the SEGMENTOP container arm (glb->userops.getSegmentOp
-        // on spc->getContain()) only fires for segmented spacebases; the flat x86
-        // stack has no segment user-op, so addout is the reference directly.
-        Ok(addout)
+        let Some(containerid) = spc.get_contain().cloned() else { return Ok(addout) };
+        let Some(segdef) = self.get_arch().get_segment_op(containerid.get_index()).cloned() else {
+            return Ok(addout);
+        };
+        let segop = self.new_op(3, op_addr);
+        self.op_set_opcode_code(segop, OpCode::CPUI_SEGMENTOP);
+        let segout = self.new_unique_out(containerid.get_addr_size() as int4, segop)?;
+        let spcvn = self.new_varnode_space(&containerid);
+        self.op_set_input(segop, spcvn, 0)?;
+        let basevn = self.new_constant(segdef.baseinsize, 0);
+        self.op_set_input(segop, basevn, 1)?;
+        self.op_set_input(segop, addout, 2)?;
+        // Make sure -segop- comes after -addop- regardless if before/after -op-
+        self.op_insert_after(segop, addop);
+        Ok(segout)
     }
 
     /// Build `LOAD` of `sz` bytes from the stack at `off` in `spc` (C++

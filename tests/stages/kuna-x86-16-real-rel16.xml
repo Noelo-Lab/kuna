@@ -34,6 +34,10 @@
     guess 0x2000. A far CALL pushes IP in its own segment (0x01a5), not the low
     half of its linear address (0xb725), and an instruction that ends on its
     segment's last byte wraps IP to 0 (0x2b623, not 0x3b623).
+
+    The script pins option segmentize off: asserts #7 and #11 read each
+    pushed IP as a store through segment(), which the default folds into the
+    stack frame (see kuna-segmentize.xml).
 -->
 <bytechunk space="ram" offset="0x100">
 e80090c3
@@ -93,6 +97,7 @@ b80700c3
 <symbol space="ram" offset="0x2b623" name="v"/>
 </binaryimage>
 <script>
+  <com>option segmentize off</com>
   <com>disassemble 0x100 0x104</com>
   <com>disassemble 0x5b680 0x5b684</com>
   <com>lo fu com_main</com>

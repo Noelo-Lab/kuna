@@ -1859,6 +1859,73 @@ model (chapter 02) and the `thumbfuncptr` const-pointer preservation (chapter 05
 §5) — and the three do not interact: this rule only ever removes an `INT_AND`
 that a `CALLIND` consumes.
 
+**Segmented addressing (`segmentize`).** A processor spec can name the SLEIGH
+user op that computes an effective address from a segment and an offset: the
+pspec `<segmentop space="ram" userop="segment" farpointer="yes">` of x86 16-bit
+real and protected mode, Z80 and HCS12, with a `<pcode>` snippet for the address
+(`res = (zext(base) << 4) + zext(inner)` in real mode) and a `<constresolve>`
+register that holds the implied segment of a constant near pointer (`DS`).
+`decompiler/crates/kuna-decomp/src/infra/architecture.rs (decode_segment_ops)`
+registers each one in the user-op table after the translator's own ops, the
+pspec's before the cspec's, and its snippet joins the inject library;
+`architecture.rs (initialize_segments)` then emits the compiled snippet into a
+snippet emulator,
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_segmentize.rs (SegmentDef)`,
+which `SegmentDef::execute` runs on constant inputs (C++ `SegmentOp::execute`
+over `ExecutablePcode::evaluate`). The definitions are shared into the
+per-function architecture snapshot only while `option segmentize` is on (the
+default), so off leaves every behaviour below inert.
+
+`ActionSegmentize`
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (ActionSegmentize)`)
+runs once per function right after the first heritage pass: each live CALLOTHER
+of a segment op with three inputs becomes `SEGMENTOP(space, base, inner)`,
+constant terms re-sized to the snippet's declared input sizes; a malformed one
+is left a CALLOTHER with a header warning rather than failing the function as
+upstream does. The stack and type passes already see through SEGMENTOP (the
+spacebase check of `RuleLoadVarnode`/`RuleStoreVarnode`, the stack-offset walk
+in heritage, slot-2 pointer propagation), so pushes, pops and frame accesses
+become stack variables and parameters. The printer emits only the near pointer
+in slot 2. `RuleSegment` (`ruleaction_7.rs (RuleSegment)`) folds a SEGMENTOP with
+constant segment and offset to the snippet's result, and, for a far-pointer
+segment op, replaces one whose segment and offset are the high and low SUBPIECEs
+of a single value with that value (the `LES` far pointer). The jump-table
+emulator executes SEGMENTOP through the same snippet
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_emulatefunction.rs`), so a
+`jmp [cs:bx+table]` is recovered. A stack reference built against a stack whose
+containing space has a segment op is wrapped in `SEGMENTOP(contain, 0, ref)`
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_op.rs (create_stack_ref)`).
+
+Constant pointers resolve through the segment op
+(`decompiler/crates/kuna-decomp/src/substrate/context.rs (resolve_constant)`, C++
+`SegmentedResolver`): a constant no wider than the near pointer takes its segment
+from the tracked value of the resolve register at the use point (0 when the
+pspec tracks none), anything wider is a far pointer with the segment in its high
+bytes. `Architecture::apply_segmentize` marks each inferable space that has such a
+resolvable segment op as accepting near-pointer-sized constants (C++
+`markNearPointers`), and a far-pointer segment op on the default data space sets
+the data organization's pointer size to the near size and its alternate pointer
+size to near plus segment (C++ `TypeFactory::setupSizes`). Turning the option off
+puts the saved sizes and space properties back.
+
+The real-mode spec's code segment is `currentCS = (inst_next >> 4) & 0xf000`, the
+instruction address rounded down to 64 KiB. For code in a segment that is not
+64 KiB aligned a cs-relative table is read from the wrong segment, and its
+entries are whatever words sit there. A table of the program's own branches
+never targets bytes the image does not have, so while a segment op is active
+`JumpBasic`'s sanity check rejects a table with any target outside the load image
+(`kuna_segmentize.rs (table_leaves_image)`), where upstream only truncates at a
+far unloadable row: the jump stays a jump-as-call, as with the option off,
+instead of decoding junk or failing the function on a fall-through off the end
+of the image. A wrong-segment table whose words all happen to land inside the
+image is still followed. Only a jump whose target, or the table read feeding
+it, is computed by a SEGMENTOP is judged (a bounded walk up the target's
+definitions): the Z80 spec declares a segment op that its unsegmented build
+never emits, and a Z80 `jp (hl)` table with a row in RAM or the BIOS is
+followed as upstream follows it (`tests/stages/kuna-segmentize-z80.xml`).
+Ghidra mode has no local `.sla` to compile the snippet, so there the segment
+ops are not decoded and the CALLOTHER stays.
+
 ## 3.3 Sub-variable flow
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`
@@ -2083,6 +2150,19 @@ register instead picked a lane too low by the input's skipped lanes: a silent
 read of the wrong lane, or, when the result fell below the input's first lane,
 a panic indexing before its piece array (#1157). Upstream Ghidra fixed the
 same line as GP-7434. This is a correctness repair with no option.
+
+Once a lane trace succeeds, applying it rewrites the function in stages:
+new ops, new varnodes, the old ops removed, the old inputs deleted and the
+lane pieces made inputs. A stage can still fail (another input overlapping a
+lane piece, a varnode that cannot be deleted), and by then the function is
+half rewritten. Upstream throws, failing the function; the action
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionLaneDivide)`) fails it the same way, with the stage's error. It used
+to count the failure as a split that was never tried and walk on over the
+storage it had already rewritten, so the next varnode it read could be one the
+failed split had deleted (`ActionLaneDivide: stale vn`), or the pipeline ran
+on over the half-rewritten function. This is a correctness repair with no
+option.
 
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.
