@@ -2117,7 +2117,8 @@ mod tests {
         // and kuna-stacksolver-unsolved / a 16-bit stack solution of 65535 is solved once
         // and kuna-bejoin-evidence-pairs / a long long loaded or carried across a call joins
         // high word first (option bejoin off = swapped)
-        assert_eq!(count, 594, "corpus file count drifted");
+        // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
+        assert_eq!(count, 595, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -137,6 +137,7 @@ writeup, not here.
 | `kuna-loweredswitchexact.xml` | GH-468 finding 4 (install soundness) | P2 switch model (every case value keeps its label; a switch that differs from its compare tree is declined) | `option loweredswitchexact on\|off` |
 | `kuna-loweredswitchheads.xml` | GH-468 finding 4 | P2 switch model (a cascade behind a later head on the switch variable is re-rolled) | `option loweredswitchheads on\|off` |
 | `kuna-switchguardreload.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (a guard on a byte in memory bounds the index read by a second load of the same address; the adjacent table is not read) | default correctness fix (no option) |
+| `kuna-lanedivide-terminator.xml` | [Kuna #1157](https://github.com/Noelo-Lab/kuna/issues/1157) | P3 laned-register split (a SUBPIECE narrower than a lane, read from a piece holding only upper lanes, terminates in the lane its byte offset reaches from the start of the whole register; upstream GP-7434) | default correctness fix (no option) |
 | `kuna-switchunrolledsense.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (copies of the bound check on each predecessor of the dispatch, with opposite branch senses, bound the merged index) | `option switchmultipred on\|off` |
 
 | `gh8017-stackprobeloop.xml` | [GH-8017](https://github.com/NationalSecurityAgency/ghidra/issues/8017) | S2 stack-pointer normalization (stack-probe loop) | `option stackprobeloop on\|off` |
