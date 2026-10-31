@@ -1553,7 +1553,7 @@ without emitting a function list at all, let alone pseudocode.
   | `pyinstaller` | the `MEI\x0c\x0b\x0a\x0b\x0e` CArchive cookie; `version` is its Python version | `PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng` |
   | `nuitka` | `NUITKA_ONEFILE_PARENT` / `__nuitka_binary_dir` | `Nuitka-compiled Python: …; extract a onefile payload with nuitka-extractor` |
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
-  | `upx` / `neolite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub | `UPX packed: run 'kuna unpack'` |
+  | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
   | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
 
@@ -2807,7 +2807,7 @@ A binary with no recognized constant is exit `0` with `count: 0`. An unreadable
 or unparseable binary, or an unknown `--section`, is exit `1` with the reason on
 stderr; a malformed command line is exit `2` with the usage block.
 
-## `kuna unpack` — statically unpack a UPX- or NEOLite-packed executable
+## `kuna unpack` — statically unpack a UPX-, NEOLite- or PKLITE-packed executable
 
 ```bash
 kuna unpack ./packed                                   # writes ./packed.unpacked
@@ -2822,10 +2822,12 @@ gives you the decompressor. `kuna unpack` reconstructs the original image so the
 of the CLI has a program to work on — on the witness that filed this gap, `kuna
 functions` goes from `count: 0` to 70, `main` included.
 
-Two packers are recognized, and which one is decided before anything is decoded, so
-the answer on a file that is neither is unchanged. A **NEOLite** image announces
-itself with a `.NEOpack` section that owns the entry point; everything else goes to
-the UPX arm, whose `no UPX PackHeader found` is still what an unpacked file gets.
+Three packers are recognized, and which one is decided before anything is decoded,
+so the answer on a file that is none of them is unchanged. A **NEOLite** image
+announces itself with a `.NEOpack` section that owns the entry point; a **PKLITE**
+DOS program with its decompressor stub at the DOS entry point (a PE, NE, LE or LX
+program whose DOS stub is one is not); everything else goes to the UPX arm, whose
+`no UPX PackHeader found` is still what an unpacked file gets.
 
 It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
 wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it
@@ -2841,6 +2843,54 @@ filter,filter_hex,pack_header_offset,pack_header_offset_hex,packed_size,
 compressed_size,unpacked_size,count,blocks:[{offset,offset_hex,u_len,c_len,method,
 method_name,filter,filter_hex,stored}]}`, where `count` is the number of compressed
 blocks consumed.
+
+### PKLITE
+
+```bash
+kuna unpack ./DAZZLE.EXE -o dazzle.exe      # "packer": "pklite" with --json
+```
+
+PKLITE (PKWARE, 1990–96) compresses a DOS EXE or COM behind a decompressor stub.
+The rebuilt EXE has the original MZ header, relocation table, load module, `CS:IP`,
+`SS:SP` and allocation fields, plus any overlay; a COM comes back whole.
+
+```text
+unpacked DAZZLE.EXE -> dazzle.exe
+  packer:      PKLITE 1.00 (header says 1.00/l)
+  compression: large
+  compressed:  73824 bytes at 0x300 (packed file 74730 bytes)
+  load module: 189160 bytes, 58 relocations
+  header:      original (PKLITE's copy at 0x50)
+  entry:       1b58:0000, stack 2e68:0080
+  alloc:       min 0x0042, max 0xffff paragraphs
+  overlay:     7 bytes
+  unpacked:    189679 bytes
+```
+
+Where the compressed data starts and how it was compressed are not in any header
+field you can trust (the version word is often wrong), so they are read out of the
+stub's own code. Covered: the 1990 betas, 1.00–1.15, 1.50–2.01 and the v1.20
+in-house builds, small and large compression, extra compression (`-e`), scrambled
+stubs, the Megalite and UN2PACK variants, and the PKLAXFIX startup patch. On 64
+real PKLITE files from 1990s shareware archives, and on the file in issue #1288,
+the output is byte-identical to deark's. Without `-e`, PKLITE keeps a copy of the
+original header, and it is used when it agrees with the footer's registers and the
+relocation count. Otherwise (`"header": "reconstructed"`) the header is rebuilt
+from the footer: `MAXALLOC` is the packed file's, and `MINALLOC` is estimated from
+the stub's free-memory check. Results that do not stop the unpack come back as
+`warnings`, for example a program that checks the `PK` signature PKLITE writes into
+its PSP, or a kept header that disagrees with the footer. A stub that matches no
+known variant exits `1` naming the part (`unsupported PKLITE file: the copier
+matches no known PKLITE copier`), and data that does not decode exits `1` with
+`corrupt PKLITE file: …`. Neither writes a file.
+
+`--json` emits `{binary,output,packer,container,reported_version,detected_version,
+large,extra,v120,scrambled,compressed_offset,compressed_offset_hex,compressed_size,
+load_module_size,relocations,header,header_copy_offset,entry,stack,min_alloc,
+max_alloc,overlay_size,packed_size,unpacked_size,warnings}`. `container` is `exe` or
+`com`. `extra` is `none`, `xor` (standard `-e`) or `complement`. `header` is
+`original`, `reconstructed` or `none` (COM). `entry` and `stack` are `SEG:OFF` hex
+strings.
 
 ### NEOLite
 
