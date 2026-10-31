@@ -2074,6 +2074,14 @@ stack arguments and locals without truncating their 64-bit contents. Narrow
 operands are never widened, and untruncated architectures keep their existing
 behavior.
 
+Truncation can leave hundreds of fresh SUBPIECEs of one stack or base
+register in a single pool pass. `RuleSelectCse`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RuleSelectCse)`)
+therefore returns at once when the visited op's own output is not yet
+heritaged. Such an op cannot be merged until the next heritage pass, and
+rebuilding the list of all its siblings at every visit made a large N32 or
+e500 function several times slower.
+
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`
 shrinks a logical value out of a larger container: given a *root* varnode and a
 bit-mask identifying where the small value lives, it traces the value's flow
