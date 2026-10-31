@@ -576,6 +576,32 @@ fn apply_rejects_a_free_temp_with_two_readers_before_mutating() {
 }
 
 #[test]
+fn apply_accepts_a_constant_with_two_readers() {
+    // opSetInput gives the second reader of a constant its own copy.
+    let mut fd = build_fd();
+    let ram = ram_space(&fd);
+    let op_a = fd.new_op(1, Address::new(ram.clone(), 0x1000));
+    let op_b = fd.new_op(1, Address::new(ram, 0x1004));
+    for op in [op_a, op_b] {
+        let old = mk_const(&mut fd, 7, 8);
+        fd.op_set_input(op, old, 0).unwrap();
+    }
+
+    let mut tm = TransformManager::new();
+    let shared = tm.new_constant(8, 0, 0x1800_2af10);
+    let rop_a = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_a);
+    let rop_b = tm.new_preexisting_op(1, OpCode::CPUI_COPY, op_b);
+    tm.op_set_input(rop_a, shared, 0);
+    tm.op_set_input(rop_b, shared, 0);
+
+    tm.apply(&mut fd).expect("a shared constant applies");
+    let a = fd.obank().get(op_a).unwrap().get_in(0).unwrap();
+    let b = fd.obank().get(op_b).unwrap().get_in(0).unwrap();
+    assert_ne!(a, b, "each reader has its own constant");
+    assert_eq!(fd.vbank().get(b).unwrap().get_offset(), 0x1800_2af10);
+}
+
+#[test]
 fn apply_accepts_a_piece_of_an_input_with_two_readers() {
     // A lane of an input becomes an input itself, so it may have several readers.
     let mut fd = build_fd();

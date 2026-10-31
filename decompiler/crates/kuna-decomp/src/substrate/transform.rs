@@ -1107,7 +1107,8 @@ impl TransformManager {
 
     /// (kuna) Reject a transform that would give a free Varnode it creates a
     /// second reader (`Varnode::addDescend`'s error), which `place_inputs`
-    /// would otherwise raise after `remove_old` has already destroyed IR.
+    /// would otherwise raise after `remove_old` has already destroyed IR. A
+    /// constant may have several readers: `opSetInput` gives each a copy.
     pub fn check_free_fanout(&self, fd: &Funcdata) -> KunaResult<()> {
         let mut readers: BTreeMap<TVarRef, usize> = BTreeMap::new();
         for op in &self.new_ops {
@@ -1124,7 +1125,7 @@ impl TransformManager {
                 continue;
             }
             let free = match var.ty {
-                tvar_type::normal_temp | tvar_type::piece_temp | tvar_type::constant => true,
+                tvar_type::normal_temp | tvar_type::piece_temp => true,
                 tvar_type::piece => !var
                     .vn
                     .and_then(|vn| fd.vbank().get(vn))
