@@ -34,6 +34,8 @@ pub struct MzImage {
     pub stack: u64,
     /// Relocation entries applied.
     pub relocations: usize,
+    /// Linear address of every word a relocation entry adjusted, ascending.
+    pub relocated_words: Vec<u64>,
     /// Relocation entries that name a word outside the module.
     pub skipped_relocations: usize,
     /// A recognized executable packer whose stub this image is.
@@ -159,12 +161,16 @@ impl MzImage {
         code_segments.extend(far_targets(&module, base, &sites, &named));
         code_segments.sort_unstable();
         code_segments.dedup();
+        let mut relocated_words: Vec<u64> = sites.iter().map(|&site| base + site as u64).collect();
+        relocated_words.sort_unstable();
+        relocated_words.dedup();
         Ok(MzImage {
             module,
             base,
             entry,
             stack: linear(MZ_LOAD_SEGMENT, word(bytes, 0x0e), word(bytes, 0x10)),
             relocations,
+            relocated_words,
             skipped_relocations,
             packer: packer(bytes),
             code_segments,
@@ -243,6 +249,7 @@ mod tests {
         assert_eq!(&mz.module[6..8], &0x1002u16.to_le_bytes());
         assert_eq!((mz.relocations, mz.skipped_relocations, mz.packer), (1, 0, None));
         assert_eq!(mz.code_segments, vec![(0x10000, 0x1000), (0x10020, 0x1002)]);
+        assert_eq!(mz.relocated_words, vec![0x10006]);
     }
 
     #[test]

@@ -743,6 +743,9 @@ Three tiers:
 | kuna functions on a --raw-image reports one function whose size is the whole file | [`rawdiscover`](#rawdiscover) |
 | decompile-all on a raw image emits a single enormous body | [`rawdiscover`](#rawdiscover) |
 | a firmware image decompiles only at addresses passed by hand | [`rawdiscover`](#rawdiscover) |
+| a DOS program lists functions inside its data segments | [`mzsweep`](#mzsweep) |
+| decompile-all on a DOS executable prints bodies of repeated add [bx+si], al statements | [`mzsweep`](#mzsweep) |
+| Control flow encountered bad instruction data on a DOS function that is a bitmap or table | [`mzsweep`](#mzsweep) |
 | stripped static-linked library function stays sub_<addr> although its fingerprint is known | [`fid`](#fid) |
 | no .fid database renames applied in a stripped binary | [`fid`](#fid) |
 | msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti) |
@@ -2896,6 +2899,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default for --raw-image. Flip off to restore the seeds-only inventory when the walk follows a decoded call into data and mints entries that are not functions, which a bytes-are-code image with no section table can do. A function no direct call reaches and no --entry names is still undiscovered either way; assert it with --define-function.
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-raw-image-function-discovery
 - **Example:** `kuna functions fw.bin --raw-image --target Cortus:LE:32:APS3:default --base 0x80000000 --entry 0x8000010c --option rawdiscover off`
+
+### `mzsweep` -- on | off, default `on`
+
+- **Symptoms:** a DOS program lists functions inside its data segments; decompile-all on a DOS executable prints bodies of repeated add [bx+si], al statements; Control flow encountered bad instruction data on a DOS function that is a bitmap or table.
+- **What it does:** Hold rawdiscover's linear call sweep over an MS-DOS executable to the calls a DOS program can make. The sweep decodes the whole load module and takes the target of every direct call it reads as a function, but a DOS module is mostly data: the far data segments a large-model program declares (bitmaps, fonts, tables) and its DGROUP decode as calls too, and each such call mints a function that is a run of data, most often zero fill read as add [bx+si], al. With this on, a far CALL/JMP ptr16:16 counts only when the relocation table names its segment word (the linker cannot know where DOS loads the module, so an unrelocated segment is absolute and does not land in it); a call read in a straight-line run that also read zero fill or an undecodable byte since the last control transfer does not count; and a target whose straight-line run up to its first control transfer reads zero fill, an undecodable byte, or ends in such an unrelocated far branch is not a function. That last arm needs a relocation table: a module whose header lists no relocation (EXEPACK's, or one an unpacker stripped) applies its own fixups, so every far call its code makes is unrelocated and a function that opens with one (a large-model prologue calling __chkstk) stays. HLT does not end a run. Seeds are kept, and the recursive descent still promotes every target that code it reaches calls, so a refused call only drops a target nothing else names. Default-on: on the unpacked DAZZLE.EXE (#1288) it removes the 24 swept entries that IDA classifies as data (321 -> 297 functions, bad-instruction warnings 15 -> 3, zero-run bodies 15 -> 0) and keeps every function IDA has; across 20 unpacked FreeDOS executables it removes one zero-fill entry and nothing else. MZ loads only, so every other input is byte-identical.
+- **When to flip:** On by default for MS-DOS MZ executables. Flip off to restore the whole-module sweep when a function that only a sweep can find (reached through a far pointer or an interrupt vector) opens with zero fill, or its only caller follows zero fill or an undecodable byte (data such as a switch table just before the caller) with no branch in between, or to compare inventories.
+- **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-1288-mz-data-as-code
+- **Example:** `kuna functions dazzle.exe --option mzsweep off`
 
 ### `fid` -- on | off, default `off`
 

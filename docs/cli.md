@@ -1136,7 +1136,11 @@ every relocated far call or jump target that lies inside that segment (below
 the next segment the image names), so a near branch wraps inside its segment as
 the CPU's does. Only the load module is mapped: the header, any
 overlay past the image size, and the uninitialized memory the header asks for
-are not. A file packed with PKLITE or LZEXE loads too, but its code is the
+are not. The call sweep that widens discovery past the entry reads the module's
+relocations (`mzsweep`, on by default): a far call counts only through a
+relocated segment word, and a call decoded among zero fill, or to a target that
+does not open with code, is data in a far data segment rather than a function;
+`--option mzsweep off` sweeps the whole module as a raw image does. A file packed with PKLITE or LZEXE loads too, but its code is the
 decompressor stub and a packed body, so kuna says so on stderr; unpack it first
 (`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
 `decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
