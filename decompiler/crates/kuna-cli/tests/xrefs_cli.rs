@@ -195,6 +195,23 @@ fn a_calls_return_address_is_not_reported_as_a_reference() {
     }
 }
 
+/// An AArch64 `bl` lifts its link value as `x30 = inst_start + 4`, an add of two
+/// constants whose first is the call site itself. The site is not a data
+/// reference to itself, on ELF or Mach-O, and its call edge is untouched.
+#[test]
+fn an_aarch64_call_site_is_not_a_reference_to_itself() {
+    for (bin, site, callee) in [
+        (fixture("plt_aarch64"), "0x400474", "0x400544"),
+        (fixture("macho_imports_arm64"), "0x10000058c", "0x1000005a0"),
+    ] {
+        let to_site = xrefs(&[&bin, "--to", site, "--json"]);
+        assert_eq!(json_int(&to_site, "/count"), Some(0), "{bin}: the bl at {site} references itself:\n{to_site}");
+        let to_callee = xrefs(&[&bin, "--to", callee, "--json"]);
+        assert_eq!(kinds(&to_callee), vec!["call"], "{bin}:\n{to_callee}");
+        assert_eq!(json_str(&to_callee, "/xrefs/0/from_address_hex").as_deref(), Some(site));
+    }
+}
+
 /// An address target works as well as a name, and resolves the name back.
 #[test]
 fn an_address_target_resolves_its_name() {
