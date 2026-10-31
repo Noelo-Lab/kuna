@@ -1436,6 +1436,20 @@ classified:
   `mark_inactive` also sets CHECKED, so no later pass re-scores it and the
   argument's producer is reaped.
 
+  *(kuna decompile-all watchdog)* The ancestor recursion tries every input of
+  every MULTIEQUAL it passes, up to `trim_recurse_max` levels, and runs a full
+  `only_op_use` walk at each top ancestor, so on a function whose phis join
+  hundreds of paths one `ActionActiveParam` pass runs for many minutes inside
+  one action (CPython 3.11's `_PyEval_EvalFrameDefault` stays in it past a
+  1,200 s budget). Every `ancestor_op_use` call and every step of an
+  `only_op_use` walk therefore probes the drive's budget through
+  `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (budget_probe)`;
+  once it is spent the walks answer *not a parameter* at once, and
+  `check_input_trial_use` asks the clock before each trial, so it stops at the
+  next one and names `action activeparam` as the budget's site. The drive then
+  reports the budget and prints nothing of the cut-off scoring. Without a
+  budget no probe answers spent.
+
   (kuna) A system call that `syscallregs` rewrote
   (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_syscallregs.rs
   (reads_as_argument)`) is treated as a call site, not as an op the value flows
