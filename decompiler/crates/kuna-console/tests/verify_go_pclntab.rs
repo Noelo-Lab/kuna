@@ -74,6 +74,17 @@ fn build_go(
     goarch: &str,
     strip: bool,
 ) -> bool {
+    build_go_flags(dir, out_bin, goos, goarch, if strip { &["-ldflags=-s -w"] } else { &[] })
+}
+
+/// [`build_go`] with explicit `go build` flags.
+fn build_go_flags(
+    dir: &std::path::Path,
+    out_bin: &std::path::Path,
+    goos: &str,
+    goarch: &str,
+    flags: &[&str],
+) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
@@ -81,12 +92,9 @@ fn build_go(
         return false;
     }
     let mut cmd = Command::new("go");
-    cmd.arg("build");
     // Flags MUST precede the package argument (`main.go`); `-ldflags=-s -w` drops
     // the symbol table + DWARF but keeps the pclntab.
-    if strip {
-        cmd.arg("-ldflags=-s -w");
-    }
+    cmd.arg("build").args(flags);
     cmd.arg("-o")
         .arg(out_bin)
         .arg("main.go")
@@ -210,6 +218,32 @@ fn gopclntab_off_suppresses_recovery() {
         prog.lookup_symbol("main.compute").is_none(),
         "gopclntab off must suppress pclntab name recovery (main.compute should be absent)"
     );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// An internally linked ELF PIE. go1.25 and older put its table in
+/// `.data.rel.ro.gopclntab` (the relro spelling of `.gopclntab`, go1.26+ moved it
+/// back), so on those toolchains the names come only from that section.
+#[test]
+fn stripped_go_pie_functions_recovered_from_pclntab() {
+    if !go_available() {
+        eprintln!("verify_go_pclntab: skipping (`go` not on PATH)");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("kuna_go_pclntab_pie_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let out_bin = dir.join("go_stripped_pie");
+    if !build_go_flags(&dir, &out_bin, "linux", "amd64", &["-buildmode=pie", "-ldflags=-s -w"]) {
+        let _ = std::fs::remove_dir_all(&dir);
+        panic!("installed Go compiler failed to build the PIE fixture");
+    }
+    let prog = bootstrap(out_bin.to_str().expect("utf8 path"));
+    for name in ["main.main", "main.compute", "runtime.main"] {
+        assert!(prog.lookup_symbol(name).is_some(), "{name} not recovered from a PIE pclntab");
+    }
+    let c = decompile(prog, "main.main");
+    assert!(c.contains("main.compute("), "PIE main.main must call main.compute by name:\n{c}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

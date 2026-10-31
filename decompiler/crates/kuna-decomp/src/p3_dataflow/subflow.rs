@@ -6309,7 +6309,9 @@ impl LaneDivide {
                         }
                         None => {
                             if self.allow_subpiece_terminator {
-                                let lane_index = self.description.get_boundary(byte_pos);
+                                let lane_index = self
+                                    .description
+                                    .get_boundary(byte_pos + self.description.get_position(skip_lanes));
                                 if lane_index < 0 || lane_index >= self.description.get_num_lanes() {
                                     return false; // Does piece start on lane boundary?
                                 }
