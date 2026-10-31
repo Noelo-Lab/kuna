@@ -133,6 +133,10 @@ impl ObjectFormat for ElfFormat {
             .collect()
     }
 
+    fn local_import_targets(&self, file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)> {
+        crate::loader::kuna_pltlocal::bind(file, &crate::loader::elf_plt::resolve_plt_imports(file, bytes))
+    }
+
     fn const_ranges(&self, file: &object::File, _bytes: &[u8]) -> Vec<(u64, u64)> {
         crate::loader::elf_plt::mips_got_const_ranges(file)
     }

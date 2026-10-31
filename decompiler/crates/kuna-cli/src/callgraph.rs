@@ -18,6 +18,9 @@ pub(crate) struct CallGraph {
     index: XrefIndex,
     /// Canonical `(entry, extent)` pairs, ascending by entry.
     entries: Vec<(u64, u64)>,
+    /// (kuna `pltlocal`) `(stub, definition)` pairs a call through the stub is
+    /// built at; empty with the option off.
+    plt_local: Vec<(u64, u64)>,
 }
 
 impl CallGraph {
@@ -75,7 +78,18 @@ impl CallGraph {
             }
         }
         entries.sort_unstable();
-        CallGraph { index, entries }
+        let plt_local = if prog.arch().plt_local_calls {
+            prog.arch().plt_local.to_vec()
+        } else {
+            Vec::new()
+        };
+        CallGraph { index, entries, plt_local }
+    }
+
+    /// (kuna `pltlocal`) The function a call to `entry` is built at: the
+    /// definition a bound PLT stub forwards to, else `entry` itself.
+    pub(crate) fn call_target(&self, entry: u64) -> u64 {
+        kuna_decomp::kuna_pltlocal::target_of(&self.plt_local, entry).unwrap_or(entry)
     }
 
     /// (kuna `callbacktype`) The entries of the functions that CALL or tail-jump
@@ -137,7 +151,9 @@ impl CallGraph {
     }
 
     /// Every inventory entry reachable from `spec` through call, tail-jump, and
-    /// address-taken-function-pointer edges, `spec`'s own function included.
+    /// address-taken-function-pointer edges, `spec`'s own function included; a
+    /// reached PLT stub bound to the image's own definition reaches it too
+    /// ([`Self::call_target`]).
     ///
     /// Function pointers count: a callback registered with `CreateThread` or an
     /// atexit handler is code the named function reaches, and dropping it would
@@ -161,8 +177,10 @@ impl CallGraph {
         while let Some(node) = queue.pop_front() {
             for r in self.index.refs_from_function(node) {
                 if let Some(callee) = self.callee_of(r) {
-                    if reached.insert(callee) {
-                        queue.push_back(callee);
+                    for callee in [callee, self.call_target(callee)] {
+                        if reached.insert(callee) {
+                            queue.push_back(callee);
+                        }
                     }
                 }
             }

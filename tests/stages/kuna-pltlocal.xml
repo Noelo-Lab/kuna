@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-1342: a call through a PLT stub that the image's own relocation binds to
+    a function it defines takes that definition's prototype.
+
+    Stage: P4 calls and prototypes, prototype source. P0 assertion:
+    `option pltlocal on|off` (default on).
+
+    The XML wrapper only provides the harness architecture. The script clears it
+    and loads the committed AArch64 shared object `pltlocal_aarch64.so` (the
+    issue's assembly, `pltlocal_aarch64.s`, clang + ld.lld). `timer_wrapper`
+    calls `timer_helper@plt` (0x10380) with its own x0, x1, w2 and w3, and the
+    stub's GOT slot is bound by an R_AARCH64_JUMP_SLOT to the defined
+    `timer_helper` (0x10344). The prototype is declared at the DEFINITION, the
+    way DWARF or a callee-first recovery states it.
+
+    Pass 1, `pltlocal off`, is the bug: the call is built at the stub, which
+    declares nothing, the four forwarded registers are inputs nobody wrote, and
+    the call renders `timer_helper();`. Pass 2, the default, builds the call at
+    the definition, so the declared four parameters arrive: the call passes the
+    wrapper's own inputs and the wrapper gains them as parameters. Both passes
+    print the stub's name and keep the tail call through `send_helper@plt`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/pltlocal_aarch64.so</com>
+  <com>read symbols</com>
+  <com>map prototype 0x10344 void timer_helper(void *timer,unsigned long cookie,unsigned int lo,unsigned int hi)</com>
+  <com>option pltlocal off</com>
+  <com>load addr 0x10308</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option pltlocal on</com>
+  <com>load addr 0x10308</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PLTLOCAL #1: built at the stub, the forwarded registers are lost" min="1" max="1">  timer_helper\(\);</stringmatch>
+<stringmatch name="PLTLOCAL #2: built at the definition, its declared parameters arrive" min="1" max="1">  timer_helper\(a0,a1,a2,a3\);</stringmatch>
+<stringmatch name="PLTLOCAL #3: the wrapper gains the parameters it forwards" min="1" max="1">timer_wrapper\(void \*a0,[a-z0-9 ]+ a1,[a-z0-9 ]+ a2,[a-z0-9 ]+ a3\)</stringmatch>
+<stringmatch name="PLTLOCAL #4: the tail call keeps its arguments in both passes" min="2" max="2">send_helper\(a0,a1\); // tail-call</stringmatch>
+</decompilertest>
