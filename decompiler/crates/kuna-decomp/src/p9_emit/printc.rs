@@ -1980,6 +1980,40 @@ impl PrintC {
         self.pending = 0;
     }
 
+    /// C++ `PrintLanguage::clear` (printlanguage.cc:682), which `docFunction`
+    /// runs when a document throws ("Don't leave printer in partial state"):
+    /// drop what an interrupted document left behind, keeping every option.
+    /// Beyond the upstream emitter/RPN/mod/scope reset this drops the kuna
+    /// per-document state (the scoped `fd` pointer, unflushed end-of-line
+    /// warnings, the declared locals, the pointer-argument record) and returns a
+    /// markup render's back-end to plain text, the state every document starts
+    /// from.
+    pub fn clear(&mut self) {
+        if self.emit.emits_markup() {
+            self.set_markup(false);
+        }
+        self.emit.set_plain_statement_provenance(false);
+        self.emit.set_output_stream();
+        self.emit.clear();
+        self.context.clear();
+        self.clear_rpn();
+        self.emit_fd = None;
+        self.eol_warns.clear();
+        self.void_tail_return = None;
+        self.stmt_op = None;
+        self.local_name_overrides.clear();
+        self.indirect_input_aliases.clear();
+        self.signature_param_names.clear();
+        self.local_name_aliases.clear();
+        self.local_name_standalones.clear();
+        self.declared_locals.clear();
+        self.declared_entry = None;
+        self.pointer_decls.clear();
+        self.record_pointer_arguments = false;
+        self.pointer_record = None;
+        self.pointer_candidate = None;
+    }
+
     /// C++ `PrintLanguage::pushOp` (printlanguage.cc:129).  Push an operator
     /// token onto the RPN stack, emitting any front part of the enclosing
     /// operator and opening the right group/paren.
@@ -2666,6 +2700,7 @@ impl PrintC {
         // of locals the scope would declare.
         let _emitted_decls = self.emit_local_var_decls(fd, arch);
         self.emit_indirect_input_aliases(fd);
+        crate::kuna_renderfault::check(fd.get_address().get_offset());
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
@@ -11822,7 +11857,7 @@ pub(crate) fn declarator_parts(
 /// The name is historical: it follows the ACTIVE output language, which is read
 /// off the architecture's printer.  Callers reach it while the printer is in
 /// place; a caller that reaches it mid-emission (with the printer loaned out by
-/// `take_print`) sees the default C language, which is the safe fallback.
+/// `with_print`) sees the default C language, which is the safe fallback.
 pub fn type_to_c_string(
     arch: &Architecture,
     ct: &std::rc::Rc<crate::dtype::Datatype>,
@@ -12195,7 +12230,7 @@ impl RealTypeCtx {
     /// gates and the target's decoded data organization.
     ///
     /// `lang` is passed rather than read off `arch` because the printer is loaned
-    /// out of the architecture for the duration of emission (`take_print`), so
+    /// out of the architecture for the duration of emission (`with_print`), so
     /// the architecture's copy is a placeholder while this runs. The printer owns
     /// the selection.
     pub(crate) fn from_arch(arch: &Architecture, lang: crate::kuna_lang::OutLang) -> RealTypeCtx {

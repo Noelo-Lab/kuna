@@ -1378,6 +1378,25 @@ The whole-document entry is `printc.rs (PrintC::doc_function_full)`, driven by
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs` after analysis
 completes.
 
+**A render that panics.** The architecture owns the printer, and a render needs
+the printer mutably while it reads the rest of the architecture, so every render
+runs inside `decompiler/crates/kuna-decomp/src/infra/architecture.rs
+(Architecture::with_print)`, which lends the printer out and moves it back. It
+moves back on every exit, a panic included: the printer is first cleared of the
+partial document by `printc.rs (PrintC::clear)` (the emitter's indent and paren
+levels and pending brace, the RPN stacks, the pushed mods and scopes, the scoped
+`Funcdata` pointer, unflushed end-of-line warnings, the declared locals and
+pointer-argument record, and a markup back-end, which returns to plain text),
+keeping every option, and then the panic resumes. Upstream `docFunction`
+catches, calls `clear()` and rethrows the same way. A batch that contains a
+render panic as that one function's error record
+(`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`, serial or
+inside a `--jobs` worker) therefore renders every later function with the
+printer settings the run configured (`indentincrement`, `arraynotation`,
+`truthycond`, ...), not a default printer's. The test-only
+`KUNA_RENDER_FAULT=<addr>` (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_renderfault.rs`)
+panics the render of the function at that entry just after its opening brace.
+
 A HighVariable linked to a local Symbol is classified for declaration emission
 by that Symbol's category. A linked parameter whose name belongs to the
 prototype is emitted only in the signature. A later register local may have
