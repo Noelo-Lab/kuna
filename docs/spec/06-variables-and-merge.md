@@ -396,7 +396,10 @@ reads an instance only through that Cover's entry for the block, so upstream's
 scan over every instance for every block the two highs share selects the same
 instances in the same order. A refreshed high drops its index with its cached
 tests (`variable.rs (HighIntersectTest::purge_high)`), and the index ends with
-the pass. On CPython 3.11's `_PyEval_EvalFrameDefault`, a stack slot's
+the pass. The required tests' storage lookups over a high's members
+(`funcdata_merge.rs (MergeContext::bank_symbol)` and `kuna_stackvalueorder`'s
+stack-view test) skip a member at the same storage as the member looked up
+before it, which can only repeat that member's miss. On CPython 3.11's `_PyEval_EvalFrameDefault`, a stack slot's
 HighVariable grows past 19,000 instances while `merge_marker` merges the
 slot's joins of about 187 inputs. A trim that renumbers a block's ops clears
 the cached tests, so a re-test pass could scan those instances again for every
