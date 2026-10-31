@@ -369,25 +369,20 @@ pub fn detect_compiler_pe(file: &object::File, bytes: &[u8]) -> Compiler {
     // The toolchain `GCC:`/`clang version`/`rustc version` records: MinGW puts
     // them NUL-delimited in `.rdata` (no `.comment` section in a PE); a Clang
     // -direct PE may carry `.comment`. Read both and treat as one record stream.
-    let mut toolchain = file
-        .section_by_name(".comment")
-        .and_then(|s| s.data().ok())
-        .map(<[u8]>::to_vec)
-        .unwrap_or_default();
-    if let Some(rdata) = file.section_by_name(".rdata").and_then(|s| s.data().ok()) {
-        toolchain.extend_from_slice(rdata);
-    }
+    let comment = file.section_by_name(".comment").and_then(|s| s.data().ok()).unwrap_or(&[]);
+    let rdata = file.section_by_name(".rdata").and_then(|s| s.data().ok()).unwrap_or(&[]);
+    let records = ToolchainRecords::scan_joined(comment, rdata);
 
-    if comment_indicates_rust(&toolchain) || symbols_indicate_rust(file) {
+    if records.rust || symbols_indicate_rust(file) {
         return Compiler::Rustc;
     }
     if swift_indicated(file) {
         return Compiler::Swift;
     }
-    if comment_contains(&toolchain, b"clang version ") {
+    if records.clang {
         return Compiler::Clang;
     }
-    if comment_contains(&toolchain, b"GCC: ") {
+    if records.gcc {
         return Compiler::Gcc;
     }
 
@@ -490,6 +485,68 @@ fn comment_records(comment: &[u8]) -> impl Iterator<Item = &[u8]> {
 /// (some toolchains pad records).
 fn record_text(record: &[u8]) -> &str {
     core::str::from_utf8(record).unwrap_or("").trim()
+}
+
+/// The toolchain records [`detect_compiler_pe`] reads.
+///
+/// Each flag is exactly [`comment_indicates_rust`] / [`comment_contains`] over the
+/// same stream. A PE's `.rdata` runs to tens of megabytes and the detection runs
+/// several times per load, so the scan neither copies it nor walks its records:
+/// a record can only open with a needle it contains, so only the records around
+/// a substring hit are decoded and tested.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ToolchainRecords {
+    rust: bool,
+    clang: bool,
+    gcc: bool,
+}
+
+impl ToolchainRecords {
+    /// The records of `first` followed by `second`, read as one stream: a record
+    /// left open at the end of `first` continues into `second`.
+    fn scan_joined(first: &[u8], second: &[u8]) -> ToolchainRecords {
+        if first.last().is_none_or(|&b| b == 0) {
+            return Self::scan(first).or(Self::scan(second));
+        }
+        let tail = first.iter().rposition(|&b| b == 0).map_or(0, |at| at + 1);
+        let head = second.iter().position(|&b| b == 0).unwrap_or(second.len());
+        let mut joined = first[tail..].to_vec();
+        joined.extend_from_slice(&second[..head]);
+        Self::scan(&first[..tail]).or(Self::scan(&joined)).or(Self::scan(&second[head..]))
+    }
+
+    fn scan(blob: &[u8]) -> ToolchainRecords {
+        ToolchainRecords {
+            rust: any_record_opens_with(blob, "rustc version "),
+            clang: any_record_opens_with(blob, "clang version "),
+            gcc: any_record_opens_with(blob, "GCC: "),
+        }
+    }
+
+    fn or(self, other: ToolchainRecords) -> ToolchainRecords {
+        ToolchainRecords {
+            rust: self.rust || other.rust,
+            clang: self.clang || other.clang,
+            gcc: self.gcc || other.gcc,
+        }
+    }
+}
+
+/// [`comment_contains`] for one needle, visiting only the records that hold it.
+fn any_record_opens_with(blob: &[u8], needle: &str) -> bool {
+    let mut checked_to = 0;
+    for hit in memchr::memmem::find_iter(blob, needle.as_bytes()) {
+        if hit < checked_to {
+            continue;
+        }
+        let start = memchr::memrchr(0, &blob[..hit]).map_or(0, |at| at + 1);
+        let end = memchr::memchr(0, &blob[hit..]).map_or(blob.len(), |at| hit + at);
+        if record_text(&blob[start..end]).starts_with(needle) {
+            return true;
+        }
+        checked_to = end;
+    }
+    false
 }
 
 /// `true` if any symbol name is a Rust-mangled symbol: the v0 scheme (`_R...`) or
@@ -1152,6 +1209,44 @@ mod tests {
         let bytes = fixture("macho_min.o");
         let file = object::File::parse(bytes.as_slice()).expect("parse Mach-O object");
         assert_eq!(detect_compiler(&file, &bytes), Compiler::Clang);
+    }
+
+    /// The one-pass PE record scan reports exactly what the per-record predicates
+    /// report over the concatenated stream, including a record that runs across
+    /// the `.comment`/`.rdata` seam, a non-ASCII lead and a non-UTF-8 record.
+    #[test]
+    fn toolchain_record_scan_matches_per_record_predicates() {
+        let blobs: [&[u8]; 14] = [
+            b"",
+            b"\0",
+            b"GCC: (GNU) 13.2\0",
+            b" \t\nclang version 17.0.1\0",
+            b"rustc version 1.80.0 (abc)\0",
+            b"GC",
+            b"C: (MinGW) 12\0tail",
+            b"\xc2\xa0GCC: (nbsp lead)\0",
+            b"GCC: \xff bad utf8\0",
+            b"GCC: ",
+            b"xyz\0clang",
+            b" version 9\0\0GCC: x",
+            b"rustc",
+            b"\x0b\x0cplain data\0r\0c\0G\0",
+        ];
+        for first in blobs {
+            for second in blobs {
+                let joined = [first, second].concat();
+                let expected = ToolchainRecords {
+                    rust: comment_indicates_rust(&joined),
+                    clang: comment_contains(&joined, b"clang version "),
+                    gcc: comment_contains(&joined, b"GCC: "),
+                };
+                assert_eq!(
+                    ToolchainRecords::scan_joined(first, second),
+                    expected,
+                    "{first:?} + {second:?}"
+                );
+            }
+        }
     }
 
     /// Hermetic PE `Rich`-header parsing: a synthetic DOS-stub + `DanS…@comp.id…Rich`
