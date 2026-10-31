@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3346,
-    3346
+    3351,
+    3351
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -894,6 +894,11 @@
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
     "data:Global aggregate fields do not become locals",
+    "data:HALTLOOPGUARD #1: OFF drops the AIRCR write, leaving the two barriers adjacent (pass 1 only)",
+    "data:HALTLOOPGUARD #2: both passes decompile sysreset",
+    "data:HALTLOOPGUARD #3: ON keeps the AIRCR write between the barriers (pass 2 only)",
+    "data:HALTLOOPGUARD #4: ON keeps the RAM store in front of the wfi loop (pass 2 only)",
+    "data:HALTLOOPGUARD #5: both passes keep the wfi loop",
     "data:IMPLIEDREFS #1: at the shipped bound 2 a value with three readers is declared",
     "data:IMPLIEDREFS #2: the declared value is then read at all three uses",
     "data:IMPLIEDREFS #3: `option impliedrefs 4` drops the declaration and inlines the load at each use",
@@ -979,7 +984,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 350 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 351 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",

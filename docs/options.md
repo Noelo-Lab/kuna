@@ -935,6 +935,10 @@ Three tiers:
 | boolean shifted into the sign bit tested with a less-than-zero compare | [`flagcompare`](#flagcompare) |
 | N==V signed-overflow branch idiom rendered as raw flag arithmetic | [`flagcompare`](#flagcompare) |
 | want the explicit condition-flag math visible (flip off) | [`flagcompare`](#flagcompare) |
+| a store to a global vanishes before an infinite loop | [`haltloopguard`](#haltloopguard) |
+| a memory-mapped register write before while (true) {} is missing | [`haltloopguard`](#haltloopguard) |
+| a reset or watchdog write before a halt loop disappears | [`haltloopguard`](#haltloopguard) |
+| a store inside a for (;;) loop the function never leaves is missing | [`haltloopguard`](#haltloopguard) |
 | &pxVar[-0x1000] page-probe noise in a large-frame function | [`stackprobeloop`](#stackprobeloop) |
 | calls rendered argument-less because the stack pointer never resolved to a constant offset | [`stackprobeloop`](#stackprobeloop) |
 | gcc stack-clash probe loop leaves the frame layout unrecovered | [`stackprobeloop`](#stackprobeloop) |
@@ -3363,6 +3367,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default (DIV-3): cleans flag-as-bit comparisons on architectures that model condition flags explicitly (8051, PIC24, etc.); flip off to restore the upstream raw flag-arithmetic rendering.
 - **Where / provenance:** P3/simplification-quiescence · ghidra-upstream · correctness-fix · GH-1276/8777
 - **Example:** `option flagcompare on`
+
+### `haltloopguard` -- on | off, default `on`
+
+- **Symptoms:** a store to a global vanishes before an infinite loop; a memory-mapped register write before while (true) {} is missing; a reset or watchdog write before a halt loop disappears; a store inside a for (;;) loop the function never leaves is missing.
+- **What it does:** Treat a loop the function never leaves as a point where global memory is read, as heritage treats every RETURN. Upstream's guardReturns reads each persistent range with an addrforce COPY in front of each RETURN, halts included, and that read is what keeps a store to a global alive through dead-code removal. A function that ends in a cycle of basic blocks with no edge out of it (`b .`, `for (;;) __WFI();`, a firmware super-loop) has no RETURN, so a store to a global before or inside that cycle had no reader and was deleted: the AIRCR write of a Cortex-M NVIC_SystemReset vanished in front of its `while (true) {}`. With this on, for every persistent range the function stores to and the cycle does not read (a cycle that reads it already keeps the stores that reach the read), heritage marks the range's value at the cycle's entry addrforce when it renames: the store before the loop, or the MULTIEQUAL joining it with the loop's own stores. Dead-code removal then keeps those stores. No operation is added, so nothing new prints and no block changes. Off deletes those stores, as upstream does.
+- **When to flip:** Leave on. A store to a global or a memory-mapped register right before an infinite loop, or inside one, is missing from the output (`DataSynchronizationBarrier(0xf); DataSynchronizationBarrier(0xf); while (true) {}` with the AIRCR write between the barriers gone). Turn off to reproduce upstream's output.
+- **Where / provenance:** P3/heritage-guard · ghidra · correctness-fix · GH-1344
+- **Example:** `option haltloopguard off`
 
 ### `stackprobeloop` -- on | off, default `on`
 

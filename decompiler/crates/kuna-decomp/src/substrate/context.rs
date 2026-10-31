@@ -1290,6 +1290,10 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option haltloopguard` (default-on): read each stored global at the
+    /// entry of a loop the function never leaves. Read by
+    /// [`crate::p3_dataflow::kuna_haltloopguard::guard`].
+    pub halt_loop_guard: bool,
     /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
     /// loaded value whose only reader is the global's own marker. Read by
     /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
@@ -2010,6 +2014,7 @@ impl ArchContext {
             guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            halt_loop_guard: false,      // haltloopguard (Architecture::reset_defaults sets the shipped default: on)
             global_field_store: false,
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)

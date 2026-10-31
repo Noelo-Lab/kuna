@@ -711,6 +711,32 @@ each RETURN (`return_copy`), which is precisely what keeps a global store's
 def-chain alive through dead-code elimination so `glob = ...` survives to the
 output.
 
+**Loops the function never leaves** (`option haltloopguard`, default on). A
+function that ends in a cycle of basic blocks with no edge out of it (`b .`,
+`for (;;) __WFI();`, a firmware super-loop) has no RETURN, so upstream gives a
+global it stores before or inside that cycle no reader, and dead-code
+elimination deletes the store; a Cortex-M `NVIC_SystemReset` prints as its two
+barriers and an empty `while (true) {}` without the AIRCR write between them.
+Memory written there stays observable to interrupt handlers, DMA and other
+cores while the loop runs, and upstream already reads globals at halt RETURNs
+(no-return calls). Once per heritage pass, the first time a range needs it,
+`kuna_haltloopguard.rs (exitless_loops)` finds each strongly connected
+component of the block graph reachable from the start block that holds a cycle
+and has no out edge, and picks one of its blocks: the first, in depth-first
+order from the block through which the walk entered it, that branches more than
+one way or back to itself or holds a call, a user operation, a STORE or an
+indirect branch, so that no do-nothing cleanup removes it; else the entry
+block. For each new persistent range that the function stores to (a write whose
+definition is neither a marker nor a return copy) and that the loop does not
+read, `kuna_haltloopguard.rs (guard)` records that block; a loop that reads the
+range already keeps the stores that reach the read alive. When renaming reaches
+the recorded block, after its MULTIEQUALs, `kuna_haltloopguard.rs (mark)` makes
+the range's current definition `addrforce`, as the RETURN guard's COPY output
+is: the store before the loop, the INDIRECT of a call before it, or the
+MULTIEQUAL that joins either with the loop's own stores. `ActionDeadCode` then
+keeps it and everything it reads. No operation is added, so nothing new prints
+and no block changes. `off` deletes those stores, as upstream does.
+
 **LOAD/STORE guards.** Ranges in the stack space can be aliased by indexed
 LOADs/STOREs (`stack[i]`). Once per space per function
 (`heritage.rs (Heritage::discover_indexed_stack_pointers)`), the engine walks

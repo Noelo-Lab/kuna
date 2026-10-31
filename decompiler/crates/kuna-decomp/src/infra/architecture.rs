@@ -1132,6 +1132,10 @@ pub struct Architecture {
     /// (option `loopcounterstore`, default-on, DIV-146).  See
     /// [`crate::p3_dataflow::kuna_loopcounterstore`].
     pub loop_counter_store: bool,
+    /// (kuna `haltloopguard`) Read each stored global at the entry of a loop
+    /// the function never leaves, as at a RETURN
+    /// ([`crate::p3_dataflow::kuna_haltloopguard`]).
+    pub halt_loop_guard: bool,
     /// (kuna) Keep a global's COPY of a loaded value whose only reader is the
     /// global's own marker, so the write stays after the call or loop edge
     /// that observes the old value (option `globalcallstore`, default-on).
@@ -3133,6 +3137,7 @@ impl Architecture {
             guarded_read_trim: false,
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
+            halt_loop_guard: false,
             global_field_store: false,
             global_call_store: false, // (kuna) option globalcallstore; reset_defaults sets the shipped default (on)
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
@@ -3549,6 +3554,7 @@ impl Architecture {
         self.load_guard_range = true; // (kuna) DIV-77 default-on: restores upstream Heritage::analyzeNewLoadGuards ValueSet range refinement of indexed-stack LOAD/STORE guards (0/675 ablation); `option loadguardrange off` reverts to whole-space guards with no index bound
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
+        self.halt_loop_guard = true;
         self.global_call_store = true; // (kuna) default-on (0/675 datatest assertions): RulePropagateCopy keeps a global's COPY of a loaded value whose only reader is the global's marker, so the write stays after the call that observes the old value; `option globalcallstore off` restores the propagation
         self.global_field_store = true;
         self.int_float_round = true; // (kuna) default-on (0/675 datatest assertions): RuleFloatCast and SubfloatFlow keep an integer-to-float conversion's rounding unless the float it passes through holds the integer exactly; `option intfloatround off` restores the unconditional fold
@@ -4453,6 +4459,7 @@ impl Architecture {
         ctx.guarded_read_trim = self.guarded_read_trim;
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
+        ctx.halt_loop_guard = self.halt_loop_guard; // haltloopguard
         ctx.global_call_store = self.global_call_store; // globalcallstore
         ctx.global_field_store = self.global_field_store;
         ctx.int_float_round = self.int_float_round; // intfloatround

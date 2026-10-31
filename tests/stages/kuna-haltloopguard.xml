@@ -1,0 +1,68 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:Cortex">
+<!--
+    GH-1344. Stage P3, heritage guards: option haltloopguard
+    (p3_dataflow/kuna_haltloopguard.rs), default on.
+
+    Heritage reads every global at each RETURN, and that read is what keeps a
+    store to a global alive through dead-code removal. A function that ends in
+    a loop it never leaves has no RETURN, so the store had no reader and was
+    deleted.
+
+    sysreset (0x8020500) is the issue's 34-byte raw Thumb NVIC_SystemReset:
+
+        movw r0,#0xed0c; movt r0,#0xe000; dsb sy
+        ldr r1,[r0]; movs r2,#4; and r1,r1,#0x700; movt r2,#0x5fa
+        orrs r1,r2; str r1,[r0]; dsb sy
+        b .
+
+    park (0x8000054, clang 14 -O2 thumbv7em) stores 9 to a RAM global and then
+    sleeps in a wfi loop forever:
+
+        movw r0,#0; movt r0,#0x2000; movs r1,#9; str r1,[r0]
+        wfi; b <wfi>
+
+    Pass 1 (option haltloopguard off) reproduces the bug: both stores vanish,
+    leaving the barriers and the loops. Pass 2 (on, the default) keeps the
+    AIRCR write between the two barriers and the RAM store before the wfi loop.
+-->
+<bytechunk space="ram" offset="0x8020500" readonly="true">
+4ef60c50cef20000bff34f8f0168042201f4e061c0f2fa5211430160bff34f8f
+fee7
+</bytechunk>
+<bytechunk space="ram" offset="0x8000054" readonly="true">
+40f20000c2f200000921016030bffde7
+</bytechunk>
+<symbol space="ram" offset="0x8020500" name="sysreset"/>
+<symbol space="ram" offset="0x8000054" name="park"/>
+</binaryimage>
+<script>
+  <com>set context TMode 1 [ram,0x8000000] [ram,0x8030000]</com>
+  <com>option haltloopguard off</com>
+  <com>lo fu sysreset</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu park</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option haltloopguard on</com>
+  <com>lo fu sysreset</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu park</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="HALTLOOPGUARD #1: OFF drops the AIRCR write, leaving the two barriers adjacent (pass 1 only)" min="1" max="1">DataSynchronizationBarrier\(0xf\);
+DataSynchronizationBarrier\(0xf\);</stringmatch>
+<stringmatch name="HALTLOOPGUARD #2: both passes decompile sysreset" min="2" max="2">^void sysreset\(void\)$</stringmatch>
+<stringmatch name="HALTLOOPGUARD #3: ON keeps the AIRCR write between the barriers (pass 2 only)" min="1" max="1">DataSynchronizationBarrier\(0xf\);
+e000ed0c = [a-z_0-9]+e000ed0c &amp; 0x700 \| 0x5fa0004;
+DataSynchronizationBarrier\(0xf\);
+while\( true \) \{</stringmatch>
+<stringmatch name="HALTLOOPGUARD #4: ON keeps the RAM store in front of the wfi loop (pass 2 only)" min="1" max="1">20000000 = 9;
+while\( true \) \{
+WaitForInterrupt\(\);</stringmatch>
+<stringmatch name="HALTLOOPGUARD #5: both passes keep the wfi loop" min="2" max="2">WaitForInterrupt\(\);</stringmatch>
+</decompilertest>
