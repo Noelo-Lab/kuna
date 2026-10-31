@@ -2736,7 +2736,7 @@ impl Heritage {
         fl: uint4,
         addr: &Address,
         size: int4,
-        _write: &mut [crate::context::VarnodeId],
+        write: &mut [crate::context::VarnodeId],
     ) {
         use kuna_num::opcodes::OpCode;
         if fd.get_active_output().is_some()
@@ -2771,7 +2771,9 @@ impl Heritage {
                 }
             }
         }
-        if (fl & varnode_flags::persist) == 0 {
+        if (fl & varnode_flags::persist) == 0
+            || super::kuna_readonlyreturns::skips(fd, fl, self.readonly_unguarded, write)
+        {
             return;
         }
         // Persist RETURN-COPY branch (heritage.cc:1677-1692): the global value

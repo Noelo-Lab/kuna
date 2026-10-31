@@ -1113,6 +1113,8 @@ pub struct ArchContext {
     pub pruned_ssa: bool,
     /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
     pub load_guard_reads: bool,
+    /// (kuna) `readonlyreturns`, read by `Heritage::guard_returns`.
+    pub readonly_returns: bool,
     /// (kuna) let the callee's decoded body answer for the call's RETURN
     /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
     /// through
@@ -1968,6 +1970,7 @@ impl ArchContext {
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             pruned_ssa: true,
             load_guard_reads: true,
+            readonly_returns: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)

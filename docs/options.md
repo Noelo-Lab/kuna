@@ -1355,6 +1355,9 @@ Three tiers:
 | a huge function exhausts memory in the heritage pass that first heritages its stack | [`loadguardreads`](#loadguardreads) |
 | millions of COPY ops are built and destroyed in one heritage pass | [`loadguardreads`](#loadguardreads) |
 | a function with many indexed stack array reads and many address-taken locals takes gigabytes to decompile | [`loadguardreads`](#loadguardreads) |
+| a huge function with many returns exhausts memory after its return blocks are split | [`readonlyreturns`](#readonlyreturns) |
+| millions of COPY ops of a global into itself fill a large function's IR | [`readonlyreturns`](#readonlyreturns) |
+| a function that reads many constant globals and has many returns takes gigabytes to decompile | [`readonlyreturns`](#readonlyreturns) |
 
 ## Toggleable transforms
 
@@ -4135,6 +4138,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default. Flip off to build upstream's LOAD guard COPYs, for example to compare heritage's intermediate IR with upstream.
 - **Where / provenance:** P3/load-guard · kuna · performance · gh-1034
 - **Example:** `option loadguardreads off`
+
+### `readonlyreturns` -- on | off, default `on`
+
+- **Symptoms:** a huge function with many returns exhausts memory after its return blocks are split; millions of COPY ops of a global into itself fill a large function's IR; a function that reads many constant globals and has many returns takes gigabytes to decompile.
+- **What it does:** On a heritage pass where readonlycalls leaves read-only memory unguarded at calls, put no RETURN guard COPY in front of the function's RETURN ops for a read-only range the function never writes. Upstream builds one `glob = glob` COPY per persistent range per RETURN; its addrforced output keeps the global's last write, or the INDIRECT a call left on it, alive through dead-code removal. A read-only range with no write and no call guard reaches every return with its entry value, so its COPY keeps nothing alive and never prints, but the copies cost the pass's read-only ranges times the function's RETURN ops, survive into the final IR, and are cloned again with every return block ActionReturnSplit duplicates. A range any write in the pass reaches keeps its guards, as does every range on a pass that keeps its read-only call guards and every range under indexaliasguard full, whose STORE guards come after the return guards. With readonlycalls off this option has no effect.
+- **When to flip:** On by default. Flip off to put upstream's RETURN guard COPY on every read-only range again, for example to compare heritage's IR with upstream on a function that reads many constant globals.
+- **Where / provenance:** P3/heritage-guard · kuna · performance · gh-1034
+- **Example:** `option readonlyreturns off`
 
 ## Programmatic use
 

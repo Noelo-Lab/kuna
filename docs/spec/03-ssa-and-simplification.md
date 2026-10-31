@@ -711,6 +711,24 @@ each RETURN (`return_copy`), which is precisely what keeps a global store's
 def-chain alive through dead-code elimination so `glob = ...` survives to the
 output.
 
+Under `option readonlyreturns` (default on), a pass on which `readonlycalls`
+leaves read-only ranges unguarded at calls builds no such COPY for a read-only
+range the pass never writes
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (skips)`).
+With no write and no call INDIRECT on the range, the value that reaches every
+RETURN is the one it had at entry, so the COPY would keep nothing alive and the
+printer hides it anyway. Upstream builds it: one COPY per persistent range per
+RETURN, which survives to the final IR and is cloned again with every return
+block `ActionReturnSplit` duplicates. serde-hkx's 194 KB deserializer reads
+about 2,900 read-only globals and has 269 RETURNs before its returns are split:
+1.19 million return COPYs, 97% of them on such ranges, and 7.19 million once
+`ActionReturnSplit` has cloned its shared return block. A range any write in the
+pass reaches (an explicit store, a syscall's memory effect) keeps its COPYs, as
+does every range on a pass that keeps its read-only call guards, since there the
+return COPY is the reader that keeps those guards' chains, and every range under
+`indexaliasguard full`, whose STORE guards are placed after the return guards.
+With `readonlycalls off` the option has no effect.
+
 **LOAD/STORE guards.** Ranges in the stack space can be aliased by indexed
 LOADs/STOREs (`stack[i]`). Once per space per function
 (`heritage.rs (Heritage::discover_indexed_stack_pointers)`), the engine walks

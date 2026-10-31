@@ -2126,7 +2126,8 @@ mod tests {
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
         // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
         // and kuna-dedup-goto-arm / a goto into an arm unwrapped by a suffix hoist keeps a live target
-        assert_eq!(count, 604, "corpus file count drifted");
+        // and kuna-readonlyreturns / no return guard on read-only memory nothing writes (option readonlyreturns)
+        assert_eq!(count, 605, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
