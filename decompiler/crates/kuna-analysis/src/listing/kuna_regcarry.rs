@@ -76,7 +76,9 @@
 //! branch target, a switch case or a function entry — a join, where another
 //! path may hand the register a different value. Nothing is carried along a
 //! branch edge, and an instruction whose own p-code branches (ARM predication,
-//! x86 `rep`) passes on no register it writes.
+//! x86 `rep`) passes on no register it writes. Past a p-code-relative label a
+//! value may come from either side of it (`cinc x0,x0,eq` leaves `x0` or
+//! `x0 + 1`), so nothing after one is filed.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::rc::Rc;
@@ -208,6 +210,8 @@ pub(super) struct Insn<'a> {
     pub fall: Option<u64>,
     /// The static branch targets; none for a call.
     pub branches: &'a [u64],
+    /// Some op is a `CALL` or `CALLIND`.
+    pub calls: bool,
 }
 
 /// A value inside one instruction's evaluation.
@@ -251,6 +255,12 @@ fn is_constant(vn: &VarnodeData) -> bool {
     vn.space.as_ref().is_some_and(|s| s.get_type() == spacetype::IPTR_CONSTANT)
 }
 
+fn is_constant_or_temp(vn: &VarnodeData) -> bool {
+    vn.space
+        .as_ref()
+        .is_some_and(|s| matches!(s.get_type(), spacetype::IPTR_CONSTANT | spacetype::IPTR_INTERNAL))
+}
+
 fn overlaps(a: (u64, u32), b: (u64, u32)) -> bool {
     a.0 < b.0.saturating_add(u64::from(b.1)) && b.0 < a.0.saturating_add(u64::from(a.1))
 }
@@ -282,36 +292,52 @@ fn folds(code: OpCode) -> bool {
 /// take a positive address-like constant (`auipc`'s `inst_start`) — not the
 /// 12-bit immediate RISC-V copies into a temporary ahead of almost every
 /// instruction — and it must not be a call, which nothing it forms survives.
-fn has_seed(ops: &[FullOp]) -> bool {
-    let konst = |vn: &VarnodeData| {
-        is_constant(vn).then(|| Val {
-            v: vn.offset & mask(vn.size),
-            carried: false,
-            composed: None,
-            age: 0,
-            pc: false,
-            formed: None,
-            base: None,
-        })
-    };
-    let big = |vn: &VarnodeData| {
-        let v = vn.offset & mask(vn.size);
-        looks_like_address(v) && is_constant(vn) && sign_extend(v, vn.size) as i64 > 0
-    };
+/// Where only a PC-derived value may start a carry, some modelled op must also
+/// read a constant in the instruction's PC window, or nothing it forms is kept.
+/// And it must give some register a value: the first register an evaluation can
+/// know is written by a modelled op from constants and temporaries alone.
+fn has_seed(m: &Machine, insn: &Insn) -> bool {
+    if insn.calls {
+        return false;
+    }
     let mut seed = false;
-    for op in ops {
-        match op.opcode {
-            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => return false,
-            code if !seed && folds(code) && op.out.is_some() => {
-                seed = op.ins.iter().any(big)
-                    || op.ins.iter().all(is_constant)
-                        && fold(op, op.ins.first().and_then(konst), op.ins.get(1).and_then(konst))
-                            .is_some_and(|v| looks_like_address(v.v));
+    let mut pc = !m.pc_only;
+    for op in insn.ops {
+        if op.out.is_none() || !folds(op.opcode) {
+            continue;
+        }
+        let mut constants = true;
+        for vn in &op.ins {
+            if !is_constant(vn) {
+                constants = false;
+                continue;
             }
-            _ => {}
+            let v = vn.offset & mask(vn.size);
+            pc |= v.wrapping_sub(insn.vma) < PC_WINDOW;
+            seed |= looks_like_address(v) && sign_extend(v, vn.size) as i64 > 0;
+        }
+        if !seed && constants {
+            let konst = |vn: &VarnodeData| Val {
+                v: vn.offset & mask(vn.size),
+                carried: false,
+                composed: None,
+                age: 0,
+                pc: false,
+                formed: None,
+                base: None,
+            };
+            seed = fold(op, op.ins.first().map(konst), op.ins.get(1).map(konst))
+                .is_some_and(|v| looks_like_address(v.v));
+        }
+        if seed && pc {
+            return insn.ops.iter().any(|op| {
+                op.out.as_ref().is_some_and(|o| m.is_register(o))
+                    && folds(op.opcode)
+                    && op.ins.iter().all(is_constant_or_temp)
+            });
         }
     }
-    seed
+    false
 }
 
 /// Does `op` branch inside its own instruction — a p-code-relative target, or
@@ -479,17 +505,13 @@ impl Tracker {
     pub(super) fn step(&mut self, m: &Machine, insn: Insn) {
         self.targets.extend(insn.branches.iter().copied());
         let carry = if self.pending.is_empty() { None } else { self.pending.remove(&insn.vma) };
-        if carry.is_none() && !has_seed(insn.ops) {
-            return;
+        if carry.is_some() || has_seed(m, &insn) {
+            self.evaluate(m, &insn, carry.unwrap_or_default());
         }
-        let mut frame = std::mem::take(&mut self.scratch);
-        let mut hits = std::mem::take(&mut self.hits);
-        self.evaluate(m, &insn, carry.unwrap_or_default(), &mut frame, &mut hits);
-        self.scratch = frame;
-        self.hits = hits;
     }
 
-    fn evaluate(&mut self, m: &Machine, insn: &Insn, carry: Carry, frame: &mut Frame, hits: &mut Vec<Hit>) {
+    fn evaluate(&mut self, m: &Machine, insn: &Insn, carry: Carry) {
+        let Tracker { pending, found, scratch: frame, hits, .. } = self;
         let &Insn { vma, ops, fall, .. } = insn;
         frame.vma = vma;
         frame.regs.clear();
@@ -508,21 +530,22 @@ impl Tracker {
             };
             (h.off, h.size, val)
         }));
-        let first = self.found.len();
+        let first = found.len();
         let base_of = |found: &[Found], val: &Val, to: u64| {
             val.formed.or(val.base).filter(|&i| i < first && found[i].to != to)
         };
         let fall_vma = fall.unwrap_or(u64::MAX);
         let mut conditional = false;
+        let mut joined = false;
         for op in ops {
             let from_data = || op.ins.first().is_some_and(|vn| Some(vn.offset) == m.data_index);
             match op.opcode {
                 OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                     let load = op.opcode == OpCode::CPUI_LOAD;
                     if let Some(a) = op.ins.get(1).and_then(|vn| frame.read(m, vn)) {
-                        if a.carried && from_data() && m.admits(a.v) {
+                        if a.carried && !joined && from_data() && m.admits(a.v) {
                             let kind = if load { XrefKind::Read } else { XrefKind::Write };
-                            let base = base_of(&self.found, &a, a.v);
+                            let base = base_of(found, &a, a.v);
                             hits.push(Hit { to: a.v, kind, age: a.age, base });
                             let width = op.out.as_ref().map(|o| o.size).filter(|_| load);
                             if let Some(t) = width.and_then(|w| m.pool?.follow(a.v, w, m.mapped)) {
@@ -547,6 +570,7 @@ impl Tracker {
                 }
                 OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
                     conditional |= branches_within(op, fall_vma);
+                    joined |= op.ins.first().is_some_and(is_constant);
                 }
                 _ => {
                     let Some(out) = &op.out else { continue };
@@ -555,12 +579,13 @@ impl Tracker {
                     let mut val = fold(op, a, b);
                     if let Some(v) = val.as_mut() {
                         if v.carried
+                            && !joined
                             && v.composed == Some(out.size)
                             && m.is_register(out)
                             && v.v != fall_vma
                             && m.admits(v.v)
                         {
-                            let base = base_of(&self.found, v, v.v);
+                            let base = base_of(found, v, v.v);
                             hits.push(Hit { to: v.v, kind: XrefKind::Data, age: v.age, base });
                             v.formed = Some(first + hits.len() - 1);
                         }
@@ -576,12 +601,12 @@ impl Tracker {
             trail.push(vma);
             if let Some(i) = h.base {
                 if !frame.regs.iter().any(|&(_, _, v)| v.formed == Some(i)) {
-                    self.found[i].stepped.push(trail.clone());
+                    found[i].stepped.push(trail.clone());
                 }
             }
             let writeback = h.kind == XrefKind::Data
                 && hits.iter().enumerate().any(|(j, o)| j != k && o.to == h.to && o.kind != XrefKind::Data);
-            self.found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped: Vec::new() });
+            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped: Vec::new() });
         }
 
         let Some(next) = fall else { return };
@@ -606,7 +631,7 @@ impl Tracker {
         trail.push(vma);
         let keep = oldest.min(trail.len());
         trail.drain(..trail.len() - keep);
-        self.pending.entry(next).or_insert(Carry { held, trail });
+        pending.entry(next).or_insert(Carry { held, trail });
     }
 
     /// The references whose every carrying instruction nothing else enters, as
@@ -718,7 +743,8 @@ mod tests {
         }
         for (i, ops) in insns.iter().enumerate() {
             let vma = 0x20000 + 4 * i as u64;
-            t.step(m, Insn { vma, ops, fall: Some(vma + 4), branches: &[] });
+            let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+            t.step(m, Insn { vma, ops, fall: Some(vma + 4), branches: &[], calls });
         }
         let mut out = t.finish(&BTreeSet::from([0x20000]));
         out.sort_unstable();
@@ -824,5 +850,19 @@ mod tests {
         far.extend((0..MAX_HOPS).map(|_| isa.set(1, 5)));
         far.push(isa.add(0, 0, 0x10));
         assert!(walk(&m, &far, &[]).is_empty());
+    }
+
+    #[test]
+    fn a_value_past_a_label_inside_the_instruction_is_not_filed() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let cinc = vec![
+            op(OpCode::CPUI_COPY, Some(isa.t(0)), vec![isa.x(0)]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&isa.c, 2, 8), isa.x(5)]),
+            op(OpCode::CPUI_INT_ADD, Some(isa.t(0)), vec![isa.x(0), isa.k(1)]),
+            op(OpCode::CPUI_COPY, Some(isa.x(0)), vec![isa.t(0)]),
+        ];
+        let got = walk(&m, &[isa.set(0, 0x21000), cinc], &[]);
+        assert!(got.is_empty(), "`cinc x0,x0,eq` leaves x0 or x0 + 1: {got:?}");
     }
 }

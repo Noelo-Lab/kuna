@@ -1117,6 +1117,7 @@ fn descend(
                     ops: cap.ops(),
                     fall: c.fall_through,
                     branches: if c.flow.is_call { &[] } else { &c.flows },
+                    calls: c.flow.is_call,
                 });
             }
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,

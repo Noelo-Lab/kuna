@@ -6737,7 +6737,9 @@ register is written with anything the fold cannot follow, and survives a call on
 in a register the default prototype leaves unaffected and the call instruction did
 not itself write (ARM's cspec lists `lr` as unaffected, yet the `bl` writes it). An
 instruction whose p-code branches inside itself — a predicated A32 instruction, an
-x86 `rep` — passes on no register it writes. Values travel only along
+x86 `rep` — passes on no register it writes, and nothing it computes past a
+p-code-relative label is filed, because a value there may come from either side
+of the label (`cinc x0,x0,eq` leaves `x0` or `x0 + 1`). Values travel only along
 fall-through, and the walk is breadth-first, so each reference records the
 instructions its value passed through; once the whole walk has drained, a
 reference is filed only if none of them is a branch target, a switch case or a
@@ -6763,9 +6765,22 @@ way), so there a constant starts a carry only when it was computed from the
 instruction's own address: `auipc`'s `imm + inst_start`, A32's `pc` read as
 `inst_start + 8`. x86-64 and AArch64 are exempt, because SLEIGH folds their
 PC-relative operands (`lea [rip+…]`, `adrp`) into a plain constant, so the PC is
-not visible, and neither builds a number from an add of two immediates. The page
-or high half on its own is not a carried reference; an `adrp` page that is itself
-a mapped address keeps the `Data` row the constant scan always gave it.
+not visible, and neither builds a number from an add of two immediates. RV32 is
+where the two shapes coincide in an executable: `li a1,70000` assembles to
+`lui a1,0x11; addi a1,a1,0x170`, exactly the `%hi`/`%lo` pair of an address, so in
+an RV32 `ET_EXEC` a number that lands in a mapped section files a `Data` row — the
+same floor the constant scan applies to a lone immediate. RV64 builds that number
+with `addiw` and is not affected. The page or high half on its own is not a
+carried reference; an `adrp` page that is itself a mapped address keeps the `Data`
+row the constant scan always gave it.
+
+Most instructions never reach the evaluation. One is evaluated when a carry
+reaches it, or when it could start one: it calls nothing, some modelled op yields
+an address-like constant, some register is written by a modelled op from constants
+and temporaries alone (the first register an evaluation can know is always written
+that way), and in an `ET_DYN` image some modelled op reads a constant in the
+instruction's PC window. An instruction failing any of these would leave nothing
+to carry or keep, so the gate decides what is evaluated, never what is filed.
 
 Measured over 86 images (AArch64 ELF and Mach-O, ARM, MIPS, PowerPC, RISC-V,
 x86-64, i386 PE and the vendored fixtures): no row is lost, and of the 14,550 rows
@@ -6775,10 +6790,12 @@ MIPS, PowerPC and x86-64 match an independent capstone def-chain resolver, the 3
 ARM PLT slot reads match the entries' own `add`/`add`/`ldr` arithmetic, and the
 other 80 (Thumb `adr` + `ldrd` pool reads, a MIPS delay-slot `addiu`, a RISC-V
 `c.lui` store and an `amoswap` on a lock) were checked by hand. The walk
-itself costs within 2% more on x86-64 and ARM, where little is carried, and 8-10%
-more on AArch64, RISC-V and MIPS, where a high half precedes nearly every global
-access; a whole `kuna xrefs` answer costs under 1% more on x86-64 and 3-5% more on
-the others. Emitted C is unchanged.
+itself costs about 2% more on x86-64 and ARM, where little is carried, 2-3% more
+on MIPS and PowerPC, and 4-7% more on AArch64 and RISC-V, where a high half
+precedes nearly every global access. Roughly half of that is the evaluation; the
+rest is the new rows themselves, rendering each one's instruction text (about
+2 µs a row on AArch64) and filing it (the 9,331 rows of a RISC-V PJSIP library).
+Emitted C is unchanged.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
