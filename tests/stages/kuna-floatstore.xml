@@ -24,7 +24,10 @@
         str r1,[r0]; str r1,[r0,#16]; str r1,[r0,#32]
         vstr s2,[r0,#8]; vstr s0,[r0,#24]; bx lr
 
-    Passes 2 and 3 load floatstore.c built by clang 14 -O2 for x86-64 (movss)
+    Pass 2 repeats pass 1 with option realtypes off: the pointee then prints as
+    xunknown4, upstream's bit copy, and the stores keep upstream's text.
+
+    Passes 3 and 4 load floatstore.c built by clang 14 -O2 for x86-64 (movss)
     and AArch64 (str s0), from kuna-analysis's fixtures (floatstore.provenance).
 -->
 <bytechunk space="ram" offset="0x8000010" readonly="true">
@@ -38,6 +41,11 @@
   <com>lo fu mat_init</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>option realtypes off</com>
+  <com>lo fu mat_init</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option realtypes on</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatstore_x86_64_O2.o</com>
   <com>read symbols</com>
@@ -55,6 +63,7 @@
 <stringmatch name="FLOATSTORE #1: Thumb vstr of a computed float is a float store" min="1" max="1">^  \*\(float4? \*\)&amp;v1\[2\] = a0 \* a1 \+ 0\.5f;$</stringmatch>
 <stringmatch name="FLOATSTORE #2: Thumb vstr of a float difference is a float store" min="1" max="1">^  \*\(float4? \*\)&amp;v1\[6\] = a0 - a1;$</stringmatch>
 <stringmatch name="FLOATSTORE #3: x86-64 movss and AArch64 str s0 are float stores" min="2" max="2">^  \*\(float4? \*\)&amp;a2\[2\] = </stringmatch>
-<stringmatch name="FLOATSTORE #4: no float is assigned to an integer element" min="0" max="0">^  [av][0-9]+\[[0-9]+\] = a[0-9] [-*] a[0-9]</stringmatch>
-<stringmatch name="FLOATSTORE #5: the integer stores keep their bit patterns" min="7" max="7">= 0x3f800000;$</stringmatch>
+<stringmatch name="FLOATSTORE #4: a float is assigned to an element only into xunknown4 bytes (pass 2)" min="2" max="2">^  [av][0-9]+\[[0-9]+\] = a[0-9] [-*] a[0-9]</stringmatch>
+<stringmatch name="FLOATSTORE #5: the integer stores keep their bit patterns" min="10" max="10">= 0x3f800000;$</stringmatch>
+<stringmatch name="FLOATSTORE #6: realtypes off prints the pointee as upstream's xunknown4 bytes (pass 2)" min="1" max="1">^  xunknown4 \*v1;</stringmatch>
 </decompilertest>

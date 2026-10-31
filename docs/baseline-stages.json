@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3351,
-    3351
+    3352,
+    3352
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -628,8 +628,9 @@
     "data:FLOATSTORE #1: Thumb vstr of a computed float is a float store",
     "data:FLOATSTORE #2: Thumb vstr of a float difference is a float store",
     "data:FLOATSTORE #3: x86-64 movss and AArch64 str s0 are float stores",
-    "data:FLOATSTORE #4: no float is assigned to an integer element",
+    "data:FLOATSTORE #4: a float is assigned to an element only into xunknown4 bytes (pass 2)",
     "data:FLOATSTORE #5: the integer stores keep their bit patterns",
+    "data:FLOATSTORE #6: realtypes off prints the pointee as upstream's xunknown4 bytes (pass 2)",
     "data:FLOWMODE #1: off (the default), and on after an unproven call, the A32 helper decodes as Thumb",
     "data:FLOWMODE #2: on, the first bl target keeps A32; aftercall, the bl after the blx does",
     "data:FLOWMODE #3: aftercall, the blx target decodes as Thumb and returns 7",

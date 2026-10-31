@@ -499,7 +499,7 @@ fn get_input_cast_store(
         if qualifiers & crate::kuna_typequal::CONST != 0 {
             return tlst.get_type_pointer(pointer_size, access_type(pointed_to)?, wordsize).ok();
         }
-        if let Some(value) = super::kuna_floatstore::pointer(&pointed_to, &value_type) {
+        if let Some(value) = super::kuna_floatstore::pointer(data, &pointed_to, &value_type) {
             return tlst.get_type_pointer(pointer_size, access_type(value)?, wordsize).ok();
         }
         let v = data.vbank().get(pointer_vn)?;
