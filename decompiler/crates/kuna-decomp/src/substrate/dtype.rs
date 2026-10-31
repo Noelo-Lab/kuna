@@ -946,6 +946,24 @@ impl Datatype {
         Datatype::new_with_align(size, -1, metatype)
     }
 
+    /// Is this exactly `Datatype::new(size, TYPE_UNKNOWN)`: the unnamed skeleton a
+    /// Varnode starts with where no factory is consulted, which no factory holds?
+    pub fn is_unknown_placeholder(&self) -> bool {
+        self.metatype == type_metatype::TYPE_UNKNOWN
+            && matches!(self.kind, DatatypeKind::Base)
+            && self.submeta == base2sub(type_metatype::TYPE_UNKNOWN)
+            && self.id == 0
+            && self.flags == 0
+            && self.name.is_empty()
+            && self.display_name.is_empty()
+            && self.alignment == -1
+            && self.align_size == self.size
+            && self.typedef_imm.is_none()
+            && self.record_completion.is_none()
+            && self.qualified_base.is_none()
+            && self.qualifiers == 0
+    }
+
     /// Produce a data-type id by hashing the type name (C++ `Datatype::hashName`,
     /// type.cc:693-705).  IDs produced this way have their two top header bits set
     /// (`0xC000000000000000`) to distinguish them from other IDs.  Transcribed
@@ -5215,24 +5233,18 @@ impl TypeFactoryImpl {
     /// Look up a data-type locally by name and id (C++
     /// `TypeFactory::findByIdLocal`, type.cc:3804-3822).  When `id == 0` the name
     /// may be non-unique; the first type with a matching name is returned.
+    ///
+    /// `nametree` is kept ordered by (name, id), so this is the C++ set's
+    /// ordered search: a scan made every name probe cost the whole factory.
     fn find_by_id_local(&self, n: &str, id: uint8) -> Option<Rc<Datatype>> {
         let store = self.store.borrow();
-        if id != 0 {
-            // Exact (name,id) match.
-            store
-                .nametree
-                .iter()
-                .find(|dt| dt.name == n && dt.id == id)
-                .map(Rc::clone)
+        let names = &store.nametree;
+        let at = if id != 0 {
+            names.partition_point(|dt| (dt.name.as_str(), dt.id) < (n, id))
         } else {
-            // First type with this name (nametree is kept ordered by (name,id)).
-            store
-                .nametree
-                .iter()
-                .filter(|dt| dt.name == n)
-                .min_by(|a, b| a.name.cmp(&b.name).then(a.id.cmp(&b.id)))
-                .map(Rc::clone)
-        }
+            names.partition_point(|dt| dt.name.as_str() < n)
+        };
+        names.get(at).filter(|dt| dt.name == n && (id == 0 || dt.id == id)).map(Rc::clone)
     }
 
     /// Search by name and/or id, applying the variable-length size hash (C++
@@ -8387,6 +8399,34 @@ mod tests {
         let p_b = f.get_type_pointer(8, Rc::clone(&i4_b), 1).unwrap();
         assert!(Rc::ptr_eq(&p_a, &p_b), "identical pointers dedup");
         assert!(Rc::ptr_eq(&p_a.get_ptr_to().unwrap(), &i4_a));
+    }
+
+    /// A name probe is the ordered search of the (name, id) index: an exact id
+    /// finds that entry, id 0 the lowest id under the name, and a name that is
+    /// only a prefix of held ones, or sorts between them, finds nothing.
+    #[test]
+    fn factory_name_lookup_is_the_ordered_search() {
+        let f = factory();
+        for name in ["struct_1", "struct_10", "struct_2", "struct_0"] {
+            f.get_type_struct(name).unwrap();
+        }
+        let mut alias = Datatype::new(8, type_metatype::TYPE_INT);
+        alias.name = "struct_1".into();
+        alias.display_name = "struct_1".into();
+        alias.id = 7;
+        let alias = f.find_add(alias).unwrap();
+        let first = f.find_by_name("struct_1").unwrap().unwrap();
+        assert_eq!(first.get_id(), 7, "the lowest id under a shared name");
+        let held = f.find_by_id_local("struct_1", Datatype::hash_name("struct_1")).unwrap();
+        assert_eq!(held.get_metatype(), type_metatype::TYPE_STRUCT);
+        assert!(Rc::ptr_eq(&f.find_by_id_local("struct_1", 7).unwrap(), &alias));
+        assert!(f.find_by_id_local("struct_1", 8).is_none());
+        for absent in ["struct_", "struct_11", "struct_3", "a", "zzz", ""] {
+            assert!(f.find_by_name(absent).unwrap().is_none(), "{absent:?}");
+        }
+        for name in ["struct_0", "struct_10", "struct_2"] {
+            assert_eq!(f.find_by_name(name).unwrap().unwrap().get_name(), name);
+        }
     }
 
     /// `getBaseNoChar` returns the cached non-char int for size-1 INT, and the
