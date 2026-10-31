@@ -3060,6 +3060,7 @@ impl Funcdata {
             }
 
             let mut splitcount = 0;
+            let first = retnode.len();
             // splitedge holds edges to split, biggest index first, so edge removal
             // does not shift the index of remaining edges.
             let size_in = self.bblocks_ref().block(parent).size_in();
@@ -3088,7 +3089,6 @@ impl Funcdata {
                 retnode.pop();
             }
             // (kuna `retsplitlimit`) a block too big to clone this many times keeps its gotos.
-            let first = retnode.iter().position(|&b| b == parent).unwrap_or(retnode.len());
             if crate::p8_structure::kuna_retsplitlimit::split_is_declined(
                 self.get_arch().ret_split_limit,
                 self.bb_op_count(parent),

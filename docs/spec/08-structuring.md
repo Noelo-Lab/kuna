@@ -869,16 +869,22 @@ a return block carries, besides its epilogue, one `Heritage::guardReturns`
 `retsplitglobal` deliberately does not count. A huge function that reads
 thousands of globals and reaches one return from hundreds of gotos clones
 millions of ops, which every later pass and the variable merge walk: serde-hkx's
-194 KB deserializer (GH-1034) has two return blocks of about 3,000 ops reached by
-658 and 674 gotos, 6.1 million cloned ops and 7.19 million guard COPYs after
-the split. *Transform:* when the block's op count times its split edges exceeds
-the limit (`retsplitlimit <n>`, default 2^20 = 1,048,576 cloned ops), none of
-that block's edges are split and its gotos stay; `off` restores the unlimited
-split. *Bounds:* the test is per block and in cloned ops, so a block under the
-limit splits exactly as upstream and the C changes only in a function that would
-have cloned more, where those paths print a `goto` to the shared return instead
-of their own `return`. Like `retsplitglobal` it can only decline a split.
-Settable `retsplitlimit`, shipped default **1048576**.
+194 KB deserializer (GH-1034) has two return blocks of 4,524 ops reached by 674
+and 658 gotos, 6.0 million cloned ops (8.75 million ops in the function right
+after the split, 7.19 million of them guard COPYs). *Transform:* when the
+block's op count times its split edges exceeds the limit (`retsplitlimit <n>`,
+default 2^20 = 1,048,576 cloned ops), none of that block's edges are split and
+its gotos stay; `off` restores the unlimited split. *Bounds:* the test is per
+block and in cloned ops, so a block under the limit splits exactly as upstream
+and the C changes only in a function that would have cloned more, where those
+paths print a `goto` to the shared return instead of their own `return`. Like
+`retsplitglobal` it can only decline a split. The kuna const-return peelers that
+also call `node_split` (`returndup`, `earlyreturn`, `switchreturn`) do not
+consult the limit; their own in-edge caps bound them. Settable `retsplitlimit`,
+shipped default **1048576**: the costliest return split in ordinary code is a
+few thousand cloned ops, so the default declines only in functions like
+serde-hkx's two largest (the one above, and a 174 KB one whose 3,665-op return
+block is reached by 673 gotos).
 
 ### crossjumprevert — un-doing compiler cross-jumping (angr `CrossJumpReverter`)
 

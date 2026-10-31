@@ -6,10 +6,10 @@
 //! cloned whole: every op in it, once per split edge. A bare epilogue is a
 //! handful of ops, but a RETURN block also carries one `glob = glob` guard COPY
 //! per global the function reads (`Heritage::guardReturns`). serde-hkx's
-//! 194 KB deserializer reads about 2,900 globals and has return blocks with
-//! 658 and 674 goto edges, so splitting them clones 6.1 million ops (7.19
-//! million guard COPYs once every return is split), and every later pass and
-//! the variable merge walk them.
+//! 194 KB deserializer reads about 4,400 globals and has two return blocks of
+//! 4,524 ops reached by 674 and 658 goto edges, so splitting them clones 6.0
+//! million ops (8.75 million ops in the function right after, 7.19 million of
+//! them guard COPYs), and every later pass and the variable merge walk them.
 //!
 //! With the option set, a return block whose op count times its split edges
 //! exceeds the limit keeps its gotos instead. The limit is in cloned ops; a
