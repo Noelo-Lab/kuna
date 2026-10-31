@@ -198,9 +198,9 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
     let mut nodes = BTreeMap::<u64, Node>::new();
     let mut issues = Vec::new();
     let mut widest = 0u64;
-    let mut failures = 0usize;
+    let mut failed = BTreeSet::new();
     while let Some(addr) = queue.pop_front() {
-        if nodes.contains_key(&addr) || !inside(addr) {
+        if nodes.contains_key(&addr) || failed.contains(&addr) || !inside(addr) {
             continue;
         }
         if nodes.len() >= limit {
@@ -214,7 +214,7 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
                     message: Some(message),
                     ..Issue::at("decode_error", addr)
                 });
-                failures += 1;
+                failed.insert(addr);
                 continue;
             }
         };
@@ -334,7 +334,7 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
         .iter()
         .find_map(|issue| issue.message.as_ref())
         .map(|first| {
-            format!("{failures} instruction(s) in the walk did not lift; the first: {first}")
+            format!("{} instruction(s) in the walk did not lift; the first: {first}", failed.len())
         });
     let text = if args.json {
         let doc = vec![

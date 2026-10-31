@@ -2440,7 +2440,6 @@ kuna raw-pcode ./a.out main --follow --json
   (unique,0x4f900,8) = COPY (register,0x28,8)
   (register,0x20,8) = INT_SUB (register,0x20,8), (const,0x8,8)
   STORE (const,0x3,8), (register,0x20,8), (unique,0x4f900,8)
-# truncated at 0x40071e (instruction_limit)
 ```
 
 Each instruction's p-code exactly as SLEIGH lifts it, beside the bytes it
@@ -2457,8 +2456,12 @@ at the first instruction that does not lift or that would cross the end of the
 window or of mapped memory, keeps what it lifted on stdout (text `# stopped at`,
 JSON `error`), prints `error:` on stderr and exits `1`. `stop_reason` is
 `range_end`, `instruction_limit`, `mapped_end` or `decode_error`, and `end` is
-the exclusive end of what was lifted. A start in a non-executable data section
-is lifted anyway, with a `note:` on stderr (and in `notes`).
+the exclusive end of what was lifted. `truncated` means what it means for
+`disassemble`, that the 1024-instruction cap on a derived walk ended it (text:
+`# truncated at`), and also that a lift failed; a `--count` the walk met is not
+truncation. A walk the end of mapped memory cut short gets `disassemble`'s
+note. A start in a non-executable data section is lifted anyway, with a
+`note:` on stderr (and in `notes`).
 
 `--json` is `disassemble`'s envelope with `kind: "pcode"` — `binary`, `kind`,
 `target` (`name`, `address`, `address_hex`), `start`/`start_hex`,
@@ -2485,10 +2488,11 @@ dead, and a lift falls through unless its last live op is `BRANCH`,
 `BRANCHIND` or `RETURN`. So a predicated instruction (ARM `movle`, x86
 `CMOVG`) lists the next address twice, as a `branch` and as its `fallthrough`,
 and the walk goes on; a call is assumed to return and is not entered. The
-window is `--bytes` or the range, else the function extent; `--count` caps the
-lifts (1024 by default). JSON has `binary`, `kind: "flow"`, `target`,
-`start`, `range_end` (exclusive bound of the window, not a claim every byte
-below it was lifted), `complete`, `instruction_count`, `notes`, `issues` and
+window is `--bytes` or the range, else the function extent (64 bytes outside
+any function); `--count` caps the lifts (1024 by default), and a failed lift is
+reported once however many edges reach it. JSON has `binary`, `kind: "flow"`,
+`target`, `start`, `range_end` (exclusive bound of the window, not a claim every
+byte below it was lifted), `complete`, `instruction_count`, `notes`, `issues` and
 `blocks` (`start`, `start_hex`, `successors`, `instructions`). An edge has a
 `kind` (`branch`, `fallthrough`, `indirect`, `unresolved`) and a `target`
 (null when unknown). `issues` lists `indirect_branch`, `out_of_range`,

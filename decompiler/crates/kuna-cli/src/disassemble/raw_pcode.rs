@@ -270,7 +270,7 @@ fn render(args: &DisArgs) -> Result<Output, String> {
         window_is_caller_bounded(args),
         |prog, args, region| {
             require_mapped(args, prog, &region)?;
-            let notes = data_notes(prog, &region);
+            let mut notes = data_notes(prog, &region);
             let limit = args.count.unwrap_or(if region.derived {
                 DERIVED_INSTRUCTION_CAP
             } else {
@@ -300,15 +300,17 @@ fn render(args: &DisArgs) -> Result<Output, String> {
                 "decode_error"
             } else if listed == limit && stop.is_none_or(|end| addr < end) {
                 "instruction_limit"
-            } else if region.reaches_past_image()
-                && region.mapped_end.is_some_and(|end| addr >= end)
-                && args.count.is_none_or(|count| listed < count)
-            {
+            } else if cut_short_by_image(&region, args.count, listed, addr) {
+                notes.push(image_bound_note(prog, &region));
                 "mapped_end"
             } else {
                 "range_end"
             };
-            let truncated = stop_reason != "range_end";
+            let truncated = match stop_reason {
+                "decode_error" => true,
+                "instruction_limit" => args.count.is_none(),
+                _ => false,
+            };
             let text = if args.json {
                 let error = failure.as_ref().map_or(Json::Null, |message| {
                     Json::Object(vec![

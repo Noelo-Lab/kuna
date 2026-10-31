@@ -1182,7 +1182,7 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
     let doc: Json = serde_json::from_str(&stdout).unwrap();
     let instructions = doc["instructions"].as_array().unwrap();
     assert_eq!(instructions.len(), 1);
-    assert_eq!(doc["truncated"], true);
+    assert_eq!(doc["truncated"], false, "a --count the walk met is not truncation, as in disassemble");
     let ops = instructions[0]["ops"].as_array().unwrap();
     assert_eq!(instructions[0]["mnemonic"], "PUSH");
     assert_eq!(instructions[0]["bytes"], "55");
@@ -1208,7 +1208,7 @@ fn raw_pcode_exposes_instruction_ops_and_reports_limits() {
     assert!(text.starts_with("# 1 instruction at main @ 0x40071d (0x40071d..0x40071e, 1 bytes)\n"), "{text}");
     assert!(text.contains("55  PUSH RBP"));
     assert!(text.contains(ops[0]["opcode"].as_str().unwrap()));
-    assert!(text.contains("# truncated at"));
+    assert!(!text.contains("# truncated at"), "{text}");
     let next = format!("0x{:x}", doc["end"].as_u64().unwrap());
     let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, &next, "--bytes", "1"]);
     assert_eq!(code, 1);
@@ -1318,6 +1318,35 @@ fn raw_pcode_follow_skips_inline_data_and_follows_both_paths() {
     let limited: Json = serde_json::from_str(&stdout).unwrap();
     assert_eq!(limited["complete"], false);
     assert!(limited["issues"].as_array().unwrap().iter().any(|issue| issue["reason"] == "instruction_limit"));
+}
+
+#[test]
+fn raw_pcode_truncated_means_the_derived_cap_as_in_disassemble() {
+    let binary = raw_flow_fixture(&[0x90; 1100]);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["count"], 1024);
+    assert_eq!(doc["stop_reason"], "instruction_limit");
+    assert_eq!(doc["truncated"], true);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--count", "1024", "--json"]);
+    assert_eq!(code, 0, "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(doc["stop_reason"], "instruction_limit");
+    assert_eq!(doc["truncated"], false);
+}
+
+#[test]
+fn raw_pcode_follow_reports_each_undecodable_target_once() {
+    // je, jne and jb all target the same truncated instruction at the window's end.
+    let binary = raw_flow_fixture(&[0x74, 0x04, 0x75, 0x02, 0x72, 0x00, 0x0f]);
+    let (stdout, stderr, code) = run_kuna(&["raw-pcode", &binary, "probe", "--follow", "--json"]);
+    assert_eq!(code, 1, "{stderr}");
+    assert!(stderr.contains("error: 1 instruction(s) in the walk did not lift"), "{stderr}");
+    let doc: Json = serde_json::from_str(&stdout).unwrap();
+    let issues = doc["issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1, "{doc}");
+    assert_eq!(issues[0]["reason"], "decode_error");
 }
 
 #[test]
