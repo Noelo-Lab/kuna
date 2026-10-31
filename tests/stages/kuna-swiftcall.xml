@@ -41,6 +41,12 @@
     method `settle` hands its own, untouched `self` to `fee(for:)` before
     and after a call. Pass 4 (`swiftcall off`, with symbols) shows `settle`
     calling `fee(for:)` without it.
+
+    `swift_call_helper_elf` calls the mutating `Counter.bump()` after
+    `swift_beginAccess`, a C runtime helper that runs between the caller
+    setting r13 and the call and preserves the register. Pass 5 (`swiftcall
+    off`) passes no `self`; pass 6 (the default) passes `a0` to both calls,
+    straight-line and in a loop.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -99,6 +105,27 @@ c3
   <com>load addr 0x35e0</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_helper_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swiftcall off</com>
+  <com>read symbols</com>
+  <com>load addr 0x2440</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2480</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_call_helper_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x2440</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x2480</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="swiftcall off: the class method takes no self" min="1" max="1">vtable#7\.method\(int8 a0,int8 a1\)</stringmatch>
@@ -120,4 +147,6 @@ c3
 <stringmatch name="swiftcall on, symbols: the non-mutating method gains no self" min="1" max="1">callfix\.Counter\.peek\(_:\)\(a2,a1-&gt;field_0x0,a1-&gt;field_0x8\)</stringmatch>
 <stringmatch name="swiftcall on, symbols: a final method hands its own self on" min="1" max="1">v1 = callfix\.Account\.fee\(for:\)\(self,a1\);</stringmatch>
 <stringmatch name="swiftcall on, symbols: and again after a call" min="1" max="1">return callfix\.Account\.fee\(for:\)\(self,v2\) \+ v1;</stringmatch>
+<stringmatch name="swiftcall off: the call after a runtime helper passes no self" min="2" max="2">helperfix\.Counter\.bump\(\)\(\);</stringmatch>
+<stringmatch name="swiftcall on: a runtime helper call leaves the self the caller set" min="2" max="2">helperfix\.Counter\.bump\(\)\(a0\);</stringmatch>
 </decompilertest>

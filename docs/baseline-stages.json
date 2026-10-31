@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3851,
-    3851
+    3853,
+    3853
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3632,6 +3632,7 @@
     "data:success preserves the zero result word",
     "data:swiftcall off: a final method calls another without its self",
     "data:swiftcall off: self is an unnamed register read",
+    "data:swiftcall off: the call after a runtime helper passes no self",
     "data:swiftcall off: the class method takes no self",
     "data:swiftcall off: the struct witness writes through an unnamed register",
     "data:swiftcall off: the throwing call's error path folds away",
@@ -3643,6 +3644,7 @@
     "data:swiftcall on, symbols: the mutating struct method takes the struct's self",
     "data:swiftcall on, symbols: the non-mutating method gains no self",
     "data:swiftcall on: a class witness takes the address of the reference",
+    "data:swiftcall on: a runtime helper call leaves the self the caller set",
     "data:swiftcall on: a virtual call on self passes self",
     "data:swiftcall on: the class method takes the class's self first",
     "data:swiftcall on: the error path survives",

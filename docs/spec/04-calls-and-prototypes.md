@@ -3893,7 +3893,12 @@ arguments rather than in `swiftself`, so a call to one keeps a `swiftself`
 argument only when the caller set the register for that call: a value that
 reaches the call through an `INDIRECT`, or past another call on the dominator
 path from its definition (or from the entry, for the caller's own input), is
-scored no-use in `ActionActiveParam` (`stale_self`).
+scored no-use in `ActionActiveParam` (`stale_self`). A call to a C function
+does not count (`may_take_self`): one under a non-Swift model whose callee
+has a C name (`swift_retain`, `objc_msgSend`, a `@_cdecl` export, not an
+engine `sub_`/`FUN_` placeholder) preserves the register and reads none of
+it, so a value set before it is still set for the call that follows. A Swift
+function, an unnamed callee or an indirect target may read it.
 
 A method passes its own `self` on without touching the register: `settle`
 calls `fee(for:)` and its own getter with x20 / r13 exactly as it received

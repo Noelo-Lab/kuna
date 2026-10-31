@@ -15,8 +15,9 @@
 //! gets it in the trailing argument registers and leaves `swiftself` alone.
 //! Its name does not say which, so a call to one keeps a `swiftself`
 //! argument only when the caller set the register for that call: a value
-//! that reaches it across an earlier call is that call's, not this one's
-//! ([`stale_self`]).
+//! that reaches it across an earlier call is that call's, not this one's,
+//! unless that call is to a C function (a runtime helper), which preserves
+//! the register and reads none of it ([`stale_self`]).
 //!
 //! A method hands its own `self` on to the methods it calls without writing
 //! the register again; that value is the caller's input in a preserved
@@ -299,8 +300,24 @@ pub fn indirect_call(data: &Funcdata, call: OpId) -> Option<Rc<ProtoModel>> {
 /// How many dominating blocks [`call_since`] walks.
 const MAX_BLOCKS: usize = 64;
 
-/// Is there a call on the dominator path from `def` (the function entry when
-/// `None`) down to the call `op`?
+/// Can the call `id` take `swiftself`? Not when it is under a C model and
+/// its callee is named as a C function (`swift_retain`, `objc_msgSend`, a
+/// `@_cdecl` export): one preserves the register and reads none of it. A
+/// Swift function, an unnamed one or an indirect target may.
+fn may_take_self(data: &Funcdata, id: OpId) -> bool {
+    let Some(i) = data.get_call_specs_index(id) else { return true };
+    let call = data.get_call_specs(i);
+    let proto = call.proto();
+    if proto.has_model() && is_swift(proto.model()) {
+        return true;
+    }
+    let name = call.get_name();
+    let c_name = !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    !c_name || name.starts_with("sub_") || name.starts_with("FUN_")
+}
+
+/// Is there a call that may take `swiftself` ([`may_take_self`]) on the dominator path from
+/// `def` (the function entry when `None`) down to the call `op`?
 fn call_since(data: &Funcdata, def: Option<OpId>, op: OpId) -> bool {
     let Some(mut bl) = data.obank().get(op).and_then(|o| o.get_parent()) else { return false };
     let mut cur = data.op_previous_op(op);
@@ -310,7 +327,7 @@ fn call_since(data: &Funcdata, def: Option<OpId>, op: OpId) -> bool {
                 return false;
             }
             let Some(o) = data.obank().get(id) else { return false };
-            if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) && may_take_self(data, id) {
                 return true;
             }
             cur = data.op_previous_op(id);
