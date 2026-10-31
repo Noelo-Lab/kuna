@@ -1633,6 +1633,9 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    /// Per-body spelling of a goto-target leaf whose address label another
+    /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
+    label_names: std::collections::BTreeMap<BlockId, String>,
 }
 
 impl Default for PrintC {
@@ -1676,6 +1679,7 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            label_names: std::collections::BTreeMap::new(),
         }
     }
 
@@ -2001,6 +2005,7 @@ impl PrintC {
         self.eol_warns.clear();
         self.void_tail_return = None;
         self.stmt_op = None;
+        self.label_names.clear();
         self.local_name_overrides.clear();
         self.indirect_input_aliases.clear();
         self.signature_param_names.clear();
@@ -4201,8 +4206,46 @@ impl PrintC {
         } else {
             None
         };
+        self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
         self.void_tail_return = None;
+        self.label_names.clear();
+    }
+
+    /// Give every printed label a distinct name.  Block duplication (return
+    /// splitting, tail duplication, const-return peeling) leaves two leaves
+    /// with the same entry address, and both can be goto targets.  Labeled
+    /// leaves are visited in tree order; the first keeps `label_<addr>`, the
+    /// n-th copy becomes `label_<addr>_<n>`, and a goto resolves its target
+    /// leaf through the same map.
+    fn assign_label_names(&mut self, fd: &Funcdata, sroot: BlockId) {
+        use crate::block::BlockType;
+        self.label_names.clear();
+        let sb = fd.sblocks_ref();
+        let mut targets = Vec::new();
+        let mut stack = vec![sroot];
+        while let Some(b) = stack.pop() {
+            let blk = sb.block(b);
+            if blk.get_type() == BlockType::Copy {
+                if blk.is_unstructured_target() {
+                    targets.push(b);
+                }
+                continue;
+            }
+            stack.extend(blk.get_list().iter().rev().copied());
+        }
+        if targets.len() < 2 {
+            return;
+        }
+        let mut seen: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for b in targets {
+            let base = self.address_label_name(fd, b);
+            let n = seen.entry(base.clone()).or_insert(0);
+            *n += 1;
+            if *n > 1 {
+                self.label_names.insert(b, format!("{base}_{n}"));
+            }
+        }
     }
 
     /// C++ `PrintC::emitBlockGraph` (printc.cc:2895): emit each component block.
@@ -4316,8 +4359,19 @@ impl PrintC {
     /// block, rendered in kuna's angr style as `label_<addr>`
     /// ([`kuna_label_name`](crate::database::kuna_label_name)).  Falls back to the
     /// reverse-post `LAB_<index>` form only when the block has no resolvable entry
-    /// address, keeping a `goto`/target pair always consistent.
+    /// address, keeping a `goto`/target pair always consistent.  A duplicated
+    /// leaf takes the suffixed name [`assign_label_names`](PrintC::assign_label_names)
+    /// gave it.
     pub(crate) fn block_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
+        if !self.label_names.is_empty() {
+            if let Some(name) = fd.sblocks_ref().get_front_leaf(bl).and_then(|f| self.label_names.get(&f)) {
+                return name.clone();
+            }
+        }
+        self.address_label_name(fd, bl)
+    }
+
+    fn address_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
         let addr = fd.sblock_entry_addr(bl);
         if addr.is_invalid() {
             let idx = fd.sblocks_ref().block(bl).get_index();
