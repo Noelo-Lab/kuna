@@ -740,7 +740,9 @@ pub(super) fn writes_base(ops: &[FullOp], base: &PicBase) -> bool {
 /// *register*, which is the address-taken case (`lea eax,[ebx-0x1119]`).
 /// Intermediate temporaries are deliberately not reported: in an indexed access
 /// like `mov al,[ebx+edx+0x87]` the array base is computed into one, and filing
-/// it would claim a reference to an address the instruction never forms.
+/// it would claim a reference to an address the instruction never forms. A
+/// register left holding the fall-through is a return address only in an
+/// instruction that [`super::xrefs::links`].
 pub(super) fn refs_through_base(
     ops: &[FullOp],
     base: &PicBase,
@@ -776,10 +778,7 @@ pub(super) fn refs_through_base(
         if let Some(o) = &op.out {
             if ctx.is_register(o) {
                 if let Some(v) = m.konst(o) {
-                    // A call materializes its own return address in a register on
-                    // several architectures; that is the instruction after this
-                    // one, not a reference.
-                    if v != fall_through {
+                    if v != fall_through || !super::xrefs::links(ops) {
                         admit(v, XrefKind::Data, &mut out);
                     }
                 }
@@ -905,12 +904,27 @@ mod tests {
         assert!(refs_through_base(&ops, &base, &ctx(&r), &MAPPED, 0).is_empty());
     }
 
+    /// A register a call leaves holding its fall-through is the return address;
+    /// a `lea` that lands on the instruction after it formed that address.
     #[test]
     fn a_calls_own_return_address_is_not_a_reference() {
         let (k, r, _u) = spaces();
         let base = PicBase { reg: vn(&r, 0xc, 4), value: 0x804a240 };
-        let ops = [op(OpCode::CPUI_COPY, Some(vn(&r, 0, 4)), vec![vn(&k, 0x8048ad9, 4)])];
+        let ops = [
+            op(OpCode::CPUI_COPY, Some(vn(&r, 0, 4)), vec![vn(&k, 0x8048ad9, 4)]),
+            op(OpCode::CPUI_CALL, None, vec![vn(&r, 0x100, 4)]),
+        ];
         assert!(refs_through_base(&ops, &base, &ctx(&r), &MAPPED, 0x8048ad9).is_empty());
+        // EAX = EBX + (-0x1767), the instruction's own fall-through.
+        let lea = [op(
+            OpCode::CPUI_INT_ADD,
+            Some(vn(&r, 0, 4)),
+            vec![vn(&r, 0xc, 4), vn(&k, 0xffffe899, 4)],
+        )];
+        assert_eq!(
+            refs_through_base(&lea, &base, &ctx(&r), &MAPPED, 0x8048ad9),
+            vec![(0x8048ad9, XrefKind::Data)]
+        );
     }
 
     #[test]

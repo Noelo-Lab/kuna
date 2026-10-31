@@ -1,0 +1,50 @@
+adrnext_* -- the fixtures for `kuna xrefs` over an address that is the
+instruction right after the one forming it (GH #1360), and over the return
+address every kind of link leaves, which is never a reference
+(decompiler/crates/kuna-cli/tests/xrefs_cli.rs).
+
+What they are
+  adrnext_aarch64      static AArch64 ELF: adr to itself, to the next and to
+                       the one after next; bl, blr and a bl to the next.
+  adrnext_macho_arm64  arm64 Mach-O dylib from the issue's own assembly.
+  adrnext_x86_64       static x86-64 ELF: lea rax,[rip] and mov eax,offset to
+                       the next instruction; call, call *, call $+5, syscall.
+  adrnext_arm          static A32/Thumb-2 ELF: adr and adr.w to the next
+                       instruction; bl, blx, mov lr,pc + bx, a bl to the next.
+  adrnext_rv64         static RV64 ELF: auipc + addi ending right before the
+                       label it forms; call, jalr ra, jal t0, a jal to the next.
+  adrnext_ppc32        static PPC32 ELF: bcl 20,31 and bl to the next, bl, bctrl.
+  adrnext_mips         static MIPS32 BE ELF: bal past its delay slot, bltzal
+                       $zero (SLEIGH's nal), jal, jalr.
+  Sources: adrnext_<arch>.S, adrnext_macho.s.
+
+Why they are vendored
+  They are assembled and linked for six foreign targets, which CI has no
+  toolchain for.
+
+Where they came from
+  Ubuntu clang 14.0.0 assembles; LLD 23.1.4 (docker image mstorsjo/llvm-mingw)
+  links the ELFs, and the rustup-bundled ld64.lld (LLD 20.1.8, rustc 1.90.0)
+  the Mach-O:
+
+      clang -target aarch64-linux-gnu -c adrnext_aarch64.S -o aarch64.o
+      clang -target x86_64-linux-gnu -c adrnext_x86_64.S -o x86_64.o
+      clang -target armv7a-linux-gnueabi -c adrnext_arm.S -o arm.o
+      clang -target riscv64-linux-gnu -c adrnext_rv64.S -o rv64.o
+      clang -target powerpc-linux-gnu -c adrnext_ppc32.S -o ppc32.o
+      clang -target mips-linux-gnu -mno-abicalls -fno-pic -c adrnext_mips.S -o mips.o
+      ld.lld -static -nostdlib -e main --build-id=none --no-relax <arch>.o \
+          -o adrnext_<arch>
+      clang -target arm64-apple-macos11 -c adrnext_macho.s -o macho.o
+      ld64.lld -dylib -arch arm64 -platform_version macos 11.0 11.0 \
+          -o adrnext_macho_arm64 macho.o
+
+  sha256:
+    485435b481aecd7f6b3aeba8611fb0e9e268c3642654943d06bf39b23a8a7cb0  adrnext_aarch64
+    638c66143eb1c594d2b4d6a4e765e788f0a750d918948f8199ba447d2bc93e10  adrnext_macho_arm64
+    c693b4479d6467064dab12779faa35292ce90739b45919d3ce0edb4177396199  adrnext_x86_64
+    1aa527299aa6b08a722e4b0da31ad175bf244b9c27fcdea7307c3a43af4314a7  adrnext_arm
+    6d3b761c7f2c6b954c7a34b0384b3e2428c8a57c0f67f607b0667fb7caf64bbe  adrnext_rv64
+    1283f5088734c9f26c9d5992903a5ed217f91624314a65852e389fb624602548  adrnext_ppc32
+    a2299c7afcfe56e14863924bdd93622258ec728de39cbf6b3fb0f35375efced8  adrnext_mips
+  Never executed.
