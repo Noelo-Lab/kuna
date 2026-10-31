@@ -192,6 +192,9 @@ impl Funcdata {
         }
         let invalid = Address::new_invalid();
         let n = h.num_instances();
+        // Both lookups read only a member's storage: a member at the storage
+        // of the member looked up before it does not map either.
+        let mut last: Option<(&Address, int4)> = None;
         for i in 0..n {
             let vn = h.get_instance(i);
             let v = match self.vbank().get(vn) {
@@ -204,6 +207,10 @@ impl Funcdata {
             if v.is_free() || !v.is_addr_tied() {
                 continue;
             }
+            if last == Some((v.get_addr(), v.get_size())) {
+                continue;
+            }
+            last = Some((v.get_addr(), v.get_size()));
             let addr = v.get_addr().clone();
             let size = v.get_size();
             // Local (stack) scope first: a `map addr s...` symbol.  `entry_addr` is the
