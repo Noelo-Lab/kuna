@@ -902,6 +902,11 @@ pub struct ArchContext {
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
     pub unknown_byte_is_char: bool,
+    /// (kuna) The printer spells residual TYPE_UNKNOWN bytes as an integer
+    /// (`realtypes` on, or an output language with no unknown-bytes type), so a
+    /// float assigned into them reads as a numeric conversion.  Read by
+    /// [`kuna_floatstore`](crate::p9_emit::kuna_floatstore).
+    pub unknown_is_integer: bool,
     /// (kuna) The output language promotes a sub-`int` argument to `int`
     /// (`LangCaps::integer_promotion`).  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -1904,6 +1909,7 @@ impl ArchContext {
             bool_byte: true, // (kuna) option boolbyte (default on)
             float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
+            unknown_is_integer: false, // (kuna) realtypes, or not C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
             cast_arith: false, // (kuna) option castarith

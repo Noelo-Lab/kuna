@@ -4392,6 +4392,8 @@ impl Architecture {
         ctx.float_bits = self.float_bits; // (kuna) floatbits
         ctx.unknown_byte_is_char =
             self.realtypes && self.print.out_lang() == crate::kuna_lang::OutLang::C;
+        ctx.unknown_is_integer =
+            self.realtypes || self.print.out_lang() != crate::kuna_lang::OutLang::C;
         ctx.int_promotion = self.print.out_lang().profile().caps.integer_promotion;
         ctx.char_byte = self.char_byte; // (kuna) charbyte
         ctx.cast_arith = self.cast_arith && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castarith

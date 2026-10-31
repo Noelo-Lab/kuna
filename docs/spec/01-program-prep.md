@@ -6070,6 +6070,23 @@ from inbound results, so asking who calls the import does not count its own
 veneer. This intentionally changes the public xref `kind` for PE `FF 25` veneers
 and x86 ELF PLT stubs from `read` to `jump`.
 
+(kuna) A call materialises its own **return address**, and the constant scan must
+not read it as a reference: it is the instruction's fall-through, which x86 pushes
+as a constant, A32 copies into `lr` and MIPS into `$ra`, so a constant equal to the
+fall-through is never filed as `Data`. AArch64 spells it differently — `bl` and
+`blr` lift `x30 = inst_start + 4` to one `INT_ADD` of two constants — so the
+fall-through never appears as a constant and the scan filed the first addend, the
+`bl`'s own address, as a `Data` reference from every call site to itself (and,
+`--to` a call site, as an incoming one). In an instruction that calls, an op that
+adds two constants into the fall-through is that same return address, and neither
+addend is filed
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (is_return_address_sum)`).
+The rule names the call's sum, not the instruction's own address: `adr x0,.`, a
+constant equal to the instruction's address, a PC-relative sum that lands anywhere
+but the fall-through, and the same sum outside a call — a Thumb-2 `vldr
+s0,[pc,#8]` reads `pc` as `inst_start + 4`, which is its fall-through only by
+width — are reported as before.
+
 (kuna) An edge also has to survive being resolved to a **node**, and the walk's
 function set is the wrong authority for this one. The walk calls nothing outside
 an executable section a function — an IAT slot lives in `.rdata`, so it is never
@@ -6710,6 +6727,92 @@ the load. A position-independent static image with no GOT and no `.dynamic`
 section (code that touches only its own strings and statics) is read as
 firmware. And in an image stripped of its mapping symbols, a datum at an odd
 address inside an executable section is filed one byte low.
+
+(kuna) PIC base folding and PIC pool composition each recognise one idiom; the
+general form of their defect is any ISA whose instructions cannot hold an address.
+AArch64 builds one as a page (`adrp x0,0x100000000`) plus a twelve-bit offset
+(`add x0,x0,#0x488`, or the offset of an `ldr`/`str`), RISC-V as `lui`'s or
+`auipc`'s high twenty bits plus an `addi`/`lw`/`sw`/`ld` offset, MIPS as `lui` plus
+`addiu`, PowerPC as `lis` plus `addi`; neither instruction names the datum, so the
+constant scan reported a static string that a function returns, a global that it
+reads and a function pointer that it loads as referenced by nothing, on arm64
+Mach-O, AArch64 ELF and RV32/RV64 ELF alike. **Register pair carrying**
+(`decompiler/crates/kuna-analysis/src/listing/kuna_regcarry.rs`) carries a
+register's constant to the instructions that fall after it. A register an
+instruction leaves holding a constant that passes the `checkOperands` floor is
+handed to its fall-through, and each instruction that receives one evaluates its
+own p-code with it seeded, over the same small integer fold PIC base folding uses.
+The three shapes that machine reads are read here too, with one difference in
+kind: the address a `LOAD` reads is a `Read`, the address a `STORE` writes a
+`Write`, and an address an `INT_ADD`/`INT_SUB` composes into a whole register is
+`Data` — forming an address is not reading it. Only a value a carried register
+contributed to is reported (the instruction's own constants are the scan's), and a
+value that stays in a temporary is not, for the indexed-access reason above.
+
+A carried value lives for at most eight instructions, is dropped when its
+register is written with anything the fold cannot follow, and survives a call only
+in a register the default prototype leaves unaffected and the call instruction did
+not itself write (ARM's cspec lists `lr` as unaffected, yet the `bl` writes it). An
+instruction whose p-code branches inside itself — a predicated A32 instruction, an
+x86 `rep` — passes on no register it writes, and nothing it computes past a
+p-code-relative label is filed, because a value there may come from either side
+of the label (`cinc x0,x0,eq` leaves `x0` or `x0 + 1`). Values travel only along
+fall-through, and the walk is breadth-first, so each reference records the
+instructions its value passed through; once the whole walk has drained, a
+reference is filed only if none of them is a branch target, a switch case or a
+function entry. A join is where another path may hand the register a different
+value, and two `adrp`s meeting at one `add` therefore form nothing. This gives
+up a value that every path agrees on, which the meet PIC pool composition runs
+would keep; the carry is meant for the two halves of one pair, which a compiler
+keeps in one straight run.
+
+The `Data` shape is narrower than the other two because nothing dereferences the
+value to vouch for it, and the same pair builds integers. A copy of a carried
+value (`mv a1,a0`, which RISC-V spells `addi a1,a0,0`) is the reference its source
+already was. Bitwise composition (`movk`, `ori`, `movt`) and an add narrower than
+the register it lands in (RV64 `addiw`, which truncates through a `SUBPIECE`) are
+how a program builds a number. A value formed only to form the next one — the
+middle `add` of an A32 PLT entry, whose register the very next instruction uses as
+a base and overwrites — is a step, not an address, and an access that writes its
+own address back (`ldr pc,[ip,#0x2f0]!`, `lwzu`) is one reference, the access. And
+in an ELF `ET_DYN` image, which is relocated as a whole, an absolute immediate is
+a number, never an address (`lui s2,0x3; addi s2,s2,-5` in a RISC-V shared object is
+12283, and a PJSIP library forms thousands of `70000`-range status codes that
+way), so there a constant starts a carry only when it was computed from the
+instruction's own address: `auipc`'s `imm + inst_start`, A32's `pc` read as
+`inst_start + 8`. x86-64 and AArch64 are exempt, because SLEIGH folds their
+PC-relative operands (`lea [rip+…]`, `adrp`) into a plain constant, so the PC is
+not visible, and neither builds a number from an add of two immediates. RV32 is
+where the two shapes coincide in an executable: `li a1,70000` assembles to
+`lui a1,0x11; addi a1,a1,0x170`, exactly the `%hi`/`%lo` pair of an address, so in
+an RV32 `ET_EXEC` a number that lands in a mapped section files a `Data` row — the
+same floor the constant scan applies to a lone immediate. RV64 builds that number
+with `addiw` and is not affected. The page or high half on its own is not a
+carried reference; an `adrp` page that is itself a mapped address keeps the `Data`
+row the constant scan always gave it.
+
+Most instructions never reach the evaluation. One is evaluated when a carry
+reaches it, or when it could start one: it calls nothing, some modelled op yields
+an address-like constant, some register is written by a modelled op from constants
+and temporaries alone (the first register an evaluation can know is always written
+that way), and in an `ET_DYN` image some modelled op reads a constant in the
+instruction's PC window. An instruction failing any of these would leave nothing
+to carry or keep, so the gate decides what is evaluated, never what is filed.
+
+Measured over 86 images (AArch64 ELF and Mach-O, ARM, MIPS, PowerPC, RISC-V,
+x86-64, i386 PE and the vendored fixtures): no row is lost, and of the 14,550 rows
+added, 10,994 on RISC-V match GNU objdump's own `lui`/`auipc` pair annotation
+exactly, 895 more trace back through a base objdump annotated, 2,237 on AArch64,
+MIPS, PowerPC and x86-64 match an independent capstone def-chain resolver, the 344
+ARM PLT slot reads match the entries' own `add`/`add`/`ldr` arithmetic, and the
+other 80 (Thumb `adr` + `ldrd` pool reads, a MIPS delay-slot `addiu`, a RISC-V
+`c.lui` store and an `amoswap` on a lock) were checked by hand. The walk
+itself costs about 2% more on x86-64 and ARM, where little is carried, 2-3% more
+on MIPS and PowerPC, and 4-7% more on AArch64 and RISC-V, where a high half
+precedes nearly every global access. Roughly half of that is the evaluation; the
+rest is the new rows themselves, rendering each one's instruction text (about
+2 µs a row on AArch64) and filing it (the 9,331 rows of a RISC-V PJSIP library).
+Emitted C is unchanged.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
