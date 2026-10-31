@@ -556,6 +556,21 @@ is a union but the high's preferred type is scalar. The operand then prints as
 `storage.integer` rather than a cast of the whole `storage` union, which C
 rejects. Only an existing selection is copied; no field is chosen anew.
 
+**A float stored into unknown bytes (kuna).** `cast_standard` needs no cast
+into `TYPE_UNKNOWN`, so upstream prints a float stored through a pointer to
+unknown bytes as `*puVar1 = fVar2`, a bit copy into an `undefined4`. kuna's C
+declares unknown bytes as an integer, and the same assignment is C's numeric
+float-to-integer conversion: a pointer whose other stores are integer bit
+patterns (clang stores a `1.0f` constant as `0x3f800000` from an integer
+register) printed its `vstr`, `movss` or `str s0` store as `v1[2] = a0 * a1 +
+0.5f;` beside `unsigned int *v1`. At the STORE's pointer slot, when the
+pointee (through typedefs and qualifiers) is unknown bytes and the stored value
+is a float of the same size, `get_input_cast_store` asks for a pointer to the
+value's type with the pointee's qualifiers (`kuna_floatstore.rs (pointer)`),
+and the store prints as `*(float *)&v1[2] = a0 * a1 + 0.5f;`; the value slot
+then matches its pointee and takes no cast. This is a correctness fix with no
+option.
+
 **A signed read of an unsigned-printing expression (kuna).** The `U` suffix
 `mark_explicit_unsigned` gives a constant makes its whole C expression
 unsigned (`a0 - 1U`), and so does an operand declared `unsigned` or
