@@ -326,7 +326,8 @@ fn stripped_go_pe_functions_recovered_from_pclntab() {
 /// and a function it reaches only that way gains a `sub_<addr>` alias beside its
 /// pclntab name; on, those are not walked, and only the roots keep the alias
 /// their entry source gave them. The inventory (addresses, names, sizes) is the
-/// same either way.
+/// same either way. With `gopclntab` off nothing commits the table's functions,
+/// so the walk keeps every root.
 #[test]
 fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
     if !go_available() {
@@ -344,17 +345,17 @@ fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
         let bin = out_bin.to_str().expect("utf8 path").to_string();
         let specs = repo_root().join("specs");
         let spec_roots = vec![specs.to_str().unwrap().to_string()];
-        let inventory = |prune: &str| {
+        let inventory = |options: &[(&str, &str)]| {
             let mut prog = bootstrap_from_object(&bin, "", &spec_roots)
                 .expect("bootstrap fixture with built processor specs");
-            for (option, value) in [("fast_funcdisc", "on"), ("gowalkprune", prune)] {
+            for &(option, value) in [("fast_funcdisc", "on")].iter().chain(options) {
                 prog.arch_mut().set_kuna_option(option, value).expect("option applies");
             }
             prog.commit_pending_analysis().expect("analysis commit succeeds");
             prog.function_entries_canonical()
         };
-        let walked = inventory("off");
-        let pruned = inventory("on");
+        let walked = inventory(&[("gowalkprune", "off")]);
+        let pruned = inventory(&[("gowalkprune", "on")]);
 
         let shape = |entries: &[kuna_console::engine::FunctionEntry]| {
             entries.iter().map(|e| (e.addr.get_offset(), e.name.clone(), e.size)).collect::<Vec<_>>()
@@ -376,6 +377,8 @@ fn fast_inventory_walk_leaves_pclntab_functions_to_the_table() {
             pruned_aliases.len(),
             walked_aliases.len()
         );
+        let tableless = |prune| shape(&inventory(&[("gopclntab", "off"), ("gowalkprune", prune)]));
+        assert_eq!(tableless("on"), tableless("off"), "{goos}: without gopclntab every root is walked");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

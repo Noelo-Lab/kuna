@@ -5255,16 +5255,30 @@ same functions again, and on an x64 PE it is expensive: Go's Windows linker
 writes a `.pdata` record for every Go function, so with those records as roots
 the walk decoded the whole Go text. A root at a pclntab function entry is
 therefore dropped before the walk, and every other root is kept, so cgo's C
-code and anything else the image's own records name is still walked. Measured
-on four Go images (gh 2.89.0 for Windows and Linux, two other Go PEs), the
-inventory's addresses, names and sizes do not change. What changes is that a
+code and anything else the image's own records name is still walked. (Go's
+internal linker lists a cgo image's C functions in the pclntab too, so there
+they reach the inventory through the table; an external link leaves them out of
+it, and they stay roots.) The cost is what the walk could reach only through a
+pclntab function's body: it is no longer found unless something else names
+it. Go code calls C only through function pointers (`asmcgocall`, the cgo
+wrappers' data words), so this takes Go assembly that CALLs C code directly, in
+an externally linked image whose C carries neither symbols nor unwind records;
+there the called function and its callees are lost and the function before them
+absorbs their bytes. Measured on four Go images (gh 2.89.0 for Windows and
+Linux, two other Go PEs), on cgo builds (internal and external link, the race
+detector, c-shared, plugin) for Linux and Windows, and on Go builds for macOS
+and the BSDs, the inventory's addresses, names and sizes do not change. What changes is that a
 Go function the walk reached only by a call no longer also carries a
 `sub_<addr>` alias; a function another source of entries names (a `.pdata`
 record, an entry oracle) keeps its alias as before; the decompiled C is the
 same. The pruning applies only where `fast_funcdisc` builds the walk without
 the full Listing, which is fast mode on every surface. With the Listing on,
-every root is walked as before. `--option gowalkprune off` walks the Go
-functions again.
+every root is walked as before. The pruning also waits for the `gopclntab`
+pass: it applies only when the load-time verdict is Go (the verdict that chose
+the pass set, so a `sourcelang` force issued after the load does not count)
+and `gopclntab` is on, since with the pass off nothing else would put the
+dropped roots' functions in the inventory. `--option gowalkprune off` walks
+the Go functions again.
 
 The second source covers indirect-only callbacks. On non-ARM objects, scan
 allocated, initialized, non-executable data for pointer-width runs of at least
