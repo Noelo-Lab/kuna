@@ -233,15 +233,42 @@ impl SegmentDef {
 /// `jmp [cs:bx+table]` in a code segment the spec's 64 KiB `currentCS` guess gets
 /// wrong reads arbitrary words; such a table is rejected whole (the jump stays a
 /// jump-as-call), since truncating would keep the rows before the first miss.
-pub fn table_leaves_image(fd: &crate::funcdata::Funcdata, addresstable: &[Address]) -> bool {
+/// Only a jump whose target is worked out through a SEGMENTOP is judged: a Z80
+/// spec declares a segment op its unsegmented build never emits, and a `jp (hl)`
+/// table there with a row in RAM or the BIOS is followed as upstream does.
+pub fn table_leaves_image(
+    fd: &crate::funcdata::Funcdata,
+    indop: crate::context::OpId,
+    addresstable: &[Address],
+) -> bool {
     let arch = fd.get_arch();
-    if arch.num_segment_ops() == 0 {
+    if arch.num_segment_ops() == 0 || !target_through_segment(fd, indop) {
         return false;
     }
     let Some(loader) = arch.loader.as_ref() else { return false };
     let Ok(mut loader) = loader.try_borrow_mut() else { return false };
     let mut probe = [0u8; 1];
     addresstable.iter().any(|addr| loader.load_fill(&mut probe, addr).is_err())
+}
+
+/// Is the indirect branch `indop`'s target, or the table read that feeds it,
+/// computed by a SEGMENTOP?  A bounded walk up the target's definitions.
+fn target_through_segment(fd: &crate::funcdata::Funcdata, indop: crate::context::OpId) -> bool {
+    use kuna_num::opcodes::OpCode;
+    let mut work: Vec<crate::context::VarnodeId> = fd.obank().get(indop).and_then(|o| o.get_in(0)).into_iter().collect();
+    let mut budget = 64u32;
+    while let Some(vn) = work.pop() {
+        if budget == 0 {
+            return false;
+        }
+        budget -= 1;
+        let Some(op) = fd.vbank().get(vn).and_then(|v| v.get_def()).and_then(|d| fd.obank().get(d)) else { continue };
+        if op.code() == OpCode::CPUI_SEGMENTOP {
+            return true;
+        }
+        work.extend((0..op.num_input()).filter_map(|i| op.get_in(i)));
+    }
+    false
 }
 
 /// The values the option changes outside the per-function snapshot, kept so

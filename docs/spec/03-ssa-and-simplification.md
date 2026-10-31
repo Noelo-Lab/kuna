@@ -1918,8 +1918,13 @@ never targets bytes the image does not have, so while a segment op is active
 far unloadable row: the jump stays a jump-as-call, as with the option off,
 instead of decoding junk or failing the function on a fall-through off the end
 of the image. A wrong-segment table whose words all happen to land inside the
-image is still followed. Ghidra mode has no local `.sla` to compile the snippet,
-so there the segment ops are not decoded and the CALLOTHER stays.
+image is still followed. Only a jump whose target, or the table read feeding
+it, is computed by a SEGMENTOP is judged (a bounded walk up the target's
+definitions): the Z80 spec declares a segment op that its unsegmented build
+never emits, and a Z80 `jp (hl)` table with a row in RAM or the BIOS is
+followed as upstream follows it (`tests/stages/kuna-segmentize-z80.xml`).
+Ghidra mode has no local `.sla` to compile the snippet, so there the segment
+ops are not decoded and the CALLOTHER stays.
 
 ## 3.3 Sub-variable flow
 

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3281,
-    3281
+    3283,
+    3283
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2928,6 +2928,8 @@
     "data:segmentize #7: LES reads one far pointer, the parameter both halves came from",
     "data:segmentize #8: the far pointer is dereferenced directly",
     "data:segmentize #9: the cs-relative jump table is emulated through the snippet and recovered",
+    "data:segmentize-z80 #1: the table with a row outside the image is recovered in both passes",
+    "data:segmentize-z80 #2: the jump is never left a jump-as-call",
     "data:selected local reaches configuration",
     "data:selected local reaches first device write",
     "data:short UTF-16 #1: explicit wchar_t mapping replaces narrow exact-address data",

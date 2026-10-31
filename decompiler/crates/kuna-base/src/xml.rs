@@ -2122,7 +2122,8 @@ mod tests {
         // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
         // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
-        assert_eq!(count, 599, "corpus file count drifted");
+        // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
+        assert_eq!(count, 600, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
