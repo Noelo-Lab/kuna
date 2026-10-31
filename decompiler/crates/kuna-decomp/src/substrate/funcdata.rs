@@ -4039,20 +4039,18 @@ impl Funcdata {
             self.obank.get_mut(op).expect("bb_set_order").set_order(count);
             cur = self.obank.get(op).expect("bb_set_order").basic_neighbours().1;
         }
-        let mut affected = std::collections::HashSet::new();
-        for op in self.bb_ops(bl) {
+        let mut cur = self.bb_op_head(bl);
+        while let Some(op) = cur {
             let operation = self.obank.get(op).expect("bb_set_order");
-            if let Some(output) = operation.get_out() {
-                affected.insert(output);
-            }
-            for slot in 0..operation.num_input() {
-                if let Some(input) = operation.get_in(slot) {
-                    affected.insert(input);
+            cur = operation.basic_neighbours().1;
+            let vns: smallvec::SmallVec<[VarnodeId; 4]> =
+                operation.get_out().into_iter().chain((0..operation.num_input()).filter_map(|i| operation.get_in(i))).collect();
+            for vn in vns {
+                let marked = self.vbank.get(vn).is_none_or(|v| v.is_cover_dirty_flag() && v.get_high().is_none());
+                if !marked {
+                    crate::p6_variables::merge::MergeContext::vn_set_cover_dirty(self, vn);
                 }
             }
-        }
-        for vn in affected {
-            crate::p6_variables::merge::MergeContext::vn_set_cover_dirty(self, vn);
         }
     }
 
