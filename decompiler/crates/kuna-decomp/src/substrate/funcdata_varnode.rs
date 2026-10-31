@@ -2456,38 +2456,106 @@ impl Funcdata {
         offset: int4,
         main_flags: kuna_base::types::uint4,
     ) -> bool {
-        use crate::expression::traverse_flags;
+        let mut memo = AncestorMemo::default();
+        self.ancestor_op_use_in(&mut memo, maxlevel, invn, op, trial, offset, main_flags).is_used()
+    }
+
+    /// [`ancestor_op_use`](Self::ancestor_op_use), or with `every_path` the
+    /// upstream walk with no memo, and the number of steps it took.
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn ancestor_op_use_counted(
+        &mut self,
+        every_path: bool,
+        maxlevel: int4,
+        invn: VarnodeId,
+        op: OpId,
+        trial: &mut crate::fspec::ParamTrial,
+        offset: int4,
+        main_flags: kuna_base::types::uint4,
+    ) -> (bool, u64) {
+        let mut memo = AncestorMemo { every_path, ..AncestorMemo::default() };
+        let used = self.ancestor_op_use_in(&mut memo, maxlevel, invn, op, trial, offset, main_flags).is_used();
+        (used, memo.steps)
+    }
+
+    /// One [`ancestor_op_use`](Self::ancestor_op_use) step, answered from
+    /// `memo` when an earlier step of the same call already found no use from
+    /// `invn` under paths it still cuts (kuna; spec chapter 04).
+    #[allow(clippy::too_many_arguments)]
+    fn ancestor_op_use_in(
+        &mut self,
+        memo: &mut AncestorMemo,
+        maxlevel: int4,
+        invn: VarnodeId,
+        op: OpId,
+        trial: &mut crate::fspec::ParamTrial,
+        offset: int4,
+        main_flags: kuna_base::types::uint4,
+    ) -> Ancestry {
         if maxlevel == 0 || crate::decompile_drive::budget_probe() {
-            return false;
+            return Ancestry::Unused { cut: 0, bounded: true };
         }
+        let key = memo.key(invn, offset, main_flags);
+        if let Some(found) = key.and_then(|k| memo.recall(self, k, maxlevel)) {
+            return found;
+        }
+        #[cfg(test)]
+        {
+            memo.steps += 1;
+        }
+        let found = self.ancestor_op_step(memo, maxlevel, invn, op, trial, offset, main_flags);
+        if let Some(k) = key {
+            memo.remember(k, maxlevel, found);
+        }
+        found
+    }
+
+    /// The C++ `ancestorOpUse` body for one Varnode, recursing through
+    /// [`ancestor_op_use_in`](Self::ancestor_op_use_in).
+    #[allow(clippy::too_many_arguments)]
+    fn ancestor_op_step(
+        &mut self,
+        memo: &mut AncestorMemo,
+        maxlevel: int4,
+        invn: VarnodeId,
+        op: OpId,
+        trial: &mut crate::fspec::ParamTrial,
+        offset: int4,
+        main_flags: kuna_base::types::uint4,
+    ) -> Ancestry {
+        use crate::expression::traverse_flags;
         let written = self.vbank().get(invn).map(|v| v.is_written()).unwrap_or(false);
         if !written {
             let is_input = self.vbank().get(invn).map(|v| v.is_input()).unwrap_or(false);
             if !is_input {
-                return false;
+                return Ancestry::NONE;
             }
             let is_typelock =
                 self.vbank().get(invn).map(|v| v.is_type_lock()).unwrap_or(false);
             if !is_typelock {
-                return false;
+                return Ancestry::NONE;
             }
             // typelocked input is as good as written.
-            return self.only_op_use(invn, op, trial, main_flags);
+            return Ancestry::of(self.only_op_use(invn, op, trial, main_flags));
         }
         let def = self.vbank().get(invn).and_then(|v| v.get_def());
         let def = match def {
             Some(d) => d,
-            None => return self.only_op_use(invn, op, trial, main_flags),
+            None => return Ancestry::of(self.only_op_use(invn, op, trial, main_flags)),
         };
         let code = self.obank().get(def).map(|o| o.code()).unwrap_or(OpCode::CPUI_COPY);
         match code {
             OpCode::CPUI_INDIRECT => {
                 if self.obank().get(def).map(|o| o.is_indirect_creation()).unwrap_or(false) {
-                    return self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags);
+                    return Ancestry::of(
+                        self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags),
+                    );
                 }
                 let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
                 if let Some(in0) = in0 {
-                    return self.ancestor_op_use(
+                    return self.ancestor_op_use_in(
+                        memo,
                         maxlevel - 1,
                         in0,
                         op,
@@ -2496,26 +2564,36 @@ impl Funcdata {
                         main_flags | traverse_flags::indirect,
                     );
                 }
-                false
+                Ancestry::NONE
             }
             OpCode::CPUI_MULTIEQUAL => {
                 // Trim loops via the op mark bit.
                 if self.obank().get(def).map(|o| o.is_mark()).unwrap_or(false) {
-                    return false;
+                    return Ancestry::Unused { cut: memo.cut_at(def), bounded: false };
                 }
                 self.obank_mut().get_mut(def).expect("ancestorOpUse: def").set_mark();
+                let depth = memo.enter(def);
+                let (mut cut, mut bounded) = (0, false);
                 let ninput = self.obank().get(def).map(|o| o.num_input()).unwrap_or(0);
                 for k in 0..ninput {
                     let ink = self.obank().get(def).and_then(|o| o.get_in(k));
                     if let Some(ink) = ink {
-                        if self.ancestor_op_use(maxlevel - 1, ink, op, trial, offset, main_flags) {
-                            self.obank_mut().get_mut(def).expect("ancestorOpUse: def").clear_mark();
-                            return true;
+                        match self.ancestor_op_use_in(memo, maxlevel - 1, ink, op, trial, offset, main_flags) {
+                            Ancestry::Used => {
+                                memo.leave();
+                                self.obank_mut().get_mut(def).expect("ancestorOpUse: def").clear_mark();
+                                return Ancestry::Used;
+                            }
+                            Ancestry::Unused { cut: c, bounded: b } => {
+                                cut |= c;
+                                bounded |= b;
+                            }
                         }
                     }
                 }
+                memo.leave();
                 self.obank_mut().get_mut(def).expect("ancestorOpUse: def").clear_mark();
-                false
+                Ancestry::Unused { cut: cut & AncestorMemo::above(depth), bounded }
             }
             OpCode::CPUI_COPY => {
                 let space_internal = self
@@ -2531,27 +2609,27 @@ impl Funcdata {
                     .unwrap_or(false);
                 if space_internal || incidental || in0_incid {
                     if let Some(in0) = in0 {
-                        return self.ancestor_op_use(maxlevel - 1, in0, op, trial, offset, main_flags);
+                        return self.ancestor_op_use_in(memo, maxlevel - 1, in0, op, trial, offset, main_flags);
                     }
                 }
-                self.only_op_use(invn, op, trial, main_flags)
+                Ancestry::of(self.only_op_use(invn, op, trial, main_flags))
             }
             OpCode::CPUI_PIECE => {
                 let in1 = self.obank().get(def).and_then(|o| o.get_in(1));
                 let in1_size = in1.and_then(|v| self.vbank().get(v)).map(|v| v.get_size()).unwrap_or(0);
                 if offset == 0 {
                     if let Some(in1) = in1 {
-                        return self.ancestor_op_use(maxlevel - 1, in1, op, trial, 0, main_flags);
+                        return self.ancestor_op_use_in(memo, maxlevel - 1, in1, op, trial, 0, main_flags);
                     }
-                    return false;
+                    return Ancestry::NONE;
                 }
                 if offset == in1_size {
                     let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
                     if let Some(in0) = in0 {
-                        return self.ancestor_op_use(maxlevel - 1, in0, op, trial, 0, main_flags);
+                        return self.ancestor_op_use_in(memo, maxlevel - 1, in0, op, trial, 0, main_flags);
                     }
                 }
-                false
+                Ancestry::NONE
             }
             OpCode::CPUI_SUBPIECE => {
                 let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
@@ -2601,7 +2679,8 @@ impl Funcdata {
                     .unwrap_or(false);
                 if space_internal || incidental || in0_incid || overlap_match {
                     if let Some(in0) = in0 {
-                        return self.ancestor_op_use(
+                        return self.ancestor_op_use_in(
+                            memo,
                             maxlevel - 1,
                             in0,
                             op,
@@ -2611,13 +2690,132 @@ impl Funcdata {
                         );
                     }
                 }
-                self.only_op_use(invn, op, trial, main_flags)
+                Ancestry::of(self.only_op_use(invn, op, trial, main_flags))
             }
             OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => {
-                self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags)
+                Ancestry::of(self.kuna_forced_scoring() && self.only_op_use(invn, op, trial, main_flags))
             }
-            _ => self.only_op_use(invn, op, trial, main_flags),
+            _ => Ancestry::of(self.only_op_use(invn, op, trial, main_flags)),
         }
+    }
+}
+
+// ===========================================================================
+// (kuna) The no-use memo of one ancestor_op_use call
+// ===========================================================================
+
+/// What one [`Funcdata::ancestor_op_use`] step found above a Varnode.
+#[derive(Clone, Copy)]
+enum Ancestry {
+    /// An ancestor is only used by the matched op.
+    Used,
+    /// None is. `cut` holds the [`AncestorMemo::path`] positions of the marked
+    /// MULTIEQUALs that trimmed a path above the Varnode; `bounded` says
+    /// whether `maxlevel` ended one.
+    Unused { cut: u64, bounded: bool },
+}
+
+impl Ancestry {
+    const NONE: Ancestry = Ancestry::Unused { cut: 0, bounded: false };
+
+    fn of(used: bool) -> Ancestry {
+        if used {
+            Ancestry::Used
+        } else {
+            Ancestry::NONE
+        }
+    }
+
+    fn is_used(self) -> bool {
+        matches!(self, Ancestry::Used)
+    }
+}
+
+/// A recorded no-use answer: it holds at every `maxlevel` up to `bound` (any
+/// level when `None`) while every MULTIEQUAL in `cut` is marked.
+struct UnusedAbove {
+    bound: Option<int4>,
+    cut: smallvec::SmallVec<[OpId; 4]>,
+}
+
+type AncestorKey = (VarnodeId, int4, uint4);
+
+/// (kuna) The no-use answers of one top-level `ancestor_op_use` call.
+///
+/// The recursion enumerates paths, and through MULTIEQUALs with many inputs
+/// one Varnode is reached by millions of them. A step's answer depends on the
+/// Varnode, the offset and flags it is reached with, `maxlevel`, and the
+/// MULTIEQUALs marked on the path to it, but only on the marked ones a path
+/// above it ran into. A no-use answer records those (`cut`) and whether the
+/// level bound ended a path, and is reused at a lower or equal level while all
+/// of `cut` is still marked: every path that step would walk avoids `cut`, so
+/// the recorded step walked it and found no use (and set the same trial
+/// flags). A use ends the whole call, so it is never recorded.
+#[derive(Default)]
+struct AncestorMemo {
+    /// The MULTIEQUALs marked on the current path, outermost first.
+    path: Vec<OpId>,
+    unused: crate::kuna_fasthash::FxHashMap<AncestorKey, UnusedAbove>,
+    #[cfg(test)]
+    every_path: bool,
+    #[cfg(test)]
+    steps: u64,
+}
+
+impl AncestorMemo {
+    /// The bits of the path positions above `depth`.
+    fn above(depth: usize) -> u64 {
+        if depth >= 64 {
+            u64::MAX
+        } else {
+            (1u64 << depth) - 1
+        }
+    }
+
+    /// A step's key, or `None` when no MULTIEQUAL is on the path (one path
+    /// reaches the step) or the path is too deep to track.
+    fn key(&self, vn: VarnodeId, offset: int4, flags: uint4) -> Option<AncestorKey> {
+        #[cfg(test)]
+        if self.every_path {
+            return None;
+        }
+        (!self.path.is_empty() && self.path.len() < 64).then_some((vn, offset, flags))
+    }
+
+    /// The path bit of the marked MULTIEQUAL `multi`.
+    fn cut_at(&self, multi: OpId) -> u64 {
+        self.path.iter().position(|&m| m == multi).filter(|&p| p < 64).map_or(0, |p| 1u64 << p)
+    }
+
+    fn enter(&mut self, multi: OpId) -> usize {
+        self.path.push(multi);
+        self.path.len() - 1
+    }
+
+    fn leave(&mut self) {
+        self.path.pop();
+    }
+
+    fn recall(&self, fd: &Funcdata, key: AncestorKey, maxlevel: int4) -> Option<Ancestry> {
+        let known = self.unused.get(&key)?;
+        if known.bound.is_some_and(|b| maxlevel > b) {
+            return None;
+        }
+        let mut cut = 0;
+        for &m in &known.cut {
+            if !fd.obank().get(m).is_some_and(|o| o.is_mark()) {
+                return None;
+            }
+            cut |= self.cut_at(m);
+        }
+        Some(Ancestry::Unused { cut, bounded: known.bound.is_some() })
+    }
+
+    fn remember(&mut self, key: AncestorKey, maxlevel: int4, found: Ancestry) {
+        let Ancestry::Unused { cut, bounded } = found else { return };
+        let cut = self.path.iter().take(64).enumerate().filter(|&(p, _)| cut & (1u64 << p) != 0);
+        let cut = cut.map(|(_, &m)| m).collect();
+        self.unused.insert(key, UnusedAbove { bound: bounded.then_some(maxlevel), cut });
     }
 }
 
@@ -3226,6 +3424,9 @@ fn op_iop_encode(op: OpId) -> uintb {
 pub(crate) fn op_iop_decode(val: uintb) -> OpId {
     OpId::from(slotmap::KeyData::from_ffi(val))
 }
+
+#[cfg(test)]
+mod ancestor_tests;
 
 #[cfg(test)]
 mod tests {

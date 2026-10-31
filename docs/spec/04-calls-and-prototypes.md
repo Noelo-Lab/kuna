@@ -1436,13 +1436,29 @@ classified:
   `mark_inactive` also sets CHECKED, so no later pass re-scores it and the
   argument's producer is reaped.
 
-  *(kuna decompile-all watchdog)* The ancestor recursion tries every input of
-  every MULTIEQUAL it passes, up to `trim_recurse_max` levels, and runs a full
-  `only_op_use` walk at each top ancestor, so on a function whose phis join
-  hundreds of paths one `ActionActiveParam` pass runs for many minutes inside
-  one action (CPython 3.11's `_PyEval_EvalFrameDefault` stays in it past a
-  1,200 s budget). Every `ancestor_op_use` call and every step of an
-  `only_op_use` walk therefore probes the drive's budget through
+  (kuna) The ancestor recursion is upstream's: it tries every input of every
+  MULTIEQUAL it passes, and only the MULTIEQUALs on the current path are
+  marked, so it walks paths, not Varnodes. Through phis that join hundreds of
+  edges it can walk millions of paths for one trial, with an `only_op_use`
+  walk at the top of each. In CPython 3.11's `_PyEval_EvalFrameDefault`, each
+  of a few stack trials walked 14-16 million paths and took 12-35 s, and
+  `ActionActiveParam` was still running after 35 minutes. One call to
+  `ancestor_op_use` now keeps a memo of the steps that found no use
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+  (AncestorMemo)`). A step's key is the Varnode plus the offset and flags it
+  is reached with. With the answer, the memo records which marked MULTIEQUALs
+  above the step cut off a path below it, and the level, if any path ended at
+  the level bound. A later step with the same key reuses the "no" when its
+  level is no higher and every recorded MULTIEQUAL is still marked. Each path
+  that step could walk then avoids those MULTIEQUALs, so the first step walked
+  it too and found no use, and also set the same trial flags (`rem_formed`).
+  A "yes" ends the call, so it is never stored. A step with no MULTIEQUAL above
+  it is reached by one path only, so it skips the memo. The answers, and so the
+  output, are the same as the walk over every path. On the CPython function,
+  13 passes now take 15 s in all.
+
+  *(kuna decompile-all watchdog)* Every `ancestor_op_use` step and every step
+  of an `only_op_use` walk also probes the drive's budget through
   `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (budget_probe)`;
   once it is spent the walks answer *not a parameter* at once, and
   `check_input_trial_use` asks the clock before each trial, so it stops at the
