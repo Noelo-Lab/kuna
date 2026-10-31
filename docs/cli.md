@@ -1225,6 +1225,11 @@ be quoted too, as the DOS target needs: `load raw "x86:LE:16:Real Mode:default"
   the generic `/* WARNING: structured blocks unavailable (structuring
   declined) */` means the pipeline *ran* and produced no structured blocks —
   a different failure.
+- **a render past the budget prints nothing**: when printing runs past what
+  the drive left of `--max-fn-seconds`, the console's `print C` refuses, stdout
+  is empty, and stderr carries `error: decompilation failed for <fn> in
+  <binary>: per-function decompile budget exceeded (<N> s) in rendering C` and
+  the `--max-fn-seconds` note.
 
 **Load and analysis failures (DIV-90).** `kuna decompile` runs the engine in a
 subprocess, so it recovers *why* a run failed from the console transcript — and

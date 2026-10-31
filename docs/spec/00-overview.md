@@ -1639,8 +1639,10 @@ basic block and every 256 Varnodes of its local declarations
 (PrintC::emit_basic_block_ops, PrintC::emit_local_var_decls)`) and stops
 printing once it has passed; the batch probes again after the C text and
 after the variable extraction. A render past the budget never reaches the
-output: the function's `error` (or the console command's error) is the
-budget message naming `rendering C` or `extracting variables`. A function
+output: the function's `error` (or the console command's error, which
+`kuna decompile` reports as `decompilation failed for <fn> in <binary>:`
+followed by it) is the budget message naming `rendering C` or `extracting
+variables`. A function
 whose drive and rendering complete before expiry is byte-identical with or
 without a budget, and the console/parity paths set one only through
 `decomp_dbg --max-fn-seconds`. It is not a hard wall around discovery,
