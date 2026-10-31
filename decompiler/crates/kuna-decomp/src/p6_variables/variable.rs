@@ -1145,11 +1145,44 @@ pub struct HighIntersectTest {
     affecting_ops: PcodeOpSet,
     /// IR revision used by the saved positions and crossing decisions.
     affecting_ops_revision: u64,
+    /// (kuna) While a run of tests that edits nothing is open, the instances
+    /// of each large high whose Cover has each block.
+    instance_blocks: Option<crate::kuna_fasthash::FxHashMap<HighVariableId, InstanceBlocks>>,
 }
+
+/// The instances of one HighVariable whose Cover has each block, in instance
+/// order.
+pub type InstanceBlocks = crate::kuna_fasthash::FxHashMap<int4, Vec<VarnodeId>>;
 
 impl HighIntersectTest {
     pub fn new(affecting_ops: PcodeOpSet) -> HighIntersectTest {
-        HighIntersectTest { highedgemap: BTreeMap::new(), affecting_ops, affecting_ops_revision: 0 }
+        HighIntersectTest {
+            highedgemap: BTreeMap::new(),
+            affecting_ops,
+            affecting_ops_revision: 0,
+            instance_blocks: None,
+        }
+    }
+
+    /// Open a run of tests between which nothing edits the function or merges
+    /// a HighVariable: until [`Self::end_instance_blocks`], a high's instances
+    /// can be looked up by block.
+    pub(crate) fn begin_instance_blocks(&mut self) {
+        self.instance_blocks = Some(Default::default());
+    }
+
+    /// Close the run [`Self::begin_instance_blocks`] opened.
+    pub(crate) fn end_instance_blocks(&mut self) {
+        self.instance_blocks = None;
+    }
+
+    /// `high`'s instances by block while a run is open, built by `build` on first use.
+    pub(crate) fn instance_blocks(
+        &mut self,
+        high: HighVariableId,
+        build: impl FnOnce() -> InstanceBlocks,
+    ) -> Option<&InstanceBlocks> {
+        Some(self.instance_blocks.as_mut()?.entry(high).or_insert_with(build))
     }
 
     /// Clear any cached tests (C++ `clear`).
@@ -1170,6 +1203,9 @@ impl HighIntersectTest {
     /// Remove cached intersection tests for a given HighVariable (C++
     /// `HighIntersectTest::purgeHigh`, `variable.cc:1058-1073`).
     pub fn purge_high(&mut self, high: HighVariableId) {
+        if let Some(blocks) = self.instance_blocks.as_mut() {
+            blocks.remove(&high);
+        }
         // Collect the `b` endpoints of all (high, b) edges, then erase both
         // directions of each.  The C++ does the same with lower_bound ranges and
         // an erase that avoids invalidating the iterator; over a BTreeMap we
