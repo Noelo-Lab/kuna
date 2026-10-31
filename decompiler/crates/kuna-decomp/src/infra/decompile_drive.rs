@@ -754,6 +754,7 @@ pub fn build_and_follow_flow_within_budget(
     let result = {
         let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
         let fd = build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+        deadline_passed_in("flow following");
         budget_error(arch).map_or(fd, Err)
     };
     arch.kuna_fn_deadline = outer;
