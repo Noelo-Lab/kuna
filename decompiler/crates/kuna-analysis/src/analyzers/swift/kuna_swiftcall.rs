@@ -26,7 +26,8 @@
 //!   struct and `Class **` for a class, or the metadata for a static
 //!   requirement; a protocol's default implementations take the model only;
 //! - a symbol the demangler places in a class or struct (an image that kept
-//!   its symbols): a method, accessor, initializer or deinitializer, with
+//!   its symbols): a method, accessor, property observer, initializer or
+//!   deinitializer, with
 //!   `throws` read off its function type.
 //!
 //! Only `self` is typed, and only when the body reads the register at its
@@ -273,7 +274,9 @@ fn member(entity: &NodeRef) -> Option<(NodeRef, SelfIs, bool)> {
         | Kind::ModifyAccessor
         | Kind::Modify2Accessor
         | Kind::ReadAccessor
-        | Kind::Read2Accessor => {
+        | Kind::Read2Accessor
+        | Kind::WillSet
+        | Kind::DidSet => {
             let storage = entity.first()?;
             if !matches!(storage.kind, Kind::Variable | Kind::Subscript) {
                 return None;
@@ -365,4 +368,23 @@ pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mu
         });
     }
     stats
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn member_of(symbol: &str) -> Option<(SelfIs, bool)> {
+        let tree = demangle_swift_tree(symbol)?;
+        let [entity] = tree.children.as_slice() else { return None };
+        member(entity).map(|(_, is, throws)| (is, throws))
+    }
+
+    #[test]
+    fn property_observers_take_self() {
+        assert!(member_of("$s1m1KC1vSivw") == Some((SelfIs::Instance, false)));
+        assert!(member_of("$s1m1KC1vSivW") == Some((SelfIs::Instance, false)));
+        assert!(member_of("$s1m1SV1wSivW") == Some((SelfIs::Instance, false)));
+        assert!(member_of("$s1m1gSivW").is_none());
+    }
 }
