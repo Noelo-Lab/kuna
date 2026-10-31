@@ -115,7 +115,7 @@
 //! Default-**on**: this only ever REMOVES an argument, and only against a decoded
 //! body that contradicts it. Flip `off` to restore the pre-option rendering.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -163,8 +163,8 @@ const MAX_WRITTEN_BYTES: usize = 4096;
 /// How many cuts one summary keeps before declaring itself incomplete.
 const MAX_CUTS: usize = 64;
 
-/// A set of individual register-space bytes, keyed by `(space index, offset)`.
-type ByteSet = BTreeSet<(int4, u64)>;
+mod byteset;
+use byteset::ByteSet;
 
 /// What a bounded decode of a callee body proves about its entry liveness.
 ///
@@ -554,6 +554,36 @@ impl CalleeEntryDead {
             && self.skipped.as_deref().map_or(true, |s| s.leaves_untouched(idx, off, end))
     }
 
+    /// Drop the spare capacity the walk left, since the run keeps the summary
+    /// for every later caller of the callee.
+    fn shrink_to_fit(&mut self) {
+        let sets = [
+            &mut self.live_read_bytes,
+            &mut self.unpadded_read_bytes,
+            &mut self.stored_read_bytes,
+            &mut self.cond_written,
+        ];
+        for set in sets {
+            set.shrink_to_fit();
+        }
+        for cut in self.cuts.iter_mut().chain(&mut self.opaque_cuts).chain(&mut self.trap_cuts) {
+            cut.shrink_to_fit();
+        }
+        for (_, cut) in &mut self.named_cuts {
+            cut.shrink_to_fit();
+        }
+        self.reads.shrink_to_fit();
+        self.reads_live.shrink_to_fit();
+        self.return_reads.shrink_to_fit();
+        self.cuts.shrink_to_fit();
+        self.opaque_cuts.shrink_to_fit();
+        self.named_cuts.shrink_to_fit();
+        self.trap_cuts.shrink_to_fit();
+        if let Some(skipped) = self.skipped.as_deref_mut() {
+            skipped.shrink_to_fit();
+        }
+    }
+
     /// Record one unnameable-transfer terminator, so a consumer of this
     /// evidence can unit-test the forwarding case without a translator.
     #[cfg(test)]
@@ -653,9 +683,11 @@ impl CalleeEntryDead {
 pub struct ForwardTransfer {
     /// The register-space manager index this answers for.
     reg_idx: int4,
-    /// Written sets, one per unaccounted-for terminator in the closure: a range
-    /// is transfer free only if every one of them already contains it.
-    cut_sets: Vec<ByteSet>,
+    /// The bytes every unaccounted-for terminator in the closure has already
+    /// written: a range is transfer free only if each terminator's written set
+    /// contains it, so their meet is all a query reads. `None` when there is no
+    /// such terminator.
+    cut_meet: Option<ByteSet>,
     /// Bytes read before being written somewhere in the closure, on a path that
     /// carried the caller's value there.
     forbidden: ByteSet,
@@ -665,7 +697,15 @@ impl ForwardTransfer {
     /// The answer that proves nothing: a single empty cut set leaves no range
     /// transfer free.
     fn denied(reg_idx: int4) -> Self {
-        ForwardTransfer { reg_idx, cut_sets: vec![ByteSet::new()], forbidden: ByteSet::new() }
+        ForwardTransfer { reg_idx, cut_meet: Some(ByteSet::new()), forbidden: ByteSet::new() }
+    }
+
+    /// Add one terminator that had written `written` on the way to it.
+    fn cut(&mut self, written: &ByteSet) {
+        self.cut_meet = Some(match self.cut_meet.take() {
+            Some(meet) => meet.intersection(written),
+            None => written.clone(),
+        });
     }
 
     /// Can a value the caller left in `[addr, addr+size)` reach code that reads
@@ -689,7 +729,7 @@ impl ForwardTransfer {
         if (off..end).any(|b| self.forbidden.contains(&(idx, b))) {
             return false;
         }
-        self.cut_sets.iter().all(|c| (off..end).all(|b| c.contains(&(idx, b))))
+        self.cut_meet.as_ref().is_none_or(|c| (off..end).all(|b| c.contains(&(idx, b))))
     }
 }
 
@@ -751,20 +791,19 @@ fn fold_node(
     if !dead.is_complete() || dead.reg_idx != reg_idx {
         return ForwardTransfer::denied(reg_idx);
     }
-    let mut out = ForwardTransfer {
-        reg_idx,
-        cut_sets: dead.opaque_cuts().to_vec(),
-        forbidden: dead.read_bytes(),
-    };
+    let mut out = ForwardTransfer { reg_idx, cut_meet: None, forbidden: dead.read_bytes() };
+    for c in dead.opaque_cuts() {
+        out.cut(c);
+    }
     for (target, written) in dead.named_cuts() {
         match answer(target) {
             TargetAnswer::Accounted => {}
-            TargetAnswer::Unaccounted => out.cut_sets.push(written.clone()),
+            TargetAnswer::Unaccounted => out.cut(written),
             TargetAnswer::Through(sub) => {
-                for c in &sub.cut_sets {
-                    out.cut_sets.push(c.union(written).cloned().collect());
+                if let Some(meet) = &sub.cut_meet {
+                    out.cut(&meet.union(written));
                 }
-                out.forbidden.extend(sub.forbidden.difference(written).cloned());
+                out.forbidden.append(&mut sub.forbidden.difference(written));
             }
         }
     }
@@ -1016,8 +1055,8 @@ impl Pushed {
     /// Count every pending push as a read after all: something read the stack
     /// in a way the walk cannot place, or the path left for code it does not see.
     fn flush(&mut self, res: &mut CalleeEntryDead) {
-        for (_, _, bytes) in self.slots.drain(..) {
-            res.unpadded_read_bytes.extend(bytes);
+        for (_, _, mut bytes) in self.slots.drain(..) {
+            res.unpadded_read_bytes.append(&mut bytes);
         }
     }
 
@@ -1026,8 +1065,8 @@ impl Pushed {
         let (hit, keep): (Vec<_>, Vec<_>) =
             self.slots.drain(..).partition(|(o, w, _)| *o < off + size && off < *o + *w);
         self.slots = keep;
-        for (_, _, bytes) in hit {
-            res.unpadded_read_bytes.extend(bytes);
+        for (_, _, mut bytes) in hit {
+            res.unpadded_read_bytes.append(&mut bytes);
         }
     }
 
@@ -1153,14 +1192,14 @@ impl Pushed {
     fn at_call(&mut self, res: &mut CalleeEntryDead, moved: i64, n: Option<usize>) {
         self.slots.sort_by_key(|s| s.0);
         let mut next = moved;
-        for (off, width, bytes) in self.slots.drain(..) {
+        for (off, width, mut bytes) in self.slots.drain(..) {
             let contiguous = off == next;
             if contiguous {
                 next += width;
             }
             let pad = contiguous && matches!(n, Some(n) if off - moved >= 8 * n as i64);
             if !pad {
-                res.unpadded_read_bytes.extend(bytes);
+                res.unpadded_read_bytes.append(&mut bytes);
             }
         }
     }
@@ -1239,6 +1278,7 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.cond_written.clear();
         res.skipped = None;
     }
+    res.shrink_to_fit();
     res
 }
 

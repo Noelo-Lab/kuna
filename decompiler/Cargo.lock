@@ -246,10 +246,12 @@ dependencies = [
  "kuna-decomp",
  "kuna-num",
  "kuna-sleigh",
+ "memchr",
  "msvc-demangler",
  "object",
  "pdb",
  "rustc-demangle",
+ "smallvec",
  "undname",
 ]
 

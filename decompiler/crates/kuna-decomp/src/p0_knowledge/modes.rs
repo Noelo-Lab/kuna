@@ -551,7 +551,7 @@ mod tests {
         /// it on that correct `int` prints as a wrong `long long` (GH-904). In
         /// the preset it would be the default output under 500 KiB, which is
         /// exactly what it is opt-in to avoid; every mode keeps the default,
-        /// `evidence`, which joins that way only on proof.
+        /// `callers`, which joins that way only on proof.
         /// `mixedtailret` returns a value a function tested beside a tail call,
         /// and a `void` guard that leaves the tested value in the return
         /// register compiles to the same bytes (clang's ARM `thr`/`keep`), so

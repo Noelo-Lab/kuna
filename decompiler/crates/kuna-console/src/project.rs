@@ -361,7 +361,7 @@ fn decompile_batch(
         landed(&r);
         out.push(r);
     });
-    converge_synthesized_structs(prog, opts, &replay, &mut out);
+    converge_synthesized_structs(prog, opts, &replay, &mut out, &mut |_| {});
     converge_element_globals(prog, opts, &replay, &mut out);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     if opts.want_pointer_arguments {
@@ -420,7 +420,8 @@ pub fn converge_element_globals(
 /// time, because the structure it was given first still answers for it.
 ///
 /// A redo that fails where the first pass succeeded -- a watchdog budget spent
-/// the second time round -- keeps the first body.
+/// the second time round -- keeps the first body. `starting` is told the index
+/// of each redo before it runs.
 ///
 /// A batch that synthesized nothing pays one ledger probe for the whole run.
 pub fn converge_synthesized_structs(
@@ -428,6 +429,7 @@ pub fn converge_synthesized_structs(
     opts: &DecompileOptions,
     targets: &[FunctionEntry],
     out: &mut [FuncResult],
+    starting: &mut dyn FnMut(usize),
 ) {
     let stale = superseded_struct_names(prog);
     if stale.is_empty() {
@@ -440,6 +442,7 @@ pub fn converge_synthesized_structs(
         .map(|(i, _)| i)
         .collect();
     for i in redo {
+        starting(i);
         let again = decompile_entry(prog, targets[i].clone(), opts);
         if redo_replaces(&out[i], &again) {
             out[i] = again;
@@ -858,6 +861,7 @@ pub fn decompile_pulled(
                 }
                 let emitted_name = fd.get_display_name().to_string();
                 prog.arch_mut().print_mut().set_record_pointer_arguments(want_pointer_arguments);
+                let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
                 let rendered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     if header_carries_types {
                         crate::kuna_projectfunctionnames::reserve(prog.arch(), &mut fd)
@@ -875,6 +879,9 @@ pub fn decompile_pulled(
                         (print_c(prog.arch_mut(), &fd), Default::default(), Vec::new())
                     };
                     let pointerargs = prog.arch_mut().print_mut().take_pointer_arguments(&untrimmed);
+                    if let Some(err) = budget.error() {
+                        return Err(err.explain().to_string());
+                    }
                     let code = untrimmed.trim_matches('\n').to_string();
                     let globals = kuna_decomp::decompile_drive::extract_global_objects(prog.arch());
                     let calls = if want_proto && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C {
@@ -929,8 +936,17 @@ pub fn decompile_pulled(
                         .as_ref()
                         .map(|ctx| ctx.scan(&fd, byte_address))
                         .unwrap_or_default();
+                    if budget.spent_in("extracting variables") {
+                        return Err(budget.error().map(|e| e.explain().to_string()).unwrap_or_default());
+                    }
                     Ok::<_, String>((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects))
-                })).unwrap_or_else(|_| Err("panic while rendering C / extracting variables".into()));
+                })).unwrap_or_else(|_| {
+                    Err(budget.error().map_or_else(
+                        || "panic while rendering C / extracting variables".to_string(),
+                        |e| e.explain().to_string(),
+                    ))
+                });
+                drop(budget);
                 fd.set_display_name(&original_display);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, pointerargs, stack_objects)) => {

@@ -24,12 +24,13 @@
 //! Origin (upstream Ghidra): `Ghidra/Features/MicrosoftCodeAnalyzer/.../rtti/`.
 
 use super::refkind::RefKind;
+use kuna_decomp::kuna_fasthash::{FxHashMap, FxHashSet};
 #[cfg(test)]
 use super::refkind::End;
 
 /// A view over the loaded image's bytes addressable by virtual address — the
 /// loadable sections, sorted, so a `read(vma, len)` resolves through whichever
-/// section covers `[vma, vma+len)`, and a `find_refs` byte-search scans every
+/// section covers `[vma, vma+len)`, and a `scan_refs` byte-search scans every
 /// section. The kuna analog of reading program memory through Ghidra's
 /// `MemoryByteProvider`. Structurally the same view [`crate::pclntab`] uses.
 pub struct ImageBytes<'a> {
@@ -102,21 +103,25 @@ impl<'a> ImageBytes<'a> {
         None
     }
 
-    /// Find every aligned position in any section whose `rk`-resolved reference (the
-    /// 4-byte raw-VA / `IBO32` field) equals `target`, returning the *VMA of the
-    /// reference word* (not the target). This is the byte-search the walk uses to go
-    /// from a TypeDescriptor back to the COL that names it (`−12` from the ref) and
-    /// from a COL forward to its vftable (the word after the meta slot). Scans on a
-    /// 4-byte stride (every MSVC RTTI reference is `ref_size`-aligned in practice).
-    pub fn find_refs(&self, rk: &RefKind, target: u64) -> Vec<u64> {
-        let mut hits = Vec::new();
+    /// Every aligned position in any section whose `rk`-resolved reference (the
+    /// 4-byte raw-VA / `IBO32` field) is one of `targets`, as the *VMAs of the
+    /// reference words* grouped by the target they name, each list in scan order.
+    /// This is the byte-search the walk uses to go from a TypeDescriptor back to the
+    /// COL that names it (`−12` from the ref). One scan for every target: a search
+    /// per TypeDescriptor is `O(classes × image)`, minutes on a large C++ DLL. Scans
+    /// on a 4-byte stride (every MSVC RTTI reference is `ref_size`-aligned in practice).
+    pub fn scan_refs(&self, rk: &RefKind, targets: &FxHashSet<u64>) -> FxHashMap<u64, Vec<u64>> {
+        let mut hits = FxHashMap::<u64, Vec<u64>>::default();
+        if targets.is_empty() {
+            return hits;
+        }
         let rs = rk.ref_size();
         for &(base, data) in &self.sections {
             let mut off = 0usize;
             while off + rs <= data.len() {
                 if let Some(resolved) = rk.resolve_ref(&data[off..off + rs]) {
-                    if resolved == target {
-                        hits.push(base + off as u64);
+                    if targets.contains(&resolved) {
+                        hits.entry(resolved).or_default().push(base + off as u64);
                     }
                 }
                 off += rs;
@@ -158,13 +163,10 @@ impl<'a> ImageBytes<'a> {
             if data.len() < prefix.len() {
                 continue;
             }
-            let first = prefix[0];
-            let mut i = 0usize;
-            while i + prefix.len() <= data.len() {
-                if data[i] == first && &data[i..i + prefix.len()] == prefix {
+            for i in memchr::memchr_iter(prefix[0], &data[..=data.len() - prefix.len()]) {
+                if &data[i..i + prefix.len()] == prefix {
                     hits.push(base + i as u64);
                 }
-                i += 1;
             }
         }
         hits
@@ -176,11 +178,7 @@ impl<'a> ImageBytes<'a> {
     /// objects, and running `find_ptrs` per class is `O(classes × image)` — on a
     /// C++ library with hundreds of polymorphic classes that is the whole pass's
     /// cost. Scans on a `ptr_size` stride, once.
-    pub fn scan_ptr_slots(
-        &self,
-        rk: &RefKind,
-        targets: &std::collections::HashSet<u64>,
-    ) -> Vec<(u64, u64)> {
+    pub fn scan_ptr_slots(&self, rk: &RefKind, targets: &FxHashSet<u64>) -> Vec<(u64, u64)> {
         let mut hits = Vec::new();
         if targets.is_empty() {
             return hits;
@@ -408,6 +406,18 @@ mod tests {
         let r2 = BaseClassDescriptor::read(&img, &rk, bases[1]).unwrap();
         let base_td2 = TypeDescriptor::read(&img, &rk, r2.p_type_descriptor).unwrap();
         assert_eq!(base_td2.mangled_name, ".?AVShape@@");
+    }
+
+    #[test]
+    fn scan_refs_groups_every_reference_by_target_in_image_order() {
+        let (rdata, data, rk) = x64_img();
+        let img = ImageBytes::from_spans(vec![(0x1_4000_2000, &rdata), (0x1_4000_3000, &data)]);
+        let targets: FxHashSet<u64> = [0x1_4000_3010, 0x1_4000_3030, 0x1_4000_9000].into_iter().collect();
+        let hits = img.scan_refs(&rk, &targets);
+        assert_eq!(hits.get(&0x1_4000_3010), Some(&vec![0x1_4000_202c, 0x1_4000_2060]));
+        assert_eq!(hits.get(&0x1_4000_3030), Some(&vec![0x1_4000_2080]));
+        assert!(!hits.contains_key(&0x1_4000_9000));
+        assert!(img.scan_refs(&rk, &Default::default()).is_empty());
     }
 
     #[test]

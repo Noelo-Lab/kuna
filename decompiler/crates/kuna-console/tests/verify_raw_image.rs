@@ -292,6 +292,78 @@ fn console_load_raw_preserves_whitespace_in_final_filename() {
     assert!(stdout.contains("successfully loaded"), "{stdout}\n{stderr}");
 }
 
+/// (kuna #1288) A raw x86 real-mode image states its code segment when one
+/// segment holds it: CS 0 in the first 64 KiB, else its base paragraph. A near
+/// CALL wraps IP inside that segment and pushes IP; a larger image states none
+/// and takes the linear sum above 64 KiB. The default `segmentize` folds the
+/// push into the frame, so the pushed IP is read with the option off.
+#[test]
+fn raw_real_mode_images_decode_near_calls_in_their_code_segment() {
+    let image = |size: usize, code: &[(usize, &[u8])]| {
+        let mut bytes = vec![0u8; size];
+        for (at, insn) in code {
+            bytes[*at..*at + insn.len()].copy_from_slice(insn);
+        }
+        bytes
+    };
+    let ret7: &[u8] = &[0xb8, 0x07, 0x00, 0xc3];
+    let cases: [(&str, u64, Vec<u8>, u64, u64, &str); 3] = [
+        // CS 0: IP 0x0103 - 0x7000 wraps to 0x9103.
+        (
+            "raw-x86-com",
+            0x100,
+            image(0x9007, &[(0, &[0xe8, 0x00, 0x90, 0xc3]), (0x9003, ret7)]),
+            0x100,
+            0x9103,
+            "= 0x103;",
+        ),
+        // C800:FFF0: IP 0xfff3 + 0x7000 wraps to C800:6FF3; the CALL pushes IP 0xfff3.
+        (
+            "raw-x86-rom",
+            0xc8000,
+            image(0x10000, &[(0xfff0, &[0xe8, 0x00, 0x70, 0xc3]), (0x6ff3, ret7)]),
+            0xd7ff0,
+            0xceff3,
+            "= 0xfff3;",
+        ),
+        // 132 KiB at 0x10000 states no segment: 0x2b683 + 0x498d; the CALL pushes 0xb683.
+        (
+            "raw-x86-large",
+            0x10000,
+            image(0x21000, &[(0x1b680, &[0xe8, 0x8d, 0x49, 0xc3]), (0x20010, ret7)]),
+            0x2b680,
+            0x30010,
+            "= 0xb683;",
+        ),
+    ];
+    for (stem, base, bytes, caller, callee, pushed) in cases {
+        let fixture = RawFixture::new(stem, &bytes);
+        let path = fixture.0.to_string_lossy();
+        let mut program = bootstrap_from_raw(
+            &path,
+            "x86:LE:16:Real Mode:default",
+            base,
+            &[caller],
+            None,
+            &specs(),
+        )
+        .expect("bootstrap raw real-mode fixture with built specs");
+        program.commit_pending_analysis().unwrap();
+        assert!(program.find_entry_at(callee).is_some(), "{stem}: no function at {callee:#x}");
+        let entry = program.find_entry_at(caller).expect("seeded raw entry must resolve");
+        for segmentize in ["on", "off"] {
+            program.arch_mut().set_kuna_option("segmentize", segmentize).expect("segmentize flips");
+            let results = decompile_targets(&mut program, vec![entry.clone()], true, false, false);
+            assert!(results[0].error.is_none(), "{stem}: {:?}", results[0].error);
+            let code = results[0].code.as_deref().unwrap();
+            assert!(code.contains(&format!("sub_{callee:x}();")), "{stem}:\n{code}");
+            if segmentize == "off" {
+                assert!(code.contains(pushed), "{stem}:\n{code}");
+            }
+        }
+    }
+}
+
 #[test]
 fn raw_input_rejects_missing_metadata_and_unmapped_entries() {
     let fixture = RawFixture::thumb_return_7();

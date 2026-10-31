@@ -11,7 +11,7 @@ use crate::architecture::Architecture;
 use crate::context::OpId;
 use crate::fspec::{FuncCallSpecs, FuncProto, ParamActive, ProtoModel};
 use crate::funcdata::Funcdata;
-use crate::kuna_bejoin::{BeJoinMode, WidePair};
+use crate::kuna_bejoin::WidePair;
 
 pub mod mips;
 mod proof;
@@ -106,7 +106,7 @@ impl Drop for ProofSlot {
 
 /// Copy previously frozen facts into a fresh drive without discovering a fact.
 pub fn seed(arch: &Architecture, data: &mut Funcdata) {
-    let proof = if arch.call_wide && arch.be_join == BeJoinMode::Evidence {
+    let proof = if arch.call_wide && arch.be_join.proves() {
         arch.kuna_callwide
             .0
             .as_ref()
@@ -123,7 +123,7 @@ pub fn seed(arch: &Architecture, data: &mut Funcdata) {
 
 /// The same verdict is read by the producer's own return and every direct call.
 pub fn proven(data: &Funcdata, entry: &Address) -> bool {
-    if !data.get_arch().call_wide || crate::kuna_bejoin::mode(data) != BeJoinMode::Evidence {
+    if !data.get_arch().call_wide || !crate::kuna_bejoin::mode(data).proves() {
         return false;
     }
     let Some(space) = entry.get_space() else {
@@ -547,7 +547,7 @@ pub fn publish_mips(
 ) -> usize {
     arch.kuna_callwide.clear();
     if !arch.call_wide
-        || arch.be_join != BeJoinMode::Evidence
+        || !arch.be_join.proves()
         || arch.archid != "MIPS:BE:32:default:default"
     {
         return 0;

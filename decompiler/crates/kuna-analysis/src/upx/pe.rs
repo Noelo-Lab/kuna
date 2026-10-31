@@ -225,11 +225,7 @@ impl PeHeader {
         let width = match le16(b, opt)? {
             0x10b => Width::Pe32,
             0x20b => Width::Pe32Plus,
-            magic => {
-                return Err(corrupt(format!(
-                    "optional header magic {magic:#x} is neither PE32 nor PE32+"
-                )))
-            }
+            magic => return Err(unsupported(format!("PE optional header magic {magic:#x}"))),
         };
         if nsec == 0 || nsec > 96 {
             return Err(corrupt(format!("PE header declares {nsec} sections")));
@@ -383,7 +379,7 @@ fn target_width(img: &Image<'_>, info: &PackInfo) -> Result<Width, UpxError> {
         }
     };
     if img.hdr.width != width {
-        return Err(corrupt(format!(
+        return Err(unsupported(format!(
             "PackHeader names {} but the packed image is {}",
             super::format_name(info.format),
             img.hdr.width.name()
@@ -452,7 +448,7 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
     let skip = le32(&obuf, trailer_end)? as usize;
     let mut oh = PeHeader::parse(&obuf, skip, Layout::Trailer)?;
     if oh.width != width {
-        return Err(corrupt(format!(
+        return Err(unsupported(format!(
             "PackHeader names {} but the recovered header is {}",
             info.format_name(),
             oh.width.name()
@@ -811,29 +807,35 @@ fn table_names_dlls(table: &[u32], base: u32, wanted: &BTreeSet<u32>) -> bool {
 /// even when the original imports nothing from it, so one descriptor naming
 /// that DLL is allowed beyond the set the trailer asks for.
 ///
-/// The scan reads only bytes the file holds, and gives up after one candidate
-/// per four file bytes -- all an honest image, whose sections do not overlap in
-/// the file, can need.
+/// The scan reads only section bytes the file holds, and gives up after two
+/// descriptor reads per four file bytes. An honest image, whose sections do not
+/// overlap in the file, rejects nearly every candidate on its first descriptor,
+/// so it needs about half that; a region of descriptors that all name wanted
+/// DLLs would otherwise cost a full table walk per candidate.
 fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxError> {
     let wanted: BTreeSet<u32> = dlls.iter().map(|d| d.name_off).collect();
     if wanted.len() > MAX_LOADER_DLLS {
-        return Err(corrupt(format!(
-            "trailer names {} DLLs, more than a loader table holds",
+        return Err(unsupported(format!(
+            "trailer names {} DLLs; this build follows loader tables of at most {MAX_LOADER_DLLS}",
             wanted.len()
         )));
     }
-    let agrees = |base: u32| -> bool {
+    let mut reads = img.bytes.len() / 2 + img.hdr.sections.len() + 2 * (MAX_LOADER_DLLS + 1);
+    let mut agrees = |base: u32| -> Result<bool, UpxError> {
         let mut names = Vec::new();
         let mut stub_kernel32 = false;
         for k in 0..=MAX_LOADER_DLLS {
+            reads = reads
+                .checked_sub(1)
+                .ok_or_else(|| corrupt("packed image holds too many candidate loader tables to scan"))?;
             let Some(at) = base.checked_add((k * IMPORT_DESC_SIZE) as u32) else {
-                return false;
+                return Ok(false);
             };
             let Some(desc) = img.at_rva(at, IMPORT_DESC_SIZE) else {
-                return false;
+                return Ok(false);
             };
             if desc.iter().all(|&b| b == 0) {
-                return table_names_dlls(&names, base, &wanted);
+                return Ok(table_names_dlls(&names, base, &wanted));
             }
             let name = u32::from_le_bytes([desc[12], desc[13], desc[14], desc[15]]);
             // Nearly every position a scan tries fails on its first descriptor;
@@ -842,31 +844,27 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
                 let kernel32 =
                     img.cstr_at_rva(name).is_ok_and(|n| n.eq_ignore_ascii_case(b"KERNEL32.DLL"));
                 if stub_kernel32 || !kernel32 {
-                    return false;
+                    return Ok(false);
                 }
                 stub_kernel32 = true;
                 continue;
             }
             names.push(name);
         }
-        false
+        Ok(false)
     };
     let declared = img.hdr.dir(DIR_IMPORT).0;
-    if declared != 0 && agrees(declared) {
+    if declared != 0 && agrees(declared)? {
         return Ok(declared);
     }
-    let mut budget = img.bytes.len() / 4 + img.hdr.sections.len();
     let mut found = None;
     for s in &img.hdr.sections {
         let present = img.bytes.len().saturating_sub(s.rawptr as usize);
         let end = (u64::from(s.vaddr) + (s.rawsize as usize).min(present) as u64).min(1 << 32);
         let mut rva = u64::from(s.vaddr);
         while rva < end {
-            budget = budget.checked_sub(1).ok_or_else(|| {
-                corrupt("packed sections overlap too much to scan for a loader table")
-            })?;
             let at = rva as u32;
-            if agrees(at) {
+            if agrees(at)? {
                 if found.is_some_and(|f| f != at) {
                     return Err(corrupt("packed image has more than one loader import table"));
                 }
@@ -1187,7 +1185,10 @@ fn rebuild_export_dir(
 /// the directory back to where the original had it, repointing every leaf UPX
 /// moved at the address recorded in front of its data. A directory UPX could
 /// not clear -- one whose pieces were not contiguous -- is still in the image,
-/// and is left there the way UPX's unpacker leaves it.
+/// and is left there the way UPX's unpacker leaves it. Unlike the import and
+/// relocation records, the packer writes this one exactly when it gives the
+/// packed header a resource directory, so a trailer without it for an image
+/// whose headers both have one is damaged, not a variant.
 fn rebuild_resources(
     img: &Image<'_>,
     obuf: &mut [u8],
@@ -1199,6 +1200,9 @@ fn rebuild_resources(
     let expected = oh.dir(DIR_RESOURCE).1 != 0 && img.hdr.dir(DIR_RESOURCE).1 != 0;
     if present && !expected {
         return Err(corrupt("trailer carries resources for an image with no resource directory"));
+    }
+    if !present && expected {
+        return Err(corrupt("trailer has no resource record for an image with resources"));
     }
     if !present {
         return Ok(());
@@ -1926,6 +1930,127 @@ mod tests {
         assert_eq!(overlay_of(overlay, end, len, 0), overlay);
         assert_eq!(overlay_of(overlay, end, len + 100, 0), overlay);
         assert_eq!(overlay_of(&appended, end, end, 0), b"");
+    }
+
+    fn put(b: &mut [u8], at: usize, v: u32) {
+        b[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// Where [`tiny_pe`] writes its one section header and its data directories.
+    const TINY_SECTION: usize = 0x40 + 24 + 224;
+    const TINY_DIRS: usize = 0x40 + 24 + 96;
+
+    /// Replay the resource rebuild of a packed image whose one section, at
+    /// `packed_rva`, is the resource directory `tree`, into a recovered image
+    /// whose `.rsrc` starts at 0x1000.
+    fn rebuild_tree(tree: &[u8], packed_rva: u32) -> Result<(), UpxError> {
+        let mut bytes = tiny_pe(tree);
+        put(&mut bytes, TINY_SECTION + 12, packed_rva);
+        put(&mut bytes, TINY_DIRS + 8 * DIR_RESOURCE, packed_rva);
+        put(&mut bytes, TINY_DIRS + 8 * DIR_RESOURCE + 4, tree.len() as u32);
+        let img = Image::new(&bytes).unwrap();
+        let mut dirs = vec![(0, 0); 16];
+        dirs[DIR_RESOURCE] = (0x1000, tree.len() as u32);
+        let rsrc = Section { vsize: 0x10000, vaddr: 0x1000, rawsize: 0x10000, rawptr: 0x400 };
+        let oh = PeHeader {
+            at: 0,
+            width: Width::Pe32,
+            opt_size: 224,
+            hdr_len: 24 + 224,
+            flags: 0,
+            code_size: 0,
+            code_base: 0x1000,
+            image_base: 0x40_0000,
+            file_align: 0x200,
+            sections: vec![rsrc],
+            dirs,
+            table_at: 24 + 224,
+        };
+        let mut obuf = vec![0u8; 0x20000];
+        let mut trailer = obuf.len() - 2;
+        rebuild_resources(&img, &mut obuf, &oh, 0x1000, true, &mut trailer)
+    }
+
+    /// A root directory with one entry naming the data entry at 24, which
+    /// holds `data_rva` and a zero size; `len` pads the tree.
+    fn one_leaf_tree(data_rva: u32, len: usize) -> Vec<u8> {
+        let mut tree = vec![0u8; len];
+        tree[14..16].copy_from_slice(&1u16.to_le_bytes());
+        put(&mut tree, 16, 3);
+        put(&mut tree, 20, 24);
+        put(&mut tree, 24, data_rva);
+        tree
+    }
+
+    /// A data entry whose last eight bytes lie past the packed directory's
+    /// copy used to be sliced out of it anyway.
+    #[test]
+    fn a_resource_data_entry_past_its_packed_copy_is_refused() {
+        let err = rebuild_tree(&one_leaf_tree(0, 32), 0x1000).expect_err("a truncated entry");
+        assert!(format!("{err}").contains("runs past its packed copy"), "{err}");
+        rebuild_tree(&one_leaf_tree(0, 40), 0x1000).expect("the whole entry is there");
+    }
+
+    /// A moved leaf's back-pointer sits four bytes before its data, so a leaf
+    /// at address 1 has none -- it used to underflow the address instead.
+    #[test]
+    fn a_moved_resource_below_address_four_has_no_back_pointer() {
+        let err = rebuild_tree(&one_leaf_tree(1, 40), 0).expect_err("no back-pointer");
+        assert!(format!("{err}").contains("no back-pointer"), "{err}");
+    }
+
+    /// A section whose raw data lies past the end of the file maps no bytes,
+    /// so a DLL name it claims to hold is an error, not a slice past the end.
+    #[test]
+    fn a_section_past_the_end_of_the_file_holds_no_import_name() {
+        let mut bytes = tiny_pe(&[0x11; 0x40]);
+        put(&mut bytes, TINY_SECTION + 20, 0x10_0000);
+        let img = Image::new(&bytes).unwrap();
+        let err = img.cstr_at_rva(0x1000).expect_err("nothing is there");
+        assert!(format!("{err}").contains("outside the image"), "{err}");
+    }
+
+    /// A section mapped at the top of the address space must not wrap the
+    /// loader-table scan back to address zero (endless in release) or
+    /// overflow its end address.
+    #[test]
+    fn a_section_at_the_top_of_the_address_space_does_not_wrap_the_loader_scan() {
+        for rawsize in [0xf, 0x40] {
+            let mut bytes = tiny_pe(&[0x11; 0x40]);
+            put(&mut bytes, TINY_SECTION + 12, 0xffff_fff0);
+            put(&mut bytes, TINY_SECTION + 16, rawsize);
+            let img = Image::new(&bytes).unwrap();
+            let err = loader_import_table(&img, &dlls(&[0x80])).expect_err("no loader table");
+            assert!(format!("{err}").contains("cannot find"), "{err}");
+        }
+    }
+
+    /// More distinct DLLs than a candidate table is followed for is this
+    /// build's limit, not damage: UPX packs up to 4096 import descriptors, and
+    /// older releases any number.
+    #[test]
+    fn more_dlls_than_the_scan_follows_is_unsupported() {
+        let img_bytes = tiny_pe(&[0; 0x40]);
+        let img = Image::new(&img_bytes).unwrap();
+        let wanted: Vec<u32> = (0..=MAX_LOADER_DLLS as u32).map(|k| 0x40 + 20 * k).collect();
+        let err = loader_import_table(&img, &dlls(&wanted)).expect_err("too many DLLs");
+        assert!(matches!(err, UpxError::Unsupported(_)), "{err}");
+    }
+
+    /// A section whose every word names a wanted DLL relative to the candidate
+    /// four bytes before it would make each candidate a full table walk; the
+    /// scan's reads are bounded by the file instead.
+    #[test]
+    fn a_region_of_matching_descriptors_exhausts_the_scan_not_the_clock() {
+        let mut body = vec![0u8; 0x10000];
+        for q in (0..body.len()).step_by(4) {
+            put(&mut body, q, 0x1000 + q as u32 - 12 + 0x40);
+        }
+        let img_bytes = tiny_pe(&body);
+        let img = Image::new(&img_bytes).unwrap();
+        let wanted: Vec<u32> = (0..MAX_LOADER_DLLS as u32).map(|k| 0x40 + 20 * k).collect();
+        let err = loader_import_table(&img, &dlls(&wanted)).expect_err("no table, many walks");
+        assert!(format!("{err}").contains("too many candidate loader tables"), "{err}");
     }
 
     /// An eight-byte directory is the empty block "some tricky dlls use", which

@@ -77,7 +77,7 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
     if bss {
         return slots
             .into_iter()
-            .map(|(addr, name)| PltSym { addr, name })
+            .map(|(addr, name)| PltSym { addr, name, slot: None })
             .collect();
     }
     if slots.is_empty() {
@@ -110,6 +110,7 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
                 out.push(PltSym {
                     addr: section.address() + off as u64,
                     name: name.clone(),
+                    slot: None,
                 });
             }
         }

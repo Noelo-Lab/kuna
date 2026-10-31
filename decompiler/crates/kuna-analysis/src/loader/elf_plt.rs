@@ -50,6 +50,8 @@ pub(crate) struct PltSym {
     pub addr: u64,
     /// Imported function name (raw `.dynstr` bytes, `@VERSION` stripped).
     pub name: Vec<u8>,
+    /// The GOT slot the stub jumps through, when it was decoded from the stub.
+    pub slot: Option<u64>,
 }
 
 /// Resolve PLT-stub call targets to their imported function names.
@@ -351,7 +353,7 @@ fn decode_x86_64_ifunc_stubs(
                 if !named.contains_key(&got) && named_got.insert(got) {
                     let stub =
                         vma + x86_stub_start(data, i, &[0xF3, 0x0F, 0x1E, 0xFA]) as u64;
-                    out.push(PltSym { addr: stub, name: format!("ifunc_{resolver:x}").into_bytes() });
+                    out.push(PltSym { addr: stub, name: format!("ifunc_{resolver:x}").into_bytes(), slot: None });
                 }
             }
             i += 6;
@@ -428,7 +430,7 @@ fn record(
 ) {
     if let Some(name) = map.get(&got) {
         if named_got.insert(got) {
-            out.push(PltSym { addr: stub, name: name.clone() });
+            out.push(PltSym { addr: stub, name: name.clone(), slot: Some(got) });
         }
     }
 }
@@ -978,7 +980,7 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
         // import's `refAddr`); this is the indirect call target the decompiler
         // resolves after $gp recovery.  Skip a 0 slot (unresolvable).
         if ext.stub_addr != 0 {
-            out.push(PltSym { addr: ext.stub_addr, name: ext.name });
+            out.push(PltSym { addr: ext.stub_addr, name: ext.name, slot: None });
         }
     }
     out

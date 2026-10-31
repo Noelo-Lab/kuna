@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna: hoisting a shared if/else suffix must not free a block a goto still
+    names.  dedupitetail moves the statement both arms end with to after the
+    if.  When that leaves an arm with one component, the arm's list is
+    unwrapped and freed.  Here a goto from the else arm targets the whole true
+    arm, so the goto kept the freed list's id, and printing its label panicked
+    (substrate/block.rs "invalid SlotMap key used"; Ghidra 12.1.2's
+    llio_i386.dll sub_10001fee hit it).  The goto now names the arm's sole
+    component, which starts at the same statement and prints the same label.
+
+    Stage / sub-stage: P8 structure, goto-quality
+    (p8_structure/kuna_dedupitetail.rs, BlockGraph::kuna_hoist_ite_suffix).
+    Two passes: option dedupitetail off keeps one shared(y) per arm, and the
+    default hoists it to one copy after the if.  No option gates the fix; before
+    it the second pass panicked.
+
+    Hand-assembled x86-64 (as -64, bytes verbatim):
+
+        g:        push rbx; mov ebx,esi; cmp edi,1; je else_arm
+        true_arm: call cond_a; test eax,eax; je t_shared; call body_a
+        t_shared: mov edi,ebx; call shared; jmp conv
+        else_arm: call cond_b; test eax,eax; je e_shared
+                  call cond_c; test eax,eax; jne true_arm
+        e_shared: mov edi,ebx; call shared
+        conv:     mov edi,ebx; call post; pop rbx; ret
+        cond_a/cond_b/cond_c: xor eax,eax; ret    body_a/shared/post: ret
+
+    Asserts: shared( appears three times over both passes (two copies, then
+    one), each pass prints the goto and its label once, and only the default
+    pass logs the merge.
+-->
+<bytechunk space="ram" offset="0x100000">
+5389f383ff017417e83400000085c07405e83400000089dfe82e000000eb19e8
+2000000085c07409e81a00000085c075d789dfe81300000089dfe80d0000005b
+c331c0c331c0c331c0c3c3c3c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="g"/>
+<symbol space="ram" offset="0x100041" name="cond_a"/>
+<symbol space="ram" offset="0x100044" name="cond_b"/>
+<symbol space="ram" offset="0x100047" name="cond_c"/>
+<symbol space="ram" offset="0x10004a" name="body_a"/>
+<symbol space="ram" offset="0x10004b" name="shared"/>
+<symbol space="ram" offset="0x10004c" name="post"/>
+</binaryimage>
+<script>
+  <com>option dedupitetail off</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupitetail on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="shared(y) is printed once per arm, then once after the if" min="3" max="3">shared\(</stringmatch>
+<stringmatch name="each pass jumps into the true arm" min="2" max="2">goto label_100008;</stringmatch>
+<stringmatch name="each pass prints that label" min="2" max="2">label_100008:</stringmatch>
+<stringmatch name="only the default pass merges the tail" min="1" max="1">// ite-dedupe</stringmatch>
+<stringmatch name="post(y) runs once per pass" min="2" max="2">post\(</stringmatch>
+</decompilertest>

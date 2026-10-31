@@ -705,3 +705,112 @@ fn repeatapply_deadline_bounds_nonconverging_action() {
     // expiry into a per-function error).
     assert!(total <= 2);
 }
+
+/// Removes a COPY nothing reads, as dead-op removal does.
+struct DeadCopyRule;
+
+impl Rule for DeadCopyRule {
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        let Some(out) = data.obank().get(op).and_then(|o| o.get_out()) else {
+            return 0;
+        };
+        if !data.vbank().get(out).unwrap().has_no_descend() {
+            return 0;
+        }
+        data.note_dead_removal(op);
+        data.op_destroy(op);
+        if !data.obank().get(op).unwrap().is_dead() {
+            data.obank_mut().mark_dead(op);
+        }
+        1
+    }
+    fn get_op_list(&self) -> Vec<OpCode> {
+        vec![OpCode::CPUI_COPY]
+    }
+    fn clone_rule(&self, _g: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        Some(Box::new(DeadCopyRule))
+    }
+    fn removes_dead_ops(&self) -> bool {
+        true
+    }
+}
+
+/// Logs every INT_XOR it is offered and walks as far as a sub-variable flow.
+struct FarLogRule {
+    log: Log,
+}
+
+impl Rule for FarLogRule {
+    fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
+        self.log.borrow_mut().push("far".into());
+        0
+    }
+    fn get_op_list(&self) -> Vec<OpCode> {
+        vec![OpCode::CPUI_INT_XOR]
+    }
+    fn clone_rule(&self, _g: &ActionGroupList) -> Option<Box<dyn Rule>> {
+        Some(Box::new(FarLogRule { log: self.log.clone() }))
+    }
+    fn walks_far(&self) -> bool {
+        true
+    }
+}
+
+/// A chain of `n` COPYs, each reading the one before and the last read by
+/// nothing, interleaved with `n` INT_ADDs and `n` INT_XORs that have no
+/// output. Returns the ops still alive after the pool [dead-copy, log, far]
+/// runs to its fixpoint, how many ops the log rule was offered, and how many
+/// the far-walking rule was.
+fn run_dead_chain(n: u64, waves: bool) -> (Vec<u64>, usize, usize) {
+    let mut arch = ArchContext::new(build_manager());
+    arch.pool_dead_waves = waves;
+    let glb = Rc::new(arch);
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(ram, 0x1000), 0x10000000, 0x40).unwrap();
+    let mut prev = fd.new_constant(4, 7);
+    for i in 0..n {
+        let op = make_op(&mut fd, 0x1000 + 0x10 * i, OpCode::CPUI_COPY);
+        fd.op_set_all_input(op, &[prev]).unwrap();
+        let at = ram_addr(&fd, 0x100 + 8 * i);
+        prev = fd.new_varnode_out(4, &at, op).unwrap();
+        make_op(&mut fd, 0x1008 + 0x10 * i, OpCode::CPUI_INT_ADD);
+        make_op(&mut fd, 0x100c + 0x10 * i, OpCode::CPUI_INT_XOR);
+    }
+    let log: Log = Rc::new(RefCell::new(Vec::new()));
+    let far: Log = Rc::new(RefCell::new(Vec::new()));
+    let mut pool = ActionPool::new(ruleflags::rule_repeatapply, "pool");
+    pool.add_rule(RuleState::new("analysis", 0, "earlyremoval"), Box::new(DeadCopyRule));
+    pool.add_rule(
+        RuleState::new("analysis", 0, "log"),
+        Box::new(LogRule { tag: "log".into(), log: log.clone(), group: "analysis" }),
+    );
+    pool.add_rule(RuleState::new("analysis", 0, "far"), Box::new(FarLogRule { log: far.clone() }));
+    let mut ctx = ActionContext::new();
+    pool.perform(&mut fd, &mut ctx);
+    let alive = fd
+        .obank()
+        .iter_all()
+        .filter(|&(_, id)| !fd.obank().get(id).unwrap().is_dead())
+        .map(|(_, id)| fd.obank().get(id).unwrap().get_addr().get_offset())
+        .collect();
+    let offered = log.borrow().len();
+    let far_offered = far.borrow().len();
+    (alive, offered, far_offered)
+}
+
+/// (kuna `deadwaves`) A dead chain dies one link per pass either way and
+/// leaves the same ops; after the first pass the waves offer the other rules
+/// only the chain's next link instead of every op, and a far-walking rule
+/// every op of its opcode, as the sweep does.
+#[test]
+fn dead_waves_remove_the_chain_a_sweep_would_and_visit_only_its_links() {
+    let (swept, swept_offers, swept_far) = run_dead_chain(40, false);
+    let (waved, waved_offers, waved_far) = run_dead_chain(40, true);
+    assert_eq!(swept, waved);
+    assert_eq!(swept.len(), 80, "{swept:?}");
+    assert!(swept.iter().all(|off| off % 0x10 >= 8), "{swept:?}");
+    assert!(swept_offers > 40 * 40, "{swept_offers}");
+    assert!(waved_offers < 4 * 80, "{waved_offers}");
+    assert_eq!(swept_far, waved_far);
+    assert!(swept_far >= 40 * 40, "{swept_far}");
+}

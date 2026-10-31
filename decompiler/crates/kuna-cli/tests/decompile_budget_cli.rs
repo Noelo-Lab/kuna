@@ -98,3 +98,31 @@ fn decompile_stops_at_its_budget_and_names_the_pass() {
     );
     assert!(start.elapsed() < Duration::from_secs(60), "took {:?}", start.elapsed());
 }
+
+/// `big` in `jtglobals_x86_64` recovers its jump table after 400 calls that
+/// each guard 400 globals, while `load function` is still following flow: the
+/// memory limit covers that follow too, so the run fails `big` at it instead
+/// of growing until the drive starts.
+#[test]
+fn decompile_stops_flow_following_at_its_memory_limit() {
+    let out = common::process::output_with_timeout(
+        Command::new(env!("CARGO_BIN_EXE_kuna")).args([
+            "decompile",
+            &common::fixture("jtglobals_x86_64"),
+            "big",
+            "--max-fn-memory",
+            "200",
+            "--max-fn-seconds",
+            "0",
+            "--sleighpath",
+            &specs(),
+        ]),
+        Duration::from_secs(120),
+        Duration::from_millis(50),
+    )
+    .expect("kuna decompile did not stop within the 120 s outer bound");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("decompilation failed for big in "), "{stderr}");
+    assert!(stderr.contains("per-function memory limit exceeded (200 MiB)"), "{stderr}");
+}

@@ -726,8 +726,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         let entries = rehydrate_entries(&prog, targets)?;
         let replay = if converge { entries.clone() } else { Vec::new() };
         {
-            let mut out =
-                jobs::ResultWriter::create(&dir.join(jobs::result_name(idx)).to_string_lossy())?;
+            let out = std::cell::RefCell::new(jobs::ResultWriter::create(
+                &dir.join(jobs::result_name(idx)).to_string_lossy(),
+            )?);
             // One pulled batch for the whole chunk, not one call per function:
             // the callee-hint context is built once per call, and rebuilding the
             // program's entry set per function is unaffordable on a large image.
@@ -757,6 +758,17 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             // the pull stops at the current function rather than decompiling the
             // rest of it into a dead file.
             let write_error: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+            let write = |frame: Result<(), String>| {
+                let mut slot = write_error.borrow_mut();
+                if let (None, Err(e)) = (&*slot, frame) {
+                    *slot = Some(e);
+                }
+            };
+            let mut begin = |position: usize| {
+                if converge {
+                    write(out.borrow_mut().begin(position));
+                }
+            };
             decompile_pulled(
                 &mut prog,
                 &opts,
@@ -768,6 +780,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                     if let Some(hook) = &synth_hook {
                         hook.borrow_mut().begin(&answers[pulled]);
                     }
+                    begin(pulled);
                     pulled += 1;
                     faults.before_target(dir, entry.addr.get_offset());
                     Some(entry)
@@ -780,22 +793,18 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                         held.push(r);
                         return;
                     }
-                    let mut slot = write_error.borrow_mut();
-                    if slot.is_none() {
-                        if let Err(e) = out.push(&r) {
-                            *slot = Some(e);
-                        }
-                    }
+                    write(out.borrow_mut().push(&r));
                 },
             );
+            if converge && write_error.borrow().is_none() {
+                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held, &mut begin);
+            }
             if let Some(e) = write_error.into_inner() {
                 return Err(e);
             }
-            if converge {
-                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held);
-                for r in &held {
-                    out.push(r)?;
-                }
+            let mut out = out.into_inner();
+            for r in &held {
+                out.push(r)?;
             }
         }
         jobs::ack_chunk(idx);
@@ -1712,6 +1721,17 @@ pub(crate) fn load_program(
     Ok(prog)
 }
 
+/// What a name miss says beyond the miss itself: the `; `-separated tail of
+/// [`EntryLookupError::NotFound`] (a near spelling, the count of names the
+/// image does carry, or the data object the name labels). `None` for a bare
+/// miss, which is what a stripped image answers.
+pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
+    let EntryLookupError::NotFound { .. } = error else { return None };
+    let text = error.to_string();
+    let (_, hint) = text.split_once("\"; ")?;
+    (!hint.trim().is_empty()).then(|| hint.trim().to_string())
+}
+
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
 /// (the canonical record at that address, else a record named via the symbol
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
@@ -1775,8 +1795,18 @@ fn resolve_targets_with_policy(
             };
             match entry {
                 Ok(entry) => targets.push(entry),
-                Err(EntryLookupError::NotFound { .. }) => {
-                    eprintln!("warning: no function named {want:?} in {}", args.binary)
+                Err(error @ EntryLookupError::NotFound { .. }) => {
+                    let tail = match &error {
+                        EntryLookupError::NotFound { data: Some(_), .. } => name_miss_hint(&error),
+                        _ => None,
+                    };
+                    match tail {
+                        Some(tail) => eprintln!(
+                            "warning: no function named {want:?} in {}; {tail}",
+                            args.binary
+                        ),
+                        None => eprintln!("warning: no function named {want:?} in {}", args.binary),
+                    }
                 }
                 Err(error) => return Err(error.to_string()),
             }

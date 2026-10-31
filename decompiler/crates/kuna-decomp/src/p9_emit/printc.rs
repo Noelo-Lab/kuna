@@ -1633,6 +1633,9 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    /// Per-body spelling of a goto-target leaf whose address label another
+    /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
+    label_names: std::collections::BTreeMap<BlockId, String>,
 }
 
 impl Default for PrintC {
@@ -1676,6 +1679,7 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            label_names: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1978,6 +1982,41 @@ impl PrintC {
         self.revpol.clear();
         self.nodepend.clear();
         self.pending = 0;
+    }
+
+    /// C++ `PrintLanguage::clear` (printlanguage.cc:682), which `docFunction`
+    /// runs when a document throws ("Don't leave printer in partial state"):
+    /// drop what an interrupted document left behind, keeping every option.
+    /// Beyond the upstream emitter/RPN/mod/scope reset this drops the kuna
+    /// per-document state (the scoped `fd` pointer, unflushed end-of-line
+    /// warnings, the declared locals, the pointer-argument record) and returns a
+    /// markup render's back-end to plain text, the state every document starts
+    /// from.
+    pub fn clear(&mut self) {
+        if self.emit.emits_markup() {
+            self.set_markup(false);
+        }
+        self.emit.set_plain_statement_provenance(false);
+        self.emit.set_output_stream();
+        self.emit.clear();
+        self.context.clear();
+        self.clear_rpn();
+        self.emit_fd = None;
+        self.eol_warns.clear();
+        self.void_tail_return = None;
+        self.stmt_op = None;
+        self.label_names.clear();
+        self.local_name_overrides.clear();
+        self.indirect_input_aliases.clear();
+        self.signature_param_names.clear();
+        self.local_name_aliases.clear();
+        self.local_name_standalones.clear();
+        self.declared_locals.clear();
+        self.declared_entry = None;
+        self.pointer_decls.clear();
+        self.record_pointer_arguments = false;
+        self.pointer_record = None;
+        self.pointer_candidate = None;
     }
 
     /// C++ `PrintLanguage::pushOp` (printlanguage.cc:129).  Push an operator
@@ -2666,6 +2705,7 @@ impl PrintC {
         // of locals the scope would declare.
         let _emitted_decls = self.emit_local_var_decls(fd, arch);
         self.emit_indirect_input_aliases(fd);
+        crate::kuna_renderfault::check(fd.get_address().get_offset());
         if fd.sblocks_get_size() != 0 {
             self.emit_function_body(fd, arch);
         } else {
@@ -3228,8 +3268,12 @@ impl PrintC {
             }
             s
         };
+        let named = SameNamed::new(fd);
         let vlist: Vec<crate::context::VarnodeId> = fd.vbank().iter_loc().collect();
-        for vn in vlist {
+        for (k, vn) in vlist.into_iter().enumerate() {
+            if k % 256 == 0 && crate::decompile_drive::deadline_passed_in("rendering C") {
+                break;
+            }
             let high = match fd.vbank().get(vn).and_then(|v| v.get_high()) {
                 Some(h) => h,
                 None => continue,
@@ -3272,7 +3316,7 @@ impl PrintC {
             // carries that name and has at least one NON-constant (storage)
             // instance — the stack/register varnodes the printer declares from.
             let has_storage_sibling = all_constant
-                && fd.high_bank().iter().any(|(id, h)| {
+                && same_named(fd, named.get(&name)).any(|(id, h)| {
                     id != high
                         && h.kuna_name() == Some(name.as_str())
                         && (0..h.num_instances()).any(|i| {
@@ -3283,7 +3327,7 @@ impl PrintC {
                         })
                 });
             if has_storage_sibling {
-                if let Some(owner) = reference_owner(fd, high, &name) {
+                if let Some(owner) = reference_owner(fd, named.get(&name), high, &name) {
                     self.local_name_aliases.insert(high, owner);
                 }
                 continue;
@@ -3332,10 +3376,10 @@ impl PrintC {
                 });
                 composite
                     && h.kuna_symbol_offset() >= 0
-                    && high_name_has_whole_sibling(fd, high, &name)
+                    && high_name_has_whole_sibling(fd, named.get(&name), high, &name)
             });
             if is_proto_partial_piece {
-                if let Some(root) = owner_in_group(fd, high, &name, |_, h| h.kuna_symbol_offset() == -1) {
+                if let Some(root) = owner_in_group(fd, named.get(&name), high, &name, |_, h| h.kuna_symbol_offset() == -1) {
                     self.local_name_aliases.insert(high, root);
                 }
                 continue;
@@ -3371,10 +3415,10 @@ impl PrintC {
                 };
                 // A strict partial: offset into the symbol, or narrower than the whole.
                 let is_strict_partial = h.kuna_symbol_offset() > 0 || rep_size < sym_size;
-                is_strict_partial && high_name_has_scalar_whole_sibling(fd, high, &name)
+                is_strict_partial && high_name_has_scalar_whole_sibling(fd, named.get(&name), high, &name)
             });
             if is_scalar_partial_piece {
-                if let Some(whole) = owner_in_group(fd, high, &name, is_scalar_whole) {
+                if let Some(whole) = owner_in_group(fd, named.get(&name), high, &name, is_scalar_whole) {
                     self.local_name_aliases.insert(high, whole);
                 }
                 continue;
@@ -4165,8 +4209,46 @@ impl PrintC {
         } else {
             None
         };
+        self.assign_label_names(fd, sroot);
         self.emit_block_graph(fd, arch, sroot);
         self.void_tail_return = None;
+        self.label_names.clear();
+    }
+
+    /// Give every printed label a distinct name.  Block duplication (return
+    /// splitting, tail duplication, const-return peeling) leaves two leaves
+    /// with the same entry address, and both can be goto targets.  Labeled
+    /// leaves are visited in tree order; the first keeps `label_<addr>`, the
+    /// n-th copy becomes `label_<addr>_<n>`, and a goto resolves its target
+    /// leaf through the same map.
+    fn assign_label_names(&mut self, fd: &Funcdata, sroot: BlockId) {
+        use crate::block::BlockType;
+        self.label_names.clear();
+        let sb = fd.sblocks_ref();
+        let mut targets = Vec::new();
+        let mut stack = vec![sroot];
+        while let Some(b) = stack.pop() {
+            let blk = sb.block(b);
+            if blk.get_type() == BlockType::Copy {
+                if blk.is_unstructured_target() {
+                    targets.push(b);
+                }
+                continue;
+            }
+            stack.extend(blk.get_list().iter().rev().copied());
+        }
+        if targets.len() < 2 {
+            return;
+        }
+        let mut seen: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for b in targets {
+            let base = self.address_label_name(fd, b);
+            let n = seen.entry(base.clone()).or_insert(0);
+            *n += 1;
+            if *n > 1 {
+                self.label_names.insert(b, format!("{base}_{n}"));
+            }
+        }
     }
 
     /// C++ `PrintC::emitBlockGraph` (printc.cc:2895): emit each component block.
@@ -4280,8 +4362,19 @@ impl PrintC {
     /// block, rendered in kuna's angr style as `label_<addr>`
     /// ([`kuna_label_name`](crate::database::kuna_label_name)).  Falls back to the
     /// reverse-post `LAB_<index>` form only when the block has no resolvable entry
-    /// address, keeping a `goto`/target pair always consistent.
+    /// address, keeping a `goto`/target pair always consistent.  A duplicated
+    /// leaf takes the suffixed name [`assign_label_names`](PrintC::assign_label_names)
+    /// gave it.
     pub(crate) fn block_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
+        if !self.label_names.is_empty() {
+            if let Some(name) = fd.sblocks_ref().get_front_leaf(bl).and_then(|f| self.label_names.get(&f)) {
+                return name.clone();
+            }
+        }
+        self.address_label_name(fd, bl)
+    }
+
+    fn address_label_name(&self, fd: &Funcdata, bl: BlockId) -> String {
         let addr = fd.sblock_entry_addr(bl);
         if addr.is_invalid() {
             let idx = fd.sblocks_ref().block(bl).get_index();
@@ -5658,6 +5751,9 @@ impl PrintC {
         let mut separator = false;
         let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
         while let Some(inst) = cur {
+            if crate::decompile_drive::deadline_passed_in("rendering C") {
+                break;
+            }
             cur = fd.bb_op_next(inst);
             let o = match fd.obank().get(inst) {
                 Some(o) => o,
@@ -5794,6 +5890,7 @@ impl PrintC {
         // which is what upstream would have seen had the copy been propagated.
         // Only an IMPLIED input qualifies: an explicit one has a name of its own
         // and the statement really is `out = <that name>`.
+        let stmt = op;
         let (opc, in0, in1, num_input, op) = match self.inplace_through_copy(fd, opc, in0, num_input) {
             Some((inner_op, i0, i1)) => (
                 fd.obank().get(inner_op).map(|o| o.code()).unwrap_or(opc),
@@ -5864,7 +5961,8 @@ impl PrintC {
                     {
                         let mag = (!val).wrapping_add(1) & mask;
                         self.push_op(&tokens::MINUSEQUAL, Some(op_key(op)));
-                        self.push_vn_explicit_ir(fd, arch, in0, op);
+                        let (lhs, lhs_op) = self.inplace_target(fd, (in0, op), (out, stmt));
+                        self.push_vn_explicit_ir(fd, arch, lhs, lhs_op);
                         self.push_constant_ir_fmt_sign(mag, sz, op, 0, true);
                         return true;
                     }
@@ -5872,9 +5970,30 @@ impl PrintC {
             }
         }
         self.push_op(tok, Some(op_key(op)));
-        self.push_vn_explicit_ir(fd, arch, in0, op);
+        let (lhs, lhs_op) = self.inplace_target(fd, (in0, op), (out, stmt));
+        self.push_vn_explicit_ir(fd, arch, lhs, lhs_op);
         self.push_vn_ir(fd, arch, in1, op);
         true
+    }
+
+    /// The varnode an in-place `out OP= y` renders on its left, with the op it
+    /// renders against: `in0` as its op reads it, unless it covers only part of
+    /// its mapped symbol, whose read form is a cast (`(int)origin`) and not an
+    /// lvalue; the statement's output then renders the store form an ordinary
+    /// assignment uses (`*(int *)&origin`).
+    fn inplace_target(
+        &self,
+        fd: &Funcdata,
+        read: (VarnodeId, OpId),
+        write: (VarnodeId, OpId),
+    ) -> (VarnodeId, OpId) {
+        let partial = fd.vbank().get(read.0).is_some_and(|v| {
+            v.get_high()
+                .and_then(|high| self.emitted_high_symbol(fd, high))
+                .and_then(|(_, off, ty)| ty.map(|ty| off > 0 || v.get_size() < ty.get_size()))
+                .unwrap_or(false)
+        });
+        if partial { write } else { read }
     }
 
     /// C++ `PrintC::emitExpression` (printc.cc:2544): if the op has an output,
@@ -6157,6 +6276,13 @@ impl PrintC {
             // (`symbol.field`) or the cast/functional dispatch.
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op, read_op),
             OpCode::CPUI_PIECE if self.op_partial_concat_ir(fd, arch, op) => {},
+            // SEGMENTOP (printc.cc:1169 opSegmentOp): only the near pointer in
+            // slot 2 prints; slot 0 is the space and slot 1 the segment.
+            OpCode::CPUI_SEGMENTOP => {
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(2)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+            }
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
             OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),
@@ -11822,7 +11948,7 @@ pub(crate) fn declarator_parts(
 /// The name is historical: it follows the ACTIVE output language, which is read
 /// off the architecture's printer.  Callers reach it while the printer is in
 /// place; a caller that reaches it mid-emission (with the printer loaned out by
-/// `take_print`) sees the default C language, which is the safe fallback.
+/// `with_print`) sees the default C language, which is the safe fallback.
 pub fn type_to_c_string(
     arch: &Architecture,
     ct: &std::rc::Rc<crate::dtype::Datatype>,
@@ -12195,7 +12321,7 @@ impl RealTypeCtx {
     /// gates and the target's decoded data organization.
     ///
     /// `lang` is passed rather than read off `arch` because the printer is loaned
-    /// out of the architecture for the duration of emission (`take_print`), so
+    /// out of the architecture for the duration of emission (`with_print`), so
     /// the architecture's copy is a placeholder while this runs. The printer owns
     /// the selection.
     pub(crate) fn from_arch(arch: &Architecture, lang: crate::kuna_lang::OutLang) -> RealTypeCtx {
@@ -12210,6 +12336,43 @@ impl RealTypeCtx {
     }
 }
 
+/// (kuna perf) The named highs of one function grouped by name, each group in
+/// the bank's own order and built on the first search, so a declaration's
+/// search for a same-named sibling visits only that name's highs instead of
+/// every high of the function.
+struct SameNamed<'a> {
+    fd: &'a Funcdata,
+    by_name: std::cell::OnceCell<std::collections::HashMap<&'a str, Vec<crate::context::HighVariableId>>>,
+}
+
+impl<'a> SameNamed<'a> {
+    fn new(fd: &'a Funcdata) -> Self {
+        SameNamed { fd, by_name: std::cell::OnceCell::new() }
+    }
+
+    fn get(&self, name: &str) -> &[crate::context::HighVariableId] {
+        let by_name = self.by_name.get_or_init(|| {
+            let mut by_name: std::collections::HashMap<&'a str, Vec<crate::context::HighVariableId>> =
+                std::collections::HashMap::new();
+            for (id, h) in self.fd.high_bank().iter() {
+                if let Some(name) = h.kuna_name() {
+                    by_name.entry(name).or_default().push(id);
+                }
+            }
+            by_name
+        });
+        by_name.get(name).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+/// The highs `ids` names, in order (a [`SameNamed`] group).
+fn same_named<'a>(
+    fd: &'a Funcdata,
+    ids: &'a [crate::context::HighVariableId],
+) -> impl Iterator<Item = (crate::context::HighVariableId, &'a crate::variable::HighVariable)> + 'a {
+    ids.iter().filter_map(move |&id| fd.high_bank().get(id).map(|h| (id, h)))
+}
+
 /// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
 /// (printc.cc:2697): is there a *whole-symbol* sibling high (the proto-partial
 /// ROOT) sharing `name` whose `kuna_symbol_offset == -1`?  A register-returned
@@ -12220,10 +12383,11 @@ impl RealTypeCtx {
 /// piece itself (excluded so a lone whole high is not its own sibling).
 fn high_name_has_whole_sibling(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
-    fd.high_bank().iter().any(|(id, h)| {
+    same_named(fd, siblings).any(|(id, h)| {
         id != except
             && h.kuna_symbol_offset() == -1
             && h.kuna_name() == Some(name)
@@ -12244,12 +12408,12 @@ fn high_is_global(fd: &Funcdata, high: crate::context::HighVariableId) -> bool {
 /// `whole`: the declaration a skipped piece is printed through.
 fn owner_in_group(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     except: crate::context::HighVariableId,
     name: &str,
     whole: impl Fn(&Funcdata, &crate::variable::HighVariable) -> bool,
 ) -> Option<crate::context::HighVariableId> {
-    fd.high_bank()
-        .iter()
+    same_named(fd, siblings)
         .find(|(id, h)| {
             *id != except
                 && h.kuna_name() == Some(name)
@@ -12265,12 +12429,12 @@ fn owner_in_group(
 /// for.  A reference with no recorded local Symbol has no owner.
 fn reference_owner(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     high: crate::context::HighVariableId,
     name: &str,
 ) -> Option<crate::context::HighVariableId> {
     let sym = fd.high_bank().get(high)?.kuna_ref_symbol()?;
-    fd.high_bank()
-        .iter()
+    same_named(fd, siblings)
         .find(|(id, h)| {
             *id != high
                 && h.kuna_name() == Some(name)
@@ -12308,12 +12472,11 @@ fn is_scalar_whole(fd: &Funcdata, h: &crate::variable::HighVariable) -> bool {
 /// lone partial that has no whole cover.
 fn high_name_has_scalar_whole_sibling(
     fd: &Funcdata,
+    siblings: &[crate::context::HighVariableId],
     except: crate::context::HighVariableId,
     name: &str,
 ) -> bool {
-    fd.high_bank()
-        .iter()
-        .any(|(id, h)| id != except && h.kuna_name() == Some(name) && is_scalar_whole(fd, h))
+    same_named(fd, siblings).any(|(id, h)| id != except && h.kuna_name() == Some(name) && is_scalar_whole(fd, h))
 }
 
 /// Whether `spc` should use the kuna angr-style `dat_<addr>` global naming (a

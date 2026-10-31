@@ -227,6 +227,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "fatstr" => kuna_decomp::kuna_fatstr::FatStrMode::from_u8(conf.fat_str).as_str(),
         // (kuna `gobool`) Three-valued, so it reports its own token.
         "gobool" => kuna_decomp::kuna_gobool::GoBoolMode::from_u8(conf.go_bool).as_str(),
+        // (kuna `fpuemu`) Three-valued, so it reports its own token.
+        "fpuemu" => kuna_decomp::kuna_fpuemu::FpuEmuMode::from_u8(conf.fpu_emu).as_str(),
         // (kuna `gomorestack`) Three-valued, so it reports its own token.
         "gomorestack" => kuna_decomp::kuna_gomorestack::GoMorestackMode::from_u8(conf.go_morestack).as_str(),
         // (kuna `gowritebarrier`) Three-valued, so it reports its own token.
@@ -331,6 +333,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "thunkentry" => on_off(conf.analysis_thunkentry),
         "addrtakenentry" => on_off(conf.analysis_addrtakenentry),
         "ppclocalentry" => on_off(conf.analysis_ppclocalentry),
+        "gowalkprune" => on_off(conf.analysis_gowalkprune),
         // (kuna `flowmode`) Valued `on|aftercall|off`, so it reports its own token.
         "flowmode" => match (conf.analysis_flowmode, conf.analysis_flowmode_aftercall) {
             (false, _) => "off",
@@ -345,6 +348,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "elfmain" => on_off(conf.analysis_elfmain),
         "fast_funcdisc" => on_off(conf.analysis_fast_funcdisc),
         "rawdiscover" => on_off(conf.analysis_rawdiscover),
+        "mzsweep" => on_off(conf.analysis_mzsweep),
         "gopclntab" => on_off(conf.analysis_gopclntab),
         "gotypes" => on_off(conf.analysis_gotypes),
         "gonoreturn" => on_off(conf.analysis_gonoreturn),

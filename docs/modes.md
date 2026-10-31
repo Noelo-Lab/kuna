@@ -180,9 +180,10 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   the grow call on the strength of its argument shape; the callee body is never
   read. That trust is the operator's call to make about a binary, not a default.
 
-- **`bejoin`** — its default, `evidence`, joins a big-endian or AVR
-  two-register value high word first only on proof the value is that wide, in
-  every mode. `on` joins it that way whenever its low word looks returned on
+- **`bejoin`** — its default, `callers`, joins a big-endian or AVR
+  two-register value high word first only on proof the value is that wide (its
+  own instructions, or a caller that reads the second register after the
+  call), in every mode. `on` joins it that way whenever its low word looks returned on
   purpose: the rule reads the instructions, not a type, and an `int` that works
   over the high half of a 64-bit temporary compiles to the same registers as the
   `long long`, so with it on that correct `int` prints as a wrong `long long`

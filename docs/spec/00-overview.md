@@ -1542,7 +1542,11 @@ rule-pool loop (`decompiler/crates/kuna-decomp/src/infra/action.rs
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs`), before each
 range heritage's guard placement visits and before each
 address the written-slot guard guards, every 256 new values a pointer walk of
-`stackstoreguard` visits, and again after the final layout checks: the drive
+`stackstoreguard` visits, every 64 steps of a variable-merging pass
+(`decompiler/crates/kuna-decomp/src/p6_variables/merge.rs (Merge::budget)`,
+chapter 06), before each region attempt of region identification (chapter
+07), before each call-argument trial `ActionActiveParam` scores and every 256
+steps of the trial's use walks (chapter 04), and again after the final layout checks: the drive
 publishes its deadline to
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (deadline_passed)`,
 so a walk inside one pass gives up rather than run past it. Flow-time
@@ -1559,8 +1563,13 @@ ran out: the first probe to see the expiry records its site
 and later ones leave it, so the site is the innermost polled loop that was
 running when the deadline passed — an action (a rule pool adds the rule that
 applied most since the function's reset, `decompiler/crates/kuna-decomp/src/infra/action.rs
-(ActionPool::budget_site)`), heritage, region structuring, a store-reachability
-walk or a jump-table step. While a flow-time table is being recovered
+(ActionPool::budget_site)`), heritage, variable merging, region identification,
+region structuring, `action activeparam`'s trial scoring, a
+store-reachability walk or a jump-table step. A walk that recurses too often
+to read the clock at each step probes through
+`decompile_drive.rs (budget_probe)`, which reads it every 256th call and,
+once it has seen the budget spent, answers at once for the rest of the drive;
+it names no site, so the loop driving the walk names it. While a flow-time table is being recovered
 (`decompile_drive.rs (JumpTableScope)`) a site from inside that recovery — an
 action of the reduced `jumptable` pipeline, say — is suffixed with the indirect
 jump's address. Each drive starts with no site and restores the enclosing
@@ -1569,10 +1578,16 @@ decompile` passes the same budget to `decomp_dbg` (`--max-fn-seconds N`,
 default 120 like its `--json` face, `0` none), which sets it process-wide
 (`decompile_drive.rs (set_default_fn_budget_secs)`) for every drive whose
 architecture carries none. The flow `load function` / `load addr` follow before
-any drive, which the next `decompile` adopts, is held to the same budget
-(`decompile_drive.rs (build_and_follow_flow_within_budget)`): a follow still
-running when it runs out fails the load with the budget error, so a truncated
-IR is never adopted, and the drive that adopts a completed one arms its own.
+any drive, which the next `decompile` adopts, is held to the same budget and
+memory limit (`decompile_drive.rs (build_and_follow_flow_within_budget)`): a
+follow still running when either runs out fails the load with that one's
+error, whose site is `flow following` unless a probe inside the follow (a
+jump-table step) named one, which `kuna decompile` reports as the function's failure, so a
+truncated IR is never adopted, and the drive that adopts a completed one arms
+its own, measuring from where the follow left the resident set. The follow
+recovers every jump table, and a jump table's sub-pipeline heritages
+everything flow has reached, so in a huge function the follow is where the
+memory goes.
 `--max-fn-memory MiB` arms the
 same probes with a memory limit
 (`decompiler/crates/kuna-decomp/src/infra/kuna_fnmemory.rs`): the driver sets
@@ -1583,7 +1598,16 @@ starts within a tenth of the limit), and
 the one test every probe makes — also asks, reading the resident set at most
 every 50 ms, whether the process is over the limit and the drive itself has
 added at least 64 MiB (`kuna_fnmemory.rs (trips)`), so what the batch built
-up before a function began cannot stop it. A drive armed only by the limit
+up before a function began cannot stop it. What a function leaves behind for
+the rest of the run should be its result and the facts later functions read,
+not its working state: a `Funcdata` releases on drop the fspec-space entries
+its call specs registered under their process-unique handles
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::drop)`),
+which were otherwise kept for every call site of every function; an inlined
+callee's handles pass to the function it is inlined into, whose cloned call
+ops still name them
+(`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (FlowInfo::inline_flow)`), and the
+per-callee summaries a run caches are stored compactly (04, `calleedeadarg`). A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
 heap pages on the way out. Without the flag, a process under a finite cgroup
@@ -1612,11 +1636,28 @@ run, but each such stop usually replaces a worker the kernel would have
 killed outright. A run outside a capped cgroup has no default. The resident set
 is `kuna_hostmem.rs (resident_bytes)`: `VmRSS` on Linux, and on Windows the
 larger of the working set and the private commit; a platform that reports no
-resident set (macOS) refuses a non-zero limit. A function whose drive
-completes before expiry is byte-identical with or without a budget, and the
-console/parity paths set one only through `decomp_dbg --max-fn-seconds`. It is not a hard wall around discovery,
-unprobed SLEIGH work, C rendering and variable extraction, assembly/JSON
-construction, total project time, or memory.
+resident set (macOS) refuses a non-zero limit. Printing the function counts
+against the same budget: the drive hands back what is left of its deadline
+with the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::render_budget)`), and whoever renders it publishes that, counted
+from when rendering starts, as the deadline the probes read
+(`decompile_drive.rs (RenderBudget)`): the batch render and its variable
+extraction (`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`)
+and the console's `print C`. The printer probes before each statement of a
+basic block and every 256 Varnodes of its local declarations
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs
+(PrintC::emit_basic_block_ops, PrintC::emit_local_var_decls)`) and stops
+printing once it has passed; the batch probes again after the C text and
+after the variable extraction. A render past the budget never reaches the
+output: the function's `error` (or the console command's error, which
+`kuna decompile` reports as `decompilation failed for <fn> in <binary>:`
+followed by it) is the budget message naming `rendering C` or `extracting
+variables`. A function
+whose drive and rendering complete before expiry is byte-identical with or
+without a budget, and the console/parity paths set one only through
+`decomp_dbg --max-fn-seconds`. It is not a hard wall around discovery,
+unprobed SLEIGH work, assembly/JSON construction, total project time, or
+memory.
 
 (kuna) **Synthesized structures across a batch.** With `structsynth` on, a
 function decompiled later can measure more of a record that an earlier one has
@@ -1807,7 +1848,9 @@ A structure can travel only if another process can rebuild every field type,
 and a named type counts only if the worker's load created it
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/shard.rs
 (AtLoad)`): `pebnames` creates `PEB` and `TEB` the first time a function reads
-them, so one worker holds them and another does not. When such a field would
+them, so one worker holds them and another does not. The unnamed unknown
+placeholder a Varnode starts with is held by no factory and is rebuilt as itself
+(chapter [05](05-types.md)). When such a field would
 have to travel, when the questions do not settle in four rounds, when a repeated
 question could be answered differently, or when a second decompile fails where
 the first did not (a dead worker, a table it could not install), the functions
@@ -1917,11 +1960,28 @@ write end its parent holds, so end of pipe means the parent is gone by any route
 including SIGKILL, and the worker removes the pool's scratch directory and exits
 rather than running on reparented to init.
 
+Progress is the result file growing, so a worker that holds its records back has
+to show progress some other way. The one-worker structsynth path does: it
+delivers its ordered chunk only after its own convergence sweep has run, and that
+chunk is every function that synthesized (8,991 of dxcompiler.dll's 37,204). Its
+silence used to look exactly like a wedged function. The parent killed the worker
+after four budgets plus a load, blamed the chunk's first function (a 144-byte one
+that decompiles in 2 ms), and re-ran the rest one function per chunk, which
+undoes the ordering the path exists for. So that worker writes a begin frame as
+it starts each function, in the pass and in the sweep. The frame carries the
+function's chunk position and is not a record
+(`decompiler/crates/kuna-cli/src/jobs/wire.rs (ResultWriter::begin)`). The stall
+window then measures one function, as it does for any streaming worker. If the
+worker dies anyway, the last frame names the function it was on, and only that
+function is the suspect.
+
 A worker that dies — a panic no per-function guard catches, an OOM kill, a
 signal, or that stall kill — costs the function it was running and nothing else.
 A worker decompiles its chunk in spec order and flushes one record per function,
 so the records it leaves are a prefix: the first target without one is the
-function it was on, and every later target never started. Before it takes more
+function it was on, and every later target never started. The holding worker
+leaves no records, so the function it was on is the one its last begin frame
+names, and every other target counts as never started. Before it takes more
 work, the thread that served the chunk re-runs each of those targets once as a
 chunk of its own (`decompiler/crates/kuna-cli/src/jobs.rs (retry_order)`): the
 function that was running goes first, onto the fresh worker the thread starts

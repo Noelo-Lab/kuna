@@ -120,6 +120,14 @@ Cover points cache numeric operation positions. When inserting an operation
 exhausts an order gap and renumbers its block, the covers of that block's input
 and output Varnodes, and their owning HighVariables, must be marked dirty.
 The next merge comparison rebuilds those ranges using the new positions.
+The renumbering walks the block once and marks each Varnode as it meets it,
+skipping one already marked that has no HighVariable, since marking it again
+changes nothing (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::bb_set_order_within)`). Heritage inserts one INDIRECT per guarded
+range in front of every call, which renumbers a large block about once every
+dozen insertions at each call; collecting the block's Varnodes into a set at
+every renumbering spent 47 s of `tests/hang-repro/escaped_locals`' 95 s
+(1,403 ranges at 700 calls) in renumbering; the function now takes 48 s.
 
 A Cover is keyed by block index; its walk over the CFG resolves an index to its
 block through a table built once per walk, the first block in list order with
@@ -334,6 +342,20 @@ forbids a forced merge, the machinery edits the data flow until it doesn't:
    boundary and keeps the partially merged state — the failure mode is a
    residual un-fused marker op, not a dead function.
 
+*(kuna decompile-all watchdog)* Each merge pass is one action, and the action
+loop probes a budgeted drive's deadline only between actions; on a function
+with millions of Varnodes one merge pass runs for minutes (`ActionMergeRequired`
+took 470 s of the 804 s serde-hkx's 174 KB deserializer at `0x1406491d0` needed,
+and a budget that ran out inside it was overrun by as much). So every merge
+step probes (`merge.rs (Merge::budget)`): each address-tied window, each
+Varnode `unify_address` snips, each op of `merge_marker`, `merge_opcode` and
+`merge_adjacent`, each pair `merge_linear` tests and each `Merge::merge`. Every
+64th probe asks the drive's budget (`decompile_drive.rs (deadline_passed)`);
+once one has seen it spent, that one names `variable merging` as the budget's
+site and every later step of that `Merge` fails at once. The merge actions drop
+the error like any other, the next action boundary stops the pipeline, and the
+drive reports the budget. Without a budget no probe fails.
+
 The inserted trim COPYs accumulate in the persistent `Merge::copy_trims`
 (`funcdata_merge.rs (Funcdata::with_covermerge)` keeps one `Merge` per
 function so they survive between actions). Later,
@@ -343,6 +365,20 @@ COPYs (tracked by the `copy_in1`/`copy_in2` bits) gets them grouped by source
 and replaced with a single COPY hoisted to the common dominator block
 (`funcdata_merge.rs (MergeContext::build_dominant_copy)`) — one assignment
 instead of one per predecessor.
+
+*(kuna perf)* A merge pass edits ops but never blocks, so while one runs
+every Cover walk shares a single block-index table built on first use
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::cover_blocks)`,
+set and dropped by `funcdata_merge.rs (Funcdata::with_covermerge)`) instead of
+each walk rebuilding it from the block list. The intersection tests read the
+highs' and members' covers in place instead of copying them
+(`merge.rs (MergeContext::high_get_cover)`), a high's flag word is recomputed
+from each member's flags without building the member's whole view
+(`variable.rs (HighContext::vn_flags)`), and merging two highs whose instance
+lists do not interleave, which is every forced merge of the Varnodes at one
+address, appends one list to the other instead of re-merging both
+(`variable.rs (HighVariableBank::merge_inst_lists)`). None of this changes
+which Varnodes merge.
 
 **Copy and speculative merges.** After the forced merges and explicit/implied
 marking (below), three passes fuse variables to reduce clutter:
@@ -3157,14 +3193,42 @@ a *clog* (`coreaction_stackptr.rs (check_clog)`: `SP = SP + *(SP+k)` — an
 `alloca`-style adjustment loaded from the stack; when the matching constant
 STORE is found the LOAD becomes a COPY), and unresolved stack adjustments
 across calls (`coreaction_stackptr.rs (StackSolver)`: a linear system over
-every spacebase reference — one variable per reference, sentinel 65535 for
-"unsolved" — whose solution rewrites the INDIRECT survivors into explicit
-`INT_ADD SP, #c`; an underdetermined call contributes the guessed equation
-`extrapop = 4`). Once the solve succeeds the action latches
-(`analysis_finished`) until the next restart resets it. Its failure mode is
-honest: an unsolvable system leaves the INDIRECTs in place, the affected
-frame offsets never promote, and the function keeps raw pointer arithmetic
-where locals should be.
+every spacebase reference — one variable per reference — whose solution
+rewrites the INDIRECT survivors into explicit `INT_ADD SP, #c`; an
+underdetermined call contributes the guessed equation `extrapop = 4`). Once the
+solve succeeds the action latches (`analysis_finished`) until the next restart
+resets it. Its failure mode is honest: an unsolvable system leaves the
+INDIRECTs in place, the affected frame offsets never promote, and the function
+keeps raw pointer arithmetic where locals should be.
+
+Unsolved is a state of its own in kuna, not a value. Upstream marks an
+unsolved variable with the number 65535, but the equations carry each constant
+as the stack pointer's unsigned offset, so on a 16-bit stack pointer one
+`DEC SP` (`SP + 0xffff`) solves its variable to exactly 65535. Upstream's
+propagation then reads that variable back as unsolved and pushes it again from
+every neighbour; two such variables joined by a COPY or a MULTIEQUAL push each
+other forever, and the work stack grows until the process runs out of memory
+(issue #1288: a DOS executable whose packed body decodes as code with stray
+`DEC SP` bytes). kuna keeps the solutions as `Option` values, so each variable
+is solved, and pushed, at most once, and the propagation is bounded by the
+equation count. The solution arithmetic wraps, as the C++ `int4` does.
+
+Upstream only ever writes a variable that reads as unsolved, so the first
+solution a variable gets is its last, and kuna keeps exactly that rule: where
+no variable solves to 65535 the two solves take identical steps and pick the
+same winner between conflicting equations. Where one does and upstream still
+finishes, its answer differs, and kuna's is the right one. Upstream lets a
+later neighbour overwrite the genuine 65535, lets the guessed-equation loop
+replace it with a guess, and skips it in the rewrite, so that producer keeps
+its INDIRECT or MULTIEQUAL form, the offsets behind it stay unsolved, and the
+function keeps a raw stack-pointer local where a frame slot should be. Only a
+2-byte stack pointer reaches the value in practice: it is the stack pointer at
+entry - 1, while on 32 or 64 bits it would be 64 KiB above the entry value. The
+solve itself only runs under a prototype model whose extrapop is unknown, the
+x86-16, M16C/60 and 32-bit Windows, Borland and Delphi x86 specs among them. On
+M16C/60 `PUSH.B` lowers the stack pointer by one, so a byte push at a
+function's entry is ordinary compiled code, and with a loop after it upstream
+never finished.
 
 The guessed equation is where kuna diverges (option `calleepop`, default on).
 Upstream's constant `extrapop = 4` states that the callee pops none of its
@@ -3195,6 +3259,20 @@ free — and a more faithful frame can expose weaknesses further down: an
 outgoing-argument slot that lands inside the caller's `localrange` once the
 frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
 argument is dropped, which is visible on deep-frame MSVC CRT helpers.
+
+Under the same option the constant itself is measured rather than assumed:
+upstream's `4` is the x86-32 return-address size, and the guess's base is now
+the bytes the call instruction itself stores
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
+(return_address_bytes)`), counted over the live STOREs at the call's address and
+the COPYs into the stack space that `RuleStoreVarnode` already made of them. An
+x86 16-bit near call stores two bytes and a far call four, so a callee that pops
+only its return address no longer leaves the modelled stack pointer two bytes
+high after every near call (the next push landing on the caller's local and the
+local turning into an extra argument). The argument bytes the import refinement
+counts are added to that base. A call that stores nothing, such as a call
+through a link register, keeps upstream's `4`; every x86-32 call measures `4`,
+so the 32-bit specs are unchanged.
 
 
 Register assertion symbols participate in the merge's required-symbol identity

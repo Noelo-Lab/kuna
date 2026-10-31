@@ -183,6 +183,37 @@ pub struct SegmentOp {
     pub constresolve: VarnodeData,
 }
 
+impl SegmentOp {
+    /// Get the address space being pointed to (C++ `getSpace`).
+    pub fn get_space(&self) -> Option<&Rc<AddrSpace>> {
+        self.spc.as_ref()
+    }
+    /// Return `true` if this op supports far pointers (C++ `hasFarPointerSupport`).
+    pub fn has_far_pointer_support(&self) -> bool {
+        self.supportsfarpointer
+    }
+    /// Get size in bytes of the base/segment value (C++ `getBaseSize`).
+    pub fn get_base_size(&self) -> int4 {
+        self.baseinsize
+    }
+    /// Get size in bytes of the near value (C++ `getInnerSize`).
+    pub fn get_inner_size(&self) -> int4 {
+        self.innerinsize
+    }
+    /// Get the default register for resolving indirect segments (C++ `getResolve`).
+    pub fn get_resolve(&self) -> &VarnodeData {
+        &self.constresolve
+    }
+    /// Get the number of input Varnodes expected (C++ `getNumVariableTerms`).
+    pub fn get_num_variable_terms(&self) -> int4 {
+        if self.baseinsize != 0 {
+            2
+        } else {
+            1
+        }
+    }
+}
+
 /// \brief A user defined p-code op for assisting jump-table recovery
 /// (C++ `JumpAssistOp`).
 #[derive(Debug, Clone)]

@@ -1144,9 +1144,10 @@ fn parse_raw_address(token: &str) -> Result<u64, IfaceError> {
 
 decomp_command!(
     /// Load a headerless image with explicit language, base, and entry seeds.
+    /// The language may be quoted, since `x86:LE:16:Real Mode` has a space.
     IfcLoadRaw,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let target = s.read_token();
+        let target = s.read_filename();
         let base_token = s.read_token();
         let entries_token = s.read_token();
         let filename = s.read_filename();
@@ -2491,11 +2492,16 @@ decomp_command!(
                 return Err(IfaceError::execution("No load image present"));
             }
             let fd = dcp.fd.take().expect("fd checked non-None above");
-            let text = {
+            let (text, spent) = {
                 let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-                print_c(prog.arch_mut(), &fd)
+                let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
+                let text = print_c(prog.arch_mut(), &fd);
+                (text, budget.error())
             };
             dcp.fd = Some(fd);
+            if let Some(err) = spent {
+                return Err(IfaceError::execution(err.explain()));
+            }
             let refusals: Vec<String> = match (dcp.printed_checks.take(), dcp.conf.as_ref(), dcp.fd.as_ref()) {
                 (Some((lines, expected)), Some(prog), Some(fd)) => {
                     crate::assertions::check_printed(prog.arch(), fd, &text, &expected)
@@ -3664,14 +3670,19 @@ decomp_command!(
 // --- count pcode / actionstats / reset actionstats (ifacedecomp.cc) --------
 
 decomp_command!(
-    /// C++ `IfcCountPcode`: `count pcode`.
+    /// C++ `IfcCountPcode`: `count pcode`, the selected function's live ops.
+    /// (kuna) A second line counts every op the function created since its IR
+    /// was last cleared, dead ones included: the size of its op arena. Both go
+    /// to the bulk stream, as the print commands do, so a datatest sees them.
     IfcCountPcode,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+        let Some(fd) = dcp.fd.as_ref() else {
             return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable("Funcdata op-count walk"))
+        };
+        let (alive, created) = (fd.obank().num_alive(), fd.obank().get_uniq_id());
+        status.file_out(&format!("Count - pcode = {alive}\nCount - created = {created}\n"));
+        Ok(())
     }
 );
 

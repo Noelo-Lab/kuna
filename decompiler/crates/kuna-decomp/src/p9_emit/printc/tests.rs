@@ -357,6 +357,7 @@ mod stack_pointer_high_leaf {
 
         assert!(!high_name_has_scalar_whole_sibling(
             &fd,
+            SameNamed::new(&fd).get("local"),
             partial_high,
             "local"
         ));
@@ -367,6 +368,7 @@ mod stack_pointer_high_leaf {
         h.set_symbol_offset(0);
         assert!(high_name_has_scalar_whole_sibling(
             &fd,
+            SameNamed::new(&fd).get("local"),
             partial_high,
             "local"
         ));

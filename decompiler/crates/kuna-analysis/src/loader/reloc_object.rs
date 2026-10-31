@@ -223,6 +223,9 @@ pub struct RelocLayout {
     /// VMA plus each external call target.  Feeds `ObjectLoadImage::funcsyms`
     /// (demangle + dedup happen there, as on the linked path).
     pub funcsyms: Vec<(u64, Vec<u8>)>,
+    /// `(addr, size)` of each defined function symbol whose symbol table
+    /// states a size, the largest when two share an address.
+    pub funcsizes: Vec<(u64, u64)>,
     /// Non-fatal relocation diagnostics, aggregated with bounded samples. The
     /// caller prints one report for the load; analysis-side layout reuse stays
     /// silent.
@@ -477,6 +480,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
 
     // --- Function symbols: defined (rebased) + extern call targets.
     let mut funcsyms: Vec<(u64, Vec<u8>)> = Vec::new();
+    let mut funcsizes: Vec<(u64, u64)> = Vec::new();
     let mut symbol_info: Vec<RelocSymbolInfo> = Vec::new();
     for sym in file.symbols() {
         if sym.kind() != SymbolKind::Text {
@@ -509,7 +513,12 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
             undefined: false,
         });
         funcsyms.push((vma, name));
+        if sym.size() > 0 {
+            funcsizes.push((vma, sym.size()));
+        }
     }
+    funcsizes.sort_unstable_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+    funcsizes.dedup_by_key(|s| s.0);
     // Extern functions: name each external *code target* at its synthetic slot
     // so `call ext` renders by name instead of a bare address. A code target is
     // an undefined symbol reached through a PLT-relative reloc (reliable even for
@@ -552,6 +561,7 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
         segments,
         sections,
         funcsyms,
+        funcsizes,
         diagnostics,
         section_vma: vma_of,
         extern_addr: extern_of,

@@ -1,0 +1,32 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 heritage, option earlyrestart. main (the floatret_wrap
+     fixture) reaches a stack slot in its second heritage pass whose dead code
+     the first pass already removed: heritage records a longer dead-code delay
+     for the stack and asks for a restart, which re-follows flow and analyses
+     main again. Pass 1 finishes the doomed pass first, as upstream does
+     (earlyrestart off). Pass 2 is the default: the pass stops after that
+     heritage and the restart begins at once. Both passes print the same body
+     and end with the same IR.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatret_wrap_gcc_O2</com>
+  <com>read symbols</com>
+  <com>option earlyrestart off</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option earlyrestart on</com>
+  <com>load function main</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="earlyrestart #1: both passes print main" min="2" max="2">^unsigned long main\(unsigned long a0,int4 a1\)$</stringmatch>
+<stringmatch name="earlyrestart #2: both passes print the time-zone call" min="2" max="2">set_tz\(</stringmatch>
+<stringmatch name="earlyrestart #3: both passes leave the same live IR" min="2" max="2">Count - pcode = 100</stringmatch>
+<stringmatch name="earlyrestart #4: both passes create the same ops after the restart" min="2" max="2">Count - created = 1056</stringmatch>
+</decompilertest>

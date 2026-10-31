@@ -214,6 +214,31 @@ fn raw_image_flags_reach_single_function_engine_with_quoted_path() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("return 7;"));
 }
 
+/// `x86:LE:16:Real Mode:default`, the DOS target, names its variant with a
+/// space; the single-function engine must load the image under the whole id.
+#[test]
+fn raw_image_target_with_a_space_reaches_the_engine() {
+    let raw = common::scratch_file("raw real mode", "bin");
+    std::fs::write(&raw, [0xb8, 0x07, 0x00, 0xc3]).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            raw.to_str().unwrap(),
+            "0x0",
+            "--raw-image",
+            "--target",
+            "x86:LE:16:Real Mode:default",
+            "--base",
+            "0",
+        ])
+        .output()
+        .expect("run kuna decompile over a real-mode raw image");
+    let _ = std::fs::remove_file(&raw);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("return 7;"), "{stdout}");
+}
+
 /// An empty `print C` keeps the pre-existing "no C output" error (that path is
 /// unchanged, and still exits non-zero).
 #[test]
@@ -224,6 +249,32 @@ fn empty_output_still_errors() {
 
     assert_eq!(code, Some(1));
     assert!(stderr.contains("no C output"), "got: {stderr}");
+}
+
+/// A function whose rendering ran past what its drive left of the budget: the
+/// console's `print C` refuses with the budget error and writes no C, and the CLI
+/// names that reason instead of dumping the start of the transcript.
+#[test]
+fn a_print_refused_at_the_budget_reports_the_budget() {
+    let stub = stub_decomp_dbg(
+        "renderbudget",
+        "",
+        "[decomp]> decompile\nDecompiling main\n[decomp]> print C\n\
+         Execution error: per-function decompile budget exceeded (2 s) in rendering C",
+        "",
+    );
+    let (stdout, stderr, code) = run_decompile(&stub, "main");
+    let _ = std::fs::remove_file(&stub);
+
+    assert_eq!(code, Some(1));
+    assert!(stdout.is_empty(), "{stdout}");
+    assert!(
+        stderr.contains("decompilation failed for main in ")
+            && stderr.contains(": per-function decompile budget exceeded (2 s) in rendering C"),
+        "got: {stderr}"
+    );
+    assert!(stderr.contains("--max-fn-seconds N sets the budget"), "got: {stderr}");
+    assert!(!stderr.contains("no C output"), "got: {stderr}");
 }
 
 /// GH-339's silent half, through the whole CLI: the console reported that the

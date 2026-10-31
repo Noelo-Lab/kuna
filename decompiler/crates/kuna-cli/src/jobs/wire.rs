@@ -16,9 +16,13 @@ use super::TargetSpec;
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
 pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES11";
 
-/// Result-stream frame kind.  One kind today; the envelope is what lets a
-/// truncated tail be dropped rather than guessed.
+/// Result-stream frame kinds.  The envelope is what lets a truncated tail be
+/// dropped rather than guessed.
 const FRAME_RESULT: u8 = 1;
+/// The chunk position of the function a worker is starting, from a worker that
+/// holds its records back until the chunk's convergence sweep has run: its only
+/// sign of progress, and what names the function it was on if it dies.
+const FRAME_BEGIN: u8 = 2;
 
 // --- wire primitives ---------------------------------------------------------
 
@@ -378,6 +382,11 @@ impl ResultWriter {
         self.frame(FRAME_RESULT, &body)
     }
 
+    /// Say which function of the chunk this worker starts on ([`FRAME_BEGIN`]).
+    pub(crate) fn begin(&mut self, position: usize) -> Result<(), String> {
+        self.frame(FRAME_BEGIN, &(position as u32).to_le_bytes())
+    }
+
     fn frame(&mut self, kind: u8, body: &[u8]) -> Result<(), String> {
         let mut frame = Vec::with_capacity(body.len() + 5);
         frame.push(kind);
@@ -388,21 +397,32 @@ impl ResultWriter {
     }
 }
 
+/// A worker result file: every complete record, and the chunk position the
+/// last [`FRAME_BEGIN`] named.
+pub(super) struct Frames {
+    pub(super) results: Vec<FuncResult>,
+    pub(super) running: Option<usize>,
+}
+
 /// Decode every complete frame in a worker result file, ignoring a truncated
 /// tail (a worker killed mid-write).  `None` only when the magic is absent.
-pub(super) fn decode_results(bytes: &[u8]) -> Option<Vec<FuncResult>> {
+pub(super) fn decode_results(bytes: &[u8]) -> Option<Frames> {
     let mut r = Reader { bytes, pos: 0 };
     if r.take(RESULT_MAGIC.len())? != RESULT_MAGIC {
         return None;
     }
-    let mut out = Vec::new();
+    let mut out = Frames { results: Vec::new(), running: None };
     while let Some(kind) = r.u8() {
         let Some(len) = r.u32() else { break };
         let Some(body) = r.take(len as usize) else { break };
         match kind {
             FRAME_RESULT => match decode_one(body) {
-                Some(rec) => out.push(rec),
+                Some(rec) => out.results.push(rec),
                 None => break,
+            },
+            FRAME_BEGIN => match <[u8; 4]>::try_from(body) {
+                Ok(position) => out.running = Some(u32::from_le_bytes(position) as usize),
+                Err(_) => break,
             },
             _ => break,
         }

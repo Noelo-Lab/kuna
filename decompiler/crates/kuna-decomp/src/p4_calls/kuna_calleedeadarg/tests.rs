@@ -334,3 +334,93 @@ fn a_read_is_measured_from_the_low_end() {
     assert_eq!(summary(0x1c, 4).low_read_width(&be, 8), Some(4));
     assert_eq!(summary(0x18, 4).low_read_width(&be, 8), None);
 }
+
+/// The run-length byte set answers every query a `BTreeSet<(int4, u64)>` of
+/// the same bytes does, so the summaries it stores read as before.
+#[test]
+fn the_byte_set_matches_a_tree_set_of_the_same_bytes() {
+    use std::collections::BTreeSet;
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = move |n: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % n
+    };
+    let check = |set: &ByteSet, tree: &BTreeSet<(int4, u64)>| {
+        assert_eq!(set.len(), tree.len());
+        assert_eq!(set.iter().collect::<Vec<_>>(), tree.iter().copied().collect::<Vec<_>>());
+        assert_eq!(set.clone().into_iter().collect::<Vec<_>>(), tree.iter().copied().collect::<Vec<_>>());
+    };
+    for round in 0..300 {
+        let mut a = (ByteSet::new(), BTreeSet::new());
+        let mut b = (ByteSet::new(), BTreeSet::new());
+        let span = 8 + round % 64;
+        for _ in 0..(next(80) + 1) {
+            let byte = (next(3) as int4, next(span));
+            let (set, tree) = if next(2) == 0 { (&mut a.0, &mut a.1) } else { (&mut b.0, &mut b.1) };
+            if next(5) == 0 {
+                assert_eq!(set.remove(&byte), tree.remove(&byte));
+            } else {
+                assert_eq!(set.insert(byte), tree.insert(byte));
+            }
+            let probe = (next(3) as int4, next(span + 2));
+            assert_eq!(set.contains(&probe), tree.contains(&probe));
+        }
+        check(&a.0, &a.1);
+        check(&b.0, &b.1);
+        assert_eq!(a.0.is_subset(&b.0), a.1.is_subset(&b.1));
+        assert_eq!(b.0.is_subset(&a.0), b.1.is_subset(&a.1));
+        assert!(a.0.is_subset(&a.0.union(&b.0)));
+        check(&a.0.union(&b.0), &a.1.union(&b.1).copied().collect());
+        check(&a.0.difference(&b.0), &a.1.difference(&b.1).copied().collect());
+        check(&a.0.intersection(&b.0), &a.1.intersection(&b.1).copied().collect());
+        let extended: ByteSet = a.1.iter().copied().chain(b.1.iter().copied()).collect();
+        check(&extended, &a.1.union(&b.1).copied().collect());
+        let (mut joined, mut moved) = (a.0.clone(), b.0.clone());
+        joined.append(&mut moved);
+        assert_eq!(joined, a.0.union(&b.0));
+        assert_eq!(moved.len(), 0);
+    }
+    let mut edge = ByteSet::new();
+    assert!(edge.insert((0, u64::MAX)));
+    assert!(edge.insert((0, u64::MAX - 1)));
+    assert!(edge.contains(&(0, u64::MAX)));
+    assert_eq!(edge.len(), 2);
+    assert!(edge.remove(&(0, u64::MAX)));
+    assert_eq!(edge.iter().collect::<Vec<_>>(), vec![(0, u64::MAX - 1)]);
+}
+
+/// A forward-transfer answer reads its terminators only through their meet:
+/// a range written before every one of them is free, one any of them left
+/// unwritten is not, and no terminator at all leaves every unread range free.
+#[test]
+fn a_forward_transfer_reads_its_cuts_as_one_meet() {
+    let reg = Rc::new(kuna_base::space::AddrSpace::new(
+        spacetype::IPTR_PROCESSOR,
+        "register",
+        false,
+        8,
+        1,
+        3,
+        kuna_base::space::addrspace_flags::hasphysical,
+        1,
+        1,
+    ));
+    let rcx = Address::new(Rc::clone(&reg), 8);
+    let rdx = Address::new(Rc::clone(&reg), 0x10);
+    let both = CalleeEntryDead::from_parts(3, Vec::new(), Vec::new(), true)
+        .with_opaque_cut((8..0x18).map(|b| (3, b)).collect())
+        .with_opaque_cut((8..0x10).map(|b| (3, b)).collect());
+    let fwd = fold_node(&both, 3, |_| TargetAnswer::Accounted);
+    assert!(fwd.transfer_free(&rcx, 8));
+    assert!(!fwd.transfer_free(&rdx, 8), "the second cut left rdx unwritten");
+    let none = CalleeEntryDead::from_parts(3, Vec::new(), Vec::new(), true);
+    assert!(fold_node(&none, 3, |_| TargetAnswer::Accounted).transfer_free(&rdx, 8));
+    assert!(!ForwardTransfer::denied(3).transfer_free(&rcx, 8));
+    let through = CalleeEntryDead::from_parts(3, Vec::new(), Vec::new(), true)
+        .with_named_cut(Address::new(Rc::clone(&reg), 0x1000), (0x10..0x18).map(|b| (3, b)).collect());
+    let fwd = fold_node(&through, 3, |_| TargetAnswer::Through(fold_node(&both, 3, |_| TargetAnswer::Accounted)));
+    assert!(fwd.transfer_free(&rcx, 8));
+    assert!(fwd.transfer_free(&rdx, 8), "the call site wrote rdx before the call");
+}

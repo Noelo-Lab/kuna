@@ -1,0 +1,112 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!--
+    kuna #1288: every memory access, call and return of x86 real-mode code
+    printed through a bare segment() call. The SLEIGH spec computes each
+    effective address with the user-op segment(seg,off), and the pspec names
+    it in a <segmentop> with the p-code res = (zext(base) << 4) + zext(inner).
+    Upstream's ActionSegmentize, RuleSegment, SegmentOp and SegmentedResolver
+    were never ported, so the op stayed an opaque CALLOTHER: pushes and pops
+    were stores through segment(SS,v), no parameter was recovered, a RET
+    printed as segment(CS,*(unsigned short *)segment(SS,&Stack0000)), and the
+    cs-relative jump table could not be emulated.
+
+    Independently assembled (nasm -f bin, org 0):
+      0x00 addtwo: push bp; mov bp,sp; mov ax,[bp+4]; add ax,[bp+6]; pop bp; ret
+      0x10 video:  mov ax,0xb800; mov es,ax; mov word [es:0x10],0x741; ret
+      0x20 farsum: push bp; mov bp,sp; les bx,[bp+4]; mov ax,[es:bx];
+                   add ax,[es:bx+2]; pop bp; ret
+      0x30 pick:   n = [bp+4]; if n > 3 return 0; jmp [cs:bx+0x42] over a
+                   four-entry table returning 10/20/30/40
+      0x70 farlong: mov ax,[cs:0x80]; mov dx,[cs:0x82]; ret (the long at 0x80)
+      0x11030 pickfar: pick's bytes again, in code segment 0x1100
+
+    Stage: P3 dataflow (option segmentize, default on). Pass one is option
+    segmentize off, the old rendering; pass two is the default. Asserts 1-2
+    and 4 count both passes: the bare return statement and the segment()
+    store and jump-as-call appear only in pass one. The rest are pass two:
+    the frame parameters, the constant segment folded to the linear global
+    0xb8010, the far pointer read through LES as one parameter, and the
+    recovered switch.
+
+    farlong returns a long read out of global memory in DX:AX. Once the reads
+    resolve to globals, the return-pair repair took an unwritten global for a
+    leftover and kept AX alone (`return dat_80;`); a global read is a value the
+    function computed, so both halves are returned (assert 10).
+
+    pickfar sits in code segment 0x1100, but the spec's CS is the instruction
+    address rounded down to 64 KiB, 0x1000, so its jmp [cs:bx+0x42] reads the
+    table at 0x10042 instead of 0x11042. The words there send control to
+    0x1fff0, outside the image. Such a table is rejected and the jump stays a
+    call (asserts 11-12), where following it decoded junk or failed the
+    function on the deark-unpacked DAZZLE.EXE.
+-->
+<bytechunk space="ram" offset="0x0">
+5589e58b46040346065dc39090909090b800b88ec026c70610004107c3909090
+5589e5c45e04268b07260347025dc3905589e58b5e0483fb037723d1e32effa7
+42004a004f0054005900b80a00eb11b81400eb0cb81e00eb07b82800eb0231c0
+5dc390909090909090909090909090902ea180002e8b168200c3909090909090
+34127856
+</bytechunk>
+<bytechunk space="ram" offset="0x10040">
+9090f0fff0fff0fff0ff
+</bytechunk>
+<bytechunk space="ram" offset="0x11030">
+5589e58b5e0483fb037723d1e32effa742004a004f0054005900b80a00eb11b8
+1400eb0cb81e00eb07b82800eb0231c05dc3
+</bytechunk>
+<symbol space="ram" offset="0x0" name="addtwo"/>
+<symbol space="ram" offset="0x10" name="video"/>
+<symbol space="ram" offset="0x20" name="farsum"/>
+<symbol space="ram" offset="0x30" name="pick"/>
+<symbol space="ram" offset="0x70" name="farlong"/>
+<symbol space="ram" offset="0x11030" name="pickfar"/>
+</binaryimage>
+<script>
+  <com>option segmentize off</com>
+  <com>lo fu addtwo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu video</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu farsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option segmentize on</com>
+  <com>lo fu addtwo</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu video</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu farsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu farlong</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pickfar</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="segmentize #1: with the option off each RET is a bare segment() statement, once per function" min="4" max="4">^  segment\(v\d+,\*\(unsigned short \*\)segment\(v\d+,&amp;Stack0000\)\);$</stringmatch>
+<stringmatch name="segmentize #2: with the option off the video store goes through segment(0xb800,0x10)" min="1" max="1">^  \*\(unsigned short \*\)segment\(0xb800,0x10\) = 0x741;$</stringmatch>
+<stringmatch name="segmentize #3: the stack is seen through the segment op, so the frame parameters are recovered" min="1" max="1">^int2 addtwo\(int2 a0,int2 a1\)$</stringmatch>
+<stringmatch name="segmentize #4: with the option off the jump table is a call through segment()" min="1" max="1">segment\(0,\*\(unsigned short \*\)segment\(0,v\d+ \* 2 \+ 0x42\)\); // jump-as-call$</stringmatch>
+<stringmatch name="segmentize #5: the near-pointer arithmetic prints alone" min="1" max="1">^  return a0 \+ a1;$</stringmatch>
+<stringmatch name="segmentize #6: a constant segment and offset fold through the snippet to the linear address" min="1" max="1">^  dat_b8010 = 0x741;$</stringmatch>
+<stringmatch name="segmentize #7: LES reads one far pointer, the parameter both halves came from" min="1" max="1">^int2 farsum\(int2 \*a0\)$</stringmatch>
+<stringmatch name="segmentize #8: the far pointer is dereferenced directly" min="1" max="1">^  return \*a0 \+ \(\(int2 \*\)a0\)\[1\];$</stringmatch>
+<stringmatch name="segmentize #9: the cs-relative jump table is emulated through the snippet and recovered" min="1" max="1">^  switch\(a0\) </stringmatch>
+<stringmatch name="segmentize #10: a long read out of global memory is returned whole in DX:AX" min="1" max="1">^  return CONCAT22\(dat_82,dat_80\);$</stringmatch>
+<stringmatch name="segmentize #11: a cs-relative table read from the wrong segment, whose words leave the image, is not followed" min="1" max="1">^    v\d+ = \(code \*\)\*\(unsigned short \*\)\(\w+ \* 2 \+ 0x42\); // jump-as-call$</stringmatch>
+<stringmatch name="segmentize #12: no flow reaches the table's out-of-image targets" min="0" max="0">unmapped memory</stringmatch>
+</decompilertest>

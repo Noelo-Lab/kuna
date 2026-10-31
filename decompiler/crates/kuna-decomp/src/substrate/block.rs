@@ -2489,8 +2489,8 @@ impl BlockGraph {
         self.arena[true_clause].list.drain(0..k);
         self.arena[else_clause].list.drain(0..k);
         // Free the now-orphaned duplicate (else-arm) leaf nodes.
-        for &d in duplicate {
-            self.arena.remove(d);
+        for (&r, &d) in retained.iter().zip(duplicate.iter()) {
+            self.kuna_free_replaced(d, r);
         }
         // Splice the retained leaves into the parent immediately before the `if`,
         // preserving their order.
@@ -2560,8 +2560,8 @@ impl BlockGraph {
         self.arena[true_clause].list.truncate(tn - k);
         self.arena[else_clause].list.truncate(en - k);
         // Free the now-orphaned duplicate (else-arm) leaf nodes.
-        for &d in duplicate {
-            self.arena.remove(d);
+        for (&r, &d) in retained.iter().zip(duplicate.iter()) {
+            self.kuna_free_replaced(d, r);
         }
         // Splice the retained leaves into the parent immediately *after* the `if`,
         // preserving their order.
@@ -2602,7 +2602,37 @@ impl BlockGraph {
         let sole = self.arena[clause].list[0];
         self.arena[sole].parent = Some(if_id);
         self.arena[if_id].list[i] = sole;
-        self.arena.remove(clause);
+        self.kuna_free_replaced(clause, sole);
+    }
+
+    /// (kuna) Free the print-tree node `old` after an edit put `new` in its place,
+    /// first pointing every unstructured-branch carrier that names `old` (a
+    /// `BlockGoto`/`BlockIf` goto target, a `BlockSwitch` case, a `BlockMultiGoto`
+    /// edge) at `new`, so no `goto` is left naming a freed node.  A clause and the
+    /// sole component it is unwrapped to share their front leaf, so the goto keeps
+    /// its label and its landing statement.
+    fn kuna_free_replaced(&mut self, old: BlockId, new: BlockId) {
+        for blk in self.arena.values_mut() {
+            match &mut blk.kind {
+                BlockKind::Goto { gototarget, .. } | BlockKind::If { gototarget, .. } => {
+                    if *gototarget == Some(old) {
+                        *gototarget = Some(new);
+                    }
+                }
+                BlockKind::Switch { caseblocks, .. } => {
+                    for c in caseblocks.iter_mut().filter(|c| c.block == old) {
+                        c.block = new;
+                    }
+                }
+                BlockKind::MultiGoto { gotoedges, .. } => {
+                    for e in gotoedges.iter_mut().filter(|e| **e == old) {
+                        *e = new;
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.arena.remove(old);
     }
 
     /// (kuna) Inline a duplicated **cross-jump tail** into a `BlockGoto` that
