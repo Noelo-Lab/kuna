@@ -806,6 +806,9 @@ Three tiers:
 | stripped go binary renders code after a runtime.panicshift or runtime.gopanic call as if the helper returned | [`gonoreturn`](#gonoreturn) |
 | a go panic arm falls through into the next block and the output interleaves panic and normal paths | [`gonoreturn`](#gonoreturn) |
 | a go function keeps its morestack entry loop because the grow arm follows a panic call kuna treats as returning | [`gonoreturn`](#gonoreturn) |
+| kuna functions on a large Go PE takes many times longer than on the same program's ELF build | [`gowalkprune`](#gowalkprune) |
+| kuna functions on a Go binary spends its time decoding instructions after the pclntab names are read | [`gowalkprune`](#gowalkprune) |
+| a Go function reached only by a call lists a sub_<addr> alias beside its pclntab name | [`gowalkprune`](#gowalkprune) |
 | go functions declare a local commented r14 or x28 that is read but never assigned | [`goreg`](#goreg) |
 | stackguard reads render as *(long *)(v3 + 0x10) instead of g->stackguard0 | [`goreg`](#goreg) |
 | go runtime internals full of unexplained register arithmetic | [`goreg`](#goreg) |
@@ -3025,6 +3028,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) truncates flow at runtime panic/exit helpers on stripped Go binaries, exactly as unstripped ones already behave; off restores the fall-through reading of every runtime.panic*/throw/goexit call site (auditing, or a hand-patched runtime whose panic helpers really return).
 - **Where / provenance:** P1/code-data-partition · kuna · analysis-enablement · kuna-multilang-gonoreturn
 - **Example:** `option gonoreturn off`
+
+### `gowalkprune` -- on | off, default `on`
+
+- **Symptoms:** kuna functions on a large Go PE takes many times longer than on the same program's ELF build; kuna functions on a Go binary spends its time decoding instructions after the pclntab names are read; a Go function reached only by a call lists a sub_<addr> alias beside its pclntab name.
+- **What it does:** Leave the functions a Go pclntab names out of the roots of the fast inventory walk. fast_funcdisc roots its recursive-descent walk at every loader-backed entry, and on an x64 PE that is every .pdata record, which Go's Windows linker writes for every Go function: the walk decoded the whole Go text (3.5 million instructions on the 40 MB gh.exe 2.89.0, 8 of its 11 seconds of kuna functions) only to re-find functions the pclntab already names and bounds. On, a root at a pclntab function entry is dropped before the walk, so it decodes only the code outside the table, cgo's C code and anything else the image's other records name; every root that is not a pclntab entry is kept. The pclntab entries reach the inventory as before, through the gopclntab pass. What the walk could reach only through a pclntab function's body is no longer found unless something else names it; Go code calls C only through function pointers, so this takes Go assembly that CALLs C code directly in an externally linked image whose C carries no unwind records and no symbols (measured: the called C function and its callee are lost, and the preceding function's extent absorbs them). Measured with the Go PE detection of GH-1289 in place, kuna functions --json lists the same function addresses, names and sizes on/off on gh.exe 2.89.0 (42,540), Forest-Game.exe (7,898), a go1.2x identifier.exe (5,895) and the gh 2.89.0 ELF build (42,723); what changes is that a Go function the walk used to reach only by a call no longer also carries a sub_<addr> alias (408, 137, 105 and 1,458 of them), while a function some other source of entries names (a .pdata record, an entry oracle) keeps its alias as before. Time: gh.exe 11.2 s to 2.0 s, gh ELF 2.8 s to 1.7 s, Forest-Game.exe 1.9 s to 0.5 s. Applies only where fast_funcdisc builds the walk without the full Listing, which is fast mode (files of 2 MiB and up) on every surface; with the Listing on, every root is walked as before. The decompiled C does not change: decompile-all --json on gofmt (ELF and PE) differs only in the same aliases. Inert on a non-Go image, on a Go image with no readable pclntab, and with gopclntab off, where nothing else would commit the table's functions.
+- **When to flip:** On (default) on any Go binary large enough for fast mode: kuna functions finishes in about the time the pclntab read takes rather than the time a decode of every Go function takes. Flip off to walk the Go functions again, for instance to compare against an inventory taken before this option existed, where more pclntab-named functions also listed a sub_<addr> alias, or on a stripped external-link image whose Go assembly calls C code built without unwind tables directly.
+- **Where / provenance:** P1/code-data-partition · kuna · speed · GH-1289
+- **Example:** `--option gowalkprune off`
 
 ### `goreg` -- on | off, default `on`
 

@@ -482,9 +482,9 @@ define context contextreg
 @define PRE_66		"prefix_66=1"
 @define PRE_F3		"prefix_f3=1"
 @define PRE_F2		"prefix_f2=1"
-
-
-
+@ifdef IA16
+define context contextreg realCS=(48,63) callerCS=(32,47); # (kuna #1288) the real-mode code segment, and a far CALL's own while ptr1616 states its target's (bits only VEX/EVEX decode reads), see x86-16.slaspec
+@endif
 # Define special registers for debugger
 @ifdef IA64
 define register offset=0x2200 size=4   [ IDTR_Limit ];
@@ -1153,7 +1153,7 @@ rel8: reloc is simm8        [ reloc=inst_next+simm8; ] { export *[ram]:$(SIZE) r
 @ifdef IA64
 rel16: reloc is simm16      [ reloc=((inst_next >> 16) << 16) | ((inst_next + simm16) & 0xFFFF); ] { export *[ram]:$(SIZE) reloc; }
 @else
-rel16: reloc is simm16      [ reloc=(inst_next + simm16) & 0xFFFF; ] { export *[ram]:$(SIZE) reloc; } # (kuna GH-7418) 16-bit operand-size branch in 32/16-bit mode masks tempEIP to the low 16 bits, zeroing the high bytes of EIP per Intel SDM
+rel16: reloc is simm16      [ reloc=(inst_next + simm16) & 0xFFFF; ] { export *[ram]:$(SIZE) reloc; } # (kuna GH-7418) a 0x66-prefixed branch in 32-bit code masks tempEIP to the low 16 bits, zeroing the high bytes of EIP per Intel SDM; 16-bit code: x86-16.slaspec
 @endif
 rel32: reloc is simm32      [ reloc=inst_next+simm32; ] { export *[ram]:$(SIZE) reloc; }
 
