@@ -1472,13 +1472,31 @@ classified:
   `mark_inactive` also sets CHECKED, so no later pass re-scores it and the
   argument's producer is reaped.
 
-  *(kuna decompile-all watchdog)* The ancestor recursion tries every input of
-  every MULTIEQUAL it passes, up to `trim_recurse_max` levels, and runs a full
-  `only_op_use` walk at each top ancestor, so on a function whose phis join
-  hundreds of paths one `ActionActiveParam` pass runs for many minutes inside
-  one action (CPython 3.11's `_PyEval_EvalFrameDefault` stays in it past a
-  1,200 s budget). Every `ancestor_op_use` call and every step of an
-  `only_op_use` walk therefore probes the drive's budget through
+  (kuna) The ancestor recursion is upstream's: it tries every input of every
+  MULTIEQUAL it passes, and only the MULTIEQUALs on the current path are
+  marked, so it walks paths, not Varnodes. Through phis that join hundreds of
+  edges it can walk millions of paths for one trial, with an `only_op_use`
+  walk at the top of each. In CPython 3.11's `_PyEval_EvalFrameDefault`, each
+  of a few stack trials walked 14-16 million paths and took 12-35 s, and
+  `ActionActiveParam` was still running after 35 minutes. One call to
+  `ancestor_op_use` now keeps a memo of the steps that found no use
+  (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+  (AncestorMemo)`). A step's key is the Varnode plus the offset and flags it
+  is reached with. With the answer, the memo records which marked MULTIEQUALs
+  above the step cut off a path below it, and the level, if any path ended at
+  the level bound. A later step with the same key reuses the "no" while every
+  recorded MULTIEQUAL is still marked, at a level no higher than the recorded
+  one, or at any level when none was recorded (no path reached the bound, so a
+  higher level walks the same paths). Each path that step could walk is then
+  one the first step walked, or the start of one, so the first step found no
+  use on it and also set the same trial flags (`rem_formed`).
+  A "yes" ends the call, so it is never stored. A step with no MULTIEQUAL above
+  it is reached by one path only, so it skips the memo. The answers, and so the
+  output, are the same as the walk over every path. On the CPython function,
+  13 passes now take 15 s in all.
+
+  *(kuna decompile-all watchdog)* Every `ancestor_op_use` step and every step
+  of an `only_op_use` walk also probes the drive's budget through
   `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (budget_probe)`;
   once it is spent the walks answer *not a parameter* at once, and
   `check_input_trial_use` asks the clock before each trial, so it stops at the
@@ -6091,6 +6109,74 @@ the matching `puts`, libgcc's `_Unwind_SetGR` in `_Unwind_VRS_Set`. A wrapper
 also repeats its callee's recovered type, so the nuttx callers of `getopt`
 compare against `0xffffffff` because `getopt_common` is recovered as returning
 `unsigned int`. No MIPS corpus with DWARF was measured.
+
+### (kuna) `pltlocal` — a call through a stub the image binds to its own definition
+
+A shared library calls its own default-visibility functions through
+`name@plt`, so that another object loaded first can interpose them. The PLT
+decoder (`decompiler/crates/kuna-analysis/src/loader/elf_plt.rs
+(resolve_plt_imports)`) names each stub after its GOT slot's relocation symbol
+and registers it as an import, so a direct `bl timer_helper@plt` had the stub
+as its callee entry. Every callee fact this chapter keys by entry address was
+then about a body that is one jump through the GOT: the `protoorder` statement
+`passthrough` reads, the bounded callee-body probes (`calleedeadarg`,
+`calleereadarg`), a declared or DWARF prototype on the definition, and the
+callee-first order itself. GH-1342's AArch64 `timer_wrapper` forwards its own
+x0, x1, w2 and w3 to a helper that reads all four and rendered `timer_helper();`
+under `decompile-all`, where the `-Bsymbolic` build of the same object renders
+`timer_helper(a0,a1,a2,a3)`. x86-64 and ARM builds of the equivalent C behave
+the same; only the tail call `b send_helper@plt` kept its arguments, because the
+wrapper reloads x0/x1 there, which the caller's own trial scoring accepts.
+
+`option pltlocal` (default on) follows the binding the image itself states.
+At load the loader records, for each decoded stub whose slot carries a
+symbol-bearing dynamic relocation naming a defined `STT_FUNC`, the pair
+(stub, definition) (`decompiler/crates/kuna-analysis/src/loader/kuna_pltlocal.rs
+(bind)`). The join is the relocation's symbol index, never a shared name (two
+versions of one symbol are two definitions), and an `STT_GNU_IFUNC` is skipped
+because its value is the resolver. The pairs reach the engine as
+`Architecture::plt_local`. When flow builds the call spec of a direct call
+(`decompiler/crates/kuna-decomp/src/p2_lift/flow.rs (build_call_specs)`), a stub
+in that table whose definition is a known function and which declares no
+prototype of its own (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_pltlocal.rs
+(definition)`) has its `FuncCallSpecs` built at the definition's entry. The
+printed name and the flow effects (no-return, inline, call-fixup injection)
+are still queried at the stub, so the call reads exactly as before, and a
+prototype the flow-time copy finds on the stub still wins over one on the
+definition. A stub that does declare one (a `libcsigs` signature seeded on the
+import, an `--assert prototype` at the stub address) keeps its call where it
+was: the declaration already says what the call passes, and building past it
+would trade a stated signature for a recovered one. The call spec remembers the
+stub (`FuncCallSpecs::plt_stub`).
+
+Everything downstream then sees a call to the definition, as it would in a
+`-Bsymbolic` build: the callee-first plan orders the definition before its
+callers through the stub (`decompiler/crates/kuna-cli/src/callgraph.rs
+(CallGraph::call_target)`), `--reachable-from` reaches it, `passthrough` and
+the body probes read its body, and its recovered return and parameter types
+type the call. One kind of fact is not carried across a stub. The definition's
+body answers what it reads and returns, never what it leaves alone: a compiler that
+emits `bl name@plt` cannot keep a value in a call-clobbered register across it
+(the lazy resolver runs first, and another definition may win), so the
+`calleepreserves` and `calleeretpreserves` proofs (chapter 03) are not taken for
+such a call. `voidret` files a caller's read of the call result against the
+stub as well as the definition, so the stub's own decompile keeps the return
+its callers read.
+
+Single-function `kuna decompile` builds the call at the definition too, which
+is what lets a prototype declared there reach the call (the
+`tests/stages/kuna-pltlocal.xml` passes); without one, a forwarded register is
+still recovered only from a callee-first run, exactly as for a direct call.
+Over 67 shared objects (the 18 decbench x86-64 `.so` files, 13 x86-64 system
+libraries, 13 AArch64 and 9 ARM Thumb-2 Debian bookworm libraries, and 14
+fixtures and reproducers), 46 change. The call sites the change touched gained
+808 arguments, each within the definition's own recovered arity, and lost 7
+down to it. The 14 that exceed it are behaviors a direct call shows as well:
+`calleereadarg` reading a register
+an instruction with an internal p-code branch writes (AArch64 `cneg` in
+libgcc's `__floatsitf`), libgcc's unwinder saving the EH data registers, and a
+definition kuna under-recovers. `option pltlocal off` restores the stub as the
+callee entry everywhere.
 
 ### (kuna) `mixedtailret` — a value returned beside a tail call
 

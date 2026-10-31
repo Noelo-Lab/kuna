@@ -36,7 +36,7 @@ use super::{FormatKind, ImportSym, ObjectFormat};
 /// Mach-O format impl because it is loader infra shared by the ObjC walk (and any
 /// future chained-fixup consumer), keyed off the same typed Mach-O re-parse.
 pub mod chained;
-pub use chained::{resolve_chained_fixups, ChainedFixups};
+pub use chained::{resolve_chained_fixups, ChainedBind, ChainedFixups};
 
 /// The environment-variable gate for arm64e Apple-Silicon spec selection
 /// (design §3.7). Off (unset/empty) by default — an arm64e Mach-O then loads

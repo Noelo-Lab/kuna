@@ -902,6 +902,11 @@ pub struct ArchContext {
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
     pub unknown_byte_is_char: bool,
+    /// (kuna) The printer spells residual TYPE_UNKNOWN bytes as an integer
+    /// (`realtypes` on, or an output language with no unknown-bytes type), so a
+    /// float assigned into them reads as a numeric conversion.  Read by
+    /// [`kuna_floatstore`](crate::p9_emit::kuna_floatstore).
+    pub unknown_is_integer: bool,
     /// (kuna) The output language promotes a sub-`int` argument to `int`
     /// (`LangCaps::integer_promotion`).  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -1290,6 +1295,10 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option haltloopguard` (default-on): read each stored global at the
+    /// entry of a loop the function never leaves. Read by
+    /// [`crate::p3_dataflow::kuna_haltloopguard::guard`].
+    pub halt_loop_guard: bool,
     /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
     /// loaded value whose only reader is the global's own marker. Read by
     /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
@@ -1900,6 +1909,7 @@ impl ArchContext {
             bool_byte: true, // (kuna) option boolbyte (default on)
             float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
+            unknown_is_integer: false, // (kuna) realtypes, or not C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
             cast_arith: false, // (kuna) option castarith
@@ -2010,6 +2020,7 @@ impl ArchContext {
             guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            halt_loop_guard: false,      // haltloopguard (Architecture::reset_defaults sets the shipped default: on)
             global_field_store: false,
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)

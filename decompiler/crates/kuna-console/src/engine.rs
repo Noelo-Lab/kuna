@@ -59,7 +59,8 @@ use kuna_sleigh::translate::register_translate_ids;
 
 use crate::entry_selector::ObjectSectionLocation;
 pub use crate::entry_selector::{
-    EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion, ObjectLocation,
+    DataName, EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion,
+    ObjectLocation,
 };
 
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
@@ -1275,6 +1276,7 @@ impl ConsoleProgram {
                             selector: selector.display(),
                             suggestion: nearest_spelling(&entries, want),
                             named_entries: named_entry_count(&entries),
+                            data: self.data_name(want),
                         });
                     }
                 }
@@ -1369,6 +1371,7 @@ impl ConsoleProgram {
                 selector: format!("0x{:x}", address.get_offset()),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             })?;
         let known = self.entry_at_exact_address(address);
         if self.entry_bytes_mapped(address) {
@@ -1458,6 +1461,7 @@ impl ConsoleProgram {
                 selector: selector.display(),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             });
         }
         let candidates = sections
@@ -1493,6 +1497,7 @@ impl ConsoleProgram {
                 selector: selector.display(),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             }),
             1 => Ok(candidates.remove(0)),
             _ => Err(EntryLookupError::Ambiguous {
@@ -2015,6 +2020,20 @@ impl ConsoleProgram {
     /// Resolve an imported data object's original spelling after identifier folding.
     pub fn lookup_data_alias(&self, name: &str) -> Option<u64> {
         self.data_name_aliases.get(name).copied()
+    }
+
+    /// The data object `name` labels, for a name that selects no function: a
+    /// loader data symbol or data export, or a debug-info global
+    /// ([`Self::lookup_data_alias`]), with the section holding it.
+    fn data_name(&self, name: &str) -> Option<DataName> {
+        let address = self.lookup_data_alias(name)?;
+        let section = self.image_metadata.as_ref().and_then(|meta| {
+            meta.sections
+                .iter()
+                .find(|s| address >= s.vma && address - s.vma < s.size)
+                .map(|s| s.name.clone())
+        });
+        Some(DataName { address, section })
     }
 
     /// Global data symbols with their address-space identity retained.
@@ -4414,6 +4433,9 @@ pub fn bootstrap_from_object_with_isa(
     // FunctionSymbol at each of them for call naming, and the whole-binary
     // enumeration needs to know those addresses hold a pointer, not a body.
     let import_slots: Vec<(u64, u64)> = loader.import_slot_ranges().to_vec();
+    // (kuna `pltlocal`) The PLT stubs the image's own relocations bind to a
+    // function it defines, so a call through one is built at the definition.
+    let plt_local: Vec<(u64, u64)> = loader.plt_local_targets().to_vec();
     let elfv1_tocs = loader.elfv1_descriptors().entry_tocs();
     let elf_functions = loader.elf_function_provenance().clone();
     let loader_aliases = loader.func_symbol_aliases();
@@ -4589,6 +4611,7 @@ pub fn bootstrap_from_object_with_isa(
         ranges.sort_unstable();
         prog.arch_mut().dynreloc_const = std::rc::Rc::new(ranges);
     }
+    prog.arch_mut().plt_local = std::rc::Rc::new(plt_local);
 
     // (kuna `litpoolconst`) ... and the executable read-only regions the in-code
     // literal pools live in. Already sorted, disjoint and merged by

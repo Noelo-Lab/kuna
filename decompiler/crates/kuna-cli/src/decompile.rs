@@ -1292,10 +1292,12 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
             decompile_all::zero_discovery_error(&args.binary)
                 .unwrap_or_else(|| format!("no function {target:?} in {}", args.binary))
         } else {
-            format!(
-                "no function {target:?} in {}; for a stripped binary pass an address with --addr",
-                args.binary
-            )
+            let hint = prog
+                .resolve_entry(&kuna_console::engine::EntrySelector::Name(target.to_string()))
+                .err()
+                .and_then(|error| decompile_all::name_miss_hint(&error))
+                .unwrap_or_else(|| "for a stripped binary pass an address with --addr".to_string());
+            format!("no function {target:?} in {}; {hint}", args.binary)
         });
     }
 

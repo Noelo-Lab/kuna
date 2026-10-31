@@ -532,6 +532,39 @@ would not cover a wider access, so mapping it would trade `dat_<addr>` for
 extra casts and raw addresses. A declaration (`--assert data ...`, DWARF) that
 supplies the real extent names the storage in emitted C.
 
+A Mach-O image takes the same rule (`macho_stubs.rs (data_exports)`). Its
+"exports" are the external defined `nlist` entries, and every one of them used to
+enter the function stream: a `__DATA,__data` global, an Objective-C class object
+in `__objc_data`, Swift type metadata in `__TEXT,__const`, an `N_ABS` value. Each
+then listed in `kuna functions` and decompiled by name to an
+`UndefinedInstructionException` body. Now only an export inside a section the
+loader classifies as code enters it; the rest are lookup names, under both their
+symbol-table spelling (`_audit_global`) and the C spelling (`audit_global`), and
+a decompile by either name answers that it names data, where, and that `kuna
+read` shows its bytes. One more symbol is excluded the same way: an `N_SECT`
+symbol's kind comes from its section's name, and the Mach header symbol
+(`__mh_execute_header`) is numbered into `__text` while addressed at the image
+base, outside it. A Mach-O symbol is a function entry only when its address lies
+inside a code section.
+
+Mach-O data symbols then join the `datasyms` stream themselves
+(`macho_stubs.rs (data_symbols)`): every named `N_SECT` symbol inside a non-code
+section, local ones included, plus the header symbol, demangled as the function
+stream's names are. An `nlist` records no size, so each extends to the next
+symbol of its section or the section's end, the way `lldb` sizes Mach-O symbols,
+**capped at 8 bytes** (`MAX_DATA_EXTENT`, one 64-bit scalar or pointer). The
+extent is what lets the covering-symbol query find the name at the access width,
+so `counter += 1` and `return audit_global` read by name, and every pointer to
+the object renders `&name` (`MetaClass(&gMetaClass)`,
+`&original_NSManagedObject_init`). The cap exists because the gap is a guess: a
+release image is stripped of its local symbols (`-x`), so the gap after an
+exported object often holds unnamed data (Swift's lazy metadata caches follow
+`__dyld_private`), and Go's region markers (`runtime.rodata`, `go:string.*`)
+label hundreds of kilobytes; uncapped, every access there would render as an
+offset into the wrong name. Inside the cap the guess can still cover alignment
+padding, so an access narrower than the extent renders as a partial access of
+the named object (`(short)half`, `*(char *)&flag = 1`).
+
 A **declared extent is never trusted to be representable.** `st_size` is a 64-bit
 field of the image that no header check validates, while the type factory sizes
 types in a 32-bit `int4`, so the commit clamps the declared size into `1 ..=
@@ -806,9 +839,25 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   (`decompiler/crates/kuna-analysis/src/loader/format/macho.rs (MACHO_ARM64E_ENV)`).
   Modern Mach-O pointer slots are chained-fixup entries, not pointers;
   `decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (ChainedFixups)`
-  parses `LC_DYLD_CHAINED_FIXUPS` into a VMA→resolved-pointer overlay (rebase and
-  arm64e auth-rebase handled; bind entries deliberately absent, so a consumer
-  misses and falls back rather than reading a wrong address).
+  parses `LC_DYLD_CHAINED_FIXUPS` into a VMA→resolved-pointer overlay for every
+  user-space pointer format (`DYLD_CHAINED_PTR_64`, `_64_OFFSET`, `_32`, and the
+  arm64e formats 1, 7 (a kext), 9 and 12, authenticated rebases with their PAC context
+  stripped) plus the import each bind names, read through the chained imports
+  table. A bind resolves to no pointer, so a consumer misses and falls back rather
+  than reading a wrong address. The loader writes the resolved values into the
+  image it maps (`dynrelocs`, §1.3). The header is the image's own bytes, so the
+  walk is bounded by the file rather than by its counts: a `seg_count` stops at
+  the end of the blob, every address computation wraps instead of overflowing, a
+  chain stops at a file word the walk already decoded, and the walk reads at most
+  one page start per 2-byte entry of the blob (`chained.rs (Walk)`). An honest
+  image decodes each slot once and reads each page start once, so neither bound
+  changes what it yields; a hostile one with 65535 tiny pages all starting inside
+  one long chain would otherwise walk it once per page, and thousands of segments
+  sharing one 65535-entry start table would read it once per segment. Only the
+  import records a bind uses are read, and their names, which an honest pool
+  holds once each, are read from at most the pool's own length in total
+  (`chained.rs (read_imports)`): a table whose names all run on to the pool's end
+  would otherwise copy the pool once per import.
 
 An explicit target changes only language selection: the parsed container still
 owns section mapping, image base, symbols, and imports. Container header class is
@@ -1314,6 +1363,78 @@ funcsym stream:
   This is a different path from `relocobjects`/`relocrebase` above, which own the
   *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
   the layout pass and this walk does not run for it.
+
+  A Mach-O image's dynamic relocations are its `LC_DYLD_CHAINED_FIXUPS` chains,
+  and there the on-disk word is worse than zero: it is not a value at all. Each
+  pointer slot holds a packed chain entry, the target in its low bits and the
+  hop to the next slot of the page in its high bits, and in Apple `ld64`'s
+  `DYLD_CHAINED_PTR_64_OFFSET` layout the target is an offset from the image
+  base. GH #1333's slot for a pointer to `audit_target` at `0x100000410` reads
+  `10 04 00 00 00 00 00 00`, and a slot that is not the last on its chain carries
+  `next` bits above the target (`0x0010000100000440` for a pointer to
+  `0x100000440`). `kuna_dynrelocs.rs (macho_chained)` takes the chains from
+  `chained.rs (resolve_chained_fixups)` and writes each rebase's resolved target
+  and a zero for each bind, the word every other format's loader leaves in an
+  import slot. A bind names an import, whose address is in another image, so
+  nothing better is knowable. No Mach-O slot is reported constant: the read-only
+  `__DATA_CONST` segment is the RELRO analog, but no Mach-O section is read-only
+  to the engine today, so there is nothing for the warrant to narrow. A classic
+  image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
+  are already the unslid pointers, and its bound slots are already zero or a
+  stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
+  them.
+
+  A Mach-O image's dynamic relocations are its `LC_DYLD_CHAINED_FIXUPS` chains,
+  and there the on-disk word is worse than zero: it is not a value at all. Each
+  pointer slot holds a packed chain entry, the target in its low bits and the
+  hop to the next slot of the page in its high bits, and in Apple `ld64`'s
+  `DYLD_CHAINED_PTR_64_OFFSET` layout the target is an offset from the image
+  base. GH #1333's slot for a pointer to `audit_target` at `0x100000410` reads
+  `10 04 00 00 00 00 00 00`, and a slot that is not the last on its chain carries
+  `next` bits above the target (`0x0010000100000440` for a pointer to
+  `0x100000440`). `kuna_dynrelocs.rs (macho_chained)` takes the chains from
+  `chained.rs (resolve_chained_fixups)` and writes each rebase's resolved target
+  and a zero for each bind, the word every other format's loader leaves in an
+  import slot. A bind names an import, whose address is in another image, so
+  nothing better is knowable. No Mach-O slot is reported constant: the read-only
+  `__DATA_CONST` segment is the RELRO analog, but no Mach-O section is read-only
+  to the engine today, so there is nothing for the warrant to narrow. A classic
+  image (`LC_DYLD_INFO` rebase and bind opcodes) needs no write: its rebased words
+  are already the unslid pointers, and its bound slots are already zero or a
+  stub-helper address. `dynrelocs off` leaves the chain words as the linker wrote
+  them.
+- **Data-held pointers** (kuna,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_dataptrs.rs (data_pointers)`):
+  the read-only twin of the two writers above, for `kuna xrefs`. A word in data
+  that holds `&audit_target` is a reference no instruction makes, so the
+  instruction walk never reports it, and calling it a call edge would be wrong.
+  But a rebased image lists every such word, because its loader must fix each
+  one up: a chained-fixup Mach-O threads them on its chains (the rebase carries
+  its target), a classic Mach-O lists them in its `LC_DYLD_INFO` rebase opcodes
+  (interpreted here; the slot already holds the unslid target), a
+  position-independent ELF carries a dynamic relocation for each, and a PE lists
+  them in `.reloc`. The ELF list is read here, not through `dynrelocs` (whose
+  writes are an option of the loaded image): a `RELATIVE` word holds `B + A`, and
+  an absolute word, `GLOB_DAT` or `JUMP_SLOT` against a symbol the image defines
+  holds `S + A`. The absolute kind is how a shared object stores its own exported
+  functions, which are preemptible (`R_X86_64_64 audit_target` for the first entry
+  of a callback table). The list keeps
+  each word whose target is in an allocated section, and says which metadata it
+  came from. An image that lists none (a non-PIE ELF, whose own pointers carry no
+  relocation, a PE without base relocations, a relocatable object) reports
+  coverage `none`: its pointers are plain words no metadata tells from integers,
+  and guessing would make an empty answer mean two things. A bound slot is not
+  listed, since it holds an address of another image. `kuna xrefs` reports these
+  as separate `pointer` rows with that coverage, never merged into the
+  instruction rows or the call graph (`docs/cli.md`). On x86 an instruction can
+  embed an absolute address, so a 32-bit PE's `.reloc` also lists every
+  `push offset f` and `jmp [slot]` operand in `.text`; a word that lies inside a
+  decoded instruction referencing the same address (the instruction's bytes, as
+  its own decode measures them, cover the word) is that instruction's row and is
+  left out (`xrefs.rs (data_rows)`). A word just past the instruction, such as a
+  pointer table placed in `.text` after a `mov eax, offset f`, stays a pointer,
+  and so does one inside an instruction the walk never decoded or whose reference
+  it did not record, so dropping a row never leaves the word unanswered.
 - **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and
@@ -1458,7 +1579,8 @@ funcsym stream:
   *directly*, so naming the entry is sufficient and arch-independent;
   `__la_symbol_ptr`/`__got` slots are named too for `-fno-plt`-style indirect
   calls. `INDIRECT_SYMBOL_LOCAL`/`ABS` entries are skipped; the C-ABI leading `_`
-  is stripped.
+  is stripped. The image's own exports join the stream only when they lie in a
+  code section (§1.2, `data_exports`).
 
 The import currency deliberately includes both executable linkage stubs and
 pointer slots in data sections: the latter must be function symbols so indirect
@@ -6070,6 +6192,23 @@ from inbound results, so asking who calls the import does not count its own
 veneer. This intentionally changes the public xref `kind` for PE `FF 25` veneers
 and x86 ELF PLT stubs from `read` to `jump`.
 
+(kuna) A call materialises its own **return address**, and the constant scan must
+not read it as a reference: it is the instruction's fall-through, which x86 pushes
+as a constant, A32 copies into `lr` and MIPS into `$ra`, so a constant equal to the
+fall-through is never filed as `Data`. AArch64 spells it differently — `bl` and
+`blr` lift `x30 = inst_start + 4` to one `INT_ADD` of two constants — so the
+fall-through never appears as a constant and the scan filed the first addend, the
+`bl`'s own address, as a `Data` reference from every call site to itself (and,
+`--to` a call site, as an incoming one). In an instruction that calls, an op that
+adds two constants into the fall-through is that same return address, and neither
+addend is filed
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (is_return_address_sum)`).
+The rule names the call's sum, not the instruction's own address: `adr x0,.`, a
+constant equal to the instruction's address, a PC-relative sum that lands anywhere
+but the fall-through, and the same sum outside a call — a Thumb-2 `vldr
+s0,[pc,#8]` reads `pc` as `inst_start + 4`, which is its fall-through only by
+width — are reported as before.
+
 (kuna) An edge also has to survive being resolved to a **node**, and the walk's
 function set is the wrong authority for this one. The walk calls nothing outside
 an executable section a function — an IAT slot lives in `.rdata`, so it is never
@@ -6710,6 +6849,92 @@ the load. A position-independent static image with no GOT and no `.dynamic`
 section (code that touches only its own strings and statics) is read as
 firmware. And in an image stripped of its mapping symbols, a datum at an odd
 address inside an executable section is filed one byte low.
+
+(kuna) PIC base folding and PIC pool composition each recognise one idiom; the
+general form of their defect is any ISA whose instructions cannot hold an address.
+AArch64 builds one as a page (`adrp x0,0x100000000`) plus a twelve-bit offset
+(`add x0,x0,#0x488`, or the offset of an `ldr`/`str`), RISC-V as `lui`'s or
+`auipc`'s high twenty bits plus an `addi`/`lw`/`sw`/`ld` offset, MIPS as `lui` plus
+`addiu`, PowerPC as `lis` plus `addi`; neither instruction names the datum, so the
+constant scan reported a static string that a function returns, a global that it
+reads and a function pointer that it loads as referenced by nothing, on arm64
+Mach-O, AArch64 ELF and RV32/RV64 ELF alike. **Register pair carrying**
+(`decompiler/crates/kuna-analysis/src/listing/kuna_regcarry.rs`) carries a
+register's constant to the instructions that fall after it. A register an
+instruction leaves holding a constant that passes the `checkOperands` floor is
+handed to its fall-through, and each instruction that receives one evaluates its
+own p-code with it seeded, over the same small integer fold PIC base folding uses.
+The three shapes that machine reads are read here too, with one difference in
+kind: the address a `LOAD` reads is a `Read`, the address a `STORE` writes a
+`Write`, and an address an `INT_ADD`/`INT_SUB` composes into a whole register is
+`Data` — forming an address is not reading it. Only a value a carried register
+contributed to is reported (the instruction's own constants are the scan's), and a
+value that stays in a temporary is not, for the indexed-access reason above.
+
+A carried value lives for at most eight instructions, is dropped when its
+register is written with anything the fold cannot follow, and survives a call only
+in a register the default prototype leaves unaffected and the call instruction did
+not itself write (ARM's cspec lists `lr` as unaffected, yet the `bl` writes it). An
+instruction whose p-code branches inside itself — a predicated A32 instruction, an
+x86 `rep` — passes on no register it writes, and nothing it computes past a
+p-code-relative label is filed, because a value there may come from either side
+of the label (`cinc x0,x0,eq` leaves `x0` or `x0 + 1`). Values travel only along
+fall-through, and the walk is breadth-first, so each reference records the
+instructions its value passed through; once the whole walk has drained, a
+reference is filed only if none of them is a branch target, a switch case or a
+function entry. A join is where another path may hand the register a different
+value, and two `adrp`s meeting at one `add` therefore form nothing. This gives
+up a value that every path agrees on, which the meet PIC pool composition runs
+would keep; the carry is meant for the two halves of one pair, which a compiler
+keeps in one straight run.
+
+The `Data` shape is narrower than the other two because nothing dereferences the
+value to vouch for it, and the same pair builds integers. A copy of a carried
+value (`mv a1,a0`, which RISC-V spells `addi a1,a0,0`) is the reference its source
+already was. Bitwise composition (`movk`, `ori`, `movt`) and an add narrower than
+the register it lands in (RV64 `addiw`, which truncates through a `SUBPIECE`) are
+how a program builds a number. A value formed only to form the next one — the
+middle `add` of an A32 PLT entry, whose register the very next instruction uses as
+a base and overwrites — is a step, not an address, and an access that writes its
+own address back (`ldr pc,[ip,#0x2f0]!`, `lwzu`) is one reference, the access. And
+in an ELF `ET_DYN` image, which is relocated as a whole, an absolute immediate is
+a number, never an address (`lui s2,0x3; addi s2,s2,-5` in a RISC-V shared object is
+12283, and a PJSIP library forms thousands of `70000`-range status codes that
+way), so there a constant starts a carry only when it was computed from the
+instruction's own address: `auipc`'s `imm + inst_start`, A32's `pc` read as
+`inst_start + 8`. x86-64 and AArch64 are exempt, because SLEIGH folds their
+PC-relative operands (`lea [rip+…]`, `adrp`) into a plain constant, so the PC is
+not visible, and neither builds a number from an add of two immediates. RV32 is
+where the two shapes coincide in an executable: `li a1,70000` assembles to
+`lui a1,0x11; addi a1,a1,0x170`, exactly the `%hi`/`%lo` pair of an address, so in
+an RV32 `ET_EXEC` a number that lands in a mapped section files a `Data` row — the
+same floor the constant scan applies to a lone immediate. RV64 builds that number
+with `addiw` and is not affected. The page or high half on its own is not a
+carried reference; an `adrp` page that is itself a mapped address keeps the `Data`
+row the constant scan always gave it.
+
+Most instructions never reach the evaluation. One is evaluated when a carry
+reaches it, or when it could start one: it calls nothing, some modelled op yields
+an address-like constant, some register is written by a modelled op from constants
+and temporaries alone (the first register an evaluation can know is always written
+that way), and in an `ET_DYN` image some modelled op reads a constant in the
+instruction's PC window. An instruction failing any of these would leave nothing
+to carry or keep, so the gate decides what is evaluated, never what is filed.
+
+Measured over 86 images (AArch64 ELF and Mach-O, ARM, MIPS, PowerPC, RISC-V,
+x86-64, i386 PE and the vendored fixtures): no row is lost, and of the 14,550 rows
+added, 10,994 on RISC-V match GNU objdump's own `lui`/`auipc` pair annotation
+exactly, 895 more trace back through a base objdump annotated, 2,237 on AArch64,
+MIPS, PowerPC and x86-64 match an independent capstone def-chain resolver, the 344
+ARM PLT slot reads match the entries' own `add`/`add`/`ldr` arithmetic, and the
+other 80 (Thumb `adr` + `ldrd` pool reads, a MIPS delay-slot `addiu`, a RISC-V
+`c.lui` store and an `amoswap` on a lock) were checked by hand. The walk
+itself costs about 2% more on x86-64 and ARM, where little is carried, 2-3% more
+on MIPS and PowerPC, and 4-7% more on AArch64 and RISC-V, where a high half
+precedes nearly every global access. Roughly half of that is the evaluation; the
+rest is the new rows themselves, rendering each one's instruction text (about
+2 µs a row on AArch64) and filing it (the 9,331 rows of a RISC-V PJSIP library).
+Emitted C is unchanged.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.

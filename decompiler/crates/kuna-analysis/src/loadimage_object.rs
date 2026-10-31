@@ -500,7 +500,7 @@ pub struct ObjectLoadImage {
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
-    /// A PE image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
+    /// A PE or Mach-O image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
     data_exports: Vec<(u64, String)>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
     /// the program's own data objects live in; see
@@ -538,6 +538,10 @@ pub struct ObjectLoadImage {
     /// a whole-binary enumeration needs to keep them out of the decompile set.
     /// Empty for every non-PE image and for a relocatable object.
     import_slots: Vec<(u64, u64)>,
+    /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
+    /// dynamic relocations bind to a function it defines, ascending by stub. See
+    /// [`crate::loader::kuna_pltlocal`].
+    plt_local: Vec<(u64, u64)>,
     elfv1: crate::loader::elfv1::Descriptors,
     elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
@@ -871,6 +875,17 @@ impl ObjectLoadImage {
         // the same walks and deduped on its own address set.  See [`DataSym`].
         let mut datasyms: Vec<DataSym> = Vec::new();
         let mut seen_data: HashSet<u64> = HashSet::new();
+        // A Mach-O `N_SECT` symbol's kind comes from its section's name, so the
+        // Mach header symbol (`__mh_execute_header`, numbered into `__text` but
+        // addressed at the image base) reads as text. An entry must lie inside a
+        // section the loader classifies as code.
+        let macho_code = (file.format() == object::BinaryFormat::MachO)
+            .then(|| crate::loader::macho_stubs::code_ranges(&file));
+        let outside_code = |addr: u64| {
+            macho_code
+                .as_ref()
+                .is_some_and(|code| !crate::loader::macho_stubs::in_ranges(code, addr))
+        };
 
         // 1. `.symtab` defined functions.  Skip *undefined* (import-placeholder)
         //    entries — e.g. the ELF UND `puts@@GLIBC_2.2.5` (`st_value == 0`),
@@ -897,6 +912,9 @@ impl ObjectLoadImage {
                 continue; // UND / import placeholder, not a real code address
             }
             let addr = elfv1.code_address(sym.address());
+            if outside_code(addr) {
+                continue;
+            }
             if is_elf { elf_functions.definitions.insert(if arm32_decoder { addr & !1 } else { addr }); }
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
@@ -911,6 +929,21 @@ impl ObjectLoadImage {
                 funcsyms.push(FuncSym { addr, name, size });
             } else if is_elf {
                 aliases.push(FuncSym { addr, name, size });
+            }
+        }
+
+        // A Mach-O `nlist` records no size; `data_symbols` guesses one from
+        // the next symbol of its section, capped at 8 bytes. Demangled as the
+        // function stream's names are.
+        for (addr, name, size) in crate::loader::macho_stubs::data_symbols(&file) {
+            let name = match std::str::from_utf8(&name).ok().and_then(crate::demangle::demangle_name) {
+                Some(demangled) => demangled.into_bytes(),
+                None => name,
+            };
+            let data_mode = if namechars == NameChars::Ident { NameChars::Safe } else { namechars };
+            let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
+            if !name.is_empty() && seen_data.insert(addr) {
+                datasyms.push(DataSym { addr, name, size });
             }
         }
 
@@ -979,6 +1012,8 @@ impl ObjectLoadImage {
         // Through the boundary: `ElfFormat::const_ranges` is `mips_got_const_ranges`.
         let const_ranges = fmt.const_ranges(&file, bytes);
 
+        let plt_local = fmt.local_import_targets(&file, bytes);
+
         // (kuna) The import pointer slots the funcsym walk above just registered
         // names at — recorded as addresses so the enumeration can tell a pointer
         // word from a function entry. Empty off-PE.
@@ -992,8 +1027,9 @@ impl ObjectLoadImage {
         let le_image = file.is_little_endian();
         let dynrelocs = crate::loader::kuna_dynrelocs::resolve(&file, bytes);
         let mut applied: HashSet<u64> = HashSet::new();
+        let track = !dynrelocs.const_ranges.is_empty();
         for w in &dynrelocs.writes {
-            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) {
+            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) && track {
                 applied.insert(w.vma);
             }
         }
@@ -1021,12 +1057,14 @@ impl ObjectLoadImage {
             datasyms,
             data_exports: crate::loader::pe_iat::data_exports(&file)
                 .into_iter()
+                .chain(crate::loader::macho_stubs::data_exports(&file))
                 .map(|(addr, name)| (addr, String::from_utf8_lossy(&name).into_owned()))
                 .collect(),
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
             import_slots,
+            plt_local,
             elfv1,
             elf_functions,
             spaceid: None,
@@ -1188,6 +1226,7 @@ impl ObjectLoadImage {
             // A pre-link object has no Import Address Table: its external calls
             // are relocations, resolved by the layout pass.
             import_slots: Vec::new(),
+            plt_local: Vec::new(),
             elfv1: Default::default(),
             elf_functions: ElfFunctionProvenance::default(),
             spaceid: None,
@@ -1271,6 +1310,12 @@ impl ObjectLoadImage {
     /// varnode inside one even when global propagation is off.
     pub fn dynreloc_const_ranges(&self) -> &[(u64, u64)] {
         &self.dynreloc_const
+    }
+
+    /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
+    /// relocations bind to a function it defines, ascending by stub.
+    pub fn plt_local_targets(&self) -> &[(u64, u64)] {
+        &self.plt_local
     }
 
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
@@ -1367,7 +1412,7 @@ impl ObjectLoadImage {
             .collect()
     }
 
-    /// A PE image's data exports as `(vma, name)`: the named exports outside
+    /// A PE or Mach-O image's data exports as `(vma, name)`: the named exports outside
     /// every code section. They carry no extent, so they name addresses for
     /// lookup only and never become globals.
     pub fn data_exports(&self) -> &[(u64, String)] {
@@ -1593,6 +1638,10 @@ impl LoadImage for ObjectLoadImage {
             r.1 = r.1.wadd(badjust);
         }
         for r in &mut self.dynreloc_const {
+            r.0 = r.0.wadd(badjust);
+            r.1 = r.1.wadd(badjust);
+        }
+        for r in &mut self.plt_local {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
@@ -3042,6 +3091,24 @@ mod tests {
         );
     }
 
+    /// (GH #1333) A chained-fixup Mach-O maps its pointer slots as the pointers
+    /// dyld writes, not the chain words on disk: both rebases resolve and the
+    /// import slot reads zero, in `ld64.lld`'s layout and in Apple `ld64`'s.
+    #[test]
+    fn macho_chained_fixups_are_applied_to_the_image() {
+        for name in ["macho_ptrslots_arm64", "macho_ptrslots_offset_arm64"] {
+            let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let m = manager();
+            let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+            let mut img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+            img.attach_to_space(Rc::clone(&ram));
+            let words = img.load(24, &Address::new(Rc::clone(&ram), 0x100004000)).unwrap();
+            let read = |i: usize| u64::from_le_bytes(words[i * 8..i * 8 + 8].try_into().unwrap());
+            assert_eq!((read(0), read(1), read(2)), (0x100000440, 0x1000003c8, 0), "{name}");
+        }
+    }
+
     #[test]
     fn cet_plt_sec_imports_resolve_at_call_targets() {
         // PIE + CET: calls target `.plt.sec` (`endbr64; FF 25`).  The stub entry
@@ -3140,6 +3207,45 @@ mod tests {
         img.attach_to_space(Rc::clone(&ram));
         let got = img.load(4, &Address::new(Rc::clone(&ram), 0x400660));
         assert!(got.is_ok(), "fix_output_parameters bytes must load: {got:?}");
+    }
+
+    /// (GH #1339) A Mach-O export outside every code section names data: the
+    /// `__DATA,__data` globals of `macho_datasyms_arm64` are data symbols and
+    /// lookup names, not function entries, and neither is the Mach header
+    /// symbol at the image base. `_audit_global` extends to `_audit_message`
+    /// eight bytes on, which runs to the end of `__data`.
+    #[test]
+    fn macho_data_exports_are_not_function_entries() {
+        let syms = fixture_funcsyms("macho_datasyms_arm64");
+        let mut entries: Vec<(u64, &str)> =
+            syms.iter().map(|(addr, name)| (*addr, name.as_str())).collect();
+        entries.sort_unstable();
+        assert_eq!(entries, vec![(0x1000003c8, "_audit_read"), (0x1000003d4, "_main")]);
+
+        let path =
+            format!("{}/tests/fixtures/macho_datasyms_arm64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let data = img.data_symbols();
+        for want in [(0x100004000u64, "_audit_global", 8), (0x100004008, "_audit_message", 8)] {
+            assert!(
+                data.contains(&(want.0, want.1.to_string(), want.2)),
+                "{want:?} must be a data symbol of that extent: {data:?}"
+            );
+        }
+        for (addr, name) in [
+            (0x100004000u64, "audit_global"),
+            (0x100004000, "_audit_global"),
+            (0x100004008, "audit_message"),
+            (0x100004008, "_audit_message"),
+            (0x100000000, "__mh_execute_header"),
+        ] {
+            assert!(
+                img.data_exports().contains(&(addr, name.to_string())),
+                "{name} @ {addr:#x} must be a data lookup name: {:?}",
+                img.data_exports()
+            );
+        }
     }
 
     #[test]

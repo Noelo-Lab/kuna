@@ -355,6 +355,7 @@ kuna_options! { self, p1;
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
     "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
+    "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
     "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
@@ -506,6 +507,11 @@ kuna_options! { self, p1;
     "passthrough" => {
         let (val, msg) = crate::p4_calls::kuna_passthrough::OptionPassThrough.apply(p1)?;
         self.pass_through = val;
+        Ok(msg)
+    },
+    "pltlocal" => {
+        let (val, msg) = crate::p4_calls::kuna_pltlocal::OptionPltLocal.apply(p1)?;
+        self.plt_local_calls = val;
         Ok(msg)
     },
     "mixedtailret" => {
