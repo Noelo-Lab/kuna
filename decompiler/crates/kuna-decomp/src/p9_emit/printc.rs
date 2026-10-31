@@ -12253,14 +12253,6 @@ impl RealTypeCtx {
     }
 }
 
-/// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
-/// (printc.cc:2697): is there a *whole-symbol* sibling high (the proto-partial
-/// ROOT) sharing `name` whose `kuna_symbol_offset == -1`?  A register-returned
-/// struct's per-field pieces are all bound to the root's shared name; the root
-/// keeps the `-1` whole-symbol-match offset and is the one entry that declares.
-/// Per-function names are unique (the `vN` allocator), so the only sibling with a
-/// shared name is the group's root, never an unrelated scalar.  `except` is the
-/// piece itself (excluded so a lone whole high is not its own sibling).
 /// (kuna perf) The named highs of one function grouped by name, each group in
 /// the bank's own order and built on the first search, so a declaration's
 /// search for a same-named sibling visits only that name's highs instead of
@@ -12298,6 +12290,14 @@ fn same_named<'a>(
     ids.iter().filter_map(move |&id| fd.high_bank().get(id).map(|h| (id, h)))
 }
 
+/// STUB A helper — the kuna stand-in for C++ `Symbol::getFirstWholeMap() != entry`
+/// (printc.cc:2697): is there a *whole-symbol* sibling high (the proto-partial
+/// ROOT) sharing `name` whose `kuna_symbol_offset == -1`?  A register-returned
+/// struct's per-field pieces are all bound to the root's shared name; the root
+/// keeps the `-1` whole-symbol-match offset and is the one entry that declares.
+/// Per-function names are unique (the `vN` allocator), so the only sibling with a
+/// shared name is the group's root, never an unrelated scalar.  `except` is the
+/// piece itself (excluded so a lone whole high is not its own sibling).
 fn high_name_has_whole_sibling(
     fd: &Funcdata,
     siblings: &[crate::context::HighVariableId],
