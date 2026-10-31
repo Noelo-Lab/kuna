@@ -2114,6 +2114,33 @@ Execution error: No symbol named: v9
             ));
     }
 
+    /// The x86 real-mode language id contains a space; the load line quotes it
+    /// so the console does not read `Mode:default` as the next argument.
+    #[test]
+    fn build_script_quotes_a_target_containing_a_space() {
+        for raw_image in [true, false] {
+            let script = build_script(
+                &super::DecompileArgs {
+                    by_address: true,
+                    raw_image,
+                    base: raw_image.then_some(0),
+                    bfd_target: Some("x86:LE:16:Real Mode:default".into()),
+                    ..script_args("/tmp/dazzle.exe", "0x70")
+                },
+                Path::new("/tmp/kuna.c"),
+                LISTING,
+                None,
+            );
+            let load = script.lines().next().unwrap();
+            let expected = if raw_image {
+                "load raw \"x86:LE:16:Real Mode:default\" 0x0 0x70 /tmp/dazzle.exe"
+            } else {
+                "load file \"x86:LE:16:Real Mode:default\" /tmp/dazzle.exe"
+            };
+            assert_eq!(load, expected);
+        }
+    }
+
     /// A checked-in fixture path, so the architecture classification behind the
     /// discovery bundle reads a real object rather than a guess.
     fn fixture(name: &str) -> String {

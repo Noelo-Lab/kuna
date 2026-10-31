@@ -1144,9 +1144,10 @@ fn parse_raw_address(token: &str) -> Result<u64, IfaceError> {
 
 decomp_command!(
     /// Load a headerless image with explicit language, base, and entry seeds.
+    /// The language may be quoted, since `x86:LE:16:Real Mode` has a space.
     IfcLoadRaw,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
-        let target = s.read_token();
+        let target = s.read_filename();
         let base_token = s.read_token();
         let entries_token = s.read_token();
         let filename = s.read_filename();

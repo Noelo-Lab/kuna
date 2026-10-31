@@ -2116,7 +2116,8 @@ mod tests {
         // and kuna-sparc-delay-condition / a flag-writing delay slot cannot change its branch
         // and kuna-stacksolver-unsolved / a 16-bit stack solution of 65535 is solved once
         // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
-        assert_eq!(count, 594, "corpus file count drifted");
+        // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
+        assert_eq!(count, 595, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
