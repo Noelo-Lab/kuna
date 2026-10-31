@@ -1,0 +1,25 @@
+macho_datasyms_arm64 -- arm64 Mach-O whose exported globals are data, not functions.
+
+What it is
+  A linked arm64 MH_EXECUTE (33,536 bytes, SHA-256
+  d6271bd8514fe485094455d7f5efc4166a65d17ac9e706d621064ed5bb755795) built from
+  macho_datasyms.c, the source of GH #1339:
+    volatile int audit_global = 3;              -> _audit_global  @ 0x100004000 (__DATA,__data)
+    const char *audit_message = "static marker"; -> _audit_message @ 0x100004008 (__DATA,__data)
+    _audit_read @ 0x1000003c8, _main @ 0x1000003d4 (__TEXT,__text)
+  Both globals are external defined nlist entries, so they are Mach-O
+  "exports"; __mh_execute_header @ 0x100000000 is numbered into __text but lies
+  before it. The image carries LC_DYLD_CHAINED_FIXUPS (the audit_message slot is
+  a DYLD_CHAINED_PTR_64_OFFSET rebase of the __cstring literal).
+
+How it was built (no macOS SDK; host clang + the rustup-bundled ld64.lld)
+  clang -target arm64-apple-macos11 -O0 -g0 -fno-inline -c macho_datasyms.c -o d.o
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  "$LLD" -arch arm64 -platform_version macos 11.0 11.0 -fixup_chains \
+         -undefined dynamic_lookup -e _main -o macho_datasyms_arm64 d.o
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). Prebuilt because CI
+  has no Mach-O linker.
+
+What it pins
+  kuna functions lists _audit_read and _main only; decompile of audit_global /
+  _audit_global answers that the name labels data at 0x100004000.

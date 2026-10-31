@@ -1721,6 +1721,17 @@ pub(crate) fn load_program(
     Ok(prog)
 }
 
+/// What a name miss says beyond the miss itself: the `; `-separated tail of
+/// [`EntryLookupError::NotFound`] (a near spelling, the count of names the
+/// image does carry, or the data object the name labels). `None` for a bare
+/// miss, which is what a stripped image answers.
+pub(crate) fn name_miss_hint(error: &EntryLookupError) -> Option<String> {
+    let EntryLookupError::NotFound { .. } = error else { return None };
+    let text = error.to_string();
+    let (_, hint) = text.split_once("\"; ")?;
+    (!hint.trim().is_empty()).then(|| hint.trim().to_string())
+}
+
 /// Build the target [`FunctionEntry`] list from the filters: `--addr` entries
 /// (the canonical record at that address, else a record named via the symbol
 /// table / `name_function`), `--functions` names or aliases, or — with no filter
@@ -1784,8 +1795,18 @@ fn resolve_targets_with_policy(
             };
             match entry {
                 Ok(entry) => targets.push(entry),
-                Err(EntryLookupError::NotFound { .. }) => {
-                    eprintln!("warning: no function named {want:?} in {}", args.binary)
+                Err(error @ EntryLookupError::NotFound { .. }) => {
+                    let tail = match &error {
+                        EntryLookupError::NotFound { data: Some(_), .. } => name_miss_hint(&error),
+                        _ => None,
+                    };
+                    match tail {
+                        Some(tail) => eprintln!(
+                            "warning: no function named {want:?} in {}; {tail}",
+                            args.binary
+                        ),
+                        None => eprintln!("warning: no function named {want:?} in {}", args.binary),
+                    }
                 }
                 Err(error) => return Err(error.to_string()),
             }

@@ -59,7 +59,8 @@ use kuna_sleigh::translate::register_translate_ids;
 
 use crate::entry_selector::ObjectSectionLocation;
 pub use crate::entry_selector::{
-    EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion, ObjectLocation,
+    DataName, EntryLookupError, EntryProvenance, EntrySelector, FunctionEntry, NameSuggestion,
+    ObjectLocation,
 };
 
 /// One function symbol discovered in the `<binaryimage>` (name → entry address).
@@ -1275,6 +1276,7 @@ impl ConsoleProgram {
                             selector: selector.display(),
                             suggestion: nearest_spelling(&entries, want),
                             named_entries: named_entry_count(&entries),
+                            data: self.data_name(want),
                         });
                     }
                 }
@@ -1369,6 +1371,7 @@ impl ConsoleProgram {
                 selector: format!("0x{:x}", address.get_offset()),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             })?;
         let known = self.entry_at_exact_address(address);
         if self.entry_bytes_mapped(address) {
@@ -1458,6 +1461,7 @@ impl ConsoleProgram {
                 selector: selector.display(),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             });
         }
         let candidates = sections
@@ -1493,6 +1497,7 @@ impl ConsoleProgram {
                 selector: selector.display(),
                 suggestion: None,
                 named_entries: 0,
+                data: None,
             }),
             1 => Ok(candidates.remove(0)),
             _ => Err(EntryLookupError::Ambiguous {
@@ -2015,6 +2020,20 @@ impl ConsoleProgram {
     /// Resolve an imported data object's original spelling after identifier folding.
     pub fn lookup_data_alias(&self, name: &str) -> Option<u64> {
         self.data_name_aliases.get(name).copied()
+    }
+
+    /// The data object `name` labels, for a name that selects no function: a
+    /// loader data symbol or data export, or a debug-info global
+    /// ([`Self::lookup_data_alias`]), with the section holding it.
+    fn data_name(&self, name: &str) -> Option<DataName> {
+        let address = self.lookup_data_alias(name)?;
+        let section = self.image_metadata.as_ref().and_then(|meta| {
+            meta.sections
+                .iter()
+                .find(|s| address >= s.vma && address - s.vma < s.size)
+                .map(|s| s.name.clone())
+        });
+        Some(DataName { address, section })
     }
 
     /// Global data symbols with their address-space identity retained.

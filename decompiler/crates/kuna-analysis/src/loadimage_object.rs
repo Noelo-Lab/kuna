@@ -500,7 +500,7 @@ pub struct ObjectLoadImage {
     /// Defined data symbols (`STT_OBJECT`), in symbol-table order. See
     /// [`DataSym`]; surfaced through [`ObjectLoadImage::data_symbols`].
     datasyms: Vec<DataSym>,
-    /// A PE image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
+    /// A PE or Mach-O image's data exports as `(vma, name)`; see [`ObjectLoadImage::data_exports`].
     data_exports: Vec<(u64, String)>,
     /// (kuna `globalref`) Sorted, merged `[start, stop]` ranges of the sections
     /// the program's own data objects live in; see
@@ -875,6 +875,17 @@ impl ObjectLoadImage {
         // the same walks and deduped on its own address set.  See [`DataSym`].
         let mut datasyms: Vec<DataSym> = Vec::new();
         let mut seen_data: HashSet<u64> = HashSet::new();
+        // A Mach-O `N_SECT` symbol's kind comes from its section's name, so the
+        // Mach header symbol (`__mh_execute_header`, numbered into `__text` but
+        // addressed at the image base) reads as text. An entry must lie inside a
+        // section the loader classifies as code.
+        let macho_code = (file.format() == object::BinaryFormat::MachO)
+            .then(|| crate::loader::macho_stubs::code_ranges(&file));
+        let outside_code = |addr: u64| {
+            macho_code
+                .as_ref()
+                .is_some_and(|code| !crate::loader::macho_stubs::in_ranges(code, addr))
+        };
 
         // 1. `.symtab` defined functions.  Skip *undefined* (import-placeholder)
         //    entries — e.g. the ELF UND `puts@@GLIBC_2.2.5` (`st_value == 0`),
@@ -901,6 +912,9 @@ impl ObjectLoadImage {
                 continue; // UND / import placeholder, not a real code address
             }
             let addr = elfv1.code_address(sym.address());
+            if outside_code(addr) {
+                continue;
+            }
             if is_elf { elf_functions.definitions.insert(if arm32_decoder { addr & !1 } else { addr }); }
             let name = match sym.name_bytes() {
                 Ok(n) if !n.is_empty() => crate::loader::elf_plt::strip_version(n),
@@ -915,6 +929,21 @@ impl ObjectLoadImage {
                 funcsyms.push(FuncSym { addr, name, size });
             } else if is_elf {
                 aliases.push(FuncSym { addr, name, size });
+            }
+        }
+
+        // A Mach-O `nlist` records no size; `data_symbols` guesses one from
+        // the next symbol of its section, capped at 8 bytes. Demangled as the
+        // function stream's names are.
+        for (addr, name, size) in crate::loader::macho_stubs::data_symbols(&file) {
+            let name = match std::str::from_utf8(&name).ok().and_then(crate::demangle::demangle_name) {
+                Some(demangled) => demangled.into_bytes(),
+                None => name,
+            };
+            let data_mode = if namechars == NameChars::Ident { NameChars::Safe } else { namechars };
+            let name = sanitize_symbol_name_bytes(&name, data_mode).into_owned();
+            if !name.is_empty() && seen_data.insert(addr) {
+                datasyms.push(DataSym { addr, name, size });
             }
         }
 
@@ -1027,6 +1056,7 @@ impl ObjectLoadImage {
             datasyms,
             data_exports: crate::loader::pe_iat::data_exports(&file)
                 .into_iter()
+                .chain(crate::loader::macho_stubs::data_exports(&file))
                 .map(|(addr, name)| (addr, String::from_utf8_lossy(&name).into_owned()))
                 .collect(),
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
@@ -1381,7 +1411,7 @@ impl ObjectLoadImage {
             .collect()
     }
 
-    /// A PE image's data exports as `(vma, name)`: the named exports outside
+    /// A PE or Mach-O image's data exports as `(vma, name)`: the named exports outside
     /// every code section. They carry no extent, so they name addresses for
     /// lookup only and never become globals.
     pub fn data_exports(&self) -> &[(u64, String)] {
@@ -3158,6 +3188,45 @@ mod tests {
         img.attach_to_space(Rc::clone(&ram));
         let got = img.load(4, &Address::new(Rc::clone(&ram), 0x400660));
         assert!(got.is_ok(), "fix_output_parameters bytes must load: {got:?}");
+    }
+
+    /// (GH #1339) A Mach-O export outside every code section names data: the
+    /// `__DATA,__data` globals of `macho_datasyms_arm64` are data symbols and
+    /// lookup names, not function entries, and neither is the Mach header
+    /// symbol at the image base. `_audit_global` extends to `_audit_message`
+    /// eight bytes on, which runs to the end of `__data`.
+    #[test]
+    fn macho_data_exports_are_not_function_entries() {
+        let syms = fixture_funcsyms("macho_datasyms_arm64");
+        let mut entries: Vec<(u64, &str)> =
+            syms.iter().map(|(addr, name)| (*addr, name.as_str())).collect();
+        entries.sort_unstable();
+        assert_eq!(entries, vec![(0x1000003c8, "_audit_read"), (0x1000003d4, "_main")]);
+
+        let path =
+            format!("{}/tests/fixtures/macho_datasyms_arm64", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        let img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+        let data = img.data_symbols();
+        for want in [(0x100004000u64, "_audit_global", 8), (0x100004008, "_audit_message", 8)] {
+            assert!(
+                data.contains(&(want.0, want.1.to_string(), want.2)),
+                "{want:?} must be a data symbol of that extent: {data:?}"
+            );
+        }
+        for (addr, name) in [
+            (0x100004000u64, "audit_global"),
+            (0x100004000, "_audit_global"),
+            (0x100004008, "audit_message"),
+            (0x100004008, "_audit_message"),
+            (0x100000000, "__mh_execute_header"),
+        ] {
+            assert!(
+                img.data_exports().contains(&(addr, name.to_string())),
+                "{name} @ {addr:#x} must be a data lookup name: {:?}",
+                img.data_exports()
+            );
+        }
     }
 
     #[test]

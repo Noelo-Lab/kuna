@@ -532,6 +532,39 @@ would not cover a wider access, so mapping it would trade `dat_<addr>` for
 extra casts and raw addresses. A declaration (`--assert data ...`, DWARF) that
 supplies the real extent names the storage in emitted C.
 
+A Mach-O image takes the same rule (`macho_stubs.rs (data_exports)`). Its
+"exports" are the external defined `nlist` entries, and every one of them used to
+enter the function stream: a `__DATA,__data` global, an Objective-C class object
+in `__objc_data`, Swift type metadata in `__TEXT,__const`, an `N_ABS` value. Each
+then listed in `kuna functions` and decompiled by name to an
+`UndefinedInstructionException` body. Now only an export inside a section the
+loader classifies as code enters it; the rest are lookup names, under both their
+symbol-table spelling (`_audit_global`) and the C spelling (`audit_global`), and
+a decompile by either name answers that it names data, where, and that `kuna
+read` shows its bytes. One more symbol is excluded the same way: an `N_SECT`
+symbol's kind comes from its section's name, and the Mach header symbol
+(`__mh_execute_header`) is numbered into `__text` while addressed at the image
+base, outside it. A Mach-O symbol is a function entry only when its address lies
+inside a code section.
+
+Mach-O data symbols then join the `datasyms` stream themselves
+(`macho_stubs.rs (data_symbols)`): every named `N_SECT` symbol inside a non-code
+section, local ones included, plus the header symbol, demangled as the function
+stream's names are. An `nlist` records no size, so each extends to the next
+symbol of its section or the section's end, the way `lldb` sizes Mach-O symbols,
+**capped at 8 bytes** (`MAX_DATA_EXTENT`, one 64-bit scalar or pointer). The
+extent is what lets the covering-symbol query find the name at the access width,
+so `counter += 1` and `return audit_global` read by name, and every pointer to
+the object renders `&name` (`MetaClass(&gMetaClass)`,
+`&original_NSManagedObject_init`). The cap exists because the gap is a guess: a
+release image is stripped of its local symbols (`-x`), so the gap after an
+exported object often holds unnamed data (Swift's lazy metadata caches follow
+`__dyld_private`), and Go's region markers (`runtime.rodata`, `go:string.*`)
+label hundreds of kilobytes; uncapped, every access there would render as an
+offset into the wrong name. Inside the cap the guess can still cover alignment
+padding, so an access narrower than the extent renders as a partial access of
+the named object (`(short)half`, `*(char *)&flag = 1`).
+
 A **declared extent is never trusted to be representable.** `st_size` is a 64-bit
 field of the image that no header check validates, while the type factory sizes
 types in a 32-bit `int4`, so the commit clamps the declared size into `1 ..=
@@ -1458,7 +1491,8 @@ funcsym stream:
   *directly*, so naming the entry is sufficient and arch-independent;
   `__la_symbol_ptr`/`__got` slots are named too for `-fno-plt`-style indirect
   calls. `INDIRECT_SYMBOL_LOCAL`/`ABS` entries are skipped; the C-ABI leading `_`
-  is stripped.
+  is stripped. The image's own exports join the stream only when they lie in a
+  code section (§1.2, `data_exports`).
 
 The import currency deliberately includes both executable linkage stubs and
 pointer slots in data sections: the latter must be function symbols so indirect
