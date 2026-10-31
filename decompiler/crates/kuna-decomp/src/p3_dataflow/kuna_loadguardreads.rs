@@ -11,10 +11,11 @@
 //! pairs, renaming reads the top of each pair's stack at the LOAD exactly as it
 //! would read the `COPY`'s input, and each distinct Varnode reached gets one
 //! guard `COPY` after renaming; the writes the walk from it marks are the ones
-//! upstream's COPYs mark, and it is propagated away like them. A read that
-//! upstream renames to a guard `COPY`'s output moves, at the end of the pass,
-//! to the back of its Varnode's readers, where propagating that `COPY` away
-//! puts it, so later passes visit readers in the same order.
+//! upstream's COPYs mark, and it is propagated away like them. The `COPY` of a
+//! pair that a later read would see on top of the stack is built when renaming
+//! meets that read, which reads it as it reads upstream's: the steps between
+//! renaming and propagation see the same reader lists, and propagating the
+//! COPYs in upstream's order leaves every Varnode's readers in upstream's order.
 
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
@@ -30,8 +31,16 @@ pub(crate) struct Reads {
     pairs: u32,
     reached: Vec<(VarnodeId, OpId, u32)>,
     seen: FxHashSet<VarnodeId>,
-    behind: std::collections::BTreeMap<Address, Vec<(usize, u32)>>,
-    later: Vec<(u32, OpId, int4)>,
+    behind: std::collections::BTreeMap<Address, (u32, Vec<(u32, u32, OpId)>)>,
+    copies: FxHashMap<u32, VarnodeId>,
+    built: Vec<(u32, OpId)>,
+}
+
+/// A guard read a later read of the range sees on top of the stack.
+pub(crate) struct Behind {
+    pub(crate) pair: u32,
+    pub(crate) range: u32,
+    pub(crate) load: OpId,
 }
 
 impl Reads {
@@ -80,29 +89,45 @@ impl Reads {
             self.reached.push((vn, op, range));
         }
         let key = self.ranges[range as usize].0.clone();
-        self.behind.entry(key).or_default().push((depth, pair));
+        self.behind
+            .entry(key)
+            .or_insert_with(|| (range, Vec::new()))
+            .1
+            .push((depth as u32, pair, op));
     }
 
     /// The block that pushed a [`Reads::reach`] entry for `key` is done.
     pub(crate) fn pop(&mut self, key: &Address) {
-        if let Some(entries) = self.behind.get_mut(key) {
+        if let Some((_, entries)) = self.behind.get_mut(key) {
             entries.pop();
         }
     }
 
-    /// Renaming linked `slot` of `op` to the entry `depth` of the stack for
-    /// `key` holds from below. When an upstream guard COPY would have stood
-    /// between them, the read moves to the back of the Varnode's readers at
-    /// the end of the pass, where propagating that COPY away puts it.
-    pub(crate) fn read(&mut self, key: &Address, depth: usize, op: OpId, slot: int4) {
-        let Some(entries) = self.behind.get(key) else {
-            return;
-        };
-        if let Some(&(d, pair)) = entries.iter().rev().find(|(d, _)| *d <= depth) {
-            if d == depth {
-                self.later.push((pair, op, slot));
-            }
-        }
+    /// Renaming links a read of `key` to the entry `depth` of its stack holds
+    /// from below. The guard read upstream's COPY for it would read instead,
+    /// when one stands between them.
+    pub(crate) fn behind(&self, key: &Address, depth: usize) -> Option<Behind> {
+        let (range, entries) = self.behind.get(key)?;
+        let &(d, pair, load) = entries
+            .iter()
+            .rev()
+            .find(|(d, _, _)| *d as usize <= depth)?;
+        (d as usize == depth).then_some(Behind {
+            pair,
+            range: *range,
+            load,
+        })
+    }
+
+    /// The output of the COPY built for `pair`, if any.
+    pub(crate) fn copy(&self, pair: u32) -> Option<VarnodeId> {
+        self.copies.get(&pair).copied()
+    }
+
+    /// The COPY `op` writing `out` was built for `pair`.
+    pub(crate) fn built(&mut self, pair: u32, out: VarnodeId, op: OpId) {
+        self.copies.insert(pair, out);
+        self.built.push((pair, op));
     }
 
     pub(crate) fn take_reached(&mut self) -> Vec<(VarnodeId, OpId, u32)> {
@@ -110,11 +135,11 @@ impl Reads {
         std::mem::take(&mut self.reached)
     }
 
-    /// The reads [`Reads::read`] deferred, in upstream's propagation order.
-    pub(crate) fn take_later(&mut self) -> Vec<(u32, OpId, int4)> {
-        let mut later = std::mem::take(&mut self.later);
-        later.sort_by_key(|&(pair, _, _)| pair);
-        later
+    /// The COPYs [`Reads::built`] recorded, in upstream's propagation order.
+    pub(crate) fn take_built(&mut self) -> Vec<OpId> {
+        let mut built = std::mem::take(&mut self.built);
+        built.sort_unstable_by_key(|&(pair, _)| pair);
+        built.into_iter().map(|(_, op)| op).collect()
     }
 
     pub(crate) fn clear(&mut self) {
@@ -124,6 +149,7 @@ impl Reads {
         self.reached.clear();
         self.seen.clear();
         self.behind.clear();
-        self.later.clear();
+        self.copies.clear();
+        self.built.clear();
     }
 }

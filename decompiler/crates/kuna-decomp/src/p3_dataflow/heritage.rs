@@ -4196,7 +4196,9 @@ impl Heritage {
                         }
                     }
                     if self.load_reads.active() {
-                        self.load_reads.read(&key, depth, op, slot);
+                        if let Some(copy) = self.load_guard_copy(fd, &key, depth, vnnew) {
+                            vnnew = copy;
+                        }
                     }
                     fd.op_set_input(op, vnnew, slot).expect("rename_recurse: op_set_input read");
                     if fd.vbank().get(vnin).expect("rename_recurse: in").has_no_descend() {
@@ -4254,7 +4256,7 @@ impl Heritage {
                 }
                 let key = fd.vbank().get(vnin).expect("rename_recurse: multi in").get_addr().clone();
                 let in_size = fd.vbank().get(vnin).expect("rename_recurse: multi in").get_size();
-                let vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
+                let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                     Some(top) => top,
                     None => {
                         let nv = self.new_entry_input(fd, in_size, &key)?;
@@ -4264,7 +4266,9 @@ impl Heritage {
                 };
                 if self.load_reads.active() {
                     let depth = varstack.get(&key).map_or(0, |s| s.len());
-                    self.load_reads.read(&key, depth, multiop, slot);
+                    if let Some(copy) = self.load_guard_copy(fd, &key, depth, vnnew) {
+                        vnnew = copy;
+                    }
                 }
                 fd.op_set_input(multiop, vnnew, slot).expect("rename_recurse: op_set_input multi");
                 if fd.vbank().get(vnin).expect("rename_recurse: multi in").has_no_descend() {
@@ -4325,13 +4329,43 @@ impl Heritage {
         Ok(())
     }
 
+    /// (kuna `loadguardreads`) The output a read of `key` reads instead of
+    /// `vn`, the entry `depth` of its stack, when upstream links it to a guard
+    /// COPY's output: that pair's COPY of `vn`, built in front of its LOAD the
+    /// first time renaming meets such a read.
+    fn load_guard_copy(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        key: &Address,
+        depth: usize,
+        vn: crate::context::VarnodeId,
+    ) -> Option<crate::context::VarnodeId> {
+        use kuna_num::opcodes::OpCode;
+        let behind = self.load_reads.behind(key, depth)?;
+        if let Some(out) = self.load_reads.copy(behind.pair) {
+            return Some(out);
+        }
+        let (addr, size) = self.load_reads.range(behind.range).clone();
+        let load_addr = fd.obank().get(behind.load)?.get_addr().clone();
+        let copyop = fd.new_op(1, load_addr);
+        let out = fd.new_varnode_out(size, &addr, copyop).expect("loadguardreads: COPY out");
+        fd.vbank_mut().get_mut(out).expect("loadguardreads: COPY out vn").set_addr_force();
+        fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+        let _ = fd.op_set_input(copyop, vn, 0);
+        fd.op_insert_before(copyop, behind.load);
+        self.load_reads.built(behind.pair, out, copyop);
+        Some(out)
+    }
+
     /// (kuna `loadguardreads`) After renaming, give each Varnode a LOAD guard
     /// read reached one address-forced guard `COPY`, in front of the first LOAD
     /// that reached it. The rest of the pass sees it read as upstream's COPYs
     /// read it, and `handle_new_load_copies` walks back from it and propagates
-    /// it away like them.
+    /// it away like them, after the COPYs renaming built, in upstream's order.
     fn place_load_guard_reads(&mut self, fd: &mut crate::funcdata::Funcdata) {
         use kuna_num::opcodes::OpCode;
+        let built = self.load_reads.take_built();
+        self.load_copy_ops.extend(built);
         for (vn, load, index) in self.load_reads.take_reached() {
             let (addr, size) = self.load_reads.range(index).clone();
             let Some(load_addr) = fd.obank().get(load).map(|o| o.get_addr().clone()) else {
@@ -5652,16 +5686,6 @@ impl Heritage {
         for &op in copy_sinks.iter().take(copy_sink_size) {
             // Make sure load guard COPYs no longer exist.
             self.propagate_copy_away(fd, op);
-        }
-        // (kuna `loadguardreads`) A read upstream's COPY stood in front of
-        // joins the back of its Varnode's readers, as propagating that COPY
-        // away puts it.
-        for (_, op, slot) in self.load_reads.take_later() {
-            let Some(vn) = fd.obank().get(op).filter(|o| !o.is_dead()).and_then(|o| o.get_in(slot)) else {
-                continue;
-            };
-            fd.vbank_mut().erase_descend(vn, op);
-            let _ = fd.vbank_mut().add_descend(vn, op);
         }
         self.load_reads.clear();
         // (marks on the remaining artificial COPYs die with the local set.)

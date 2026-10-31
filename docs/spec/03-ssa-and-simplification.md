@@ -788,13 +788,19 @@ upstream's COPYs: a store-guard INDIRECT they delete moves it to the
 INDIRECT's input, and `handle_new_load_copies` walks back from it to the same
 writes and propagates it away. Upstream's COPY for any other pair reads
 either another guard COPY's output or a Varnode an earlier COPY already reads,
-so its walk marks nothing new. Renaming also notes each read that upstream
-links to a guard COPY's output, because the COPY stands between the read and
-the value it reached: at the end of the pass those reads move to the back of
-their Varnode's readers, ordered by when upstream built the COPY, which is
-where propagating the COPYs away appends them
-(`kuna_loadguardreads.rs (Reads::read)`), so the later passes walk every
-Varnode's readers in upstream's order. The read
+so its walk marks nothing new. A read that upstream links to a guard COPY's
+output, because the COPY stands between the read and the value it reached,
+still reads a COPY: the first time renaming meets such a read of a pair, it
+builds that pair's COPY in front of its LOAD, reading the Varnode the guard
+reached, and links the read to the COPY's output
+(`heritage.rs (Heritage::load_guard_copy)`,
+`kuna_loadguardreads.rs (Reads::behind)`). The steps between renaming and
+propagation therefore see upstream's reader lists (a store-guard INDIRECT they
+delete hands its readers to that COPY, as it does upstream), and propagating
+those COPYs in the order upstream built them leaves every Varnode's readers in
+upstream's order. Only the pairs a later read sees build their COPY, and each
+reads the reached Varnode directly where upstream's chains the guard COPYs of
+consecutive LOADs. The read
 locations that branch-scope trimming (chapter 06, `guardedreadtrim`) records
 for the stack guard COPYs are recorded once per block and range
 (`kuna_stackreadscope.rs (mark_guarded_read)`). With the option off, every

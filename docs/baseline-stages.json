@@ -2655,7 +2655,7 @@
     "data:loadguardreads #4: both passes read the table at all 256 indexes",
     "data:loadguardreads #5: both passes keep the same live IR",
     "data:loadguardreads #6: upstream placement builds a guard COPY per LOAD per range",
-    "data:loadguardreads #7: the default builds one guard COPY per Varnode a guard reads",
+    "data:loadguardreads #7: the default builds a guard COPY only per Varnode reached and per guard read again",
     "data:local aggregate is passed by value",
     "data:localstackviews off folds the frame read across an escaped write",
     "data:localstackviews off retains the incompatible pointer assignment",

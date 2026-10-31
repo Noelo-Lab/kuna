@@ -8,10 +8,11 @@
      LOADs still guards the whole stack, so it builds an address-forced COPY
      of every address-tied stack range in front of every LOAD, then
      propagates every one of them away before the pass ends. Pass 2 is the
-     default: renaming reads each guarded range at its LOAD, and only one
-     guard COPY is built per Varnode those reads reach. Both passes keep the
-     same live IR and print the same body; the default builds 51,510 fewer
-     ops. The fixture's source and provenance are beside it.
+     default: renaming reads each guarded range at its LOAD, one guard COPY
+     is built per Varnode those reads reach, and one per guarded range a later
+     read sees on top of its stack. Both passes keep the same live IR and
+     print the same body; the default builds 51,311 fewer ops. The
+     fixture's source and provenance are beside it.
 -->
 </binaryimage>
 <script>
@@ -35,5 +36,5 @@
 <stringmatch name="loadguardreads #4: both passes read the table at all 256 indexes" min="2" max="2">v5\[v4\[0xff\] &amp; 0x3f\];$</stringmatch>
 <stringmatch name="loadguardreads #5: both passes keep the same live IR" min="2" max="2">Count - pcode = 11538</stringmatch>
 <stringmatch name="loadguardreads #6: upstream placement builds a guard COPY per LOAD per range" min="1" max="1">Count - created = 81135</stringmatch>
-<stringmatch name="loadguardreads #7: the default builds one guard COPY per Varnode a guard reads" min="1" max="1">Count - created = 29625</stringmatch>
+<stringmatch name="loadguardreads #7: the default builds a guard COPY only per Varnode reached and per guard read again" min="1" max="1">Count - created = 29824</stringmatch>
 </decompilertest>
