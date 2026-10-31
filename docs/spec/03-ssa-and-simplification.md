@@ -1224,8 +1224,8 @@ that output when propagated into integer storage: the declared address remains
 available for named-global recovery instead of becoming an image-address integer.
 This also applies to computed interior addresses: losing the declaration before pointer recovery can leave a base address embedded in integer arithmetic. Without a pointer declaration, integer expressions retain their ordinary meaning.
 
-A `decompiler/crates/kuna-decomp/src/infra/action.rs (Rule)` is a stateless
-pattern→rewrite unit: `get_op_list` declares the opcodes it can fire on
+A `decompiler/crates/kuna-decomp/src/infra/action.rs (Rule)` is a
+pattern→rewrite unit with no state of its own beyond what its `reset` clears: `get_op_list` declares the opcodes it can fire on
 (defaulting to *all* opcodes), and `apply_op(op, data)` either returns 0 (no
 match — every guard along the way simply declines) or performs its whole
 rewrite and returns 1. Rules are owned by an
@@ -1393,9 +1393,35 @@ group):
 
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested
-phis can spill to owned buffers without changing visit order. The lists add
-no persistent state to an operation or rule; both success and failure clear
-the same marks, and successful rewriting iterates copied IDs directly.
+phis can spill to owned buffers without changing visit order. Both success and
+failure clear the same marks, and successful rewriting iterates copied IDs
+directly. The traversal list is read in place: each entry is one
+`MULTIEQUAL`'s run of input slots, in the order upstream appends that op's
+inputs, so a walk that stops early has not copied the inputs of every
+`MULTIEQUAL` it expanded first. Nothing writes an input during the walk, so a
+slot read when the walk reaches it holds the value upstream copied.
+
+The rule is the one stateful member of oppool1: a walk that fails records a
+witness for its op, the input slots leading from the op to the non-matching
+branch it stopped at
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs
+(RuleMultiCollapse::fails_again)`). The next application derives the defining
+branch as the walk would (the first input no `MULTIEQUAL` writes, else the first
+unmarked input) and replays the witness. When every link is still an input the
+walk would expand (unmarked, not the op's own output, not the defining branch,
+not functionally equal to it, and written by the `MULTIEQUAL` the next link
+names) and the last slot still holds a branch that matches nothing, the walk
+would reach that branch, and an earlier stop is a failure too. The rule
+answers "no change" without walking. Any other outcome walks, and records a
+new witness if the walk fails. The replay comes before the heritage test, whose
+failure is also "no change". Witnesses belong to the rule instance and are
+dropped when its pool resets. On a dispatch loop, where each handler's joins
+take one input per dispatch site, most applications in a sweep repeat a failed
+walk over a web nothing has edited since. On CPython 3.11's
+`_PyEval_EvalFrameDefault` (joins of about 190 inputs), one pass applies the
+rule 17.2 million times. Upstream's walk appends 35 billion entries and reads
+17.7 billion of them. With witnesses, 16.97 million applications answer from a
+witness and 223 thousand walk. The collapses are the same 15,113.
 
 `RulePullsubIndirect`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
