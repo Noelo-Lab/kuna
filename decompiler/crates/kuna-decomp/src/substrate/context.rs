@@ -1659,6 +1659,10 @@ pub struct ArchContext {
     /// guard), flipped by `option jtsharepartial`, shared from the real
     /// architecture.  Read by `Funcdata::stage_jump_table`.
     pub jumptable_share_partial: bool,
+    /// (kuna `deadwaves`) Revisit only the neighbours of what the previous
+    /// pool pass removed when removal was its only change, shared from the
+    /// real architecture. Read by `ActionPool::apply`.
+    pub pool_dead_waves: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -2088,6 +2092,7 @@ impl ArchContext {
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
+            pool_dead_waves: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
