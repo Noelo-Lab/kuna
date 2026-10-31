@@ -2490,15 +2490,18 @@ per image, and only the function asked about keeps its verdict, so a whole
 project export print every function the same way.
 
 Against `evidence`, every function the callers newly prove over 2,241
-objects returns eight bytes by its DWARF or source type (1,591 of them), and
+objects returns eight bytes by its DWARF or source type (1,570 of them), and
 no function's own return type changes width. Over the same 813 big-endian
-objects (20,759 functions) 274 functions in 55 objects change: 163 whose DWARF
-return is eight bytes now return or read a 64-bit value high word first (Lua's
-`posrelat` and `luaV_div`, bash's `expr.c` evaluators, grep's `add_count`,
-kmod's `elf_get_uint`), 106 `int` functions read such a callee's words the
-right way round, and the other five are 64-bit fixture functions and
-diffutils' `file_position`. Over the four SQLite builds (6,010 functions) 124
-change the same way (`sqlite3VdbeIntValue`, `memIntValue` and
+objects (20,759 functions) 250 functions in 44 objects change: those whose
+DWARF return is eight bytes now return or read a 64-bit value high word first
+(Lua's `posrelat` and `luaV_div`, bash's `expr.c` evaluators, grep's
+`add_count`, kmod's `elf_get_uint`, diffutils' `file_position`), and the `int`
+functions that call them read their words the right way round. In two static
+PowerPC SQLite shells linked with glibc (`-O2` and `-Os`, 8,117 functions)
+the 75 functions the callers prove return eight bytes by their DWARF type or
+are libgcc's and glibc's 64-bit routines (`__divdi3`, `strtoull`, `lseek64`,
+`__time64`). The four SQLite objects (6,010 functions) change the same way
+(`sqlite3VdbeIntValue`, `memIntValue` and
 `sqlite3BtreeOffset` return high word first, and `sqlite3_column_int` returns
 `(unsigned int)memIntValue(v)` where it lost the word); none change on MIPS,
 whose gcc build calls through `jalr`. Over 1,428 authored objects (sums,

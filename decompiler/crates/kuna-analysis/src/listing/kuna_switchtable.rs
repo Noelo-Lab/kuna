@@ -808,8 +808,11 @@ pub(super) fn value_of(vn: &VarnodeData, vals: &[(Key, Val)], data: Option<&Rc<A
     let (class, off, size) = split(key);
     vals.iter().rev().find_map(|&(k, v)| {
         let (c, o, s) = split(k);
+        if c != class || s <= size {
+            return None;
+        }
         let low = if big { o.checked_add(u64::from(s - size)) == Some(off) } else { o == off };
-        if c != class || s <= size || !low {
+        if !low {
             return None;
         }
         match v {
