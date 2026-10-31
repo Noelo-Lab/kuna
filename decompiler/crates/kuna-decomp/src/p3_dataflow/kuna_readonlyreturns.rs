@@ -83,12 +83,12 @@ pub(crate) fn keeps_apart(ctx: &mut dyn MergeContext, a: HighVariableId, b: High
         if !ctx.high_is_persist(global) || ctx.high_is_addr_tied(other) {
             continue;
         }
+        if !ctx.bank_tied_varnode(global).is_some_and(|tied| ctx.kuna_returnless_storage(tied)) {
+            continue;
+        }
         let Some(entry) = ctx.bank_input_varnode(global) else {
             continue;
         };
-        if !ctx.kuna_returnless_entry(entry) {
-            continue;
-        }
         let n = ctx.high_num_instances(other);
         if (0..n).any(|i| !ctx.vn_copy_shadow(ctx.high_get_instance(other, i), entry)) {
             return true;

@@ -152,8 +152,8 @@ pub trait MergeContext: HighContext {
     fn kuna_has_returnless(&self) -> bool {
         false
     }
-    /// (kuna `readonlyreturns`) Is `vn` the entry value of such a range?
-    fn kuna_returnless_entry(&self, _vn: VarnodeId) -> bool {
+    /// (kuna `readonlyreturns`) Is `vn` stored in such a range?
+    fn kuna_returnless_storage(&self, _vn: VarnodeId) -> bool {
         false
     }
     // --- HighVariable flag/type reads (the C++ direct `high->is*`/`getType`) --
