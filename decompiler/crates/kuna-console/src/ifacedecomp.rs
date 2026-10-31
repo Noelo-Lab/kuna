@@ -3665,14 +3665,19 @@ decomp_command!(
 // --- count pcode / actionstats / reset actionstats (ifacedecomp.cc) --------
 
 decomp_command!(
-    /// C++ `IfcCountPcode`: `count pcode`.
+    /// C++ `IfcCountPcode`: `count pcode`, the selected function's live ops.
+    /// (kuna) A second line counts every op the function created since its IR
+    /// was last cleared, dead ones included: the size of its op arena. Both go
+    /// to the bulk stream, as the print commands do, so a datatest sees them.
     IfcCountPcode,
     fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
+        let Some(fd) = dcp.fd.as_ref() else {
             return Err(IfaceError::execution("No function selected"));
-        }
-        Err(engine_unavailable("Funcdata op-count walk"))
+        };
+        let (alive, created) = (fd.obank().num_alive(), fd.obank().get_uniq_id());
+        status.file_out(&format!("Count - pcode = {alive}\nCount - created = {created}\n"));
+        Ok(())
     }
 );
 
