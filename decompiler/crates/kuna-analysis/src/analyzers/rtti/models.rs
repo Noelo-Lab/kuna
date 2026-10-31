@@ -163,13 +163,10 @@ impl<'a> ImageBytes<'a> {
             if data.len() < prefix.len() {
                 continue;
             }
-            let first = prefix[0];
-            let mut i = 0usize;
-            while i + prefix.len() <= data.len() {
-                if data[i] == first && &data[i..i + prefix.len()] == prefix {
+            for i in memchr::memchr_iter(prefix[0], &data[..=data.len() - prefix.len()]) {
+                if &data[i..i + prefix.len()] == prefix {
                     hits.push(base + i as u64);
                 }
-                i += 1;
             }
         }
         hits
@@ -181,11 +178,7 @@ impl<'a> ImageBytes<'a> {
     /// objects, and running `find_ptrs` per class is `O(classes × image)` — on a
     /// C++ library with hundreds of polymorphic classes that is the whole pass's
     /// cost. Scans on a `ptr_size` stride, once.
-    pub fn scan_ptr_slots(
-        &self,
-        rk: &RefKind,
-        targets: &std::collections::HashSet<u64>,
-    ) -> Vec<(u64, u64)> {
+    pub fn scan_ptr_slots(&self, rk: &RefKind, targets: &FxHashSet<u64>) -> Vec<(u64, u64)> {
         let mut hits = Vec::new();
         if targets.is_empty() {
             return hits;

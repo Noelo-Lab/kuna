@@ -424,6 +424,9 @@ mod typed_vtable_cli;
 #[path = "unpack_cli.rs"]
 mod unpack_cli;
 
+#[path = "unpack_pklite_cli.rs"]
+mod unpack_pklite_cli;
+
 #[path = "unstructured_goto_cli.rs"]
 mod unstructured_goto_cli;
 

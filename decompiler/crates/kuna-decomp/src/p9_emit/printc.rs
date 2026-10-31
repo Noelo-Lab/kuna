@@ -6157,6 +6157,13 @@ impl PrintC {
             // (`symbol.field`) or the cast/functional dispatch.
             OpCode::CPUI_SUBPIECE => self.op_subpiece_ir(fd, arch, op, read_op),
             OpCode::CPUI_PIECE if self.op_partial_concat_ir(fd, arch, op) => {},
+            // SEGMENTOP (printc.cc:1169 opSegmentOp): only the near pointer in
+            // slot 2 prints; slot 0 is the space and slot 1 the segment.
+            OpCode::CPUI_SEGMENTOP => {
+                if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(2)) {
+                    self.push_vn_ir(fd, arch, vn, op);
+                }
+            }
             // PTRADD (printc.cc:900 opPtradd) / PTRSUB (printc.cc:953 opPtrsub).
             OpCode::CPUI_PTRADD => self.op_ptradd_ir(fd, arch, op),
             OpCode::CPUI_PTRSUB => self.op_ptrsub_ir(fd, arch, op),

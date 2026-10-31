@@ -186,6 +186,8 @@ pub fn detect(bytes: &[u8], toolchain: bool) -> Vec<RuntimeHint> {
         out.push(hint("upx", None, "UPX packed: run 'kuna unpack'".into(), true));
     } else if pe.is_some() && kuna_analysis::neolite::detect(bytes) {
         out.push(hint("neolite", None, "NEOLite packed: run 'kuna unpack'".into(), true));
+    } else if kuna_analysis::pklite::detect(bytes) {
+        out.push(hint("pklite", None, "PKLITE packed: run 'kuna unpack'".into(), true));
     }
     if windows_only(Marker::TwinBasic) {
         out.push(hint(

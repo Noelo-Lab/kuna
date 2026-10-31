@@ -2211,14 +2211,21 @@ puts the first one high (`r3:r4`, `$2:$3`, `%o0:%o1`, `r0:r1`, AVR's `R25:R24`,
 AArch64 big-endian's `x0:x1` for a 16-byte value); on any other model nothing
 is walked and nothing changes.
 
-The walk follows every path from the entry to a RETURN, or to a call that
-does not return, over symbolic values
-(a register's value at the entry, a literal, an operation on values, or an
-opaque value: a load, a call's result or clobber, a partly written register),
-taking a branch whose condition folds to a literal one way only (SPARC's
-`call` p-code keeps a RETURN for a `restore` in its delay slot behind
-`didrestore == 0`, never taken) and starting from the processor's tracked
-register values. A call keeps the registers the model says it leaves alone.
+The walk follows every path from the entry to a RETURN, to a branch into
+another function's entry (a tail call), or to a call that does not return,
+over symbolic values (a register's value at the entry, a literal, an
+operation on values, a load named by its address and size, what a direct or
+indirect call left in one of the pair's two registers, or an opaque value:
+another register's clobber, a partly written register), taking a branch whose
+condition folds to a literal one way only (SPARC's `call` p-code keeps a
+RETURN for a `restore` in its delay slot behind `didrestore == 0`, never
+taken) and starting from the processor's tracked register values. A call
+keeps the registers the model says it leaves alone. A store into the
+function's own stack frame (an address that is the entry stack pointer plus
+a literal, also through a frame pointer copied from it) is remembered on its
+path, and a later load of exactly that slot names the value stored there, so
+a value spilled across a call and reloaded is still that value; a store
+through any other pointer leaves the remembered slots alone.
 An `int` worked out from the high half of a 64-bit temporary can leave the
 temporary's low half in the second register, and then compiles to exactly the
 bytes of the `long long` that returns the temporary whole: `umull r1,r0,r1,r0`
@@ -2244,7 +2251,64 @@ instruction, one of:
   r1,r2`). A low half the multiply itself writes into the second register
   (ARMv7's `umull r1,r0`, SPARC's `umul %i1,%i0,%i1`), or that only a
   register window's `restore` carries there, proves nothing: the instruction
-  writes it whether or not the function returns it.
+  writes it whether or not the function returns it;
+* the two words of one object read from memory: two loads of adjacent words
+  of one base (`lwz 4,4(3); lwz 3,0(3)`, `ldmia r0,{r0,r1}`, a field, a
+  global, an array element), the high word's at the lower address, or the
+  two halves of one load twice a register's width (SPARC's `ldd [%i0],%i0`),
+  the low word read by nothing but moves and stores into the stack frame,
+  where a load of a slot such a store filled is the low word too, so an
+  instruction that reads the reload reads the low word (gcc -O0 keeps
+  `int lo = v` in a stack slot and passes it on from there). An `int` that
+  returns one word of a 64-bit object loads only that word (the other load is
+  dead, and gone at -O1 and up), and an `int` truncation that reloads a stack
+  temporary loads the words the other way round (clang -O0's `lwz 4,12(31);
+  lwz 3,16(31)` for `(int)t`). A volatile object is the exception:
+  `return *(volatile long long *)p >> 32` must load both words and compiles
+  to the bytes of `return *p` with gcc and clang at -O1 and up, through a
+  pointer or of a global, as does `a = r[0]; (void)r[1]; return a;` over two
+  volatile words (ARM big-endian clang, MIPS gcc); both read as the `long
+  long`, and their callers that read only the first register still read the
+  high word;
+* the pair one direct call handed back, the call's first register in the
+  first and its second in the second, the second moved back into place by the
+  function itself after the call, through another register or a stack slot
+  (`bl wid; mr 30,3; mr 31,4; bl ext; mr 3,30; mr 4,31`), on condition that
+  the call's callee is proven: an `int` that returns the call's high word
+  keeps only the first register across the next call, and one that returns
+  it at once (`return wid(x) >> 32`) leaves the second where the call put it,
+  the code of `return wid(x)`.
+
+Some path ends need not prove the value wide but must not contradict it: a
+pair one direct call left where it put it, on the same condition that its
+callee is proven, and two literals (`return p ? *p : 0`). A tail branch to a
+function's entry proves the value wide when its callee is proven (a compiler
+emits a sibling call only when the caller returns the callee's value
+unchanged). A function is proven when every path end proves or fits, at least
+one proves, and every callee those ends depend on is proven; the driver takes
+those verdicts first, walking each function still once per image, and a
+function whose verdict depends on its own, through any chain of callees, is
+not proven, whichever function of the cycle is asked about first. When the
+high register's latest writes moved in the value it already held, directly or
+out of a stack slot it was stored to, more times in a row than the low
+register's, or only the low register's did, the RETURN proves only by the
+first three shapes: gcc -O0 lowers `(u32)(v >> 32)` of a reloaded 64-bit
+temporary as `ldmia r1,{r0,r1}; mov r3,r0; mov r0,r3` on ARM big-endian, or,
+with the `int` kept in a local, `mov r3,r0; str r3,[fp,#-20]; ...; ldr
+r3,[fp,#-20]; mov r0,r3`, which leaves both loaded words in the pair, the
+second where the reload put it. A RETURN whose two registers were otherwise
+both moved back hands back the pair the function held, and is judged by what
+that pair holds: gcc -O0 returns a `long long` local it spilled a call's pair
+to as `str r0,[fp,#-12]; str r1,[fp,#-8]; ...; ldm r3,{r2,r3}; mov r1,r3; mov
+r0,r2`, and `return g()` as `mov r3,r1; mov r2,r0; mov r1,r3; mov r0,r2`, and
+clang keeps the pair in `r4:r5` across a call only one path makes (`if (v < 0)
+ext(); return v;`), and clang -O0 first copies a call's low word out and back
+(`mov r2,r1; mov r1,r2`) before it stores a `volatile long long` local it
+returns. An `int` that returns the high word has no reason to move the low
+word back, except as part of the whole pair: gcc -O0 moves a libcall's pair
+back whole the same way before it works on it, so on ARMv5, which calls
+`__atomic_load_8` for it, `(u32)(__atomic_load_n(p, 0) >> 32)` moves `r0` back
+once more than `r1` (`mov r1,r3; mov r0,r2; ...; mov r3,r0; ...; mov r0,r3`).
 
 Every read counts, on every path, a path that ends in a call that does not
 return included: gcc -Os hoists an error path's computation into a branch
@@ -2266,9 +2330,11 @@ call in an object file leaves behind (stopping there keeps the walks of an
 object full of them cheap). Every other pair
 keeps the first-register-low join, which C's truncation reads as the right
 `int`, and a genuine `long long` there still prints with its halves swapped:
-a 64-bit sum or difference, a load of both words, a product the multiply
-writes whole, a value a call hands back (`return g() >> 32` of a `long long
-g()` leaves `g`'s low word in the second register, the code of `return g()`).
+a 64-bit sum or difference (`addc 4,4,6; adde 3,3,5` on PowerPC, `adds
+r1,r3,r1; adc r0,r2,r0` on ARM big-endian and `addcc`/`addx` on SPARC are
+both `a + b` and `(a + b) >> 32` at -O1 and up), a product the multiply writes
+whole (`umull r1,r0,r1,r0`), a value a call of an unproven callee hands back,
+and one a proven callee's call leaves in place on every path.
 
 A call's two-register output joins in the ABI's order exactly when its callee
 is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
@@ -2302,7 +2368,16 @@ every shape GH-904 lists built for each target at -O0 to -O3 and -Os, ARMv6,
 Thumb-2 and MIPS PIC, with the callers placed before or after their callees
 and decompiled whole, narrowed, with `--jobs 2` or one at a time; the
 functions it changes return a 64-bit value and print it right, and their
-callers read it right. Little-endian output is byte-identical.
+callers read it right. Little-endian output is byte-identical. The memory and
+call-pair shapes, measured the same way against the sign, zero and product
+shapes alone, change 37 64-bit returns over the 20,759 functions of those
+objects (getters such as kmod's `kmod_module_symbol_get_crc`, diffutils'
+`file_position` and SQLite's `sqlite3_changes64`) and 6 `int` callers that
+now read such a getter high word first, and no other function; over 32
+builds each (PowerPC, MIPS and ARM big-endian with gcc and clang, ARMv7 and
+SPARC with clang, -O0 to -O2 and -Os) of loads, struct copies, stack
+temporaries and call results kept across calls, returned as a `long long` or
+as one of its words, the only `int` that moves is the volatile read above.
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.
@@ -3679,9 +3754,20 @@ value. "Computed" is a bounded walk back through the operations that only *move*
 value — copies, phis, indirects, piece/subpiece reshaping — stopping at the first
 one that produces one. An unwritten Varnode and an INDIRECT creation are
 uncomputed; a constant is computed, because returning a literal is a real return;
-anything the walk cannot classify is computed, so an unfamiliar shape keeps
-today's answer. The RETURN is then rewritten to the surviving half and the dead
-concatenation destroyed.
+an unwritten global (a persistent RAM Varnode) is computed too, because a value
+read out of the program's own data is one the function chose to return —
+`mov ax,[g]; mov dx,[g+2]; ret` returns `CONCAT22(dat_g2,dat_g)`, where taking
+the global for a leftover kept `AX` alone, and an i386 `mov edx,5; mov eax,[g];
+ret` lost the whole return under the `EDX:EAX` rule below. That holds only in a
+pair joined in its ABI's order. On an ABI that returns the first register high,
+a pair `bejoin` does not prove to be one value is joined first register low
+(`kuna_pairs_first_low`), on the reading that the second register is a leftover
+this repair drops, so there a global in the second register stays uncomputed:
+SPARC's `restore` copies `%i1` into `%o1` whatever it holds, and an `int` that
+read a global into `%i1` for a store would otherwise come back as a swapped
+`CONCAT44` (`tests/stages/kuna-returnglobal-sparc.xml`). Anything the walk cannot
+classify is computed, so an unfamiliar shape keeps today's answer. The RETURN is
+then rewritten to the surviving half and the dead concatenation destroyed.
 
 Timing is the load-bearing detail. At recovery time the restore is still
 `COPY(LOAD(sp − k))` and indistinguishable from `return *p`, so there is nothing

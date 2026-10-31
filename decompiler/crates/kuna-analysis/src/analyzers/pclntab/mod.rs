@@ -654,6 +654,21 @@ fn text_section_start(file: &object::File) -> u64 {
         .unwrap_or(0)
 }
 
+/// The sorted entry PCs of every function the image's pclntab describes; empty
+/// when there is no table.
+///
+/// The fast inventory walk drops these from its roots (`gowalkprune`). The
+/// table names each of them and gives its extent, so the inventory already
+/// holds them, and on a PE, where every one also has a `.pdata` record, walking
+/// them from there decodes the whole Go text only to re-find the same set.
+/// Every other root, cgo's C code included, stays a root.
+pub(crate) fn function_entries(file: &object::File) -> Vec<u64> {
+    let mut entries: Vec<u64> = recover_go_table(file).0.into_iter().map(|f| f.addr).collect();
+    entries.sort_unstable();
+    entries.dedup();
+    entries
+}
+
 /// Go pclntab function-name recovery pass. Gated on the source language being Go
 /// (registered only for `Compiler::Go` in `passes_for`); a strict no-op on every
 /// other binary. Emits a [`SymFact`] `{ kind: Function }` per recovered function,

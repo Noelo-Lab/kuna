@@ -987,6 +987,19 @@ replay, and such an image is refused by name before the resource rebuild could r
 that record as its icon count. A TLS directory needs no step at all: UPX's own
 `rebuildTls` is empty, so the directory comes back with the image it was packed in.
 
+Every offset these rebuilds follow comes from the file, so each walk is bounded by
+the bytes the file holds. The loader-table scan reads only section bytes present in
+the file -- a section past the end of the file maps nothing, and one at the top of
+the address space does not wrap -- and reads at most two descriptors per four bytes
+of the file, about twice what an honest image needs; a trailer naming more than 256
+distinct DLLs is refused as unsupported, since UPX can pack more. A resource
+tree that reaches one directory or data entry twice is refused: UPX's packer writes
+the directory out afresh with every node once, even for an original whose linker
+shared a subtree, so only an edited file has one, and following it lets a small tree
+fan out into an exponential walk. The leaves it moves may not add up to more than
+the packed file. The output is laid out, and checked against the original length the
+PackHeader declares, before it is allocated.
+
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
 is not packed at all -- depends on this. `decompiler/crates/kuna-analysis/src/neolite.rs`
@@ -1086,6 +1099,59 @@ an explicit override and not a fallback the `PackHeader` search reaches on its o
 refusal path is unchanged and deliberately so: an image that genuinely is not packed
 still exits `1` naming that, because an `unpack` that exited `0` on everything would
 trade a right answer for a reachable one.
+
+(kuna) **PKLITE.** The DOS packer, recognized after NEOLite and before UPX by its
+decompressor stub at the DOS entry point, so a file without one reaches the UPX arm
+exactly as before. A Windows or OS/2 program (`e_lfanew` naming a `PE`, `NE`, `LE`
+or `LX` header) is never PKLITE's, even when its DOS stub is a PKLITE file: the
+program is the new-style executable, which PKLITE does not pack.
+`decompiler/crates/kuna-analysis/src/pklite` is a port of deark's
+`pklite` module (MIT; the notice is in the module header and `NOTICE`): `stub.rs`
+reads the parameters out of the stub, `decode.rs` is the decoder, and `mod.rs`
+rebuilds the file. A packed EXE enters at `FFF0:0100` -- the start of its code --
+and its load module is the stub, the compressed program, a compressed relocation
+table and an 8-byte footer holding the original `SS`, `SP`, `CS`, `IP`; the 1990
+betas put the data before the decoder instead. Without extra compression (`-e`) the
+stub's header also keeps a copy of the original MZ header.
+
+Nothing trustworthy *declares* the parameters. The version word at `0x1C` is
+routinely wrong, so the compression mode and the data's position are read from the
+stub's machine code, walked component by component against known byte patterns:
+the intro (whose `MOV DX` immediate keys the descrambler some versions run over the
+rest of the stub, an XOR or ADD chain undone in place before anything else is
+read), the copier (whose `MOV SI` immediate locates the decompressor), and the
+decompressor (whose immediate is the compressed data's paragraph, and whose
+literal-copy loop, length table and register setup say whether extra compression,
+large compression or the v1.20 code tables are in use, plus any XOR key on match
+offsets). Every component that matches no pattern is a named refusal.
+
+The codec is LZ77 over an 8 KiB window with fixed Huffman codes for the match
+length and the distance's high five bits. Control bits come from 16-bit words read
+least-significant first, and the next word is fetched the moment the last bit of
+the current one is consumed, ahead of the data byte that follows; extra compression
+XORs each literal with the number of control bits left at that moment. One length
+code escapes to a byte that is a longer length, the stop code, a no-op, or an
+uncompressed area, whose eight-byte `PKLITE` signature and length byte are restored
+in the output while the history gets zeros (two registered PKZIP 2.04 builds put
+stale memory there instead, matched by content). The relocation table is the short
+form (count byte, segment, offsets) normally and the long form (count word per
+`0x0FFF`-paragraph segment) under extra compression, byte-swapped when the stub's
+descrambler is the ADD kind.
+
+The rebuild uses the kept header copy only when its registers agree with the footer
+and its relocation count with the table; otherwise it writes a 28-byte header with
+the code 16-byte aligned, the footer's registers, `MAXALLOC` from the packed file
+and `MINALLOC` estimated from the stub's own free-memory check, as deark does.
+The kept copy runs up to the original relocation table, and PKLITE does not record
+the bytes between that table and the code, so those are zero. An overlay is carried over when
+the decompressed module ends exactly where the recovered header says. The format
+has no checksum, so the proofs are structural: the stream must end on its stop
+code, the relocation table must end where an 8-byte footer still fits before the end
+of the load module, and a match may not reach before the output or behind an
+uncompressed area. A file whose stub stores a `PK` signature into the PSP is
+unpacked with a warning that the program checks for it at run time. A PKLITE COM
+file is decompressed whole. As with UPX, nothing on the load path unpacks
+implicitly; the runtime hint names the stub (`PKLITE packed: run 'kuna unpack'`).
 
 ## 1.3 Loader markup
 
@@ -3116,8 +3182,16 @@ moves.
   names exactly.
 - **Source-language detection**
   (`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/mod.rs
-  (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) runs once,
-  before pass selection, and shapes the pass list: `rustc version` records in
+  (detect_compiler)`, the `SourceLanguageAnalyzer` detection half) is asked
+  for its verdict several times per load: by the loader's language-id choice,
+  by pass selection, for the engine fact below, by the `addrtakenentry` gate
+  and by the CLI's runtime hints. So it reads the image in place. The PE arm
+  tests `.comment` and `.rdata` as one NUL-delimited record stream (a record
+  left open at the end of `.comment` continues into `.rdata`) without copying
+  either, and decodes only the records around a substring hit of the record
+  it looks for. On a 20 MB `.rdata` that is a few milliseconds per ask, where
+  copying the section and splitting every record cost a quarter of a second.
+  Detection shapes the pass list: `rustc version` records in
   `.comment` or Rust-mangled symbols → the Rust no-return list;
   `.go.buildinfo`/`.note.go.buildid` (any format's spelling) → the Go list plus
   the pclntab pass; a Swift 5 reflection-metadata section (any format's
@@ -5245,6 +5319,40 @@ format oracles; full `funcstart_patterns` roots are included only when both
 `listing` and that option are on. The Listing walk recursively follows every
 static CALL from those trustworthy roots, and `fast_funcdisc` commits all
 resulting function entries.
+
+On a Go image the walk leaves out the roots the pclntab already accounts for
+(`gowalkprune`, default-on;
+`decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs
+(function_entries)`). The pclntab names every Go function and gives its extent,
+and the `gopclntab` pass puts each in the inventory. Walking them finds those
+same functions again, and on an x64 PE it is expensive: Go's Windows linker
+writes a `.pdata` record for every Go function, so with those records as roots
+the walk decoded the whole Go text. A root at a pclntab function entry is
+therefore dropped before the walk, and every other root is kept, so cgo's C
+code and anything else the image's own records name is still walked. (Go's
+internal linker lists a cgo image's C functions in the pclntab too, so there
+they reach the inventory through the table; an external link leaves them out of
+it, and they stay roots.) The cost is what the walk could reach only through a
+pclntab function's body: it is no longer found unless something else names
+it. Go code calls C only through function pointers (`asmcgocall`, the cgo
+wrappers' data words), so this takes Go assembly that CALLs C code directly, in
+an externally linked image whose C carries neither symbols nor unwind records;
+there the called function and its callees are lost and the function before them
+absorbs their bytes. Measured on four Go images (gh 2.89.0 for Windows and
+Linux, two other Go PEs), on cgo builds (internal and external link, the race
+detector, c-shared, plugin) for Linux and Windows, and on Go builds for macOS
+and the BSDs, the inventory's addresses, names and sizes do not change. What changes is that a
+Go function the walk reached only by a call no longer also carries a
+`sub_<addr>` alias; a function another source of entries names (a `.pdata`
+record, an entry oracle) keeps its alias as before; the decompiled C is the
+same. The pruning applies only where `fast_funcdisc` builds the walk without
+the full Listing, which is fast mode on every surface. With the Listing on,
+every root is walked as before. The pruning also waits for the `gopclntab`
+pass: it applies only when the load-time verdict is Go (the verdict that chose
+the pass set, so a `sourcelang` force issued after the load does not count)
+and `gopclntab` is on, since with the pass off nothing else would put the
+dropped roots' functions in the inventory. `--option gowalkprune off` walks
+the Go functions again.
 
 The second source covers indirect-only callbacks. On non-ARM objects, scan
 allocated, initialized, non-executable data for pointer-width runs of at least

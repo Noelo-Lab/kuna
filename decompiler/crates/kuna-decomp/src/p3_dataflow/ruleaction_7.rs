@@ -1438,12 +1438,9 @@ impl Rule for RuleSignMod2nOpt2 {
 // RuleSegment (ruleaction.cc:9020)
 // =============================================================================
 
-/// `RuleSegment` — propagate constants through a SEGMENTOP.
-///
-/// // STUB(W4): needs `getSpaceFromConst`, `userops.getSegmentOp`,
-/// `SegmentOp::execute`, `hasFarPointerSupport`, and the `contiguous_test`/
-/// `findContiguousWhole` expression helpers (none ported yet).  The body is a
-/// no-op until W4 fills these in; recorded as a loss.
+/// `RuleSegment` — propagate constants through a SEGMENTOP: two constant
+/// inputs fold through the segment op's snippet; with far-pointer support, a
+/// segment and offset that are the two halves of one value become that value.
 pub struct RuleSegment;
 
 impl RuleSegment {
@@ -1472,12 +1469,78 @@ impl Rule for RuleSegment {
         }
     }
 
-    fn apply_op(&mut self, _op: OpId, _data: &mut Funcdata) -> int4 {
-        // STUB(W4): SegmentOp *segdef =
-        // ... segdef->execute(bindlist) / hasFarPointerSupport / contiguous_test /
-        // findContiguousWhole are all unported W4 surfaces.  No change here.
+    /// C++ `RuleSegment::applyOp` (ruleaction.cc:9025).
+    fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        let (Some(in0), Some(vn1), Some(vn2), Some(out)) =
+            (op_in(data, op, 0), op_in(data, op, 1), op_in(data, op, 2), op_out(data, op))
+        else {
+            return 0;
+        };
+        let glb = std::rc::Rc::clone(data.get_arch());
+        let Some(segdef) = glb.get_segment_op(vn_offset(data, in0) as int4) else {
+            return 0; // C++ throws "Segment operand missing definition"
+        };
+        if vn_is_constant(data, vn1) && vn_is_constant(data, vn2) {
+            let Ok(val) = segdef.execute(&[vn_offset(data, vn1), vn_offset(data, vn2)]) else {
+                return 0;
+            };
+            data.op_remove_input(op, 2);
+            data.op_remove_input(op, 1);
+            let c = data.new_constant(vn_size(data, out), val);
+            if data.op_set_input(op, c, 0).is_err() {
+                return 0;
+            }
+            data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
+            return 1;
+        } else if segdef.supportsfarpointer {
+            // If the hi and lo pieces come from a contiguous source
+            if !contiguous_test(data, vn1, vn2) {
+                return 0;
+            }
+            let Some(whole) = find_contiguous_whole(data, vn1) else { return 0 };
+            if vn_is_free(data, whole) {
+                return 0;
+            }
+            // Use the contiguous source as the whole pointer
+            data.op_remove_input(op, 2);
+            data.op_remove_input(op, 1);
+            if data.op_set_input(op, whole, 0).is_err() {
+                return 0;
+            }
+            data.op_set_opcode(op, typeop_for(OpCode::CPUI_COPY));
+            return 1;
+        }
         0
     }
+}
+
+/// C++ `contiguous_test` (varnode.cc:2033): `vn1` and `vn2` are the high and
+/// low SUBPIECEs of one Varnode.
+fn contiguous_test(data: &Funcdata, vn1: VarnodeId, vn2: VarnodeId) -> bool {
+    let is_input = |vn| data.vbank().get(vn).is_some_and(|v| v.is_input());
+    if is_input(vn1) || is_input(vn2) {
+        return false;
+    }
+    let (Some(op1), Some(op2)) = (vn_def(data, vn1), vn_def(data, vn2)) else { return false };
+    if op_code(data, op1) != OpCode::CPUI_SUBPIECE || op_code(data, op2) != OpCode::CPUI_SUBPIECE {
+        return false;
+    }
+    let vnwhole = op_in(data, op1, 0);
+    if op_in(data, op2, 0) != vnwhole {
+        return false;
+    }
+    let (Some(lo_off), Some(hi_off)) = (op_in(data, op2, 1), op_in(data, op1, 1)) else { return false };
+    if vn_offset(data, lo_off) != 0 {
+        return false; // Must be least sig
+    }
+    vn_offset(data, hi_off) == vn_size(data, vn2) as uintb // Must be contiguous
+}
+
+/// C++ `findContiguousWhole` (varnode.cc:2064): the Varnode a contiguous pair
+/// was cut from.
+fn find_contiguous_whole(data: &Funcdata, vn1: VarnodeId) -> Option<VarnodeId> {
+    let def = vn_def(data, vn1)?;
+    (op_code(data, def) == OpCode::CPUI_SUBPIECE).then(|| op_in(data, def, 0)).flatten()
 }
 
 // =============================================================================

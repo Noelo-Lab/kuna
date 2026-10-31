@@ -243,6 +243,48 @@ fn a_field_type_is_rebuilt_only_when_it_is_the_same_type() {
     assert!(missing.build(&g).is_none());
 }
 
+/// The unnamed unknown a Varnode starts with is in no factory, so it travels as
+/// itself: a structure whose field points at one (one function of
+/// onnxruntime.dll, nine of dxcompiler.dll) is installed in another process with
+/// the same layout and members, the pointer behind a pointer included. A
+/// placeholder some factory has interned, or one with any other property, does
+/// not pass for it.
+#[test]
+fn the_unknown_placeholder_travels_as_itself() {
+    let f = factory();
+    let g = factory();
+    let stub = |n| Rc::new(Datatype::new(n, type_metatype::TYPE_UNKNOWN));
+    let to_stub = f.get_type_pointer(8, stub(8), 1).unwrap();
+    let twice = f.get_type_pointer(8, f.get_type_pointer(8, stub(2), 1).unwrap(), 1).unwrap();
+    for ct in [Rc::clone(&to_stub), Rc::clone(&twice)] {
+        let recipe = TypeRecipe::of(&ct).expect("a pointer to the placeholder travels");
+        let rebuilt = recipe.build(&g).expect("rebuilds");
+        assert_eq!(TypeRecipe::of(&rebuilt), Some(recipe));
+        assert_eq!(rebuilt.get_ptr_to().map(|t| t.get_size()), ct.get_ptr_to().map(|t| t.get_size()));
+    }
+    let fs = vec![
+        TypeField::new(0, 0, "field_0x0", Rc::clone(&to_stub)),
+        TypeField::new(1, 8, "field_0x8", ty(&f, Ty::Long)),
+    ];
+    let request = SynthRequest::of(&fs, 16, &[], &[], &AtLoad::of(&f));
+    assert!(request.portable());
+    let mut replay = Replay::probe(&factory());
+    assert_eq!(replay.lookup_or_mint(&request), Some("struct_0".to_string()));
+    let minted = ledger::lookup_or_mint(&f, fs, 16, &[], &[], crate::kuna_structmerge::StructMergeMode::Off).unwrap();
+    install_table(&g, &decode_table(&encode_table(replay.table())).unwrap()).unwrap();
+    let installed = g.find_by_name("struct_0").unwrap().unwrap();
+    assert_eq!(ledger::layout_of(&installed), ledger::layout_of(&minted));
+    assert_eq!(ledger::members_of(&installed), ledger::members_of(&minted));
+
+    let interned = f.get_base(8, type_metatype::TYPE_UNKNOWN).unwrap();
+    assert!(!interned.is_unknown_placeholder(), "undefined8 is named and held");
+    let mut aligned = Datatype::new(8, type_metatype::TYPE_UNKNOWN);
+    aligned.alignment = 8;
+    assert!(!aligned.is_unknown_placeholder());
+    assert_eq!(TypeRecipe::of(&f.get_type_pointer(8, Rc::new(aligned), 1).unwrap()), None);
+    assert!(stub(8).is_unknown_placeholder());
+}
+
 #[test]
 fn a_record_survives_the_wire() {
     let f = factory();

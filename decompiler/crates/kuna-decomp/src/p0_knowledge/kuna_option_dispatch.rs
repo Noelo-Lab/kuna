@@ -160,6 +160,12 @@ kuna_options! { self, p1;
         self.x64_syscall = mode;
         Ok(msg)
     },
+    "segmentize" => {
+        let (val, msg) = crate::kuna_segmentize::OptionSegmentize.apply(p1)?;
+        self.segmentize = val;
+        self.apply_segmentize();
+        Ok(msg)
+    },
     "syscallregs" => {
         let (mode, msg) = crate::kuna_syscallregs::OptionSyscallRegs.apply(p1)?;
         self.syscall_regs = mode;
@@ -963,6 +969,9 @@ kuna_options! { self, p1;
     },
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
+    },
+    "gowalkprune" => {
+        on_off!(analysis_gowalkprune, "Go pclntab functions out of the fast inventory walk")
     },
     "flowmode" => {
         let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {
