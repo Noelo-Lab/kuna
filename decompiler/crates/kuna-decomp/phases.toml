@@ -2755,6 +2755,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "haltloopguard"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "heritage-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "GH-1344"
+summary = "Treat a loop the function never leaves as a point where global memory is read, as heritage treats every RETURN. Upstream's guardReturns reads each persistent range with an addrforce COPY in front of each RETURN, halts included, and that read is what keeps a store to a global alive through dead-code removal. A function that ends in a cycle of basic blocks with no edge out of it (`b .`, `for (;;) __WFI();`, a firmware super-loop) has no RETURN, so a store to a global before or inside that cycle had no reader and was deleted: the AIRCR write of a Cortex-M NVIC_SystemReset vanished in front of its `while (true) {}`. With this on, for every persistent range the function stores to, heritage records the range's value at the cycle's entry when it renames, and once renaming is done marks the writes behind that value addrforce, looking through the MULTIEQUALs that join them: the store before the loop and the loop's own stores. A read inside the cycle does not exempt the range, since it may only feed the cycle's own stores (`for (;;) *odr ^= 0x2000;`). Dead-code removal then keeps those stores. No operation is added, so nothing new prints and no block changes. Off deletes those stores, as upstream does."
+use_when = "Leave on. A store to a global or a memory-mapped register right before an infinite loop, or inside one, is missing from the output (`DataSynchronizationBarrier(0xf); DataSynchronizationBarrier(0xf); while (true) {}` with the AIRCR write between the barriers gone). Turn off to reproduce upstream's output."
+example = "option haltloopguard off"
+source_decompiler = "ghidra"
+inspiration = "GH-1344: a raw Cortex-M NVIC_SystemReset (dsb; AIRCR = AIRCR & 0x700 | 0x05fa0004; dsb; b .) printed as two barriers and an empty infinite loop; the same bytes ending in bx lr kept the store."
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a store to a global vanishes before an infinite loop|a memory-mapped register write before while (true) {} is missing|a reset or watchdog write before a halt loop disappears|a store inside a for (;;) loop the function never leaves is missing"
+live_field = "halt_loop_guard"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "noreturn_externmatch"
 values = "on|off"
 default = "on"
