@@ -2141,7 +2141,19 @@ HighVariable, exactly one counter); parameters with no recovered name are
 `a0`, `a1`, … by signature slot; global data reads `dat_<addr>` (lowercase
 bare hex), unnamed callees `sub_<addr>`, goto targets `label_<addr>`
 (`printc.rs (PrintC::block_label_name)`, from the target block's entry
-address so goto and label always agree). Under `ghidra` the upstream scheme
+address so goto and label always agree). Two printed labels can start at
+the same address: `ActionReturnSplit` clones a shared return block once per
+goto edge, each clone keeping the original's address cover, and a clone
+spliced into its predecessor still starts at the return block's address.
+When two such copies are both goto targets, each would print
+`label_<addr>:`, a duplicate label (a C compile error) that leaves every
+goto to either copy ambiguous. Before the body prints,
+`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (PrintC::assign_label_names)`
+walks the structured tree in child order over the leaves that print a
+label; the first leaf with a given name keeps it and the n-th takes
+`label_<addr>_<n>` (`LAB_%08x_<n>` in ghidra mode). A goto resolves its
+target's front leaf through the same table, so it names the copy it jumps
+to. A function with no shared label prints exactly as before. Under `ghidra` the upstream scheme
 returns: `param_N`, type-prefixed `iVar1`/`uVar2`-style locals
 (`decompiler/crates/kuna-decomp/src/p6_variables/coreaction_cleanup.rs
 (kuna_default_local_name)`), `func_`/`code_` addresses. Both schemes are

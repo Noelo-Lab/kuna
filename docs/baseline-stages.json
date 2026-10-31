@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3329,
-    3329
+    3335,
+    3335
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -440,6 +440,12 @@
     "data:DECODEHALT #2: on, the halt names the decode failure and carries the truncation warning",
     "data:DECODEHALT #3: on, the function header says the body is incomplete",
     "data:DECODEHALT #4: exactly one of the two passes renders the pseudo-call",
+    "data:DUPLABELS #1: the first copy keeps the address label",
+    "data:DUPLABELS #2: the second copy has its own label",
+    "data:DUPLABELS #3: the first copy calls intarith",
+    "data:DUPLABELS #4: the converted integer path jumps to the first copy",
+    "data:DUPLABELS #5: the default path jumps to the copy that stores v3",
+    "data:DUPLABELS #6: the second copy stores the tag the path chose",
     "data:DWARFVARIANTS #10: no variant name is ever synthesized",
     "data:DWARFVARIANTS #11: off, an overlaying Result payload is a raw byte offset",
     "data:DWARFVARIANTS #12: on, the overlaying Result keeps its recovered tag field",
