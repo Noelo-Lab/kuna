@@ -3042,6 +3042,24 @@ mod tests {
         );
     }
 
+    /// (GH #1333) A chained-fixup Mach-O maps its pointer slots as the pointers
+    /// dyld writes, not the chain words on disk: both rebases resolve and the
+    /// import slot reads zero, in `ld64.lld`'s layout and in Apple `ld64`'s.
+    #[test]
+    fn macho_chained_fixups_are_applied_to_the_image() {
+        for name in ["macho_ptrslots_arm64", "macho_ptrslots_offset_arm64"] {
+            let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+            let m = manager();
+            let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+            let mut img = ObjectLoadImage::from_bytes(&path, &bytes).unwrap();
+            img.attach_to_space(Rc::clone(&ram));
+            let words = img.load(24, &Address::new(Rc::clone(&ram), 0x100004000)).unwrap();
+            let read = |i: usize| u64::from_le_bytes(words[i * 8..i * 8 + 8].try_into().unwrap());
+            assert_eq!((read(0), read(1), read(2)), (0x100000440, 0x1000003c8, 0), "{name}");
+        }
+    }
+
     #[test]
     fn cet_plt_sec_imports_resolve_at_call_targets() {
         // PIE + CET: calls target `.plt.sec` (`endbr64; FF 25`).  The stub entry

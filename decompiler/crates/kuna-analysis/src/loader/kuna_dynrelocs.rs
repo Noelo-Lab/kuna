@@ -38,6 +38,13 @@
 //!
 //! ## Scope
 //!
+//! A Mach-O image's analog is its `LC_DYLD_CHAINED_FIXUPS` chains: on disk a
+//! pointer slot holds a packed chain entry (`1004000000000000` for a pointer to
+//! `0x100000410`), not the pointer. [`resolve`] writes each rebase's target and
+//! zeroes each bind, the word every other format's loader leaves in an import
+//! slot. No slot is reported constant. A classic `LC_DYLD_INFO` image needs
+//! neither: its rebased words are already the unslid pointers.
+//!
 //! Linked images only (`ET_EXEC`/`ET_DYN`); an `ET_REL` `.o` takes the separate
 //! `relocobjects` layout path, which applies its own relocations. Architectures:
 //! x86-64, AArch64, i386 and ARM — the four whose `RELATIVE`/`GLOB_DAT`/
@@ -181,7 +188,8 @@ fn implicit_addend(file: &object::File, vma: u64, width: usize, le: bool) -> Opt
 /// knowable writes plus the RELRO-frozen subset of their slots.
 ///
 /// Returns an empty result — the byte-identical pre-fix behaviour — whenever
-/// `--option dynrelocs off` (env `KUNA_DYNRELOCS`), the file is not an ELF, the
+/// `--option dynrelocs off` (env `KUNA_DYNRELOCS`), the file is neither an ELF
+/// nor a Mach-O (a Mach-O answers [`macho_chained`]), the
 /// file is an `ET_REL` object (the `relocobjects` path owns those), or the
 /// machine is not one of the four handled. Never errors: a malformed entry is
 /// skipped, never applied on a guess.
@@ -189,6 +197,9 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     let mut out = DynRelocs::default();
     if !kuna_decomp::kuna_dynrelocs::dynrelocs_enabled() {
         return out;
+    }
+    if file.format() == object::BinaryFormat::MachO {
+        return macho_chained(file, bytes);
     }
     if file.format() != object::BinaryFormat::Elf {
         return out;
@@ -272,6 +283,20 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     }
 
     out
+}
+
+/// A Mach-O image's chained fixups as writes: each rebase's resolved target, and
+/// a zero for each bind, in slot order.
+fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
+    let fixups = crate::loader::format::macho::resolve_chained_fixups(file, bytes);
+    let width = fixups.slot_width();
+    let mut writes: Vec<DynRelocWrite> = fixups
+        .rebases()
+        .map(|(vma, value)| DynRelocWrite { vma, value, width })
+        .chain(fixups.binds().map(|(vma, _)| DynRelocWrite { vma, value: 0, width }))
+        .collect();
+    writes.sort_unstable_by_key(|w| w.vma);
+    DynRelocs { writes, const_ranges: Vec::new() }
 }
 
 #[cfg(test)]

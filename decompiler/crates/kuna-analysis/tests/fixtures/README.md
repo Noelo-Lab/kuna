@@ -1048,6 +1048,18 @@ covered by the resolver's synthetic-bit-pattern unit tests
 (`decode_arm64e_auth_rebase_strips_pac` et al.) since the in-container linker does
 not emit an arm64e auth-fixup slice.
 
+`macho_ptrslots_arm64` and `macho_ptrslots_offset_arm64` (arm64, 33 KB each)
+are GH #1333's source plus one imported pointer, so their `__DATA,__data` holds
+two chained-fixup rebases (`_audit_label_ptr`@`0x100004000` -> `0x100000440`,
+`_audit_func_ptr`@`0x100004008` -> `_audit_target`@`0x1000003c8`) and one bind
+(`_audit_import_ptr`@`0x100004010` -> `_audit_imported`). The first is
+`ld64.lld`'s `DYLD_CHAINED_PTR_64` layout; the second, generated from it by
+`macho_ptrslots_offset_arm64.py`, is Apple `ld64`'s `DYLD_CHAINED_PTR_64_OFFSET`
+layout, whose rebase words hold image-base offsets. Source `macho_ptrslots.c`;
+recipe, toolchain and SHA-256s in `macho_ptrslots_arm64.provenance`. Pinned by
+`loadimage_object.rs (macho_chained_fixups_are_applied_to_the_image)`,
+`chained.rs (fixture_rebases_and_binds)` and `tests/verify_dynrelocs_gate.rs`.
+
 ## Stripped-PE / stripped-Mach-O entry discovery (PR-12+13)
 
 The multi-format **entry-discovery** gate
