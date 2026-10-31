@@ -858,6 +858,28 @@ one-directional: it can only make a split not happen, so it cannot create a
 duplication or change what the surviving merged block does. Settable
 `retsplitglobal`, shipped default **on**.
 
+### retsplitlimit — a bound on what one return split may clone
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_retsplitlimit.rs
+(split_is_declined)`, read by `decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs
+(Funcdata::return_split_apply)` once a return block's split edges are known.
+*Pattern:* `node_split` clones the whole return block once per split edge, and
+a return block carries, besides its epilogue, one `Heritage::guardReturns`
+`glob = glob` COPY per global the function reads — the liveness markers
+`retsplitglobal` deliberately does not count. A huge function that reads
+thousands of globals and reaches one return from hundreds of gotos clones
+millions of ops, which every later pass and the variable merge walk: serde-hkx's
+194 KB deserializer (GH-1034) has two return blocks of about 3,000 ops reached by
+658 and 674 gotos, 6.1 million cloned ops and 7.19 million guard COPYs after
+the split. *Transform:* when the block's op count times its split edges exceeds
+the limit (`retsplitlimit <n>`, default 2^20 = 1,048,576 cloned ops), none of
+that block's edges are split and its gotos stay; `off` restores the unlimited
+split. *Bounds:* the test is per block and in cloned ops, so a block under the
+limit splits exactly as upstream and the C changes only in a function that would
+have cloned more, where those paths print a `goto` to the shared return instead
+of their own `return`. Like `retsplitglobal` it can only decline a split.
+Settable `retsplitlimit`, shipped default **1048576**.
+
 ### crossjumprevert — un-doing compiler cross-jumping (angr `CrossJumpReverter`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_crossjumpreverter.rs

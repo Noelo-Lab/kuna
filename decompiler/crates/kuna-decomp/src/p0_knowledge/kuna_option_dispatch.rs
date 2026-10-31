@@ -147,6 +147,12 @@ kuna_options! { self, p1;
         self.ret_split_global = val;
         Ok(msg)
     },
+    "retsplitlimit" => {
+        let (val, msg) =
+            crate::p8_structure::kuna_retsplitlimit::OptionRetSplitLimit.apply(p1)?;
+        self.ret_split_limit = val;
+        Ok(msg)
+    },
     "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
