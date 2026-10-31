@@ -49,6 +49,7 @@ fn build_manager() -> AddrSpaceManager {
         1,
     )))
     .unwrap();
+    m.set_default_code_space(2).unwrap();
     m
 }
 
@@ -684,6 +685,7 @@ fn ptrflow_copy_propagates_when_flagged() {
     // A COPY op already marked ptrflow: applyOp should propagate to its out's
     // readers and its in0's def, returning a change.
     let mut fd = build_fd();
+    ram(&fd).truncate_space(4);
     let src = make_input(&mut fd, 0x100, 8);
     let (copyop, copyout) = make_op(&mut fd, 0x200, OpCode::CPUI_COPY, 1, 8);
     wire(&mut fd, src, copyop, 0);
@@ -716,10 +718,14 @@ fn ptrflow_copy_not_flagged_is_noop() {
 }
 
 #[test]
-fn ptrflow_oplist_empty_without_truncations() {
-    // hasTruncations defaults false (W4 seam) -> getOpList must be empty.
-    let rule = RulePtrFlow::new();
-    assert!(rule.get_op_list().is_empty(), "no truncations -> rule installs nothing");
+fn ptrflow_leaves_nontruncated_architectures_unchanged() {
+    let mut fd = build_fd();
+    let src = make_input(&mut fd, 0x100, 8);
+    let (op, out) = make_op(&mut fd, 0x200, OpCode::CPUI_COPY, 1, 8);
+    wire(&mut fd, src, op, 0);
+    fd.obank_mut().get_mut(op).unwrap().set_ptr_flow();
+    assert_eq!(RulePtrFlow::new().apply_op(op, &mut fd), 0);
+    assert!(!fd.vbank().get(out).unwrap().is_ptr_flow());
 }
 
 // ===========================================================================

@@ -2026,6 +2026,17 @@ ops are not decoded and the CALLOTHER stays.
 
 ## 3.3 Sub-variable flow
 
+On architectures with a truncated default data space, `RulePtrFlow` narrows
+LOAD/STORE address operands to their referenced space's address width and
+indirect branch/call targets to the code-space width. A SUBPIECE takes the low
+bytes (with storage adjusted for endianness); constants are masked directly.
+Other uses retain the full value. Pointer-flow marks let sub-variable analysis
+propagate the required width through arithmetic, copies and merges. In N32,
+this works with the entry stack-register extension (chapter 04) to recover
+stack arguments and locals without truncating their 64-bit contents. Narrow
+operands are never widened, and untruncated architectures keep their existing
+behavior.
+
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`
 shrinks a logical value out of a larger container: given a *root* varnode and a
 bit-mask identifying where the small value lives, it traces the value's flow

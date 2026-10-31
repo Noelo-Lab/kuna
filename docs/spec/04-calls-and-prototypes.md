@@ -334,6 +334,14 @@ assertion. Locked models retain priority. Compiler-mechanism templates that
 reference instruction-specific placeholders such as `inst_next` are rejected;
 these boundaries do not supply an instruction-length context.
 
+When a stack register is wider than its logical stack address, prototype setup
+seeds the narrow input register and a zero-extension into the full register at
+function entry. This links lifted full-register arithmetic to the modeled stack
+base before SSA recovery. For example, BE N32 uses the low four bytes of its
+eight-byte SP while retaining eight-byte integer arguments. Equal-width stack
+registers receive no synthetic extension. Declared pointers matching a truncated
+code space also seed pointer flow; chapter 03 describes address-use trimming.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element
