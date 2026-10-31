@@ -3442,6 +3442,25 @@ mod tests {
         assert_eq!(v.get_offset(), 0xdead);
     }
 
+    /// The fspec side-table entry a call-spec annotation names lives as long
+    /// as the function: a batch decompiling thousands of functions kept every
+    /// call site's entry before the function's drop released them.
+    #[test]
+    fn dropping_a_function_releases_its_fspec_entries() {
+        let handle = crate::flow::next_fspec_handle();
+        let info = || kuna_base::space::FspecCallInfo { printed_name: "callee".into(), entry: Address::default() };
+        kuna_base::space::fspec_register(handle, info());
+        let mut fd = build_fd();
+        fd.new_varnode_call_specs(handle);
+        let other = crate::flow::next_fspec_handle();
+        kuna_base::space::fspec_register(other, info());
+        assert_eq!(kuna_base::space::fspec_lookup(handle).map(|i| i.printed_name), Some("callee".into()));
+        drop(fd);
+        assert!(kuna_base::space::fspec_lookup(handle).is_none());
+        assert!(kuna_base::space::fspec_lookup(other).is_some(), "a handle the function did not take is kept");
+        kuna_base::space::fspec_unregister(other);
+    }
+
     // --- deletion / teardown ---------------------------------------------
 
     #[test]
