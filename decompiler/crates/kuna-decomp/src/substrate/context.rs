@@ -1106,8 +1106,9 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
     pub callee_preserves: bool,
     pub global_call_ranges: bool,
-    /// (kuna) `readonlycalls`, read by `Heritage::guard_calls`.
-    pub readonly_calls: bool,
+    /// (kuna) `readonlycalls`, read by `Heritage::guard_calls`: the guard count
+    /// at which a pass leaves read-only ranges unguarded, `None` when off.
+    pub readonly_calls: Option<u64>,
     /// (kuna) `prunedssa`, read by `Heritage::guard_calls` and `Heritage::place_multiequals`.
     pub pruned_ssa: bool,
     /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
@@ -1964,7 +1965,7 @@ impl ArchContext {
             zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
-            readonly_calls: true,
+            readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             pruned_ssa: true,
             load_guard_reads: true,
             callee_ret_preserves: true,
