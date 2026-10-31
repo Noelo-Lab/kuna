@@ -82,7 +82,7 @@
 //! instruction calls itself (the placeholder an unrelocated call in an
 //! object file leaves).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -135,8 +135,8 @@ type Entry = (int4, uintb);
 pub struct WideCache {
     pair: Option<Option<WidePair>>,
     map: HashMap<Entry, bool>,
-    by_callers: HashMap<Entry, bool>,
-    locals: HashMap<Entry, Local>,
+    by_callers: BTreeMap<Entry, bool>,
+    locals: BTreeMap<Entry, Local>,
     callers: callers::Cache,
 }
 
@@ -238,7 +238,7 @@ fn by_callers(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>
     }
     let Some(lo) = WidePair::key(&pair.lo) else { return false };
     let mut order = vec![key];
-    let mut pos: HashMap<Entry, usize> = HashMap::from([(key, 0)]);
+    let mut pos: BTreeMap<Entry, usize> = BTreeMap::from([(key, 0)]);
     let mut nodes: Vec<Node> = Vec::new();
     while nodes.len() < order.len() && order.len() <= MAX_CONE {
         let k = order[nodes.len()];

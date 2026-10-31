@@ -38,7 +38,7 @@
 //! symbol table, so a verdict is the same whichever function a run decompiles,
 //! in whatever order. An image without symbols proves nothing this way.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -335,9 +335,9 @@ impl Index {
 #[derive(Default)]
 pub(super) struct Cache {
     index: Option<Option<Index>>,
-    facts: HashMap<u64, Facts>,
-    scans: HashMap<u64, Scan>,
-    clobbers: HashMap<u64, bool>,
+    facts: BTreeMap<u64, Facts>,
+    scans: BTreeMap<u64, Scan>,
+    clobbers: BTreeMap<u64, bool>,
 }
 
 impl Cache {
@@ -431,7 +431,7 @@ fn reads(insn: &Insn, opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData
 
 /// The literal `v` holds inside one instruction, from the literals its
 /// earlier operations wrote (`known`).
-fn literal(v: &VarnodeData, known: &HashMap<Key, u64>) -> Option<u64> {
+fn literal(v: &VarnodeData, known: &BTreeMap<Key, u64>) -> Option<u64> {
     if is_const(v) {
         return Some(v.offset);
     }
@@ -439,7 +439,7 @@ fn literal(v: &VarnodeData, known: &HashMap<Key, u64>) -> Option<u64> {
 }
 
 /// Record what op `opc` writes into `known` when its inputs are literals.
-fn track(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], known: &mut HashMap<Key, u64>) {
+fn track(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], known: &mut BTreeMap<Key, u64>) {
     let Some(k) = out.as_ref().and_then(key) else { return };
     let a = ins.first().and_then(|v| literal(v, known));
     let b = ins.get(1).and_then(|v| literal(v, known));
@@ -462,7 +462,7 @@ fn track(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], known: &mu
 
 /// The literals the context holds for the registers it tracks at `entry`
 /// (SPARC's `DECOMPILE_MODE`, which its window macros branch on).
-fn tracked(arch: &Architecture, index: &Index, entry: u64) -> HashMap<Key, u64> {
+fn tracked(arch: &Architecture, index: &Index, entry: u64) -> BTreeMap<Key, u64> {
     arch.with_context_db(|db| db.get_tracked_set(&index.at(entry)).clone())
         .iter()
         .filter_map(|t| Some(((t.loc.space.as_ref()?.get_index(), t.loc.offset, t.loc.size), t.val)))
@@ -473,7 +473,7 @@ fn tracked(arch: &Architecture, index: &Index, entry: u64) -> HashMap<Key, u64> 
 /// the literals `known` holds at its start: each operation some path reaches,
 /// the code addresses a reached branch may go to, and whether a path falls
 /// off the end. `stops` ends a path at a call.
-fn reached(insn: &Insn, known: &HashMap<Key, u64>, index: &Index, stops: &dyn Fn(u64) -> bool) -> (Vec<usize>, Vec<u64>, bool) {
+fn reached(insn: &Insn, known: &BTreeMap<Key, u64>, index: &Index, stops: &dyn Fn(u64) -> bool) -> (Vec<usize>, Vec<u64>, bool) {
     let n = insn.ops.len();
     let mut seen = vec![false; n];
     let (mut ops, mut targets, mut falls) = (Vec::new(), Vec::new(), false);
@@ -535,7 +535,7 @@ fn reached(insn: &Insn, known: &HashMap<Key, u64>, index: &Index, stops: &dyn Fn
 }
 
 /// A branch condition over registers, as one instruction computes it.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Cond {
     Reg(Key),
     Lit(u64),
@@ -560,23 +560,23 @@ impl Cond {
 /// What one path learned from the branches it took: the values of one-byte
 /// registers (the flags a conditional instruction tests) and the outcome of
 /// each condition it decided, until a write of a register they read.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct PathFacts {
-    regs: Vec<(Key, u64)>,
-    conds: Vec<(Cond, bool)>,
+    regs: BTreeMap<Key, u64>,
+    conds: BTreeMap<Cond, bool>,
 }
 
 impl PathFacts {
     fn value(&self, c: &Cond) -> Option<u64> {
         match c {
             Cond::Lit(v) => Some(*v),
-            Cond::Reg(k) => self.regs.iter().find(|(r, _)| r == k).map(|r| r.1),
+            Cond::Reg(k) => self.regs.get(k).copied(),
             _ => self.truth(c).map(u64::from),
         }
     }
 
     fn truth(&self, c: &Cond) -> Option<bool> {
-        if let Some(&(_, v)) = self.conds.iter().find(|(d, _)| d == c) {
+        if let Some(&v) = self.conds.get(c) {
             return Some(v);
         }
         match c {
@@ -595,7 +595,7 @@ impl PathFacts {
             },
             Cond::Eq(a, b) => match (self.value(a), self.value(b)) {
                 (Some(x), Some(y)) => Some(x == y),
-                _ => self.conds.iter().find(|(d, _)| *d == Cond::Eq(b.clone(), a.clone())).map(|d| d.1),
+                _ => self.conds.get(&Cond::Eq(b.clone(), a.clone())).copied(),
             },
         }
     }
@@ -605,11 +605,10 @@ impl PathFacts {
         if matches!(c, Cond::Unknown) {
             return;
         }
-        self.conds.push((c.clone(), v));
+        self.conds.insert(c.clone(), v);
         match c {
             Cond::Reg(k) if k.2 == 1 => {
-                self.regs.retain(|r| r.0 != *k);
-                self.regs.push((*k, v as u64));
+                self.regs.insert(*k, v as u64);
             }
             Cond::Not(a) => self.learn(a, !v),
             Cond::And(a, b) if v => {
@@ -624,7 +623,7 @@ impl PathFacts {
                 for (r, other) in [(a, b), (b, a)] {
                     if let (Cond::Reg(k), Some(x)) = (r.as_ref(), self.value(other)) {
                         if k.2 == 1 && self.value(r).is_none() {
-                            self.regs.push((*k, x));
+                            self.regs.insert(*k, x);
                         }
                     }
                 }
@@ -635,14 +634,14 @@ impl PathFacts {
 
     /// Forget what a write of `k` changes.
     fn forget(&mut self, k: &Key) {
-        self.regs.retain(|r| !overlaps(&r.0, k));
-        self.conds.retain(|(c, _)| !c.mentions(k));
+        self.regs.retain(|r, _| !overlaps(r, k));
+        self.conds.retain(|c, _| !c.mentions(k));
     }
 }
 
 /// The condition `v` holds inside one instruction: what its earlier
 /// operations derived it from (`deriv`), down to registers and literals.
-fn cond_of(v: &VarnodeData, deriv: &HashMap<Key, Cond>) -> Cond {
+fn cond_of(v: &VarnodeData, deriv: &BTreeMap<Key, Cond>) -> Cond {
     if is_const(v) {
         return Cond::Lit(v.offset);
     }
@@ -659,7 +658,7 @@ fn cond_of(v: &VarnodeData, deriv: &HashMap<Key, Cond>) -> Cond {
 
 /// Record in `deriv` the condition op `opc` writes into a temporary, and in
 /// `facts` that a register it writes no longer holds what the path learned.
-fn derive(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], deriv: &mut HashMap<Key, Cond>, facts: &mut PathFacts) {
+fn derive(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], deriv: &mut BTreeMap<Key, Cond>, facts: &mut PathFacts) {
     let Some(o) = out.as_ref() else { return };
     let Some(k) = key(o) else { return };
     let arg = |i: usize| ins.get(i).map_or(Cond::Unknown, |v| cond_of(v, deriv));
@@ -676,7 +675,7 @@ fn derive(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], deriv: &m
         facts.forget(&k);
         deriv.remove(&k);
         if let (Cond::Lit(v), 1) = (&c, k.2) {
-            facts.regs.push((k, *v));
+            facts.regs.insert(k, *v);
         }
     } else if matches!(c, Cond::Unknown) {
         deriv.remove(&k);
@@ -704,22 +703,22 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
     let mut entry = PathFacts::default();
     for (key, v) in tracked(arch, index, caller.0) {
         if key.2 == 1 {
-            entry.regs.push((key, v));
+            entry.regs.insert(key, v);
         }
     }
     let mut facts = entry.clone();
-    let mut deriv = HashMap::new();
+    let mut deriv = BTreeMap::new();
     for (opc, out, ins) in &insn.ops[..k] {
         derive(*opc, out, ins, &mut deriv, &mut facts);
     }
-    type Item = (u64, Rc<Insn>, usize, PathFacts, HashMap<Key, Cond>);
+    type Item = (u64, Rc<Insn>, usize, PathFacts, BTreeMap<Key, Cond>);
     let mut todo: Vec<Item> = vec![(site, Rc::new(insn), k + 1, facts, deriv)];
-    let mut seen: HashSet<(u64, PathFacts)> = HashSet::new();
+    let mut seen: BTreeSet<(u64, PathFacts)> = BTreeSet::new();
     let mut result = Use::Dead;
-    let visit = |t: u64, f: PathFacts, seen: &mut HashSet<(u64, PathFacts)>, todo: &mut Vec<Item>| {
+    let visit = |t: u64, f: PathFacts, seen: &mut BTreeSet<(u64, PathFacts)>, todo: &mut Vec<Item>| {
         if t > caller.0 && t < caller.1 && seen.len() < MAX_SITE_INSNS && seen.insert((t, f.clone())) {
             if let Some(i) = decode(arch, &index.at(t)) {
-                todo.push((t, Rc::new(i), 0, f, HashMap::new()));
+                todo.push((t, Rc::new(i), 0, f, BTreeMap::new()));
             }
         }
     };
@@ -795,7 +794,7 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
 }
 
 /// Scan the function at `entry` once per image (see [`Scan`]).
-fn scan<'a>(arch: &Architecture, index: &Index, lo: Key, entry: u64, cache: &'a mut HashMap<u64, Scan>) -> &'a Scan {
+fn scan<'a>(arch: &Architecture, index: &Index, lo: Key, entry: u64, cache: &'a mut BTreeMap<u64, Scan>) -> &'a Scan {
     cache.entry(entry).or_insert_with(|| scan_function(arch, index, lo, entry))
 }
 
@@ -805,7 +804,7 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
     let base = tracked(arch, index, start);
     let noreturn = |t: u64| crate::p4_calls::kuna_calleenoreturn::is_no_return(arch, &index.at(t));
     let mut todo = vec![start];
-    let mut seen: HashSet<u64> = HashSet::new();
+    let mut seen: BTreeSet<u64> = BTreeSet::new();
     let (mut direct, mut in_window) = (false, false);
     let mut restored: Vec<Key> = Vec::new();
     let mut written: Vec<Key> = Vec::new();
@@ -868,9 +867,9 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
 /// it: itself, by an indirect or unknown call, or through a direct callee or
 /// a function it branches into that does? A function with a register window
 /// only by itself, and none that saves the register on entry.
-fn clobbers(arch: &Architecture, index: &Index, lo: Key, entry: u64, cache: &mut HashMap<u64, Scan>) -> bool {
-    let mut queue = std::collections::VecDeque::from([entry]);
-    let mut seen: HashSet<u64> = HashSet::from([entry]);
+fn clobbers(arch: &Architecture, index: &Index, lo: Key, entry: u64, cache: &mut BTreeMap<u64, Scan>) -> bool {
+    let mut queue = VecDeque::from([entry]);
+    let mut seen: BTreeSet<u64> = BTreeSet::from([entry]);
     while let Some(f) = queue.pop_front() {
         let s = scan(arch, index, lo, f, cache);
         if s.saves {
