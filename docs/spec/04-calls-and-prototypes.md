@@ -3754,9 +3754,20 @@ value. "Computed" is a bounded walk back through the operations that only *move*
 value — copies, phis, indirects, piece/subpiece reshaping — stopping at the first
 one that produces one. An unwritten Varnode and an INDIRECT creation are
 uncomputed; a constant is computed, because returning a literal is a real return;
-anything the walk cannot classify is computed, so an unfamiliar shape keeps
-today's answer. The RETURN is then rewritten to the surviving half and the dead
-concatenation destroyed.
+an unwritten global (a persistent RAM Varnode) is computed too, because a value
+read out of the program's own data is one the function chose to return —
+`mov ax,[g]; mov dx,[g+2]; ret` returns `CONCAT22(dat_g2,dat_g)`, where taking
+the global for a leftover kept `AX` alone, and an i386 `mov edx,5; mov eax,[g];
+ret` lost the whole return under the `EDX:EAX` rule below. That holds only in a
+pair joined in its ABI's order. On an ABI that returns the first register high,
+a pair `bejoin` does not prove to be one value is joined first register low
+(`kuna_pairs_first_low`), on the reading that the second register is a leftover
+this repair drops, so there a global in the second register stays uncomputed:
+SPARC's `restore` copies `%i1` into `%o1` whatever it holds, and an `int` that
+read a global into `%i1` for a store would otherwise come back as a swapped
+`CONCAT44` (`tests/stages/kuna-returnglobal-sparc.xml`). Anything the walk cannot
+classify is computed, so an unfamiliar shape keeps today's answer. The RETURN is
+then rewritten to the surviving half and the dead concatenation destroyed.
 
 Timing is the load-bearing detail. At recovery time the restore is still
 `COPY(LOAD(sp − k))` and indistinguishable from `return *p`, so there is nothing

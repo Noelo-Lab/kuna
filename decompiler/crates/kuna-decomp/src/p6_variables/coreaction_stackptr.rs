@@ -320,8 +320,21 @@ impl StackSolver {
                     // Otherwise make a guess.  (kuna) `calleepop`: upstream's
                     // constant 4 assumes the callee pops nothing, which is
                     // wrong for the majority of calls under a spec whose
-                    // default model is `__stdcall extrapop="unknown"`.
-                    let mut rhs = crate::kuna_calleepop::RETURN_ADDRESS_ONLY;
+                    // default model is `__stdcall extrapop="unknown"`, and is
+                    // the x86-32 return-address size: the call's own pushes are
+                    // the measure.
+                    use crate::kuna_calleepop::RETURN_ADDRESS_ONLY;
+                    let ret_bytes = match (data.get_arch().callee_pop, callee) {
+                        (true, Some(fc_idx)) => {
+                            let call = data.get_call_specs(fc_idx).get_op();
+                            data.obank().get(call).map(|c| c.get_addr().clone()).and_then(|at| {
+                                crate::kuna_calleepop::return_address_bytes(data, id, &at)
+                            })
+                        }
+                        _ => None,
+                    }
+                    .unwrap_or(RETURN_ADDRESS_ONLY);
+                    let mut rhs = RETURN_ADDRESS_ONLY;
                     if data.get_arch().callee_pop {
                         let out = data.obank().get(op).and_then(|o| o.get_out());
                         if let (Some(sp), Some(out), Some(fc_idx)) = (othervn, out, callee) {
@@ -349,6 +362,7 @@ impl StackSolver {
                             }
                         }
                     }
+                    rhs += ret_bytes - RETURN_ADDRESS_ONLY;
                     self.guess.push(StackEqn { var1: i as int4, var2: idx, rhs });
                 }
                 OpCode::CPUI_MULTIEQUAL => {

@@ -69,8 +69,20 @@
 //! reshaping — stopping at the first operation that produces one. A terminal is
 //! uncomputed when it is an unwritten (input or free) Varnode or an INDIRECT
 //! creation; a constant counts as computed, because returning a literal is a real
-//! return. Anything the walk cannot classify is treated as computed, so an
-//! unfamiliar shape keeps today's answer.
+//! return, and so does a value read out of global memory, the program's own data
+//! (`mov ax,[g]; mov dx,[g+2]; ret` returns the `long` at `g`). Anything the walk
+//! cannot classify is treated as computed, so an unfamiliar shape keeps today's
+//! answer.
+//!
+//! The global carve-out holds only for a pair joined in its ABI's order. On an
+//! ABI that returns the first register high, a pair [`crate::kuna_bejoin`] does
+//! not prove to be one value is joined first register low
+//! ([`Funcdata::kuna_pairs_first_low`]), on the reading that the second register
+//! is a leftover this repair drops; keeping it there would return the halves
+//! swapped. A global in that second register proves nothing: SPARC's `restore`
+//! copies `%i1` into `%o1` whatever it holds, so `h = g2; return g1;` would come
+//! back as `CONCAT44(g2,g1)`, and PowerPC's `lwz 3,g2; lwz 4,g1` for
+//! `(u64)g2 << 32 | g1` as `CONCAT44(g1,g2)`.
 //!
 //! # A value built in one return register
 //!
@@ -209,13 +221,18 @@ fn computes_from(data: &Funcdata, vn: VarnodeId, depth: u32, placed_at: Option<&
     if v.is_constant() {
         return true;
     }
-    // Never written: a function input, or a free Varnode standing for a location
-    // the function only ever reads (the callee-saved restore shape). An input
-    // parameter the function PLACED in the return register is a value it was
-    // handed and is handing back, which is a real return.
+    // Never written: a function input, a global the function reads, or a free
+    // Varnode standing for a location the function only ever reads (the
+    // callee-saved restore shape). A global is the program's own data and an
+    // input parameter the function PLACED in the return register is a value it
+    // was handed and is handing back: both are real returns. A global is not
+    // proof in a pair joined against its ABI's order (see the module header).
     let Some(def) = v.get_def() else {
         if placed_at.is_some_and(|a| a == v.get_addr()) {
             return false;
+        }
+        if v.is_persist() && !data.kuna_pairs_first_low() {
+            return true;
         }
         return crate::kuna_retinputhalf::is_input_parameter(data, vn);
     };
