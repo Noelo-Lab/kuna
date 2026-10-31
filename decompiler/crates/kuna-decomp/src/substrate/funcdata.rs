@@ -2017,6 +2017,11 @@ impl Funcdata {
         &self.qlst[i as usize]
     }
 
+    /// Every call specification, in `qlst` order.
+    pub(crate) fn call_specs(&self) -> &[FuncCallSpecs] {
+        &self.qlst
+    }
+
     /// Get the i-th call specification mutably (the recovery actions need to
     /// mutate the `ParamActive` trials in place).
     pub fn get_call_specs_mut(&mut self, i: int4) -> &mut FuncCallSpecs {

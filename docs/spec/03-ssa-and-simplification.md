@@ -140,6 +140,37 @@ block and the walk stops at the first op that is not one), so it collects the ru
 off the block's intrusive op list rather than materializing every op of every
 successor once per CFG edge per pass.
 
+**Pruned joins.** Under `option prunedssa` (default on) phi placement is
+pruned by liveness for a range that is neither persistent nor address-tied,
+in the unique and stack spaces (`kuna_prunedssa.rs (prune_merges)`). After
+`guard` the range's free reads and writes are all in the IR; a backward walk
+over the CFG from the blocks whose first access is a read, stopped by blocks
+that write the whole range, gives the blocks where the range is live on
+entry. A merge block where it is not live gets no MULTIEQUAL. An INDIRECT is
+neither a read nor a write for this walk: its input read is the chain, not a
+use. Minimal SSA would place those MULTIEQUALs and `ActionDeadCode` would
+delete them before anything reads them, so the IR after dead-code removal is
+the same up to op and varnode numbering; what changes is that the joins are
+never built. This matters where
+one unique location is written in many blocks and read only next to each
+write, as the loop temporaries of REP-prefixed string instructions are (the
+`prunedssa` fixture's 64 `rep movsb` loops share them): its iterated dominance
+frontier is nearly every join of the function, and an 11 KB serde-hkx
+function placed 675,234 unique-space MULTIEQUALs for 630 such ranges. Register ranges keep every
+join: the prototype passes that run between heritage and dead-code removal
+read a register's joins even where no read follows (a clobber on one path of
+an argument register's join). The pruning runs only on a pass whose dead-code
+removal may already remove from the space (pass at least the space's
+dead-code delay), and it records dead code for the space, so a read of the
+range that a later pass finds takes the same deadcode-delay restart a
+dead-code removal would have caused. Because the numbering differs, a later
+pass that breaks a tie by varnode order can still choose the other way: the
+lowered-switch detector takes the first of two equally long compare cascades
+on one variable, so bash's `do_redirection_internal` at -O0 recovers its
+four-case `switch (ri)` with the option on and keeps the compare tree with it
+off. The reduced `firstpass` and `register` pipelines run no `ActionDeadCode`,
+so there the pruned markers are absent rather than deleted later.
+
 An invalid entry-input range, including one crossing the end of its address
 space, returns a recoverable error from any of the three input-creation paths
 (ordinary read, same-time INDIRECT, or successor phi). The error propagates
@@ -314,6 +345,42 @@ small constructors affect their explicit destination objects, while unrelated
 global stores keep their original statements and ordering. Turning the option
 off restores the previous guards without changing the function's time or memory
 budgets.
+
+Under `option readonlycalls` (default on), a heritage pass that would guard
+at least 65,536 read-only-range and call pairs (its calls times its new, read,
+read-only ranges in the default data space,
+`heritage.rs (Heritage::readonly_cross_product)`) gives a range the image maps
+without write permission, which this function never writes, no INDIRECT at a
+call with an unknown effect on it: a callee cannot change it, so every read
+sees the entry value and the range needs no definition per call
+(`heritage.rs (Heritage::guard_calls)`). The x86-64 syscall memory guard
+already skips read-only ranges the same way. A read-only range with an
+explicit write in the function keeps its guards. Upstream guards every such
+range at every call, and on a persistent range those INDIRECTs survive
+dead-code removal; a function reading thousands of constants through
+thousands of calls (APoseFix's and serde-hkx's 200 KB deserializers: 2,876
+read-only globals at 1,316 calls in one jump-table partial) builds millions of
+INDIRECTs and the MULTIEQUALs their writes force. Below the threshold every
+call keeps the guard, because the printer reads the chain as a barrier: with
+the reads linked to the entry value, `SplitDatatype::splitCopy` declines a
+copy of a read-only literal into a local (its input is an input varnode) and
+prints one cast whole-word copy instead of one per element, and an expression
+over a constant global may be printed again after a call instead of being kept
+in a variable.
+
+Under `option prunedssa` (default on) a stack range that is neither persistent
+nor address-tied gets the unknown-effect INDIRECT only at a call after which a
+read of the range can follow (`kuna_prunedssa.rs (live_calls)`), the same
+liveness walk as the pruned joins, computed before the guards exist. The reads
+the guard pass adds itself count as reads at their op: a call where the range
+is an input trial, overlaps the call's output or a locked stack output, and
+every return when it is a function output trial. A guard no read can follow is
+one `ActionDeadCode` deletes after the pass; skipping it records dead code for
+the stack space as above. An address-tied range keeps every guard, since its
+INDIRECT outputs are `addrforce`d and survive dead-code removal once a direct
+write reaches them. In practice this prunes the stack ranges of a jump-table
+partial, which has no local scope yet and so no address-tied slots: one
+APoseFix-sized partial placed 953,360 stack INDIRECTs and keeps 20,419.
 
 **A range the call returns in.** Upstream skips a call whose output varnode
 covers the heritaged range exactly: the call defines the range itself, so no
