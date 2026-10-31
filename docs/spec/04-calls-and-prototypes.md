@@ -1448,10 +1448,12 @@ classified:
   (AncestorMemo)`). A step's key is the Varnode plus the offset and flags it
   is reached with. With the answer, the memo records which marked MULTIEQUALs
   above the step cut off a path below it, and the level, if any path ended at
-  the level bound. A later step with the same key reuses the "no" when its
-  level is no higher and every recorded MULTIEQUAL is still marked. Each path
-  that step could walk then avoids those MULTIEQUALs, so the first step walked
-  it too and found no use, and also set the same trial flags (`rem_formed`).
+  the level bound. A later step with the same key reuses the "no" while every
+  recorded MULTIEQUAL is still marked, at a level no higher than the recorded
+  one, or at any level when none was recorded (no path reached the bound, so a
+  higher level walks the same paths). Each path that step could walk is then
+  one the first step walked, or the start of one, so the first step found no
+  use on it and also set the same trial flags (`rem_formed`).
   A "yes" ends the call, so it is never stored. A step with no MULTIEQUAL above
   it is reached by one path only, so it skips the memo. The answers, and so the
   output, are the same as the walk over every path. On the CPython function,

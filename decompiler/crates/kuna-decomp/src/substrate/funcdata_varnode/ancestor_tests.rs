@@ -290,3 +290,196 @@ fn a_no_use_cut_by_a_marked_multiequal_is_not_reused_once_it_is_unmarked() {
         assert_eq!(memo.0, walk.0, "level {maxlevel}");
     }
 }
+
+/// A value `v` that a RETURN also reads, behind an INDIRECT and straight
+/// under a MULTIEQUAL. While return recovery runs, the RETURN read only
+/// competes with the call when the walk came through the INDIRECT, so `v`
+/// is no use with the `indirect` flag and a use without it. The no-use
+/// answer reached with the flag must not answer the step without it.
+#[test]
+fn a_no_use_reached_through_an_indirect_does_not_answer_the_plain_step() {
+    let mut ir = Ir::new();
+    ir.fd.init_active_output();
+    let v = ir.leaf(0x20_000, 4, false);
+    let zero = ir.fd.new_constant(4, 0);
+    let ret = ir.op(OpCode::CPUI_RETURN, 2);
+    ir.set(ret, &[zero, v]);
+    let iop = ir.fd.new_constant(8, 0);
+    let ind = ir.op(OpCode::CPUI_INDIRECT, 2);
+    ir.set(ind, &[v, iop]);
+    let iv = ir.out(ind, 0x21_000, 4);
+    let phi = ir.op(OpCode::CPUI_MULTIEQUAL, 2);
+    let root = ir.out(phi, 0x22_000, 4);
+    ir.set(phi, &[iv, v]);
+    let call = ir.call(root);
+    for maxlevel in 1..=4 {
+        let walk = ir.score(true, maxlevel, root, call);
+        let memo = ir.score(false, maxlevel, root, call);
+        assert_eq!(walk.0, maxlevel >= 2, "level {maxlevel}");
+        assert_eq!(memo.0, walk.0, "level {maxlevel}");
+    }
+}
+
+/// Random graphs as in [`random_graph`], plus INDIRECTs, COPYs to unique
+/// space, more `SUBPIECE`s of the high half and more leaves only the call
+/// reads, some also read by a RETURN while return recovery runs. Each is
+/// scored from several values at every level.
+fn rich_graph(rng: &mut Rng) -> (Ir, Vec<OpId>, Vec<VarnodeId>, OpId) {
+    let mut ir = Ir::new();
+    let returns = rng.below(2) == 0;
+    if returns {
+        ir.fd.init_active_output();
+    }
+    let mut wide = Vec::new();
+    let mut narrow = Vec::new();
+    let mut phis = Vec::new();
+    let mut pieces = Vec::new();
+    let mut links = Vec::new();
+    let mut at = 0x10_000u64;
+    let mut place = || {
+        at += 0x10;
+        at
+    };
+    for _ in 0..3 + rng.below(6) {
+        let fan = 1 + rng.below(4);
+        let o = ir.op(OpCode::CPUI_MULTIEQUAL, fan as int4);
+        wide.push(ir.out(o, place(), 8));
+        phis.push((o, fan));
+    }
+    for _ in 0..rng.below(4) {
+        let o = ir.op(OpCode::CPUI_PIECE, 2);
+        wide.push(ir.out(o, place(), 8));
+        pieces.push(o);
+    }
+    for _ in 0..rng.below(4) {
+        let v = if rng.below(2) == 0 {
+            let o = ir.op(OpCode::CPUI_INDIRECT, 2);
+            links.push(o);
+            ir.out(o, place(), 8)
+        } else {
+            let o = ir.op(OpCode::CPUI_COPY, 1);
+            links.push(o);
+            ir.fd.new_unique_out(8, o).unwrap()
+        };
+        wide.push(v);
+    }
+    for _ in 0..1 + rng.below(3) {
+        wide.push(ir.leaf(place(), 8, rng.below(2) == 0));
+    }
+    for _ in 0..rng.below(6) {
+        let whole = wide[rng.below(wide.len())];
+        let half = if rng.below(3) == 0 { 0 } else { 4 };
+        let base = ir.fd.vbank().get(whole).unwrap().get_offset();
+        let k = ir.fd.new_constant(4, half);
+        let o = ir.op(OpCode::CPUI_SUBPIECE, 2);
+        ir.set(o, &[whole, k]);
+        narrow.push(ir.out(o, base + half, 4));
+    }
+    for _ in 0..1 + rng.below(4) {
+        let bad = rng.below(2) == 0;
+        let v = if rng.below(3) == 0 { ir.rem_leaf(place(), bad) } else { ir.leaf(place(), 4, bad) };
+        if returns && rng.below(2) == 0 {
+            let zero = ir.fd.new_constant(4, 0);
+            let ret = ir.op(OpCode::CPUI_RETURN, 2);
+            ir.set(ret, &[zero, v]);
+        }
+        narrow.push(v);
+    }
+    let all: Vec<VarnodeId> = wide.iter().chain(narrow.iter()).copied().collect();
+    for &(o, fan) in &phis {
+        let ins: Vec<VarnodeId> = (0..fan).map(|_| all[rng.below(all.len())]).collect();
+        ir.set(o, &ins);
+    }
+    for &o in &pieces {
+        let ins = [narrow[rng.below(narrow.len())], narrow[rng.below(narrow.len())]];
+        ir.set(o, &ins);
+    }
+    for &o in &links {
+        let src = all[rng.below(all.len())];
+        if ir.fd.obank().get(o).unwrap().code() == OpCode::CPUI_COPY {
+            ir.set(o, &[src]);
+        } else {
+            let iop = ir.fd.new_constant(8, 0);
+            ir.set(o, &[src, iop]);
+        }
+    }
+    let mut roots: Vec<VarnodeId> = (0..3).map(|_| all[rng.below(all.len())]).collect();
+    roots.push(wide[rng.below(phis.len())]);
+    let call = ir.call(roots[0]);
+    for &r in &roots[1..] {
+        let k = ir.fd.new_code_ref(&ram(&ir.fd, 0x4000));
+        let o = ir.op(OpCode::CPUI_CALL, 2);
+        ir.set(o, &[k, r]);
+    }
+    (ir, phis.iter().map(|&(o, _)| o).collect(), roots, call)
+}
+
+#[test]
+fn the_memo_answers_as_the_walk_does_through_indirects_copies_and_returns() {
+    let mut differ = Vec::new();
+    let (mut saved, mut used, mut cases) = (0, 0, 0);
+    for seed in 1..=4000u64 {
+        let mut rng = Rng(seed.wrapping_mul(0xd1b5_4a32_d192_ed03) | 1);
+        let (mut ir, phis, roots, call) = rich_graph(&mut rng);
+        for &root in &roots {
+            for maxlevel in 1..=7 {
+                let walk = ir.score(true, maxlevel, root, call);
+                let memo = ir.score(false, maxlevel, root, call);
+                if (walk.0, walk.1) != (memo.0, memo.1) {
+                    differ.push((seed, maxlevel, walk.0, walk.1, memo.0, memo.1));
+                }
+                cases += 1;
+                saved += usize::from(memo.2 < walk.2);
+                used += usize::from(walk.0);
+            }
+        }
+        for o in phis {
+            assert!(!ir.fd.obank().get(o).unwrap().is_mark(), "seed {seed}: a MULTIEQUAL stayed marked");
+        }
+    }
+    differ.truncate(20);
+    assert!(differ.is_empty(), "memo differs from the full walk (seed, level, walk, memo): {differ:?}");
+    assert!(saved > 2000 && used > 2000, "cases {cases}, saved {saved}, used {used}");
+}
+
+/// `r = phi(p1, k)`, `p1 = phi(p2)`, `p2 = phi(p3)`, `p3 = phi(x)`,
+/// `x = phi(k, c1)`, `k = phi(x)`, `c1 = phi(c2)`, `c2 = phi(u)`, with `u`
+/// read only by the call. Through `p1` the walk reaches `k` three levels
+/// deep with `x` marked, so `k`'s answer is no use, cut by `x` and not
+/// bounded, and `u` is past the level bound there. Reached straight from
+/// `r` at level 7, `k` leads through the unmarked `x` to `u`. The first
+/// answer holds at any level, but only while `x` is marked.
+#[test]
+fn a_no_use_cut_by_a_marked_multiequal_is_not_reused_higher_up_once_it_is_unmarked() {
+    let mut ir = Ir::new();
+    let u = ir.leaf(0x20_000, 4, false);
+    let phi1 = |ir: &mut Ir, at: u64| {
+        let o = ir.op(OpCode::CPUI_MULTIEQUAL, 1);
+        (o, ir.out(o, at, 4))
+    };
+    let (c2, c2v) = phi1(&mut ir, 0x10_000);
+    ir.set(c2, &[u]);
+    let (c1, c1v) = phi1(&mut ir, 0x10_010);
+    ir.set(c1, &[c2v]);
+    let x = ir.op(OpCode::CPUI_MULTIEQUAL, 2);
+    let xv = ir.out(x, 0x10_020, 4);
+    let (k, kv) = phi1(&mut ir, 0x10_030);
+    ir.set(k, &[xv]);
+    ir.set(x, &[kv, c1v]);
+    let (p3, p3v) = phi1(&mut ir, 0x10_040);
+    ir.set(p3, &[xv]);
+    let (p2, p2v) = phi1(&mut ir, 0x10_050);
+    ir.set(p2, &[p3v]);
+    let (p1, p1v) = phi1(&mut ir, 0x10_060);
+    ir.set(p1, &[p2v]);
+    let r = ir.op(OpCode::CPUI_MULTIEQUAL, 2);
+    let rv = ir.out(r, 0x10_070, 4);
+    ir.set(r, &[p1v, kv]);
+    let call = ir.call(rv);
+    for maxlevel in 1..=9 {
+        let walk = ir.score(true, maxlevel, rv, call);
+        let memo = ir.score(false, maxlevel, rv, call);
+        assert_eq!(walk.0, maxlevel >= 6, "level {maxlevel}");
+        assert_eq!(memo.0, walk.0, "level {maxlevel}");
+    }
+}

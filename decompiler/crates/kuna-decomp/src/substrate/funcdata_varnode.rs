@@ -2746,11 +2746,12 @@ type AncestorKey = (VarnodeId, int4, uint4);
 /// one Varnode is reached by millions of them. A step's answer depends on the
 /// Varnode, the offset and flags it is reached with, `maxlevel`, and the
 /// MULTIEQUALs marked on the path to it, but only on the marked ones a path
-/// above it ran into. A no-use answer records those (`cut`) and whether the
-/// level bound ended a path, and is reused at a lower or equal level while all
-/// of `cut` is still marked: every path that step would walk avoids `cut`, so
-/// the recorded step walked it and found no use (and set the same trial
-/// flags). A use ends the whole call, so it is never recorded.
+/// above it ran into. A no-use answer records those (`cut`) and the level, if
+/// the level bound ended a path, and is reused while all of `cut` is still
+/// marked, at no higher a level (at any level when none is recorded): every
+/// path that step would walk is one the recorded step walked, or the start of
+/// one, so it found no use there (and set the same trial flags). A use ends
+/// the whole call, so it is never recorded.
 #[derive(Default)]
 struct AncestorMemo {
     /// The MULTIEQUALs marked on the current path, outermost first.
