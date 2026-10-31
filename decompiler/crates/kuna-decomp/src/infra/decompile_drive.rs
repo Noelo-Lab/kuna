@@ -1872,10 +1872,13 @@ fn decompile_func_full_with_objects_inner(
         break result;
     };
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
-    // no later, non-drive pipeline run (console sub-queries) consults a stale one.
+    // no later, non-drive pipeline run (console sub-queries) consults a stale one;
+    // what is left of it goes with the function to bound its rendering.
+    let left = arch.kuna_fn_deadline.map(|d| d.saturating_duration_since(std::time::Instant::now()));
     arch.kuna_fn_deadline = outer_deadline;
-    result.and_then(|fd| {
+    result.and_then(|mut fd| {
         crate::kuna_stackobjectasserts::validate(&fd).map_err(KunaError::lowlevel)?;
+        fd.set_render_budget(left);
         Ok(fd)
     })
 }
@@ -3233,6 +3236,41 @@ fn budget_error(arch: &Architecture) -> Option<KunaError> {
     let site = FN_BUDGET_SITE.with(|s| s.borrow().clone());
     let at = site.map(|s| format!(" in {s}")).unwrap_or_default();
     Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({secs} s){at}")))
+}
+
+/// (kuna decompile-all watchdog) Bounds the rendering of a function by what
+/// its drive left of the per-function budget ([`Funcdata::render_budget`]):
+/// until dropped, that is the deadline the printer's probes read, counted from
+/// when rendering starts. A function decompiled with no budget renders
+/// unbounded.
+pub struct RenderBudget {
+    scope: Option<DeadlineScope>,
+    secs: u64,
+}
+
+impl RenderBudget {
+    pub fn enter(arch: &Architecture, fd: &Funcdata) -> Self {
+        let deadline = fd.render_budget().map(|left| std::time::Instant::now() + left);
+        RenderBudget {
+            scope: deadline.map(|d| DeadlineScope::enter(Some(d))),
+            secs: fn_budget(arch).map_or(0, |b| b.as_secs()),
+        }
+    }
+
+    /// Has the budget run out? Names `site` when it has and no probe named one.
+    pub fn spent_in(&self, site: &str) -> bool {
+        self.scope.is_some() && deadline_passed_in(site)
+    }
+
+    /// The per-function error once rendering ran past the budget, naming
+    /// where it ran out.
+    pub fn error(&self) -> Option<KunaError> {
+        if !self.spent_in("rendering C") {
+            return None;
+        }
+        let site = FN_BUDGET_SITE.with(|s| s.borrow().clone()).unwrap_or_default();
+        Some(KunaError::lowlevel(format!("per-function decompile budget exceeded ({} s) in {site}", self.secs)))
+    }
 }
 
 /// Publishes a drive's deadline to [`deadline_passed`], with no budget site

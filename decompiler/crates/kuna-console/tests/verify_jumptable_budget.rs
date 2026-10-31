@@ -129,3 +129,52 @@ fn console_load_follows_flow_under_the_budget() {
         "{expired}"
     );
 }
+
+/// The console's transcript for `before`, then `print C` with the active
+/// function's rendering bounded by `left`.
+fn console_print(left: Option<Duration>, before: &[&str]) -> String {
+    let mut cmds: Vec<String> = before.iter().map(|c| c.to_string()).collect();
+    cmds.push("print C".to_string());
+    let mut status = ConsoleCommands::into_status(cmds.clone());
+    register_decomp_commands(&mut status);
+    let (program, path) = program(None);
+    let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+    data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap().conf = Some(program);
+    for _ in before {
+        execute(&mut status);
+    }
+    let data = status.get_data_mut(DECOMPILE_MODULE).unwrap();
+    let dcp = data.as_any_mut().downcast_mut::<IfaceDecompData>().unwrap();
+    assert_eq!(dcp.fd.as_ref().unwrap().render_budget(), None);
+    dcp.fd.as_mut().unwrap().set_render_budget(left);
+    execute(&mut status);
+    std::fs::remove_file(path).unwrap();
+    status.optr
+}
+
+/// Rendering counts against the budget: a function whose drive left nothing of
+/// it fails while it is printed, naming that, instead of printing past it.
+#[test]
+fn rendering_stops_at_what_the_drive_left_of_the_budget() {
+    let plenty = console_print(Some(Duration::from_secs(3600)), &["load addr 0x401000", "decompile"]);
+    assert_eq!(plenty.matches("switch(").count(), 2, "{plenty}");
+    let spent = console_print(Some(Duration::ZERO), &["load addr 0x401000", "decompile"]);
+    assert!(
+        spent.contains("Execution error: per-function decompile budget exceeded (0 s) in rendering C"),
+        "{spent}"
+    );
+    assert!(!spent.contains("switch("), "{spent}");
+}
+
+/// The drive hands back what is left of its budget, and nothing without one.
+#[test]
+fn the_drive_hands_rendering_what_is_left_of_the_budget() {
+    let budget = Duration::from_secs(3600);
+    let (mut program, path) = program(Some(budget));
+    let entry = program.find_entry_at(0x401000).expect("entry point");
+    let fd = kuna_decomp::decompile_drive::decompile_func(program.arch_mut(), &entry.name, entry.addr.clone(), 0)
+        .expect("decompile under a generous budget");
+    std::fs::remove_file(path).unwrap();
+    let left = fd.render_budget().expect("a budgeted drive leaves a render budget");
+    assert!(left <= budget && left > budget / 2, "{left:?}");
+}

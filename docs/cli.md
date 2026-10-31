@@ -1230,6 +1230,11 @@ be quoted too, as the DOS target needs: `load raw "x86:LE:16:Real Mode:default"
   the generic `/* WARNING: structured blocks unavailable (structuring
   declined) */` means the pipeline *ran* and produced no structured blocks —
   a different failure.
+- **a render past the budget prints nothing**: when printing runs past what
+  the drive left of `--max-fn-seconds`, the console's `print C` refuses, stdout
+  is empty, and stderr carries `error: decompilation failed for <fn> in
+  <binary>: per-function decompile budget exceeded (<N> s) in rendering C` and
+  the `--max-fn-seconds` note.
 
 **Load and analysis failures (DIV-90).** `kuna decompile` runs the engine in a
 subprocess, so it recovers *why* a run failed from the console transcript — and
@@ -1841,11 +1846,14 @@ Behaviors specific to `decompile-all`:
   this function), `heritage`, `region structuring`, or a jump-table step, and
   anything inside a flow-time table recovery adds `during jump-table recovery at
   <indirect-jump address>`, e.g. `in action oppool1 (busiest rule earlyremoval)`
-  or `in jump-table recovery at 0x1820e009b`. This is not a hard process timer: it does not bound
-  discovery, unprobed decoder work, C/variable rendering, artifact
+  or `in jump-table recovery at 0x1820e009b`. Printing the function and
+  extracting its variables get what the drive left of the budget; a render
+  that runs past it fails the same way, `in rendering C` or `in extracting
+  variables`. This is not a hard process timer: it does not bound
+  discovery, unprobed decoder work, artifact
   construction, total export time, or memory. Driver policy, not a stage-model
-  settable — zero output change for a function whose drive completes before
-  expiry; the console / `decomp_dbg` parity path arms it only when given
+  settable — zero output change for a function whose drive and render complete
+  before expiry; the console / `decomp_dbg` parity path arms it only when given
   `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes.
 
 - **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
