@@ -998,6 +998,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     // root is current, and the caller's tree is paused mid-pass.
     let mut contract_root: Option<Box<dyn Action>> = None;
     let mut contract_budget = MAX_CONTRACT_CALLEES;
+    let restart_early = arch.early_restart;
     loop {
         let res = {
             let deadline = arch.kuna_fn_deadline;
@@ -1012,13 +1013,14 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             // (kuna decompile-all watchdog) thread the per-function deadline
             // into the action loop (`None` = no budget, the parity default).
             ctx.deadline = deadline;
+            ctx.restart_early = restart_early && reflows < MAX_REFLOW;
             let r = root.perform(fd, &mut ctx);
             if let Some(error) = ctx.error {
                 return Err(error);
             }
-            (r, ctx.reflow_requested)
+            (r, ctx.reflow_requested, ctx.abandoned_for_restart)
         };
-        let (r, reflow_requested) = res;
+        let (r, reflow_requested, abandoned) = res;
         if let Some(error) = fd.kuna_call_mechanisms.failure.as_ref() {
             return Err(KunaError::lowlevel(error.clone()));
         }
@@ -1063,8 +1065,8 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // guard needs is analyzed again from scratch without it by the drive.
         // The deadline is checked again after the layout checks: their walks
         // give up once it passes, which would otherwise keep the guard.
-        let spoiled =
-            fd.stack_store_guard_spoiled() || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd);
+        let spoiled = !abandoned
+            && (fd.stack_store_guard_spoiled() || crate::p6_variables::kuna_storereach::withdraw_spoiled_guard(fd));
         if let Some(err) = budget_error(arch) {
             return Err(err);
         }

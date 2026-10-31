@@ -268,6 +268,9 @@ pub struct Funcdata {
     /// (kuna `condstmts`) Block start addresses the final structure folded into a
     /// condition operand over the cap.
     kuna_condstmts_hits: std::collections::BTreeSet<Address>,
+    /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
+    /// in this pass: the analysis is about to be thrown away and redone.
+    kuna_restart_now: bool,
     /// (kuna `deadwaves`) While a rule pool's pass records it, every op
     /// dead-op removal took out and the Varnodes it read
     /// (`infra/action.rs (ActionPool::apply_wave)`).
@@ -783,6 +786,7 @@ impl Funcdata {
             stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
+            kuna_restart_now: false,
             dead_wave_log: None,
             render_budget: None,
             jumpvec: Vec::new(),
@@ -2480,6 +2484,16 @@ impl Funcdata {
     /// (kuna `condstmts`) Block starts the final structure folded over the cap.
     pub fn condstmts_hits(&self) -> &std::collections::BTreeSet<Address> {
         &self.kuna_condstmts_hits
+    }
+
+    /// (kuna `earlyrestart`) Did heritage bump a dead-code delay this pass?
+    pub fn kuna_restart_now(&self) -> bool {
+        self.kuna_restart_now
+    }
+
+    /// (kuna `earlyrestart`) Record that heritage bumped a dead-code delay.
+    pub fn kuna_set_restart_now(&mut self) {
+        self.kuna_restart_now = true;
     }
 
     /// (kuna `deadwaves`) Start recording dead-op removals for a pool pass.
@@ -4235,6 +4249,7 @@ impl Funcdata {
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
         self.kuna_hiddenret_vetoed.clear();
         self.kuna_condstmts_hits.clear();
+        self.kuna_restart_now = false;
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow();  -- STUB(W4)
         // clearActiveOutput() (funcdata.cc): drop the output-trial state.

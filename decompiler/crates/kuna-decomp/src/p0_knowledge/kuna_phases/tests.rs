@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_349() {
-    assert_eq!(kuna_num_settables(), 349);
-    assert_eq!(SETTABLE_TABLE.len(), 349);
+fn settable_count_is_350() {
+    assert_eq!(kuna_num_settables(), 350);
+    assert_eq!(SETTABLE_TABLE.len(), 350);
 }
 
 #[test]
-fn tier_counts_are_124_core_133_transform_92_analysis() {
+fn tier_counts_are_124_core_134_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_124_core_133_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (124, 133, 92));
+    assert_eq!((core, transform, analysis), (124, 134, 92));
 }
 
 #[test]
@@ -924,7 +924,8 @@ fn option_values_live_value_present_for_155() {
     // 157 -> 158: +1 for `loadguardreads` (load_guard_reads).
     // 158 -> 157: `readonlycalls` takes `off|on|<n>` and has no live_field.
     // 157 -> 158: +1 for `deadwaves` (pool_dead_waves).
-    assert_eq!(with_live, 158);
+    // 158 -> 159: +1 for `earlyrestart` (early_restart).
+    assert_eq!(with_live, 159);
 }
 
 #[test]
@@ -1142,7 +1143,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `fpuemu`; its P2 row sits beside `decodehalt`.
     // +1 for `retsplitlimit`; its P8 row sits after `retsplitglobal`.
     // +1 for `deadwaves`; its P3 row sits after `jtsharepartial`.
-    assert_eq!(json.matches("},\n").count(), 348);
+    // +1 for `earlyrestart`; its P3 row sits after `deadwaves`.
+    assert_eq!(json.matches("},\n").count(), 349);
 }
 
 #[test]

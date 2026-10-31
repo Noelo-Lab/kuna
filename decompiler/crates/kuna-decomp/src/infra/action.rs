@@ -598,6 +598,12 @@ pub struct ActionContext {
     /// (kuna `stackstoreguard`) Set when the drive will analyze the function
     /// again, so the containers stop scheduling work as on an expired deadline.
     pub abandon: bool,
+    /// (kuna `earlyrestart`) Set by the outer driver when it will re-follow
+    /// flow for a restart: a pass whose heritage bumped a space's dead-code
+    /// delay stops at once instead of finishing an analysis it throws away.
+    pub restart_early: bool,
+    /// (kuna `earlyrestart`) Set when the pass stopped for that restart.
+    pub abandoned_for_restart: bool,
 }
 
 /// How many [`ActionPool`] op visits between deadline probes (the tight rule
@@ -807,6 +813,12 @@ impl Action for ActionGroup {
                 return 0;
             }
             let res = self.list[self.state].perform(data, ctx);
+            if ctx.restart_early && data.kuna_restart_now() && !data.is_jumptable_recovery_on() {
+                ctx.abandon = true;
+                ctx.abandoned_for_restart = true;
+                ctx.reflow_requested = true;
+                return 0;
+            }
             if res > 0 {
                 // A change was made
                 self.base.count += res;

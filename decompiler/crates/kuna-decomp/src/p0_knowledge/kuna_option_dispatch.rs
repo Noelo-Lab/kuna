@@ -354,6 +354,7 @@ kuna_options! { self, p1;
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
+    "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
     "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
