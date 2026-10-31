@@ -251,6 +251,32 @@ fn empty_output_still_errors() {
     assert!(stderr.contains("no C output"), "got: {stderr}");
 }
 
+/// A function whose rendering ran past what its drive left of the budget: the
+/// console's `print C` refuses with the budget error and writes no C, and the CLI
+/// names that reason instead of dumping the start of the transcript.
+#[test]
+fn a_print_refused_at_the_budget_reports_the_budget() {
+    let stub = stub_decomp_dbg(
+        "renderbudget",
+        "",
+        "[decomp]> decompile\nDecompiling main\n[decomp]> print C\n\
+         Execution error: per-function decompile budget exceeded (2 s) in rendering C",
+        "",
+    );
+    let (stdout, stderr, code) = run_decompile(&stub, "main");
+    let _ = std::fs::remove_file(&stub);
+
+    assert_eq!(code, Some(1));
+    assert!(stdout.is_empty(), "{stdout}");
+    assert!(
+        stderr.contains("decompilation failed for main in ")
+            && stderr.contains(": per-function decompile budget exceeded (2 s) in rendering C"),
+        "got: {stderr}"
+    );
+    assert!(stderr.contains("--max-fn-seconds N sets the budget"), "got: {stderr}");
+    assert!(!stderr.contains("no C output"), "got: {stderr}");
+}
+
 /// GH-339's silent half, through the whole CLI: the console reported that the
 /// analysis commit failed and then rendered C anyway, from a program whose debug
 /// facts were only partially applied.  `kuna decompile` used to print that C and

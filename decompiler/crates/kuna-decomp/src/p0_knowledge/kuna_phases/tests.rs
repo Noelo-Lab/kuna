@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_348() {
-    assert_eq!(kuna_num_settables(), 348);
-    assert_eq!(SETTABLE_TABLE.len(), 348);
+fn settable_count_is_350() {
+    assert_eq!(kuna_num_settables(), 350);
+    assert_eq!(SETTABLE_TABLE.len(), 350);
 }
 
 #[test]
-fn tier_counts_are_124_core_132_transform_92_analysis() {
+fn tier_counts_are_124_core_134_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_124_core_132_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (124, 132, 92));
+    assert_eq!((core, transform, analysis), (124, 134, 92));
 }
 
 #[test]
@@ -648,6 +648,9 @@ fn option_values_live_value_present_for_155() {
                             // (kuna) `readonlycalls` takes `off|on|<n>`, a guard
                             // count; its live value is `Architecture::readonly_calls`.
                             | "readonlycalls"
+                            // (kuna) `retsplitlimit` takes `off|<n>`, an op count;
+                            // its live value is `Architecture::ret_split_limit`.
+                            | "retsplitlimit"
                             // (kuna) `narrowargs` takes `off|on|callers`; its
                             // live value is the pair `Architecture::narrow_args`
                             // and `Architecture::narrow_args_callers`.
@@ -920,8 +923,9 @@ fn option_values_live_value_present_for_155() {
     // 156 -> 157: +1 for `segmentize` (live_field = segmentize).
     // 157 -> 158: +1 for `loadguardreads` (load_guard_reads).
     // 158 -> 157: `readonlycalls` takes `off|on|<n>` and has no live_field.
-    // 157 -> 158: +1 for `earlyrestart` (early_restart).
-    assert_eq!(with_live, 158);
+    // 157 -> 158: +1 for `deadwaves` (pool_dead_waves).
+    // 158 -> 159: +1 for `earlyrestart` (early_restart).
+    assert_eq!(with_live, 159);
 }
 
 #[test]
@@ -1137,7 +1141,10 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `loadguardreads`; its P3 row sits after `prunedssa`.
     // +1 for `mzsweep`; its P1 row sits beside `rawdiscover`.
     // +1 for `fpuemu`; its P2 row sits beside `decodehalt`.
-    assert_eq!(json.matches("},\n").count(), 347);
+    // +1 for `retsplitlimit`; its P8 row sits after `retsplitglobal`.
+    // +1 for `deadwaves`; its P3 row sits after `jtsharepartial`.
+    // +1 for `earlyrestart`; its P3 row sits after `deadwaves`.
+    assert_eq!(json.matches("},\n").count(), 349);
 }
 
 #[test]

@@ -1,0 +1,31 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 rule pools, option deadwaves. churn (the prunedssa
+     fixture) reads 256 read-only table words between 256 calls; its rule
+     pool passes remove dead INDIRECT and MULTIEQUAL chains one link per
+     pass. Pass 1 sweeps every op in every pass (deadwaves off). Pass 2 is
+     the default: a pass that follows one whose only change was dead-op
+     removal visits only the ops that removal touched. Both passes print the
+     same body, leave the same live IR and create the same ops.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/prunedssa_x86_64</com>
+  <com>read symbols</com>
+  <com>option deadwaves off</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option deadwaves on</com>
+  <com>load function churn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="deadwaves #1: both passes print churn" min="2" max="2">^uint8 churn\(int8 a0,char \*a1\)$</stringmatch>
+<stringmatch name="deadwaves #2: both passes keep churn's 256 calls" min="512" max="512">sink\(</stringmatch>
+<stringmatch name="deadwaves #3: both passes leave the same live IR" min="2" max="2">Count - pcode = 8135</stringmatch>
+<stringmatch name="deadwaves #4: both passes create the same ops" min="2" max="2">Count - created = 35936</stringmatch>
+</decompilertest>

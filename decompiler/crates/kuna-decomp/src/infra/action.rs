@@ -1016,6 +1016,19 @@ pub trait Rule {
     /// Reset any function-specific state (C++ virtual `reset`).  The default is
     /// a no-op; the engine separately clears the [`RuleState`] warning latch.
     fn reset(&mut self, _data: &mut Funcdata) {}
+
+    /// (kuna `deadwaves`) Does this rule only ever remove an op nothing reads
+    /// (`RuleEarlyRemoval`), recording it with `Funcdata::note_dead_removal`?
+    fn removes_dead_ops(&self) -> bool {
+        false
+    }
+
+    /// (kuna `deadwaves`) Can this rule's test read Varnodes further than one
+    /// op from the op it is offered (a sub-variable or split flow walking a
+    /// whole data-flow web)? A wave offers it every op of its opcodes.
+    fn walks_far(&self) -> bool {
+        false
+    }
 }
 
 /// Engine-owned per-[`Rule`] bookkeeping (C++ `Rule`'s private members).
@@ -1189,6 +1202,18 @@ pub struct ActionPool {
     /// An invariant-violation message (C++ "Rule changed op without returning
     /// result of 1!") stashed for the same reason as [`warnings`](ActionPool::warnings).
     pending_error: Option<String>,
+    /// (kuna `deadwaves`) Dead-op removals and other rule applications in the
+    /// current pass.
+    pass_removals: u32,
+    pass_others: u32,
+    /// (kuna `deadwaves`) What the previous pass removed and the Varnodes those
+    /// ops read, kept when removal was all that pass changed.
+    wave_seed: Option<(Vec<OpId>, Vec<crate::context::VarnodeId>)>,
+    /// (kuna `deadwaves`) The ops a wave pass offers the rules, while it is one.
+    wave: Option<crate::kuna_fasthash::FxHashSet<OpId>>,
+    /// (kuna `deadwaves`) The opcodes a rule that walks far fires on
+    /// ([`Rule::walks_far`]), indexed by opcode.
+    far: Vec<bool>,
 }
 
 /// The resumable op cursor.  Modelled as the last *consumed* [`SeqNum`] so the
@@ -1223,6 +1248,11 @@ impl ActionPool {
             rule_index: 0,
             warnings: WarningSink::new(),
             pending_error: None,
+            pass_removals: 0,
+            pass_others: 0,
+            wave_seed: None,
+            wave: None,
+            far: vec![false; OpCode::CPUI_MAX as usize],
         }
     }
 
@@ -1232,9 +1262,13 @@ impl ActionPool {
     pub fn add_rule(&mut self, state: RuleState, rule: Box<dyn Rule>) {
         let idx = self.allrules.len();
         let oplist = rule.get_op_list();
+        let far = rule.walks_far();
         self.allrules.push(RuleEntry { state, rule, applied_at_reset: 0 });
         for opc in oplist {
             self.perop[opc as usize].push(idx);
+            if far {
+                self.far[opc as usize] = true;
+            }
         }
     }
 
@@ -1300,6 +1334,13 @@ impl ActionPool {
             self.allrules[rl_idx].state.count_tests += 1;
             let res = self.allrules[rl_idx].rule.apply_op(op, data);
             if res > 0 {
+                if self.allrules[rl_idx].rule.removes_dead_ops()
+                    && data.obank().get(op).is_none_or(|o| o.is_dead())
+                {
+                    self.pass_removals += 1;
+                } else {
+                    self.pass_others += 1;
+                }
                 self.allrules[rl_idx].state.count_apply += 1;
                 self.base.count += res;
                 // Route the rule warning to the pool's stash.
@@ -1399,6 +1440,54 @@ impl ActionPool {
             ctx.warnings.messages.push(err);
         }
     }
+
+    /// Close a completed pass: clear the cursor memo, flush the stash, and keep
+    /// what dead-op removal recorded for a following wave.
+    fn end_pass(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) {
+        self.next_op = None;
+        self.lookahead_epoch = None;
+        self.wave = None;
+        self.drain_into(ctx);
+        if data.get_arch().pool_dead_waves {
+            self.wave_seed = Some(data.take_dead_wave_log());
+        }
+    }
+
+    fn has_breakpoints(&self) -> bool {
+        self.base.breakpoint != 0 || self.allrules.iter().any(|r| r.state.breakpoint != 0)
+    }
+
+    /// (kuna `deadwaves`) Does a wave offer `op` to the rules? The pass before
+    /// changed nothing but remove dead ops, which it left dead in the tree, so
+    /// every test it made elsewhere fails again unless it reads what a removal
+    /// changed: a wave offers, in the sweep's own order, the dead ops (which it
+    /// destroys, as the sweep does), the definition and readers of each
+    /// Varnode a removed op read, every op of an opcode a far-walking rule
+    /// fires on, and the same neighbourhood of each op it removes.
+    fn wave_wants(&self, data: &Funcdata, op: OpId) -> bool {
+        let Some(o) = data.obank().get(op) else {
+            return true;
+        };
+        o.is_dead() || self.far[o.code() as usize] || self.wave.as_ref().is_some_and(|w| w.contains(&op))
+    }
+}
+
+/// (kuna `deadwaves`) Add `ops` and the definition and readers of each of
+/// `vns` that still exist to a wave.
+fn add_wave_ops(
+    data: &Funcdata,
+    wave: &mut crate::kuna_fasthash::FxHashSet<OpId>,
+    ops: &[OpId],
+    vns: &[crate::context::VarnodeId],
+) {
+    wave.extend(ops.iter().copied());
+    for &vn in vns {
+        let Some(v) = data.vbank().get(vn) else {
+            continue;
+        };
+        wave.extend(v.get_def());
+        wave.extend(v.descend_iter());
+    }
 }
 
 impl Action for ActionPool {
@@ -1427,6 +1516,10 @@ impl Action for ActionPool {
     /// C++ `ActionPool::reset`: reset base, then each rule's state and object.
     fn reset(&mut self, data: &mut Funcdata) {
         self.base.reset_base();
+        self.wave_seed = None;
+        self.wave = None;
+        self.pass_removals = 0;
+        self.pass_others = 0;
         for entry in &mut self.allrules {
             entry.state.reset_state();
             entry.rule.reset(data);
@@ -1450,10 +1543,27 @@ impl Action for ActionPool {
     }
 
     /// C++ `ActionPool::apply`, `action.cc:877`.
+    ///
+    /// (kuna `deadwaves`) A pass that follows one whose only change was dead-op
+    /// removal is a wave: it offers the rules only the ops
+    /// [`wave_wants`](ActionPool::wave_wants) names.
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         if self.base.status != statusflags::status_mid {
             self.op_state = OpCursor::Unstarted;
             self.rule_index = 0;
+            let quiet = self.base.count > 0 && self.pass_removals > 0 && self.pass_others == 0;
+            let seed = self.wave_seed.take().filter(|_| quiet);
+            self.pass_removals = 0;
+            self.pass_others = 0;
+            self.wave = None;
+            if data.get_arch().pool_dead_waves {
+                data.start_dead_wave_log();
+                if let Some((ops, vns)) = seed.filter(|_| !self.has_breakpoints()) {
+                    let mut wave = crate::kuna_fasthash::FxHashSet::default();
+                    add_wave_ops(data, &mut wave, &ops, &vns);
+                    self.wave = Some(wave);
+                }
+            }
         }
         self.next_op = None;
         self.lookahead_epoch = None;
@@ -1467,12 +1577,16 @@ impl Action for ActionPool {
             if ops_since_deadline_probe >= POOL_DEADLINE_STRIDE {
                 ops_since_deadline_probe = 0;
                 if ctx.deadline_expired_at(|| self.budget_site()) {
-                    self.next_op = None;
-                    self.lookahead_epoch = None;
-                    self.drain_into(ctx);
+                    self.end_pass(data, ctx);
                     return 0;
                 }
             }
+            if self.wave.is_some() && !self.wave_wants(data, op) {
+                self.advance_op_state(data, op);
+                continue;
+            }
+            let others = self.pass_others;
+            let mark = data.dead_wave_log_mark();
             let r = self.process_op(op, data);
             if r != 0 {
                 self.next_op = None;
@@ -1480,10 +1594,14 @@ impl Action for ActionPool {
                 self.drain_into(ctx);
                 return -1;
             }
+            if self.pass_others != others {
+                self.wave = None;
+            } else if let Some(wave) = self.wave.as_mut() {
+                let (ops, vns) = data.dead_wave_log_since(mark);
+                add_wave_ops(data, wave, ops, vns);
+            }
         }
-        self.next_op = None;
-        self.lookahead_epoch = None;
-        self.drain_into(ctx);
+        self.end_pass(data, ctx);
         0 // Indicate successful completion
     }
 

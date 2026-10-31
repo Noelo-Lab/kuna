@@ -271,6 +271,13 @@ pub struct Funcdata {
     /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
     /// in this pass: the analysis is about to be thrown away and redone.
     kuna_restart_now: bool,
+    /// (kuna `deadwaves`) While a rule pool's pass records it, every op
+    /// dead-op removal took out and the Varnodes it read
+    /// (`infra/action.rs (ActionPool::apply_wave)`).
+    dead_wave_log: Option<(Vec<OpId>, Vec<VarnodeId>)>,
+    /// (kuna decompile-all watchdog) What was left of the per-function budget
+    /// when the drive handed this function back; rendering it may use no more.
+    render_budget: Option<std::time::Duration>,
     /// List of jump-tables for this function (C++ `jumpvec`).
     ///
     /// The real `JumpTable` (`jumptable.{hh,cc}`) now lives here: the recovery
@@ -780,6 +787,8 @@ impl Funcdata {
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             kuna_restart_now: false,
+            dead_wave_log: None,
+            render_budget: None,
             jumpvec: Vec::new(),
             vbank,
             kuna_storage_sources: Default::default(),
@@ -2485,6 +2494,54 @@ impl Funcdata {
     /// (kuna `earlyrestart`) Record that heritage bumped a dead-code delay.
     pub fn kuna_set_restart_now(&mut self) {
         self.kuna_restart_now = true;
+    }
+
+    /// (kuna `deadwaves`) Start recording dead-op removals for a pool pass.
+    pub(crate) fn start_dead_wave_log(&mut self) {
+        self.dead_wave_log = Some((Vec::new(), Vec::new()));
+    }
+
+    /// (kuna `deadwaves`) Stop recording and hand back what was recorded.
+    pub(crate) fn take_dead_wave_log(&mut self) -> (Vec<OpId>, Vec<VarnodeId>) {
+        self.dead_wave_log.take().unwrap_or_default()
+    }
+
+    /// (kuna `deadwaves`) Where the running log ends, for
+    /// [`dead_wave_log_since`](Funcdata::dead_wave_log_since).
+    pub(crate) fn dead_wave_log_mark(&self) -> (usize, usize) {
+        self.dead_wave_log.as_ref().map_or((0, 0), |log| (log.0.len(), log.1.len()))
+    }
+
+    /// (kuna `deadwaves`) The removals logged after `mark`, and the Varnodes
+    /// they read.
+    pub(crate) fn dead_wave_log_since(&self, mark: (usize, usize)) -> (&[OpId], &[VarnodeId]) {
+        match self.dead_wave_log.as_ref() {
+            Some(log) => (log.0.get(mark.0..).unwrap_or(&[]), log.1.get(mark.1..).unwrap_or(&[])),
+            None => (&[], &[]),
+        }
+    }
+
+    /// (kuna `deadwaves`) Record that dead-op removal is taking out `op`, and
+    /// the Varnodes it reads, before it is destroyed.
+    pub(crate) fn note_dead_removal(&mut self, op: OpId) {
+        let Some(log) = self.dead_wave_log.as_mut() else {
+            return;
+        };
+        let Some(o) = self.obank.get(op) else {
+            return;
+        };
+        log.0.push(op);
+        log.1.extend((0..o.num_input()).filter_map(|k| o.get_in(k)));
+    }
+
+    /// (kuna decompile-all watchdog) What the drive left of the budget for rendering.
+    pub fn render_budget(&self) -> Option<std::time::Duration> {
+        self.render_budget
+    }
+
+    /// (kuna decompile-all watchdog) Record what the drive left of the budget.
+    pub fn set_render_budget(&mut self, left: Option<std::time::Duration>) {
+        self.render_budget = left;
     }
 
     /// (kuna `condstmts`) Record a block start folded over the cap.

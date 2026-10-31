@@ -539,6 +539,15 @@ fn decompile_command_failure(out: &str) -> Option<String> {
     }
 }
 
+/// Why `print C` refused to render, e.g. a function whose rendering ran past
+/// what the drive left of `--max-fn-seconds`; `None` when it did not refuse.
+fn print_command_failure(out: &str) -> Option<String> {
+    match command_failure(out, "print C") {
+        Some(reason) if reason != SCRIPT_NOT_REACHED => Some(reason),
+        _ => None,
+    }
+}
+
 /// The function the console last announced (`Decompiling <name>`), so a failure
 /// report names the same function the JSON surface's does.
 fn decompiling_name(out: &str) -> Option<String> {
@@ -749,6 +758,10 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
                     name: args.target.clone(),
                     interior: None,
                 });
+            }
+            if let Some(reason) = print_command_failure(&stdout_text) {
+                let func = decompiling_name(&stdout_text).unwrap_or_else(|| args.target.clone());
+                return Err((format!("decompilation failed for {func} in {binary}: {reason}"), false));
             }
             return Err((
                 format!(
