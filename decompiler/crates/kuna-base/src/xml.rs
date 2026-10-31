@@ -2120,8 +2120,12 @@ mod tests {
         // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
         // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-x86-16-real-rel16 + kuna-x86-16-protected-rel16 / 16-bit near branches keep their segment
+        // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
+        // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
+        // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
+        // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
         // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
-        assert_eq!(count, 599, "corpus file count drifted");
+        assert_eq!(count, 603, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -3224,6 +3224,20 @@ outgoing-argument slot that lands inside the caller's `localrange` once the
 frame is the right size is scored no-use by `checkInputTrialUse` (§4.4) and the
 argument is dropped, which is visible on deep-frame MSVC CRT helpers.
 
+Under the same option the constant itself is measured rather than assumed:
+upstream's `4` is the x86-32 return-address size, and the guess's base is now
+the bytes the call instruction itself stores
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_calleepop.rs
+(return_address_bytes)`), counted over the live STOREs at the call's address and
+the COPYs into the stack space that `RuleStoreVarnode` already made of them. An
+x86 16-bit near call stores two bytes and a far call four, so a callee that pops
+only its return address no longer leaves the modelled stack pointer two bytes
+high after every near call (the next push landing on the caller's local and the
+local turning into an extra argument). The argument bytes the import refinement
+counts are added to that base. A call that stores nothing, such as a call
+through a link register, keeps upstream's `4`; every x86-32 call measures `4`,
+so the 32-bit specs are unchanged.
+
 
 Register assertion symbols participate in the merge's required-symbol identity
 checks before names are emitted. A usepoint-scoped register entry identifies a

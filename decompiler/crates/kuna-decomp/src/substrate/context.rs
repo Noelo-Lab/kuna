@@ -1392,6 +1392,10 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna `segmentize`) The processor's segment operations by address-space
+    /// index (C++ `userops.segmentop`); empty when the option is off, so no
+    /// CALLOTHER is segmentized and every constant resolves flat.
+    pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
     /// (kuna) `option syscallregs`, resolved against the loader's user-space
     /// fact: does the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op read
     /// its setup registers and write its result?  Read by
@@ -2021,6 +2025,7 @@ impl ArchContext {
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
+            segment_ops: Vec::new(),
             syscall_regs: false,
             syscall_regs_family: None,
             syscall_regs_userops: Vec::new(),
@@ -2509,7 +2514,26 @@ impl ArchContext {
         point: &Address,
         full_encoding: &mut u64,
     ) -> KunaResult<Address> {
+        if let Some(seg) = self.get_segment_op(spc.get_index()) {
+            return Ok(seg.resolve(val, sz, point, full_encoding, |mem, at| self.get_tracked_value(mem, at)));
+        }
         self.manage.resolve_constant(spc, val, sz, point, full_encoding)
+    }
+
+    /// Number of segment operations supported (C++ `userops.numSegmentOps`).
+    pub fn num_segment_ops(&self) -> int4 {
+        self.segment_ops.len() as int4
+    }
+
+    /// The segment operation for the space with index `i` (C++
+    /// `userops.getSegmentOp`).
+    pub fn get_segment_op(&self, i: int4) -> Option<&Rc<crate::kuna_segmentize::SegmentDef>> {
+        usize::try_from(i).ok().and_then(|i| self.segment_ops.get(i)).and_then(|s| s.as_ref())
+    }
+
+    /// The tracked value of `mem` at `point` (C++ `glb->context->getTrackedValue`).
+    pub fn get_tracked_value(&self, mem: &kuna_num::pcoderaw::VarnodeData, point: &Address) -> u64 {
+        kuna_sleigh::globalcontext::tracked_value(self.get_tracked_set(point), mem)
     }
 
     /// C++ `data.getScopeLocal()->getParent()->queryContainer(addr,size,usepoint)`

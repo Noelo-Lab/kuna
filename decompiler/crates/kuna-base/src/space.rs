@@ -815,6 +815,12 @@ impl AddrSpace {
         self.flags.set(self.flags.get() & !flags);
     }
 
+    /// (kuna) Set the minimum pointer size outright, so a caller that marked
+    /// near pointers can take the marking back.
+    pub fn set_minimum_pointer_size(&self, size: i32) {
+        self.minimum_pointer_size.set(size);
+    }
+
     /// The logical form of the space is truncated from its actual size.
     /// Pointers may refer to this original size put the most significant
     /// bytes are ignored
