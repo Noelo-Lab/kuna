@@ -271,3 +271,23 @@ fn each_drive_starts_with_no_budget_site_and_restores_the_outer_one() {
     }
     assert_eq!(budget_site().as_deref(), Some("heritage"));
 }
+
+fn fresh_merge() -> crate::merge::Merge {
+    crate::merge::Merge::new(crate::variable::HighIntersectTest::new(crate::cover::PcodeOpSet::new(
+        Box::new(Vec::new),
+        Box::new(|_, _| true),
+    )))
+}
+
+#[test]
+fn variable_merging_stops_once_a_probe_sees_the_budget_spent() {
+    let mut merge = fresh_merge();
+    let _drive = super::DeadlineScope::enter(Some(std::time::Instant::now()));
+    let stride = (0..1000).take_while(|_| merge.budget().is_ok()).count() + 1;
+    assert!(stride > 1 && stride <= 256, "first probe to ask the clock: {stride}");
+    assert!((0..10).all(|_| merge.budget().is_err()), "every step after it fails");
+    assert_eq!(budget_site().as_deref(), Some("variable merging"));
+    merge.clear();
+    let _unbudgeted = super::DeadlineScope::enter(None);
+    assert!((0..1000).all(|_| merge.budget().is_ok()));
+}
