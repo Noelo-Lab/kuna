@@ -1970,7 +1970,7 @@ impl ArchContext {
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             pruned_ssa: true,
             load_guard_reads: true,
-            readonly_returns: true,
+            readonly_returns: false,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)

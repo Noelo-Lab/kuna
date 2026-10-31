@@ -11,9 +11,8 @@
      escaped's slots are address-tied, so they keep every guard in every
      pass. Pass 3 is the default: churn's 256 read-only ranges at its 321
      calls (82,176 guards) reach readonlycalls' 65,536-guard threshold, the
-     guards on read-only memory the function never writes go, readonlyreturns
-     drops their return COPYs too, and churn's live IR drops from 90311 to
-     7623 ops. Each function prints the same body in all three passes. Two more passes count churn's ops only: at
+     guards on read-only memory the function never writes go, and churn's
+     live IR drops from 90311 to 8135 ops. Each function prints the same body in all three passes. Two more passes count churn's ops only: at
      readonlycalls 82177, one guard more than churn would build, it keeps
      them; at readonlycalls on it drops them. The fixture's source,
      provenance and native oracle are beside it.
@@ -68,8 +67,8 @@
 <stringmatch name="prunedssa #6: upstream placement keeps the read-only guards in churn's live IR" min="3" max="3">Count - pcode = 90311</stringmatch>
 <stringmatch name="prunedssa #7: upstream placement builds every guard and join for churn" min="1" max="1">Count - created = 118816</stringmatch>
 <stringmatch name="prunedssa #8: prunedssa builds no dead joins for churn" min="2" max="2">Count - created = 118112</stringmatch>
-<stringmatch name="prunedssa #9: readonlycalls drops the read-only guards from churn's live IR" min="2" max="2">Count - pcode = 7623</stringmatch>
-<stringmatch name="prunedssa #10: the default builds the fewest ops for churn" min="2" max="2">Count - created = 35424</stringmatch>
+<stringmatch name="prunedssa #9: readonlycalls drops the read-only guards from churn's live IR" min="2" max="2">Count - pcode = 8135</stringmatch>
+<stringmatch name="prunedssa #10: the default builds the fewest ops for churn" min="2" max="2">Count - created = 35936</stringmatch>
 <stringmatch name="prunedssa #11: escaped's address-tied slots keep every guard in every pass" min="3" max="3">Count - created = 12578</stringmatch>
 <stringmatch name="prunedssa #12: escaped's live IR is the same in all three passes" min="3" max="3">Count - pcode = 4812</stringmatch>
 </decompilertest>

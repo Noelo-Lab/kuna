@@ -711,7 +711,7 @@ each RETURN (`return_copy`), which is precisely what keeps a global store's
 def-chain alive through dead-code elimination so `glob = ...` survives to the
 output.
 
-Under `option readonlyreturns` (default on), a pass on which `readonlycalls`
+Under `option readonlyreturns` (default off), a pass on which `readonlycalls`
 leaves read-only ranges unguarded at calls builds no such COPY for a read-only
 range the pass never writes
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (skips)`).
@@ -741,9 +741,18 @@ and `Merge::merge` and `Merge::merge_test` refuse to join a variable holding
 such a range's entry value with an unaddress-tied variable holding anything but
 a copy of it
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (keeps_apart)`),
-the joins the full Cover would have refused. The C is otherwise unchanged,
-except that `gotoreduce`, which counts every op in a return tail against its
-budget, can now duplicate a tail that only the COPYs had made too long.
+the joins the full Cover would have refused. That restores what the COPYs'
+input did, but not what their output did: each is a write of the global at a
+RETURN, part of the global's variable, and on some huge functions those writes
+were what kept a one-byte view of the global (`SUBPIECE` of its own storage)
+out of a vector register's lane MULTIEQUAL. Without them the lane phi joins the
+byte, and the C prints a store into read-only memory (four of serde-hkx's
+hkxc.exe functions that trigger the option, `0x1400d4c60`, `0x14038afb0`,
+`0x1402bec30` and `0x140766a50`; ten more of the fourteen sampled print the same
+C as with the COPYs). The option is
+therefore off by default; on it trades that risk for the memory and time.
+`gotoreduce`, which counts every op in a return tail against its budget, can
+also duplicate a tail that only the COPYs had made too long.
 
 **LOAD/STORE guards.** Ranges in the stack space can be aliased by indexed
 LOADs/STOREs (`stack[i]`). Once per space per function
