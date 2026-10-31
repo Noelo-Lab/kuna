@@ -692,6 +692,11 @@ impl TransformManager {
         true
     }
 
+    /// (kuna) The preexisting Varnodes the manager holds pieces for.
+    pub fn original_varnodes(&self) -> impl Iterator<Item = VarnodeId> + '_ {
+        self.piece_map.values().filter_map(|vec| vec.first().and_then(|tv| tv.vn))
+    }
+
     // -- clearVarnodeMarks (transform.cc:356) ---------------------------------
 
     /// Clear mark for all Varnodes in the map (C++

@@ -34,6 +34,7 @@
 //!    and the partial-copy-shadow characterization stay the conservative path
 //!    (W7 `StackAffectingOps`); empty on the merged-tree slices here.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
@@ -52,7 +53,7 @@ use crate::variable::{
     CompareNameView, HighContext, HighIntersectTest, VariablePieceId, VarnodeView, VarnodeViewLoc,
 };
 use kuna_base::space::spacetype;
-use kuna_base::types::{int2, int4, uintm};
+use kuna_base::types::{int2, int4, uint4, uintm};
 
 /// (kuna LOSS-229) Disjoint id-spaces for `MergeContext::bank_symbol`.  A local
 /// (dynamic/equate) Symbol is a slotmap ffi key; a global mapped Symbol is keyed
@@ -93,8 +94,11 @@ impl HighContext for Funcdata {
             create_index: v.get_create_index(),
         }
     }
-    fn vn_cover(&self, vn: VarnodeId) -> Option<Cover> {
-        self.vbank().get(vn).and_then(|v| v.cover().cloned())
+    fn vn_flags(&self, vn: VarnodeId) -> uint4 {
+        self.vbank().get(vn).expect("vn_flags: stale vn").get_flags()
+    }
+    fn vn_cover(&self, vn: VarnodeId) -> Option<&Cover> {
+        self.vbank().get(vn).and_then(|v| v.cover())
     }
     fn vn_has_cover(&self, vn: VarnodeId) -> bool {
         self.vbank().get(vn).map(|v| v.has_cover()).unwrap_or(false)
@@ -264,7 +268,9 @@ impl Funcdata {
     ) -> R {
         self.ensure_covermerge();
         let mut merge = self.covermerge.take().expect("with_covermerge: just ensured");
+        let outer = self.cover_blocks.replace(BlockTable::new());
         let r = f(&mut merge, self);
+        self.cover_blocks = outer;
         self.covermerge = Some(merge);
         r
     }
@@ -407,15 +413,15 @@ impl MergeContext for Funcdata {
     fn high_get_instance(&self, high: HighVariableId, i: int4) -> VarnodeId {
         self.high_bank().get(high).expect("high_get_instance: stale high").get_instance(i)
     }
-    fn high_get_cover(&self, high: HighVariableId) -> Cover {
-        self.high_bank().get_cover(high).cloned().unwrap_or_else(Cover::new)
+    fn high_get_cover(&self, high: HighVariableId) -> Cow<'_, Cover> {
+        self.high_bank().get_cover(high).map(Cow::Borrowed).unwrap_or_default()
     }
-    fn high_internal_cover(&self, high: HighVariableId) -> Cover {
+    fn high_internal_cover(&self, high: HighVariableId) -> Cow<'_, Cover> {
         // C++ `high->internalCover` (merge.cc:1622): the RAW internal cover, NOT
         // `getCover()` (which is the piece's extended cover when the high is
         // grouped).  `inflateTest` deliberately checks intersections only against
         // the cover contributing to the inflate.
-        self.high_bank().internal_cover(high).cloned().unwrap_or_else(Cover::new)
+        self.high_bank().internal_cover(high).map(Cow::Borrowed).unwrap_or_default()
     }
     fn bank_update_cover_for(&mut self, high: HighVariableId) {
         self.refresh_high_cover(high);
@@ -755,8 +761,8 @@ impl MergeContext for Funcdata {
     fn vn_is_global_load(&self, vn: VarnodeId) -> bool {
         self.vbank().get(vn).is_some_and(|v| v.is_global_load())
     }
-    fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover> {
-        self.vbank().get(vn).and_then(|v| v.cover().cloned())
+    fn vn_cover_ref(&self, vn: VarnodeId) -> Cow<'_, Cover> {
+        self.vbank().get(vn).and_then(|v| v.cover()).map(Cow::Borrowed).unwrap_or_default()
     }
     fn vn_create_index(&self, vn: VarnodeId) -> u64 {
         self.vbank().get(vn).map(|v| v.get_create_index() as u64).unwrap_or(0)

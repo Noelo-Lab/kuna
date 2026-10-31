@@ -448,7 +448,7 @@ mod tests {
                 .unwrap();
             let prog = data.conf.as_mut().unwrap();
             if prog.arch().call_wide
-                && prog.arch().be_join == kuna_decomp::kuna_bejoin::BeJoinMode::Evidence
+                && prog.arch().be_join.proves()
             {
                 prepare(prog);
                 assert!(prog.callwide.frozen, "completed preflight before {command}");
@@ -670,7 +670,7 @@ pub(crate) fn target_declaration(
 /// A refusal is stable until an external mutation; no selected function can supply a positive fact.
 pub fn prepare(prog: &mut ConsoleProgram) {
     if !prog.arch().call_wide
-        || prog.arch().be_join != kuna_decomp::kuna_bejoin::BeJoinMode::Evidence
+        || !prog.arch().be_join.proves()
         || prog.callwide.frozen
     {
         return;

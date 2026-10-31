@@ -328,3 +328,60 @@ fn all_applies_report_no_change_on_empty_fd() {
         assert_eq!(a.base().count, 0, "{} apply must report no change", a.get_name());
     }
 }
+
+// -----------------------------------------------------------------------------
+// 5. ActionLaneDivide — a split that fails part way
+// -----------------------------------------------------------------------------
+
+/// A laned split that fails after it has started rewriting the function fails
+/// the function, as the C++ exception does. The 16-byte input is split into
+/// 4-byte lanes; the old `COPY` (and the second 16-byte varnode it defined) is
+/// gone and the whole input deleted by the time its second lane cannot become
+/// an input, because another input overlaps it. Reading the next varnode of
+/// that storage on as if nothing had changed panicked
+/// (`ActionLaneDivide: stale vn`) over a half-rewritten function.
+#[test]
+fn lane_divide_fails_the_function_when_a_split_fails_part_way() {
+    let mut arch = ArchContext::new(build_manager());
+    arch.lanerecords = vec![LanedRegister::with_mask(16, 1 << 4)];
+    let glb = Rc::new(arch);
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(Rc::clone(&ram), 0x1000), 0x10000000, 0x40)
+        .unwrap();
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    let bl = fd.bblocks_mut().new_block_basic(root);
+    let at = |off: u64| Address::new(Rc::clone(&ram), off);
+    let input = |fd: &mut Funcdata, size: int4, off: u64| {
+        let vn = fd.vbank_mut().create(size, at(off), Rc::new(Datatype::new(size, type_metatype::TYPE_UNKNOWN)));
+        fd.vbank_mut().set_input(vn, &mut |_, _, _| Ok(())).unwrap()
+    };
+    let whole = input(&mut fd, 16, 0x100);
+    input(&mut fd, 8, 0x104);
+    let op = |fd: &mut Funcdata, opc: OpCode, ins: &[VarnodeId]| {
+        let op = fd.new_op(ins.len() as int4, at(0x2000));
+        fd.op_set_opcode_code(op, opc);
+        for (i, &v) in ins.iter().enumerate() {
+            fd.op_set_input(op, v, i as int4).unwrap();
+        }
+        fd.op_insert(op, bl, None);
+        op
+    };
+    let copy = op(&mut fd, OpCode::CPUI_COPY, &[whole]);
+    let copied = fd.new_varnode_out(16, &at(0x100), copy).unwrap();
+    for (src, lane) in [(whole, 8), (copied, 0), (copied, 4)] {
+        let offset = fd.new_constant(4, lane);
+        let sub = op(&mut fd, OpCode::CPUI_SUBPIECE, &[src, offset]);
+        fd.new_unique_out(4, sub).unwrap();
+    }
+    fd.laned_map_insert(
+        crate::funcdata::LanedKey::new(&at(0x100), 16),
+        at(0x100),
+        16,
+        LanedRegister::with_mask(16, 1 << 4),
+    );
+    let mut ctx = ActionContext::new();
+    let r = ActionLaneDivide::boxed("g").apply(&mut fd, &mut ctx);
+    assert_eq!(r, -1);
+    let error = ctx.error.expect("the failed split fails the function").to_string();
+    assert!(error.contains("Overlapping input varnodes"), "{error}");
+}

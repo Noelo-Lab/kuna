@@ -792,9 +792,9 @@ mod stacknode_flags {
     pub const dynamic_stack: uint4 = 4;
 }
 
-/// (kuna `readonlycalls`) The read-only-range by call guard count at which a
-/// heritage pass leaves read-only ranges unguarded.
-const READONLY_CROSS_PRODUCT: usize = 1 << 16;
+/// (kuna `readonlycalls`) The default read-only-range by call guard count at
+/// which a heritage pass leaves read-only ranges unguarded.
+pub const READONLY_CROSS_PRODUCT: u64 = 1 << 16;
 
 // =============================================================================
 // Heritage (heritage.hh:207)
@@ -878,6 +878,14 @@ pub struct Heritage {
     /// (kuna `readonlycalls`) Whether this pass leaves read-only ranges
     /// unguarded at calls ([`Heritage::readonly_cross_product`]).
     readonly_unguarded: bool,
+    /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
+    halt_loops: Option<Vec<BlockId>>,
+    /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
+    /// block's entry, keyed by the block's index, read at renaming.
+    halt_loop_marks: BTreeMap<usize, Vec<Address>>,
+    /// (kuna `haltloopguard`) The definitions renaming had current at those
+    /// entries, marked once renaming has filled every MULTIEQUAL.
+    halt_loop_reach: Vec<crate::context::VarnodeId>,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
     store_frame_unresolved: Option<bool>,
@@ -902,6 +910,8 @@ pub struct Heritage {
     /// as `(space, first byte, last byte)`.
     global_load_ranges: Vec<(Rc<AddrSpace>, u64, u64)>,
     partial_global_loads: Vec<crate::kuna_partialglobalload::Guard>,
+    /// (kuna `loadguardreads`) This pass's LOAD guards, read at renaming.
+    load_reads: super::kuna_loadguardreads::Reads,
     /// (kuna) C++ `Heritage::splitmanage`: the compiler spec's preferred
     /// register splits, run once at heritage pass 0.
     splitmanage: crate::p5_types::prefersplit::PreferSplitManager,
@@ -937,6 +947,9 @@ impl Heritage {
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
             readonly_unguarded: false,
+            halt_loops: None,
+            halt_loop_marks: BTreeMap::new(),
+            halt_loop_reach: Vec::new(),
             store_frame_unresolved: None,
             store_frame_guarded: false,
             global_store_guards: 0,
@@ -946,6 +959,7 @@ impl Heritage {
             global_loads: None,
             global_load_ranges: Vec::new(),
             partial_global_loads: Vec::new(),
+            load_reads: Default::default(),
             splitmanage: Default::default(),
         }
     }
@@ -1112,6 +1126,7 @@ impl Heritage {
         self.global_store_guards = 0;
         self.global_store_ranges.clear();
         self.partial_global_loads.clear();
+        self.load_reads.clear();
         self.load_guard.clear();
         self.store_guard.clear();
         self.store_frame_unresolved = None;
@@ -1368,6 +1383,7 @@ impl Heritage {
         }
         ovr.insert_deadcode_delay(spc, spc.get_deadcode_delay() + 1);
         fd.set_restart_pending(true);
+        fd.kuna_set_restart_now();
         // kunaRecordRestart(*fd,krestart_deadcode_bump,spc->getName());  (kuna)
         let name = spc.get_name().to_string();
         restartlog.record(fd, KunaRestartReason::DeadcodeBump, &name);
@@ -1599,6 +1615,10 @@ impl Heritage {
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
             crate::kuna_x64syscall::guard_memory(fd, fl, addr, size, write);
             self.guard_returns(fd, fl, addr, size, write);
+            if fd.get_arch().halt_loop_guard && (fl & varnode_flags::persist) != 0 {
+                let heads = self.halt_loops.get_or_insert_with(|| super::kuna_haltloopguard::exitless_loops(fd));
+                super::kuna_haltloopguard::guard(fd, heads, fl, addr, write, &mut self.halt_loop_marks);
+            }
             // (kuna `indexaliasguard`) `Architecture::highPtrPossible`
             // (architecture.hh:408) is `space type != IPTR_INTERNAL &&
             // !nohighptr.inRange(loc,size)`.  kuna does not read the cspec
@@ -3115,6 +3135,8 @@ impl Heritage {
         if (fl & varnode_flags::addrtied) == 0 {
             return; // If not address tied, don't consider for index alias
         }
+        let reads = super::kuna_loadguardreads::Reads::enabled(fd);
+        let mut range = None;
         let mut kept: Vec<LoadGuard> = Vec::with_capacity(self.load_guard.len());
         let guards = std::mem::take(&mut self.load_guard);
         for guard in guards {
@@ -3127,6 +3149,13 @@ impl Heritage {
             } && addr.get_offset() >= guard.minimum_offset
                 && addr.get_offset() <= guard.maximum_offset;
             if !applies {
+                kept.push(guard);
+                continue;
+            }
+            if reads {
+                let index = *range.get_or_insert_with(|| self.load_reads.add_range(addr, size));
+                self.load_reads.guard(guard.op, index);
+                crate::p3_dataflow::kuna_stackreadscope::mark_guarded_read(fd, guard.op, addr, size);
                 kept.push(guard);
                 continue;
             }
@@ -3210,6 +3239,14 @@ impl Heritage {
                 writes: writes.to_vec(),
                 loads,
             });
+            return;
+        }
+        if super::kuna_loadguardreads::Reads::enabled(fd) {
+            let index = self.load_reads.add_range(addr, size);
+            for op in loads {
+                self.load_reads.guard(op, index);
+            }
+            self.global_load_ranges.push((spc, lo, hi.wrapping_sub(1)));
             return;
         }
         for op in loads {
@@ -4075,6 +4112,13 @@ impl Heritage {
         self.infolist[info_idx].has_call_placeholders = false;
     }
 
+    /// (kuna `haltloopguard`) Record each range in `addrs`'s current definition
+    /// on `varstack`, the value it holds at this point of renaming.
+    #[allow(clippy::mutable_key_type)]
+    fn mark_halt_loop(&mut self, varstack: &VariableStack, addrs: &[Address]) {
+        self.halt_loop_reach.extend(addrs.iter().filter_map(|a| varstack.get(a)?.last().copied()));
+    }
+
     /// The heart of the renaming algorithm (C++ `Heritage::renameRecurse`,
     /// `heritage.cc:2480`).
     ///
@@ -4106,11 +4150,23 @@ impl Heritage {
     ) -> KunaResult<()> {
         use kuna_num::opcodes::OpCode;
         let mut writelist: Vec<crate::context::VarnodeId> = Vec::new();
+        let mut guarded: Vec<Address> = Vec::new();
 
         let ops: Vec<crate::context::OpId> = self.block_ops(fd, bl);
+        let mut halt_marks = if self.halt_loop_marks.is_empty() {
+            None
+        } else {
+            self.halt_loop_marks.remove(&(fd.bblocks_ref().block(bl).get_index() as usize))
+        };
         for op in ops {
+            if self.load_reads.has_guards() {
+                self.rename_load_guards(fd, op, varstack, &mut guarded)?;
+            }
             let code = fd.obank().get(op).expect("rename_recurse: stale op").code();
             if code != OpCode::CPUI_MULTIEQUAL {
+                if let Some(addrs) = halt_marks.take() {
+                    self.mark_halt_loop(varstack, &addrs);
+                }
                 // First replace reads with top of stack.
                 let ninput = fd.obank().get(op).expect("rename_recurse: stale op").num_input();
                 for slot in 0..ninput {
@@ -4137,6 +4193,7 @@ impl Heritage {
                             nv
                         }
                     };
+                    let mut depth = varstack.get(&key).map_or(0, |s| s.len());
                     // INDIRECTs and their op really happen AT SAME TIME.
                     let same_time = {
                         let nvref = fd.vbank().get(vnnew).expect("rename_recurse: vnnew");
@@ -4162,9 +4219,16 @@ impl Heritage {
                                 let nv = self.new_entry_input(fd, in_size, &key)?;
                                 varstack.entry(key.clone()).or_default().insert(0, nv);
                                 vnnew = nv;
+                                depth = 1;
                             } else {
                                 vnnew = varstack[&key][stacklen - 2];
+                                depth = stacklen - 1;
                             }
+                        }
+                    }
+                    if self.load_reads.active() {
+                        if let Some(copy) = self.load_guard_copy(fd, &key, depth, vnnew) {
+                            vnnew = copy;
                         }
                     }
                     fd.op_set_input(op, vnnew, slot).expect("rename_recurse: op_set_input read");
@@ -4187,6 +4251,9 @@ impl Heritage {
             writelist.push(vnout);
         }
 
+        if let Some(addrs) = halt_marks.take() {
+            self.mark_halt_loop(varstack, &addrs);
+        }
         // Fill successor MULTIEQUAL inputs (the merge-block phi in-edges).
         let size_out = fd.bblocks_ref().block(bl).size_out();
         for i in 0..size_out {
@@ -4223,7 +4290,7 @@ impl Heritage {
                 }
                 let key = fd.vbank().get(vnin).expect("rename_recurse: multi in").get_addr().clone();
                 let in_size = fd.vbank().get(vnin).expect("rename_recurse: multi in").get_size();
-                let vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
+                let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                     Some(top) => top,
                     None => {
                         let nv = self.new_entry_input(fd, in_size, &key)?;
@@ -4231,6 +4298,12 @@ impl Heritage {
                         nv
                     }
                 };
+                if self.load_reads.active() {
+                    let depth = varstack.get(&key).map_or(0, |s| s.len());
+                    if let Some(copy) = self.load_guard_copy(fd, &key, depth, vnnew) {
+                        vnnew = copy;
+                    }
+                }
                 fd.op_set_input(multiop, vnnew, slot).expect("rename_recurse: op_set_input multi");
                 if fd.vbank().get(vnin).expect("rename_recurse: multi in").has_no_descend() {
                     fd.delete_varnode(vnin).expect("rename_recurse: delete multi free in");
@@ -4252,7 +4325,94 @@ impl Heritage {
                 stack.pop();
             }
         }
+        for key in guarded.iter().rev() {
+            self.load_reads.pop(key);
+        }
         Ok(())
+    }
+
+    /// (kuna `loadguardreads`) Read each range guarded at the LOAD `op` as
+    /// renaming reads a guard `COPY`'s input: the top of the range's stack,
+    /// or a new input when nothing reaches it. The keys are recorded in
+    /// `guarded` so the block pops them as it pops the COPYs' writes.
+    #[allow(clippy::mutable_key_type)]
+    fn rename_load_guards(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        op: crate::context::OpId,
+        varstack: &mut VariableStack,
+        guarded: &mut Vec<Address>,
+    ) -> KunaResult<()> {
+        let Some(ranges) = self.load_reads.take(op) else {
+            return Ok(());
+        };
+        for (index, pair) in ranges {
+            let (key, size) = self.load_reads.range(index).clone();
+            let top = match varstack.get(&key).and_then(|s| s.last().copied()) {
+                Some(top) => top,
+                None => {
+                    let nv = self.new_entry_input(fd, size, &key)?;
+                    varstack.entry(key.clone()).or_default().push(nv);
+                    nv
+                }
+            };
+            let depth = varstack.get(&key).map_or(0, |s| s.len());
+            self.load_reads.reach(top, op, index, pair, depth);
+            guarded.push(key);
+        }
+        Ok(())
+    }
+
+    /// (kuna `loadguardreads`) The output a read of `key` reads instead of
+    /// `vn`, the entry `depth` of its stack, when upstream links it to a guard
+    /// COPY's output: that pair's COPY of `vn`, built in front of its LOAD the
+    /// first time renaming meets such a read.
+    fn load_guard_copy(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        key: &Address,
+        depth: usize,
+        vn: crate::context::VarnodeId,
+    ) -> Option<crate::context::VarnodeId> {
+        use kuna_num::opcodes::OpCode;
+        let behind = self.load_reads.behind(key, depth)?;
+        if let Some(out) = self.load_reads.copy(behind.pair) {
+            return Some(out);
+        }
+        let (addr, size) = self.load_reads.range(behind.range).clone();
+        let load_addr = fd.obank().get(behind.load)?.get_addr().clone();
+        let copyop = fd.new_op(1, load_addr);
+        let out = fd.new_varnode_out(size, &addr, copyop).expect("loadguardreads: COPY out");
+        fd.vbank_mut().get_mut(out).expect("loadguardreads: COPY out vn").set_addr_force();
+        fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+        let _ = fd.op_set_input(copyop, vn, 0);
+        fd.op_insert_before(copyop, behind.load);
+        self.load_reads.built(behind.pair, out, copyop);
+        Some(out)
+    }
+
+    /// (kuna `loadguardreads`) After renaming, give each Varnode a LOAD guard
+    /// read reached one address-forced guard `COPY`, in front of the first LOAD
+    /// that reached it. The rest of the pass sees it read as upstream's COPYs
+    /// read it, and `handle_new_load_copies` walks back from it and propagates
+    /// it away like them, after the COPYs renaming built, in upstream's order.
+    fn place_load_guard_reads(&mut self, fd: &mut crate::funcdata::Funcdata) {
+        use kuna_num::opcodes::OpCode;
+        let built = self.load_reads.take_built();
+        self.load_copy_ops.extend(built);
+        for (vn, load, index) in self.load_reads.take_reached() {
+            let (addr, size) = self.load_reads.range(index).clone();
+            let Some(load_addr) = fd.obank().get(load).map(|o| o.get_addr().clone()) else {
+                continue;
+            };
+            let copyop = fd.new_op(1, load_addr);
+            let out = fd.new_varnode_out(size, &addr, copyop).expect("loadguardreads: COPY out");
+            fd.vbank_mut().get_mut(out).expect("loadguardreads: COPY out vn").set_addr_force();
+            fd.op_set_opcode_code(copyop, OpCode::CPUI_COPY);
+            let _ = fd.op_set_input(copyop, vn, 0);
+            fd.op_insert_before(copyop, load);
+            self.load_copy_ops.push(copyop);
+        }
     }
 
     /// Borrow a block's ops in execution order (C++ `bl->beginOp()..endOp()`),
@@ -4276,6 +4436,9 @@ impl Heritage {
         let start = bblocks.block(root).get_block(0);
         let mut varstack: VariableStack = VariableStack::new();
         self.rename_recurse(fd, start, &mut varstack)?;
+        if !self.halt_loop_reach.is_empty() {
+            super::kuna_haltloopguard::mark(fd, &std::mem::take(&mut self.halt_loop_reach));
+        }
         self.disjoint.clear();
         Ok(())
     }
@@ -4740,6 +4903,9 @@ impl Heritage {
         // walk with the refinement resetting `idx` to the first partition mirrors
         // the C++ iterator (which is reseated to `refiter`).
         self.readonly_unguarded = self.readonly_cross_product(fd);
+        self.halt_loops = None;
+        self.halt_loop_marks.clear();
+        self.halt_loop_reach.clear();
         let mut idx = 0usize;
         while idx < self.disjoint.len() {
             if self.deadline_passed() {
@@ -4858,18 +5024,22 @@ impl Heritage {
     /// (kuna `readonlycalls`) Does this pass guard enough read-only RAM ranges
     /// at enough calls to leave them unguarded? The product of the calls and
     /// the pass's new, read, read-only ranges in the default data space must
-    /// reach [`READONLY_CROSS_PRODUCT`] guards: below it every call keeps
-    /// upstream's guard, whose chain the printer reads as a barrier.
+    /// reach the option's threshold ([`READONLY_CROSS_PRODUCT`] by default):
+    /// below it every call keeps upstream's guard, whose chain the printer
+    /// reads as a barrier.
     fn readonly_cross_product(&self, fd: &crate::funcdata::Funcdata) -> bool {
-        let calls = fd.num_calls().max(0) as usize;
-        if !fd.get_arch().readonly_calls || calls == 0 || calls * self.disjoint.len() < READONLY_CROSS_PRODUCT {
+        let Some(threshold) = fd.get_arch().readonly_calls else {
+            return false;
+        };
+        let calls = fd.num_calls().max(0) as u64;
+        if calls == 0 || calls.saturating_mul(self.disjoint.len() as u64) < threshold {
             return false;
         }
         let Some(ram) = fd.get_arch().manage().get_default_data_space() else {
             return false;
         };
         let usepoint = Address::new_invalid();
-        let mut ranges = 0usize;
+        let mut ranges = 0u64;
         for i in 0..self.disjoint.len() {
             let range = self.disjoint.get(i);
             if !range.new_addresses() || range.addr.get_space().map(|s| s.get_index()) != Some(ram.get_index()) {
@@ -4886,7 +5056,7 @@ impl Heritage {
             });
             if read {
                 ranges += 1;
-                if ranges * calls >= READONLY_CROSS_PRODUCT {
+                if ranges.saturating_mul(calls) >= threshold {
                     return true;
                 }
             }
@@ -5561,6 +5731,7 @@ impl Heritage {
             // Make sure load guard COPYs no longer exist.
             self.propagate_copy_away(fd, op);
         }
+        self.load_reads.clear();
         // (marks on the remaining artificial COPYs die with the local set.)
         // We have handled all the load guard COPY ops (list stays cleared).
     }
@@ -5625,6 +5796,7 @@ impl Heritage {
         self.global_loads = None;
         self.global_load_ranges.clear();
         self.partial_global_loads.clear();
+        self.load_reads.clear();
         if self.maxdepth == -1 {
             // Has a restructure been forced
             self.build_adt(fd);
@@ -5752,6 +5924,9 @@ impl Heritage {
             return Ok(());
         }
         self.rename(fd)?;
+        if super::kuna_loadguardreads::Reads::enabled(fd) {
+            self.place_load_guard_reads(fd);
+        }
         // (kuna w10-chainb-gap1) reprocessFreeStores: re-derive the STORE guards
         // now that this pass completed, dropping spurious INDIRECTs on STOREs
         // that turned out not to need a guard (only reached when discovery saw

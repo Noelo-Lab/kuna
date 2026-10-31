@@ -2492,11 +2492,16 @@ decomp_command!(
                 return Err(IfaceError::execution("No load image present"));
             }
             let fd = dcp.fd.take().expect("fd checked non-None above");
-            let text = {
+            let (text, spent) = {
                 let prog = dcp.conf.as_mut().expect("conf checked non-None above");
-                print_c(prog.arch_mut(), &fd)
+                let budget = kuna_decomp::decompile_drive::RenderBudget::enter(prog.arch(), &fd);
+                let text = print_c(prog.arch_mut(), &fd);
+                (text, budget.error())
             };
             dcp.fd = Some(fd);
+            if let Some(err) = spent {
+                return Err(IfaceError::execution(err.explain()));
+            }
             let refusals: Vec<String> = match (dcp.printed_checks.take(), dcp.conf.as_ref(), dcp.fd.as_ref()) {
                 (Some((lines, expected)), Some(prog), Some(fd)) => {
                     crate::assertions::check_printed(prog.arch(), fd, &text, &expected)

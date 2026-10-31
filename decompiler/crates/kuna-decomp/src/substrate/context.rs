@@ -807,6 +807,8 @@ pub struct ArchContext {
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
     /// the predicate both `ActionReturnSplit` and `ActionReturnDup` consult.
     pub ret_split_global: bool,
+    /// (kuna) `retsplitlimit`, read by `Funcdata::return_split_apply`.
+    pub ret_split_limit: Option<u64>,
     /// (kuna) resolve a one-byte lane read of a CONSTANT-mask `pshufb` shuffle
     /// to the source lane it selects (`simdlane`).  Read by
     /// [`RuleSimdShuffleLane`](crate::kuna_simdlane::RuleSimdShuffleLane).
@@ -900,6 +902,11 @@ pub struct ArchContext {
     /// (`realtypes` on, C output), so its promotion sign-extends.  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
     pub unknown_byte_is_char: bool,
+    /// (kuna) The printer spells residual TYPE_UNKNOWN bytes as an integer
+    /// (`realtypes` on, or an output language with no unknown-bytes type), so a
+    /// float assigned into them reads as a numeric conversion.  Read by
+    /// [`kuna_floatstore`](crate::p9_emit::kuna_floatstore).
+    pub unknown_is_integer: bool,
     /// (kuna) The output language promotes a sub-`int` argument to `int`
     /// (`LangCaps::integer_promotion`).  Read by
     /// [`kuna_truncarg`](crate::p9_emit::kuna_truncarg).
@@ -1106,10 +1113,13 @@ pub struct ArchContext {
     /// [`crate::p4_calls::kuna_calleepreserves::callee_preserves_range`].
     pub callee_preserves: bool,
     pub global_call_ranges: bool,
-    /// (kuna) `readonlycalls`, read by `Heritage::guard_calls`.
-    pub readonly_calls: bool,
+    /// (kuna) `readonlycalls`, read by `Heritage::guard_calls`: the guard count
+    /// at which a pass leaves read-only ranges unguarded, `None` when off.
+    pub readonly_calls: Option<u64>,
     /// (kuna) `prunedssa`, read by `Heritage::guard_calls` and `Heritage::place_multiequals`.
     pub pruned_ssa: bool,
+    /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
+    pub load_guard_reads: bool,
     /// (kuna) let the callee's decoded body answer for the call's RETURN
     /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
     /// through
@@ -1285,6 +1295,10 @@ pub struct ArchContext {
     /// it.  Read by
     /// [`crate::p3_dataflow::kuna_loopcounterstore::declines`].
     pub loop_counter_store: bool,
+    /// (kuna) `option haltloopguard` (default-on): read each stored global at the
+    /// entry of a loop the function never leaves. Read by
+    /// [`crate::p3_dataflow::kuna_haltloopguard::guard`].
+    pub halt_loop_guard: bool,
     /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
     /// loaded value whose only reader is the global's own marker. Read by
     /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
@@ -1390,6 +1404,10 @@ pub struct ArchContext {
     /// left out, so a spec-declared model always wins.  Read by
     /// [`ActionX64Syscall`](crate::p2_lift::kuna_x64syscall::ActionX64Syscall).
     pub x64_syscall_userops: Vec<kuna_base::types::uint4>,
+    /// (kuna `segmentize`) The processor's segment operations by address-space
+    /// index (C++ `userops.segmentop`); empty when the option is off, so no
+    /// CALLOTHER is segmentized and every constant resolves flat.
+    pub segment_ops: Vec<Option<Rc<crate::kuna_segmentize::SegmentDef>>>,
     /// (kuna) `option syscallregs`, resolved against the loader's user-space
     /// fact: does the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op read
     /// its setup registers and write its result?  Read by
@@ -1650,6 +1668,10 @@ pub struct ArchContext {
     /// guard), flipped by `option jtsharepartial`, shared from the real
     /// architecture.  Read by `Funcdata::stage_jump_table`.
     pub jumptable_share_partial: bool,
+    /// (kuna `deadwaves`) Revisit only the neighbours of what the previous
+    /// pool pass removed when removal was its only change, shared from the
+    /// real architecture. Read by `ActionPool::apply`.
+    pub pool_dead_waves: bool,
     /// The program load image (C++ `Architecture::loader`), shared from the
     /// engine through `build_arch_handle`.  Read by jump-table emulation
     /// (`EmulateFunction::executeLoad` -> `get_load_image_value`) to fetch the
@@ -1859,6 +1881,7 @@ impl ArchContext {
             global_array_anchor: false,
             cancel_byte_arithmetic: false, // cancelbytearithmetic (the ArchSeam carries the real default)
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
+            ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_lane_fold: false,       // simdlane (the ArchSeam carries the real default)
             const_space_load_fold: false, // constspaceload (the ArchSeam carries the real default)
             drop_call_push: false,        // callpush (the ArchSeam carries the real default)
@@ -1886,6 +1909,7 @@ impl ArchContext {
             bool_byte: true, // (kuna) option boolbyte (default on)
             float_bits: true, // (kuna) option floatbits (default on)
             unknown_byte_is_char: false, // (kuna) realtypes + C output
+            unknown_is_integer: false, // (kuna) realtypes, or not C output
             int_promotion: true,         // (kuna) LangCaps::integer_promotion (C)
             char_byte: true, // (kuna) option charbyte
             cast_arith: false, // (kuna) option castarith
@@ -1958,8 +1982,9 @@ impl ArchContext {
             zero_call_regs: true,
             callee_preserves: true,
             global_call_ranges: true,
-            readonly_calls: true,
+            readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             pruned_ssa: true,
+            load_guard_reads: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)
@@ -1995,6 +2020,7 @@ impl ArchContext {
             guarded_read_trim: false,
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
+            halt_loop_guard: false,      // haltloopguard (Architecture::reset_defaults sets the shipped default: on)
             global_field_store: false,
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)
@@ -2018,6 +2044,7 @@ impl ArchContext {
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (opt-in default-off)
             x64_syscall_memory_target: false,
             x64_syscall_userops: Vec::new(),
+            segment_ops: Vec::new(),
             syscall_regs: false,
             syscall_regs_family: None,
             syscall_regs_userops: Vec::new(),
@@ -2076,6 +2103,7 @@ impl ArchContext {
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)
             unrolled_guard: false, // (kuna) angr opt-in default off (upstream byte-identical)
             jumptable_share_partial: true, // (kuna) DIV: upstream stageJumpTable shape
+            pool_dead_waves: true,
             loader: None,
             // C++ Architecture default: readonlypropagate = false (resetDefaults);
             // `option readonly` flips it before the per-function build_arch_handle.
@@ -2506,7 +2534,26 @@ impl ArchContext {
         point: &Address,
         full_encoding: &mut u64,
     ) -> KunaResult<Address> {
+        if let Some(seg) = self.get_segment_op(spc.get_index()) {
+            return Ok(seg.resolve(val, sz, point, full_encoding, |mem, at| self.get_tracked_value(mem, at)));
+        }
         self.manage.resolve_constant(spc, val, sz, point, full_encoding)
+    }
+
+    /// Number of segment operations supported (C++ `userops.numSegmentOps`).
+    pub fn num_segment_ops(&self) -> int4 {
+        self.segment_ops.len() as int4
+    }
+
+    /// The segment operation for the space with index `i` (C++
+    /// `userops.getSegmentOp`).
+    pub fn get_segment_op(&self, i: int4) -> Option<&Rc<crate::kuna_segmentize::SegmentDef>> {
+        usize::try_from(i).ok().and_then(|i| self.segment_ops.get(i)).and_then(|s| s.as_ref())
+    }
+
+    /// The tracked value of `mem` at `point` (C++ `glb->context->getTrackedValue`).
+    pub fn get_tracked_value(&self, mem: &kuna_num::pcoderaw::VarnodeData, point: &Address) -> u64 {
+        kuna_sleigh::globalcontext::tracked_value(self.get_tracked_set(point), mem)
     }
 
     /// C++ `data.getScopeLocal()->getParent()->queryContainer(addr,size,usepoint)`

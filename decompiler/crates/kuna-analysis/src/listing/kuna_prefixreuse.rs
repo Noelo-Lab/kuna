@@ -26,6 +26,7 @@ pub(super) fn discard_bodies(
         !refs.is_empty()
     });
     state.indirect_call_sites.retain(|at| !removed.contains(at));
+    state.carry.discard(&removed);
     state
         .switches
         .retain(|table| !removed.contains(&table.dispatch));

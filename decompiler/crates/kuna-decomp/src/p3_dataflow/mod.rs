@@ -6,6 +6,7 @@
 pub mod heritage;
 mod kuna_leafmemory;
 pub(crate) mod kuna_globalcallranges;
+pub(crate) mod kuna_loadguardreads;
 pub(crate) mod kuna_prunedssa;
 pub mod subflow;
 mod kuna_constantbytes;
@@ -34,6 +35,7 @@ pub mod kuna_flagcompare;
 pub mod kuna_arraystride;
 pub mod kuna_condexeplace;
 pub mod kuna_compareform;
+pub mod kuna_segmentize;
 pub mod kuna_indirectanchor; // (kuna) an op inserted after a guard INDIRECT anchors to the op it speaks for
 pub mod kuna_inputtile;
 pub mod kuna_calloverlap;
@@ -49,6 +51,7 @@ pub(crate) mod kuna_stackbytecopy;
 pub(crate) mod kuna_spillstoreguard;
 pub mod kuna_tiedstorekeep;
 pub mod kuna_loopcounterstore;
+pub(crate) mod kuna_haltloopguard;
 pub mod kuna_pairrefine;
 pub mod kuna_splitstorekeep;
 pub mod kuna_pointeestorekeep;

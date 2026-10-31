@@ -1,0 +1,24 @@
+dataptrs_so_x86_64.so -- x86-64 shared object whose pointer table names its own
+exported function through an absolute relocation.
+
+What it is
+  A 14,096-byte ELF ET_DYN (SHA-256
+  20623345ed5635c5c28fee150a14d205919c2d82a630bda76f1895116a648eae) built from
+  dataptrs_so.c. Its .rela.dyn holds every kind of pointer relocation a shared
+  object's data carries:
+    0x3ff8 R_X86_64_GLOB_DAT exported_tab  -> 0x4030 (.got slot for the table)
+    0x4020 R_X86_64_RELATIVE 0x2000        -> "hello" (msg)
+    0x4030 R_X86_64_64       audit_target  -> 0x1000 (exported_tab[0])
+    0x4038 R_X86_64_RELATIVE 0x1010        -> local_target (exported_tab[1])
+  audit_target is exported and so preemptible: its table entry is an absolute
+  relocation against the symbol, not a RELATIVE one.
+
+How it was built
+  gcc -O2 -shared -fPIC -nostdlib -Wl,--build-id=none -o dataptrs_so_x86_64.so dataptrs_so.c
+  gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, GNU ld 2.38. Prebuilt so the
+  relocation kinds do not depend on the host toolchain.
+
+What it pins
+  kuna_dataptrs lists all four words with coverage dynamic-relocations, and
+  `kuna xrefs --to audit_target` reports exported_tab's first word as a pointer
+  row.

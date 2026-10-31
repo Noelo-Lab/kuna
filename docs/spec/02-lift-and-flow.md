@@ -75,6 +75,89 @@ This repairs selector identity without an option and does not emulate CP15,
 interpret processor-specific registers, or change named CP15 intrinsics,
 coprocessor data processing, or double-register transfers.
 
+An x86 near branch with a 16-bit displacement (`CALL`/`JMP`/`Jcc rel16`) in
+32-bit code takes a 0x66 prefix, and its target is masked to the low 16 bits,
+since the CPU zeroes the high half of EIP (GH-7418). Code whose default operand
+size is 16 bits (`x86:LE:16:Real Mode`, `x86:LE:16:Protected Mode` and
+`x86:LE:32:System Management Mode`) decodes with its own spec,
+`specs/Ghidra/Processors/x86/data/languages/x86-16.slaspec`, which is
+`x86.slaspec` plus the real-mode code segment in the decode context; `x86.sla`
+and `x86-64.sla` are unchanged. A real-mode address is the linear CS*16 + IP,
+and a code segment need not start on a 64 KiB boundary. The context variable
+`realCS` (default 0) holds CS. A near branch (`rel8` and `rel16`: `CALL`,
+`JMP`, `Jcc`, `LOOP`, `JCXZ`) wraps IP inside the segment, so its target is
+`realCS*16 + ((IP + displacement) & 0xFFFF)`, and it commits `realCS` to that
+target (a SLEIGH `globalset`), so a callee decodes in its caller's segment. A
+far `CALL`/`JMP ptr16:16` commits the segment it names to its target. Every
+16-bit `CALL` pushes IP, not the low half of the linear address; a far `CALL
+ptr16:16` keeps its own segment in the scratch context field `callerCS` while
+`ptr1616` states its target's, so it pushes IP in its own segment. The CS a `CS:`
+override or a near indirect `CALL`/`JMP` reads is `realCS`, so a `jmp
+[cs:bx+table]` reads its table from its own segment (upstream assumed the
+instruction's 64 KiB block). An instruction that starts outside the 64 KiB
+above `realCS*16` cannot be in that segment (one that ends on the segment's last
+byte is inside it, and its IP wraps to 0): there a near branch is the linear sum of
+the next address and the displacement, which is exact unless the branch was
+encoded through the wrap, `CALL` pushes the low 16 bits of its next address,
+and CS is upstream's 64 KiB block. A committed segment holds from its target up to
+the next address the segment was set at, so this bound is what keeps a far
+target's segment from reaching unrelated code above it. With the default CS 0
+the first 64 KiB wrap as the GH-7418 mask did (a `.COM` program's
+`call 0x9103` from 0x100 encoded as -0x7000), and code above it takes the
+linear sum, which the mask had sent into the first 64 KiB (issue #1288: a DOS
+program loaded at segment 0x1000 lost all but 12 of its 330 functions). A
+loader states the segments it knows through
+`decompiler/crates/kuna-analysis/src/loader/kuna_realmodecs.rs (paint)`. A
+raw image (`--raw-image`) that ends inside the first 64 KiB keeps CS 0, another
+raw image of at most 64 KiB is one segment that starts at its base paragraph,
+and a larger one states none (`raw_image_cs`). The raw image's linear call
+sweep decodes data as code, so it runs with `realCS` commits masked
+(`without_commits`). With the main segment of that DOS program stated (CS
+0x2b58), all 697 of its `rel16` branches decode to their targets, against 651
+with the linear sum and none with the mask. In 16-bit protected mode an address
+is selector*0x10000 + offset, so a near branch keeps the selector and wraps the
+offset, as upstream computes it. This is a SLEIGH correctness repair, without
+an inference option.
+
+A DOS program built by Microsoft's or Borland's compilers for the 8087
+emulator carries no x87 opcodes: the linker's emulator fixups turn each `WAIT`
+and ESC opcode pair into a software interrupt that the emulator services or,
+once it finds a coprocessor, patches back. `INT 34h+n` stands for ESC `D8h+n`
+and is followed by the instruction's ModR/M and displacement. `INT 3Ch` is
+followed by a byte holding the segment override in bits 6-7 (DS, SS, CS, ES)
+and the ESC opcode in bits 0-2, then the ModR/M. `INT 3Dh` is `FWAIT`. Read as
+interrupts, the operand bytes decode as garbage instructions: `FLD1` (`CD 35
+E8`) becomes `INT 35h` and a near `CALL` to a phantom function. In
+`x86-16.slaspec` the ESC constructors are a table `x87` that reads its opcode
+byte through the `X87_Dn` patterns. The byte is the opcode itself, the `34h+n`
+of an `INT 34h-3Bh` form (context `fpuEsc` 1), or the segment byte of an `INT
+3Ch` form (`fpuEsc` 2, which also sets the segment override). Root
+constructors dispatch the native opcode and, where the context bit `fpuEmu`
+is 1 (default 0), the emulator forms; `INT 3Dh` there is `WAIT`. Each form
+emits the p-code of the real instruction. `ia.sinc` keeps the constructors in
+place: outside 16-bit x86 each `X87_Dn` expands to the old `byte=0xDn`, the
+quoted mnemonics print as before and the `with x87` block is under `@ifdef
+IA16`, so `x86.sla` and `x86-64.sla` are byte-identical, and so is the
+16-bit decode of every native ESC instruction.
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_fpuemu.rs (apply)` paints
+`fpuEmu` over the default code space from `option fpuemu` (`off|auto|on`,
+default `auto`). `on` sets it, `off` clears it, and `auto` sets it when the
+MS-DOS loader found emulator code in the load module (`emulator_evidence`): at
+least two emulated instructions that run straight into an emulated `FWAIT` or
+follow one. A compiler ends a float sequence with that `FWAIT`, and data
+almost never holds the pair. A table of `INT n; RET` thunks holds every `INT
+34h-3Dh` back to back but no pair, because each `RET` byte reads as a register
+ModR/M. A language without `fpuEmu` ignores the option, and so does a
+bytechunk or raw image under `auto`. On the deark-unpacked `DAZZLE.EXE`
+(Turbo C, issue #1288) the evidence holds, and `decompile-all` changes 18
+functions. All 75 calls through `swi(0x34)`..`swi(0x3d)` become float
+arithmetic. The last three bad-instruction warnings go away and
+`funcboundflow` truncations go from 10 to 7. Two phantom functions that IDA
+does not list (one the `FLD1` call target) are gone, 297 to 295. Borland's
+`INT 3Eh` shortcut calls into the emulator library are left as interrupts.
+On 42 FreeDOS executables the evidence never holds, so their output is
+byte-identical.
+
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,
 but cannot repaint the caller. After a successful instruction, a mode commit

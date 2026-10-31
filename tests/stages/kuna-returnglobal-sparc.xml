@@ -1,0 +1,54 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+    kuna-1288 follow-on, P4 calls and prototypes (output-prototype, the
+    uncomputed-half repair `strip_uncomputed_return_piece`); no option, a bug
+    fix inside the repair.
+
+    The repair counts a value read out of global memory as a computed return
+    half, so an x86 DX:AX or EDX:EAX long read from globals keeps both words
+    (kuna-segmentize.xml #10). SPARC returns a long long in %o0:%o1 with the
+    HIGH word in %o0, and a pair option bejoin cannot prove to be one value is
+    joined first register low, on the reading that %o1 is a leftover the
+    repair drops. restore copies %i1 into %o1 whatever it holds, here a global
+    the function read and stored elsewhere, so counting that global as
+    computed kept the swapped pair and an int function came back
+    `unsigned long long` returning `CONCAT44(dat_2004,...)`. A global is
+    computed only in a pair joined in the ABI's order.
+
+    Authored, the clang 14 -O2 -fintegrated-as code for sparc-linux-gnu with
+    vg1/g1 at 0x2000, vg2/g2 at 0x2004 and h at 0x2008:
+        int leftover(void) { int a = vg1; h = vg2; return a; }   (vg* volatile)
+          save / sethi / ld [%i0],%i0 / sethi / ld [%i1+4],%i1 / sethi /
+          st %i1,[%i2+8] / ret / restore
+        int dirty(int x) { h = g2; return x + g1; }
+          save / sethi x2 / ld [%i2],%i2 / ld [%i1+4],%i1 / sethi /
+          add %i2,%i0,%i0 / st %i1,[%i3+8] / ret / restore
+
+    Asserts #1-#2: each returns its int, and no pair is invented from the
+    stale %o1 (both failed before the fix).
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+9de3bfa031000008f006200033000008f206600435000008f226a00881c7e008
+81e8000001000000010000000100000001000000010000000100000001000000
+9de3bfa03300000835000008f406a000f206600437000008b0068018f226e008
+81c7e00881e80000
+</bytechunk>
+<bytechunk space="ram" offset="0x2000">
+000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="leftover"/>
+<symbol space="ram" offset="0x1040" name="dirty"/>
+</binaryimage>
+<script>
+  <com>lo fu leftover</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dirty</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="returnglobal-sparc #1: each function returns its 4-byte int" min="2" max="2">^(unsigned int|u?int4) (leftover\(void\)|dirty\(int4 a0\))$</stringmatch>
+<stringmatch name="returnglobal-sparc #2: the global left in %o1 is not joined into the return" min="0" max="0">CONCAT44|long long</stringmatch>
+</decompilertest>

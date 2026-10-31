@@ -129,7 +129,7 @@ tree could not be unpacked.
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
 | `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
-| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
+| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `stall-again:<addr>` wedges it only the second time that target starts in a run, `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. A stall only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over all of these, and one pointing at nothing is reported as
 such rather than silently re-probed.
@@ -292,7 +292,15 @@ kuna decompile ./mre zork
 ```
 
 `kuna functions` lists them. A near spelling is the same identifier under a
-different ABI decoration, never a merely similar name.
+different ABI decoration, never a merely similar name. A name that labels a
+global instead (a data symbol, a PE or Mach-O data export) is answered as data,
+not lifted as code:
+
+```bash
+kuna decompile ./mre audit_global
+#   error: no function "audit_global" in ./mre; it names data at 0x100004000
+#          in __data, not code -- `kuna read` shows its bytes
+```
 
 **An import name selects the code half.** A dynamically linked image spells an
 import's name twice — on the forwarding veneer a direct `call` targets, and on
@@ -1116,6 +1124,43 @@ slice and is ignored, as on any thin image. Project exports retain the TE entry
 (reported through the inventory, at its even address) and the named section
 table.
 
+### MS-DOS MZ executables
+
+A DOS `.EXE` (an `MZ` header that is not the stub of a PE, NE, LE or LX image)
+loads without `--raw-image`. kuna places the load module at segment 0x1000
+(linear 0x10000), applies the relocation table, and seeds discovery from the
+header's `CS:IP`, decoding as `x86:LE:16:Real Mode:default` unless `--target`
+names another language:
+
+```bash
+kuna functions GAME.EXE --json            # the entry, (0x1000+CS)*16+IP, then discovery
+kuna decompile GAME.EXE 0x2b580 --addr
+kuna decompile-project GAME.EXE -o out/
+```
+
+Addresses are linear real-mode addresses, `segment * 16 + offset` with the load
+segment added. The decoder is told the entry's code segment and the segment of
+every relocated far call or jump target that lies inside that segment (below
+the next segment the image names), so a near branch wraps inside its segment as
+the CPU's does. Only the load module is mapped: the header, any
+overlay past the image size, and the uninitialized memory the header asks for
+are not. The call sweep that widens discovery past the entry reads the module's
+relocations (`mzsweep`, on by default): a far call counts only through a
+relocated segment word, and a call decoded among zero fill, or to a target that
+does not open with code, is data in a far data segment rather than a function;
+`--option mzsweep off` sweeps the whole module as a raw image does. A file packed with PKLITE or LZEXE loads too, but its code is the
+decompressor stub and a packed body, so kuna says so on stderr; unpack it first
+(`kuna unpack` for PKLITE, for example `deark -m lzexe` for LZEXE).
+A program linked with Microsoft's or Borland's 8087 emulator carries its float
+instructions as `INT 34h`-`3Dh`; when the load module holds emulator code,
+kuna decodes them as the x87 instructions they stand for (`--option fpuemu
+off` keeps the interrupts, `on` forces the decode, for example on a
+`--raw-image` `.COM` program).
+`decompile`, `decompile-all`, `functions`, `disassemble`/`read`,
+`decompile-project` and the console support MZ input; `strings`, `xrefs`,
+`decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
+object-file view and refuse it with a capability error, as for a TE.
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from
@@ -1142,6 +1187,15 @@ half-open range is rejected. Duplicate entries collapse. ARM32 raw input require
 `--isa arm|thumb`; odd ARM function pointers are normalized to their underlying
 even byte address before validation. Other addresses retain every input bit, so
 an odd ARM data or property address still selects the odd byte.
+
+An x86 real-mode image (`x86:LE:16:Real Mode`) also needs its code segment, the
+CS that a linear address is CS*16 + IP in. A file that ends inside the first
+64 KiB runs with CS 0 (a `.COM` program at `--base 0x100`, a boot sector at
+`0x7c00`); any other file of at most 64 KiB is one segment that starts at its
+base paragraph (`--base 0xf0000` is `F000:0000`). A larger file states no
+segment: its near branches past the first 64 KiB decode as the linear sum of
+the next address and the displacement, until a far call or jump names the
+segment of its target.
 
 Raw images carry no symbols, so there is no object-backed discovery tier to
 run; `--option rawdiscover off` leaves the inventory at the explicit seeds.
@@ -1184,6 +1238,11 @@ be quoted too, as the DOS target needs: `load raw "x86:LE:16:Real Mode:default"
   the generic `/* WARNING: structured blocks unavailable (structuring
   declined) */` means the pipeline *ran* and produced no structured blocks —
   a different failure.
+- **a render past the budget prints nothing**: when printing runs past what
+  the drive left of `--max-fn-seconds`, the console's `print C` refuses, stdout
+  is empty, and stderr carries `error: decompilation failed for <fn> in
+  <binary>: per-function decompile budget exceeded (<N> s) in rendering C` and
+  the `--max-fn-seconds` note.
 
 **Load and analysis failures (DIV-90).** `kuna decompile` runs the engine in a
 subprocess, so it recovers *why* a run failed from the console transcript — and
@@ -1553,7 +1612,7 @@ without emitting a function list at all, let alone pseudocode.
   | `pyinstaller` | the `MEI\x0c\x0b\x0a\x0b\x0e` CArchive cookie; `version` is its Python version | `PyInstaller bundle (Python 3.12): extract with pyinstxtractor-ng` |
   | `nuitka` | `NUITKA_ONEFILE_PARENT` / `__nuitka_binary_dir` | `Nuitka-compiled Python: …; extract a onefile payload with nuitka-extractor` |
   | `autoit` | `AU3!EA06`/`AU3!EA05` in a PE | `AutoIt compiled script: extract the script with autoit-ripper` |
-  | `upx` / `neolite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub | `UPX packed: run 'kuna unpack'` |
+  | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
   | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`) |
 
@@ -1795,11 +1854,14 @@ Behaviors specific to `decompile-all`:
   this function), `heritage`, `region structuring`, or a jump-table step, and
   anything inside a flow-time table recovery adds `during jump-table recovery at
   <indirect-jump address>`, e.g. `in action oppool1 (busiest rule earlyremoval)`
-  or `in jump-table recovery at 0x1820e009b`. This is not a hard process timer: it does not bound
-  discovery, unprobed decoder work, C/variable rendering, artifact
+  or `in jump-table recovery at 0x1820e009b`. Printing the function and
+  extracting its variables get what the drive left of the budget; a render
+  that runs past it fails the same way, `in rendering C` or `in extracting
+  variables`. This is not a hard process timer: it does not bound
+  discovery, unprobed decoder work, artifact
   construction, total export time, or memory. Driver policy, not a stage-model
-  settable — zero output change for a function whose drive completes before
-  expiry; the console / `decomp_dbg` parity path arms it only when given
+  settable — zero output change for a function whose drive and render complete
+  before expiry; the console / `decomp_dbg` parity path arms it only when given
   `decomp_dbg --max-fn-seconds N`, which `kuna decompile` passes.
 
 - **Per-function memory limit** — `--max-fn-memory MiB` (`0` disables) on
@@ -1975,7 +2037,11 @@ Behaviors specific to `decompile-all`:
   - **A worker that dies costs one function, not its chunk.** A worker
     decompiles its chunk in order and writes each result as it finishes, so when
     it dies — a panic, an OOM kill, a signal, the stall watchdog — the pool knows
-    which function it was on and which never started. The thread that gave it
+    which function it was on and which never started. The one ordered
+    structsynth worker holds its results until its sweep has run. It writes a
+    marker as it starts each function instead, so the stall watchdog times each
+    of its functions and not the whole chunk, and a stall there is charged to the
+    function that stalled. The thread that gave it
     the chunk re-runs every function the worker did not deliver, one function per
     chunk: the one that was running first, on a fresh worker, so its `error`
     record is the failure it repeats on its own, then the rest. Without this, one
@@ -2067,8 +2133,9 @@ apply to `kuna functions` — which never spawns a pool — exactly as they do t
 
   The gate group, decided before any thread is spawned, so nothing is wasted:
   `language commits context` (the loaded `.sla` has a `globalset`, so a decode at one address
-  changes how another decodes — ARM, MIPS, PowerPC, PA-RISC, PIC and friends,
-  while x86, x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass), `language has
+  changes how another decodes — ARM, MIPS, PowerPC, PA-RISC, PIC, 16-bit x86 and
+  friends, while 32-bit x86, x86-64, AARCH64, RISC-V, SPARC, SuperH and Z80 pass),
+  `language has
   delay slots`, `no rebuildable decode engine`, `loader cannot share its bytes`,
   `per-address decode context`, `executable range not fully mapped`, `executable
   image too small` (under 8 MiB of executable bytes the engine builds cost more
@@ -2140,9 +2207,31 @@ act on and is answered; see below.
 |---|---|
 | `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. |
 | `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
-| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. |
-| `read` | The target is loaded from. |
-| `write` | The target is stored to. |
+| `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. Also an address a **register pair** forms across instructions (`adrp x0,…; add x0,x0,#0x488`, `lui a0,…; addi a0,a0,0x25`), filed from the instruction that completes it. |
+| `read` | The target is loaded from — including through a register an earlier instruction set to (part of) the address (`adrp x8,…; ldr w0,[x8,#0x1d0]`, `lui a1,…; lw a1,0x1d0(a1)`). |
+| `write` | The target is stored to, likewise. |
+
+### Addresses formed in two instructions
+
+A fixed-width ISA cannot hold a whole address in one instruction, so it builds one
+in two: AArch64 `adrp` + `add`/`ldr`/`str`, RISC-V `lui` or `auipc` +
+`addi`/`lw`/`sw`/`ld`, MIPS `lui` + `addiu`/`lw`, PowerPC `lis` + `addi`/`lwz`. The
+walk carries a register's constant to the instructions that fall after it and reads
+the address off the instruction that completes it: `data` where that instruction
+only forms the address, `read`/`write` where it accesses memory there. A carried
+value lives for at most eight instructions, survives a call only in a callee-saved
+register, and is never believed past a **join** — an instruction another branch,
+switch case or function entry also reaches — so two bases meeting at a label form
+nothing. The page or high half on its own is not the reference (`adrp`'s page row
+appears only where it did before, when the page itself is a mapped address).
+
+Shapes that build a number rather than an address do not file `data`: a copy of the
+register, bitwise composition (`movk`, `ori`, `movt`) and a 32-bit add widened into a
+64-bit register (RV64 `addiw`). In an ELF shared object or PIE an absolute immediate
+cannot be an address, so there only a value computed from the instruction's own
+address (`auipc`, A32 `add rX,pc`) is carried; on x86-64 and AArch64 the PC-relative
+form (`lea [rip+…]`, `adrp`) is already a decode-time constant and is carried as
+before.
 
 ### One import, two addresses
 
@@ -2208,8 +2297,35 @@ stub whose forwarding jump the walk could not decode), the answer is still for t
 selected address, and stderr says so with
 `warning: "NAME" also names 0x...; this answer is for 0x... only, query that address for the rest`.
 
-Flags: `--json`, `--kind call,jump,data,read,write` (repeatable-by-comma filter),
-plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+Flags: `--json`, `--kind call,jump,data,read,write,pointer` (repeatable-by-comma
+filter), plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+
+**A pointer stored in data is a `pointer` row, not an instruction xref.** The
+`xrefs` rows are references an instruction makes. A word in `.data` that holds a
+function's address (an initialized function pointer, a vtable or callback table
+entry) is a different fact, and no instruction makes it, so it is reported apart:
+the image's own rebase/relocation metadata lists every such word, and `--to`
+answers each word holding the target's address, `--from` each word inside a data
+target. The source is the image's: Mach-O chained-fixup rebases or classic rebase
+opcodes, ELF dynamic relocations, PE base relocations. `data_refs_coverage` names
+it, and is `none` when the image lists no pointer relocations (a non-PIE ELF, a PE
+without `.reloc`, a relocatable object): there an empty `data_refs` means "not
+enumerated", not "none stored". A word bound to an import is not listed; it holds
+an address of another image. On x86 a relocated word inside a decoded instruction
+that references the same address (a 32-bit PE's `push offset f`) is that
+instruction's row, not a stored pointer, and is left out; a word past the end of
+that instruction, such as a pointer table in `.text`, is still listed.
+
+```
+kuna xrefs fixture --to _audit_target
+# 1 reference to _audit_target @ 0x1000003c8
+0x1000003e4	call	_audit_direct_call+0x8	bl 0x1000003c8
+# 1 data-held pointer to _audit_target @ 0x1000003c8 (chained-fixups)
+0x100004008	pointer	_audit_func_ptr
+```
+
+`--kind` filters these rows too: `--kind pointer` gives only them, any other
+`--kind` list leaves them out.
 
 `--json` emits
 
@@ -2221,8 +2337,15 @@ plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
             "from_address","from_address_hex","to_address","to_address_hex",
             "from_function": {"name","address","address_hex"},
             "to_function":   {"name","address","address_hex"},
-            "instruction": "CALL 0x1030"}]}
+            "instruction": "CALL 0x1030"}],
+ "data_refs_coverage": "chained-fixups|rebase-opcodes|dynamic-relocations|base-relocations|none",
+ "data_refs_count": N,
+ "data_refs": [{"kind": "pointer", "from_address","from_address_hex","from_name",
+                "to_address","to_address_hex","to_name","width","source"}]}
 ```
+
+`count` and `xrefs` are the instruction rows alone; `data_refs` carries the stored
+pointers, `from_address` being the word and `from_name` the data object holding it.
 
 Both ends of every edge are always spelled out, so a consumer never has to infer
 which one `address` meant; `address` itself is the end the query did not already
@@ -2864,7 +2987,7 @@ A binary with no recognized constant is exit `0` with `count: 0`. An unreadable
 or unparseable binary, or an unknown `--section`, is exit `1` with the reason on
 stderr; a malformed command line is exit `2` with the usage block.
 
-## `kuna unpack` — statically unpack a UPX- or NEOLite-packed executable
+## `kuna unpack` — statically unpack a UPX-, NEOLite- or PKLITE-packed executable
 
 ```bash
 kuna unpack ./packed                                   # writes ./packed.unpacked
@@ -2879,10 +3002,12 @@ gives you the decompressor. `kuna unpack` reconstructs the original image so the
 of the CLI has a program to work on — on the witness that filed this gap, `kuna
 functions` goes from `count: 0` to 70, `main` included.
 
-Two packers are recognized, and which one is decided before anything is decoded, so
-the answer on a file that is neither is unchanged. A **NEOLite** image announces
-itself with a `.NEOpack` section that owns the entry point; everything else goes to
-the UPX arm, whose `no UPX PackHeader found` is still what an unpacked file gets.
+Three packers are recognized, and which one is decided before anything is decoded,
+so the answer on a file that is none of them is unchanged. A **NEOLite** image
+announces itself with a `.NEOpack` section that owns the entry point; a **PKLITE**
+DOS program with its decompressor stub at the DOS entry point (a PE, NE, LE or LX
+program whose DOS stub is one is not); everything else goes to the UPX arm, whose
+`no UPX PackHeader found` is still what an unpacked file gets.
 
 It runs **in-process**, with no external tooling: `upx -d` cannot be assumed present
 wherever a release `kuna` runs, and handing a hostile binary to a packer to look at it
@@ -2898,6 +3023,54 @@ filter,filter_hex,pack_header_offset,pack_header_offset_hex,packed_size,
 compressed_size,unpacked_size,count,blocks:[{offset,offset_hex,u_len,c_len,method,
 method_name,filter,filter_hex,stored}]}`, where `count` is the number of compressed
 blocks consumed.
+
+### PKLITE
+
+```bash
+kuna unpack ./DAZZLE.EXE -o dazzle.exe      # "packer": "pklite" with --json
+```
+
+PKLITE (PKWARE, 1990–96) compresses a DOS EXE or COM behind a decompressor stub.
+The rebuilt EXE has the original MZ header, relocation table, load module, `CS:IP`,
+`SS:SP` and allocation fields, plus any overlay; a COM comes back whole.
+
+```text
+unpacked DAZZLE.EXE -> dazzle.exe
+  packer:      PKLITE 1.00 (header says 1.00/l)
+  compression: large
+  compressed:  73824 bytes at 0x300 (packed file 74730 bytes)
+  load module: 189160 bytes, 58 relocations
+  header:      original (PKLITE's copy at 0x50)
+  entry:       1b58:0000, stack 2e68:0080
+  alloc:       min 0x0042, max 0xffff paragraphs
+  overlay:     7 bytes
+  unpacked:    189679 bytes
+```
+
+Where the compressed data starts and how it was compressed are not in any header
+field you can trust (the version word is often wrong), so they are read out of the
+stub's own code. Covered: the 1990 betas, 1.00–1.15, 1.50–2.01 and the v1.20
+in-house builds, small and large compression, extra compression (`-e`), scrambled
+stubs, the Megalite and UN2PACK variants, and the PKLAXFIX startup patch. On 64
+real PKLITE files from 1990s shareware archives, and on the file in issue #1288,
+the output is byte-identical to deark's. Without `-e`, PKLITE keeps a copy of the
+original header, and it is used when it agrees with the footer's registers and the
+relocation count. Otherwise (`"header": "reconstructed"`) the header is rebuilt
+from the footer: `MAXALLOC` is the packed file's, and `MINALLOC` is estimated from
+the stub's free-memory check. Results that do not stop the unpack come back as
+`warnings`, for example a program that checks the `PK` signature PKLITE writes into
+its PSP, or a kept header that disagrees with the footer. A stub that matches no
+known variant exits `1` naming the part (`unsupported PKLITE file: the copier
+matches no known PKLITE copier`), and data that does not decode exits `1` with
+`corrupt PKLITE file: …`. Neither writes a file.
+
+`--json` emits `{binary,output,packer,container,reported_version,detected_version,
+large,extra,v120,scrambled,compressed_offset,compressed_offset_hex,compressed_size,
+load_module_size,relocations,header,header_copy_offset,entry,stack,min_alloc,
+max_alloc,overlay_size,packed_size,unpacked_size,warnings}`. `container` is `exe` or
+`com`. `extra` is `none`, `xor` (standard `-e`) or `complement`. `header` is
+`original`, `reconstructed` or `none` (COM). `entry` and `stack` are `SEG:OFF` hex
+strings.
 
 ### NEOLite
 

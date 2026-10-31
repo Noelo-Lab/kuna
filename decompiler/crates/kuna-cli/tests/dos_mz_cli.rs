@@ -1,0 +1,285 @@
+//! An MS-DOS `MZ` executable loads without `--raw-image`: its load module is
+//! relocated at segment 0x1000 and its `CS:IP` seeds discovery.
+
+use crate::common;
+
+use std::process::{Command, Output};
+
+/// Entry `0000:0000` far-calls `0002:0000`, whose segment word at module offset
+/// 3 is the one relocation; `0002:0000` returns 9 with `RETF`.
+fn dos_image(extra_header: &[u8]) -> Vec<u8> {
+    let mut module = vec![0x90u8; 0x24];
+    module[..10].copy_from_slice(&[0x9a, 0x00, 0x00, 0x02, 0x00, 0xb8, 0x00, 0x4c, 0xcd, 0x21]);
+    module[0x20..0x24].copy_from_slice(&[0xb8, 0x09, 0x00, 0xcb]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    header[0x1c..0x20].copy_from_slice(&[0x03, 0x00, 0x00, 0x00]);
+    header.extend_from_slice(extra_header);
+    header.resize(header.len().div_ceil(16) * 16, 0);
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 6] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x06, 1),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
+/// A load module of 0x10004 bytes whose entry `0100:0000` (linear 0x11000
+/// once loaded at 0x1000) calls -0x1003 and returns far: IP 3 wraps inside the
+/// segment to `0100:F000`, linear 0x20000, past the 64 KiB line, where a
+/// decoder that ignored the segment would land on 0x0 (a 16-bit mask) or
+/// 0x10000 (the linear sum). `0100:F000` returns 7.
+fn segmented_dos_image() -> Vec<u8> {
+    let mut module = vec![0u8; 0x10004];
+    module[0x1000..0x1004].copy_from_slice(&[0xe8, 0xfd, 0xef, 0xcb]);
+    module[0x10000..0x10004].copy_from_slice(&[0xb8, 0x07, 0x00, 0xc3]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 7] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x14, 0x0000),
+        (0x16, 0x0100),
+        (0x18, 0x1c),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
+/// Entry `0000:0000` far-calls `0B00:0A00` (linear 0x1BA00), then loads the
+/// far pointer `DX:AX = seg 0000 : 0x109a` (`b8 9a 10 ba ..`), whose 9a byte
+/// reads as `callf 1000:ba10` (linear 0x1BA10, inside segment 0x1B00). The
+/// callee runs 32 straight-line bytes past 0x1BA10 and near-calls
+/// `0B00:6000`, linear 0x21000; in segment 0x1000 that call would wrap to
+/// 0x11000.
+fn two_segment_dos_image() -> Vec<u8> {
+    let mut module = vec![0u8; 0x11004];
+    module[..12].copy_from_slice(&[0x9a, 0x00, 0x0a, 0x00, 0x0b, 0xb8, 0x9a, 0x10, 0xba, 0x00, 0x00, 0xcb]);
+    module[0x1000] = 0xc3;
+    module[0xba00..0xba20].fill(0x40);
+    module[0xba20..0xba24].copy_from_slice(&[0xe8, 0xdd, 0x55, 0xcb]);
+    module[0x11000..0x11004].copy_from_slice(&[0xb8, 0x07, 0x00, 0xc3]);
+    let mut header = vec![0u8; 0x30];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 9] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x06, 2),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+        (0x1c, 0x0003),
+        (0x20, 0x0009),
+        (0x22, 0x0000),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
+/// Code at `1000:0000` and a data region behind it. The entry near-calls
+/// `0x20`; the code at `0x40`, which only the linear call sweep reads, near-calls
+/// `0x60` and far-calls `0007:0000` (linear 0x10070) through a relocated
+/// segment word. The data region at `0x100` holds three calls a decode of it
+/// finds: one after zero fill (to `0x200`), one into zero fill (`0x300`) and a
+/// far call through a segment word no relocation names (`1000:0400`, linear
+/// 0x10400). `0x200` and `0x400` read as `inc ax; inc ax; ret`.
+fn data_segment_dos_image() -> Vec<u8> {
+    let mut module = vec![0x90u8; 0x100];
+    module[..9].copy_from_slice(&[0xe8, 0x1d, 0x00, 0xb8, 0x00, 0x4c, 0xcd, 0x21, 0xcb]);
+    module[0x20..0x24].copy_from_slice(&[0xb8, 0x01, 0x00, 0xc3]);
+    module[0x40..0x4d].copy_from_slice(&[0x55, 0x8b, 0xec, 0xe8, 0x1a, 0x00, 0x9a, 0x00, 0x00, 0x07, 0x00, 0x5d, 0xc3]);
+    module[0x60..0x64].copy_from_slice(&[0xb8, 0x02, 0x00, 0xc3]);
+    module[0x70..0x74].copy_from_slice(&[0xb8, 0x03, 0x00, 0xcb]);
+    module.resize(0x410, 0);
+    module[0x110..0x11e].copy_from_slice(&[
+        0xe8, 0xed, 0x00, 0xc3, // call 0x200 after zero fill; ret
+        0xe8, 0xe9, 0x01, 0xc3, // call 0x300, which is zero fill; ret
+        0x9a, 0x00, 0x04, 0x00, 0x10, 0xc3, // callf 1000:0400, not relocated; ret
+    ]);
+    module[0x200..0x203].copy_from_slice(&[0x40, 0x40, 0xc3]);
+    module[0x400..0x403].copy_from_slice(&[0x40, 0x40, 0xc3]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 8] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x06, 1),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+        (0x1c, 0x0049),
+        (0x1e, 0x0000),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
+/// A module whose header lists no relocation, as an EXEPACK-packed or
+/// relocation-stripped program's does: its code applies its own fixups, so its
+/// far calls are unrelocated. The entry exits; the code at `0x40`, which only
+/// the linear call sweep reads, near-calls `0x60`, which opens like a
+/// large-model function: `push bp; mov bp, sp; mov ax, 6; callf 0000:0080`.
+fn unrelocated_dos_image() -> Vec<u8> {
+    let mut module = vec![0x90u8; 0x80];
+    module[..6].copy_from_slice(&[0xb8, 0x00, 0x4c, 0xcd, 0x21, 0xcb]);
+    module[0x40..0x48].copy_from_slice(&[0x55, 0x8b, 0xec, 0xe8, 0x1a, 0x00, 0x5d, 0xc3]);
+    module[0x60..0x6d].copy_from_slice(&[0x55, 0x8b, 0xec, 0xb8, 0x06, 0x00, 0x9a, 0x80, 0x00, 0x00, 0x00, 0x5d, 0xc3]);
+    let mut header = vec![0u8; 0x20];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 5] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
+fn kuna(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).output().expect("run kuna")
+}
+
+fn written(stem: &str, bytes: &[u8]) -> std::path::PathBuf {
+    let path = common::scratch_file(stem, "exe");
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[test]
+fn a_dos_executable_loads_at_its_entry_with_relocated_far_calls() {
+    let path = written("dos-mz", &dos_image(&[]));
+    let exe = path.to_str().unwrap();
+
+    let functions = kuna(&["functions", exe, "--json"]);
+    let listing = String::from_utf8_lossy(&functions.stdout);
+    assert!(functions.status.success(), "{listing}\n{}", String::from_utf8_lossy(&functions.stderr));
+    for name in ["\"sub_10000\"", "\"sub_10020\""] {
+        assert!(listing.contains(name), "missing {name}: {listing}");
+    }
+
+    for args in [vec!["decompile", exe, "sub_10020"], vec!["decompile-all", exe, "--addr", "0x10020"]] {
+        let out = kuna(&args);
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success(), "{args:?}: {text}\n{}", String::from_utf8_lossy(&out.stderr));
+        assert!(text.contains("return 9;"), "{args:?}: {text}");
+    }
+
+    let strings = kuna(&["strings", exe]);
+    assert!(!strings.status.success());
+    assert!(String::from_utf8_lossy(&strings.stderr).contains("MS-DOS MZ input has no object-file view"));
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn a_pklite_stub_is_named_on_load() {
+    let path = written("dos-mz-pklite", &dos_image(b"PKLITE Copr. 1990"));
+    let out = kuna(&["functions", path.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("PKLITE-compressed") && stderr.contains("run `kuna unpack`"), "{stderr}");
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// `segmentize` folds the pushed IP into the stack frame, so the store that
+/// shows it is read with the option off.
+#[test]
+fn a_near_call_wraps_inside_the_entry_code_segment() {
+    let path = written("dos-mz-segment", &segmented_dos_image());
+    let exe = path.to_str().unwrap();
+
+    let functions = kuna(&["functions", exe, "--json"]);
+    let listing = String::from_utf8_lossy(&functions.stdout);
+    assert!(functions.status.success(), "{listing}\n{}", String::from_utf8_lossy(&functions.stderr));
+    assert!(listing.contains("\"sub_20000\""), "the wrapped call target is missing: {listing}");
+    assert!(!listing.contains("\"sub_10000\""), "the linear sum is not the target: {listing}");
+
+    let out = kuna(&["decompile-all", exe, "--addr", "0x11000", "--option", "segmentize", "off"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("sub_20000();"), "{text}");
+    assert!(text.contains(" = 3;"), "the CALL pushes IP 3, not the linear low half 0x1003: {text}");
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn a_relocated_far_call_states_its_segment_and_a_far_pointer_load_does_not() {
+    let path = written("dos-mz-two-segments", &two_segment_dos_image());
+    let exe = path.to_str().unwrap();
+
+    let functions = kuna(&["functions", exe, "--json"]);
+    let listing = String::from_utf8_lossy(&functions.stdout);
+    assert!(functions.status.success(), "{listing}\n{}", String::from_utf8_lossy(&functions.stderr));
+    assert!(listing.contains("\"sub_21000\""), "the callee in segment 0x1B00 is missing: {listing}");
+    assert!(!listing.contains("\"sub_11000\""), "the call wrapped in segment 0x1000: {listing}");
+
+    let out = kuna(&["decompile-all", exe, "--addr", "0x1ba00"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("sub_21000();"), "{text}");
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn the_call_sweep_keeps_code_calls_and_drops_calls_decoded_from_data() {
+    let path = written("dos-mz-data-segment", &data_segment_dos_image());
+    let exe = path.to_str().unwrap();
+    let list = |extra: &[&str]| {
+        let out = kuna(&[&["functions", exe, "--json"][..], extra].concat());
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        text
+    };
+
+    let kept = list(&[]);
+    for name in ["\"sub_10000\"", "\"sub_10020\"", "\"sub_10060\"", "\"sub_10070\""] {
+        assert!(kept.contains(name), "missing {name}: {kept}");
+    }
+    for name in ["\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
+        assert!(!kept.contains(name), "{name} is a call decoded from data: {kept}");
+    }
+
+    let swept = list(&["--option", "mzsweep", "off"]);
+    for name in ["\"sub_10060\"", "\"sub_10070\"", "\"sub_10200\"", "\"sub_10300\"", "\"sub_10400\""] {
+        assert!(swept.contains(name), "missing {name} from the whole-module sweep: {swept}");
+    }
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn without_relocations_an_unrelocated_far_call_does_not_refuse_the_function_it_opens() {
+    let path = written("dos-mz-unrelocated", &unrelocated_dos_image());
+    let exe = path.to_str().unwrap();
+    let out = kuna(&["functions", exe, "--json"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("\"sub_10060\""), "a function opening with a far call is code: {text}");
+    std::fs::remove_file(&path).unwrap();
+}

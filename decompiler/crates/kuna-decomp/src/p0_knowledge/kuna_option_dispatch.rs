@@ -147,6 +147,12 @@ kuna_options! { self, p1;
         self.ret_split_global = val;
         Ok(msg)
     },
+    "retsplitlimit" => {
+        let (val, msg) =
+            crate::p8_structure::kuna_retsplitlimit::OptionRetSplitLimit.apply(p1)?;
+        self.ret_split_limit = val;
+        Ok(msg)
+    },
     "flagcompare" => on_off!(fold_flag_compare, "Flag-modelled comparison folding"),
     "v850indirectbranch" => on_off!(v850_indirect_branch, "V850 indirect-branch reclassification"),
     "fastfailnoreturn" => on_off!(fastfail_noreturn, "Windows int 0x29 (__fastfail) no-return"),
@@ -158,6 +164,18 @@ kuna_options! { self, p1;
     "x64syscall" => {
         let (mode, msg) = crate::kuna_x64syscall::OptionX64Syscall.apply(p1)?;
         self.x64_syscall = mode;
+        Ok(msg)
+    },
+    "segmentize" => {
+        let (val, msg) = crate::kuna_segmentize::OptionSegmentize.apply(p1)?;
+        self.segmentize = val;
+        self.apply_segmentize();
+        Ok(msg)
+    },
+    "fpuemu" => {
+        let (mode, msg) = crate::kuna_fpuemu::parse_fpuemu_mode(p1).map_err(KunaError::parse)?;
+        self.fpu_emu = mode.as_u8();
+        crate::kuna_fpuemu::apply(self);
         Ok(msg)
     },
     "syscallregs" => {
@@ -288,8 +306,25 @@ kuna_options! { self, p1;
     "arraystride" => on_off!(recover_array_stride, "Strided-induction array recovery"),
     "stackalias" => on_off!(stack_alias_deadstore, "Stack-pointer-alias dead-store hold"),
     "globalcallranges" => on_off!(global_call_ranges, "Global call access ranges"),
-    "readonlycalls" => on_off!(readonly_calls, "Unguarded read-only memory at calls"),
+    "readonlycalls" => {
+        let field = p1.trim();
+        let (val, msg) = match field {
+            "off" => (None, "Unguarded read-only memory at calls turned off".to_string()),
+            "on" => (Some(1), "Read-only memory is unguarded at every call".to_string()),
+            _ => {
+                let n = field
+                    .parse::<u64>()
+                    .ok()
+                    .filter(|_| !field.is_empty() && field.bytes().all(|b| b.is_ascii_digit()))
+                    .ok_or_else(|| KunaError::parse("Must specify off, on or a decimal guard count"))?;
+                (Some(n), format!("Read-only memory is unguarded at calls from {n} guards"))
+            }
+        };
+        self.readonly_calls = val;
+        Ok(msg)
+    },
     "prunedssa" => on_off!(pruned_ssa, "Pruned SSA heritage markers"),
+    "loadguardreads" => on_off!(load_guard_reads, "LOAD guards read at renaming"),
     "localstackviews" => on_off!(local_stack_views, "Bounded local stack views"),
     "stackviews" => {
         let (value, message) = crate::kuna_stackviews::OptionStackViews.apply(p1)?;
@@ -319,6 +354,9 @@ kuna_options! { self, p1;
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),
     "jtsharepartial" => on_off!(jumptable_share_partial, "Shared jump-table partial sub-decompilation"),
+    "earlyrestart" => on_off!(early_restart, "Early restart after a dead-code delay bump"),
+    "haltloopguard" => on_off!(halt_loop_guard, "Global stores live in an exitless loop"),
+    "deadwaves" => on_off!(pool_dead_waves, "Rule-pool dead-removal waves"),
     "noreturn_externmatch" => on_off!(noreturn_extern_match, "Name-matched extern no-return"),
     "loweredswitch" => {
         let (val, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
@@ -469,6 +507,11 @@ kuna_options! { self, p1;
     "passthrough" => {
         let (val, msg) = crate::p4_calls::kuna_passthrough::OptionPassThrough.apply(p1)?;
         self.pass_through = val;
+        Ok(msg)
+    },
+    "pltlocal" => {
+        let (val, msg) = crate::p4_calls::kuna_pltlocal::OptionPltLocal.apply(p1)?;
+        self.plt_local_calls = val;
         Ok(msg)
     },
     "mixedtailret" => {
@@ -948,6 +991,9 @@ kuna_options! { self, p1;
     "ppclocalentry" => {
         on_off!(analysis_ppclocalentry, "PPC64 ELFv2 local-entry entry suppression")
     },
+    "gowalkprune" => {
+        on_off!(analysis_gowalkprune, "Go pclntab functions out of the fast inventory walk")
+    },
     "flowmode" => {
         let (on, after_call) = match p1.trim().to_ascii_lowercase().as_str() {
             "on" | "1" | "true" => (true, false),
@@ -1210,6 +1256,9 @@ kuna_options! { self, p1;
     ),
     "rawdiscover" => {
         on_off!(analysis_rawdiscover, "Raw-image recursive function discovery")
+    },
+    "mzsweep" => {
+        on_off!(analysis_mzsweep, "MS-DOS executable call-sweep evidence")
     },
     "noreturn_disc" => {
         on_off!(analysis_noreturn_disc, "Discovered-no-return Listing consumer")

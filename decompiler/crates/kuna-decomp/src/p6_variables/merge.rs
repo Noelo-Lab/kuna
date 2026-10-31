@@ -46,6 +46,8 @@
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uintm};
 
+use std::borrow::Cow;
+
 use crate::cover::Cover;
 use crate::context::{HighVariableId, OpId, VarnodeId};
 use crate::variable::{HighContext, HighIntersectTest};
@@ -182,9 +184,9 @@ pub trait MergeContext: HighContext {
     /// `high->getInstance(i)`.
     fn high_get_instance(&self, high: HighVariableId, i: int4) -> VarnodeId;
     /// `high->getCover()` (internal or extended; the `getCover` accessor).
-    fn high_get_cover(&self, high: HighVariableId) -> Cover;
+    fn high_get_cover(&self, high: HighVariableId) -> Cow<'_, Cover>;
     /// `high->internalCover` (the inflateTest cover-to-include).
-    fn high_internal_cover(&self, high: HighVariableId) -> Cover;
+    fn high_internal_cover(&self, high: HighVariableId) -> Cow<'_, Cover>;
     /// Drive `bank.update_cover(high)` across the bank-split (the `updateHigh`
     /// rebuild step; the cache purge stays in [`MergeIntersect`]).
     fn bank_update_cover_for(&mut self, high: HighVariableId);
@@ -297,8 +299,8 @@ pub trait MergeContext: HighContext {
     fn vn_is_global_load(&self, _vn: VarnodeId) -> bool {
         false
     }
-    /// `vn->getCover()` — the member's (already rebuilt) Cover, or `None`.
-    fn vn_cover_ref(&self, vn: VarnodeId) -> Option<Cover>;
+    /// `vn->getCover()` — the member's (already rebuilt) Cover, empty if it has none.
+    fn vn_cover_ref(&self, vn: VarnodeId) -> Cow<'_, Cover>;
     /// `vn->getCreateIndex()`.
     fn vn_create_index(&self, vn: VarnodeId) -> u64;
     /// `vn->getSymbolEntry()->getOffset()` (the CONCAT-tree base offset).
@@ -879,7 +881,7 @@ impl MergeIntersect {
         let n = ctx.high_num_instances(a);
         for i in 0..n {
             let vn = ctx.high_get_instance(a, i);
-            let vncover = ctx.vn_cover_ref(vn).unwrap_or_default();
+            let vncover = ctx.vn_cover_ref(vn);
             if 1 < vncover.intersect_by_block(blk, cover) {
                 res.push(vn);
             }
@@ -900,12 +902,12 @@ impl MergeIntersect {
         let n = ctx.high_num_instances(a);
         for i in 0..n {
             let vn = ctx.high_get_instance(a, i);
-            let vncover = ctx.vn_cover_ref(vn).unwrap_or_default();
+            let vncover = ctx.vn_cover_ref(vn);
             if 2 > vncover.intersect_by_block(blk, cover) {
                 continue;
             }
             for &vn2 in blist {
-                let vn2cover = ctx.vn_cover_ref(vn2).unwrap_or_default();
+                let vn2cover = ctx.vn_cover_ref(vn2);
                 if 1 < vn2cover.intersect_by_block(blk, &vncover) {
                     if ctx.vn_size(vn) == ctx.vn_size(vn2) {
                         if !ctx.vn_copy_shadow(vn, vn2) {
@@ -1098,7 +1100,14 @@ pub struct Merge {
     /// (kuna) The outputs of the MULTIEQUALs `tiedphitrim` trimmed, with the
     /// storage each was trimmed away from.
     tied_phis: Vec<(VarnodeId, kuna_base::address::Address)>,
+    /// (kuna decompile-all watchdog) Budget probes taken, and whether one saw
+    /// the running drive's budget spent ([`Merge::budget`]).
+    probes: u32,
+    spent: bool,
 }
+
+/// (kuna decompile-all watchdog) How many merge steps between budget probes.
+const BUDGET_STRIDE: u32 = 64;
 
 impl Merge {
     /// Construct given a specific function's intersection cache (C++
@@ -1108,7 +1117,33 @@ impl Merge {
     /// here the affecting-ops `PcodeOpSet` is supplied already wired (it is the
     /// `StackAffectingOps` populated from the function's CALL/STORE ops).
     pub fn new(test_cache: HighIntersectTest) -> Merge {
-        Merge { test_cache, copy_trims: Vec::new(), proto_partial: Vec::new(), tied_phis: Vec::new() }
+        Merge {
+            test_cache,
+            copy_trims: Vec::new(),
+            proto_partial: Vec::new(),
+            tied_phis: Vec::new(),
+            probes: 0,
+            spent: false,
+        }
+    }
+
+    /// (kuna decompile-all watchdog) An error once the running drive's budget
+    /// is spent. Each merge pass is a single action, which the action loop
+    /// cannot interrupt, and on a function with millions of Varnodes one pass
+    /// runs for minutes; every merge step therefore probes, every
+    /// [`BUDGET_STRIDE`]th one asking the clock, and once a probe has seen the
+    /// budget spent every later step fails at once. The merge actions drop the
+    /// error and the drive reports the budget.
+    pub(crate) fn budget(&mut self) -> KunaResult<()> {
+        if !self.spent {
+            self.probes = self.probes.wrapping_add(1);
+            self.spent = self.probes % BUDGET_STRIDE == 0
+                && crate::decompile_drive::deadline_passed_in("variable merging");
+        }
+        if self.spent {
+            return Err(KunaError::lowlevel("variable merging stopped at the function's budget"));
+        }
+        Ok(())
     }
 
     /// Borrow the intersection-test cache.
@@ -1124,6 +1159,7 @@ impl Merge {
         self.proto_partial.clear();
         self.tied_phis.clear();
         self.test_cache.affecting_ops_mut().clear();
+        self.spent = false;
     }
 
     /// Number of accumulated trim COPYs (C++ `copyTrims.size()`).  The persistent
@@ -1178,6 +1214,7 @@ impl Merge {
         if high1 == high2 {
             return Ok(true); // Already merged
         }
+        self.budget()?;
         if MergeIntersect::intersection(ctx, &mut self.test_cache, high1, high2)
             || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high1, high2)
         {
@@ -1210,6 +1247,7 @@ impl Merge {
         for high in order {
             let mut merged_into = false;
             for &out in &highstack {
+                self.budget()?;
                 let spec_ok = Self::merge_test_speculative(ctx, out, high)
                     && !crate::kuna_fputruncviews::keeps_highs_apart(ctx, out, high)
                     && !crate::kuna_fputruncviews::keeps_root_alone(ctx, out, high);
@@ -1271,7 +1309,7 @@ impl Merge {
         };
         MergeIntersect::update_high(ctx, &mut self.test_cache, high);
         // const Cover &highCover( high->internalCover )
-        let high_cover = ctx.high_internal_cover(high);
+        let high_cover = ctx.high_internal_cover(high).into_owned();
 
         let n = ctx.high_num_instances(ahigh);
         for i in 0..n {
@@ -1279,7 +1317,7 @@ impl Merge {
             if ctx.vn_copy_shadow(b, a) {
                 continue; // Intersection with a or shadows of a is allowed
             }
-            let bcover = ctx.vn_cover_ref(b).unwrap_or_default();
+            let bcover = ctx.vn_cover_ref(b);
             if 2 == bcover.intersect(&high_cover) {
                 return true;
             }
@@ -1298,7 +1336,7 @@ impl Merge {
                     if ctx.vn_partial_copy_shadow(b, a, off) {
                         continue;
                     }
-                    let bcover = ctx.vn_cover_ref(b).unwrap_or_default();
+                    let bcover = ctx.vn_cover_ref(b);
                     if 2 == bcover.intersect(&high_cover) {
                         return true;
                     }
@@ -1319,6 +1357,7 @@ impl Merge {
                 if ctx.op_code(op) != opc {
                     continue;
                 }
+                self.budget()?;
                 if opc == OpCode::CPUI_COPY && crate::kuna_fputruncviews::keeps_apart(ctx, op) {
                     continue;
                 }
@@ -1417,6 +1456,7 @@ impl Merge {
             if ctx.op_is_call(op) {
                 continue;
             }
+            self.budget()?;
             let vn1 = ctx.op_out(op);
             if !Self::merge_test_basic(ctx, vn1) {
                 continue;
@@ -1471,6 +1511,7 @@ impl Merge {
             if !ctx.op_is_marker(op) || ctx.op_is_indirect_creation(op) {
                 continue;
             }
+            self.budget()?;
             if ctx.op_code(op) == OpCode::CPUI_INDIRECT {
                 self.merge_indirect(ctx, op)?;
             } else {
@@ -1775,6 +1816,7 @@ impl Merge {
             if !range.addrtied {
                 continue;
             }
+            self.budget()?;
             self.unify_address(ctx, &range.all_varnodes)?;
             for sub in &range.must_merge_ranges {
                 // (kuna divergence) A forced merge that intersects — a heavily-reused
@@ -1847,6 +1889,7 @@ impl Merge {
             }
         });
         for &vn in &isectlist {
+            self.budget()?;
             self.eliminate_intersect(ctx, vn, &blocksort)?;
         }
         Ok(())
@@ -2035,14 +2078,14 @@ impl Merge {
                 // instance of `high`, and `bank_update_cover` rebuilds each
                 // member's cover before re-deriving the high's.
                 ctx.bank_update_cover(high);
-                let vn2cover = ctx.vn_cover_ref(vn2).unwrap_or_default();
+                let vn2cover = ctx.vn_cover_ref(vn2);
                 if single_contain_varnode_def(&vn2cover, ctx, vn1) == 1 {
                     let def1 = ctx.vn_def(vn1).unwrap();
                     ctx.op_set_input(def1, vn2, 0)?;
                     res = true;
                     break;
                 }
-                let vn1cover = ctx.vn_cover_ref(vn1).unwrap_or_default();
+                let vn1cover = ctx.vn_cover_ref(vn1);
                 if single_contain_varnode_def(&vn1cover, ctx, vn2) == 1 {
                     let def2 = ctx.vn_def(vn2).unwrap();
                     ctx.op_set_input(def2, vn1, 0)?;
@@ -2353,13 +2396,13 @@ impl Merge {
     fn shadowed_varnode(ctx: &dyn MergeContext, vn: VarnodeId) -> bool {
         let high = ctx.vn_high(vn).expect("shadowedVarnode: vn no high");
         let num = ctx.high_num_instances(high);
-        let vncover = ctx.vn_cover_ref(vn).unwrap_or_default();
+        let vncover = ctx.vn_cover_ref(vn);
         for i in 0..num {
             let othervn = ctx.high_get_instance(high, i);
             if othervn == vn {
                 continue;
             }
-            let othercover = ctx.vn_cover_ref(othervn).unwrap_or_default();
+            let othercover = ctx.vn_cover_ref(othervn);
             if vncover.intersect(&othercover) == 2 {
                 return true;
             }
@@ -2575,7 +2618,7 @@ mod tests {
                 create_index: 0,
             }
         }
-        fn vn_cover(&self, _vn: VarnodeId) -> Option<Cover> {
+        fn vn_cover(&self, _vn: VarnodeId) -> Option<&Cover> {
             None
         }
         fn vn_has_cover(&self, _vn: VarnodeId) -> bool {
@@ -2650,11 +2693,11 @@ mod tests {
         fn high_get_instance(&self, h: HighVariableId, i: int4) -> VarnodeId {
             self.hs(h).instances[i as usize]
         }
-        fn high_get_cover(&self, h: HighVariableId) -> Cover {
-            self.hs(h).cover.clone()
+        fn high_get_cover(&self, h: HighVariableId) -> Cow<'_, Cover> {
+            Cow::Borrowed(&self.hs(h).cover)
         }
-        fn high_internal_cover(&self, h: HighVariableId) -> Cover {
-            self.hs(h).cover.clone()
+        fn high_internal_cover(&self, h: HighVariableId) -> Cow<'_, Cover> {
+            Cow::Borrowed(&self.hs(h).cover)
         }
         fn bank_update_cover_for(&mut self, h: HighVariableId) {
             self.hs_mut(h).cover_dirty = false;
@@ -2800,8 +2843,8 @@ mod tests {
         fn vn_offset(&self, _vn: VarnodeId) -> u64 {
             0
         }
-        fn vn_cover_ref(&self, _vn: VarnodeId) -> Option<Cover> {
-            None
+        fn vn_cover_ref(&self, _vn: VarnodeId) -> Cow<'_, Cover> {
+            Cow::default()
         }
         fn vn_create_index(&self, vn: VarnodeId) -> u64 {
             self.vn_create.get(&vkey(vn)).copied().unwrap_or(0)

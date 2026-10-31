@@ -154,9 +154,13 @@ pub struct VarnodeView {
 pub trait HighContext {
     /// Read the [`VarnodeView`] of a member Varnode (`vn->get*`).
     fn vn_view(&self, vn: VarnodeId) -> VarnodeView;
+    /// `vn->getFlags()` alone, without building the whole view.
+    fn vn_flags(&self, vn: VarnodeId) -> uint4 {
+        self.vn_view(vn).flags
+    }
     /// `vn->getCover()` — the member's Cover (already rebuilt by the Merge
     /// driver), or `None` if it has none.
-    fn vn_cover(&self, vn: VarnodeId) -> Option<Cover>;
+    fn vn_cover(&self, vn: VarnodeId) -> Option<&Cover>;
     /// `vn->hasCover()`.
     fn vn_has_cover(&self, vn: VarnodeId) -> bool;
     /// Read the [`CompareNameView`] of a member Varnode (the fields
@@ -644,7 +648,7 @@ impl HighVariable {
         }
         let mut fl: uint4 = 0;
         for &vn in &self.inst {
-            fl |= ctx.vn_view(vn).flags;
+            fl |= ctx.vn_flags(vn);
         }
         // Keep these flags
         self.flags &= varnode_flags::mark | varnode_flags::typelock;
@@ -834,7 +838,7 @@ impl HighVariable {
             if ctx.vn_has_cover(self.inst[0]) {
                 for &vn in &self.inst {
                     if let Some(c) = ctx.vn_cover(vn) {
-                        self.internal_cover.merge(&c);
+                        self.internal_cover.merge(c);
                     }
                 }
             }
@@ -991,8 +995,7 @@ impl HighVariable {
     /// `HighVariable::getTiedVarnode`, `variable.cc:765-775`).
     pub fn get_tied_varnode(&self, ctx: &dyn HighContext) -> kuna_base::error::KunaResult<VarnodeId> {
         for &vn in &self.inst {
-            let view = ctx.vn_view(vn);
-            if (view.flags & (varnode_flags::addrtied | varnode_flags::insert))
+            if (ctx.vn_flags(vn) & (varnode_flags::addrtied | varnode_flags::insert))
                 == (varnode_flags::addrtied | varnode_flags::insert)
             {
                 return Ok(vn);
@@ -1005,7 +1008,7 @@ impl HighVariable {
     /// `variable.cc:780-787`).
     pub fn get_input_varnode(&self, ctx: &dyn HighContext) -> kuna_base::error::KunaResult<VarnodeId> {
         for &vn in &self.inst {
-            if (ctx.vn_view(vn).flags & varnode_flags::input) != 0 {
+            if (ctx.vn_flags(vn) & varnode_flags::input) != 0 {
                 return Ok(vn);
             }
         }
@@ -1819,12 +1822,9 @@ impl HighVariableBank {
         }
 
         // std::merge(inst1, inst2) by compareJustLoc into the combined list.
-        let inst1: Vec<VarnodeId> = self.highs.get(&id1).unwrap().inst.clone();
-        let merged = self.merge_inst_lists(&inst1, &inst2, ctx);
-        {
-            let h1 = self.highs.get_mut(&id1).unwrap();
-            h1.inst = merged;
-        }
+        let inst1 = std::mem::take(&mut self.highs.get_mut(&id1).unwrap().inst);
+        let merged = Self::merge_inst_lists(inst1, &inst2, ctx);
+        self.highs.get_mut(&id1).unwrap().inst = merged;
         // internalCover merge (only if neither is cover-dirty), else mark dirty.
         let (h1_cd, h2_cd) = {
             let h1 = self.highs.get(&id1).unwrap();
@@ -1847,13 +1847,20 @@ impl HighVariableBank {
     }
 
     /// `std::merge` of two `compareJustLoc`-sorted instance lists (the
-    /// `mergeInternal` body, `variable.cc:668-671`).
-    fn merge_inst_lists(
-        &self,
-        a: &[VarnodeId],
-        b: &[VarnodeId],
-        ctx: &dyn HighContext,
-    ) -> Vec<VarnodeId> {
+    /// `mergeInternal` body, `variable.cc:668-671`). When nothing in `b` sorts
+    /// before the last of `a`, which is every merge of the Varnodes at one
+    /// address, the first range winning ties makes the result `a` then `b`.
+    fn merge_inst_lists(mut a: Vec<VarnodeId>, b: &[VarnodeId], ctx: &dyn HighContext) -> Vec<VarnodeId> {
+        let appends = match (a.last(), b.first()) {
+            (_, None) | (None, _) => true,
+            (Some(&last), Some(&first)) => {
+                !HighVariable::compare_just_loc(&ctx.vn_loc_view(first), &ctx.vn_loc_view(last))
+            }
+        };
+        if appends {
+            a.extend_from_slice(b);
+            return a;
+        }
         let mut out = Vec::with_capacity(a.len() + b.len());
         let mut i = 0usize;
         let mut j = 0usize;
@@ -2261,8 +2268,8 @@ mod tests {
         fn vn_view(&self, vn: VarnodeId) -> VarnodeView {
             self.views.get(&MapCtx::key(vn)).expect("view").clone()
         }
-        fn vn_cover(&self, vn: VarnodeId) -> Option<Cover> {
-            self.covers.get(&MapCtx::key(vn)).cloned()
+        fn vn_cover(&self, vn: VarnodeId) -> Option<&Cover> {
+            self.covers.get(&MapCtx::key(vn))
         }
         fn vn_has_cover(&self, vn: VarnodeId) -> bool {
             // has cover if insert & !constant & !annotation
@@ -2595,5 +2602,43 @@ mod tests {
         let b = VarnodeViewLoc { addr: Address::new(Rc::clone(&spc), 0x20) };
         assert!(HighVariable::compare_just_loc(&a, &b));
         assert!(!HighVariable::compare_just_loc(&b, &a));
+    }
+
+    /// Varnodes keyed by id with an address each, for the instance-list merge.
+    struct LocCtx {
+        spc: Rc<AddrSpace>,
+        offsets: BTreeMap<u64, u64>,
+    }
+    impl HighContext for LocCtx {
+        fn vn_view(&self, _vn: VarnodeId) -> VarnodeView {
+            unreachable!("the instance-list merge reads only addresses")
+        }
+        fn vn_cover(&self, _vn: VarnodeId) -> Option<&Cover> {
+            None
+        }
+        fn vn_has_cover(&self, _vn: VarnodeId) -> bool {
+            false
+        }
+        fn vn_name_view(&self, _vn: VarnodeId) -> CompareNameView {
+            unreachable!("the instance-list merge reads only addresses")
+        }
+        fn vn_loc_view(&self, vn: VarnodeId) -> VarnodeViewLoc {
+            VarnodeViewLoc { addr: Address::new(Rc::clone(&self.spc), self.offsets[&MapCtx::key(vn)]) }
+        }
+    }
+
+    #[test]
+    fn merge_inst_lists_is_std_merge_with_the_first_list_winning_ties() {
+        let spc = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "ram", false, 8, 1, 2, 0, 0, 0));
+        let offsets = [(1, 0x10), (2, 0x10), (3, 0x20), (4, 0x10), (5, 0x20), (6, 0x08), (7, 0x18)];
+        let ctx = LocCtx { spc, offsets: offsets.into_iter().map(|(n, off)| (MapCtx::key(vid(n)), off)).collect() };
+        let ids = |v: &[u64]| v.iter().map(|&n| vid(n)).collect::<Vec<_>>();
+        let merge = |a: &[u64], b: &[u64]| HighVariableBank::merge_inst_lists(ids(a), &ids(b), &ctx);
+        assert_eq!(merge(&[1, 2], &[4]), ids(&[1, 2, 4]), "a tie keeps the first list first");
+        assert_eq!(merge(&[1, 3], &[5]), ids(&[1, 3, 5]));
+        assert_eq!(merge(&[1, 3], &[6]), ids(&[6, 1, 3]));
+        assert_eq!(merge(&[1, 3], &[4, 7]), ids(&[1, 4, 7, 3]), "interleaved lists still merge in order");
+        assert_eq!(merge(&[], &[4]), ids(&[4]));
+        assert_eq!(merge(&[1], &[]), ids(&[1]));
     }
 }

@@ -140,6 +140,12 @@ mod ctypes_per_arch;
 #[path = "decompile_budget_cli.rs"]
 mod decompile_budget_cli;
 
+#[path = "dos_fpuemu_cli.rs"]
+mod dos_fpuemu_cli;
+
+#[path = "dos_mz_cli.rs"]
+mod dos_mz_cli;
+
 #[path = "decompile_cli.rs"]
 mod decompile_cli;
 
@@ -292,6 +298,9 @@ mod partial_global_load_guard;
 #[path = "passthrough_own_return.rs"]
 mod passthrough_own_return;
 
+#[path = "pltlocal_cli.rs"]
+mod pltlocal_cli;
+
 #[path = "pointer_table_strings.rs"]
 mod pointer_table_strings;
 
@@ -424,6 +433,9 @@ mod typed_vtable_cli;
 #[path = "unpack_cli.rs"]
 mod unpack_cli;
 
+#[path = "unpack_pklite_cli.rs"]
+mod unpack_pklite_cli;
+
 #[path = "unstructured_goto_cli.rs"]
 mod unstructured_goto_cli;
 
@@ -457,8 +469,14 @@ mod x64_syscall_memory;
 #[path = "xref_body_ownership.rs"]
 mod xref_body_ownership;
 
+#[path = "xrefs_address_pairs.rs"]
+mod xrefs_address_pairs;
+
 #[path = "xrefs_cli.rs"]
 mod xrefs_cli;
+
+#[path = "xrefs_data_refs_cli.rs"]
+mod xrefs_data_refs_cli;
 
 #[path = "xrefs_own_export_plt.rs"]
 mod xrefs_own_export_plt;

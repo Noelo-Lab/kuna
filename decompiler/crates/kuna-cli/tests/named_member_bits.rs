@@ -160,10 +160,10 @@ unsigned int _observe(void);
     .unwrap();
     for partial in [false, true] {
         let arch = program.arch_mut();
-        let mut printer = arch.take_print();
-        printer.options.partial_access = partial;
-        let body = printer.doc_function_full(&fd, arch);
-        arch.put_print(printer);
+        let body = arch.with_print(|printer, arch| {
+            printer.options.partial_access = partial;
+            printer.doc_function_full(&fd, arch)
+        });
         assert!(
             body.contains("store.real[2] ="),
             "named float member:\n{body}"

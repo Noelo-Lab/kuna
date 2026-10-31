@@ -2781,6 +2781,10 @@ impl RuleSubvarAnd {
 }
 
 impl Rule for RuleSubvarAnd {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_AND]
     }
@@ -2848,6 +2852,10 @@ impl RuleSubvarSubpiece {
 }
 
 impl Rule for RuleSubvarSubpiece {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_SUBPIECE]
     }
@@ -2908,6 +2916,10 @@ impl RuleSubvarCompZero {
 }
 
 impl Rule for RuleSubvarCompZero {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_NOTEQUAL, OpCode::CPUI_INT_EQUAL]
     }
@@ -2992,6 +3004,10 @@ impl RuleSubvarShift {
 }
 
 impl Rule for RuleSubvarShift {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_RIGHT]
     }
@@ -3044,6 +3060,10 @@ impl RuleSubvarZext {
 }
 
 impl Rule for RuleSubvarZext {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_ZEXT]
     }
@@ -3087,6 +3107,10 @@ impl RuleSubvarSext {
 }
 
 impl Rule for RuleSubvarSext {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_INT_SEXT]
     }
@@ -3658,6 +3682,10 @@ impl RuleSplitFlow {
 }
 
 impl Rule for RuleSplitFlow {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_SUBPIECE]
     }
@@ -4977,6 +5005,10 @@ impl RuleSplitCopy {
 }
 
 impl Rule for RuleSplitCopy {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_COPY]
     }
@@ -5025,6 +5057,10 @@ impl RuleSplitLoad {
 }
 
 impl Rule for RuleSplitLoad {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_LOAD]
     }
@@ -5071,6 +5107,10 @@ impl RuleSplitStore {
 }
 
 impl Rule for RuleSplitStore {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_STORE]
     }
@@ -5122,6 +5162,10 @@ impl RuleDumptyHumpLate {
 }
 
 impl Rule for RuleDumptyHumpLate {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_SUBPIECE]
     }
@@ -6526,6 +6570,11 @@ impl LaneDivide {
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
+
+    /// (kuna) The Varnodes the trace reached.
+    pub fn traced(&self) -> impl Iterator<Item = VarnodeId> + '_ {
+        self.tm.original_varnodes()
+    }
 }
 
 /// Perform SubfloatFlow analysis triggered by FLOAT_FLOAT2FLOAT (C++
@@ -6543,6 +6592,10 @@ impl RuleSubfloatConvert {
 }
 
 impl Rule for RuleSubfloatConvert {
+    fn walks_far(&self) -> bool {
+        true
+    }
+
     fn get_op_list(&self) -> Vec<OpCode> {
         vec![OpCode::CPUI_FLOAT_FLOAT2FLOAT]
     }

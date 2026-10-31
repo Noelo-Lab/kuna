@@ -174,7 +174,7 @@ pub fn callee_preserves_range(
         return false;
     }
     let entry = fc.get_entry_address();
-    if entry.is_invalid() {
+    if entry.is_invalid() || fc.plt_stub().is_some() {
         return false;
     }
     let Some(w) = data.kuna_callee_ret_writes(entry) else { return false };
