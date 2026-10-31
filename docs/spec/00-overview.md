@@ -546,7 +546,7 @@ Four front-ends drive one engine assembly:
   fold (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs)`), restricted to
   the listed span, because a branch out of the range says nothing about the range.
   `--follow` (`decompiler/crates/kuna-console/src/disasm.rs (follow_rows)`) then
-  decodes from those addresses as well as from the start, to a fixpoint over
+  decodes from every address flow from the start reaches, to a fixpoint over
   whatever the newly decoded rows themselves name: one re-anchor is not enough,
   because the instruction at a jumped-to address is commonly another jump over
   another decoy byte. A run steps forward while the instruction has a
@@ -554,13 +554,28 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs::harvest)`), where a
   `goto` whose destination is the instruction's own fall-through is not a dead
   end, since SLEIGH gives the x86 `E8 00000000` get-PC idiom its own `goto`
-  constructor — and stops where an earlier run already claimed the bytes, so no
-  address is decoded twice and the fixpoint terminates. What flow never reaches is
-  then filled by the ordinary straight-line walk between the claimed rows, clipped
-  so nothing crosses into one, which is why `--follow` never lists less than the
-  plain listing and both cover the same span. It is off by default because it
-  costs a second walk and the straight line is the right answer for compiler
-  output (`docs/re-needs/linear-disassembly-silently-skips.md`).
+  constructor — and stops at an address an earlier run already decoded, so no
+  address is decoded twice and the fixpoint terminates. A run is not stopped by
+  bytes an earlier run read as a different instruction: a conditional branch into
+  the middle of the fall-through it skips, a jump back into an instruction, and a
+  `75 01` hop over a junk lead byte all reach the same bytes along two paths, both
+  readings are reachable, and both are listed, so rows can overlap. Clipping the
+  later path at the earlier one's rows dropped the branch target outright whenever
+  its instruction ran past the next claimed row (GH #1363), and silently ended a
+  re-anchored run the first time it crossed one. A row budget (`--count`, or the
+  derived-length cap) is spent on the lowest addresses: once that many rows are
+  decoded a run continues only below the highest of the lowest that many, so a
+  target flow reaches late still gets its row if it is among the rows the listing
+  prints. What flow never reaches is then filled by the ordinary straight-line
+  walk between the followed rows, clipped so nothing crosses into one, which is
+  why `--follow` never lists less than the plain listing and both cover the same
+  span. A target still without a row is reported with the reason that is true of
+  it (`decompiler/crates/kuna-console/src/disasm.rs (Skip)`): named only by that
+  straight-line fill, not decodable, at or past the window's end, or past the row
+  budget; the note on what `--follow` re-anchored counts only targets it actually
+  started a row at that the straight line walked over. It is off by default
+  because it costs a second walk and the straight line is the right answer for
+  compiler output (`docs/re-needs/linear-disassembly-silently-skips.md`).
 
   (kuna) **A window the caller bounded is answered without the discovery walk.**
   `--count`, `--bytes` and an explicit `start-end` range each bound the listing on

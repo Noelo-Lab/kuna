@@ -244,7 +244,8 @@ the decompiler's own (`dat_4040`, with the declaration the project header gives 
 then the named ones, each declared with the type the global scope gives it (an untyped
 symbol has the C spelling of its size, `char primes[32]`). `instructions` is the `kuna disassemble
 --follow` walk over the function's extent (`kuna_console::disasm`, the CLI's own walker:
-branch targets start rows, literal pools fold to `.word`, undecodable bytes are `.byte`),
+branch targets start rows, literal pools fold to `.word`, undecodable bytes are `.byte`, and
+two reachable readings of the same bytes are both listed, so rows can overlap),
 at most 4096 rows (`instructions_truncated`); `bytes` is lowercase hex and honours `bytes`
 overlays, `offset` is `address − entry`, `file_offset` is where the instruction sits in the
 input file (`null` outside file-backed sections), and `lines` (always present, `[]` when

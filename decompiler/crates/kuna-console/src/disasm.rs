@@ -153,14 +153,14 @@ pub fn mapped_run(segments: &[(u64, u64, u32)], vma: u64) -> Option<(u64, Option
 /// are the same either way.
 ///
 /// Under `--follow` the straight line is not the only anchor: the walk also
-/// starts at every address the range's own branches name, so a jump over a
-/// decoy byte cannot pull the rest of the listing out of phase
+/// starts at every address the range's own reachable branches name, so a jump
+/// over a decoy byte cannot pull the rest of the listing out of phase
 /// ([`follow_rows`]).
 ///
 /// Either way the branch targets no row starts at are reported
-/// ([`skipped_targets`]) — the fact an agent reading an obfuscated listing
-/// cannot infer, because a desynchronized decode looks exactly like an ordinary
-/// one.
+/// ([`skipped_targets`]), each with the reason no row does ([`Skip`]) — the fact
+/// an agent reading an obfuscated listing cannot infer, because a
+/// desynchronized decode looks exactly like an ordinary one.
 pub fn walk(
     prog: &ConsoleProgram,
     region: &Window,
@@ -168,53 +168,127 @@ pub fn walk(
     follow: bool,
 ) -> CodeWalk {
     // What the straight line makes of this window is the baseline either way:
-    // without `--follow` it IS the listing, and with it, its skipped targets are
-    // the count of what following recovered.
+    // without `--follow` it IS the listing, and with it, it is what says which
+    // of the followed targets the straight line would have walked over.
     let (rows, truncated, refs) = decode_rows(prog, region, count, 0);
-    let plain = skipped_targets(&rows, &refs);
-    let (rows, truncated, refs, anchored) = if follow {
-        let (rows, truncated, refs) = follow_rows(prog, region, count);
-        (rows, truncated, refs, plain.len())
-    } else {
-        (rows, truncated, refs, 0)
+    if !follow {
+        let skipped =
+            skipped_targets(&rows, &refs).into_iter().map(|t| (t, Skip::Straight)).collect();
+        let (rows, folded) = fold_pool_words(prog, region, rows, &refs);
+        return CodeWalk { rows, truncated, folded, skipped, anchored: Vec::new() };
+    }
+    let followed = follow_rows(prog, region, count);
+    let starts: BTreeSet<u64> = followed.rows.iter().map(|r| r.addr).collect();
+    let anchored = followed
+        .named
+        .iter()
+        .copied()
+        .filter(|t| starts.contains(t) && walked_over(&rows, *t))
+        .collect();
+    let stop = region.stop();
+    let why = |t: u64| {
+        if !followed.named.contains(&t) {
+            Skip::Unreached
+        } else if stop.is_some_and(|end| t >= end) {
+            Skip::PastWindow
+        } else if followed.undecodable.contains(&t) {
+            Skip::Undecodable
+        } else {
+            Skip::PastBudget
+        }
     };
     // Before the fold, so the targets are tested against the boundaries the
     // decode actually produced rather than against a pool word's merged span.
-    let skipped = if follow { skipped_targets(&rows, &refs) } else { plain };
-    let (rows, folded) = fold_pool_words(prog, region, rows, &refs);
-    CodeWalk { rows, truncated, folded, skipped, anchored }
+    let skipped = skipped_targets(&followed.rows, &followed.evidence)
+        .into_iter()
+        .map(|t| (t, why(t)))
+        .collect();
+    let (rows, folded) = fold_pool_words(prog, region, followed.rows, &followed.evidence);
+    CodeWalk { rows, truncated: followed.truncated, folded, skipped, anchored }
 }
 
-/// What one code-view walk produced: the rows, whether it was cut short, how
-/// many literal-pool words were folded, which branch targets it has no row for,
-/// and how many of those the straight line would have walked over (0 without
-/// `--follow`, where they are reported rather than decoded).
+/// What one code-view walk produced: the rows, whether the derived-length cap
+/// cut them short, how many literal-pool words were folded, which branch
+/// targets it has no row for and why, and — under `--follow` — the targets it
+/// started a row at that the straight line would have walked over.
 pub struct CodeWalk {
     pub rows: Vec<Row>,
     pub truncated: bool,
     pub folded: usize,
-    pub skipped: Vec<u64>,
-    pub anchored: usize,
+    pub skipped: Vec<(u64, Skip)>,
+    pub anchored: Vec<u64>,
+}
+
+/// Why a branch target inside the listed span starts no row of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Skip {
+    /// The straight line walked over it, and `--follow` was not asked for.
+    Straight,
+    /// Only rows no flow from the start reaches name it: the straight-line fill
+    /// between followed rows, which `--follow` lists but does not follow.
+    Unreached,
+    /// Flow reaches it, and its bytes do not decode as an instruction inside
+    /// mapped memory.
+    Undecodable,
+    /// Flow reaches it at or past the window's end, inside the instruction
+    /// straddling that end.
+    PastWindow,
+    /// Flow reaches it, and the row budget (`--count`, or the derived-length
+    /// cap) was spent on lower addresses first.
+    PastBudget,
+}
+
+/// One past the furthest byte any row covers. Rows are in address order, but
+/// under `--follow` they can overlap, so the last row is not necessarily the
+/// one that reaches furthest.
+pub fn listed_end(rows: &[Row]) -> Option<u64> {
+    rows.iter().map(|r| r.addr.saturating_add(r.size)).max()
+}
+
+/// The rows that start inside an earlier row: where `--follow` listed two
+/// reachable readings of the same bytes.
+pub fn overlapping_rows(rows: &[Row]) -> Vec<u64> {
+    let mut reach = 0u64;
+    let mut out = Vec::new();
+    for (i, r) in rows.iter().enumerate() {
+        if i > 0 && r.addr < reach {
+            out.push(r.addr);
+        }
+        reach = reach.max(r.addr.saturating_add(r.size));
+    }
+    out
+}
+
+/// Does `t` lie strictly inside one of the straight line's rows? Those rows
+/// tile their span in address order, so the row covering `t` is the last one
+/// starting at or below it.
+fn walked_over(rows: &[Row], t: u64) -> bool {
+    let at = rows.partition_point(|r| r.addr <= t);
+    at > 0 && {
+        let r = &rows[at - 1];
+        r.addr < t && t < r.addr.saturating_add(r.size)
+    }
 }
 
 /// (kuna, `linear-disassembly-silently-skips`) The addresses this listing's own
 /// branches name that no row in it starts at.
 ///
-/// Rows tile their span, so an in-range target no row starts at lies strictly
-/// inside one — which means the instruction printed over it is a decode of bytes
-/// the program never executes as that instruction, and so is everything after it
-/// until the decode happens to re-synchronize. That is the whole `EB 01`
-/// jump-over-a-decoy-byte idiom, and a straight-line listing of it is not merely
-/// missing a row: it prints calls and jumps the bytes do not contain.
+/// In a straight-line listing rows tile their span, so an in-range target no row
+/// starts at lies strictly inside one — which means the instruction printed over
+/// it is a decode of bytes the program never executes as that instruction, and
+/// so is everything after it until the decode happens to re-synchronize. That is
+/// the whole `EB 01` jump-over-a-decoy-byte idiom, and a straight-line listing of
+/// it is not merely missing a row: it prints calls and jumps the bytes do not
+/// contain.
 ///
 /// Only targets INSIDE the listed span are reported. A branch out of the range
 /// is not evidence about the range, and the listing is not claiming to have
 /// decoded where it points.
 pub fn skipped_targets(rows: &[Row], evidence: &FixedRefs) -> Vec<u64> {
-    let (Some(first), Some(last)) = (rows.first(), rows.last()) else {
+    let (Some(first), Some(end)) = (rows.first(), listed_end(rows)) else {
         return Vec::new();
     };
-    let span = first.addr..(last.addr + last.size);
+    let span = first.addr..end;
     let starts: BTreeSet<u64> = rows.iter().map(|r| r.addr).collect();
     let mut out: Vec<u64> = evidence
         .flow_targets
@@ -227,72 +301,84 @@ pub fn skipped_targets(rows: &[Row], evidence: &FixedRefs) -> Vec<u64> {
     out
 }
 
-/// `--follow`: the same window, decoded from every address its own branches name
-/// rather than from one end only.
+/// What [`follow_rows`] produced: the rows, whether the derived-length cap cut
+/// them short, the fixed-address evidence every row carries, every address a
+/// row flow reaches names, and the reached addresses whose bytes would not
+/// decode.
+struct Followed {
+    rows: Vec<Row>,
+    truncated: bool,
+    evidence: FixedRefs,
+    named: BTreeSet<u64>,
+    undecodable: BTreeSet<u64>,
+}
+
+/// `--follow`: the same window, decoded from every address its own reachable
+/// branches name rather than from one end only.
 ///
 /// Two passes. The first is an ordinary recursive descent seeded at
 /// `region.start`: each run steps forward while the instruction falls through
 /// (`FixedRefs::falls_through`, the `xref_control_flow` last-op rule), stops at
-/// an address some earlier run already claimed, and hands every in-window
-/// address it branches or calls to back to the worklist. Seeds are taken in
-/// address order, so a bounded walk spends its budget on the rows it is going to
-/// print. Where two runs contest the same bytes the earlier claim stands, which
-/// is what makes the pass terminate: no address is ever decoded twice.
+/// an address some earlier run already decoded, and hands every in-window
+/// address it branches or calls to back to the worklist. No address is decoded
+/// twice, which is what makes the pass terminate.
+///
+/// A run is NOT stopped by bytes an earlier run decoded differently. A
+/// conditional branch into the middle of the instruction it skips, a jump back
+/// into an instruction, or a `75 01` hop over a junk lead byte all reach the same
+/// bytes from two paths that read them as different instructions; both
+/// readings are reachable, so both are listed, and the rows overlap. Clipping the
+/// later run at the earlier one's rows instead would drop the branch target
+/// itself whenever its instruction is longer than the gap to the next claimed
+/// row, and silently end a re-anchored run the first time it crossed one.
+///
+/// Seeds are taken in address order, so a bounded walk spends its budget on the
+/// rows it is going to print, and once the budget's worth of rows is decoded a
+/// run only continues below the highest of the lowest `budget` of them: a row
+/// above that could never be printed, while one below it still can, however
+/// late flow reaches it.
 ///
 /// The second pass fills what flow never reached — the decoy byte a jump was
 /// over, the padding after a return, a handler nothing in this window calls — by
-/// running the ordinary straight-line [`decode_rows`] across each gap, clipped so
-/// that no instruction crosses into a claimed row. So `--follow` never lists
-/// LESS than the straight line does: it is the same listing with every branch
-/// target forced to start a row, and the bytes that then do not tile an
+/// running the ordinary straight-line [`decode_rows`] across each gap, clipped
+/// so that no instruction crosses into a followed row. So `--follow` never lists
+/// LESS than the straight line does: it is the same listing with every reachable
+/// branch target forced to start a row, and the bytes that then do not tile an
 /// instruction spelled out as `.byte`.
-///
-/// Returns the rows, whether the listing was cut short, and the fixed-address
-/// evidence from both passes.
-fn follow_rows(
-    prog: &ConsoleProgram,
-    region: &Window,
-    count: Option<usize>,
-) -> (Vec<Row>, bool, FixedRefs) {
+fn follow_rows(prog: &ConsoleProgram, region: &Window, count: Option<usize>) -> Followed {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
     let stop = region.stop();
     let in_window = |a: u64| a >= region.start && stop.is_none_or(|end| a < end);
     let mut evidence = FixedRefs::default();
     let mut claimed: BTreeMap<u64, Row> = BTreeMap::new();
-    // Address order, so a listing bounded by `--count` claims the low addresses
-    // it will actually print before it spends the budget on a far callee.
+    let mut undecodable: BTreeSet<u64> = BTreeSet::new();
     let mut seeds: BinaryHeap<Reverse<u64>> = BinaryHeap::new();
     seeds.push(Reverse(region.start));
     // A row can only be printed once, so the printed budget bounds the claims;
     // an explicit range that asked for neither is bounded by the window itself.
-    let claim_budget = count.or(cap).unwrap_or(usize::MAX);
+    let budget = count.or(cap).unwrap_or(usize::MAX);
+    // Once `budget` rows are claimed: the highest of the lowest `budget`.
+    let mut frontier: Option<u64> = None;
     let (mut mnem, mut body, mut raw) = (String::new(), String::new(), Vec::new());
     while let Some(Reverse(seed)) = seeds.pop() {
-        if !in_window(seed) || claimed.contains_key(&seed) {
+        if !in_window(seed) || claimed.contains_key(&seed) || undecodable.contains(&seed) {
             continue;
         }
         let mut addr = seed;
-        while in_window(addr) && !claimed.contains_key(&addr) && claimed.len() < claim_budget {
-            // No instruction may reach past mapped memory or into bytes an
-            // earlier run already spelled as an instruction. The window's own
-            // end is NOT a ceiling: the straight line lists the instruction
+        while in_window(addr) && !claimed.contains_key(&addr) && frontier.is_none_or(|f| addr < f) {
+            // No instruction may reach past mapped memory. The window's own end
+            // is NOT a ceiling: the straight line lists the instruction
             // straddling it whole, and `--follow` must not list less.
-            let ceiling = claimed
-                .range(addr.saturating_add(1)..)
-                .next()
-                .map(|(&a, _)| a)
-                .into_iter()
-                .chain(region.mapped_end)
-                .min();
             let decoded = prog
                 .disassemble_at_into(addr, &mut mnem, &mut body)
                 .ok()
                 .filter(|&n| n > 0)
-                .filter(|&n| ceiling.is_none_or(|c| addr.saturating_add(n as u64) <= c));
-            let Some(len) = decoded else { break };
-            if !prog.read_bytes_into(addr, len as usize, &mut raw) {
+                .filter(|&n| region.mapped_end.is_none_or(|m| addr.saturating_add(n as u64) <= m))
+                .filter(|&n| prog.read_bytes_into(addr, n as usize, &mut raw));
+            let Some(len) = decoded else {
+                undecodable.insert(addr);
                 break;
-            }
+            };
             let known = evidence.flow_targets.len();
             prog.add_fixed_refs_at(addr, &mut evidence);
             for &target in &evidence.flow_targets[known..] {
@@ -310,18 +396,28 @@ fn follow_rows(
                     operands: body.clone(),
                 },
             );
+            frontier = match frontier {
+                _ if claimed.len() < budget => None,
+                None => claimed.keys().next_back().copied(),
+                Some(f) => claimed.range(..f).next_back().map(|(&a, _)| a),
+            };
             if !evidence.falls_through {
                 break;
             }
             addr = addr.saturating_add(len as u64);
         }
     }
+    let named = evidence.flow_targets.iter().copied().collect();
     let (rows, truncated) = fill_between(prog, region, claimed, count, cap, &mut evidence);
-    (rows, truncated, evidence)
+    Followed { rows, truncated, evidence, named, undecodable }
 }
 
 /// Merge the claimed rows with a straight-line decode of everything between
 /// them, in address order, until the row budget or the window runs out.
+///
+/// The flag is the straight line's own: the listing was cut short by the
+/// derived-length cap. An explicit `--count` that ran out is the length that
+/// was asked for, not a truncation, in either walk.
 fn fill_between(
     prog: &ConsoleProgram,
     region: &Window,
@@ -345,10 +441,10 @@ fn fill_between(
     let mut claims = claimed.into_values().peekable();
     loop {
         let left = match budget {
-            // Out of budget with something still to list: the answer is short by
-            // the ask, not by the image.
             Some(n) if out.len() >= n => {
-                return (out, claims.peek().is_some() || stop.is_none_or(|end| cursor < end));
+                let more = claims.peek().is_some() || stop.is_none_or(|end| cursor < end);
+                let capped = more && cap.is_some_and(|c| out.len() >= c);
+                return (out, capped);
             }
             Some(n) => Some(n - out.len()),
             // Unbounded only where the window has an end of its own, so the gap
@@ -532,7 +628,7 @@ fn fold_pool_words(
     let Some(&Row { addr: first, .. }) = rows.first() else {
         return (rows, 0);
     };
-    let last = rows.last().map_or(first, |r| r.addr + r.size);
+    let last = listed_end(&rows).unwrap_or(first);
     // A word only qualifies where the program says data can live and does not
     // say code does: a mapped non-writable section (a GOT slot is read by
     // address too, and a writable `.text` is a packer), and no function symbol
