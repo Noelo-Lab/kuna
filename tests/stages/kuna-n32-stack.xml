@@ -1,0 +1,27 @@
+<decompilertest>
+<!-- Original GCC 7.3 N32 soft-float bytes: tests/fixtures/mips-n32-stack.
+     sum_ten has no declared prototype; the getters separately assert stack
+     slot types and padding. N32 addresses are 32-bit, register values 64-bit. -->
+<binaryimage arch="MIPS:BE:64:octeon-32addr:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">dfa20000dfa300080043102d004b582d016a582d0169582d0168582d0167582d0166582d0165582d03e000080164102d27bdffe0dfa30020ffa40010ffa30018dfa20010dfa50018ffa30008dfa300280045102dffa4000027bd002003e000080043102d000000008fa2000403e00008dc4200000000000003e000088fa2000403e000088fa20000000410000004203edc42000003e000080082102d00000000fc85000003e0000800a010250000000027bdffe000801025ffa50000dfa40000ffbf00180040f80900000000dfa30000dfbf001827bd002003e000080043102d03e000080004103e0000000000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="sum_ten"/>
+<symbol space="ram" offset="0x100068" name="pointer_ninth"/>
+<symbol space="ram" offset="0x100078" name="signed_ninth"/>
+<symbol space="ram" offset="0x100080" name="float_ninth"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>lo fu sum_ten</com><com>decompile</com><com>print C</com>
+<com>parse line extern unsigned long long pointer_ninth(unsigned long long a,unsigned long long b,unsigned long long c,unsigned long long d,unsigned long long e,unsigned long long f,unsigned long long g,unsigned long long h,const unsigned long long *p);</com>
+<com>lo fu pointer_ninth</com><com>decompile</com><com>print C</com>
+<com>parse line extern int signed_ninth(unsigned long long a,unsigned long long b,unsigned long long c,unsigned long long d,unsigned long long e,unsigned long long f,unsigned long long g,unsigned long long h,int value);</com>
+<com>lo fu signed_ninth</com><com>decompile</com><com>print C</com>
+<com>parse line extern unsigned float_ninth(unsigned long long a,unsigned long long b,unsigned long long c,unsigned long long d,unsigned long long e,unsigned long long f,unsigned long long g,unsigned long long h,float value);</com>
+<com>lo fu float_ninth</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="N32 stack: inferred ten arguments reach addition" min="1" max="1">return a8 \+ a9 \+ a7 \+ a6 \+ a5 \+ a4 \+ a3 \+ a2 \+ a1 \+ a0;</stringmatch>
+<stringmatch name="N32 stack: pointer argument reaches load" min="1" max="1">return \*p;</stringmatch>
+<stringmatch name="N32 stack: integer argument keeps low slot bytes" min="1" max="1">return value;</stringmatch>
+<stringmatch name="N32 stack: float argument keeps high slot bytes" min="1" max="1">\.from = value</stringmatch>
+</decompilertest>

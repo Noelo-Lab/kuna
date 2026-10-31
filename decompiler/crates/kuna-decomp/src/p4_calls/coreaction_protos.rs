@@ -175,11 +175,6 @@ impl Action for ActionPrototypeTypes {
         Some(Box::new(ActionPrototypeTypes { base: self.base.clone() }))
     }
     fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
-        // C++ coreaction.cc:4843 — ActionPrototypeTypes::apply (the parts the
-        // merged tree reaches: model selection, RETURN-in0 strip, output recovery
-        // init).  The locked-input/output and truncated-space branches stay stubbed
-        // (no locked proto / no truncated stack space on the recovery path).
-
         let evalfp = crate::kuna_callmechanisms::evaluation_model(data);
         if let Some(evalfp) = evalfp {
             if !data.get_func_proto().is_model_locked()
@@ -282,14 +277,41 @@ impl Action for ActionPrototypeTypes {
             self.base.count += 1;
         }
 
-        // Truncated-space INT_ZEXT setup: STUB(W4) — the recovery path has no
-        // truncated stack space (only the 8051-family default code space is).
+        if let Some(stack) = data.get_arch().manage().get_stack_space().cloned() {
+            if data.bblocks_get_size() > 0 {
+                let top = data.bblocks_get_block(0);
+                for i in 0..stack.num_spacebase() {
+                    let full = stack.get_spacebase_full(i).expect("stack base register");
+                    let narrow = stack.get_spacebase(i).expect("logical stack base register");
+                    if full.size <= narrow.size {
+                        continue;
+                    }
+                    let input = data.new_varnode(narrow.size as int4, &narrow.get_addr(), None);
+                    let input = data.set_input_varnode(input).expect("stack base input");
+                    let high_addr = if full.get_addr().is_big_endian() {
+                        full.get_addr()
+                    } else {
+                        &full.get_addr() + i64::from(narrow.size)
+                    };
+                    let high = data.new_varnode((full.size - narrow.size) as int4, &high_addr, None);
+                    let high = data.set_input_varnode(high).expect("physical stack upper input");
+                    let op = data.new_op(2, data.bblocks_block_start(top));
+                    data.new_varnode_out(full.size as int4, &full.get_addr(), op)
+                        .expect("full stack base output");
+                    data.op_set_opcode_code(op, OpCode::CPUI_PIECE);
+                    data.op_set_input(op, high, 0).expect("physical stack upper bits");
+                    data.op_set_input(op, input, 1).expect("logical stack address");
+                    data.op_insert_begin(op, top);
+                    self.base.count += 1;
+                }
+            }
+        }
 
         // Force locked inputs to exist as Varnodes.  Needed so a big locked input
         // exists even when only part is used (SUBPIECE can then be built off it).
         if data.get_func_proto().is_input_locked() {
-            // ptr_size: the recovery path's default code space is never truncated,
-            // so the C++ pointer-trim (spc->isTruncated()) does not fire.
+            let ptr_size = data.get_arch().manage().get_default_code_space()
+                .filter(|s| s.is_truncated()).map(|s| s.get_addr_size() as int4);
             let topbl = if data.bblocks_get_size() > 0 {
                 Some(data.bblocks_get_block(0))
             } else {
@@ -326,6 +348,11 @@ impl Action for ActionPrototypeTypes {
                     // `isTypeLock()` arm then reads and `ActionInferTypes` propagates
                     // FROM (the type-plane seed for type-heavy functions).
                     if let Some(ptype) = ptype.as_ref() {
+                        if ptype.get_metatype() == crate::dtype::type_metatype::TYPE_PTR
+                            && Some(ptype.get_size()) == ptr_size
+                        {
+                            v.set_ptr_flow();
+                        }
                         if ptype.get_metatype() != crate::dtype::type_metatype::TYPE_UNKNOWN {
                             v.update_type_locked(Rc::clone(ptype), true, true);
                         }
@@ -2326,6 +2353,9 @@ pub fn proto_actions(g: &str) -> Vec<Box<dyn Action>> {
         ActionPrototypeWarnings::boxed(g),
     ]
 }
+
+#[cfg(test)]
+mod stack_input_tests;
 
 #[cfg(test)]
 mod tests {

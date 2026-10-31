@@ -1,0 +1,27 @@
+<decompilertest>
+<!-- Octeon review: P4 declared ABI storage. Original GCC 7.3 -O2 -g,
+     BE -mabi=n32 -msoft-float; source/build recipe in tests/fixtures/octeon-abi.
+     Strict spec fixes, selected by the explicit target. Old N32 loses aggregate
+     arguments/returns; old N64 loses alignment and half the quad result. -->
+<binaryimage arch="MIPS:BE:64:octeon-32addr:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">27bdfff00080102503e0000827bd001027bdfff000a0102503e0000827bd001027bdfff00004103f03e0000827bd00100080102503e000080002103c000000000080102503e000080002103c0000000027bdffe00080102500a0182503e0000827bd00200000000000041800000010250004203e27bdffe07c82f8060005283e7c64f803000018257c82f8077ca3f80603e0000827bd002003e000080080102503e00008010010250080102503e0000800a020250000000000a0182503e00008008010250000000000a0182503e00008008010250000000003e000082402002003e000082402001027bdfff001601025ffab000803e0000827bd00100000000027bdfff0ffab0008dfa2001003e0000827bd00100000000003e00008dfa2000803e00008dfa2001003e00008dfa2002003e000088fa200000000000000000000</bytechunk>
+<symbol space="ram" offset="0x00100000" name="pair_first"/>
+<symbol space="ram" offset="0x00100030" name="small_result"/>
+<symbol space="ram" offset="0x001000a8" name="quad_identity"/>
+</binaryimage>
+<script>
+<com>option ctypes on</com>
+<com>parse line struct Pair { long long a, b; };</com>
+<com>parse line struct Small { int x; };</com>
+<com>parse line extern long long pair_first(struct Pair p);</com>
+<com>lo fu pair_first</com><com>decompile</com><com>print C</com>
+<com>parse line extern struct Small small_result(int x);</com>
+<com>lo fu small_result</com><com>decompile</com><com>print C</com>
+<com>parse line extern long double quad_identity(long double b);</com>
+<com>lo fu quad_identity</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Octeon n32 ABI pair_first returns the source value" min="1" max="1">return p\.a;</stringmatch>
+<stringmatch name="Octeon n32 ABI small_result returns the source value" min="1" max="1">\.from = x</stringmatch>
+<stringmatch name="Octeon n32 ABI quad_identity returns the source value" min="1" max="1">return b;</stringmatch>
+</decompilertest>

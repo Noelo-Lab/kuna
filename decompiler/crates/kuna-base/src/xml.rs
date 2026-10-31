@@ -2136,7 +2136,8 @@ mod tests {
         // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype (option pltlocal)
         // and kuna-floatstore / a float stored into unknown bytes is a float store
         // and kuna-haltloopguard / a store before a loop the function never leaves is kept (option haltloopguard)
-        assert_eq!(count, 613, "corpus file count drifted");
+        // and kuna-octeon-core / explicit Octeon integer variants
+        assert_eq!(count, 620, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

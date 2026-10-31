@@ -17,7 +17,7 @@
 //!   `Funcdata::opSetOutput`).  `opSetOutput` currently returns a stub `Err`
 //!   (`funcdata_op.rs`: it needs a `banks_mut()` split-borrow for
 //!   `vbank.setDef`).  Rules that fabricate a *new* output Varnode
-//!   (`RuleSignNearMult`, `RulePtrFlow::truncatePointer`) match fully but bail at
+//!   (`RuleSignNearMult`) match fully but bail at
 //!   the construction step.  // STUB(W3-output)
 //! * **`glb->inst[opc]`** — the `OpCode`→`TypeOp` resolver (W6).  The
 //!   [`typeop_for`] helper below is the local stand-in; it carries the exact
@@ -26,8 +26,7 @@
 //!   `isFloatingPointOp()`) are *not* modelled.  // STUB(W6)
 //! * **W4 subsystems** — `RuleSegment` needs `userops.getSegmentOp`,
 //!   `SegmentOp::execute`, `getSpaceFromConst`, and the `contiguous_test`/
-//!   `findContiguousWhole` expression helpers; `RulePtrFlow` needs the
-//!   `Architecture` (`glb`), `getDefaultCodeSpace`, and `isTruncated`;
+//!   `findContiguousWhole` expression helpers;
 //!   `RuleConditionalMove` needs `opBoolNegate` and the
 //!   `CloneBlockOps` expression cloner.  These match as far as the available IR
 //!   surface allows and bail at the unported step.  // STUB(W4)
@@ -1548,30 +1547,48 @@ fn find_contiguous_whole(data: &Funcdata, vn1: VarnodeId) -> Option<VarnodeId> {
 // =============================================================================
 
 /// `RulePtrFlow` — mark Varnode/PcodeOp objects carrying or operating on
-/// pointers (only installed when the default data space is truncated).
+/// pointers when the default data space is truncated.
 ///
-/// // STUB(W4): the constructor reads `glb->getDefaultDataSpace()->isTruncated()`
-/// to decide `hasTruncations`; `applyOp` reaches `getSpaceFromConst`,
-/// `getDefaultCodeSpace`, and `truncatePointer` (which fabricates a SUBPIECE with
-/// a fresh output via `newUniqueOut`/`newVarnodeOut` — the W3-output stub).  The
-/// pointer-flow propagation helpers (`trialSetPtrFlow`, `propagateFlowToDef`,
-/// `propagateFlowToReads`) are fully ported below; `truncatePointer` and the
-/// `getSpaceFromConst`/default-space reads bail at the stub.
-pub struct RulePtrFlow {
-    /// `hasTruncations` (C++ field).  Without W4's `getDefaultDataSpace()`, this
-    /// item cannot compute it; defaulted to `false` so the rule installs nothing
-    /// (its `getOpList` early-returns) — the faithful behavior on a non-truncated
-    /// architecture.  // STUB(W4)
-    has_truncations: bool,
-}
+/// The schedule has no architecture argument for rule constructors, so the
+/// truncated-space gate is checked when applying the rule.
+pub struct RulePtrFlow;
 
 impl RulePtrFlow {
     /// Rule `RulePtrFlow` (name "ptrflow").
     ///
-    /// C++: `glb = conf; hasTruncations = glb->getDefaultDataSpace()->isTruncated();`
-    /// // STUB(W4): `getDefaultDataSpace` unavailable; `has_truncations=false`.
     pub fn new() -> RulePtrFlow {
-        RulePtrFlow { has_truncations: false }
+        RulePtrFlow
+    }
+
+    /// Narrow only the address operand; other uses of the full value retain it.
+    fn truncate_pointer(data: &mut Funcdata, op: OpId, vn: VarnodeId, slot: int4, size: int4) -> VarnodeId {
+        if vn_is_constant(data, vn) {
+            let value = data.new_constant(size, vn_offset(data, vn) & calc_mask(size));
+            data.op_set_input(op, value, slot).expect("truncated constant pointer");
+            return value;
+        }
+        let address = data.obank().get(op).expect("pointer use").get_addr().clone();
+        let trunc = data.new_op(2, address);
+        data.op_set_opcode_code(trunc, OpCode::CPUI_SUBPIECE);
+        let zero = data.new_constant(vn_size(data, vn), 0);
+        data.op_set_input(trunc, zero, 1).expect("pointer truncation offset");
+        let value = data.vbank().get(vn).expect("pointer value");
+        let mut storage = value.get_addr().clone();
+        let narrowed = if storage.get_space().expect("pointer storage").get_type()
+            == kuna_base::space::spacetype::IPTR_INTERNAL
+        {
+            data.new_unique_out(size, trunc).expect("truncated unique pointer")
+        } else {
+            if storage.is_big_endian() {
+                storage = &storage + i64::from(value.get_size() - size);
+            }
+            storage.renormalize(size, data.get_arch().manage()).expect("pointer storage");
+            data.new_varnode_out(size, &storage, trunc).expect("truncated pointer")
+        };
+        data.op_set_input(trunc, vn, 0).expect("full pointer input");
+        data.op_set_input(op, narrowed, slot).expect("narrow pointer use");
+        data.op_insert_before(trunc, op);
+        narrowed
     }
 
     /// Set \e ptrflow on the op only if it propagates (C++
@@ -1637,9 +1654,6 @@ impl Default for RulePtrFlow {
 
 impl Rule for RulePtrFlow {
     fn get_op_list(&self) -> Vec<OpCode> {
-        if !self.has_truncations {
-            return Vec::new();
-        }
         vec![
             OpCode::CPUI_STORE,
             OpCode::CPUI_LOAD,
@@ -1656,26 +1670,47 @@ impl Rule for RulePtrFlow {
 
     fn clone_rule(&self, grouplist: &ActionGroupList) -> Option<Box<dyn Rule>> {
         if grouplist.contains("subvar") {
-            Some(Box::new(RulePtrFlow { has_truncations: self.has_truncations }))
+            Some(Box::new(RulePtrFlow))
         } else {
             None
         }
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        // Push pointer-ness.  Only the branches that do NOT need getSpaceFromConst
-        // / getDefaultCodeSpace / truncatePointer are reachable here; the LOAD/
-        // STORE/CALLIND/BRANCHIND arms reach W4/W3-output stubs.
+        if !data.get_arch().manage().get_default_data_space().is_some_and(|s| s.is_truncated()) {
+            return 0;
+        }
         let mut made_change = 0;
         match op_code(data, op) {
             OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
-                // STUB(W4): spc = op->getIn(0)->getSpaceFromConst();
-                //   then propagateFlowToDef(vn).  Deferred entirely.
-                return 0;
+                let index = vn_offset(data, op_in(data, op, 0).expect("memory space"));
+                let manager = data.get_arch().manage();
+                if index >= manager.num_spaces() as u64 {
+                    return 0;
+                }
+                let size = manager.get_space(index as int4).expect("memory space").get_addr_size() as int4;
+                let mut vn = op_in(data, op, 1).expect("memory pointer");
+                if vn_size(data, vn) > size {
+                    vn = Self::truncate_pointer(data, op, vn, 1, size);
+                    made_change = 1;
+                }
+                if Self::propagate_flow_to_def(data, vn) {
+                    made_change = 1;
+                }
             }
             OpCode::CPUI_CALLIND | OpCode::CPUI_BRANCHIND => {
-                // STUB(W4): spc = data.getArch()->getDefaultCodeSpace();
-                return 0;
+                let Some(space) = data.get_arch().manage().get_default_code_space() else {
+                    return 0;
+                };
+                let size = space.get_addr_size() as int4;
+                let mut vn = op_in(data, op, 0).expect("indirect target");
+                if vn_size(data, vn) > size {
+                    vn = Self::truncate_pointer(data, op, vn, 0, size);
+                    made_change = 1;
+                }
+                if Self::propagate_flow_to_def(data, vn) {
+                    made_change = 1;
+                }
             }
             OpCode::CPUI_NEW => {
                 let vn = op_out(data, op).expect("ptrflow: NEW out");
@@ -2546,3 +2581,5 @@ pub fn specs() -> Vec<RuleSpec> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod ptrflow_tests;

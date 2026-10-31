@@ -397,6 +397,12 @@ impl Rule for RuleSelectCse {
             "RuleSelectCse: op has no in0",
         );
         let opc = data.obank().get(op).expect("RuleSelectCse: stale op").code();
+        if let Some(out) = data.obank().get(op).expect("RuleSelectCse: stale op").get_out() {
+            let addr = data.vbank().get(out).expect("RuleSelectCse: stale out").get_addr().clone();
+            if data.heritage_pass(&addr) < 0 {
+                return 0;
+            }
+        }
 
         // (kuna) `getCseHash`/`cseEliminateList`/`cseElimination` are ported
         // (op.rs / funcdata_op.rs), and the `isHeritaged(outvn)` test —
