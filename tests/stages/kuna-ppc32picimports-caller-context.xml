@@ -1,0 +1,25 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-tail-callback.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-local-alias.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="tail callbacks and clobbered stack aliases retain returning continuations" min="2" max="2">return;</stringmatch>
+<stringmatch name="caller contexts do not inherit another callers terminal identity" min="0" max="0">__stack_chk_fail|no-return</stringmatch>
+</decompilertest>

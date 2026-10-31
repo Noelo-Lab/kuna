@@ -704,3 +704,6 @@ mod ppc32_imports;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+
+#[path = "ppc32_pic_calls.rs"]
+mod ppc32_pic_calls;

@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-unproved-stub.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-dynamic-init.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-lr-alias-returning.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="unproved PIC-shaped load retains its returning continuation" min="1" max="1">return 7;</stringmatch>
+<stringmatch name="dynamic interior entries and escaped saved LR retain returning transfers" min="2" max="2">return;</stringmatch>
+<stringmatch name="stub slots loader entries and stack aliases grant no false terminal identity" min="0" max="0">__stack_chk_fail|no-return</stringmatch>
+</decompilertest>

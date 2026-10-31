@@ -1402,20 +1402,18 @@ funcsym stream:
   header. Secure-PLT entries are pointer slots instead: complete `r11` load,
   `mtctr r11`, `bctr` stubs in executable sections are named only when their
   decoded address matches such a relocation in the non-executable `.plt`.
-  Only absolute stubs carry enough evidence to establish that address here.
-  Both short and long `r30`-relative stubs remain unresolved until the caller's
-  register value is proven. `DT_PPC_GOT`, a valid GOT header and a retained
-  `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
-  In particular, GNU ld can discard an empty `.got2` while callers still use
-  its per-object base; assuming the GOT then names a different relocation and
-  can incorrectly remove reachable flow via a no-return contract. The presence,
-  size or absence of `.got2` provides no register-value proof. Duplicate relocation
-  slots, nonzero addends, data symbols and incomplete stubs provide no import
-  identity. Both ELF byte orders are supported. Resolved PPC32 import names
-  take precedence over local stub labels, which remain aliases. Existing
-  library prototypes, no-return facts and name-based xrefs therefore see the
-  same imported identity, including when a terminal call has no mapped
-  fall-through bytes. This does not add a sectionless PPC32 resolver.
+  Absolute stubs encode the address directly. For PIC stubs, the loader instead
+  exposes validated relocation-slot metadata through
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_slots)`.
+  Duplicate relocations, nonzero addends, data-symbol relocations and slots
+  outside the allocated writable non-executable `.plt` are rejected. This
+  metadata neither names executable stubs nor adds global no-return contracts.
+  The default-off `ppc32picimports` option consumes it during P2 flow, in the
+  selected caller's register context. Metadata is available after loading even
+  when the option is off, so changing the console option does not require reload.
+  `DT_PPC_GOT`, GOT headers and `.got2` locate tables, not the value of r30.
+  Both ELF byte orders are supported. BSS-PLT and absolute-stub naming remains
+  independent of this option. This does not add a sectionless PPC32 resolver.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
@@ -4542,11 +4540,17 @@ entry set against them (after the deferred Listing consumers, so the gap walk is
 covered too). Not every FDE describes one function — the linker gives the whole
 PLT a single FDE, and every stub inside it is real — so a range is used only when
 it holds no other named function start, no other FDE `pcBegin`, and no linker-stub
-section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`). An entry *at* an FDE
-start is always kept, so oracle 3's own product survives. ELF-only and inert
+section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`/`.glink`). Complete
+PPC32 short and long PIC stub sequences also exclude an overlapping FDE: GNU
+can merge these stubs into `.text` under one shared unwind range. This exclusion
+does not assign an import name or require `ppc32picimports` to be enabled.
+An entry *at* an FDE start is always kept, so oracle 3's own product survives. ELF-only and inert
 without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
+Stub intervals are sorted and merged once; each FDE uses a binary-search overlap
+query. Large PIC stub inventories therefore add no FDE-by-stub product scan,
+including when PIC call recovery is disabled.
 
 **(kuna) Except where a `.cold` fragment is entered more than once**
 (`coldentry`, default-**on**;

@@ -1,4 +1,4 @@
-//! PPC32 BSS-PLT entries and absolute secure-PLT stubs, backed by JMP_SLOTs.
+//! PPC32 relocation slots and absolute import stubs.
 //! r30-relative stubs require caller register evidence: DT_PPC_GOT describes
 //! a table, not r30, even when the linker has discarded an empty .got2.
 use super::elf_plt::PltSym;
@@ -8,24 +8,37 @@ use object::{
 };
 use std::collections::{BTreeMap, HashSet};
 
-pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
+/// Relocation slots for caller-local PIC recovery. These are data, not executable
+/// function symbols; no r30-relative stub receives a global identity.
+pub fn pic_slots(file: &object::File<'_>) -> Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot> {
+    let (bss, slots) = slots(file);
+    if bss { return Vec::new(); }
+    slots.into_iter().filter_map(|(address, name)| {
+        let name = String::from_utf8(name).ok()?;
+        Some(kuna_decomp::kuna_ppc32piccalls::ImportSlot {
+            address, no_return: super::noreturn::elf_name_is_noreturn(&name), name,
+        })
+    }).collect()
+}
+
+fn slots(file: &object::File<'_>) -> (bool, BTreeMap<u64, Vec<u8>>) {
     if file.architecture() != Architecture::PowerPc
         || !matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
     {
-        return Vec::new();
+        return (false, BTreeMap::new());
     }
     let Some(plt) = file.section_by_name(".plt") else {
-        return Vec::new();
+        return (false, BTreeMap::new());
     };
     let SectionFlags::Elf { sh_flags } = plt.flags() else {
-        return Vec::new();
+        return (false, BTreeMap::new());
     };
     if sh_flags & 3 != 3 {
-        return Vec::new();
+        return (false, BTreeMap::new());
     }
     let bss = plt.kind() == SectionKind::UninitializedData && sh_flags & 4 != 0;
     if !bss && sh_flags & 4 != 0 {
-        return Vec::new();
+        return (false, BTreeMap::new());
     }
     let names: BTreeMap<_, _> = file
         .dynamic_symbols()
@@ -74,6 +87,11 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
         }
     }
     slots.retain(|slot, _| !duplicate.contains(slot));
+    (bss, slots)
+}
+
+pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
+    let (bss, slots) = slots(file);
     if bss {
         return slots
             .into_iter()
@@ -118,11 +136,50 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
     out
 }
 
-fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
+pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     let bytes = bytes[..4].try_into().unwrap();
     if file.is_little_endian() {
         u32::from_le_bytes(bytes)
     } else {
         u32::from_be_bytes(bytes)
+    }
+}
+
+/// Recognized PIC stub ranges, independent of import identity or caller state.
+/// GNU may merge these into .text under one shared linker-generated FDE.
+pub(crate) fn pic_stub_ranges(file: &object::File<'_>) -> Vec<(u64, u64)> {
+    if file.architecture() != Architecture::PowerPc {
+        return Vec::new();
+    }
+    let mut ranges = Vec::new();
+    for section in file.sections() {
+        if !matches!(section.flags(), SectionFlags::Elf { sh_flags } if sh_flags & 6 == 6) {
+            continue;
+        }
+        let Ok(bytes) = section.data() else { continue; };
+        let first = (4 - section.address() % 4) as usize % 4;
+        for off in (first..bytes.len().saturating_sub(15)).step_by(4) {
+            let start = word(file, &bytes[off..]);
+            if !matches!(start & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000) {
+                continue;
+            }
+            let words = [start, word(file, &bytes[off + 4..]),
+                word(file, &bytes[off + 8..]), word(file, &bytes[off + 12..])];
+            if kuna_decomp::kuna_ppc32piccalls::stub_delta(&words).is_some() {
+                let start = section.address() + off as u64;
+                if let Some(end) = start.checked_add(16) { ranges.push((start, end)); }
+            }
+        }
+    }
+    ranges
+}
+
+/// Collect metadata even with recovery disabled, so console options remain live.
+pub struct PicSlotsPass;
+impl crate::pass::AnalysisPass for PicSlotsPass {
+    fn phase(&self) -> crate::pass::Phase { crate::pass::Phase::P1 }
+    fn id(&self) -> &'static str { "ppc32_pic_slots" }
+    fn run(&self, ctx: &crate::pass::AnalysisCtx) -> crate::pass::AnalysisOutput {
+        crate::pass::AnalysisOutput { ppc32_pic_slots: pic_slots(ctx.file), ..Default::default() }
     }
 }

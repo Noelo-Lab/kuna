@@ -1,0 +1,124 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-callback-shift.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-callback-call-clobber.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-callee-callback.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-return-export.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1014</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-callee-output.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-callee-output.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-float-copy.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1008</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-unsupported-rfi.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-unsupported-tar.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-string-store.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-split-store.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-unaligned-data.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-composed-words.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-vector-copy.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-mapped-data.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-note-valid.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="callback entries retain returns" min="14" max="14">return;</stringmatch>
+<stringmatch name="unproved callback addresses do not acquire terminal identities" min="0" max="0">__stack_chk_fail|no-return</stringmatch>
+<stringmatch name="exported return tokens and callee outputs retain their continuations" min="2" max="2">return 7;</stringmatch>
+</decompilertest>

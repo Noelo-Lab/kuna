@@ -1099,6 +1099,11 @@ kuna_options! { self, p1;
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },
     "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
+    "ppc32picimports" => {
+        let val = on_or_off(p1)?;
+        self.analysis_ppc32picimports = val;
+        Ok(format!("PPC32 PIC import proof {}", if val { "on" } else { "off" }))
+    },
     "i386_pie_plt" => {
         let val = on_or_off(p1)?;
         self.analysis_i386_pie_plt = val;
