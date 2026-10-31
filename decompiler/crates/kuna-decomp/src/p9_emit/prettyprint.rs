@@ -464,11 +464,16 @@ pub trait Emit {
     /// End a group of things printed together.  Default: no-op.
     fn close_group(&mut self, _id: int4) {}
 
-    /// Reset the emitter to its initial state.
+    /// Reset the emitter to its initial state (C++ `Emit::clear`, which also
+    /// drops the pending brace).
     fn clear(&mut self) {
         let st = self.state_mut();
         st.parenlevel = 0;
         st.indentlevel = 0;
+        st.pend_print = None;
+        st.pend_brace_indent = -1;
+        st.pend_fired.clear();
+        st.dangling_label = false;
     }
 
     /// Toggle whether this emits mark-up or not.  Default: no effect.

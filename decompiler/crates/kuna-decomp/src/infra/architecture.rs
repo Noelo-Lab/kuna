@@ -5589,17 +5589,27 @@ impl Architecture {
         Ok(())
     }
 
-    /// Move the printer out of `self` (replacing it with a fresh default), so a
-    /// caller can drive `PrintC::doc_function_full(fd, &self)` — which needs an
-    /// immutable borrow of the rest of the architecture (register-name lookup)
-    /// while it mutates the printer.  Pair with [`put_print`](Architecture::put_print).
-    pub fn take_print(&mut self) -> PrintC {
-        std::mem::take(&mut self.print)
-    }
-
-    /// Move a printer back into `self` (the partner of [`take_print`]).
-    pub fn put_print(&mut self, print: PrintC) {
+    /// Run `render` with the printer moved out of `self` (a fresh default stands
+    /// in meanwhile), so it can drive `PrintC::doc_function_full(fd, &self)`,
+    /// which needs an immutable borrow of the rest of the architecture
+    /// (register-name lookup) while it mutates the printer, then move it back.
+    ///
+    /// The printer goes back on every exit. A panic in `render` returns it
+    /// cleared of the partial document ([`PrintC::clear`], C++ `docFunction`'s
+    /// `catch { clear(); throw; }`) with the printing modifiers it had before
+    /// `render`, then resumes unwinding, so a caller that contains the panic
+    /// renders every later function with the printer the run configured, not
+    /// the default.
+    pub fn with_print<R>(&mut self, render: impl FnOnce(&mut PrintC, &Architecture) -> R) -> R {
+        let mut print = std::mem::take(&mut self.print);
+        let mods = print.context.mods();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(&mut print, self)));
+        if result.is_err() {
+            print.clear();
+            print.context.set_mods(mods);
+        }
         self.print = print;
+        result.unwrap_or_else(|payload| std::panic::resume_unwind(payload))
     }
 
     /// Install the load image (C++ `glb->loader`; owned inside the engine in
