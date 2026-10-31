@@ -1119,6 +1119,25 @@ exists but is an unwired stub (`kuna-console/src/ifacedecomp.rs
 (IfcDeadcodedelay)` returns engine-unavailable); the only live writer of the
 Override is `Heritage::bump_deadcode_delay`.
 
+(kuna `earlyrestart`, default on) Upstream finishes the pass that asked for
+the restart: every later mainloop iteration, the merges and the structuring of
+IR known to be missing data flow, all of which the restart throws away. A bump
+also marks the function (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::kuna_set_restart_now)`, cleared by `Funcdata::clear`), and when the
+outer drive will re-follow flow (fewer than its eight re-flows so far) the
+action group that ran the bumping heritage stops right after it
+(`decompiler/crates/kuna-decomp/src/infra/action.rs (ActionGroup::apply)`): the
+context abandons the pass as on an expired deadline and requests the re-flow,
+and the drive skips the stack-store-guard layout check for the stopped pass
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
+The restarted run is the one that is printed in both orders. What the stopped
+part would have left behind for it is gone: comments a later pass of the first
+run would have added (a duplicated `// return-dupe` tag is the one seen), and
+any Override a later pass of the first run would have recorded, which the
+restarted run then records itself, at the cost of another restart. A jump-table
+sub-decompilation never restarts, and with `earlyrestart off` the pass
+finishes first.
+
 **Free-varnode failure mode.** After `remove_revisited_markers`, a free read
 being guarded must have exactly one reader; a free varnode with multiple reads
 is an IR invariant violation and `heritage.rs (Heritage::guard)` deliberately

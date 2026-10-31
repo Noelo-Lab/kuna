@@ -156,6 +156,9 @@ Three tiers:
 | decompiling one function with several switch statements takes far longer than its size suggests | [`jtsharepartial`](#jtsharepartial) |
 | per-function latency scales with the NUMBER of jump tables rather than their size | [`jtsharepartial`](#jtsharepartial) |
 | profile shows the reduced jumptable action set running once per switch | [`jtsharepartial`](#jtsharepartial) |
+| a huge function is analysed twice from flow following on | [`earlyrestart`](#earlyrestart) |
+| warning header Heritage AFTER dead removal | [`earlyrestart`](#earlyrestart) |
+| the second half of a long run repeats the first | [`earlyrestart`](#earlyrestart) |
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
 | inter-function alignment padding decoded as add [rax],al style instructions | [`noreturn_externmatch`](#noreturn_externmatch) |
 | flow runs past an undefined-extern abort or exit call in a relocatable object | [`noreturn_externmatch`](#noreturn_externmatch) |
@@ -1659,6 +1662,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on. Flip OFF together with `option unrolledguard` on a function holding several INTERLEAVED jump tables whose case bodies are reachable only as one another's case targets (an MSVC optimized memcpy/memmove tail dispatch), where the per-table re-clone is what recovers the siblings; DESTRUCTIVE as a default in exactly that shape, since a shared partial cannot see an already-recovered sibling table. On a function with one jump table the two settings are structurally identical, and on an ordinary multi-table function sharing removes one full sub-decompilation per extra table.
 - **Where / provenance:** P2/switch-model · ghidra · speed · decompiling-3396-byte-main
 - **Example:** `option jtsharepartial off`
+
+### `earlyrestart` -- on | off, default `on`
+
+- **Symptoms:** a huge function is analysed twice from flow following on; warning header Heritage AFTER dead removal; the second half of a long run repeats the first.
+- **What it does:** Stop a pass as soon as heritage bumps a space's dead-code delay, and re-follow flow at once. Heritage that reaches a space whose dead code was already removed records a longer dead-code delay for it and asks for a restart; the restart re-follows flow and analyses the function again with that delay, so everything the pass does after the request is analysis the restart throws away. Upstream finishes the pass first: every later mainloop iteration, the merges and the structuring of IR that is known to be missing data flow. With this on, the action group stops after the heritage that bumped the delay and the driver re-follows; the stack-store-guard layout check is skipped for the stopped pass, and a pass that would exceed the restart limit always finishes. Off finishes the pass before restarting.
+- **When to flip:** Leave on. Turn off to compare against the upstream order when a function that restarts for a dead-code delay prints differently than expected, since a stopped pass leaves no warnings, overrides or types from the part it skipped.
+- **Where / provenance:** P3/heritage-refinement · ghidra · speed · GH-1034
+- **Example:** `option earlyrestart off`
 
 ### `noreturn_externmatch` -- on | off, default `on`
 

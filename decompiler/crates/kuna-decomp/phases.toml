@@ -2711,6 +2711,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "earlyrestart"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P3"
+subphase = "heritage-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "GH-1034"
+summary = "Stop a pass as soon as heritage bumps a space's dead-code delay, and re-follow flow at once. Heritage that reaches a space whose dead code was already removed records a longer dead-code delay for it and asks for a restart; the restart re-follows flow and analyses the function again with that delay, so everything the pass does after the request is analysis the restart throws away. Upstream finishes the pass first: every later mainloop iteration, the merges and the structuring of IR that is known to be missing data flow. With this on, the action group stops after the heritage that bumped the delay and the driver re-follows; the stack-store-guard layout check is skipped for the stopped pass, and a pass that would exceed the restart limit always finishes. Off finishes the pass before restarting."
+use_when = "Leave on. Turn off to compare against the upstream order when a function that restarts for a dead-code delay prints differently than expected, since a stopped pass leaves no warnings, overrides or types from the part it skipped."
+example = "option earlyrestart off"
+source_decompiler = "ghidra"
+inspiration = "serde-hkx 0.7.3 hkxc.exe 0x1406198f0: heritage bumped the stack's dead-code delay in its second pass, and the pass ran another thirty mainloop iterations plus every merge and structuring pass before the restart threw it all away."
+change_kind = "speed"
+tier = "transform"
+symptoms = "a huge function is analysed twice from flow following on|warning header Heritage AFTER dead removal|the second half of a long run repeats the first"
+live_field = "early_restart"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "noreturn_externmatch"
 values = "on|off"
 default = "on"
