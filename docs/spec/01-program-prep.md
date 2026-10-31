@@ -6194,8 +6194,8 @@ and x86 ELF PLT stubs from `read` to `jump`.
 
 (kuna) A call materialises its own **return address**, and the constant scan must
 not read it as a reference: it is the instruction's fall-through, which x86 pushes
-as a constant, A32 copies into `lr` and MIPS into `$ra`, so a constant equal to the
-fall-through is never filed as `Data`. AArch64 spells it differently — `bl` and
+as a constant, A32 copies into `lr` and MIPS into `$ra`, so a call's fall-through
+is never filed as `Data`. AArch64 spells it differently — `bl` and
 `blr` lift `x30 = inst_start + 4` to one `INT_ADD` of two constants — so the
 fall-through never appears as a constant and the scan filed the first addend, the
 `bl`'s own address, as a `Data` reference from every call site to itself (and,
@@ -6208,6 +6208,44 @@ constant equal to the instruction's address, a PC-relative sum that lands anywhe
 but the fall-through, and the same sum outside a call — a Thumb-2 `vldr
 s0,[pc,#8]` reads `pc` as `inst_start + 4`, which is its fall-through only by
 width — are reported as before.
+
+(kuna, GH #1360) Not every constant equal to the fall-through is a return address:
+`adr x0,.+4` forms the address of the next instruction exactly as `adr x0,.` and
+`adr x0,.+8` form theirs, and the scan dropped it along with the return
+addresses. The fall-through is now skipped only where the instruction leaves a
+return address
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (is_return_address)`).
+One that **links**
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (links)`) transfers
+control: a `CALL`, `CALLIND`, `BRANCH` to an address, `BRANCHIND` or `CALLOTHER`.
+That covers the links SLEIGH spells without a `CALL`: x86 `call $+5` is a push
+and a `BRANCH`; PowerPC `bcl 20,31,$+4`, `bl` to the next instruction, RISC-V `jal
+t0` and MIPS `bal` past its delay slot write the link register and `BRANCH`; a
+RISC-V PLT entry's `jalr t1,t3` is a `BRANCHIND`; x86-64 `syscall` saves the
+address in `rcx` beside a `CALLOTHER`. The AArch64 sum rule above applies in
+the same instructions. An instruction that does not branch can still leave a
+link value, in two shapes. A32 `mov lr,pc` lifts `lr = inst_next + 4` for the `bx` after it, so a
+fall-through combined with another constant in one op is not an address the
+instruction forms. MIPS `nal` (`bltzal $zero`) is a branch that is never taken
+and lifts to nothing but `ra = inst_next`; it is told apart by its delay slot
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (has_delay_slot)`): its
+fall-through lies past the slot, beyond its own encoding, and only a branch has
+one. The compiler spec is no help here, since MIPS64's names no
+`<returnaddress>`; the slot is asked only of an instruction that moves the
+fall-through whole without linking, so the walk pays the second decode almost
+nowhere. Anything else that moves the fall-through whole — a copy or an extension
+of it, or a store of it — files it as `Data`: AArch64 and A32 `adr`, Thumb-2
+`adr.w`, x86-64 `lea rax,[rip]`, `mov eax,offset next`, `push offset next`. The
+register-pair carry and the PIC base harvest below made the same assumption
+about a value they compose, and skip it only in an instruction that calls (the
+carry) or links (the harvest), so an `auipc`+`addi` pair that ends right before
+the label it forms files the label. Over 112 images (x86-64, i386 ELF and PE,
+AArch64 ELF and arm64 Mach-O, A32/Thumb, MIPS, PowerPC, RISC-V) no row changes:
+armel libc's 1,130 `mov lr,pc`, PowerPC libc's `bcl` thunks, x86-64 libc's 436
+`syscall`s, every RISC-V PLT `jalr t1,t3` and the `nal` in MIPS64 `ld.so.1`'s
+`_dl_start` still file nothing, and no image there forms an address at its own
+fall-through, so only the fixtures gain rows.
+Emitted C is unchanged; the query is not on the decompile path.
 
 (kuna) An edge also has to survive being resolved to a **node**, and the walk's
 function set is the wrong authority for this one. The walk calls nothing outside

@@ -1107,7 +1107,8 @@ fn descend(
                 Vec::new()
             } else {
                 let fall_through = vma.wrapping_add(len as u64);
-                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref())
+                let delayed = || has_delay_slot(translate, vma, &code_space, len);
+                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref(), &delayed)
             };
             // (kuna) `regcarry`: the address a register pair forms across
             // instructions. See [`super::kuna_regcarry`].
@@ -1878,24 +1879,28 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// exposed as `forwardsTo`; [`XrefIndex::refs_to_unified`] still removes it from
 /// inbound alias-class queries so it is not counted as an external caller.
 ///
-/// `fall_through` (`vma + len`) is skipped as a value for the same reason: a
-/// call materializes its own return address, and every architecture spells that
-/// as this instruction's fall-through — x86 stores the constant to the stack,
-/// ARM copies it into `LR`, MIPS into `$ra`. Reported, it would put a phantom
-/// data reference on the instruction after every single call site. AArch64
-/// spells it as a sum instead — `bl` and `blr` lift `x30 = inst_start + 4` to
-/// one `INT_ADD` of two constants — so in a call, an op that adds two constants
-/// into the fall-through is the same return address, and neither half of it
-/// (the first is the `bl`'s own address) is a reference.
+/// `fall_through` (`vma + len`) is skipped as a value where it is a return
+/// address ([`is_return_address`]): a call materializes the address it returns
+/// to, and every architecture spells that as this instruction's fall-through —
+/// x86 stores the constant to the stack, ARM copies it into `LR`, MIPS into
+/// `$ra`. Reported, it would put a phantom data reference on the instruction
+/// after every single call site. AArch64 spells it as a sum instead — `bl` and
+/// `blr` lift `x30 = inst_start + 4` to one `INT_ADD` of two constants — so in
+/// an instruction that [`links`], an op that adds two constants into the
+/// fall-through is the same return address, and neither half of it (the first
+/// is the `bl`'s own address) is a reference. `delayed` says whether the
+/// instruction ends past a delay slot ([`has_delay_slot`]); it is asked only of
+/// an instruction that moves its fall-through whole without linking.
 fn data_refs(
     ops: &[FullOp],
     data_space: Option<&Rc<AddrSpace>>,
     mapped: &[(u64, u64)],
     fall_through: u64,
     pool: Option<&PoolImage>,
+    delayed: &dyn Fn() -> bool,
 ) -> Vec<(u64, XrefKind)> {
     let mut out = Vec::new();
-    let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+    let linked = links(ops);
     // (kuna) `poolref`: the second edge a literal-pool load forms, from this same
     // instruction to the address the pool word holds. See [`super::kuna_poolref`].
     // `width` is how many bytes the instruction READ, which a `LOAD`'s address
@@ -1924,7 +1929,7 @@ fn data_refs(
                 out.push((vn.offset, XrefKind::Write));
             }
         }
-        if calls && is_return_address_sum(op, fall_through) {
+        if linked && is_return_address_sum(op, fall_through) {
             continue;
         }
         for (i, vn) in op.ins.iter().enumerate() {
@@ -1966,8 +1971,11 @@ fn data_refs(
                 OpCode::CPUI_STORE if i == 1 => XrefKind::Write,
                 _ => XrefKind::Data,
             };
-            if kind == XrefKind::Data && value == fall_through {
-                continue; // this call's own return address
+            if kind == XrefKind::Data
+                && value == fall_through
+                && is_return_address(op, i, linked, delayed)
+            {
+                continue;
             }
             out.push((value, kind));
             if kind == XrefKind::Read {
@@ -1980,8 +1988,56 @@ fn data_refs(
     out
 }
 
+/// Does this instruction leave a return address behind? It does when it
+/// transfers control — a `CALL`/`CALLIND`, a `BRANCH` to an address, a
+/// `BRANCHIND`, or a `CALLOTHER` trap — since whatever it writes that equals its
+/// fall-through is where control comes back. Not every link is a `CALL`: x86's
+/// `call $+5` lifts to a push and a `BRANCH`, PowerPC's `bcl 20,31,$+4` and
+/// RISC-V's `jal t0` to a link-register write and a `BRANCH`, a RISC-V PLT
+/// entry's `jalr t1,t3` to a `BRANCHIND`, and x86-64's `syscall` saves it in
+/// `RCX` beside a `CALLOTHER`. A p-code-relative `BRANCH` stays inside the
+/// instruction and transfers nothing.
+pub(super) fn links(ops: &[FullOp]) -> bool {
+    ops.iter().any(|op| match op.opcode {
+        OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLOTHER => {
+            true
+        }
+        OpCode::CPUI_BRANCH => op.ins.first().is_some_and(|vn| {
+            vn.space.as_ref().is_some_and(|s| s.get_type() != spacetype::IPTR_CONSTANT)
+        }),
+        _ => false,
+    })
+}
+
+/// Is the constant `op` takes in `slot`, which equals the instruction's
+/// fall-through, the return address the instruction leaves rather than an
+/// address it forms (GH #1360)? An instruction that [`links`] (`linked`) leaves
+/// one. One that does not forms its fall-through only where it moves that
+/// constant whole — `adr x0,.+4` and `lea rax,[rip]` copy it into a register,
+/// `push offset next` stores it — and is no branch. A fall-through combined
+/// with another constant is one half of a link value: A32 `mov lr,pc` lifts to
+/// `lr = inst_next + 4` for the `bx` after it, microMIPS `bgezal` to `ra =
+/// inst_next | 1`. MIPS `nal` (`bltzal $zero`) is a branch never taken, which
+/// lifts to nothing but `ra = inst_next`; only its delay slot (`delayed`) says
+/// it is one, on MIPS64 as on MIPS32.
+fn is_return_address(op: &FullOp, slot: usize, linked: bool, delayed: &dyn Fn() -> bool) -> bool {
+    let whole = op.ins.len() == 1 || (op.opcode == OpCode::CPUI_STORE && slot == 2);
+    linked || !whole || delayed()
+}
+
+/// Does the instruction at `vma` end past a delay slot? Its `len` is where it
+/// falls through to, and only a branch has a slot between its own encoding and
+/// that address.
+fn has_delay_slot(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>, len: u32) -> bool {
+    let addr = Address::new(Rc::clone(code_space), vma);
+    let own = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        translate.instruction_length(&addr)
+    }));
+    matches!(own, Ok(Ok(n)) if n > 0 && (n as u32) < len)
+}
+
 /// Does `op` add two constants into `fall_through` (AArch64's `x30 =
-/// inst_start + 4`)? Only a call's link value: a Thumb-2 `vldr s0,[pc,#8]` reads
+/// inst_start + 4`)? Only a link's value: a Thumb-2 `vldr s0,[pc,#8]` reads
 /// `pc` as the same sum, and that is not a return address. See [`data_refs`].
 fn is_return_address_sum(op: &FullOp, fall_through: u64) -> bool {
     let constant = |vn: &VarnodeData| {
@@ -2173,7 +2229,7 @@ mod tests {
     /// Run [`data_refs`] with `ram` as the default data space and a fall-through
     /// no op under test materializes.
     fn refs(ram: &Rc<AddrSpace>, ops: &[FullOp]) -> Vec<(u64, XrefKind)> {
-        data_refs(ops, Some(ram), &MAPPED, 0, None)
+        data_refs(ops, Some(ram), &MAPPED, 0, None, &|| false)
     }
 
     /// The shape a constant-address memory operand actually lifts to: a direct
@@ -2298,22 +2354,88 @@ mod tests {
     }
 
     /// Every architecture materializes a call's return address as this
-    /// instruction's fall-through — x86 stores it, ARM copies it to `LR`. It is
-    /// never a reference, so it must not survive either spelling.
+    /// instruction's fall-through, and it is never a reference: not beside a
+    /// `CALL` (x86 `call` pushes it, A32 `bl` copies it to `lr`), nor beside the
+    /// `BRANCH` of x86 `call $+5` and PowerPC `bcl 20,31,$+4`, the `BRANCHIND`
+    /// of a RISC-V PLT's `jalr t1,t3`, or x86-64 `syscall`'s `CALLOTHER`; nor
+    /// where nothing branches but the value is a link: A32 `mov lr,pc` adds the
+    /// fall-through to 4, and MIPS `nal` copies it into `ra` from behind a delay
+    /// slot.
     #[test]
     fn a_calls_own_return_address_is_never_a_data_reference() {
         let (ram, cst) = spaces();
-        let arm = [op(OpCode::CPUI_COPY, None, vec![vn(&cst, 0x1104)])];
-        let x86 = [op(
-            OpCode::CPUI_STORE,
-            None,
-            vec![vn(&cst, 0x1b), vn(&ram, 0x4010), vn(&cst, 0x1104)],
-        )];
-        assert!(data_refs(&arm, Some(&ram), &MAPPED, 0x1104, None).is_empty());
-        assert_eq!(
-            data_refs(&x86, Some(&ram), &MAPPED, 0x1104, None),
-            vec![(0x4010, XrefKind::Read)]
-        );
+        let reg = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR));
+        let r = |offset| VarnodeData { space: Some(Rc::clone(&reg)), offset, size: 4 };
+        let fall = || vn(&cst, 0x1104);
+        let push = op(OpCode::CPUI_STORE, None, vec![vn(&cst, 0x1b), r(0x10), fall()]);
+        let to_lr = op(OpCode::CPUI_COPY, Some(r(0x58)), vec![fall()]);
+        let call = op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x1180)]);
+        let to_next = op(OpCode::CPUI_BRANCH, None, vec![vn(&ram, 0x1104)]);
+        let links = [
+            ("x86 call", vec![push.clone(), call.clone()]),
+            ("A32 bl", vec![to_lr.clone(), call]),
+            ("x86 call $+5", vec![push, to_next.clone()]),
+            ("PowerPC bcl 20,31,$+4", vec![to_lr, to_next]),
+            (
+                "RISC-V jalr t1,t3",
+                vec![
+                    op(OpCode::CPUI_COPY, Some(r(0x30)), vec![fall()]),
+                    op(OpCode::CPUI_BRANCHIND, None, vec![r(0xe0)]),
+                ],
+            ),
+            (
+                "x86-64 syscall",
+                vec![
+                    op(OpCode::CPUI_COPY, Some(r(0x8)), vec![fall()]),
+                    op(OpCode::CPUI_CALLOTHER, None, vec![vn(&cst, 5)]),
+                ],
+            ),
+            ("A32 mov lr,pc", vec![op(OpCode::CPUI_INT_ADD, Some(r(0x58)), vec![fall(), vn(&cst, 4)])]),
+        ];
+        for (what, ops) in &links {
+            let decoded = || panic!("{what}: a link needs no second decode");
+            assert!(data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &decoded).is_empty(), "{what}");
+        }
+        let nal = [op(OpCode::CPUI_COPY, Some(r(0x7c)), vec![fall()])];
+        assert!(data_refs(&nal, Some(&ram), &MAPPED, 0x1104, None, &|| true).is_empty());
+    }
+
+    /// An instruction that transfers no control and moves its own fall-through
+    /// whole has formed that address (GH #1360): AArch64 `adr x0,.+4` and x86-64
+    /// `lea rax,[rip]` copy it, `mov eax,offset next` zero-extends it, `push
+    /// offset next` stores it, and a predicated A32 `adreq` only branches to skip
+    /// itself.
+    #[test]
+    fn an_address_formed_at_the_fall_through_is_a_data_reference() {
+        let (ram, cst) = spaces();
+        let reg = Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR));
+        let r = |offset| VarnodeData { space: Some(Rc::clone(&reg)), offset, size: 4 };
+        let fall = || vn(&cst, 0x1104);
+        let formed = [
+            ("adr x0,.+4", vec![op(OpCode::CPUI_COPY, Some(r(0)), vec![fall()])]),
+            ("mov eax,offset next", vec![op(OpCode::CPUI_INT_ZEXT, Some(r(0)), vec![fall()])]),
+            (
+                "push offset next",
+                vec![
+                    op(OpCode::CPUI_INT_SUB, Some(r(0x10)), vec![r(0x10), vn(&cst, 8)]),
+                    op(OpCode::CPUI_STORE, None, vec![vn(&cst, 0x1b), r(0x10), fall()]),
+                ],
+            ),
+            (
+                "A32 adreq r0,.+4",
+                vec![
+                    op(OpCode::CPUI_CBRANCH, None, vec![vn(&ram, 0x1104), r(0x200)]),
+                    op(OpCode::CPUI_COPY, Some(r(0)), vec![fall()]),
+                ],
+            ),
+        ];
+        for (what, ops) in &formed {
+            assert_eq!(
+                data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &|| false),
+                vec![(0x1104, XrefKind::Data)],
+                "{what}"
+            );
+        }
     }
 
     /// An AArch64 `bl`/`blr` lifts its link value as `x30 = inst_start + 4`: the
@@ -2331,13 +2453,13 @@ mod tests {
             op(OpCode::CPUI_INT_ADD, Some(x30), vec![vn(&cst, 0x1100), vn(&cst, 4)]),
             op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x1180)]),
         ];
-        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None).is_empty());
+        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None, &|| false).is_empty());
         let adr = [op(OpCode::CPUI_COPY, Some(x0.clone()), vec![vn(&cst, 0x1100)])];
-        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
         let add_pc = [op(OpCode::CPUI_INT_ADD, Some(x0.clone()), vec![vn(&cst, 0x1100), vn(&cst, 0x10)])];
-        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
         let pc_read = [op(OpCode::CPUI_INT_ADD, Some(x0), vec![vn(&cst, 0x1100), vn(&cst, 4)])];
-        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
     }
 
     /// (kuna) `poolref`: a pointer-sized read of a read-only word files the
@@ -2356,7 +2478,7 @@ mod tests {
             vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
         );
         assert_eq!(
-            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool)),
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
             vec![(0x1000, XrefKind::Read), (0x4000, XrefKind::Data), (0x4020, XrefKind::Write)]
         );
     }
@@ -2376,7 +2498,7 @@ mod tests {
             vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
         );
         assert_eq!(
-            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool)),
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
             vec![(0x1000, XrefKind::Read), (0x4020, XrefKind::Write)]
         );
     }
@@ -2391,7 +2513,7 @@ mod tests {
         src.size = 4;
         let copy = op(OpCode::CPUI_COPY, None, vec![src]);
         assert_eq!(
-            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool)),
+            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
             vec![(0x1008, XrefKind::Read), (0x4010, XrefKind::Data)]
         );
     }
