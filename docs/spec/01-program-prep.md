@@ -859,9 +859,16 @@ names to the 16-bit x86 decoder
 (`decompiler/crates/kuna-analysis/src/loader/kuna_realmodecs.rs (paint)`): the
 entry's CS from its `CS:IP`, and, for every relocation whose word is the segment
 of a far `CALL`/`JMP ptr16:16` (`9a`/`ea`, offset, segment) with a target in the
-module, that segment at the target (`MzImage::code_segments`). A segment holds
-from its point up to the next one, so a near branch in the entry's segment
-wraps IP inside that segment instead of taking the linear sum. The header's
+module, that segment at the target (`MzImage::code_segments`). The target must
+also lie below the next segment the image names (every relocated word, and the
+entry's CS): a far branch lands in its own segment, while a `9a`/`ea` byte that
+is the tail of another instruction (`b8 9a 10 ba ..` is `mov ax, 0x109a; mov
+dx, seg x`) implies a target past that segment, in code another CS runs, and
+stating that CS there would wrap its near branches in the wrong segment. A
+segment holds from its point up to the next one, so a near branch in the
+entry's segment wraps IP inside that segment instead of taking the linear sum,
+and the raw-image call sweep, which runs before the descent, already decodes a
+far-called segment with its own CS. The header's
 minimum allocation is not mapped: a flow into uninitialized memory is a flow
 into nothing, not into zeros that decode as `ADD [BX+SI],AL`. A PKLITE or LZEXE
 stub is named on load, since its code is a decompressor in front of a packed

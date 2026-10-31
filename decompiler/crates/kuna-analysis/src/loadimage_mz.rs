@@ -40,7 +40,8 @@ pub struct MzImage {
     pub packer: Option<&'static str>,
     /// The code segments the image states, as `(linear, CS)`: the entry's
     /// `CS:IP`, and the target of every far `CALL`/`JMP ptr16:16` whose
-    /// segment word a relocation names, when it lies in the module.
+    /// segment word a relocation names, when it lies in the module and below
+    /// the next segment the image names.
     pub code_segments: Vec<(u64, u16)>,
 }
 
@@ -151,7 +152,11 @@ impl MzImage {
         }
         let entry_cs = MZ_LOAD_SEGMENT.wrapping_add(word(bytes, 0x16));
         let mut code_segments = vec![(entry, entry_cs)];
-        code_segments.extend(far_targets(&module, base, &sites));
+        let mut named: Vec<u16> = sites.iter().map(|&site| word(&module, site)).collect();
+        named.push(entry_cs);
+        named.sort_unstable();
+        named.dedup();
+        code_segments.extend(far_targets(&module, base, &sites, &named));
         code_segments.sort_unstable();
         code_segments.dedup();
         Ok(MzImage {
@@ -170,7 +175,19 @@ impl MzImage {
 /// The `(linear, CS)` target of each far `CALL`/`JMP ptr16:16` (`9a`/`ea`
 /// followed by offset and segment) whose segment word sits at a relocated
 /// `site`, when the target lies in the module.
-fn far_targets<'a>(module: &'a [u8], base: u64, sites: &'a [usize]) -> impl Iterator<Item = (u64, u16)> + 'a {
+///
+/// A far branch lands in its own segment, which ends where the next segment
+/// in `named` (every relocated word and the entry's CS) begins. A `9a`/`ea`
+/// byte three bytes before a segment word can also be the tail of another
+/// instruction (`mov ax, 0x109a; mov dx, seg x` is `b8 9a 10 ba ..`), and the
+/// target it implies then lies past that segment, in code that runs with
+/// another CS; such a target is not stated.
+fn far_targets<'a>(
+    module: &'a [u8],
+    base: u64,
+    sites: &'a [usize],
+    named: &'a [u16],
+) -> impl Iterator<Item = (u64, u16)> + 'a {
     let end = base + module.len() as u64;
     sites.iter().filter_map(move |&site| {
         let opcode = *module.get(site.checked_sub(3)?)?;
@@ -179,7 +196,9 @@ fn far_targets<'a>(module: &'a [u8], base: u64, sites: &'a [usize]) -> impl Iter
         }
         let segment = word(module, site);
         let target = u64::from(segment) * 16 + u64::from(word(module, site - 2));
-        (base..end).contains(&target).then_some((target, segment))
+        let next = named.get(named.partition_point(|&other| other <= segment));
+        let next = next.map_or(end, |&other| u64::from(other) * 16);
+        (base..end.min(next)).contains(&target).then_some((target, segment))
     })
 }
 
@@ -231,6 +250,34 @@ mod tests {
         let mut bytes = image();
         bytes[0x24..0x26].copy_from_slice(&0x0100u16.to_le_bytes());
         assert_eq!(MzImage::parse(&bytes).unwrap().code_segments, vec![(0x10000, 0x1000)]);
+    }
+
+    /// `mov bx, 0x9a00; mov word [bx], seg 0000` (`bb 00 9a c7 07 ..`) reads
+    /// as `callf 1000:07c7` from its 9a byte, a target in segment 0x1010,
+    /// which the real far call names.
+    #[test]
+    fn a_far_target_past_the_next_named_segment_states_no_segment() {
+        let mut module = vec![0x90u8; 0x800];
+        module[..0x0d].copy_from_slice(&[
+            0x9a, 0x00, 0x00, 0x10, 0x00, // callf 0010:0000 (segment relocated)
+            0xbb, 0x00, 0x9a, // mov bx, 0x9a00
+            0xc7, 0x07, 0x00, 0x00, // mov word [bx], seg 0000 (relocated)
+            0xcb, // retf
+        ]);
+        module[0x100..0x104].copy_from_slice(&[0xb8, 0x09, 0x00, 0xcb]);
+        let total = 0x30 + module.len();
+        let mut h = vec![0u8; 0x30];
+        h[..2].copy_from_slice(b"MZ");
+        h[2..4].copy_from_slice(&((total % 512) as u16).to_le_bytes());
+        h[4..6].copy_from_slice(&(total.div_ceil(512) as u16).to_le_bytes());
+        h[6..8].copy_from_slice(&2u16.to_le_bytes());
+        h[8..10].copy_from_slice(&3u16.to_le_bytes());
+        h[0x18..0x1a].copy_from_slice(&0x1cu16.to_le_bytes());
+        h[0x1c..0x24].copy_from_slice(&[0x03, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00]);
+        h.extend_from_slice(&module);
+        let mz = MzImage::parse(&h).unwrap();
+        assert_eq!(&mz.module[0x0a..0x0c], &0x1000u16.to_le_bytes());
+        assert_eq!(mz.code_segments, vec![(0x10000, 0x1000), (0x10100, 0x1010)]);
     }
 
     #[test]

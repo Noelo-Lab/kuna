@@ -1132,8 +1132,9 @@ kuna decompile-project GAME.EXE -o out/
 
 Addresses are linear real-mode addresses, `segment * 16 + offset` with the load
 segment added. The decoder is told the entry's code segment and the segment of
-every relocated far call or jump target, so a near branch wraps inside its
-segment as the CPU's does. Only the load module is mapped: the header, any
+every relocated far call or jump target that lies inside that segment (below
+the next segment the image names), so a near branch wraps inside its segment as
+the CPU's does. Only the load module is mapped: the header, any
 overlay past the image size, and the uninitialized memory the header asks for
 are not. A file packed with PKLITE or LZEXE loads too, but its code is the
 decompressor stub and a packed body, so kuna says so on stderr; unpack it first

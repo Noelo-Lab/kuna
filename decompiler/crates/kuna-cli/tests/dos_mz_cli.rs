@@ -60,6 +60,40 @@ fn segmented_dos_image() -> Vec<u8> {
     header
 }
 
+/// Entry `0000:0000` far-calls `0B00:0A00` (linear 0x1BA00), then loads the
+/// far pointer `DX:AX = seg 0000 : 0x109a` (`b8 9a 10 ba ..`), whose 9a byte
+/// reads as `callf 1000:ba10` (linear 0x1BA10, inside segment 0x1B00). The
+/// callee runs 32 straight-line bytes past 0x1BA10 and near-calls
+/// `0B00:6000`, linear 0x21000; in segment 0x1000 that call would wrap to
+/// 0x11000.
+fn two_segment_dos_image() -> Vec<u8> {
+    let mut module = vec![0u8; 0x11004];
+    module[..12].copy_from_slice(&[0x9a, 0x00, 0x0a, 0x00, 0x0b, 0xb8, 0x9a, 0x10, 0xba, 0x00, 0x00, 0xcb]);
+    module[0x1000] = 0xc3;
+    module[0xba00..0xba20].fill(0x40);
+    module[0xba20..0xba24].copy_from_slice(&[0xe8, 0xdd, 0x55, 0xcb]);
+    module[0x11000..0x11004].copy_from_slice(&[0xb8, 0x07, 0x00, 0xc3]);
+    let mut header = vec![0u8; 0x30];
+    header[..2].copy_from_slice(b"MZ");
+    let total = header.len() + module.len();
+    let words: [(usize, u16); 9] = [
+        (0x02, (total % 512) as u16),
+        (0x04, total.div_ceil(512) as u16),
+        (0x06, 2),
+        (0x08, (header.len() / 16) as u16),
+        (0x10, 0x100),
+        (0x18, 0x1c),
+        (0x1c, 0x0003),
+        (0x20, 0x0009),
+        (0x22, 0x0000),
+    ];
+    for (at, value) in words {
+        header[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    header.extend_from_slice(&module);
+    header
+}
+
 fn kuna(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_kuna")).args(args).output().expect("run kuna")
 }
@@ -121,5 +155,23 @@ fn a_near_call_wraps_inside_the_entry_code_segment() {
     assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
     assert!(text.contains("sub_20000();"), "{text}");
     assert!(text.contains(" = 3;"), "the CALL pushes IP 3, not the linear low half 0x1003: {text}");
+    std::fs::remove_file(&path).unwrap();
+}
+
+#[test]
+fn a_relocated_far_call_states_its_segment_and_a_far_pointer_load_does_not() {
+    let path = written("dos-mz-two-segments", &two_segment_dos_image());
+    let exe = path.to_str().unwrap();
+
+    let functions = kuna(&["functions", exe, "--json"]);
+    let listing = String::from_utf8_lossy(&functions.stdout);
+    assert!(functions.status.success(), "{listing}\n{}", String::from_utf8_lossy(&functions.stderr));
+    assert!(listing.contains("\"sub_21000\""), "the callee in segment 0x1B00 is missing: {listing}");
+    assert!(!listing.contains("\"sub_11000\""), "the call wrapped in segment 0x1000: {listing}");
+
+    let out = kuna(&["decompile-all", exe, "--addr", "0x1ba00"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+    assert!(text.contains("sub_21000();"), "{text}");
     std::fs::remove_file(&path).unwrap();
 }
