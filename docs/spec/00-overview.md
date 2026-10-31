@@ -1588,7 +1588,13 @@ starts within a tenth of the limit), and
 the one test every probe makes — also asks, reading the resident set at most
 every 50 ms, whether the process is over the limit and the drive itself has
 added at least 64 MiB (`kuna_fnmemory.rs (trips)`), so what the batch built
-up before a function began cannot stop it. A drive armed only by the limit
+up before a function began cannot stop it. What a function leaves behind for
+the rest of the run should be its result and the facts later functions read,
+not its working state: a `Funcdata` releases on drop the fspec-space entries
+its call specs registered under their process-unique handles
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::drop)`),
+which were otherwise kept for every call site of every function, and the
+per-callee summaries a run caches are stored compactly (04, `calleedeadarg`). A drive armed only by the limit
 gets a deadline a year out so the probes run. The trip holds for the rest of
 the drive, the function's `error` names the limit, and the drive releases free
 heap pages on the way out. Without the flag, a process under a finite cgroup

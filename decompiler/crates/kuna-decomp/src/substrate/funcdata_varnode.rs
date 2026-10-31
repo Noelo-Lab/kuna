@@ -519,6 +519,7 @@ impl Funcdata {
         );
         let vn = self.vbank_mut().create(8, Address::new(cspc, fc_encoded), ct);
         self.assign_high(vn);
+        self.kuna_fspec_handles.push(fc_encoded);
         vn
     }
 
