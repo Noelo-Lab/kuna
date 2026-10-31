@@ -361,7 +361,7 @@ fn decompile_batch(
         landed(&r);
         out.push(r);
     });
-    converge_synthesized_structs(prog, opts, &replay, &mut out);
+    converge_synthesized_structs(prog, opts, &replay, &mut out, &mut |_| {});
     converge_element_globals(prog, opts, &replay, &mut out);
     kuna_decomp::kuna_elemptr::stop(prog.arch_mut());
     if opts.want_pointer_arguments {
@@ -420,7 +420,8 @@ pub fn converge_element_globals(
 /// time, because the structure it was given first still answers for it.
 ///
 /// A redo that fails where the first pass succeeded -- a watchdog budget spent
-/// the second time round -- keeps the first body.
+/// the second time round -- keeps the first body. `starting` is told the index
+/// of each redo before it runs.
 ///
 /// A batch that synthesized nothing pays one ledger probe for the whole run.
 pub fn converge_synthesized_structs(
@@ -428,6 +429,7 @@ pub fn converge_synthesized_structs(
     opts: &DecompileOptions,
     targets: &[FunctionEntry],
     out: &mut [FuncResult],
+    starting: &mut dyn FnMut(usize),
 ) {
     let stale = superseded_struct_names(prog);
     if stale.is_empty() {
@@ -440,6 +442,7 @@ pub fn converge_synthesized_structs(
         .map(|(i, _)| i)
         .collect();
     for i in redo {
+        starting(i);
         let again = decompile_entry(prog, targets[i].clone(), opts);
         if redo_replaces(&out[i], &again) {
             out[i] = again;
