@@ -27,7 +27,7 @@ pub(super) fn decode(bytes: &[u8], limit: usize) -> Result<Vec<u8>, String> {
     let src = bytes
         .get(HEADER_LEN..HEADER_LEN + csize)
         .ok_or("complzss compressed size runs past the end of the payload")?;
-    let out = decode_stream(src, size);
+    let out = decode_stream(src, size)?;
     if out.len() != size {
         return Err(format!("complzss decoded {} bytes, header declares {size}", out.len()));
     }
@@ -37,7 +37,8 @@ pub(super) fn decode(bytes: &[u8], limit: usize) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-pub(super) fn decode_stream(src: &[u8], size: usize) -> Vec<u8> {
+/// Decode up to `size` bytes; a back-reference running past `size` is an error.
+pub(super) fn decode_stream(src: &[u8], size: usize) -> Result<Vec<u8>, String> {
     let mut ring = [0u8; N];
     ring[..N - F].fill(b' ');
     let mut r = N - F;
@@ -60,6 +61,9 @@ pub(super) fn decode_stream(src: &[u8], size: usize) -> Vec<u8> {
         let (Some(lo), Some(hi)) = (input.next(), input.next()) else { break };
         let at = lo as usize | ((hi as usize & 0xf0) << 4);
         let len = (hi as usize & 0x0f) + THRESHOLD;
+        if out.len() + len + 1 > size {
+            return Err(format!("complzss back-reference runs past the declared {size} bytes"));
+        }
         for k in 0..=len {
             let c = ring[(at + k) & (N - 1)];
             out.push(c);
@@ -67,8 +71,7 @@ pub(super) fn decode_stream(src: &[u8], size: usize) -> Vec<u8> {
             r = (r + 1) & (N - 1);
         }
     }
-    out.truncate(size);
-    out
+    Ok(out)
 }
 
 pub(super) fn adler32(data: &[u8]) -> u32 {

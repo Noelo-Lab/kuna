@@ -1176,7 +1176,6 @@ kuna_options! { self, p1;
     "kernelcache" => {
         let (choice, msg) = crate::kuna_kernelcache::parse_kernelcache(p1)?;
         crate::kuna_kernelcache::set_kernelcache_env(&choice);
-        self.analysis_kernelcache = choice;
         Ok(msg)
     },
     "dynrelocs" => {

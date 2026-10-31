@@ -62,8 +62,10 @@ def segment(name, addr, size, sections=(), prot=5):
     body += u32(prot, prot, len(sections), 0) + b"".join(sections)
     return u32(0x19, 8 + len(body)) + body
 
-def header(filetype, cmds, subtype=0):
-    return u32(0xFEEDFACF, 0x0100000C, subtype, filetype, len(cmds), sum(map(len, cmds)), 0, 0)
+MH_DYLIB_IN_CACHE = 0x80000000
+
+def header(filetype, cmds, subtype=0, flags=0):
+    return u32(0xFEEDFACF, 0x0100000C, subtype, filetype, len(cmds), sum(map(len, cmds)), flags, 0)
 
 # Shared LINKEDIT: string pool, two symbol tables, the indirect table, fixups.
 names = [b"_kernel_add", b"_kernel_dispatch", b"_kernel_table", b"_widget_start", b"_widget_name",
@@ -150,21 +152,28 @@ def fileset_entry(addr, name):
     body = body.ljust((len(body) + 8 + 7) & ~7, b"\0")
     return u32(0x80000035, 8 + len(body)) + body
 
+PRELINK = (LINKEDIT + linkedit_size + PAGE - 1) & ~(PAGE - 1)
+prelink_plist = (b'<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0">\n<dict>\n'
+                 b'\t<key>_PrelinkInfoDictionary</key>\n\t<array/>\n'
+                 b'\t<!--' + b"-" * 56 + b'-->\n'
+                 b'\t<key>_PrelinkKCID</key>\n\t<data>AAAAAAAAAAAAAAAAAAAAAA==</data>\n</dict>\n</plist>\n\0')
+
 top_cmds = [
     segment(b"__TEXT", 0, 0x3000, prot=1),
     segment(b"__TEXT_EXEC", KERNEL_TEXT, PAGE),
     segment(b"__DATA_CONST", KERNEL_CONST, PAGE, prot=1),
     segment(b"__LINKEDIT", LINKEDIT, linkedit_size, prot=1),
+    segment(b"__PRELINK_INFO", PRELINK, len(prelink_plist), prot=1),
     u32(0x80000034, 16, fixups_off, len(fixups)),
     fileset_entry(KERNEL_HDR, b"com.apple.kernel"),
     fileset_entry(KEXT_HDR, b"com.example.driver.Widget"),
 ]
 
-image = bytearray(LINKEDIT + linkedit_size)
+image = bytearray(PRELINK + len(prelink_plist))
 def place(off, blob): image[off:off + len(blob)] = blob
 place(0, header(0xC, top_cmds) + b"".join(top_cmds))
-place(KERNEL_HDR, header(0x2, kernel_cmds) + b"".join(kernel_cmds))
-place(KEXT_HDR, header(0xB, kext_cmds) + b"".join(kext_cmds))
+place(KERNEL_HDR, header(0x2, kernel_cmds, flags=MH_DYLIB_IN_CACHE | 0x1) + b"".join(kernel_cmds))
+place(KEXT_HDR, header(0xB, kext_cmds, flags=MH_DYLIB_IN_CACHE | 0x85) + b"".join(kext_cmds))
 place(KEXT_CSTRING, b"Widget\0")
 place(KERNEL_TEXT, u32(*kernel_code))
 place(KEXT_TEXT, u32(*kext_code))
@@ -172,6 +181,7 @@ place(stub, u32(*stub_code))
 for off, raw in fixups_at.items():
     place(off, u64(raw))
 place(LINKEDIT, linkedit)
+place(PRELINK, prelink_plist)
 open("fileset.macho", "wb").write(image)
 
 def der(tag, value):

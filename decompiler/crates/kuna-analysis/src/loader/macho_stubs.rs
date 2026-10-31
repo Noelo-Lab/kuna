@@ -265,7 +265,9 @@ where
         }
     }
 
-    if header.filetype(endian) == object::macho::MH_KEXT_BUNDLE {
+    if header.filetype(endian) == object::macho::MH_KEXT_BUNDLE
+        && header.flags(endian) & object::macho::MH_DYLIB_IN_CACHE != 0
+    {
         push_kext_bound_imports(&symtab, endian, &mut out);
     }
     finish_with_exports(neutral, out)
@@ -274,6 +276,9 @@ where
 /// (kuna `kernelcache`) A kext cut out of a kernel collection carries each
 /// import the collection bound as an `N_ABS | N_EXT` symbol at the callee's
 /// address (see `kuna_kernelcache`), the target of the kext's direct calls.
+/// Only a kext whose header says it lives in a collection (`MH_DYLIB_IN_CACHE`,
+/// which the kext headers of a kernel collection carry) is read this way; a
+/// standalone kext's absolute symbols stay what they are.
 fn push_kext_bound_imports<Mach: MachHeader<Endian = Endianness>>(
     symtab: &SymbolTable<Mach>,
     endian: Endianness,

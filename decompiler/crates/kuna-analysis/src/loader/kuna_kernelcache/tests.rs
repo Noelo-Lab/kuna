@@ -37,8 +37,34 @@ fn lzfse_rejects_truncation_and_size_overrun() {
 #[test]
 fn lzss_decodes_back_references() {
     let stream = [0b1111_0111u8, b'a', b'b', b'c', 0xee, 0xf0, b'x', b'y', b'z', b'w'];
-    let out = lzss::decode_stream(&stream, 9);
+    let out = lzss::decode_stream(&stream, 9).unwrap();
     assert_eq!(out, b"abcabcxyz");
+}
+
+/// A back-reference that runs past the declared size is rejected, even when
+/// the Adler-32 of the truncated prefix matches.
+#[test]
+fn lzss_rejects_a_match_past_the_declared_size() {
+    let stream = [0b0000_0111u8, b'a', b'b', b'c', 0xee, 0xf0];
+    assert!(lzss::decode_stream(&stream, 5).is_err());
+    let mut container = lzss::MAGIC.to_vec();
+    container.extend_from_slice(&lzss::adler32(b"abcab").to_be_bytes());
+    container.extend_from_slice(&5u32.to_be_bytes());
+    container.extend_from_slice(&(stream.len() as u32).to_be_bytes());
+    container.resize(0x180, 0);
+    container.extend_from_slice(&stream);
+    assert!(lzss::decode(&container, usize::MAX).unwrap_err().contains("past the declared"));
+}
+
+/// A block whose bit streams are empty decodes to nothing instead of
+/// overflowing the shift that loads the stream's last word.
+#[test]
+fn lzfse_empty_bit_stream_is_an_error() {
+    let mut block = b"bvx2".to_vec();
+    block.extend_from_slice(&[0u8; 28]);
+    block[24] = 32;
+    block.extend_from_slice(b"bvx$");
+    assert_eq!(lzfse::decode(&block, 0, usize::MAX), Ok(Vec::new()));
 }
 
 #[test]
@@ -159,6 +185,13 @@ fn auxiliary_collection_rebases_only_its_own_level() {
     set_level(&mut image, 0x4808, 3);
     set_level(&mut image, 0x4800, 0);
     let foreign = word(&image, 0x4800);
+    let unlinked = peel(image.clone(), &KernelcacheChoice::Entry("Widget".into())).unwrap();
+    assert_eq!(word(&unlinked.bytes, 0x4000), word(&image, 0x4000), "a boot KC does not rebase level 3");
+    let pad = image.windows(4).position(|w| w == b"<!--").unwrap();
+    let end = pad + image[pad..].windows(3).position(|w| w == b"-->").unwrap() + 3;
+    let links = b"<key>_BootKCID</key><key>_PageableKCID</key>";
+    image[pad..end].fill(b' ');
+    image[pad..pad + links.len()].copy_from_slice(links);
     let kext = peel(image, &KernelcacheChoice::Entry("Widget".into())).unwrap();
     assert_eq!(word(&kext.bytes, 0x4000), base + 0x3000);
     assert_eq!(word(&kext.bytes, 0x4808), base + 0x2400, "kext __const -> \"Widget\"");
@@ -197,4 +230,22 @@ fn truncated_fileset_entry_header_is_refused() {
     let mut image = fixture("fileset.macho");
     image[0x2000 + 20..0x2000 + 24].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(peel(image, &KernelcacheChoice::Entry("Widget".into())).is_err());
+}
+
+/// A standalone kext's absolute symbols are not read as collection-bound
+/// imports; the same kext carved from its collection keeps them.
+#[test]
+fn only_a_collection_kext_reads_bound_imports() {
+    use object::read::Object;
+    let kext = peel(fixture("fileset.macho"), &KernelcacheChoice::Entry("Widget".into())).unwrap().bytes;
+    let bound = |bytes: &[u8]| {
+        let file = object::File::parse(bytes).unwrap();
+        crate::loader::macho_stubs::resolve_macho_imports(&file, bytes)
+            .iter()
+            .any(|i| i.addr == 0xffff_fff0_0700_7000 && i.name == b"kernel_add")
+    };
+    assert!(bound(&kext));
+    let mut standalone = kext.clone();
+    standalone[27] &= 0x7f;
+    assert!(!bound(&standalone));
 }

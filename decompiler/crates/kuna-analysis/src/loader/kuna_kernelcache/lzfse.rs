@@ -382,7 +382,7 @@ impl<'a> BitIn<'a> {
         }
         let width = if n != 0 { 8 } else { 7 };
         let pos = buf.len().saturating_sub(width);
-        let accum = le_bytes(&buf[pos..]) << (8 * (width - (buf.len() - pos)));
+        let accum = le_bytes(&buf[pos..]).checked_shl(8 * (width - (buf.len() - pos)) as u32).unwrap_or(0);
         let nbits = (n + 8 * width as i32) as u32;
         if nbits < 64 && accum >> nbits != 0 {
             return Err("bad LZFSE bit-stream header");

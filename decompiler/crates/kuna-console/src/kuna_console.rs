@@ -166,7 +166,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         });
     }
     if option == "kernelcache" {
-        return Some(Cow::Owned(conf.analysis_kernelcache.as_str().to_string()));
+        // The loader reads the env bridge, which the `option` command also sets.
+        let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::from_env();
+        return Some(Cow::Owned(choice.as_str().to_string()));
     }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),

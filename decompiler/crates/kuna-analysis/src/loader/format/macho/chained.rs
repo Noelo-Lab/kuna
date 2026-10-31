@@ -224,10 +224,14 @@ where
     // base (the imagebase the OFFSET formats add). __PAGEZERO (filesize 0) is
     // skipped so it does not win as the minimum.
     let mut imagebase: u64 = u64::MAX;
+    let mut prelink_info: Option<&[u8]> = None;
 
     while let Ok(Some(command)) = commands.next() {
         // Segment (either width) → SegInfo + imagebase candidate.
         if let Ok(Some((segment, _))) = Mach::Segment::from_command(command) {
+            if trim_name(segment.name()) == b"__PRELINK_INFO" {
+                prelink_info = segment.data(endian, bytes).ok();
+            }
             let vmaddr = segment.vmaddr(endian).into();
             let fileoff = segment.fileoff(endian).into();
             let filesize = segment.filesize(endian).into();
@@ -260,24 +264,67 @@ where
     let mut out = ChainedFixups::default();
     let mut walk = Walk::new(&segs, bytes, blob);
     walk_fixups(blob, imagebase, &mut walk, &mut out);
-    resolve_kernel_cache_levels(&mut out, imagebase);
+    let links = prelink_info.map(CollectionLinks::read);
+    resolve_kernel_cache_levels(&mut out, imagebase, links);
     out.sort_slots();
     out
+}
+
+fn trim_name(raw: &[u8]) -> &[u8] {
+    &raw[..raw.iter().position(|&b| b == 0).unwrap_or(raw.len())]
+}
+
+/// Which other kernel collections a collection's `__PRELINK_INFO` plist (the
+/// segment's bytes; its one section is `__info`) says it
+/// was linked against: `_BootKCID` (the boot collection) and `_PageableKCID`
+/// (the System collection), the UUID keys xnu's `OSKext` checks before it
+/// accepts a System or Auxiliary collection. A boot collection carries neither.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CollectionLinks {
+    boot: bool,
+    pageable: bool,
+}
+
+impl CollectionLinks {
+    fn read(info: &[u8]) -> Self {
+        let has = |key: &[u8]| info.windows(key.len()).any(|w| w == key);
+        CollectionLinks { boot: has(b"<key>_BootKCID</key>"), pageable: has(b"<key>_PageableKCID</key>") }
+    }
 }
 
 /// Resolve the kernel-collection rebases that target this collection.
 ///
 /// A `DYLD_CHAINED_PTR_64_KERNEL_CACHE` target is an offset from the base of
-/// the collection its `cacheLevel` names — xnu's `basePointers` index: 0 the
-/// boot (primary) collection, 1 the pageable (System) one, 3 the auxiliary one
-/// (`pexpert/gen/kcformat.c`). xnu loads them in that order and a collection can
-/// point only into itself and the ones loaded before it, so the highest level a
-/// collection's chains name is its own: 0 for a boot KC, 1 for a System KC, 3
-/// for an Auxiliary KC. Those targets rebase from this file's base; a target in
-/// an earlier collection needs that file's base and stays unresolved.
-fn resolve_kernel_cache_levels(out: &mut ChainedFixups, imagebase: u64) {
+/// the collection its `cacheLevel` names -- xnu's `basePointers` index
+/// (`kc_kind_t`: 0 the boot collection, 1 the pageable System one, 3 the
+/// Auxiliary one). Only targets at this collection's own level can be rebased
+/// from this file's base; a target in another collection needs that file.
+///
+/// Nothing in the Mach-O header or the chains names the own level: xnu learns a
+/// collection's kind from whoever loads it. The `__PRELINK_INFO` plist does
+/// say which collections it was linked against (`links`): none for the boot
+/// collection (0); `_PageableKCID` only for an Auxiliary one (3); `_BootKCID`
+/// alone for a System collection or for an Auxiliary one built without a
+/// System collection. That last pair is told apart by the chains, which is
+/// sound there because neither can name the other's level: a System
+/// collection is loaded before any Auxiliary one, and an Auxiliary one that
+/// links no System collection cannot point into it. Without the plist, or when
+/// the chains name both levels, the own level is unknown and no
+/// kernel-collection target is written at all.
+fn resolve_kernel_cache_levels(out: &mut ChainedFixups, imagebase: u64, links: Option<CollectionLinks>) {
     let pending = std::mem::take(&mut out.kernel_cache);
-    let Some(own) = pending.iter().map(|&(_, level, _)| level).max() else { return };
+    let names = |level: u8| pending.iter().any(|&(_, l, _)| l == level);
+    let own = match links {
+        Some(CollectionLinks { boot: false, pageable: false }) => Some(0),
+        Some(CollectionLinks { pageable: true, .. }) => Some(3),
+        Some(CollectionLinks { boot: true, pageable: false }) => match (names(1), names(3)) {
+            (true, false) => Some(1),
+            (false, true) => Some(3),
+            _ => None,
+        },
+        None => None,
+    };
+    let Some(own) = own else { return };
     for (va, level, offset) in pending {
         if level == own {
             out.rebases.push((va, imagebase.wrapping_add(offset)));
@@ -810,26 +857,32 @@ mod tests {
         assert_eq!(decode_ptr(plain, &at), (2, Some(Fixup::Rebase(base + 0x8000))));
     }
 
-    /// A collection's own cache level is the highest its chains name: an
-    /// Auxiliary KC (level 3) rebases its own targets from its base and leaves
-    /// the ones into the boot (0) and System (1) collections unresolved; a boot
-    /// KC (only level 0) rebases them all.
+    /// The own cache level comes from the collections the plist links: an
+    /// Auxiliary KC rebases its level-3 targets and leaves the boot and System
+    /// ones alone; a boot KC rebases level 0; with no plist, or a `_BootKCID`
+    /// collection whose chains name both 1 and 3, nothing is written.
     #[test]
     fn kernel_cache_rebases_resolve_the_collections_own_level() {
         let base = 0xffff_fe00_0700_0000;
-        let resolve = |kernel_cache| {
-            let mut f = ChainedFixups { kernel_cache, ..ChainedFixups::default() };
-            resolve_kernel_cache_levels(&mut f, base);
+        let pending = vec![(base + 0x10, 3, 0x4000), (base + 0x18, 0, 0x8000), (base + 0x20, 1, 0x100)];
+        let run = |pending: Vec<(u64, u8, u64)>, links| {
+            let mut f = ChainedFixups { kernel_cache: pending, ..ChainedFixups::default() };
+            resolve_kernel_cache_levels(&mut f, base, links);
             f.sort_slots();
-            f
+            [base + 0x10, base + 0x18, base + 0x20].map(|va| f.resolved_ptr(va))
         };
-        let aux = resolve(vec![(base + 0x10, 3, 0x4000), (base + 0x18, 0, 0x8000), (base + 0x20, 1, 0x100)]);
-        assert_eq!(aux.resolved_ptr(base + 0x10), Some(base + 0x4000));
-        assert_eq!(aux.resolved_ptr(base + 0x18), None);
-        assert_eq!(aux.resolved_ptr(base + 0x20), None);
-
-        let boot = resolve(vec![(base, 0, 0x4000)]);
-        assert_eq!(boot.resolved_ptr(base), Some(base + 0x4000));
+        let aux = Some(CollectionLinks { boot: true, pageable: true });
+        assert_eq!(run(pending.clone(), aux), [Some(base + 0x4000), None, None]);
+        let boot = Some(CollectionLinks { boot: false, pageable: false });
+        assert_eq!(run(pending.clone(), boot), [None, Some(base + 0x8000), None]);
+        let boot_only = Some(CollectionLinks { boot: true, pageable: false });
+        assert_eq!(run(pending.clone(), boot_only), [None, None, None], "both 1 and 3 named: unknown");
+        assert_eq!(run(vec![(base + 0x20, 1, 0x100), (base + 0x18, 0, 0x8000)], boot_only), [None, None, Some(base + 0x100)]);
+        assert_eq!(run(pending, None), [None, None, None], "no plist: unknown");
+        assert_eq!(
+            CollectionLinks::read(b"<dict><key>_BootKCID</key><data>AA==</data></dict>"),
+            CollectionLinks { boot: true, pageable: false }
+        );
     }
 
     /// `ARM64E_FIRMWARE` keeps a non-auth target as a full vmaddr and rebases an

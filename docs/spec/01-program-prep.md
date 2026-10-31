@@ -994,10 +994,16 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   base, and pointer-authentication bits are dropped. The kernel-cache formats
   name the collection a target lies in by its `cacheLevel`, xnu's index of the
   boot (0), System/pageable (1) and Auxiliary (3) collections
-  (`pexpert/gen/kcformat.c`); a collection points only into itself and the ones
-  loaded before it, so the highest level its chains name is its own and those
-  targets rebase from this file's base, while a target in an earlier collection
-  stays unwritten
+  (`pexpert/gen/kcformat.c`). Only targets at the collection's own level can be
+  rebased from this file's base. Neither the header nor the chains state that
+  level (xnu learns it from whoever loads the collection), so it is read from
+  the collections the `__PRELINK_INFO` plist links: no `_BootKCID` is the boot
+  collection (0), `_PageableKCID` an Auxiliary one (3), and `_BootKCID` alone is
+  a System collection or an Auxiliary one built without a System collection,
+  told apart by whichever of levels 1 and 3 its chains name (neither can point
+  into the other's level). With no plist, or chains naming both, the level is
+  unknown and no kernel-collection target is written; targets at other levels
+  are never written
   (`decompiler/crates/kuna-analysis/src/loader/format/macho/chained.rs (resolve_kernel_cache_levels)`)
   — and one entry is cut out as a thin Mach-O by copying
   its header and load commands to file offset 0. Nothing else moves: every
