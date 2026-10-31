@@ -120,6 +120,14 @@ Cover points cache numeric operation positions. When inserting an operation
 exhausts an order gap and renumbers its block, the covers of that block's input
 and output Varnodes, and their owning HighVariables, must be marked dirty.
 The next merge comparison rebuilds those ranges using the new positions.
+The renumbering walks the block once and marks each Varnode as it meets it,
+skipping one already marked that has no HighVariable, since marking it again
+changes nothing (`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs
+(Funcdata::bb_set_order_within)`). Heritage inserts one INDIRECT per guarded
+range in front of every call, which renumbers a large block about once every
+dozen insertions at each call; collecting the block's Varnodes into a set at
+every renumbering spent 47 s of `tests/hang-repro/escaped_locals`' 95 s
+(1,403 ranges at 700 calls) in renumbering; the function now takes 48 s.
 
 A Cover is keyed by block index; its walk over the CFG resolves an index to its
 block through a table built once per walk, the first block in list order with
