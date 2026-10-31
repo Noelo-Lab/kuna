@@ -1,0 +1,98 @@
+# Octeon integer extensions. Generic MIPS retains its original constructors.
+# Fields/availability follow GNU Octeon opcode tables; arithmetic uses ordinary
+# p-code so it can be checked independently of an emulator's helpers.
+
+:bbit0 RSsrc, oct_bit, Rel16 is $(AMODE) & prime=0x32 & RSsrc & oct_bit & Rel16 {
+    local taken:1 = ((RSsrc >> oct_bit) & 1) == 0;
+    delayslot(1);
+    if taken goto Rel16;
+}
+:bbit032 RSsrc, oct_bit, Rel16 is $(AMODE) & prime=0x36 & RSsrc & oct_bit & Rel16 {
+    local taken:1 = ((RSsrc >> (oct_bit + 32)) & 1) == 0;
+    delayslot(1);
+    if taken goto Rel16;
+}
+:bbit1 RSsrc, oct_bit, Rel16 is $(AMODE) & prime=0x3a & RSsrc & oct_bit & Rel16 {
+    local taken:1 = ((RSsrc >> oct_bit) & 1) != 0;
+    delayslot(1);
+    if taken goto Rel16;
+}
+:bbit132 RSsrc, oct_bit, Rel16 is $(AMODE) & prime=0x3e & RSsrc & oct_bit & Rel16 {
+    local taken:1 = ((RSsrc >> (oct_bit + 32)) & 1) != 0;
+    delayslot(1);
+    if taken goto Rel16;
+}
+:baddu RD, RSsrc, RTsrc is $(AMODE) & prime=0x1c & fct=0x28 & sa=0 & RD & RSsrc & RTsrc {
+    RD = (RSsrc + RTsrc) & 255;
+}
+:dmul RD, RSsrc, RTsrc is $(AMODE) & prime=0x1c & fct=3 & sa=0 & RD & RSsrc & RTsrc {
+    RD = RSsrc * RTsrc;
+}
+:pop RD, RSsrc is $(AMODE) & prime=0x1c & fct=0x2c & sa=0 & rt=0 & RD & RSsrc {
+    local count:4 = popcount(RSsrc:4);
+    RD = zext(count);
+}
+:dpop RD, RSsrc is $(AMODE) & prime=0x1c & fct=0x2d & sa=0 & rt=0 & RD & RSsrc {
+    RD = popcount(RSsrc);
+}
+:seq RD, RSsrc, RTsrc is $(AMODE) & prime=0x1c & fct=0x2a & sa=0 & RD & RSsrc & RTsrc {
+    RD = zext(RSsrc == RTsrc);
+}
+:sne RD, RSsrc, RTsrc is $(AMODE) & prime=0x1c & fct=0x2b & sa=0 & RD & RSsrc & RTsrc {
+    RD = zext(RSsrc != RTsrc);
+}
+:seqi RT, RSsrc, oct_imm is $(AMODE) & prime=0x1c & fct=0x2e & RT & RSsrc & oct_imm {
+    RT = zext(RSsrc == oct_imm);
+}
+:snei RT, RSsrc, oct_imm is $(AMODE) & prime=0x1c & fct=0x2f & RT & RSsrc & oct_imm {
+    RT = zext(RSsrc != oct_imm);
+}
+:cins RT, RSsrc, oct_p, oct_len is $(AMODE) & prime=0x1c & fct=0x32 & RT & RSsrc & oct_p & oct_len {
+    local octmask:8 = 0xffffffffffffffff >> (63 - oct_len);
+    RT = (RSsrc & octmask) << oct_p;
+}
+:cins32 RT, RSsrc, oct_p, oct_len is $(AMODE) & prime=0x1c & fct=0x33 & RT & RSsrc & oct_p & oct_len {
+    local octmask:8 = 0xffffffffffffffff >> (63 - oct_len);
+    RT = (RSsrc & octmask) << (oct_p + 32);
+}
+:exts RT, RSsrc, oct_p, oct_len is $(AMODE) & prime=0x1c & fct=0x3a & RT & RSsrc & oct_p & oct_len {
+    local value:8 = RSsrc >> oct_p;
+    value = value << (63 - oct_len);
+    RT = value s>> (63 - oct_len);
+}
+:exts32 RT, RSsrc, oct_p, oct_len is $(AMODE) & prime=0x1c & fct=0x3b & RT & RSsrc & oct_p & oct_len {
+    local value:8 = RSsrc >> (oct_p + 32);
+    value = value << (63 - oct_len);
+    RT = value s>> (63 - oct_len);
+}
+
+@ifdef OCTEON2
+:lbx RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=0x16 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = sext(*:1 addr);
+}
+:lbux RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=6 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = zext(*:1 addr);
+}
+:lhx RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=4 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = sext(*:2 addr);
+}
+:lhux RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=0x14 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = zext(*:2 addr);
+}
+:lwx RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=0 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = sext(*:4 addr);
+}
+:lwux RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=0x10 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = zext(*:4 addr);
+}
+:ldx RD, RTsrc(RSsrc) is $(AMODE) & prime=0x1f & fct=0xa & sa=8 & RD & RTsrc & RSsrc {
+    local addr:8 = RSsrc + RTsrc;
+    RD = *:8 addr;
+}
+@endif

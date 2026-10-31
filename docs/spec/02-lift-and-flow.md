@@ -2826,3 +2826,9 @@ the barrier for auditing GC behavior. Pinned by
 the compiler's own polarity) and by the kuna-console `verify_go_writebarrier`
 gate, which builds a real stripped Go binary and proves the detection-driven
 `auto` path end to end.
+
+## Octeon integer targets
+
+Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.
+
+Both 64-bit address and 32-bit address (N32) variants have explicit soft-float compiler specifications. Automatic ELF selection, III hard-float conventions, system/crypto/atomic coverage and complete ABI qualification remain separate work. These explicit targets currently advertise the integer core subset.

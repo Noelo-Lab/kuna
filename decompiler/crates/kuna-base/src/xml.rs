@@ -2133,7 +2133,8 @@ mod tests {
         // and kuna-deadwaves / a pass after a removal-only pass visits only what it touched (option deadwaves)
         // and kuna-earlyrestart / a pass stops at a dead-code delay bump and restarts at once (option earlyrestart)
         // and kuna-duplabels / two copies of one block print distinct labels
-        assert_eq!(count, 610, "corpus file count drifted");
+        // and kuna-octeon-core / explicit Octeon integer variants
+        assert_eq!(count, 611, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

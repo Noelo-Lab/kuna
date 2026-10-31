@@ -4,7 +4,7 @@
 stream produced by Ghidra's C++ `sleigh_opt` at revision
 `cef869af04c4740a71ad31a55704045b1b0d1644`. Compression bytes are excluded because
 flate2 and zlib can compress the same stream differently. The manifest covers
-49 specs, including both endiannesses, Toy variants, major processor families,
+53 specs, including both endiannesses, Toy variants, major processor families,
 Hexagon's named sections and crossbuilds, and inherited context assignments
 across nested `with` blocks. The named-bitrange fixtures exercise reads and
 writes of one-bit, nine-bit and byte-aligned aliases in both endiannesses.
@@ -14,6 +14,12 @@ intersection, disjunctions and nested specializations.
 The Rust test compiles the listed sources and compares directly with these
 digests. It needs no prebuilt `.sla` files, Ghidra installation or C++ toolchain.
 The other golden text files pin scanner, parser and macro-expansion traces.
+
+The Octeon integer variants were added using the recorded C++ compiler. The
+generic MIPS32/MIPS64 entries were regenerated because the conditional Octeon guards
+move source line numbers stored in the element stream. That compiler reproduces
+the old MIPS digests on the previous sources; the generic constructors retain
+their meanings. The Rust compiler matches all six new element streams.
 
 The SPARC entries include kuna's destination corrections for `fdtoi`, `fqtoi`,
 `fstox` and `fqtox`. The first three were regenerated with Ghidra's C++
