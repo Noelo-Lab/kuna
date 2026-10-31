@@ -377,7 +377,7 @@ pub fn universal_sched(
         rrow!("shift2mult", "analysis", crate::ruleaction_3::RuleShift2Mult),
         rrow!("shiftpiece", "analysis", crate::ruleaction_3::RuleShiftPiece),
         rrow!("addcarrychain", "analysis", crate::kuna_addcarrychain::RuleAddCarryChain::with_group(false, "analysis")),
-        rrow!("multicollapse", "analysis", crate::ruleaction_3::RuleMultiCollapse),
+        rrow!("multicollapse", "analysis", crate::ruleaction_3::RuleMultiCollapse::default()),
         rrow!("indirectcollapse", "analysis", crate::ruleaction_3::RuleIndirectCollapse),
         rrow!("2comp2mult", "analysis", crate::ruleaction_3::Rule2Comp2Mult),
         rrow!("sub2add", "analysis", crate::ruleaction_3::RuleSub2Add),
