@@ -344,7 +344,9 @@ fn check_errors(
     // missing bytes remain selection failures.
     if !(allow_external && is_undefined_external_entry(out)) {
         if let Some(reason) = selection_failure(out) {
-            if reason.contains("per-function decompile budget exceeded") {
+            if reason.contains("per-function decompile budget exceeded")
+                || reason.contains("per-function memory limit exceeded")
+            {
                 return Some(format!("decompilation failed for {target} in {binary}: {reason}"));
             }
             return Some(reason);
