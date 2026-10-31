@@ -2007,6 +2007,16 @@ per-field transfers using recovered types — described with the type system in
 chapter 05, as is lane division (`ActionLaneDivide` in stackstall, over
 `subflow.rs (LaneDivide)` (built over `transform.rs (TransformManager)`)).
 
+When lane division may downcast and meets a `SUBPIECE` narrower than the lane
+it reads, it keeps that `SUBPIECE` as a terminator on the lane where its bytes
+start. The `SUBPIECE` offset counts from its own input, which can hold only the
+upper lanes of the split register, so the lane is the one at that offset plus
+the input's starting position in the register. Counting from the start of the
+register instead picked a lane too low by the input's skipped lanes: a silent
+read of the wrong lane, or, when the result fell below the input's first lane,
+a panic indexing before its piece array (#1157). Upstream Ghidra fixed the
+same line as GP-7434. This is a correctness repair with no option.
+
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.
 For `PIECE` and `INT_ZEXT`, extraction respects the low operand's declared
