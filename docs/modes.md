@@ -202,10 +202,16 @@ not, and the invariant test's `EXCLUDED_ON_PURPOSE` list is the authority:
   `f ? a / b : c`) then keeps only the high word or returns nothing, where the
   default returns every word.
 
+- **`readonlyreturns`** — it drops the return guard COPYs of read-only globals
+  nothing writes, which saves memory and time on a function with thousands of
+  constant globals and hundreds of returns, but the COPYs' writes also kept
+  byte views of those globals out of vector-lane merges: on some huge functions
+  the C then prints stores into read-only memory (GH-1034).
+
 These therefore stay manual per-run opt-ins (`--option v850indirectbranch on`,
 `--option dwarf_lines on`, `--option formatstring full`, `--option ifuncfpret on`,
 `--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`,
-`--option libgccsigs on`)
+`--option libgccsigs on`, `--option readonlyreturns on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence. For `formatstring` only the `full` loop above is excluded:
 its `static` default reads the same format constants out of the image at load, so

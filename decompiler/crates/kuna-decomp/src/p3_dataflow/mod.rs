@@ -8,6 +8,7 @@ mod kuna_leafmemory;
 pub(crate) mod kuna_globalcallranges;
 pub(crate) mod kuna_loadguardreads;
 pub(crate) mod kuna_prunedssa;
+pub(crate) mod kuna_readonlyreturns;
 pub mod subflow;
 mod kuna_constantbytes;
 pub mod condexe;

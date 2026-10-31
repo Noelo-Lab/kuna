@@ -711,6 +711,49 @@ each RETURN (`return_copy`), which is precisely what keeps a global store's
 def-chain alive through dead-code elimination so `glob = ...` survives to the
 output.
 
+Under `option readonlyreturns` (default off), a pass on which `readonlycalls`
+leaves read-only ranges unguarded at calls builds no such COPY for a read-only
+range the pass never writes
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (skips)`).
+With no write and no call INDIRECT on the range, the value that reaches every
+RETURN is the one it had at entry, so the COPY would keep nothing alive and the
+printer hides it anyway. Upstream builds it: one COPY per persistent range per
+RETURN, which survives to the final IR and is cloned again with every return
+block `ActionReturnSplit` duplicates. serde-hkx's 194 KB deserializer reads
+about 2,900 read-only globals and has 269 RETURNs before its returns are split:
+1.19 million return COPYs, 97% of them on such ranges, and 7.19 million once
+`ActionReturnSplit` has cloned its shared return block. A range any write in the
+pass reaches (an explicit store, a syscall's memory effect) keeps its COPYs, as
+does every range on a pass that keeps its read-only call guards, since there the
+return COPY is the reader that keeps those guards' chains, and every range under
+`indexaliasguard full`, whose STORE guards are placed after the return guards.
+With `readonlycalls off` the option has no effect.
+
+The COPYs did one more job: by reading the range's entry value at every
+RETURN, they make that value's Cover span the function, and that Cover is what
+stops `Merge` from joining another value into the global's variable. Without
+it, a register value computed from the global, such as `t = glob ^ a1`, joins
+the global once the global's last read is behind it, and prints as a store
+into read-only memory (`glob ^= a1;`). The pass therefore records each range it
+gives no COPY
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (Returnless)`),
+and `Merge::merge` and `Merge::merge_test` refuse to join a variable holding
+such a range's entry value with an unaddress-tied variable holding anything but
+a copy of it
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (keeps_apart)`),
+the joins the full Cover would have refused. That restores what the COPYs'
+input did, but not what their output did: each is a write of the global at a
+RETURN, part of the global's variable, and on some huge functions those writes
+were what kept a one-byte view of the global (`SUBPIECE` of its own storage)
+out of a vector register's lane MULTIEQUAL. Without them the lane phi joins the
+byte, and the C prints a store into read-only memory (four of serde-hkx's
+hkxc.exe functions that trigger the option, `0x1400d4c60`, `0x14038afb0`,
+`0x1402bec30` and `0x140766a50`; ten more of the fourteen sampled print the same
+C as with the COPYs). The option is
+therefore off by default; on it trades that risk for the memory and time.
+`gotoreduce`, which counts every op in a return tail against its budget, can
+also duplicate a tail that only the COPYs had made too long.
+
 **LOAD/STORE guards.** Ranges in the stack space can be aliased by indexed
 LOADs/STOREs (`stack[i]`). Once per space per function
 (`heritage.rs (Heritage::discover_indexed_stack_pointers)`), the engine walks

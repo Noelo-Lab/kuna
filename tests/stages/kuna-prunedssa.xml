@@ -12,8 +12,7 @@
      pass. Pass 3 is the default: churn's 256 read-only ranges at its 321
      calls (82,176 guards) reach readonlycalls' 65,536-guard threshold, the
      guards on read-only memory the function never writes go, and churn's
-     live IR drops from 90311 to 8135 ops. Each function prints the same body
-     in all three passes. Two more passes count churn's ops only: at
+     live IR drops from 90311 to 8135 ops. Each function prints the same body in all three passes. Two more passes count churn's ops only: at
      readonlycalls 82177, one guard more than churn would build, it keeps
      them; at readonlycalls on it drops them. The fixture's source,
      provenance and native oracle are beside it.

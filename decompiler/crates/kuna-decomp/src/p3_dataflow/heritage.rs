@@ -878,6 +878,8 @@ pub struct Heritage {
     /// (kuna `readonlycalls`) Whether this pass leaves read-only ranges
     /// unguarded at calls ([`Heritage::readonly_cross_product`]).
     readonly_unguarded: bool,
+    /// (kuna `readonlyreturns`) The ranges given no RETURN guard.
+    readonly_returnless: super::kuna_readonlyreturns::Returnless,
     /// (kuna `stackstoreguard`) Whether this pass's frame has a stack access
     /// whose pointer does not resolve, decided at most once per pass.
     store_frame_unresolved: Option<bool>,
@@ -939,6 +941,7 @@ impl Heritage {
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
             readonly_unguarded: false,
+            readonly_returnless: Default::default(),
             store_frame_unresolved: None,
             store_frame_guarded: false,
             global_store_guards: 0,
@@ -951,6 +954,11 @@ impl Heritage {
             load_reads: Default::default(),
             splitmanage: Default::default(),
         }
+    }
+
+    /// (kuna `readonlyreturns`) The ranges given no RETURN guard.
+    pub(crate) fn readonly_returnless(&self) -> &super::kuna_readonlyreturns::Returnless {
+        &self.readonly_returnless
     }
 
     /// Get the overall count of heritage passes (C++ `getPass`).
@@ -1106,6 +1114,7 @@ impl Heritage {
         self.disjoint.clear();
         self.globaldisjoint.clear();
         self.global_call_ranges.clear();
+        self.readonly_returnless.clear();
         self.domchild.clear();
         self.augment.clear();
         self.flags.clear();
@@ -2736,7 +2745,7 @@ impl Heritage {
         fl: uint4,
         addr: &Address,
         size: int4,
-        _write: &mut [crate::context::VarnodeId],
+        write: &mut [crate::context::VarnodeId],
     ) {
         use kuna_num::opcodes::OpCode;
         if fd.get_active_output().is_some()
@@ -2772,6 +2781,10 @@ impl Heritage {
             }
         }
         if (fl & varnode_flags::persist) == 0 {
+            return;
+        }
+        if super::kuna_readonlyreturns::skips(fd, fl, self.readonly_unguarded, write) {
+            self.readonly_returnless.record(addr, size);
             return;
         }
         // Persist RETURN-COPY branch (heritage.cc:1677-1692): the global value

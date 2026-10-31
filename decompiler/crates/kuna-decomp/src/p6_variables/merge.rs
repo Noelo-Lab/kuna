@@ -150,6 +150,14 @@ pub trait MergeContext: HighContext {
     fn op_is_fpu_trunc_view(&self, _op: OpId) -> bool {
         false
     }
+    /// (kuna `readonlyreturns`) Did heritage give any range no RETURN guard?
+    fn kuna_has_returnless(&self) -> bool {
+        false
+    }
+    /// (kuna `readonlyreturns`) Is `vn` stored in such a range?
+    fn kuna_returnless_storage(&self, _vn: VarnodeId) -> bool {
+        false
+    }
     // --- HighVariable flag/type reads (the C++ direct `high->is*`/`getType`) --
     // The bank lazily re-derives flags/type from members on read, so these take
     // `&mut self`; the `Funcdata` impl does the field-split borrow internally.
@@ -1217,6 +1225,7 @@ impl Merge {
         self.budget()?;
         if MergeIntersect::intersection(ctx, &mut self.test_cache, high1, high2)
             || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high1, high2)
+            || crate::p3_dataflow::kuna_readonlyreturns::keeps_apart(ctx, high1, high2)
         {
             return Ok(false);
         }
@@ -1292,6 +1301,7 @@ impl Merge {
         for a in others {
             if MergeIntersect::intersection(ctx, &mut self.test_cache, a, high)
                 || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, a, high)
+                || crate::p3_dataflow::kuna_readonlyreturns::keeps_apart(ctx, a, high)
             {
                 return false;
             }
