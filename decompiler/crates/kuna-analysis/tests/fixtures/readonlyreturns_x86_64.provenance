@@ -2,12 +2,14 @@ readonlyreturns_x86_64 -- the GH-1034 return-guard fixture for option `readonlyr
 (tests/stages/kuna-readonlyreturns.xml).
 
 What it is
-  A 28,320-byte x86-64 ELF built from readonlyreturns_x86_64.c, which is
+  A 28,352-byte x86-64 ELF built from readonlyreturns_x86_64.c, which is
   generated straight-line C. `exits` makes 256 calls to `sink`, reads one word
   of the read-only table `tab` (in .rodata, defined in inline assembly so the
   compiler cannot fold the reads) before each call, and returns early after
   each call when the result matches a constant, so the function has 257 `ret`
   instructions. The fall-through path stores the writable global `hits`.
+  `joins` keeps `tab[0] ^ y` in a register across two calls to `sink` after
+  its only read of the table.
 
 Why it is vendored
   The op counts the stage test pins depend on the exact code layout, so the
@@ -19,5 +21,6 @@ Where it came from
 
       gcc -O2 -fno-pie -no-pie -fno-inline -o readonlyreturns_x86_64 readonlyreturns_x86_64.c
 
-  sha256 f89cec1e79c86cafa526a86629f4d7d718dac8f9c662c4b7873c5ae749fbc73c.
-  Run with no arguments it prints -2250365822891767781 -2250365822891767781.
+  sha256 a6552d5491d8fe155d4ec6d0dd36f5b534bfbaf52fc330b4058b20fa74be4b0d.
+  Run with no arguments it prints -2250365822891767781 -2250365822891767781
+  -1362730841740883504.

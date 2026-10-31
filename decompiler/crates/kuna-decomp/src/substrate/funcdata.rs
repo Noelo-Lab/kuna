@@ -2239,6 +2239,11 @@ impl Funcdata {
         self.heritage.global_store_guarded(vn.get_space().get_index(), lo, lo.wrapping_add(vn.get_size() as u64))
     }
 
+    /// (kuna `readonlyreturns`) The ranges heritage gave no RETURN guard.
+    pub(crate) fn readonly_returnless(&self) -> &crate::p3_dataflow::kuna_readonlyreturns::Returnless {
+        self.heritage.readonly_returnless()
+    }
+
     /// Get the heritage pass when the given address was last heritaged, or -1
     /// (C++ `Funcdata::isHeritaged` reads `heritage.heritagePass`).
     pub fn heritage_pass(&self, addr: &Address) -> int4 {

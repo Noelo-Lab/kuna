@@ -9,7 +9,12 @@
      write and no call guard reaches has its entry value at every return, so
      it gets no return COPY and the live IR is 4098 ops. The writable global
      hits keeps its guards and both of its stores. Both passes print the same
-     body. The fixture's source and provenance are beside it.
+     body. Passes 3 and 4 decompile joins with readonlycalls on, off and on:
+     tab[0] ^ y lives in a register across two calls after the table's last
+     read, and without the return COPYs that kept the table word live Merge
+     joined it into the table's variable, printing a store into .rodata
+     (dat_405008 ^= a1). Both passes keep it in its own variable. The
+     fixture's source and provenance are beside it.
 -->
 </binaryimage>
 <script>
@@ -26,13 +31,24 @@
   <com>decompile</com>
   <com>print C</com>
   <com>count pcode</com>
+  <com>option readonlycalls on</com>
+  <com>option readonlyreturns off</com>
+  <com>load function joins</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option readonlyreturns on</com>
+  <com>load function joins</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
 <stringmatch name="readonlyreturns #1: both passes print exits" min="2" max="2">^int8 exits\(int8 a0\)$</stringmatch>
 <stringmatch name="readonlyreturns #2: both passes keep the 256 calls" min="512" max="512">sink\(dat_</stringmatch>
-<stringmatch name="readonlyreturns #3: both passes keep the 257 returns" min="514" max="514">^ +return </stringmatch>
+<stringmatch name="readonlyreturns #3: both passes keep the 257 returns" min="514" max="514">^ +return (hits|-?(0x[0-9a-f]+|[0-9]+));$</stringmatch>
 <stringmatch name="readonlyreturns #4: both passes keep both stores to the writable global" min="4" max="4">^ +hits = v[0-9]+ \+ </stringmatch>
 <stringmatch name="readonlyreturns #5: upstream placement keeps a return COPY per read-only word per RETURN" min="1" max="1">Count - pcode = 69890</stringmatch>
 <stringmatch name="readonlyreturns #6: upstream placement builds them all" min="1" max="1">Count - created = 83666</stringmatch>
 <stringmatch name="readonlyreturns #7: the default keeps none of them" min="1" max="1">Count - pcode = 4098</stringmatch>
 <stringmatch name="readonlyreturns #8: the default never builds them" min="1" max="1">Count - created = 17874</stringmatch>
+<stringmatch name="readonlyreturns #9: both joins passes keep the value read from the table in its own variable" min="2" max="2">^ +v[0-9]+ = dat_[0-9a-f]+ \^ a1;$</stringmatch>
+<stringmatch name="readonlyreturns #10: neither joins pass stores into the read-only table" min="0" max="0">^ +dat_[0-9a-f]+ \^= </stringmatch>
 </decompilertest>

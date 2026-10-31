@@ -329,6 +329,15 @@ fn copy_pair_writes(
 }
 
 impl MergeContext for Funcdata {
+    fn kuna_has_returnless(&self) -> bool {
+        !self.readonly_returnless().is_empty()
+    }
+    fn kuna_returnless_entry(&self, vn: VarnodeId) -> bool {
+        self.vbank().get(vn).is_some_and(|v| {
+            v.is_input()
+                && self.readonly_returnless().contains(v.get_space().get_index(), v.get_offset(), v.get_size())
+        })
+    }
     fn fpu_trunc_views_enabled(&self) -> bool {
         self.get_arch().fpu_trunc_views && !self.kuna_fpu_trunc_views.is_empty()
     }

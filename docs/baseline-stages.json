@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3318,
-    3318
+    3320,
+    3320
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2845,6 +2845,7 @@
     "data:ptrfromuse #7: a parameter that is shifted before it is dereferenced is refused in all three passes",
     "data:ptrfromuse #8: and a parameter that upstream already typed is untouched in all three",
     "data:ptrfromuse #9: a parameter that subscripts a global byte table is refused in all three passes",
+    "data:readonlyreturns #10: neither joins pass stores into the read-only table",
     "data:readonlyreturns #1: both passes print exits",
     "data:readonlyreturns #2: both passes keep the 256 calls",
     "data:readonlyreturns #3: both passes keep the 257 returns",
@@ -2853,6 +2854,7 @@
     "data:readonlyreturns #6: upstream placement builds them all",
     "data:readonlyreturns #7: the default keeps none of them",
     "data:readonlyreturns #8: the default never builds them",
+    "data:readonlyreturns #9: both joins passes keep the value read from the table in its own variable",
     "data:real-rel16 #10: the CS: read does not use the 64 KiB block guess 0x2000",
     "data:real-rel16 #11: a far CALL in CS 0x2b58 pushes IP 0x01a5, not the linear low half 0xb725",
     "data:real-rel16 #12: no far CALL pushes the linear low half",

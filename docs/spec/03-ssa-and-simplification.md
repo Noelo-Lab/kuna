@@ -729,6 +729,22 @@ return COPY is the reader that keeps those guards' chains, and every range under
 `indexaliasguard full`, whose STORE guards are placed after the return guards.
 With `readonlycalls off` the option has no effect.
 
+The COPYs did one more job: by reading the range's entry value at every
+RETURN, they make that value's Cover span the function, and that Cover is what
+stops `Merge` from joining another value into the global's variable. Without
+it, a register value computed from the global, such as `t = glob ^ a1`, joins
+the global once the global's last read is behind it, and prints as a store
+into read-only memory (`glob ^= a1;`). The pass therefore records each range it
+gives no COPY
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (Returnless)`),
+and `Merge::merge` and `Merge::merge_test` refuse to join a variable holding
+such a range's entry value with an unaddress-tied variable holding anything but
+a copy of it
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_readonlyreturns.rs (keeps_apart)`),
+the joins the full Cover would have refused. The C is otherwise unchanged,
+except that `gotoreduce`, which counts every op in a return tail against its
+budget, can now duplicate a tail that only the COPYs had made too long.
+
 **LOAD/STORE guards.** Ranges in the stack space can be aliased by indexed
 LOADs/STOREs (`stack[i]`). Once per space per function
 (`heritage.rs (Heritage::discover_indexed_stack_pointers)`), the engine walks

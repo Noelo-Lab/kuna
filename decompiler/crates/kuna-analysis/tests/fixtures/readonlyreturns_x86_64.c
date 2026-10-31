@@ -3,9 +3,12 @@
    and returns early after each call, so it has 257 RETURN ops: heritage puts a
    return guard COPY for each read-only word before each of them, 65,792 in all.
    The last return also stores the writable global `hits`, whose guards stay.
+   `joins` keeps `tab[0] ^ y` in a register across two calls after its last
+   read of the table: with no return COPY to keep the table word live, Merge
+   must still not join that value into the table's variable.
    Rebuild:
      gcc -O2 -fno-pie -no-pie -fno-inline -o readonlyreturns_x86_64 readonlyreturns_x86_64.c
-   Run with no arguments it prints -2250365822891767781 -2250365822891767781. */
+   Run with no arguments it prints -2250365822891767781 -2250365822891767781 -1362730841740883504. */
 #include <stdio.h>
 extern const long tab[256];
 __asm__(".section .rodata\n.balign 8\n.globl tab\ntab:\n.quad 4096\n.quad 4113\n.quad 4130\n.quad 4147\n.quad 4164\n.quad 4181\n.quad 4198\n.quad 4215\n.quad 4232\n.quad 4249\n.quad 4266\n.quad 4283\n.quad 4300\n.quad 4317\n.quad 4334\n.quad 4351\n.quad 4368\n.quad 4385\n.quad 4402\n.quad 4419\n.quad 4436\n.quad 4453\n.quad 4470\n.quad 4487\n.quad 4504\n.quad 4521\n.quad 4538\n.quad 4555\n.quad 4572\n.quad 4589\n.quad 4606\n.quad 4623\n.quad 4640\n.quad 4657\n.quad 4674\n.quad 4691\n.quad 4708\n.quad 4725\n.quad 4742\n.quad 4759\n.quad 4776\n.quad 4793\n.quad 4810\n.quad 4827\n.quad 4844\n.quad 4861\n.quad 4878\n.quad 4895\n.quad 4912\n.quad 4929\n.quad 4946\n.quad 4963\n.quad 4980\n.quad 4997\n.quad 5014\n.quad 5031\n.quad 5048\n.quad 5065\n.quad 5082\n.quad 5099\n.quad 5116\n.quad 5133\n.quad 5150\n.quad 5167\n.quad 5184\n.quad 5201\n.quad 5218\n.quad 5235\n.quad 5252\n.quad 5269\n.quad 5286\n.quad 5303\n.quad 5320\n.quad 5337\n.quad 5354\n.quad 5371\n.quad 5388\n.quad 5405\n.quad 5422\n.quad 5439\n.quad 5456\n.quad 5473\n.quad 5490\n.quad 5507\n.quad 5524\n.quad 5541\n.quad 5558\n.quad 5575\n.quad 5592\n.quad 5609\n.quad 5626\n.quad 5643\n.quad 5660\n.quad 5677\n.quad 5694\n.quad 5711\n.quad 5728\n.quad 5745\n.quad 5762\n.quad 5779\n.quad 5796\n.quad 5813\n.quad 5830\n.quad 5847\n.quad 5864\n.quad 5881\n.quad 5898\n.quad 5915\n.quad 5932\n.quad 5949\n.quad 5966\n.quad 5983\n.quad 6000\n.quad 6017\n.quad 6034\n.quad 6051\n.quad 6068\n.quad 6085\n.quad 6102\n.quad 6119\n.quad 6136\n.quad 6153\n.quad 6170\n.quad 6187\n.quad 6204\n.quad 6221\n.quad 6238\n.quad 6255\n.quad 6272\n.quad 6289\n.quad 6306\n.quad 6323\n.quad 6340\n.quad 6357\n.quad 6374\n.quad 6391\n.quad 6408\n.quad 6425\n.quad 6442\n.quad 6459\n.quad 6476\n.quad 6493\n.quad 6510\n.quad 6527\n.quad 6544\n.quad 6561\n.quad 6578\n.quad 6595\n.quad 6612\n.quad 6629\n.quad 6646\n.quad 6663\n.quad 6680\n.quad 6697\n.quad 6714\n.quad 6731\n.quad 6748\n.quad 6765\n.quad 6782\n.quad 6799\n.quad 6816\n.quad 6833\n.quad 6850\n.quad 6867\n.quad 6884\n.quad 6901\n.quad 6918\n.quad 6935\n.quad 6952\n.quad 6969\n.quad 6986\n.quad 7003\n.quad 7020\n.quad 7037\n.quad 7054\n.quad 7071\n.quad 7088\n.quad 7105\n.quad 7122\n.quad 7139\n.quad 7156\n.quad 7173\n.quad 7190\n.quad 7207\n.quad 7224\n.quad 7241\n.quad 7258\n.quad 7275\n.quad 7292\n.quad 7309\n.quad 7326\n.quad 7343\n.quad 7360\n.quad 7377\n.quad 7394\n.quad 7411\n.quad 7428\n.quad 7445\n.quad 7462\n.quad 7479\n.quad 7496\n.quad 7513\n.quad 7530\n.quad 7547\n.quad 7564\n.quad 7581\n.quad 7598\n.quad 7615\n.quad 7632\n.quad 7649\n.quad 7666\n.quad 7683\n.quad 7700\n.quad 7717\n.quad 7734\n.quad 7751\n.quad 7768\n.quad 7785\n.quad 7802\n.quad 7819\n.quad 7836\n.quad 7853\n.quad 7870\n.quad 7887\n.quad 7904\n.quad 7921\n.quad 7938\n.quad 7955\n.quad 7972\n.quad 7989\n.quad 8006\n.quad 8023\n.quad 8040\n.quad 8057\n.quad 8074\n.quad 8091\n.quad 8108\n.quad 8125\n.quad 8142\n.quad 8159\n.quad 8176\n.quad 8193\n.quad 8210\n.quad 8227\n.quad 8244\n.quad 8261\n.quad 8278\n.quad 8295\n.quad 8312\n.quad 8329\n.quad 8346\n.quad 8363\n.quad 8380\n.quad 8397\n.quad 8414\n.quad 8431\n.text\n");
@@ -784,4 +787,10 @@ __attribute__((noinline)) long exits(long x) {
   hits = acc;
   return acc;
 }
-int main(int argc, char **argv) { long r = exits(argc); printf("%ld %ld\n", r, hits); return 0; }
+__attribute__((noinline)) long joins(long x, long y) {
+  long t = tab[0] ^ y;
+  long a = sink(t);
+  long b = sink(t + a);
+  return a + b + t + y * x;
+}
+int main(int argc, char **argv) { long r = exits(argc); printf("%ld %ld %ld\n", r, hits, joins(argc, r)); return 0; }
