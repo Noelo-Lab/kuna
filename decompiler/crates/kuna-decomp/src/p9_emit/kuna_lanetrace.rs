@@ -41,10 +41,14 @@ pub(crate) fn footprint(
 }
 
 /// The failed traces of one storage location in one mode, and the Varnodes
-/// each one read.
+/// each one reached, kept in one buffer. A failure's footprint is built only
+/// when a split follows it: nothing changes the IR between splits, so it is the
+/// footprint the trace read.
 #[derive(Default)]
 pub(crate) struct FailedTraces {
     failed: FxHashSet<VarnodeId>,
+    pending: Vec<(VarnodeId, usize, usize)>,
+    reached: Vec<VarnodeId>,
     readers: FxHashMap<VarnodeId, Vec<VarnodeId>>,
 }
 
@@ -54,23 +58,49 @@ impl FailedTraces {
         self.failed.contains(&root)
     }
 
-    /// The trace from `root` failed after reading `footprint`.
-    pub(crate) fn record(&mut self, root: VarnodeId, footprint: FxHashSet<VarnodeId>) {
-        self.failed.insert(root);
-        for vn in footprint {
-            self.readers.entry(vn).or_default().push(root);
-        }
+    /// Where the Varnodes the next root's traces reach start.
+    pub(crate) fn start(&self) -> usize {
+        self.reached.len()
     }
 
-    /// The IR changed at `footprint`: forget every failure that read it.
-    pub(crate) fn invalidate(&mut self, footprint: &FxHashSet<VarnodeId>) {
-        for vn in footprint {
-            if let Some(roots) = self.readers.remove(vn) {
-                for root in roots {
-                    self.failed.remove(&root);
+    /// A trace reached `reached`.
+    pub(crate) fn reach(&mut self, reached: impl IntoIterator<Item = VarnodeId>) {
+        self.reached.extend(reached);
+    }
+
+    /// Every trace from `root` failed, reaching what was recorded since `start`.
+    pub(crate) fn fail(&mut self, root: VarnodeId, start: usize) {
+        self.failed.insert(root);
+        self.pending.push((root, start, self.reached.len()));
+    }
+
+    /// A trace from `root` reaching what was recorded since `start` is about to
+    /// be applied as a split. Index the failures since the last split by
+    /// `footprint_of(root, reached)`, then forget every failure that read a
+    /// Varnode in the split's own footprint.
+    pub(crate) fn split(
+        &mut self,
+        root: VarnodeId,
+        start: usize,
+        mut footprint_of: impl FnMut(VarnodeId, &[VarnodeId]) -> FxHashSet<VarnodeId>,
+    ) {
+        if !self.failed.is_empty() {
+            let split = footprint_of(root, &self.reached[start..]);
+            for (failure, a, b) in std::mem::take(&mut self.pending) {
+                for vn in footprint_of(failure, &self.reached[a..b]) {
+                    self.readers.entry(vn).or_default().push(failure);
+                }
+            }
+            for vn in &split {
+                if let Some(roots) = self.readers.remove(vn) {
+                    for failure in roots {
+                        self.failed.remove(&failure);
+                    }
                 }
             }
         }
+        self.pending.clear();
+        self.reached.clear();
     }
 }
 
@@ -83,19 +113,32 @@ mod tests {
         VarnodeId::from(KeyData::from_ffi(n))
     }
 
-    fn set(ids: &[u64]) -> FxHashSet<VarnodeId> {
-        ids.iter().map(|&n| vn(n)).collect()
+    /// A trace's footprint is its root and what it reached.
+    fn read(root: VarnodeId, reached: &[VarnodeId]) -> FxHashSet<VarnodeId> {
+        std::iter::once(root).chain(reached.iter().copied()).collect()
+    }
+
+    fn fail(failed: &mut FailedTraces, root: u64, reached: &[u64]) {
+        let start = failed.start();
+        failed.reach(reached.iter().map(|&n| vn(n)));
+        failed.fail(vn(root), start);
+    }
+
+    fn split(failed: &mut FailedTraces, root: u64, reached: &[u64]) {
+        let start = failed.start();
+        failed.reach(reached.iter().map(|&n| vn(n)));
+        failed.split(vn(root), start, read);
     }
 
     #[test]
     fn a_failure_holds_until_a_split_touches_what_it_read() {
         let mut failed = FailedTraces::default();
-        failed.record(vn(1), set(&[1, 2, 3]));
-        failed.record(vn(4), set(&[4, 5]));
+        fail(&mut failed, 1, &[2, 3]);
+        fail(&mut failed, 4, &[5]);
         assert!(failed.holds(vn(1)) && failed.holds(vn(4)));
-        failed.invalidate(&set(&[6, 7]));
+        split(&mut failed, 6, &[7]);
         assert!(failed.holds(vn(1)) && failed.holds(vn(4)));
-        failed.invalidate(&set(&[7, 3]));
+        split(&mut failed, 7, &[3]);
         assert!(!failed.holds(vn(1)));
         assert!(failed.holds(vn(4)));
     }
@@ -103,13 +146,43 @@ mod tests {
     #[test]
     fn a_retraced_failure_is_held_again() {
         let mut failed = FailedTraces::default();
-        failed.record(vn(1), set(&[1, 2]));
-        failed.invalidate(&set(&[2]));
+        fail(&mut failed, 1, &[2]);
+        split(&mut failed, 2, &[]);
         assert!(!failed.holds(vn(1)));
-        failed.record(vn(1), set(&[1, 8]));
-        failed.invalidate(&set(&[2]));
+        fail(&mut failed, 1, &[8]);
+        split(&mut failed, 2, &[]);
         assert!(failed.holds(vn(1)));
-        failed.invalidate(&set(&[8]));
+        split(&mut failed, 8, &[]);
         assert!(!failed.holds(vn(1)));
+    }
+
+    #[test]
+    fn a_footprint_is_built_only_when_a_split_follows() {
+        let mut failed = FailedTraces::default();
+        let mut built = 0;
+        fail(&mut failed, 1, &[2]);
+        fail(&mut failed, 3, &[]);
+        let start = failed.start();
+        failed.split(vn(9), start, |root, reached| {
+            built += 1;
+            read(root, reached)
+        });
+        assert_eq!(built, 3);
+        let start = failed.start();
+        failed.split(vn(9), start, |root, reached| {
+            built += 1;
+            read(root, reached)
+        });
+        assert_eq!(built, 4);
+        assert!(failed.holds(vn(1)) && failed.holds(vn(3)));
+    }
+
+    #[test]
+    fn a_split_with_no_failure_held_builds_nothing() {
+        let mut failed = FailedTraces::default();
+        let start = failed.start();
+        failed.reach([vn(1), vn(2)]);
+        failed.split(vn(3), start, |_, _| panic!("no footprint is needed"));
+        assert_eq!(failed.start(), 0);
     }
 }

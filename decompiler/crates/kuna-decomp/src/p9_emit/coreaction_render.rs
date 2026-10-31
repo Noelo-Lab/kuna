@@ -258,14 +258,7 @@ impl Action for ActionLaneDivide {
                     let split = if failed.holds(vn) {
                         Ok(false)
                     } else {
-                        let mut footprint = crate::kuna_fasthash::FxHashSet::default();
-                        let split = lane_divide_process_varnode(data, vn, laned_reg, mode, &mut footprint);
-                        match split {
-                            Ok(true) => failed.invalidate(&footprint),
-                            Ok(false) => failed.record(vn, footprint),
-                            Err(_) => {}
-                        }
-                        split
+                        lane_divide_process_varnode(data, vn, laned_reg, mode, &mut failed)
                     };
                     match split {
                         Ok(true) => {
@@ -353,15 +346,15 @@ fn lane_divide_collect_lane_sizes(
 /// ops; 1: same, allowing SUBPIECE downcasts; 2: default pointer-derived size).
 /// Returns `true` if the Varnode (and its data-flow) was successfully split. A
 /// split that fails part way has already rewritten the function, so the error
-/// fails the function, as the C++ exception does. (kuna) `footprint` gathers
-/// what every trace read ([`super::kuna_lanetrace::footprint`]), taken before a
-/// split is applied.
+/// fails the function, as the C++ exception does. (kuna) A failure is recorded
+/// in `failed`, and a split is reported to it before it is applied
+/// ([`super::kuna_lanetrace::FailedTraces`]).
 fn lane_divide_process_varnode(
     data: &mut Funcdata,
     vn: VarnodeId,
     laned_register: &LanedRegister,
     mode: int4,
-    footprint: &mut crate::kuna_fasthash::FxHashSet<VarnodeId>,
+    failed: &mut super::kuna_lanetrace::FailedTraces,
 ) -> KunaResult<bool> {
     let mut check_lanes = LanedRegister::new(); // Lanes we are going to try, no lanes initially
     let allow_downcast = mode > 0;
@@ -380,20 +373,25 @@ fn lane_divide_process_varnode(
     }
     let whole_size = laned_register.get_whole_size();
     let sizes: Vec<int4> = check_lanes.iter_sizes().collect();
-    super::kuna_lanetrace::footprint(data, vn, std::iter::empty(), footprint);
+    let start = failed.start();
     for cur_size in sizes {
         let description = LaneDescription::uniform(whole_size, cur_size);
         let mut lane_divide = LaneDivide::new(data, vn, description, allow_downcast);
         let traced = lane_divide.do_trace(data);
-        let reached: Vec<VarnodeId> = lane_divide.traced().collect();
-        super::kuna_lanetrace::footprint(data, vn, reached, footprint);
+        failed.reach(lane_divide.traced());
         if traced {
+            failed.split(vn, start, |root, reached| {
+                let mut read = crate::kuna_fasthash::FxHashSet::default();
+                super::kuna_lanetrace::footprint(data, root, reached.iter().copied(), &mut read);
+                read
+            });
             lane_divide.apply(data).map_err(|e| {
                 KunaError::lowlevel(format!("laned register split failed part way: {e}"))
             })?;
             return Ok(true); // Indicate a change was made
         }
     }
+    failed.fail(vn, start);
     Ok(false)
 }
 

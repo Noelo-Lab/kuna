@@ -2086,7 +2086,12 @@ split rewrites only within its own trace's footprint, taken before it is
 applied. So the rescan skips a Varnode whose failed trace read nothing a later
 split's footprint holds, which would fail the same way, and traces again every
 other one (`kuna_lanetrace.rs (FailedTraces)`); the splits, and their order,
-are upstream's. On 0x1401cd7a0 lane division takes 4 s.
+are upstream's. A failure keeps only its root and the Varnodes it reached; its
+footprint is built when the next split on the same storage location is about to
+be applied, which is the footprint the trace read because nothing changes the
+IR between splits. A location with no later split builds none, so lane
+division costs what upstream's does when nothing is skipped. On 0x1401cd7a0
+lane division takes 4 s.
 
 When lane division may downcast and meets a `SUBPIECE` narrower than the lane
 it reads, it keeps that `SUBPIECE` as a terminator on the lane where its bytes
