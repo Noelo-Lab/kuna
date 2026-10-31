@@ -333,9 +333,11 @@ struct DataRef {
 /// target is data rather than code: its symbol's extent, else one word).
 ///
 /// With `operands` (x86, whose instructions embed absolute addresses), a word
-/// that is the operand of a decoded instruction referencing the same address
-/// is that instruction's row, not a stored pointer: a 32-bit PE's base
-/// relocations list every `push offset f` and `jmp [slot]` in `.text`.
+/// that lies inside a decoded instruction referencing the same address is that
+/// instruction's operand and row, not a stored pointer: a 32-bit PE's base
+/// relocations list every `push offset f` and `jmp [slot]` in `.text`. A word
+/// past the instruction's end (a table in `.text` after a `mov eax, offset f`)
+/// stays a pointer, and so does one no decoded instruction covers.
 fn data_rows(
     prog: &ConsoleProgram,
     index: &XrefIndex,
@@ -366,10 +368,15 @@ fn data_rows(
                 .collect()
         }
     };
+    let code_space = prog.arch().manage().get_default_code_space().cloned().filter(|_| operands);
     let operand = |p: &kuna_analysis::loader::kuna_dataptrs::DataPointer| {
-        operands
-            && (p.slot.saturating_sub(15)..=p.slot)
-                .any(|at| index.refs_from_instruction(at).iter().any(|r| r.to == p.target))
+        let Some(space) = code_space.as_ref() else { return false };
+        let end = p.slot.saturating_add(u64::from(p.width));
+        (p.slot.saturating_sub(15)..p.slot).any(|at| {
+            index.refs_from_instruction(at).iter().any(|r| r.to == p.target)
+                && kuna_analysis::listing::decode::decode_one(prog.arch().translate(), at, space, false, false)
+                    .is_ok_and(|insn| at.saturating_add(u64::from(insn.len)) >= end)
+        })
     };
     let selected: Vec<_> = selected.into_iter().filter(|p| !operand(p)).collect();
     if selected.is_empty() {

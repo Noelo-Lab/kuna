@@ -1,0 +1,29 @@
+dataptrs_textptr_i386.exe -- i386 PE whose .text holds relocated instruction
+operands and, right after an instruction naming the same function, a pointer
+table.
+
+What it is
+  A 2,048-byte PE32 (SHA-256
+  e4f447d1ba243b22b96f12a22c55c9dcec5476effb338aab3320e5b9034fce66) assembled
+  from dataptrs_textptr.s. Its .reloc lists, in .text:
+    0x401001  push $_helper            operand -> _helper   (0x40104e)
+    0x40101f  jmp *cases(,%eax,4)      operand -> the case table
+    0x401023.. the four case words     -> the case bodies
+    0x40104f  mov $_dispatch, %eax     operand -> _dispatch (0x401013)
+    0x401054  _text_table[0]           -> _helper
+    0x401058  _text_table[1]           -> _dispatch
+  and in .data _data_table (0x403000, 0x403004) -> _helper, _dispatch.
+  _text_table[1] starts five bytes after the mov that loads _dispatch's
+  address: inside the byte window an operand could occupy, outside the mov.
+
+How it was built (host clang + the rustup-bundled lld-link)
+  clang -target i686-pc-windows-msvc -c dataptrs_textptr.s -o t.obj
+  rust-lld -flavor link /brepro /dynamicbase /safeseh:no /entry:start \
+           /subsystem:console /nodefaultlib /out:dataptrs_textptr_i386.exe t.obj
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). Prebuilt because CI
+  has no PE linker.
+
+What it pins
+  `kuna xrefs --to 0x401013` lists _text_table[1] and _data_table[1] as pointer
+  rows, not the mov's operand; `--to 0x40104e` lists _text_table[0] and
+  _data_table[0], not the push's operand.

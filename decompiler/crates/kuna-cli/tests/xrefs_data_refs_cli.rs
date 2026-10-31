@@ -94,3 +94,20 @@ fn a_shared_objects_exported_function_table_is_listed() {
     assert_eq!(doc["data_refs"][0]["from_address_hex"], "0x4030");
     assert_eq!(doc["data_refs"][0]["from_name"], "exported_tab");
 }
+
+/// On x86 a relocated word inside a decoded instruction that names the same
+/// address is that instruction's operand, not a stored pointer; a pointer table
+/// in `.text` that starts just past such an instruction is still listed.
+#[test]
+fn an_x86_operand_is_the_instructions_row_and_a_text_table_is_a_pointer() {
+    let exe = fixture("dataptrs_textptr_i386.exe");
+    let rows = |doc: &serde_json::Value| -> Vec<String> {
+        doc["data_refs"].as_array().unwrap().iter().map(|r| r["from_address_hex"].as_str().unwrap().to_string()).collect()
+    };
+    let dispatch = json(&[&exe, "--to", "0x401013"]);
+    assert_eq!(dispatch["data_refs_coverage"], "base-relocations");
+    assert_eq!(rows(&dispatch), ["0x401058", "0x403004"], "the mov's operand 0x40104f is not a pointer row: {dispatch}");
+    assert!(dispatch["xrefs"].as_array().unwrap().iter().any(|r| r["from_address_hex"] == "0x40104e"), "{dispatch}");
+    let helper = json(&[&exe, "--to", "0x40104e"]);
+    assert_eq!(rows(&helper), ["0x401054", "0x403000"], "the push's operand 0x401001 is not a pointer row: {helper}");
+}

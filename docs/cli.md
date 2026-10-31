@@ -2283,7 +2283,8 @@ without `.reloc`, a relocatable object): there an empty `data_refs` means "not
 enumerated", not "none stored". A word bound to an import is not listed; it holds
 an address of another image. On x86 a relocated word inside a decoded instruction
 that references the same address (a 32-bit PE's `push offset f`) is that
-instruction's row, not a stored pointer, and is left out.
+instruction's row, not a stored pointer, and is left out; a word past the end of
+that instruction, such as a pointer table in `.text`, is still listed.
 
 ```
 kuna xrefs fixture --to _audit_target
