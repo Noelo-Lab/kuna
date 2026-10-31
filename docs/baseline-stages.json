@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3254,
-    3254
+    3269,
+    3269
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -973,7 +973,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 341 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 343 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1187,6 +1187,9 @@
     "data:Label statement x64 #1: the empty last case gets break",
     "data:Label statement x64 #2: the loop-end goto label gets a null statement",
     "data:Label statement x64 #3: no label directly before a blank line or a closing brace",
+    "data:Lane divide terminator #1",
+    "data:Lane divide terminator #2",
+    "data:Lane divide terminator #3",
     "data:Legacy array fields become locals only with the option off",
     "data:Legacy scalar writes to the whole structure require the option off",
     "data:MAPPED-FLOW #1: off loses both functions to staged padding",
@@ -2794,6 +2797,18 @@
     "data:preloaded x86 stack read: capture stays before branch",
     "data:preloaded x86 stack read: guarded consumer retains saved value",
     "data:preloaded x86 stack read: volatile slot retained",
+    "data:prunedssa #10: the default builds the fewest ops for churn",
+    "data:prunedssa #11: escaped's address-tied slots keep every guard in every pass",
+    "data:prunedssa #12: escaped's live IR is the same in all three passes",
+    "data:prunedssa #1: all three passes print churn",
+    "data:prunedssa #2: all three passes keep churn's 256 calls",
+    "data:prunedssa #3: all three passes keep churn's 64 struct copies",
+    "data:prunedssa #4: all three passes keep escaped's 64 calls",
+    "data:prunedssa #5: all three passes keep the 64 struct writes each callee may read",
+    "data:prunedssa #6: upstream placement keeps the read-only guards in churn's live IR",
+    "data:prunedssa #7: upstream placement builds every guard and join for churn",
+    "data:prunedssa #8: prunedssa builds no dead joins for churn",
+    "data:prunedssa #9: readonlycalls drops the read-only guards from churn's live IR",
     "data:ptrdepthcap #1: option off leaves the unbounded escalation (bug reproduces: 6 four-star decls + 1 cast)",
     "data:ptrdepthcap #2: option on settles the lattice (7 in the off pass + 0 in the on pass = 7; any leak back raises the count)",
     "data:ptrfromuse #10: and the named global it indexes survives in all three, instead of becoming a raw address",

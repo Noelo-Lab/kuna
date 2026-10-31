@@ -425,9 +425,10 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 /// Locate the pclntab header VMA. In precedence order (faithful to
 /// `GoPcHeader.getPcHeaderAddress` + `GoModuledata.getFirstModuledata`, plus a
 /// scan fallback for stripped binaries):
-/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`, or the large
-///    read-only data split's `.lrodata_gopclntab` / Mach-O `__lrodata_gopcln`)
-///    section start;
+/// 1. the `.gopclntab` (or `gopclntab` / Mach-O `__gopclntab`, the
+///    `.data.rel.ro.gopclntab` an internally linked go1.25-or-older ELF PIE uses,
+///    or the large read-only data split's `.lrodata_gopclntab` / Mach-O
+///    `__lrodata_gopcln`) section start;
 /// 2. the `runtime.pclntab` / `runtime.firstmoduledata`-adjacent symbol — kuna
 ///    resolves the `runtime.pclntab` symbol directly when present;
 /// 3. a byte scan of the read-only data sections for the validated header magic
@@ -435,10 +436,12 @@ fn decode_functions(img: &ImageBytes, h: &PcHeader) -> Vec<GoFunc> {
 ///    image's own `moduledata` points at ([`moduledata_anchored`]) over an
 ///    earlier one it only carries as data.
 pub(crate) fn locate_header(file: &object::File, img: &ImageBytes) -> Option<u64> {
-    // (1) The named section. Go's ELF uses `.gopclntab`; some toolchains/PE use
-    // `gopclntab` (no dot); Mach-O names it `__gopclntab` (in `__DATA_CONST`).
+    // (1) The named section. Go's ELF uses `.gopclntab` (`.data.rel.ro.gopclntab`
+    // in a relro build); some toolchains/PE use `gopclntab` (no dot); Mach-O names
+    // it `__gopclntab` (in `__DATA_CONST`).
     for name in [
         ".gopclntab",
+        ".data.rel.ro.gopclntab",
         "gopclntab",
         "__gopclntab",
         ".lrodata_gopclntab",

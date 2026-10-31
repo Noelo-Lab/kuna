@@ -1,0 +1,22 @@
+jtglobals_x86_64 -- the GH-1034 fixture for a memory limit that must cover flow
+following (decompiler/crates/kuna-cli/tests/decompile_budget_cli.rs).
+
+What it is
+  A 39,472-byte x86-64 ELF built from jtglobals_x86_64.c, which is generated C:
+  `big` makes 400 calls, each between a read and a write of one of 400 writable
+  globals, and ends in a 16-case switch compiled to a jump table. Recovering the
+  table runs the jump-table sub-pipeline over everything before it, which
+  guards every global at every call, while `kuna decompile`'s `load addr`
+  follows flow and before the decompile drive starts.
+
+Why it is vendored
+  The memory the recovery takes depends on the code layout, so the binary is
+  checked in rather than built at test time.
+
+Where it came from
+  gcc 11.4.0 (Ubuntu 11.4.0-1ubuntu1~22.04.3), GNU ld 2.38, x86-64 Linux:
+
+      gcc -O2 -fno-pie -no-pie -fno-inline -o jtglobals_x86_64 jtglobals_x86_64.c
+
+  sha256 75be111198ac5df026d365d72738af30775b40ee46c1bf1de8fd43fb2c07fc3f.
+  Run with no arguments it exits with status 59.

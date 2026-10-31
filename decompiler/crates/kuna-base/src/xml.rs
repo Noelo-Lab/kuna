@@ -2115,9 +2115,11 @@ mod tests {
         // and kuna-ppc64-ldarx-encoding / generic PowerPC ldx and ldarx decode at their own opcodes
         // and kuna-sparc-delay-condition / a flag-writing delay slot cannot change its branch
         // and kuna-stacksolver-unsolved / a 16-bit stack solution of 65535 is solved once
+        // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
+        // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-segmentize / x86 real-mode accesses go through the segment op (option segmentize)
         // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
-        assert_eq!(count, 595, "corpus file count drifted");
+        assert_eq!(count, 597, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

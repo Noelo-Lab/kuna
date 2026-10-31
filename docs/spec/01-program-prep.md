@@ -987,6 +987,19 @@ replay, and such an image is refused by name before the resource rebuild could r
 that record as its icon count. A TLS directory needs no step at all: UPX's own
 `rebuildTls` is empty, so the directory comes back with the image it was packed in.
 
+Every offset these rebuilds follow comes from the file, so each walk is bounded by
+the bytes the file holds. The loader-table scan reads only section bytes present in
+the file -- a section past the end of the file maps nothing, and one at the top of
+the address space does not wrap -- and reads at most two descriptors per four bytes
+of the file, about twice what an honest image needs; a trailer naming more than 256
+distinct DLLs is refused as unsupported, since UPX can pack more. A resource
+tree that reaches one directory or data entry twice is refused: UPX's packer writes
+the directory out afresh with every node once, even for an original whose linker
+shared a subtree, so only an edited file has one, and following it lets a small tree
+fan out into an exponential walk. The leaves it moves may not add up to more than
+the packed file. The output is laid out, and checked against the original length the
+PackHeader declares, before it is allocated.
+
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
 is not packed at all -- depends on this. `decompiler/crates/kuna-analysis/src/neolite.rs`
@@ -3275,7 +3288,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   `runtime.*` instead of `sub_<addr>`. It is format-neutral: the table is located
   by its ELF `.gopclntab` / Mach-O `__gopclntab` section, or the
   `.lrodata_gopclntab` / `__lrodata_gopcln` section a link that splits out large
-  read-only data gives it, or a scan of the data sections Go places it in. The
+  read-only data gives it, or a scan of the data sections Go places it in. An
+  internally linked ELF PIE from go1.25 or older keeps the table in
+  `.data.rel.ro.gopclntab` (the relro spelling of `.gopclntab`, which no scanned
+  section covers), so that name is on the section list too. The
   scan is the only route on a PE, whose linker writes no pclntab section and
   keeps the table inside `.rdata` among every other rodata symbol, so `.rdata`
   is on the list; and because a PE scan walks megabytes of other data before
