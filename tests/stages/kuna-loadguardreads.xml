@@ -1,0 +1,40 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- GH-1034, P3 heritage LOAD guards, option loadguardreads.
+     gather hands the address of its 64-word table and of each of 64 stack
+     structs to reg, so every stack slot is address-tied, then reads the
+     table at 256 data-dependent indexes. Pass 1 is upstream placement
+     (loadguardreads off): the heritage pass that first meets those indexed
+     LOADs still guards the whole stack, so it builds an address-forced COPY
+     of every address-tied stack range in front of every LOAD, then
+     propagates every one of them away before the pass ends. Pass 2 is the
+     default: renaming reads each guarded range at its LOAD, one guard COPY
+     is built per Varnode those reads reach, and one per guarded range a later
+     read sees on top of its stack. Both passes keep the same live IR and
+     print the same body; the default builds 51,311 fewer ops. The
+     fixture's source and provenance are beside it.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/loadguardreads_x86_64</com>
+  <com>read symbols</com>
+  <com>option loadguardreads off</com>
+  <com>load function gather</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+  <com>option loadguardreads on</com>
+  <com>load function gather</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>count pcode</com>
+</script>
+<stringmatch name="loadguardreads #1: both passes print gather" min="2" max="2">^int8 gather\(int8 a0,unsigned long a1\)$</stringmatch>
+<stringmatch name="loadguardreads #2: both passes keep the 65 calls to reg" min="130" max="130">reg\(</stringmatch>
+<stringmatch name="loadguardreads #3: both passes keep the 64 struct writes each callee may read" min="128" max="128">^  v[0-9]+ = v1( \+ (0x)?[0-9a-f]+)?;$</stringmatch>
+<stringmatch name="loadguardreads #4: both passes read the table at all 256 indexes" min="2" max="2">v5\[v4\[0xff\] &amp; 0x3f\];$</stringmatch>
+<stringmatch name="loadguardreads #5: both passes keep the same live IR" min="2" max="2">Count - pcode = 11538</stringmatch>
+<stringmatch name="loadguardreads #6: upstream placement builds a guard COPY per LOAD per range" min="1" max="1">Count - created = 81135</stringmatch>
+<stringmatch name="loadguardreads #7: the default builds a guard COPY only per Varnode reached and per guard read again" min="1" max="1">Count - created = 29824</stringmatch>
+</decompilertest>

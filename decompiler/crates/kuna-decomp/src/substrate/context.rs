@@ -1110,6 +1110,8 @@ pub struct ArchContext {
     pub readonly_calls: bool,
     /// (kuna) `prunedssa`, read by `Heritage::guard_calls` and `Heritage::place_multiequals`.
     pub pruned_ssa: bool,
+    /// (kuna) `loadguardreads`, read by `Heritage::guard_loads` and `Heritage::guard_global_loads`.
+    pub load_guard_reads: bool,
     /// (kuna) let the callee's decoded body answer for the call's RETURN
     /// register too (`calleeretpreserves`).  Read by `Heritage::guard_calls`
     /// through
@@ -1964,6 +1966,7 @@ impl ArchContext {
             global_call_ranges: true,
             readonly_calls: true,
             pruned_ssa: true,
+            load_guard_reads: true,
             callee_ret_preserves: true,
             callee_scratch_body: true,  // calleescratchbody (DIV-149 default-on)
             indirect_anchor: true,      // indirectanchor (default-on)

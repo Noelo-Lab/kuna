@@ -5,7 +5,7 @@ use crate::funcdata::Funcdata;
 use kuna_base::space::spacetype;
 use kuna_num::opcodes::OpCode;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub(crate) struct MachineRead {
     pub(crate) block: BlockId,
     pub(crate) space: i32,
@@ -17,6 +17,15 @@ pub(crate) struct MachineRead {
 pub(crate) struct ReadScopes {
     pub(crate) lowered: std::collections::HashMap<OpId, MachineRead>,
     pub(crate) by_call: std::collections::HashMap<OpId, Vec<MachineRead>>,
+    /// (kuna `loadguardreads`) The reads of LOAD guards that build no `COPY`.
+    pub(crate) guarded: crate::kuna_fasthash::FxHashSet<MachineRead>,
+}
+
+impl ReadScopes {
+    /// Every recorded read: lowered stack reads, then LOAD guard reads.
+    pub(crate) fn reads(&self) -> impl Iterator<Item = &MachineRead> + '_ {
+        self.lowered.values().chain(self.guarded.iter())
+    }
 }
 
 pub(crate) fn mark_stack_read(data: &mut Funcdata, op: OpId) {
@@ -45,6 +54,22 @@ pub(crate) fn mark_stack_read(data: &mut Funcdata, op: OpId) {
     if let Some(operation) = data.obank_mut().get_mut(op) {
         operation.set_additional_flag(crate::op::pcodeop_addlflags::kuna_stack_read);
     }
+}
+
+/// (kuna `loadguardreads`) Record the read a LOAD guard `COPY` of the stack
+/// range `addr`/`size` in front of `load` would have marked.
+pub(crate) fn mark_guarded_read(data: &mut Funcdata, load: OpId, addr: &kuna_base::address::Address, size: i32) {
+    if !data.get_arch().guarded_read_trim || data.num_calls() == 0 {
+        return;
+    }
+    let Some(space) = addr.get_space().filter(|s| s.get_type() == spacetype::IPTR_SPACEBASE) else {
+        return;
+    };
+    let Some(block) = data.obank().get(load).and_then(|op| op.get_parent()) else {
+        return;
+    };
+    let read = MachineRead { block, space: space.get_index(), offset: addr.get_offset(), size };
+    data.kuna_guarded_reads.guarded.insert(read);
 }
 
 #[inline]
