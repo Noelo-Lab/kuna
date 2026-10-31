@@ -5433,14 +5433,17 @@ impl Architecture {
     ///
     /// The printer goes back on every exit. A panic in `render` returns it
     /// cleared of the partial document ([`PrintC::clear`], C++ `docFunction`'s
-    /// `catch { clear(); throw; }`) and then resumes unwinding, so a caller that
-    /// contains the panic renders every later function with the printer the run
-    /// configured, not the default.
+    /// `catch { clear(); throw; }`) with the printing modifiers it had before
+    /// `render`, then resumes unwinding, so a caller that contains the panic
+    /// renders every later function with the printer the run configured, not
+    /// the default.
     pub fn with_print<R>(&mut self, render: impl FnOnce(&mut PrintC, &Architecture) -> R) -> R {
         let mut print = std::mem::take(&mut self.print);
+        let mods = print.context.mods();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render(&mut print, self)));
         if result.is_err() {
             print.clear();
+            print.context.set_mods(mods);
         }
         self.print = print;
         result.unwrap_or_else(|payload| std::panic::resume_unwind(payload))

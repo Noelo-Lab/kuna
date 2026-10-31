@@ -1387,8 +1387,13 @@ partial document by `printc.rs (PrintC::clear)` (the emitter's indent and paren
 levels and pending brace, the RPN stacks, the pushed mods and scopes, the scoped
 `Funcdata` pointer, unflushed end-of-line warnings, the declared locals and
 pointer-argument record, and a markup back-end, which returns to plain text),
-keeping every option, and then the panic resumes. Upstream `docFunction`
-catches, calls `clear()` and rethrows the same way. A batch that contains a
+keeping every option; its printing modifiers go back to the ones in force when
+the render began; then the panic resumes. Upstream `docFunction` catches, calls
+`clear()` and rethrows the same way, but its `clear()` takes the modifiers from
+the bottom of the pushed stack, which misses a modifier saved and set without a
+push: a panic while a load's pointer prints under `print_load_value` would
+leave it on, and every later function would drop the `&` from its array
+element addresses. A batch that contains a
 render panic as that one function's error record
 (`decompiler/crates/kuna-console/src/project.rs (decompile_pulled)`, serial or
 inside a `--jobs` worker) therefore renders every later function with the
