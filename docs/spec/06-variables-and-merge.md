@@ -399,7 +399,19 @@ tests (`variable.rs (HighIntersectTest::purge_high)`), and the index ends with
 the pass. The required tests' storage lookups over a high's members
 (`funcdata_merge.rs (MergeContext::bank_symbol)` and `kuna_stackvalueorder`'s
 stack-view test) skip a member at the same storage as the member looked up
-before it, which can only repeat that member's miss. On CPython 3.11's `_PyEval_EvalFrameDefault`, a stack slot's
+before it, which can only repeat that member's miss.
+
+When the first pass fails, `merge_op` trims one input at a time and re-runs the
+whole pass after each trim, so a join whose conflict sits at its 115th input
+re-tests every pair 115 times. A trim rewires that input to a fresh COPY. That
+changes only the Cover of the trimmed input's Varnode and adds a high. A failed
+pass records what refused it (`merge.rs (MergeConflict)`): a high without a
+Cover, or a Cover intersection with a high listed earlier. The Cover test
+reads its two highs and the highs of the overlap-group pieces that intersect
+theirs. If none of those is the trimmed input's high, the next pass would meet
+the same refusal or fail before it. That pass is skipped, and the trims go on
+as upstream makes them. A refusal from `kuna_tiedphitrim` is never carried
+over. On CPython 3.11's `_PyEval_EvalFrameDefault`, a stack slot's
 HighVariable grows past 19,000 instances while `merge_marker` merges the
 slot's joins of about 187 inputs. A trim that renumbers a block's ops clears
 the cached tests, so a re-test pass could scan those instances again for every

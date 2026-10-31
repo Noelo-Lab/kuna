@@ -1123,6 +1123,34 @@ impl MergeIntersect {
 // Merge (merge.hh:83-139)
 // =============================================================================
 
+/// (kuna) What refused a high in a merge-test pass: no Cover, or a Cover
+/// intersection with a high listed before it.
+#[derive(Clone, Copy, Debug)]
+struct MergeConflict {
+    earlier: Option<HighVariableId>,
+    high: HighVariableId,
+}
+
+impl MergeConflict {
+    /// Does this refusal survive trimming an input whose high was `trimmed`?
+    ///
+    /// A trim rewires one input of the op to a fresh COPY, which changes only
+    /// the Cover of `trimmed`'s Varnode and adds a high. A Cover test reads its
+    /// two highs and the highs of the overlap-group pieces intersecting theirs;
+    /// when none of them is `trimmed`, the next pass would meet the same
+    /// refusal (or fail before it) and can be skipped.
+    fn outlives_trim(&self, ctx: &dyn MergeContext, trimmed: HighVariableId) -> bool {
+        let unread = |high: HighVariableId| {
+            high != trimmed
+                && ctx.high_piece(high).is_none_or(|piece| {
+                    (0..ctx.piece_num_intersection(piece))
+                        .all(|i| ctx.piece_high(ctx.piece_intersection(piece, i)) != trimmed)
+                })
+        };
+        unread(self.high) && self.earlier.is_none_or(unread)
+    }
+}
+
 /// The HighVariable-formation driver for one function (C++ `class Merge`,
 /// `merge.hh:83-139`).
 ///
@@ -1332,22 +1360,61 @@ impl Merge {
         high: HighVariableId,
         tmplist: &mut Vec<HighVariableId>,
     ) -> bool {
+        self.merge_test_why(ctx, high, tmplist).is_ok()
+    }
+
+    /// [`Self::merge_test`], naming what refused `high`: a [`MergeConflict`],
+    /// or `None` when `kuna_tiedphitrim` did.
+    fn merge_test_why(
+        &mut self,
+        ctx: &mut dyn MergeContext,
+        high: HighVariableId,
+        tmplist: &mut Vec<HighVariableId>,
+    ) -> Result<(), Option<MergeConflict>> {
         if !ctx.high_has_cover(high) {
-            return false;
+            return Err(Some(MergeConflict { earlier: None, high }));
         }
         if tmplist.contains(&high) {
-            return !crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high, high);
+            if crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, high, high) {
+                return Err(None);
+            }
+            return Ok(());
         }
         let others: Vec<HighVariableId> = tmplist.clone();
         for a in others {
-            if MergeIntersect::intersection(ctx, &mut self.test_cache, a, high)
-                || crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, a, high)
-            {
-                return false;
+            if MergeIntersect::intersection(ctx, &mut self.test_cache, a, high) {
+                return Err(Some(MergeConflict { earlier: Some(a), high }));
+            }
+            if crate::p6_variables::kuna_tiedphitrim::intersects(&self.tied_phis, ctx, &mut self.test_cache, a, high) {
+                return Err(None);
             }
         }
         tmplist.push(high);
-        true
+        Ok(())
+    }
+
+    /// One pass of [`Self::merge_test`] over `op`'s output, then its first
+    /// `max` inputs until one fails (C++ `Merge::mergeOp`'s test loop).
+    fn merge_test_pass(
+        &mut self,
+        ctx: &mut dyn MergeContext,
+        op: OpId,
+        high_out: HighVariableId,
+        max: int4,
+    ) -> Result<(), Option<MergeConflict>> {
+        let mut testlist: Vec<HighVariableId> = Vec::new();
+        self.test_cache.begin_instance_blocks();
+        let _ = self.merge_test_why(ctx, high_out, &mut testlist);
+        let mut res = Ok(());
+        for i in 0..max {
+            let ih = ctx.vn_high(ctx.op_in(op, i).unwrap()).unwrap();
+            if let Err(why) = self.merge_test_why(ctx, ih, &mut testlist) {
+                res = Err(why);
+                break;
+            }
+        }
+        self.test_cache.end_instance_blocks();
+        res
     }
 
     /// Test if inflating `a`'s Cover to include `high`'s would intersect (C++
@@ -1657,38 +1724,20 @@ impl Merge {
         }
 
         // Test if a merge violates cover restrictions.
-        let mut testlist: Vec<HighVariableId> = Vec::new();
-        self.test_cache.begin_instance_blocks();
-        self.merge_test(ctx, high_out, &mut testlist);
-        let mut i = 0;
-        while i < max {
-            let ih = ctx.vn_high(ctx.op_in(op, i).unwrap()).unwrap();
-            if !self.merge_test(ctx, ih, &mut testlist) {
-                break;
-            }
-            i += 1;
-        }
-        self.test_cache.end_instance_blocks();
+        let mut failed = self.merge_test_pass(ctx, op, high_out, max);
 
-        if i != max {
+        if failed.is_err() {
             // Cover restrictions: trim one branch at a time and retest.
             let mut nexttrim = 0;
             while nexttrim < max {
+                let trimmed = ctx.vn_high(ctx.op_in(op, nexttrim).unwrap()).unwrap();
                 self.trim_op_input(ctx, op, nexttrim)?;
-                testlist.clear();
-                self.test_cache.begin_instance_blocks();
-                self.merge_test(ctx, high_out, &mut testlist);
-                let mut i2 = 0;
-                while i2 < max {
-                    let ih = ctx.vn_high(ctx.op_in(op, i2).unwrap()).unwrap();
-                    if !self.merge_test(ctx, ih, &mut testlist) {
-                        break;
+                let repeats = matches!(failed, Err(Some(c)) if c.outlives_trim(ctx, trimmed));
+                if !repeats {
+                    failed = self.merge_test_pass(ctx, op, high_out, max);
+                    if failed.is_ok() {
+                        break; // successfully test-merged everything
                     }
-                    i2 += 1;
-                }
-                self.test_cache.end_instance_blocks();
-                if i2 == max {
-                    break; // successfully test-merged everything
                 }
                 nexttrim += 1;
             }
