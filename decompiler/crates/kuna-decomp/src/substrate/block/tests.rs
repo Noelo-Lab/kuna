@@ -816,3 +816,49 @@ fn goto_to_the_next_block_still_gets_its_label() {
         "an emitted goto's target always carries its label"
     );
 }
+
+/// A suffix hoist that shrinks an `if` arm to one component unwraps the arm and
+/// frees the dropped else-arm copy.  A `goto` naming the arm then names its sole
+/// component, which starts at the same leaf, and a `break` naming the dropped copy
+/// names the kept one: no carrier is left holding a freed block.
+#[test]
+fn ite_suffix_hoist_leaves_no_branch_on_a_freed_block() {
+    let mut g = BlockGraph::new();
+    let root = g.arena.insert(FlowBlock::new_kind(BlockKind::Ls));
+    g.root = Some(root);
+    let leaf = |g: &mut BlockGraph, parent: BlockId| {
+        let id = g.arena.insert(FlowBlock::new_kind(BlockKind::Copy { copy: None }));
+        g.add_block(parent, id);
+        id
+    };
+    let ite = g.arena.insert(FlowBlock::new_kind(BlockKind::If { gototype: 0, gototarget: None }));
+    g.add_block(root, ite);
+    leaf(&mut g, ite);
+    let tclause = g.arena.insert(FlowBlock::new_kind(BlockKind::Ls));
+    g.add_block(ite, tclause);
+    let eclause = g.arena.insert(FlowBlock::new_kind(BlockKind::Ls));
+    g.add_block(ite, eclause);
+    let body = leaf(&mut g, tclause);
+    let kept = leaf(&mut g, tclause);
+    let jump = g.arena.insert(FlowBlock::new_kind(BlockKind::If {
+        gototype: block_flags::f_goto_goto,
+        gototarget: Some(tclause),
+    }));
+    g.add_block(eclause, jump);
+    leaf(&mut g, jump);
+    let dropped = leaf(&mut g, eclause);
+    let brk = g.arena.insert(FlowBlock::new_kind(BlockKind::Goto {
+        gototarget: Some(dropped),
+        gototype: block_flags::f_break_goto,
+    }));
+    g.add_block(root, brk);
+    let front_before = g.get_front_leaf(tclause);
+
+    assert!(g.kuna_hoist_ite_suffix(ite, &[kept], &[dropped]));
+    assert!(!g.arena.contains_key(tclause) && !g.arena.contains_key(dropped));
+    assert_eq!(g.block(ite).get_block(1), body);
+    assert_eq!(g.block(jump).get_if_goto_target(), Some(body));
+    assert_eq!(g.get_front_leaf(body), front_before);
+    assert_eq!(g.block(brk).get_goto_target(), Some(kept));
+    assert_eq!(g.block(root).get_list(), &[ite, kept, brk]);
+}

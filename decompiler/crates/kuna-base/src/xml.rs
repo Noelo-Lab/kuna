@@ -2124,9 +2124,11 @@ mod tests {
         // and kuna-calleepop-x86-16 / a near call is credited the two bytes it stores (option calleepop)
         // and kuna-returnglobal-sparc / a global in %o1 is not joined into an int's return
         // and kuna-segmentize-z80 / a Z80 table with a row outside the image is still followed
+        // and kuna-loadguardreads / LOAD guards read while renaming (option loadguardreads)
+        // and kuna-dedup-goto-arm / a goto into an arm unwrapped by a suffix hoist keeps a live target
         // and kuna-bejoin-callers / a long long whose callers read both registers joins
         // high word first (option bejoin evidence = swapped)
-        assert_eq!(count, 603, "corpus file count drifted");
+        assert_eq!(count, 605, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

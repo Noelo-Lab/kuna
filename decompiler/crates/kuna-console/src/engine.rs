@@ -575,6 +575,9 @@ pub struct ConsoleProgram {
     loader_data_objects: Vec<(u64, String, u64)>,
     /// (kuna) A PE image's data exports, `(addr, name)`: lookup names only.
     loader_data_exports: Vec<(u64, String)>,
+    /// (kuna `mzsweep`) An MS-DOS executable's relocated module and relocation
+    /// words, the evidence its raw-image call sweep reads.
+    mz_evidence: Option<kuna_analysis::listing::kuna_mzsweep::MzEvidence>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
     /// the console `function bounds <start> <end>` and the CLI
@@ -2557,12 +2560,14 @@ impl ConsoleProgram {
         let known: BTreeSet<u64> = seeds.iter().copied().collect();
         let found = {
             let arch = self.arch();
+            let mz = self.mz_evidence.as_ref().filter(|_| arch.analysis_mzsweep);
             kuna_analysis::listing::kuna_rawdiscover::discover(
                 arch,
                 arch.translate(),
                 &code_space,
                 &exec,
                 &seeds,
+                mz,
             )
         };
         for vma in found {
@@ -3773,6 +3778,7 @@ fn empty_program(
         arm_frames: None,
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
+        mz_evidence: None,
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
@@ -4035,6 +4041,11 @@ pub fn bootstrap_from_mz_bytes(
     }
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or(MZ_LANGUAGE);
     let entry = image.entry;
+    let evidence = kuna_analysis::listing::kuna_mzsweep::MzEvidence::new(
+        image.base,
+        image.module.clone(),
+        image.relocated_words.clone(),
+    );
     let mut program = bootstrap_raw_image(
         path,
         target,
@@ -4048,6 +4059,7 @@ pub fn bootstrap_from_mz_bytes(
         kuna_analysis::loader::kuna_realmodecs::paint(program.arch(), &space, &image.code_segments);
     }
     program.image_metadata = Some(ProgramImageMetadata { entry: Some(entry), sections: Vec::new() });
+    program.mz_evidence = Some(evidence);
     Ok(program)
 }
 

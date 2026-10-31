@@ -916,6 +916,17 @@ leaves and ≤ `(MAX_LEAF_OPS)` = 64 ops per equivalence check, exact-or-decline
 on any mismatch, and a leaf carrying a label/goto is never hoisted. Flipped
 on by DIV-14.
 
+The hoist frees tree nodes: each dropped else-arm copy, and any arm list that
+is left with one component and unwrapped to it. A goto, switch case or
+multi-goto edge elsewhere in the tree can still name one of those nodes. A
+goto from one arm into the start of the other names that whole arm. Before a
+node is freed, every branch that names it is pointed at the node that took its
+place (`decompiler/crates/kuna-decomp/src/substrate/block.rs
+(kuna_free_replaced)`). An unwrapped arm hands over to its sole component,
+which starts at the same leaf, so the goto keeps its label and lands on the
+same statement. A dropped copy hands over to the copy that was kept. Before
+this, the goto kept the freed node's id and printing its label panicked.
+
 ### iteregion — `?:` recovery (angr `ITERegionConverter`)
 
 `decompiler/crates/kuna-decomp/src/p8_structure/kuna_iteregion.rs

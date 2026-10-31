@@ -248,9 +248,7 @@ __declspec(dllexport) unsigned int choose_word(unsigned int first,unsigned int s
     let arch = data.conf.as_mut().unwrap().arch_mut();
     arch.realtypes = true;
     arch.ctypes = true;
-    let mut printer = arch.take_print();
-    let body = printer.doc_function_full(fd, arch);
-    arch.put_print(printer);
+    let body = arch.with_print(|printer, arch| printer.doc_function_full(fd, arch));
     assert!(body.contains("float v1;"), "locked type was lost:\n{body}");
     let generated = root.join("generated.c");
     std::fs::write(&generated, &body).unwrap();

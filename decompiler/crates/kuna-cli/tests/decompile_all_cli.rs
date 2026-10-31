@@ -269,6 +269,7 @@ fn kuna_command(env: &[(&str, &str)]) -> Command {
     // whose whole assertion is that the block is absent.
     cmd.env_remove("RUST_BACKTRACE");
     cmd.env_remove("KUNA_JOBS_FAULT");
+    cmd.env_remove("KUNA_RENDER_FAULT");
     for name in DECODE_ENV {
         cmd.env_remove(name);
     }
@@ -4703,6 +4704,47 @@ fn jobs_a_transient_worker_death_loses_nothing() {
     assert_eq!(stderr.matches("KUNA_JOBS_FAULT: injected panic").count(), 1, "{stderr}");
     assert_eq!(recovered_count(&stderr), Some(json_records(&serial).len()), "{stderr}");
     assert!(!stderr.contains("have no result"), "nothing was lost:\n{stderr}");
+}
+
+/// A render that panics loses only its own function. The panic used to leave
+/// a default printer in the program, so every later function of the batch (in
+/// the serial run, or in the same worker) silently lost the run's printer
+/// settings, here `indentincrement 4`. The fault fires after the opening
+/// brace, so a printer put back without being cleared would indent the rest
+/// one level too deep. `_init` renders first serially, `main` first in the one
+/// pooled chunk.
+#[test]
+fn a_render_panic_leaves_later_functions_on_the_configured_printer() {
+    let (bin, sp) = (fauxware(), specs());
+    let run: Vec<&str> =
+        ["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]
+            .into_iter()
+            .chain(SERIAL_ORDER_OFF)
+            .chain(["--option", "indentincrement", "4"])
+            .collect();
+    let pool = ["--jobs", "2", "--jobs-chunk", "64"];
+    for (extra, name, at) in [(&[][..], "_init", "0x4004e0"), (&pool[..], "main", "0x40071d")] {
+        let args: Vec<&str> = run.iter().chain(extra).copied().collect();
+        let (want, stderr, ok) = run_kuna(&args);
+        assert!(ok, "{stderr}");
+        assert!(want.contains("{\\n    puts("), "indentincrement 4 must show in the bodies:\n{want}");
+        let (got, stderr, ok) = run_kuna_env(&args, &[("KUNA_RENDER_FAULT", at)]);
+        assert!(ok, "one render panic must not fail the run:\n{stderr}");
+        let fault = format!("KUNA_RENDER_FAULT: injected render panic at {at}");
+        assert_eq!(stderr.matches(&fault).count(), 1, "{stderr}");
+        let (want, got) = (json_records(&want), json_records(&got));
+        assert_eq!(got.len(), want.len(), "one record per target");
+        for (w, g) in want.iter().zip(&got) {
+            if record_name(w) == name {
+                assert!(
+                    g.contains("\"error\": \"panic while rendering C / extracting variables\""),
+                    "{name} must carry its render panic:\n{g}"
+                );
+            } else {
+                assert_eq!(g, w, "{} rendered differently after {name}'s render panicked", record_name(w));
+            }
+        }
+    }
 }
 
 /// The stall watchdog's kill is the other way a worker dies.  Its bystanders

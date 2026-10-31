@@ -246,9 +246,8 @@ fn direct_load_body(binary: &std::path::Path, read: u64, mix: u64) -> String {
     let arch = data.conf.as_mut().unwrap().arch_mut();
     arch.realtypes = true;
     arch.ctypes = true;
-    let mut printer = arch.take_print();
-    printer.options.partial_access = true;
-    let text = printer.doc_function_full(fd, arch);
-    arch.put_print(printer);
-    text
+    arch.with_print(|printer, arch| {
+        printer.options.partial_access = true;
+        printer.doc_function_full(fd, arch)
+    })
 }

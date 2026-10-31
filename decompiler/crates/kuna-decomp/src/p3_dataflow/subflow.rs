@@ -6526,6 +6526,11 @@ impl LaneDivide {
     pub fn apply(&mut self, data: &mut Funcdata) -> KunaResult<()> {
         self.tm.apply(data)
     }
+
+    /// (kuna) The Varnodes the trace reached.
+    pub fn traced(&self) -> impl Iterator<Item = VarnodeId> + '_ {
+        self.tm.original_varnodes()
+    }
 }
 
 /// Perform SubfloatFlow analysis triggered by FLOAT_FLOAT2FLOAT (C++
