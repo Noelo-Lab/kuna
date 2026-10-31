@@ -992,8 +992,9 @@ impl ObjectLoadImage {
         let le_image = file.is_little_endian();
         let dynrelocs = crate::loader::kuna_dynrelocs::resolve(&file, bytes);
         let mut applied: HashSet<u64> = HashSet::new();
+        let track = !dynrelocs.const_ranges.is_empty();
         for w in &dynrelocs.writes {
-            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) {
+            if patch_segments(&mut segments, w.vma, w.value, w.width as usize, le_image) && track {
                 applied.insert(w.vma);
             }
         }
