@@ -1131,15 +1131,25 @@ context abandons the pass as on an expired deadline and requests the re-flow,
 and the drive skips the stack-store-guard layout check for the stopped pass
 (`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (run_pipeline)`).
 The restarted run is the one that is printed in both orders, but it is not
-independent of the first: comments, the frame-slot evidence, the re-declared
-stack objects and the stack records a pass gathers all survive
-`Funcdata::clear`, and so does any Override. What the stopped part of the first
-run would have left behind is therefore gone: a duplicated `// return-dupe`
-tag, and in a huge function the slot and object evidence later passes would
-have added, so the restarted run can type and merge some locals differently
-(hkxc.exe's 0x1406198f0 prints one 8-byte store as eight byte stores and folds
-some temporaries into their uses). An Override a later pass would have recorded
-is recorded by the restarted run itself, at the cost of another restart. A jump-table
+independent of the first. Upstream's `Funcdata::clear` also drops the local
+scope's unlocked symbols and the prototype's unlocked output (inputs go with
+the scope), and `clearAnalysis` drops the warning comments; kuna's
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (Funcdata::clear)`)
+does neither yet, so the parameter and local symbols, the prototype inputs and
+the pending comments the first run recovered seed the restarted one, as does
+any Override. A stopped pass has recovered fewer of them: a duplicated
+`// return-dupe` tag is gone, and the restarted run can merge and type some
+variables differently. Over 29,103 functions (decbench O0/O2/O2-noinline
+binaries, three ARM firmware images, CrashLogger.dll, python314.dll) 31 take a
+dead-code restart and 5 print differently: two lose the duplicated tag and
+three fold a temporary into its use. hkxc.exe's 0x1406198f0 renumbers its
+locals, folds some temporaries and prints 289 eight-byte constant stores
+through a `char (*)[16]` result as eight byte stores each, the form it already
+prints at 136 other such stores. With the unlocked symbols and prototype inputs
+cleared on a restart, both orders print the same in all of these but the
+duplicated tag. An
+Override a later pass would have recorded is recorded by the restarted run
+itself, at the cost of another restart. A jump-table
 sub-decompilation never restarts, and with `earlyrestart off` the pass
 finishes first.
 
