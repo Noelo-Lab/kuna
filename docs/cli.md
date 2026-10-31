@@ -129,7 +129,7 @@ tree could not be unpacked.
 | `KUNA_DECODE_STATS` | `1` prints one line of lane/interval/round/crossing/decode counts and the walk, merge and lane-memory figures. It also keeps the runtime's panic report for a lane fault, which the fallback otherwise silences. |
 | `KUNA_DECODE_FAULT` | Test-only: `<n>` panics lane `n` once, `spawn:<n>` makes lane `n`'s spawn fail — the two fallback paths. |
 | `KUNA_CGROUP_ROOT` | Test-only: the directory read in place of `/sys/fs/cgroup` by the `--max-fn-memory` cgroup default and when `--jobs auto` reads a cgroup's headroom. |
-| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. `stall` only ends when `--max-fn-seconds` is non-zero. |
+| `KUNA_JOBS_FAULT` | Test-only, comma-separated: `panic:<addr>` / `panic-once:<addr>` / `stall:<addr>` make a `--jobs` worker panic (the first time only) or wedge as it starts the target at that byte address (`*` for every target), `stall-again:<addr>` wedges it only the second time that target starts in a run, `spawn:<n>` refuses every worker spawn after the first `n`, and `load-abort:<n>` makes the first `n` worker loads of the run abort as a refused allocation does (`*` for every one) — the pool's re-run paths. A stall only ends when `--max-fn-seconds` is non-zero. |
 
 An override wins over all of these, and one pointing at nothing is reported as
 such rather than silently re-probed.
@@ -1984,7 +1984,11 @@ Behaviors specific to `decompile-all`:
   - **A worker that dies costs one function, not its chunk.** A worker
     decompiles its chunk in order and writes each result as it finishes, so when
     it dies — a panic, an OOM kill, a signal, the stall watchdog — the pool knows
-    which function it was on and which never started. The thread that gave it
+    which function it was on and which never started. The one ordered
+    structsynth worker holds its results until its sweep has run. It writes a
+    marker as it starts each function instead, so the stall watchdog times each
+    of its functions and not the whole chunk, and a stall there is charged to the
+    function that stalled. The thread that gave it
     the chunk re-runs every function the worker did not deliver, one function per
     chunk: the one that was running first, on a fresh worker, so its `error`
     record is the failure it repeats on its own, then the rest. Without this, one

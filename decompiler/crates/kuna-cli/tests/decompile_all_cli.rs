@@ -4222,6 +4222,46 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
     }
 }
 
+/// The one-worker structsynth path decompiles every function that synthesized
+/// in one ordered chunk and holds its records back until the sweep has run, so
+/// the frame it writes as each function starts is all the parent sees of it. A
+/// function that stalls there is the one blamed, not the chunk's first
+/// function, and the window is the warm one: the run does not wait out a
+/// program load on top of it. `sub_14ea` stalls the second time it starts,
+/// which is in the ordered chunk.
+#[test]
+fn jobs_a_stall_in_the_ordered_structsynth_worker_blames_the_function_that_stalled() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let args = ["decompile-all", bin.as_str(), "--json", "--max-fn-seconds", "1", "--sleighpath", sp.as_str(),
+        "--option", "protoorder", "off", "--jobs", "2"];
+    let started = Instant::now();
+    let (got, stderr, ok) = run_kuna_env_with_timeout(
+        &args,
+        &[("KUNA_JOBS_FAULT", "synth:serial,stall-again:0x14ea")],
+        Duration::from_secs(240),
+    )
+    .expect("the stalled ordered chunk wedged the pool");
+    assert!(ok, "{stderr}");
+    assert!(stderr.contains("in one ordered chunk, 1 worker process"), "{stderr}");
+    assert_eq!(stderr.matches("KUNA_JOBS_FAULT: injected stall at 0x14ea").count(), 1, "{stderr}");
+    assert!(started.elapsed() < Duration::from_secs(45), "the stall waited out a cold window:\n{stderr}");
+    let records = json_records(&got);
+    let failed: Vec<String> = records
+        .iter()
+        .filter(|r| r.contains("\"error\": \""))
+        .map(|r| record_name(r))
+        .collect();
+    assert_eq!(failed, ["sub_14ea"], "only the function that stalled is lost:\n{stderr}");
+    let lost = records.iter().find(|r| record_name(r) == "sub_14ea").unwrap();
+    assert!(lost.contains("\"error\": \"worker stalled past the per-function watchdog (1s)"), "{lost}");
+    assert!(recovered_count(&stderr).is_some_and(|n| n >= 1), "{stderr}");
+}
+
 /// A worker that cannot install the replayed structures takes its chunk down
 /// with it. The functions it was given are the record pool's, not lost work:
 /// the run decompiles them again by the one-worker serial path instead of
@@ -9777,6 +9817,51 @@ fn a_value_only_a_no_return_path_reads_proves_nothing() {
          printf(\"%d\\n\", bad);\n  return 0;\n}}\n"
     );
     bejoin_round_trip("bejoin_noreturn_mips32_Os", &src_text, &printed);
+}
+
+/// gcc -O0 on ARM big-endian reloads a `long long` stack temporary into
+/// `r0:r1` and moves the `int` taken from its high word back into `r0` out of
+/// the stack slot it kept it in, so the pair holds both loaded words, the
+/// shape of `return *p`. A register moved back to the value it already held,
+/// through a stack slot or not, proves nothing while the other register is
+/// left where the reload put it, and neither does a low word whose reload
+/// something else reads (`hi_lo_stored` stores it on), so the three `int`s
+/// and their caller print as with `bejoin off`, while `ll_copy`, the `long
+/// long` itself, still joins high word first. `hi_kept` does the same to
+/// `ll_copy`'s pair and is not proven either; `ll_kept` and `ll_passed` move
+/// both of its words back into place and return it whole. `hi_atomic` moves
+/// `__atomic_load_8`'s pair back whole, as `ll_atomic` does, and then its
+/// `int` back into `r0` once more, so it is not proven either.
+#[test]
+fn an_int_kept_in_a_stack_slot_proves_no_loaded_pair() {
+    let sp = specs();
+    let bin = repo_root()
+        .join("decompiler/crates/kuna-analysis/tests/fixtures/bejoin_reload_arm32_be_O0.o")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let run = |mode: &str| {
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", mode]);
+        assert!(ok, "kuna decompile-all bejoin_reload_arm32_be_O0.o ({mode}) failed: {stderr}");
+        stdout
+    };
+    let (evidence, off) = (run("evidence"), run("off"));
+    let ints = ["hi_local", "hi_lo_stored", "hi_named", "hi_use"];
+    let structs = regex::Regex::new(r"struct_\d+").unwrap();
+    let norm = |listing: &str| structs.replace_all(&callrettype_functions(listing, &ints), "struct_N").into_owned();
+    assert_eq!(norm(&evidence), norm(&off), "an int moved back out of its stack slot proves nothing:\n{evidence}");
+    let ll = callrettype_functions(&evidence, &["ll_copy"]);
+    assert!(ll.contains("return *a0;"), "ll_copy returns its long long whole:\n{ll}");
+    for f in ["ll_kept", "ll_passed"] {
+        let w = callrettype_functions(&evidence, &[f]);
+        assert!(w.contains("return ll_copy(a0);"), "{f} hands ll_copy's pair back whole:\n{w}");
+    }
+    let hk = callrettype_functions(&evidence, &["hi_kept"]);
+    assert!(!hk.is_empty() && !hk.contains("return ll_copy(a0);"), "hi_kept moves only its int back:\n{hk}");
+    let la = callrettype_functions(&evidence, &["ll_atomic"]);
+    assert!(la.contains("return __atomic_load_8(a0,0);"), "ll_atomic hands __atomic_load_8's pair back whole:\n{la}");
+    let ha = callrettype_functions(&evidence, &["hi_atomic"]);
+    assert!(!ha.is_empty() && !ha.contains("return __atomic_load_8(a0,0);"), "hi_atomic moves its int back once more:\n{ha}");
 }
 
 /// An `int` worked out from the high half of a 64-bit temporary leaves the low

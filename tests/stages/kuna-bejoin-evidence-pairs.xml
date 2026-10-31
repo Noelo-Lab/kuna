@@ -1,0 +1,115 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+    kuna option bejoin evidence (the default), GH-904: a long long read from
+    memory, or handed back by a call and moved back into r3:r4, joins high
+    word first.
+
+    PowerPC returns a long long in r3:r4 with the HIGH word in r3.  Joined
+    first register low (option bejoin off, upstream's join), a long long
+    loaded from memory printed with its words swapped:
+        ld_ll:  return CONCAT44(a0->field_0x4,a0->field_0x0);   (bug)
+    and a function returning a proven callee's long long it kept across
+    another call read the call high word first but its own return low word
+    first:
+        carry_ll:  return CONCAT44((int4)v1,(int4)((uint8)v1 >> 0x20));   (bug)
+    The evidence walk now also proves a pair that holds two loads of
+    adjacent words of one object, the high word at the lower address, the
+    low word read by nothing else (an int that returns one word of a
+    non-volatile 64-bit object never loads the other), and a pair one direct
+    call handed back whose callee is proven, when the function moved the low
+    word back into r4 itself (an int returning the high word keeps only r3
+    across ext()).
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (evidence), pass 2 option bejoin off.
+
+    Source (gcc 13.3 -O2 -fno-pic -c, target powerpc-linux-gnu, linked at
+    0x10000000 with -nostdlib -static, .text):
+        typedef long long i64;
+        struct S { int a; int pad; i64 v; };
+        __attribute__((noinline)) void ext(void) { __asm__ volatile(""); }
+        __attribute__((noinline)) i64 wid(int x) { ext(); return x; }
+        i64 ld_ll(const i64 *p) { return *p; }
+          lwz r4,4(r3) / lwz r3,0(r3) / blr
+        i64 ldfield_ll(const struct S *s) { return s->v; }
+          lwz r4,12(r3) / lwz r3,8(r3) / blr
+        i64 carry_ll(int x) { i64 v = wid(x); ext(); return v; }
+          bl wid / mr r30,r3 / mr r31,r4 / bl ext / mr r3,r30 / mr r4,r31 / blr
+        int carry_hi(int x) { i64 v = wid(x); ext(); return v >> 32; }
+          bl wid / mr r31,r3 / bl ext / mr r3,r31 / blr
+        int ld_sum(const int *p) { return p[0] + p[1]; }
+
+    Asserts #1-#2: the default returns ld_ll's and ldfield_ll's long long
+      whole; off keeps each swapped.
+    Assert #3: the default reads carry_ll's call and returns it in the same
+      order (r3 high); off joins both first register low.
+    Assert #4: carry_hi reads the high word of wid's long long in the
+      default, and stays an int in both passes.
+    Assert #5: ld_sum stays an int in both passes.
+-->
+<bytechunk space="ram" offset="0x10000000" readonly="true">
+9421fff0382100104e800020600000009421ffe07c0802a693e1001c90010024
+7c7f1b784bffffdd800100247fe3fe707fe4fb7883e1001c382100207c0803a6
+4e8000206000000060000000600000009421fff0808300048063000038210010
+4e8000206000000060000000600000009421fff08083000c8063000838210010
+4e8000206000000060000000600000009421ffe07c0802a69001002493c10018
+93e1001c4bffff6d7c7e1b787c9f23784bffff51800100247fc3f3787fe4fb78
+83c1001883e1001c382100207c0803a64e800020600000006000000060000000
+9421ffe07c0802a69001002493e1001c4bffff217c7f1b784bffff0980010024
+7fe3fb7883e1001c382100207c0803a64e800020600000006000000060000000
+9421fff081430000806300047c6a1a14382100104e800020
+</bytechunk>
+<symbol space="ram" offset="0x10000000" name="ext"/>
+<symbol space="ram" offset="0x10000010" name="wid"/>
+<symbol space="ram" offset="0x10000050" name="ld_ll"/>
+<symbol space="ram" offset="0x10000070" name="ldfield_ll"/>
+<symbol space="ram" offset="0x10000090" name="carry_ll"/>
+<symbol space="ram" offset="0x100000e0" name="carry_hi"/>
+<symbol space="ram" offset="0x10000120" name="ld_sum"/>
+</binaryimage>
+<script>
+  <com>lo fu ld_ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ldfield_ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu carry_ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu carry_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ld_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin off</com>
+  <com>lo fu ld_ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ldfield_ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu carry_ll</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu carry_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ld_sum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-pairs #1: the default returns ld_ll's long long whole" min="1" max="1">return \*a0;</stringmatch>
+<stringmatch name="bejoin-pairs #1b: only off swaps ld_ll's words" min="1" max="1">return CONCAT44\(a0-&gt;field_0x4,a0-&gt;field_0x0\);</stringmatch>
+<stringmatch name="bejoin-pairs #2: the default returns ldfield_ll's field whole" min="1" max="1">return \(\(unsigned long long \*\)a0\)\[1\];</stringmatch>
+<stringmatch name="bejoin-pairs #2b: only off swaps ldfield_ll's words" min="1" max="1">return CONCAT44\(\(\(unsigned int \*\)a0\)\[3\],\(\(unsigned int \*\)a0\)\[2\]\);</stringmatch>
+<stringmatch name="bejoin-pairs #3: carry_ll reads and returns wid's pair in one order in both passes" min="0" max="0">return CONCAT44\(\(int4\)v1,</stringmatch>
+<stringmatch name="bejoin-pairs #3b: the default keeps carry_ll's pair r3 high" min="2" max="2">unsigned long long v1; // r3:r4</stringmatch>
+<stringmatch name="bejoin-pairs #3c: only off keeps carry_ll's pair r3 low" min="1" max="1">unsigned long long v1; // r4:r3</stringmatch>
+<stringmatch name="bejoin-pairs #4: the default's carry_hi returns the high word of wid's long long" min="1" max="1">return \(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\);</stringmatch>
+<stringmatch name="bejoin-pairs #4b: carry_hi stays an int in both passes" min="2" max="2">unsigned int carry_hi\(unsigned int a0\)</stringmatch>
+<stringmatch name="bejoin-pairs #5: ld_sum stays an int in both passes" min="2" max="2">int4 ld_sum\(</stringmatch>
+</decompilertest>

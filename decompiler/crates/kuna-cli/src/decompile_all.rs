@@ -726,8 +726,9 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
         let entries = rehydrate_entries(&prog, targets)?;
         let replay = if converge { entries.clone() } else { Vec::new() };
         {
-            let mut out =
-                jobs::ResultWriter::create(&dir.join(jobs::result_name(idx)).to_string_lossy())?;
+            let out = std::cell::RefCell::new(jobs::ResultWriter::create(
+                &dir.join(jobs::result_name(idx)).to_string_lossy(),
+            )?);
             // One pulled batch for the whole chunk, not one call per function:
             // the callee-hint context is built once per call, and rebuilding the
             // program's entry set per function is unaffordable on a large image.
@@ -757,6 +758,17 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
             // the pull stops at the current function rather than decompiling the
             // rest of it into a dead file.
             let write_error: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+            let write = |frame: Result<(), String>| {
+                let mut slot = write_error.borrow_mut();
+                if let (None, Err(e)) = (&*slot, frame) {
+                    *slot = Some(e);
+                }
+            };
+            let mut begin = |position: usize| {
+                if converge {
+                    write(out.borrow_mut().begin(position));
+                }
+            };
             decompile_pulled(
                 &mut prog,
                 &opts,
@@ -768,6 +780,7 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                     if let Some(hook) = &synth_hook {
                         hook.borrow_mut().begin(&answers[pulled]);
                     }
+                    begin(pulled);
                     pulled += 1;
                     faults.before_target(dir, entry.addr.get_offset());
                     Some(entry)
@@ -780,22 +793,18 @@ fn run_jobs_worker(args: &Args) -> Result<(), String> {
                         held.push(r);
                         return;
                     }
-                    let mut slot = write_error.borrow_mut();
-                    if slot.is_none() {
-                        if let Err(e) = out.push(&r) {
-                            *slot = Some(e);
-                        }
-                    }
+                    write(out.borrow_mut().push(&r));
                 },
             );
+            if converge && write_error.borrow().is_none() {
+                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held, &mut begin);
+            }
             if let Some(e) = write_error.into_inner() {
                 return Err(e);
             }
-            if converge {
-                converge_synthesized_structs(&mut prog, &opts, &replay, &mut held);
-                for r in &held {
-                    out.push(r)?;
-                }
+            let mut out = out.into_inner();
+            for r in &held {
+                out.push(r)?;
             }
         }
         jobs::ack_chunk(idx);
