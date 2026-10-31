@@ -2084,6 +2084,19 @@ read of the wrong lane, or, when the result fell below the input's first lane,
 a panic indexing before its piece array (#1157). Upstream Ghidra fixed the
 same line as GP-7434. This is a correctness repair with no option.
 
+Once a lane trace succeeds, applying it rewrites the function in stages:
+new ops, new varnodes, the old ops removed, the old inputs deleted and the
+lane pieces made inputs. A stage can still fail (another input overlapping a
+lane piece, a varnode that cannot be deleted), and by then the function is
+half rewritten. Upstream throws, failing the function; the action
+(`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
+(ActionLaneDivide)`) fails it the same way, with the stage's error. It used
+to count the failure as a split that was never tried and walk on over the
+storage it had already rewritten, so the next varnode it read could be one the
+failed split had deleted (`ActionLaneDivide: stale vn`), or the pipeline ran
+on over the half-rewritten function. This is a correctness repair with no
+option.
+
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.
 For `PIECE` and `INT_ZEXT`, extraction respects the low operand's declared
