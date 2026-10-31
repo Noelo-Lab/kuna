@@ -108,6 +108,10 @@ impl Rule for RuleEarlyRemoval {
 
     // This rule applies to all ops (default get_op_list).
 
+    fn removes_dead_ops(&self) -> bool {
+        true
+    }
+
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
         // Functions automatically consumed
         if data.obank().get(op).expect("RuleEarlyRemoval: stale op").is_call() {
@@ -146,6 +150,7 @@ impl Rule for RuleEarlyRemoval {
             return 0;
         }
         // Get rid of unused op
+        data.note_dead_removal(op);
         data.op_destroy(op);
         1
     }

@@ -156,6 +156,9 @@ Three tiers:
 | decompiling one function with several switch statements takes far longer than its size suggests | [`jtsharepartial`](#jtsharepartial) |
 | per-function latency scales with the NUMBER of jump tables rather than their size | [`jtsharepartial`](#jtsharepartial) |
 | profile shows the reduced jumptable action set running once per switch | [`jtsharepartial`](#jtsharepartial) |
+| a huge function spends most of its time in oppool1 | [`deadwaves`](#deadwaves) |
+| rule pool sweep count in the thousands for one function | [`deadwaves`](#deadwaves) |
+| each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops | [`deadwaves`](#deadwaves) |
 | dozens of garbage *v = *v + c; lines after a __stack_chk_fail call in a .o | [`noreturn_externmatch`](#noreturn_externmatch) |
 | inter-function alignment padding decoded as add [rax],al style instructions | [`noreturn_externmatch`](#noreturn_externmatch) |
 | flow runs past an undefined-extern abort or exit call in a relocatable object | [`noreturn_externmatch`](#noreturn_externmatch) |
@@ -1659,6 +1662,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on. Flip OFF together with `option unrolledguard` on a function holding several INTERLEAVED jump tables whose case bodies are reachable only as one another's case targets (an MSVC optimized memcpy/memmove tail dispatch), where the per-table re-clone is what recovers the siblings; DESTRUCTIVE as a default in exactly that shape, since a shared partial cannot see an already-recovered sibling table. On a function with one jump table the two settings are structurally identical, and on an ordinary multi-table function sharing removes one full sub-decompilation per extra table.
 - **Where / provenance:** P2/switch-model · ghidra · speed · decompiling-3396-byte-main
 - **Example:** `option jtsharepartial off`
+
+### `deadwaves` -- on | off, default `on`
+
+- **Symptoms:** a huge function spends most of its time in oppool1; rule pool sweep count in the thousands for one function; each pool sweep removes only a handful of dead INDIRECT or MULTIEQUAL ops.
+- **What it does:** Run a rule-pool pass that follows a pass whose only change was dead-op removal as a wave over what that removal touched. A pool re-sweeps every op until a sweep changes nothing, and dead-op removal (`RuleEarlyRemoval`) takes out an op only when the cursor reaches it, so a chain of values nothing reads dies one link per sweep, backwards against sequence order: a call-guard and join chain of a vector register across a thousand calls costs a thousand sweeps over every op of the function. The previous pass left the ops it removed dead in the tree and changed nothing but the readers of the Varnodes they read, so the wave walks the ops in the same order but offers the rules only the dead ops (destroying them as the sweep would), the definition and readers of each Varnode they read, every op of an opcode a sub-variable or split flow fires on (those walk a whole data-flow web), and the same neighbourhood of each op it removes. The first application other than a removal turns the rest of the pass back into the full sweep. Off sweeps every op every pass.
+- **When to flip:** Leave on. Turn off to compare against the plain sweep when a rule whose test reads two or more ops away from the op it fires on, without walking a data-flow web, is suspected of firing later than it would have.
+- **Where / provenance:** P3/simplification-quiescence · ghidra · speed · GH-1034
+- **Example:** `option deadwaves off`
 
 ### `noreturn_externmatch` -- on | off, default `on`
 
