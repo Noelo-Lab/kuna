@@ -27,7 +27,8 @@
 //! register window's copy of every register, and a register XORed with or
 //! subtracted from itself do not read it, nor, once the path took a branch,
 //! a store of several registers or a register pair (gcc's merged `std %o0`
-//! or `stm`, whose second word can be dead at a join). The walk
+//! or `stm`, whose second word can be dead at a join), nor the delay slot of
+//! a conditional branch, which may come from the branch target. The walk
 //! after a call keeps, on each path, what the branches it took decided about
 //! the flags, so the instructions a condition skips are skipped together
 //! (ARM's `ldrne r1,..; orrnes r2,r1,r0` never reads a stale `r1`). A
@@ -734,6 +735,18 @@ fn derive(opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], deriv: &m
     }
 }
 
+/// The delay slot of a conditional branch at `at` (SPARC, MIPS), decoded on
+/// its own. A delay slot filler may move an instruction there from the branch
+/// target, so what it reads holds on that path only (gcc fills one with the
+/// target's `std %o0`, whose `%o1` is dead on the path that falls through).
+fn delay_slot(arch: &Architecture, index: &Index, at: u64, insn: &Insn) -> Option<Insn> {
+    let conditional = insn.ops.iter().any(|(opc, _, ins)| *opc == OpCode::CPUI_CBRANCH && ins.first().is_some_and(|d| !is_const(d)));
+    if !conditional || insn.len <= 4 {
+        return None;
+    }
+    decode(arch, &index.at(at + insn.len - 4))
+}
+
 /// Walk the caller at `caller` from the call to `callee` at `site`: does an
 /// instruction read the second register `lo` before anything writes it or
 /// another call clobbers it, or does it reach the caller's RETURN untouched?
@@ -776,10 +789,13 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
     while let Some((at, insn, mut op, mut facts, mut deriv, branched)) = todo.pop() {
         let mut fall = true;
         let mut forked = branched;
+        let counts = |i: &Insn| i.ops.iter().filter(|(opc, out, ins)| reads(i, *opc, out, ins, &lo, branched)).count();
+        let slot = delay_slot(arch, index, at, &insn).map_or(0, |d| counts(&d));
+        let genuine = slot == 0 || counts(&insn) > slot;
         while op < insn.ops.len() {
             let (opc, out, ins) = &insn.ops[op];
             op += 1;
-            if reads(&insn, *opc, out, ins, &lo, branched) {
+            if genuine && reads(&insn, *opc, out, ins, &lo, branched) {
                 return Use::Read;
             }
             if matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
@@ -827,14 +843,15 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
                         }
                         continue;
                     }
+                    let next = at + insn.len;
                     if let Some(t) = index.target(dest) {
-                        visit(t, there, true, &mut seen, &mut todo);
+                        visit(t, there, branched || t != next, &mut seen, &mut todo);
                     }
                     if taken == Some(true) {
                         fall = false;
                         break;
                     }
-                    forked = true;
+                    forked |= index.target(dest) != Some(next);
                 }
                 _ => derive(*opc, out, ins, &mut deriv, &mut facts),
             }

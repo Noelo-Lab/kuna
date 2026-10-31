@@ -2409,7 +2409,12 @@ more registers or of a register pair once the path has taken a branch: gcc
 merges two stack stores into SPARC's `std %o0,[%fp-0x138]` (or ARM's `stm`)
 at a join where the second word is dead on the path from the call, and
 SQLite's `int pager_write` read as wide that way. Right after the call such a
-store is a read (`call f; nop; std %o0,[%fp-16]` at -O0). A caller whose RETURN the register
+store is a read (`call f; nop; std %o0,[%fp-16]` at -O0). The delay slot of a
+conditional branch (SPARC, MIPS) does not read it either, unless the branch's
+own condition does (`bnez $3`): the delay slot filler moves an instruction
+there from the branch target, so what it reads holds on that path only (gcc
+fills `bne` with the target's `std %o0`, whose `%o1` is dead on the path that
+falls through, and SQLite's `int sqlite3VdbeCheckFk` read as wide that way). A caller whose RETURN the register
 reaches untouched (`return f();` in a function that keeps a frame, so it is no
 tail call, and SPARC's `call f; restore`) proves `f` once that caller is
 proven itself, which for such a caller means by its own callers: the path
@@ -2466,14 +2471,14 @@ per image, and only the function asked about keeps its verdict, so a whole
 project export print every function the same way.
 
 Against `evidence`, every function the callers newly prove over 2,241
-objects returns eight bytes by its DWARF or source type (1,575 of them), and
+objects returns eight bytes by its DWARF or source type (1,591 of them), and
 no function's own return type changes width. Over the same 813 big-endian
-objects (20,759 functions) 272 functions in 54 objects change: 162 whose DWARF
+objects (20,759 functions) 274 functions in 55 objects change: 163 whose DWARF
 return is eight bytes now return or read a 64-bit value high word first (Lua's
 `posrelat` and `luaV_div`, bash's `expr.c` evaluators, grep's `add_count`,
-kmod's `elf_get_uint`), 105 `int` functions read such a callee's words the
+kmod's `elf_get_uint`), 106 `int` functions read such a callee's words the
 right way round, and the other five are 64-bit fixture functions and
-diffutils' `file_position`. Over the four SQLite builds (6,010 functions) 123
+diffutils' `file_position`. Over the four SQLite builds (6,010 functions) 124
 change the same way (`sqlite3VdbeIntValue`, `memIntValue` and
 `sqlite3BtreeOffset` return high word first, and `sqlite3_column_int` returns
 `(unsigned int)memIntValue(v)` where it lost the word); none change on MIPS,
