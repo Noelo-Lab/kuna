@@ -20,16 +20,20 @@
 //! then says nothing. In a function with a register window, only a write of a
 //! register its `restore` moves into the second register counts, and calls
 //! do not. A RETURN the register reaches untouched (`return f();` in a
-//! function that keeps a frame) proves the callee when that caller is proven.
+//! function that keeps a frame) proves the callee when that caller is proven
+//! by its own callers.
 //!
 //! A call (an argument the callee may not take), a RETURN, a branch, a
 //! register window's copy of every register, and a register XORed with or
-//! subtracted from itself do not read it. The walk after a call keeps, on each
-//! path, what the branches it took decided about the flags, so the
-//! instructions a condition skips are skipped together (ARM's `ldrne r1,..;
-//! orrnes r2,r1,r0` never reads a stale `r1`). A function whose first
-//! instruction stores the second register (one that saves the argument
-//! registers to give them back, as `__gnu_mcount_nc` does) says nothing.
+//! subtracted from itself do not read it, nor, once the path took a branch,
+//! a store of several registers or a register pair (gcc's merged `std %o0`
+//! or `stm`, whose second word can be dead at a join). The walk
+//! after a call keeps, on each path, what the branches it took decided about
+//! the flags, so the instructions a condition skips are skipped together
+//! (ARM's `ldrne r1,..; orrnes r2,r1,r0` never reads a stale `r1`). A
+//! function whose first instruction stores the second register (one that
+//! saves the argument registers to give them back, as `__gnu_mcount_nc`
+//! does) says nothing.
 //!
 //! The call sites come from one scan of the executable bytes for the
 //! direct-call encodings (PowerPC `bl`, MIPS `jal` and `bal`, SPARC `call`,
@@ -50,10 +54,10 @@ use super::{decode, overlaps, Entry, Insn, Key};
 use crate::architecture::Architecture;
 
 /// How many call sites of one function are read.
-const MAX_SITES: usize = 256;
+pub(super) const MAX_SITES: usize = 16;
 
 /// How many instructions the walk after one call site visits.
-const MAX_SITE_INSNS: usize = 2048;
+const MAX_SITE_INSNS: usize = 256;
 
 /// How many instructions the scan of one function visits.
 const MAX_SCAN_INSNS: usize = 16_384;
@@ -235,6 +239,8 @@ struct Facts {
 /// The call sites and function extents of one image.
 pub(super) struct Index {
     code: Rc<AddrSpace>,
+    /// Does the instruction set have register windows (SPARC)?
+    windows: bool,
     /// `[start, end)` of each symbol, sorted.
     funcs: Vec<(u64, u64)>,
     /// `(target, site)` of each direct call to a symbol, sorted.
@@ -302,7 +308,7 @@ impl Index {
         calls.retain(|(t, _)| funcs.binary_search_by_key(t, |f| f.0).is_ok());
         calls.sort_unstable();
         calls.dedup();
-        Some(Index { code, funcs, calls })
+        Some(Index { code, windows: isa == Isa::Sparc, funcs, calls })
     }
 
     fn start(&self, entry: u64) -> Option<(u64, u64)> {
@@ -313,6 +319,11 @@ impl Index {
         let i = self.funcs.partition_point(|f| f.0 <= at);
         let f = *self.funcs.get(i.checked_sub(1)?)?;
         (at < f.1).then_some(f)
+    }
+
+    /// How many call sites of `target` [`facts`] reads.
+    pub(super) fn site_count(&self, target: u64) -> usize {
+        self.sites(target).take(MAX_SITES).count()
     }
 
     fn sites(&self, target: u64) -> impl Iterator<Item = u64> + '_ {
@@ -341,6 +352,17 @@ pub(super) struct Cache {
 }
 
 impl Cache {
+    /// How many call sites of the function at `key` its caller evidence reads.
+    pub(super) fn site_count(&mut self, arch: &Architecture, key: Entry) -> usize {
+        if self.index.is_none() {
+            self.index = Some(Index::build(arch));
+        }
+        match &self.index {
+            Some(Some(index)) if index.code.get_index() == key.0 => index.site_count(key.1),
+            _ => 0,
+        }
+    }
+
     /// What the callers of the function at `key` say, for the second register
     /// `lo`: whether one reads it after a call (the function then is proven),
     /// and the callers whose RETURN hands the pair back (it is proven when one
@@ -411,22 +433,50 @@ fn key(v: &VarnodeData) -> Option<Key> {
     Some((v.space.as_ref()?.get_index(), v.offset, v.size))
 }
 
-/// Is op `opc` over `ins` in `insn` one that reads the second register `lo`?
-fn reads(insn: &Insn, opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], lo: &Key) -> bool {
+/// Does `insn` copy three or more registers `size` bytes wide into others at
+/// once (a register window's `save` or `restore`)? ARM's flag-setting
+/// instructions copy four one-byte flags and are no window.
+fn window(insn: &Insn, size: u32) -> bool {
+    insn.window
+        && insn
+            .ops
+            .iter()
+            .filter(|(opc, out, ins)| {
+                *opc == OpCode::CPUI_COPY
+                    && out.as_ref().is_some_and(|o| is_reg(o) && o.size == size)
+                    && ins.first().is_some_and(|i| is_reg(i) && i.size == size)
+            })
+            .count()
+            >= 3
+}
+
+/// Does `insn` store two or more registers, or a register pair?
+fn stores_many(insn: &Insn, size: u32) -> bool {
+    let stored = || insn.ops.iter().filter(|(opc, _, _)| *opc == OpCode::CPUI_STORE).filter_map(|(_, _, ins)| ins.get(2));
+    stored().any(|v| is_reg(v) && v.size > size) || stored().filter(|v| is_reg(v)).count() >= 2
+}
+
+/// Is op `opc` over `ins` in `insn` one that reads the second register `lo`,
+/// on a path that took a branch since the call (`branched`)? A store of two
+/// or more registers or of a register pair is not, past a branch: gcc merges
+/// two stores into SPARC's `std %o0` or ARM's `stm` at a join where the
+/// second word is dead on the path from the call.
+fn reads(insn: &Insn, opc: OpCode, out: &Option<VarnodeData>, ins: &[VarnodeData], lo: &Key, branched: bool) -> bool {
     if matches!(
         opc,
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN | OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND
     ) {
         return false;
     }
-    if insn.window && opc == OpCode::CPUI_COPY && out.as_ref().is_some_and(is_reg) && ins.first().is_some_and(is_reg) {
+    if opc == OpCode::CPUI_COPY && out.as_ref().is_some_and(is_reg) && ins.first().is_some_and(is_reg) && window(insn, lo.2) {
         return false;
     }
     if matches!(opc, OpCode::CPUI_INT_XOR | OpCode::CPUI_INT_SUB) && ins.len() == 2 && ins[0] == ins[1] {
         return false;
     }
+    let merged = opc == OpCode::CPUI_STORE && branched && stores_many(insn, lo.2);
     let ins = if opc == OpCode::CPUI_CBRANCH { &ins[1..] } else { ins };
-    ins.iter().any(|v| !is_const(v) && key(v).is_some_and(|k| overlaps(&k, lo)))
+    ins.iter().enumerate().any(|(i, v)| !(is_const(v) || (merged && i == 2)) && key(v).is_some_and(|k| overlaps(&k, lo)))
 }
 
 /// The literal `v` holds inside one instruction, from the literals its
@@ -469,10 +519,10 @@ fn tracked(arch: &Architecture, index: &Index, entry: u64) -> BTreeMap<Key, u64>
         .collect()
 }
 
-/// Where a path through one instruction's operations from op `from` goes,
-/// the literals `known` holds at its start: each operation some path reaches,
-/// the code addresses a reached branch may go to, and whether a path falls
-/// off the end. `stops` ends a path at a call.
+/// Where the paths through one instruction's operations go, given the
+/// literals `known` holds at its start: each operation some path reaches, the
+/// code addresses a reached branch may go to, and whether a path falls off
+/// the end. `stops` ends a path at a call.
 fn reached(insn: &Insn, known: &BTreeMap<Key, u64>, index: &Index, stops: &dyn Fn(u64) -> bool) -> (Vec<usize>, Vec<u64>, bool) {
     let n = insn.ops.len();
     let mut seen = vec![false; n];
@@ -711,23 +761,25 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
     for (opc, out, ins) in &insn.ops[..k] {
         derive(*opc, out, ins, &mut deriv, &mut facts);
     }
-    type Item = (u64, Rc<Insn>, usize, PathFacts, BTreeMap<Key, Cond>);
-    let mut todo: Vec<Item> = vec![(site, Rc::new(insn), k + 1, facts, deriv)];
-    let mut seen: BTreeSet<(u64, PathFacts)> = BTreeSet::new();
+    type Item = (u64, Rc<Insn>, usize, PathFacts, BTreeMap<Key, Cond>, bool);
+    let mut todo: Vec<Item> = vec![(site, Rc::new(insn), k + 1, facts, deriv, false)];
+    let mut seen: BTreeSet<(u64, bool, PathFacts)> = BTreeSet::new();
+    let mut insns: BTreeMap<u64, Option<Rc<Insn>>> = BTreeMap::new();
     let mut result = Use::Dead;
-    let visit = |t: u64, f: PathFacts, seen: &mut BTreeSet<(u64, PathFacts)>, todo: &mut Vec<Item>| {
-        if t > caller.0 && t < caller.1 && seen.len() < MAX_SITE_INSNS && seen.insert((t, f.clone())) {
-            if let Some(i) = decode(arch, &index.at(t)) {
-                todo.push((t, Rc::new(i), 0, f, BTreeMap::new()));
+    let mut visit = |t: u64, f: PathFacts, branched: bool, seen: &mut BTreeSet<(u64, bool, PathFacts)>, todo: &mut Vec<Item>| {
+        if t > caller.0 && t < caller.1 && seen.len() < MAX_SITE_INSNS && seen.insert((t, branched, f.clone())) {
+            if let Some(i) = insns.entry(t).or_insert_with(|| decode(arch, &index.at(t)).map(Rc::new)) {
+                todo.push((t, Rc::clone(i), 0, f, BTreeMap::new(), branched));
             }
         }
     };
-    while let Some((at, insn, mut op, mut facts, mut deriv)) = todo.pop() {
+    while let Some((at, insn, mut op, mut facts, mut deriv, branched)) = todo.pop() {
         let mut fall = true;
+        let mut forked = branched;
         while op < insn.ops.len() {
             let (opc, out, ins) = &insn.ops[op];
             op += 1;
-            if reads(&insn, *opc, out, ins, &lo) {
+            if reads(&insn, *opc, out, ins, &lo, branched) {
                 return Use::Read;
             }
             if matches!(opc, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
@@ -771,23 +823,24 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
                         if taken == Some(true) {
                             op = to as usize;
                         } else {
-                            todo.push((at, Rc::clone(&insn), to as usize, there, deriv.clone()));
+                            todo.push((at, Rc::clone(&insn), to as usize, there, deriv.clone(), branched));
                         }
                         continue;
                     }
                     if let Some(t) = index.target(dest) {
-                        visit(t, there, &mut seen, &mut todo);
+                        visit(t, there, true, &mut seen, &mut todo);
                     }
                     if taken == Some(true) {
                         fall = false;
                         break;
                     }
+                    forked = true;
                 }
                 _ => derive(*opc, out, ins, &mut deriv, &mut facts),
             }
         }
         if fall {
-            visit(at + insn.len, facts, &mut seen, &mut todo);
+            visit(at + insn.len, facts, forked, &mut seen, &mut todo);
         }
     }
     result
@@ -813,7 +866,8 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
             continue;
         }
         let Some(insn) = decode(arch, &index.at(at)) else { continue };
-        out.windowed |= insn.window;
+        let win = window(&insn, lo.2);
+        out.windowed |= win;
         if at == start {
             out.saves = insn.ops.iter().any(|(opc, _, ins)| *opc == OpCode::CPUI_STORE && ins.get(2).and_then(key).is_some_and(|k| overlaps(&k, &lo)));
         }
@@ -821,14 +875,14 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
         for i in ops {
             let (opc, o, ins) = &insn.ops[i];
             if let Some(k) = o.as_ref().and_then(key) {
-                if insn.window && *opc == OpCode::CPUI_COPY && ins.first().is_some_and(is_reg) && o.as_ref().is_some_and(is_reg) {
+                if win && *opc == OpCode::CPUI_COPY && ins.first().is_some_and(is_reg) && o.as_ref().is_some_and(is_reg) {
                     if overlaps(&k, &lo) {
                         restored.extend(ins.first().and_then(key));
                     }
                 } else {
                     if overlaps(&k, &lo) {
                         direct = true;
-                        in_window |= insn.window;
+                        in_window |= win;
                     }
                     if o.as_ref().is_some_and(is_reg) && !written.contains(&k) {
                         written.push(k);
@@ -855,6 +909,9 @@ fn scan_function(arch: &Architecture, index: &Index, lo: Key, entry: u64) -> Sca
         }
         if falls && at + insn.len < end {
             todo.push(at + insn.len);
+        }
+        if !index.windows && out.ends && direct {
+            break;
         }
     }
     out.writes = if out.windowed { in_window || written.iter().any(|k| restored.iter().any(|r| overlaps(k, r))) } else { direct };

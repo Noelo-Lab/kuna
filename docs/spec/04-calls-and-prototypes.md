@@ -2403,11 +2403,18 @@ call and before anything writes the register or another call clobbers it,
 reads it in an instruction of its own: a move, a store, an operation, a
 compare (`c_add` on PowerPC stores `r4` as the low word of a `long long`
 global). A call (an argument the next callee may not take), a RETURN, a
-branch, a register window's copy of every register, and a register XORed with
-or subtracted from itself do not read it. A caller whose RETURN the register
+branch, a register window's copy of every register, a register XORed with or
+subtracted from itself do not read it, and neither does a store of two or
+more registers or of a register pair once the path has taken a branch: gcc
+merges two stack stores into SPARC's `std %o0,[%fp-0x138]` (or ARM's `stm`)
+at a join where the second word is dead on the path from the call, and
+SQLite's `int pager_write` read as wide that way. Right after the call such a
+store is a read (`call f; nop; std %o0,[%fp-16]` at -O0). A caller whose RETURN the register
 reaches untouched (`return f();` in a function that keeps a frame, so it is no
 tail call, and SPARC's `call f; restore`) proves `f` once that caller is
-proven itself. So a 64-bit sum (`addc 4,4,6; adde 3,3,5` on PowerPC, `addu`
+proven itself, which for such a caller means by its own callers: the path
+that hands the pair back leaves its own proof waiting on `f`. The first 64
+call sites of a callee, by address, are read. So a 64-bit sum (`addc 4,4,6; adde 3,3,5` on PowerPC, `addu`
 and `sltu` on MIPS, `addcc`/`addx` on SPARC, `adds`/`adc` on ARM big-endian),
 ARMv7's single `umull r1,r0,r1,r0`, `smull` or `umlal`, and a wrapper that
 returns a callee's `long long` through its frame join high word first wherever
@@ -2447,22 +2454,27 @@ never reads a stale `r1`, and SPARC's `call` p-code reads `didrestore`
 written in its own delay slot. An image without a symbol table (or an XML
 image, which has no section table) proves nothing this way, and only 32-bit
 big-endian PowerPC, MIPS, SPARC and ARM are scanned (AVR's and AArch64's pairs
-are left to `evidence`). The verdict is the least fixed point of the three
-rules (proven on its own once the callees it waits on are, a caller's read, a
-proven caller handing the pair back) over every function it reaches, up to 256
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
-(by_callers)`); each fact it reads is a function of the image alone, cached per
-image, so a whole `decompile-all`, `--functions`, `--jobs N`, a single `kuna
-decompile` and a project export print every function the same way.
+are left to `evidence`). The register-window test counts copies of registers
+of the pair's width, so ARM's flag-setting instructions, which copy four
+one-byte flags, are no window. The verdict is the least fixed point of the
+three rules (proven on its own once the callees it waits on are, a caller's
+read, a proven caller handing the pair back) over the functions it reaches, up
+to 64 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
+(by_callers)`). Each fact it reads is a function of the image alone, cached
+per image, and only the function asked about keeps its verdict, so a whole
+`decompile-all`, `--functions`, `--jobs N`, a single `kuna decompile` and a
+project export print every function the same way.
 
-Against `evidence`, no function's own return type changes width. Over the
-same 813 big-endian objects (20,759 functions) 228 functions in 45 objects
-change: 143 whose DWARF return is eight bytes now return or read a 64-bit value
-high word first (Lua's `posrelat` and `luaV_div`, bash's `expr.c` evaluators,
-grep's `add_count`, kmod's `elf_get_uint`), 80 `int` functions read such a
-callee's words the right way round, and the other five are 64-bit fixture
-functions and diffutils' `file_position`. Over the four SQLite builds (6,010
-functions) 145 change the same way (`sqlite3VdbeIntValue`, `memIntValue` and
+Against `evidence`, every function the callers newly prove over 2,241
+objects returns eight bytes by its DWARF or source type (1,575 of them), and
+no function's own return type changes width. Over the same 813 big-endian
+objects (20,759 functions) 272 functions in 54 objects change: 162 whose DWARF
+return is eight bytes now return or read a 64-bit value high word first (Lua's
+`posrelat` and `luaV_div`, bash's `expr.c` evaluators, grep's `add_count`,
+kmod's `elf_get_uint`), 105 `int` functions read such a callee's words the
+right way round, and the other five are 64-bit fixture functions and
+diffutils' `file_position`. Over the four SQLite builds (6,010 functions) 123
+change the same way (`sqlite3VdbeIntValue`, `memIntValue` and
 `sqlite3BtreeOffset` return high word first, and `sqlite3_column_int` returns
 `(unsigned int)memIntValue(v)` where it lost the word); none change on MIPS,
 whose gcc build calls through `jalr`. Over 1,428 authored objects (sums,

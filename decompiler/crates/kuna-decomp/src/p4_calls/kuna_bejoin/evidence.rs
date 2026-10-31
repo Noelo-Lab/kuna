@@ -206,7 +206,13 @@ fn verdict(arch: &Architecture, map: &mut HashMap<Entry, bool>, model: &Rc<Proto
 }
 
 /// How many functions one verdict under `option bejoin callers` weighs.
-const MAX_CONE: usize = 256;
+const MAX_CONE: usize = 32;
+
+/// How many call sites one verdict under `option bejoin callers` reads.
+const MAX_CONE_SITES: usize = 48;
+
+/// How many callers in a row a pair is followed back through.
+const MAX_BACK: u8 = 2;
 
 /// The verdict for `key` in the `option bejoin` mode in force.
 fn take(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
@@ -230,41 +236,57 @@ struct Node {
 /// least fixed point over every function the verdict reaches of "proven on
 /// its own ([`proves_wide`]) once the callees it waits on are, a caller reads
 /// its second register ([`callers::Cache::evidence`]), or a caller that hands
-/// its pair back is". A cone past [`MAX_CONE`] functions decides only `key`,
-/// on what it holds.
+/// its pair back is". A caller reached only by handing a pair back is judged
+/// by its own callers alone: the path that hands the pair back leaves its own
+/// proof waiting on that callee. A pair is followed back through at most
+/// [`MAX_BACK`] callers in a row, and a cone past [`MAX_CONE`] functions or
+/// [`MAX_CONE_SITES`] call sites decides on what it holds. Only `key`'s verdict is kept, so each verdict is taken
+/// the same way whichever function a run asks about first.
 fn by_callers(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
     if let Some(&v) = cache.by_callers.get(&key) {
         return v;
     }
     let Some(lo) = WidePair::key(&pair.lo) else { return false };
-    let mut order = vec![key];
+    let mut order: Vec<(Entry, u8)> = vec![(key, 0)];
     let mut pos: BTreeMap<Entry, usize> = BTreeMap::from([(key, 0)]);
     let mut nodes: Vec<Node> = Vec::new();
+    let mut sites = 0usize;
     while nodes.len() < order.len() && order.len() <= MAX_CONE {
-        let k = order[nodes.len()];
-        let local = match cache.locals.get(&k) {
-            Some(l) => l.clone(),
-            None => {
-                let l = arch
-                    .manage()
-                    .get_space(k.0)
-                    .map_or(Local::No, |sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), k.1)));
-                cache.locals.insert(k, l.clone());
-                l
+        let (k, back_depth) = order[nodes.len()];
+        sites += cache.callers.site_count(arch, k);
+        if !nodes.is_empty() && sites > MAX_CONE_SITES {
+            break;
+        }
+        let walked = back_depth == 0;
+        let own = if walked {
+            let local = match cache.locals.get(&k) {
+                Some(l) => l.clone(),
+                None => {
+                    let l = arch
+                        .manage()
+                        .get_space(k.0)
+                        .map_or(Local::No, |sp| proves_wide(arch, model, pair, &Address::new(Rc::clone(sp), k.1)));
+                    cache.locals.insert(k, l.clone());
+                    l
+                }
+            };
+            match local {
+                Local::Yes(d) => Some(d),
+                Local::No => None,
             }
-        };
-        let own = match local {
-            Local::Yes(d) => Some(d),
-            Local::No => None,
+        } else {
+            None
         };
         let alone = own.as_ref().is_some_and(|d| d.is_empty());
         let (read, back) = if alone { (false, Vec::new()) } else { cache.callers.evidence(arch, lo, k) };
         let base = alone || read;
         if !base {
-            for d in own.iter().flatten().chain(back.iter()) {
-                if !pos.contains_key(d) {
-                    pos.insert(*d, order.len());
-                    order.push(*d);
+            let back_next = if back_depth < MAX_BACK { &back[..] } else { &[] };
+            let next = own.iter().flatten().map(|d| (*d, 0)).chain(back_next.iter().map(|d| (*d, back_depth + 1)));
+            for (d, depth) in next {
+                if let std::collections::btree_map::Entry::Vacant(e) = pos.entry(d) {
+                    e.insert(order.len());
+                    order.push((d, depth));
                 }
             }
         }
@@ -288,13 +310,7 @@ fn by_callers(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>
             break;
         }
     }
-    if nodes.len() == order.len() {
-        for (i, v) in val.iter().enumerate() {
-            cache.by_callers.insert(order[i], *v);
-        }
-    } else {
-        cache.by_callers.insert(key, val[0]);
-    }
+    cache.by_callers.insert(key, val[0]);
     val[0]
 }
 
