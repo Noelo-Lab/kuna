@@ -132,8 +132,11 @@ pub enum BeJoinMode {
     /// First register low, always.
     Off,
     /// The ABI's order on proof the value is that wide ([`evidence`]).
-    #[default]
     Evidence,
+    /// [`Self::Evidence`], or when the value's callers read the second
+    /// register after the call.
+    #[default]
+    Callers,
     /// The ABI's order when the low word looks returned on purpose.
     On,
 }
@@ -143,8 +146,14 @@ impl BeJoinMode {
         match self {
             BeJoinMode::Off => "off",
             BeJoinMode::Evidence => "evidence",
+            BeJoinMode::Callers => "callers",
             BeJoinMode::On => "on",
         }
+    }
+
+    /// Does the mode join a pair in the ABI's order only on proof?
+    pub fn proves(self) -> bool {
+        matches!(self, BeJoinMode::Evidence | BeJoinMode::Callers)
     }
 
     /// Parse an `option bejoin` value.
@@ -152,10 +161,11 @@ impl BeJoinMode {
         let mode = match p1 {
             "off" => BeJoinMode::Off,
             "evidence" => BeJoinMode::Evidence,
+            "callers" => BeJoinMode::Callers,
             "on" => BeJoinMode::On,
             other => {
                 return Err(kuna_base::error::KunaError::parse(format!(
-                    "Unknown bejoin value: {other} (expected off|evidence|on)"
+                    "Unknown bejoin value: {other} (expected off|evidence|callers|on)"
                 )))
             }
         };
@@ -172,7 +182,7 @@ pub fn join_order(active: &ParamActive, data: &Funcdata, return_ops: &[OpId]) ->
     let wide = abi != (0, 1)
         && match mode(data) {
             BeJoinMode::Off => false,
-            BeJoinMode::Evidence => evidence::proven(data, data.get_address()),
+            BeJoinMode::Evidence | BeJoinMode::Callers => evidence::proven(data, data.get_address()),
             BeJoinMode::On => low_word_returned(active, data, return_ops),
         };
     if wide {
@@ -204,7 +214,7 @@ pub fn call_join_order(data: &Funcdata, active: &ParamActive, callee: Option<&Ad
     let abi = match mode(data) {
         BeJoinMode::Off => false,
         BeJoinMode::On => !data.kuna_pairs_first_low(),
-        BeJoinMode::Evidence => callee.is_some_and(|e| evidence::proven(data, e)),
+        BeJoinMode::Evidence | BeJoinMode::Callers => callee.is_some_and(|e| evidence::proven(data, e)),
     };
     if abi {
         active.join_pair_order()

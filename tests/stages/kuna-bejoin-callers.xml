@@ -1,0 +1,88 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+<!--
+    kuna option bejoin callers (the default), GH-904: a big-endian long long
+    the callee alone cannot prove joins high word first when a caller reads
+    its second register after the call.
+
+    PowerPC returns a long long in r3:r4 with the HIGH word in r3.  A 64-bit
+    sum compiles to the bytes of the int that returns its high word:
+        add64:  addc 4,4,6 / adde 3,3,5 / blr       return a + b;
+        add_hi: addc 4,4,6 / adde 3,3,5 / blr       return (a + b) >> 32;
+    so with option bejoin evidence add64 printed its halves swapped:
+        return CONCAT44(a1 + a3,a0 + a2 + (uint4)CARRY4(a1,a3));   (bug)
+    and its callers read the low word as the high one.  A caller compiled
+    against int add_hi() never reads r4 after the call, which the call
+    clobbered; c_add stores r4 (stw 4,4(9)), so add64 returns both words.
+    pass returns add64's pair through its frame (no tail call), and c_pass
+    stores both words of it.  keep never writes r4, so a caller may keep its
+    own value there across the call (gcc's IPA-RA), and a read of r4 after
+    keep says nothing about keep.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoin.
+    Pass 1 is the default (callers), pass 2 option bejoin evidence.
+
+    Image: decompiler/crates/kuna-analysis/tests/fixtures/bejoin_callers_ppc32_O2
+    (bejoin_callers.c, powerpc-linux-gnu-gcc 13.3 -O2 -nostdlib -static).
+
+    Assert #1: the default returns add64's sum high word first; evidence
+      swaps it, and add_hi keeps the old join in both passes.
+    Assert #2: the default reads add64's and pass's pair r3 high in c_add and
+      c_pass and stores the high word at the lower address; evidence reads
+      them r3 low.
+    Assert #3: keep and c_hi stay as they were in both passes.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">4e80002000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_callers_ppc32_O2</com>
+  <com>read symbols</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoin evidence</com>
+  <com>lo fu add64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_hi</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu keep</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu c_pass</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoin-callers #1: the default returns add64's sum high word first" min="1" max="1">return CONCAT44\(a0 \+ a2 \+ \(uint4\)CARRY4\(a1,a3\),a1 \+ a3\);</stringmatch>
+<stringmatch name="bejoin-callers #1b: evidence swaps add64, and add_hi keeps the old join in both passes" min="3" max="3">return CONCAT44\(a1 \+ a3,a0 \+ a2 \+ \(uint4\)CARRY4\(a1,a3\)\);</stringmatch>
+<stringmatch name="bejoin-callers #2: the default reads c_add's and c_pass's pair r3 high" min="2" max="2">unsigned long long v1; // r3:r4</stringmatch>
+<stringmatch name="bejoin-callers #2b: the default stores the high word at the lower address" min="2" max="2">sinku\._0_4_ = \(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\);</stringmatch>
+<stringmatch name="bejoin-callers #2c: evidence reads both pairs r3 low" min="2" max="2">unsigned long long v1; // r4:r3</stringmatch>
+<stringmatch name="bejoin-callers #3: keep stays an int in both passes" min="2" max="2">int4 keep\(int4 a0\)</stringmatch>
+<stringmatch name="bejoin-callers #3b: c_hi reads add_hi's int in both passes" min="2" max="2">sink32 = add_hi\(\);</stringmatch>
+</decompilertest>

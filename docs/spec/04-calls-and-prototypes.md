@@ -1895,7 +1895,7 @@ fixed arguments sort to the front first (`ParamActive::sort_fixed_position`).
 ### Caller-proved big-endian pair returns
 
 The `callwide` option (`off|on`, default **off**) adds positive caller evidence
-to `bejoin evidence`. It is inert with `bejoin off` or `bejoin on`, and no mode
+to `bejoin evidence` and `callers`. It is inert with `bejoin off` or `bejoin on`, and no mode
 preset enables it. A producer's own declared output takes precedence. The
 feature addresses a narrower ambiguity than instruction-shape recovery: the
 same big-endian machine instructions can compute a 64-bit result or only its
@@ -2183,12 +2183,14 @@ applies there.
 
 On those ABIs the (kuna) `bejoin` option decides the order
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (join_order)`):
-`off` joins every pair first register low, as upstream does; `evidence`, the
-default, joins in the ABI's order only on proof that the RETURNs hand back one
-value twice a register's width; `on` joins in the ABI's order when the second
-register holds a low word the function seems to return on purpose.
+`off` joins every pair first register low, as upstream does; `evidence` joins
+in the ABI's order only on proof, from the function's own instructions, that
+the RETURNs hand back one value twice a register's width; `callers`, the
+default, also takes as proof a caller that reads the second register after
+the call (below); `on` joins in the ABI's order when the second register holds
+a low word the function seems to return on purpose.
 
-With `evidence`
+With `evidence` (and `callers`)
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs (seed, proven)`)
 the order is a fact about one function that its own RETURN and every call to
 it must agree on, in any order and in any run: a whole `decompile-all`, a run
@@ -2378,6 +2380,89 @@ builds each (PowerPC, MIPS and ARM big-endian with gcc and clang, ARMv7 and
 SPARC with clang, -O0 to -O2 and -Os) of loads, struct copies, stack
 temporaries and call results kept across calls, returned as a `long long` or
 as one of its words, the only `int` that moves is the volatile read above.
+
+With `callers`, the default
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/callers.rs`), the
+callers settle what the callee's bytes cannot. A call clobbers the second
+return register, so a caller compiled against `int f()` never reads it after
+the call; one that reads it before writing it reads the value's low word. A
+function is also proven when one of its direct callers, on some path after the
+call and before anything writes the register or another call clobbers it,
+reads it in an instruction of its own: a move, a store, an operation, a
+compare (`c_add` on PowerPC stores `r4` as the low word of a `long long`
+global). A call (an argument the next callee may not take), a RETURN, a
+branch, a register window's copy of every register, and a register XORed with
+or subtracted from itself do not read it. A caller whose RETURN the register
+reaches untouched (`return f();` in a function that keeps a frame, so it is no
+tail call, and SPARC's `call f; restore`) proves `f` once that caller is
+proven itself. So a 64-bit sum (`addc 4,4,6; adde 3,3,5` on PowerPC, `addu`
+and `sltu` on MIPS, `addcc`/`addx` on SPARC, `adds`/`adc` on ARM big-endian),
+ARMv7's single `umull r1,r0,r1,r0`, `smull` or `umlal`, and a wrapper that
+returns a callee's `long long` through its frame join high word first wherever
+a caller stores, compares, adds or moves both words, while the `int` that
+returns their high word, whose callers read only the first register, keeps the
+first-register-low join.
+
+The read is evidence only if the call clobbered the register. gcc's IPA-RA
+lets a caller keep its own value there across a callee in the same unit that
+never touches it (ARM gcc -O2 compiles `int c(int a, int b) { return keep(a,
+b) + b; }` as `bl keep; add r0,r1,r0`), so the callee must write the register:
+in an instruction of its own, through an indirect or unknown call (which the
+ABI lets clobber it), or through a direct callee or a function it branches
+into that does, searched to 32 functions. A function with a register window
+writes it as its caller sees it only by writing the register its `restore`
+moves there (`%i1`), and its calls do not count. A function whose first
+instruction stores the register (one that saves the argument registers to give
+them back, as `__gnu_mcount_nc`'s `push {r0-r3,lr}` does) proves nothing. The
+callee must also start a symbol of the image's own symbol table and its
+instructions must reach a RETURN or a branch into another function (a caller
+of a function that does not return lays out unrelated code after the call),
+and a callee kuna knows does not return is not asked.
+
+Mode independence needs the callers to be found the same way in every run, so
+neither the symbols discovery added nor the Listing are used: the call sites
+come from one scan of the image's executable read-only bytes, once per image,
+for the direct-call encodings (PowerPC `bl`/`bla`, MIPS `jal`/`bal`, SPARC
+`call`, ARM `bl`/`blx` and the Thumb pair, both byte orders on a `LEBE`
+image) whose target starts a symbol, and each site is decoded again before it
+is read, so a data word that happens to encode such a call is dropped. The
+function holding a site is the symbol whose extent (to the next symbol)
+contains it, and the walk after the call stays inside it. The walk keeps, on
+each path, what the branches it took decided about the one-byte flag registers
+and the conditions it tested, so instructions that one condition skips are
+skipped together: ARM's `cmp r3,#0; ldrne r1,[sp,#0x1c]; orrnes r2,r1,r0`
+never reads a stale `r1`, and SPARC's `call` p-code reads `didrestore`
+written in its own delay slot. An image without a symbol table (or an XML
+image, which has no section table) proves nothing this way, and only 32-bit
+big-endian PowerPC, MIPS, SPARC and ARM are scanned (AVR's and AArch64's pairs
+are left to `evidence`). The verdict is the least fixed point of the three
+rules (proven on its own once the callees it waits on are, a caller's read, a
+proven caller handing the pair back) over every function it reaches, up to 256
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin/evidence.rs
+(by_callers)`); each fact it reads is a function of the image alone, cached per
+image, so a whole `decompile-all`, `--functions`, `--jobs N`, a single `kuna
+decompile` and a project export print every function the same way.
+
+Against `evidence`, no function's own return type changes width. Over the
+same 813 big-endian objects (20,759 functions) 228 functions in 45 objects
+change: 143 whose DWARF return is eight bytes now return or read a 64-bit value
+high word first (Lua's `posrelat` and `luaV_div`, bash's `expr.c` evaluators,
+grep's `add_count`, kmod's `elf_get_uint`), 80 `int` functions read such a
+callee's words the right way round, and the other five are 64-bit fixture
+functions and diffutils' `file_position`. Over the four SQLite builds (6,010
+functions) 145 change the same way (`sqlite3VdbeIntValue`, `memIntValue` and
+`sqlite3BtreeOffset` return high word first, and `sqlite3_column_int` returns
+`(unsigned int)memIntValue(v)` where it lost the word); none change on MIPS,
+whose gcc build calls through `jalr`. Over 1,428 authored objects (sums,
+differences, negations, shifts, `umull`/`smull`/`umlal` products,
+accumulations, loads, wrappers and chains, each beside the `int` over its high
+word, constant divisions, volatile high-word reads, MIPS -O0 `>> 32` and
+IPA-RA callees, at -O0 to -O2 and -Os with gcc and clang, as objects and
+linked) no function whose source return type is narrower than eight bytes
+returns more, and the 64-bit ones that change print their value high word
+first. A caller that passes the pair straight on as the next call's arguments
+(`bl f; bl use64`), and a `long long` none of whose callers reads its second
+register, stay as `evidence` prints them.
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.
@@ -4606,7 +4691,7 @@ is run through the model's own `derive_output_map`; the pair is taken only when
 the model uses exactly both, and the probe's join order says which is the high
 half. A shift by 32 names the half it reads, so the pair is formed only when the
 call's join order is the ABI's: on a big-endian ABI (`r3:r4`, `$v0:$v1`) that
-takes `option bejoin on`, or, with the default `evidence`, a callee whose own
+takes `option bejoin on`, or, with the default `callers` (or `evidence`), a callee whose own
 recovery returned the pair high word first, because the first-register-low
 join would print a read of the low word `r4` as the high one. The CALL then
 gains the pair as a `join` output, each read becomes a `SUBPIECE` of it at its

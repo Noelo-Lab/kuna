@@ -2120,7 +2120,9 @@ mod tests {
         // and kuna-prunedssa / heritage markers only where a range is live (options prunedssa, readonlycalls)
         // and kuna-lanedivide-terminator / a terminating SUBPIECE of an upper-lane piece
         // and kuna-x86-16-real-rel16 + kuna-x86-16-protected-rel16 / 16-bit near branches keep their segment
-        assert_eq!(count, 598, "corpus file count drifted");
+        // and kuna-bejoin-callers / a long long whose callers read both registers joins
+        // high word first (option bejoin evidence = swapped)
+        assert_eq!(count, 599, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
