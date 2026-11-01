@@ -63,11 +63,15 @@
 //! Two answers. The listing always reports the addresses its OWN branches name
 //! that no row of it starts at ([`kuna_console::disasm::skipped_targets`]), because a decode a byte
 //! out of phase is spelled exactly like one that is not. And `--follow` decodes
-//! from those addresses as well as from the start (`kuna_console::disasm`), filling
+//! from every address the flow from the start reaches (`kuna_console::disasm`), filling
 //! what flow never reaches with the same straight-line walk, so it never lists
 //! less than the plain listing does. Where two reachable paths read the same
 //! bytes as different instructions, `--follow` lists both rows: that is what the
-//! bytes mean, and dropping either would be a guess.
+//! bytes mean, and dropping either would be a guess. A target `--follow` still
+//! has no row for is reported with the reason that is true of it
+//! ([`kuna_console::disasm::Skip`]) — named only by bytes no flow reaches, not an
+//! instruction, past the window's end, or past the row budget — never as one it
+//! decoded from.
 //!
 //! ## Two views, because a data address is not an instruction stream
 //!
@@ -89,7 +93,7 @@
 pub(crate) mod raw_pcode;
 
 use kuna_console::disasm::{
-    self, hex, mapped_run_end, read_upto, CodeWalk, Row, Window, DERIVED_INSTRUCTION_CAP,
+    self, hex, mapped_run_end, read_upto, CodeWalk, Row, Skip, Window, DERIVED_INSTRUCTION_CAP,
 };
 use kuna_console::engine::ConsoleProgram;
 use kuna_sleigh::loadimage::section_flags;
@@ -354,13 +358,22 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             if folded > 0 {
                 notes.push(pool_note(folded));
             }
-            if anchored > 0 {
-                notes.push(follow_note(anchored));
+            if !anchored.is_empty() {
+                notes.push(follow_note(&anchored));
             }
-            if !skipped.is_empty() {
-                notes.push(skipped_note(&skipped, args.follow));
+            let overlapping = disasm::overlapping_rows(&rows);
+            if !overlapping.is_empty() {
+                notes.push(overlap_note(&overlapping));
             }
-            let end = rows.last().map_or(region.start, |r| r.addr + r.size);
+            let reasons =
+                [Skip::Straight, Skip::Unreached, Skip::Undecodable, Skip::PastWindow, Skip::PastBudget];
+            for why in reasons {
+                let addrs: Vec<u64> = skipped.iter().filter(|s| s.1 == why).map(|s| s.0).collect();
+                if !addrs.is_empty() {
+                    notes.push(skipped_note(&addrs, why, &region, args.count));
+                }
+            }
+            let end = listed_end(&region, &rows);
             if cut_short_by_image(&region, args.count, rows.len(), end) {
                 notes.push(image_bound_note(prog, &region));
             }
@@ -758,7 +771,7 @@ fn result_json(
     truncated: bool,
     notes: &[String],
 ) -> Json {
-    let end = rows.last().map_or(region.start, |r| r.addr + r.size);
+    let end = listed_end(region, rows);
     let instructions = Json::Array(
         rows.iter()
             .map(|r| {
@@ -859,7 +872,7 @@ fn target_json(region: &Region) -> Json {
 /// matches here and in `--json` alike.
 fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
     use std::fmt::Write as _;
-    let end = rows.last().map_or(region.start, |r| r.addr + r.size);
+    let end = listed_end(region, rows);
     let mut out = String::new();
     let label = label(region);
     let plural = if rows.len() == 1 { "instruction" } else { "instructions" };
@@ -957,57 +970,114 @@ fn pool_note(folded: usize) -> String {
     }
 }
 
-/// (kuna, `linear-disassembly-silently-skips`) Say that the straight line walked
-/// OVER an address this range's own branches name — the one fact an agent
+/// One past the furthest byte the listing covers — `end` in the header and the
+/// JSON. Under `--follow` rows can overlap, so that is not always the last row's
+/// own end.
+fn listed_end(region: &Region, rows: &[Row]) -> u64 {
+    disasm::listed_end(rows).unwrap_or(region.start)
+}
+
+/// Up to [`SKIPPED_NOTE_ADDRS`] addresses spelled out, the rest counted.
+fn spelled(addrs: &[u64]) -> String {
+    let shown: Vec<String> =
+        addrs.iter().take(SKIPPED_NOTE_ADDRS).map(|a| format!("0x{a:x}")).collect();
+    match addrs.len() - shown.len() {
+        0 => shown.join(", "),
+        n => format!("{} and {n} more", shown.join(", ")),
+    }
+}
+
+/// (kuna, `linear-disassembly-silently-skips`) Say that no row starts at an
+/// address this range's own branches name, and why — the one fact an agent
 /// reading a listing cannot infer, because a decode that is a byte out of phase
 /// is spelled exactly like one that is not.
 ///
-/// It is not a missing row that matters. The instruction covering the target,
-/// and every row after it until the decode re-synchronizes, are a reading of
-/// bytes the program never executes that way: on the witness the listing prints
-/// a `CALL` and a `JMP` to an address outside the image, neither of which is in
-/// the bytes. So the note leads with what is wrong with the rows that ARE
-/// there, and names the move that fixes them.
-fn skipped_note(skipped: &[u64], followed: bool) -> String {
-    let shown: Vec<String> =
-        skipped.iter().take(SKIPPED_NOTE_ADDRS).map(|a| format!("0x{a:x}")).collect();
-    let more = match skipped.len() - shown.len() {
-        0 => String::new(),
-        n => format!(" and {n} more"),
-    };
-    let (count, subject) = match skipped.len() {
+/// For the straight line it is not a missing row that matters. The instruction
+/// covering the target, and every row after it until the decode
+/// re-synchronizes, are a reading of bytes the program never executes that way:
+/// on the witness the listing prints a `CALL` and a `JMP` to an address outside
+/// the image, neither of which is in the bytes. So that note leads with what is
+/// wrong with the rows that ARE there, and names the move that fixes them.
+///
+/// Under `--follow` whatever is left has a reason of its own ([`Skip`]), and
+/// each reason has a different move, so each gets its own note: re-running the
+/// same command fixes none of them.
+fn skipped_note(skipped: &[u64], why: Skip, region: &Region, count: Option<usize>) -> String {
+    let list = spelled(skipped);
+    let (what, subject) = match skipped.len() {
         1 => ("an address".to_string(), "it"),
         n => (format!("{n} addresses"), "them"),
     };
-    // Under --follow whatever is left is out of the window's reach -- named by
-    // bytes no flow arrives at, or sitting at the very edge of the extent -- so
-    // re-running the same command is not the move.
-    let fix = if followed {
-        "--follow could not re-anchor these, so disassemble one of them on its own to \
-         decode from it"
-    } else {
-        "re-run with --follow to decode from those addresses too"
-    };
-    format!(
-        "the decode ran across {count} this range's own branches name -- {}{more} -- so no \
-         row starts at {subject}; the instruction printed over each one, and the rows after \
-         it until the decode re-synchronizes, spell bytes the program never executes that \
-         way -- {fix}",
-        shown.join(", ")
-    )
+    let lead = format!("no row starts at {what} this range's own branches name -- {list} --");
+    match why {
+        Skip::Straight => format!(
+            "the decode ran across {what} this range's own branches name -- {list} -- so no \
+             row starts at {subject}; the instruction printed over each one, and the rows after \
+             it until the decode re-synchronizes, spell bytes the program never executes that \
+             way -- re-run with --follow to decode from those addresses too"
+        ),
+        Skip::Unreached => format!(
+            "{lead} because only bytes no flow from 0x{:x} reaches branch there, and --follow \
+             lists those bytes straight-line rather than decoding from what they name -- \
+             disassemble from one of them on its own to decode from it",
+            region.start
+        ),
+        Skip::Undecodable => format!(
+            "{lead} because flow reaches {subject} and the bytes there do not decode as an \
+             instruction inside mapped memory, so --follow could not start a row there"
+        ),
+        Skip::PastWindow => format!(
+            "{lead} because the window ends at 0x{:x} and {} not below it: the instruction \
+             straddling that end is listed whole, but --follow decodes only from addresses inside \
+             the window -- widen --bytes or the range to include {subject}",
+            region.stop().unwrap_or(region.start),
+            if skipped.len() == 1 { "it is" } else { "they are" },
+        ),
+        Skip::PastBudget => {
+            let (budget, fix) = match count {
+                Some(n) => {
+                    (format!("the --count {n} budget"), format!("raise --count to include {subject}"))
+                }
+                None => (
+                    format!("the {DERIVED_INSTRUCTION_CAP}-instruction cap"),
+                    "--count N, --bytes N or a 0xstart-0xend range lists more".to_string(),
+                ),
+            };
+            format!(
+                "{lead} because {budget} ran out before the listing reached a row there -- {fix}"
+            )
+        }
+    }
 }
 
-/// (kuna, `linear-disassembly-silently-skips`) Say how much of the listing
-/// `--follow` re-anchored, so a caller comparing two runs of the same range
-/// knows how many rows moved and why.
-fn follow_note(anchored: usize) -> String {
-    let n = match anchored {
+/// (kuna, `linear-disassembly-silently-skips`) Say which addresses `--follow`
+/// re-anchored, so a caller comparing two runs of the same range knows which
+/// rows moved and why.
+fn follow_note(anchored: &[u64]) -> String {
+    let n = match anchored.len() {
         1 => "one address".to_string(),
         n => format!("{n} addresses"),
     };
     format!(
-        "--follow decoded from {n} the straight line would have walked over; bytes no \
-         flow reaches are still listed, straight-line, in between"
+        "--follow decoded from {n} the straight line would have walked over -- {} --; bytes \
+         no flow reaches are still listed, straight-line, in between",
+        spelled(anchored)
+    )
+}
+
+/// Say that some rows start inside another: under `--follow` two reachable
+/// paths can read the same bytes as different instructions, both readings are
+/// listed, and a consumer that assumes the rows tile the span would misread it.
+fn overlap_note(overlapping: &[u64]) -> String {
+    let n = match overlapping.len() {
+        1 => "one row starts".to_string(),
+        n => format!("{n} rows start"),
+    };
+    format!(
+        "{n} inside another listed row -- {} -- where two reachable paths read the same bytes \
+         as different instructions; --follow lists both readings, so these rows overlap rather \
+         than tile",
+        spelled(overlapping)
     )
 }
 
@@ -1137,10 +1207,13 @@ fn usage() {
          --define-function <start[-end][=name] | @file> (repeatable) declares a\n\
          boundary first, so a name the image never carried becomes a valid target.\n\
          \n\
-         --follow decodes from every address the range's own branches name, not just\n\
-         from its start, so a jump over a decoy byte cannot pull the rest of the\n\
-         listing out of phase. Bytes no flow reaches are still listed in between.\n\
-         Without it, such an address is reported in notes rather than decoded.\n\
+         --follow decodes from every address the range's own reachable branches name,\n\
+         not just from its start, so a jump over a decoy byte cannot pull the rest of\n\
+         the listing out of phase. Where two reachable paths read the same bytes as\n\
+         different instructions both rows are listed, so rows can overlap. Bytes no\n\
+         flow reaches are still listed in between. Without it, such an address is\n\
+         reported in notes rather than decoded; with it, a target still without a row\n\
+         is reported with the reason.\n\
          \n\
          --json emits {{binary,kind,target,start,end,count,bytes,truncated,notes}} plus\n\
          instructions:[{{address,address_hex,size,bytes,mnemonic,operands,text}}] in the\n\
@@ -1164,26 +1237,74 @@ mod tests {
     }
 
     /// The note names the addresses, counts what it cannot name, and says which
-    /// move fixes it — a different move once `--follow` is already on.
+    /// move fixes it — under `--follow`, a different move for each reason a
+    /// target is still without a row, and never "re-run with --follow".
     #[test]
     fn the_skipped_note_names_the_addresses_and_the_move_that_fixes_them() {
-        let one = skipped_note(&[0x43d092], false);
+        let region = Region {
+            start: 0x43d060,
+            end: Some(0x43d0a0),
+            name: None,
+            derived: false,
+            from_entry: false,
+            mapped_end: None,
+        };
+        let note = |addrs: &[u64], why| skipped_note(addrs, why, &region, None);
+        let one = note(&[0x43d092], Skip::Straight);
         assert!(one.contains("an address"), "{one}");
         assert!(one.contains("0x43d092"), "{one}");
         assert!(one.contains("--follow"), "{one}");
 
-        let three = skipped_note(&[0x43d092, 0x43d0ae, 0x43d0c1], false);
+        let three = note(&[0x43d092, 0x43d0ae, 0x43d0c1], Skip::Straight);
         assert!(three.contains("3 addresses"), "{three}");
         assert!(three.contains("0x43d092, 0x43d0ae, 0x43d0c1"), "{three}");
 
         let many: Vec<u64> = (0..SKIPPED_NOTE_ADDRS as u64 + 3).map(|i| 0x1000 + i).collect();
-        let note = skipped_note(&many, false);
-        assert!(note.contains("and 3 more"), "{note}");
-        assert!(!note.contains("0x1006"), "the seventh must not be spelled out: {note}");
+        let crop = note(&many, Skip::Straight);
+        assert!(crop.contains("and 3 more"), "{crop}");
+        assert!(!crop.contains("0x1006"), "the seventh must not be spelled out: {crop}");
 
-        let followed = skipped_note(&[0x43d092], true);
-        assert!(!followed.contains("re-run with --follow"), "already on: {followed}");
-        assert!(followed.contains("on its own"), "{followed}");
+        let unreached = note(&[0x43d092], Skip::Unreached);
+        assert!(unreached.contains("on its own"), "{unreached}");
+        let undecodable = note(&[0x43d092], Skip::Undecodable);
+        assert!(undecodable.contains("do not decode"), "{undecodable}");
+        let past_window = note(&[0x43d0a2], Skip::PastWindow);
+        assert!(past_window.contains("ends at 0x43d0a0"), "{past_window}");
+        assert!(past_window.contains("--bytes"), "{past_window}");
+        let past_count = skipped_note(&[0x43d092], Skip::PastBudget, &region, Some(4));
+        assert!(past_count.contains("--count 4"), "{past_count}");
+        assert!(past_count.contains("raise --count"), "{past_count}");
+        let past_cap = note(&[0x43d092], Skip::PastBudget);
+        let cap = format!("{DERIVED_INSTRUCTION_CAP}-instruction cap");
+        assert!(past_cap.contains(&cap), "{past_cap}");
+        for followed in [unreached, undecodable, past_window, past_count, past_cap] {
+            assert!(followed.contains("0x43d0"), "{followed}");
+            assert!(!followed.contains("re-run with --follow"), "already on: {followed}");
+            assert!(!followed.contains("ran across"), "{followed}");
+        }
+    }
+
+    /// Under `--follow` rows can overlap, so the listing's end is the furthest
+    /// any row reaches, not the last row's own end.
+    #[test]
+    fn the_listing_ends_where_its_furthest_row_does() {
+        let region = Region {
+            start: 0x240,
+            end: Some(0x24c),
+            name: None,
+            derived: false,
+            from_entry: false,
+            mapped_end: None,
+        };
+        let rows = vec![
+            row(0x244, &[0xb8, 0xb8, 0x2a, 0x00, 0x00], "MOV", "EAX,0x2ab8"),
+            row(0x245, &[0xb8, 0x2a], "MOV", "AX,0x2a"),
+        ];
+        assert_eq!(listed_end(&region, &rows), 0x249);
+        let header = "# 2 instructions at 0x240 (0x240..0x249, 9 bytes)";
+        assert!(render_text(&region, &rows, false).starts_with(header));
+        assert_eq!(listed_end(&region, &[]), 0x240);
+        assert_eq!(disasm::overlapping_rows(&rows), vec![0x245]);
     }
 
     #[test]

@@ -1472,3 +1472,174 @@ fn raw_pcode_help_and_data_targets_say_what_they_are() {
     let (_, stderr, _) = run_kuna(&["raw-pcode", &fauxware(), "0x601040", "--bytes", "2", "--json"]);
     assert!(stderr.contains("note: 0x601040 is in a non-executable data section"), "{stderr}");
 }
+
+// --- two reachable readings of the same bytes (GH #1363) ----------------------
+
+/// `followoverlap_x86_64` (generator beside it): one function per way two
+/// reachable paths can read the same bytes as different instructions.
+fn follow_overlap() -> String {
+    fixture("followoverlap_x86_64")
+}
+
+/// The address and text of every row of a `--json` listing, in listing order.
+fn listed(doc: &str) -> Vec<(u64, String)> {
+    instructions(doc)
+        .iter()
+        .map(|r| (as_u64(field(r, "address")), as_str(field(r, "text")).to_owned()))
+        .collect()
+}
+
+/// The reporter's bytes: a `je` into the fall-through `MOV`, whose own decode
+/// then runs past the next row that path decodes. Both readings are listed, the
+/// rows overlap, and the notes say the target was decoded from without also
+/// saying it could not be.
+#[test]
+fn follow_lists_both_readings_of_a_branch_into_the_next_instruction() {
+    let bin = follow_overlap();
+    let doc = listing(&[&bin, "audit_overlap", "--follow", "--json"]);
+    let rows = listed(&doc);
+    for (addr, text) in [
+        (0x401004, "MOV EAX,0x2ab8"),
+        (0x401005, "MOV EAX,0x2a"),
+        (0x401009, "ADD BL,AL"),
+        (0x40100a, "RET"),
+        (0x40100b, "RET"),
+    ] {
+        assert!(
+            rows.contains(&(addr, text.to_owned())),
+            "no {text} at 0x{addr:x}: {rows:?}"
+        );
+    }
+    assert!(rows.windows(2).all(|w| w[0].0 < w[1].0), "rows out of address order: {rows:?}");
+    let pairs = parse_doc(&doc);
+    assert_eq!(field(&pairs, "truncated"), &Json::Bool(false));
+    assert_eq!(as_str(field(&pairs, "end_hex")), "0x401010");
+    let Json::Array(notes) = field(&pairs, "notes") else { panic!("notes must be an array") };
+    let notes: Vec<&str> = notes.iter().map(as_str).collect();
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.starts_with("--follow decoded from one address") && n.contains("0x401005")),
+        "{notes:?}"
+    );
+    assert!(notes.iter().any(|n| n.contains("overlap") && n.contains("0x401005")), "{notes:?}");
+    assert!(
+        !notes.iter().any(|n| n.contains("no row starts") || n.contains("ran across")),
+        "0x401005 has a row; nothing may say it does not: {notes:?}"
+    );
+}
+
+/// The same admission one hop further (a target named by a row that itself
+/// starts inside another), and backwards (a jump into an instruction already
+/// listed, whose decode swallows the jump).
+#[test]
+fn follow_admits_a_chain_of_overlaps_and_a_jump_back_into_an_instruction() {
+    let bin = follow_overlap();
+    let chain = listed(&listing(&[&bin, "audit_chain", "--follow", "--json"]));
+    for (addr, text) in [
+        (0x401012, "MOV EAX,0x274a2a1"),
+        (0x401015, "JZ 0x401019"),
+        (0x401017, "MOV ECX,0x2ab8c3"),
+        (0x401019, "MOV EAX,0x2a"),
+    ] {
+        assert!(chain.contains(&(addr, text.to_owned())), "no {text} at 0x{addr:x}: {chain:?}");
+    }
+    let back = listed(&listing(&[&bin, "audit_backward", "--follow", "--json"]));
+    for (addr, text) in [
+        (0x401020, "MOV EAX,0x90c30590"),
+        (0x401022, "ADD EAX,0xfbeb90c3"),
+        (0x401025, "JMP 0x401022"),
+        (0x401027, "RET"),
+    ] {
+        assert!(back.contains(&(addr, text.to_owned())), "no {text} at 0x{addr:x}: {back:?}");
+    }
+}
+
+/// `overlapbranch_i386`'s `75 01` hop over a junk `e8`: the re-anchored run used
+/// to stop, with nothing said, the first time it crossed a row of the junk
+/// reading. The real stream is listed to its `RET`, beside the junk one.
+#[test]
+fn a_followed_run_is_not_cut_short_by_another_reading_of_its_bytes() {
+    let bin = fixture("overlapbranch_i386");
+    let rows = listed(&listing(&[&bin, "0x804881c", "--addr", "--follow", "--json"]));
+    for (addr, text) in [
+        (0x8048824, "CALL 0xb0c48ac"),
+        (0x8048825, "ADD EAX,0x7"),
+        (0x8048828, "ADD EAX,dword ptr [EAX]"),
+        (0x804882a, "ADD EAX,0xd98ddd00"),
+        (0x804882f, "RET"),
+    ] {
+        assert!(rows.contains(&(addr, text.to_owned())), "no {text} at 0x{addr:x}: {rows:?}");
+    }
+}
+
+/// A target `--follow` still cannot start a row at is named with the reason
+/// that is actually true, and the move that fixes that reason.
+#[test]
+fn follow_says_why_a_target_still_has_no_row() {
+    let bin = follow_overlap();
+    let note_for = |argv: &[&str], target: &str| {
+        let (_, notes) = rendered(&[&[bin.as_str()][..], argv, &["--follow"]].concat());
+        assert!(
+            !notes.iter().any(|n| n.contains("decoded from") && n.contains(target)),
+            "{target} has no row, so nothing may say it was decoded from: {notes:?}"
+        );
+        notes
+            .into_iter()
+            .find(|n| n.contains("no row starts") && n.contains(target))
+            .unwrap_or_else(|| panic!("no note names {target}"))
+    };
+    let undecodable = note_for(&["audit_undecodable"], "0x401033");
+    assert!(undecodable.contains("do not decode"), "{undecodable}");
+    let unreached = note_for(&["audit_unreached"], "0x401044");
+    assert!(unreached.contains("no flow from 0x401040 reaches"), "{unreached}");
+    let window = note_for(&["0x401000", "--addr", "--bytes", "5"], "0x401005");
+    assert!(window.contains("window ends at 0x401005"), "{window}");
+    assert!(window.contains("--bytes"), "{window}");
+    let budget = note_for(&["0x401000", "--addr", "--count", "3"], "0x401005");
+    assert!(budget.contains("--count 3"), "{budget}");
+}
+
+/// `--count` spends its budget on the lowest addresses, however late flow
+/// reaches them: the fall-through path decodes four rows before the branch
+/// target is taken from the worklist, and the target is still the fourth row.
+/// An explicit `--count` that ran out is the length asked for, not a truncation,
+/// with or without `--follow`; and `end` is the furthest any row reaches.
+#[test]
+fn a_counted_follow_lists_its_lowest_rows_and_is_not_truncated() {
+    let bin = follow_overlap();
+    let doc = listing(&[&bin, "0x401000", "--addr", "--count", "4", "--follow", "--json"]);
+    let rows: Vec<u64> = listed(&doc).into_iter().map(|r| r.0).collect();
+    assert_eq!(rows, vec![0x401000, 0x401002, 0x401004, 0x401005]);
+    let pairs = parse_doc(&doc);
+    assert_eq!(as_str(field(&pairs, "end_hex")), "0x40100a", "0x401005 is 5 bytes long");
+    assert_eq!(as_u64(field(&pairs, "bytes")), 10);
+    for follow in [&[][..], &["--follow"][..]] {
+        let fauxware = fauxware();
+        let argv = [&[fauxware.as_str(), "main", "--count", "9", "--json"][..], follow].concat();
+        let doc = listing(&argv);
+        assert_eq!(field(&parse_doc(&doc), "truncated"), &Json::Bool(false), "{follow:?}");
+    }
+}
+
+/// `audit_staircase`: forty levels, each branching to the one below it, entered
+/// from the top. Every level flow reaches displaces the rows of the one above it
+/// from the lowest `--count` rows, so keeping those rows exactly would cost a
+/// decode per level, and a stair as long as the window would make a short
+/// listing decode all of it. The walk spends a few decodes per row it may
+/// print: a small `--count` stops short of the bottom and says the target there
+/// is past that budget, not unreached, and a `--count` the staircase fits in
+/// lists it.
+#[test]
+fn a_counted_follow_bounds_its_decodes_and_says_so() {
+    let bin = follow_overlap();
+    let (_, notes) = rendered(&[&bin, "0x401050", "--addr", "--count", "4", "--follow"]);
+    let budget = notes
+        .iter()
+        .find(|n| n.contains("no row starts") && n.contains("0x401058"))
+        .unwrap_or_else(|| panic!("no note names 0x401058: {notes:?}"));
+    assert!(budget.contains("--count 4 budget"), "{budget}");
+    let doc = listing(&[&bin, "0x401050", "--addr", "--count", "64", "--follow", "--json"]);
+    let rows = listed(&doc);
+    assert!(rows.contains(&(0x401058, "MOV EAX,0x2a".to_owned())), "{rows:?}");
+}
