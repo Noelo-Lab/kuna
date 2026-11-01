@@ -1307,7 +1307,11 @@ impl Varnode {
     /// Returns an error if a free (non-spacebase) varnode would gain a second
     /// descendant (the C++ `LowlevelError`).
     fn add_descend(&mut self, op: OpId) -> KunaResult<()> {
-        if self.is_free() && !self.is_spacebase() && !self.descend.is_empty() {
+        if self.is_free()
+            && !self.is_spacebase()
+            && !self.descend.is_empty()
+            && self.get_space().get_type() != spacetype::IPTR_IOP
+        {
             return Err(KunaError::lowlevel("Free varnode has multiple descendants"));
         }
         self.descend.push(op); // push_back
