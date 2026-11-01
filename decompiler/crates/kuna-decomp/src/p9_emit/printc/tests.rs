@@ -510,25 +510,25 @@ mod w10_input_prototype_declarator {
         let parts = |front: &str, back: &str| (front.to_string(), back.to_string());
 
         assert_eq!(
-            type_name_for_decl(&ptr_to(array_of(base.clone(), 16)), rt),
+            type_name_for_decl(&ptr_to(array_of(base.clone(), 16)), rt.clone()),
             parts("int4 (*", ")[16]")
         );
         assert_eq!(
-            type_name_for_decl(&ptr_to(array_of(ptr_to(base.clone()), 3)), rt),
+            type_name_for_decl(&ptr_to(array_of(ptr_to(base.clone()), 3)), rt.clone()),
             parts("int4 *(*", ")[3]")
         );
         // array[2] of pointer to array[16]: `int4 (*v [2])[16]`
         assert_eq!(
-            array_decl_parts(&array_of(ptr_to(array_of(base.clone(), 16)), 2), rt),
+            array_decl_parts(&array_of(ptr_to(array_of(base.clone(), 16)), 2), rt.clone()),
             Some((parts("int4 (*", ")[16]"), 2))
         );
 
         // Near-misses carry no suffix: a named base, a plain pointer, and an array
         // of pointers.
-        assert_eq!(type_name_for_decl(&base, rt), parts("int4", ""));
-        assert_eq!(type_name_for_decl(&ptr_to(ptr_to(base.clone())), rt), parts("int4 **", ""));
+        assert_eq!(type_name_for_decl(&base, rt.clone()), parts("int4", ""));
+        assert_eq!(type_name_for_decl(&ptr_to(ptr_to(base.clone())), rt.clone()), parts("int4 **", ""));
         assert_eq!(
-            array_decl_parts(&array_of(ptr_to(base), 5), rt),
+            array_decl_parts(&array_of(ptr_to(base), 5), rt.clone()),
             Some((parts("int4 *", ""), 5))
         );
     }
@@ -608,34 +608,34 @@ mod w10_input_prototype_declarator {
         let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true, ..crate::printc::RealTypeCtx::OFF };
         let unk = |sz: i32| Rc::new(Datatype::new_with_align(sz, -1, type_metatype::TYPE_UNKNOWN));
         // Scalars: 1->char, 2->unsigned short, 4->unsigned int, 8->unsigned long.
-        assert_eq!(declarator_parts(&unk(1), on).0, "char");
-        assert_eq!(declarator_parts(&unk(2), on).0, "unsigned short");
-        assert_eq!(declarator_parts(&unk(4), on).0, "unsigned int");
-        assert_eq!(declarator_parts(&unk(8), on).0, "unsigned long");
+        assert_eq!(declarator_parts(&unk(1), on.clone()).0, "char");
+        assert_eq!(declarator_parts(&unk(2), on.clone()).0, "unsigned short");
+        assert_eq!(declarator_parts(&unk(4), on.clone()).0, "unsigned int");
+        assert_eq!(declarator_parts(&unk(8), on.clone()).0, "unsigned long");
         // LLP64: 8-byte unknown reads `unsigned long long` when long is 4 bytes.
         let llp64 = crate::printc::RealTypeCtx { enabled: true, long_is_8: false, ..crate::printc::RealTypeCtx::OFF };
         assert_eq!(declarator_parts(&unk(8), llp64).0, "unsigned long long");
         // Odd size keeps the placeholder.
-        assert_eq!(declarator_parts(&unk(3), on).0, "undefined3");
+        assert_eq!(declarator_parts(&unk(3), on.clone()).0, "undefined3");
         // Pointer-to-unknown relabels the pointee through the same size table, so
         // the declared stride matches the one `opLoad`/`opPtradd` index with.
         assert_eq!(
-            declarator_parts(&ptr_to(unk(8)), on),
+            declarator_parts(&ptr_to(unk(8)), on.clone()),
             ("unsigned long *".to_string(), String::new())
         );
         assert_eq!(
-            declarator_parts(&ptr_to(unk(4)), on),
+            declarator_parts(&ptr_to(unk(4)), on.clone()),
             ("unsigned int *".to_string(), String::new())
         );
         assert_eq!(
-            declarator_parts(&ptr_to(ptr_to(unk(1))), on),
+            declarator_parts(&ptr_to(ptr_to(unk(1))), on.clone()),
             ("char **".to_string(), String::new())
         );
         // Only a residual size with no natural C type degrades to `void` under a
         // pointer (as a scalar it still keeps the placeholder).
-        assert_eq!(declarator_parts(&ptr_to(unk(3)), on), ("void *".to_string(), String::new()));
+        assert_eq!(declarator_parts(&ptr_to(unk(3)), on.clone()), ("void *".to_string(), String::new()));
         // Array of unknown -> `char [8]` (element relabelled, count preserved).
-        assert_eq!(declarator_parts(&array_of(unk(1), 8), on), ("char".to_string(), "[8]".to_string()));
+        assert_eq!(declarator_parts(&array_of(unk(1), 8), on.clone()), ("char".to_string(), "[8]".to_string()));
         // Gate OFF leaves the placeholder untouched.
         assert_eq!(declarator_parts(&unk(4), crate::printc::RealTypeCtx::OFF).0, "undefined4");
     }
@@ -648,10 +648,10 @@ mod w10_input_prototype_declarator {
         let on = crate::printc::RealTypeCtx { enabled: true, long_is_8: true, ..crate::printc::RealTypeCtx::OFF };
         let void = || Rc::new(Datatype::new_with_align(0, 1, type_metatype::TYPE_VOID));
         for rt in [on, crate::printc::RealTypeCtx::OFF] {
-            assert_eq!(declarator_parts(&void(), rt), ("void".to_string(), String::new()));
-            assert_eq!(declarator_parts(&ptr_to(void()), rt), ("void *".to_string(), String::new()));
+            assert_eq!(declarator_parts(&void(), rt.clone()), ("void".to_string(), String::new()));
+            assert_eq!(declarator_parts(&ptr_to(void()), rt.clone()), ("void *".to_string(), String::new()));
             assert_eq!(
-                declarator_parts(&ptr_to(ptr_to(void())), rt),
+                declarator_parts(&ptr_to(ptr_to(void())), rt.clone()),
                 ("void **".to_string(), String::new())
             );
         }

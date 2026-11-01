@@ -1,0 +1,9 @@
+--- before/main.scale
++++ after/main.scale
+@@ -1,5 +1,5 @@
+ // main.scale
+-func scale(p *main.point, k int64) {
++func scale(p *point, k int64) {
+   (*p).x = (*p).x * k
+   (*p).y = k * (*p).y
+ }

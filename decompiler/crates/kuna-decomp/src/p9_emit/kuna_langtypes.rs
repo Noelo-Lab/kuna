@@ -14,7 +14,7 @@
 //!
 //! # Why the language rides on [`SpellCtx`]
 //!
-//! `SpellCtx` (the former `printc::RealTypeCtx`) is `Copy` and is already
+//! `SpellCtx` (the former `printc::RealTypeCtx`) is already
 //! threaded through every declarator chokepoint. Carrying [`OutLang`] on it means
 //! the free-function declarator family learns the language with no new threading
 //! and no new parameter: `rt.speller()` is available wherever `rt` already was.
@@ -40,8 +40,7 @@ use crate::kuna_lang::OutLang;
 /// The per-document type-rendering context (C++ has no analogue: the `realtypes`
 /// and `ctypes` gates are kuna divergences).
 ///
-/// `Copy`, so it threads cheaply through the declarator chokepoints.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SpellCtx {
     /// The output language, which selects the [`TypeSpeller`].
     pub(crate) lang: OutLang,
@@ -58,6 +57,7 @@ pub struct SpellCtx {
     pub(crate) model: crate::kuna_ctypes::CDataModel,
     /// (kuna `indirectargs`) Spell an indirectly passed parameter at its value type.
     pub(crate) indirect_args: bool,
+    pub(crate) go_package: Option<Rc<str>>,
 }
 
 impl SpellCtx {
@@ -70,6 +70,7 @@ impl SpellCtx {
         ctypes: false,
         model: crate::kuna_ctypes::CDataModel::LP64,
         indirect_args: false,
+        go_package: None,
     };
 
     /// The speller for this context's output language.

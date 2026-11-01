@@ -70,7 +70,7 @@ fn compressed_and_cross_unit_contracts_agree() {
         "func fromWord(p uint64) *int32", "func narrow(a uint64) uint32",
         "func extend(a int8) int64", "func boolNot(x bool) bool",
         "func mix(x float64, n int64, y float64) float64", "func store(p *int32, v int32)",
-        "func add(a int64, b int64) int64", "func scale(p *main.point, k int64)",
+        "func add(a int64, b int64) int64", "func scale(p *point, k int64)",
         "func callIdentity(p uint64) *int32", "func noResult(a int32)",
         "func resultOnly() int64", "func abstractIdentity(p uint64) *int32",
     ];
@@ -116,13 +116,15 @@ fn explicit_prototype_overrides_recovered_signature() {
 #[test]
 fn recovered_fixture_go_executes() {
     if !go_available() { return; }
-    let names = SUPPORTED.iter().copied().filter(|name| *name != "main.scale").collect::<Vec<_>>();
+    let names = SUPPORTED;
     for image in ["uncompressed", "compressed"] {
         let code = decompile(&fixture(image), &names, true, &[]);
         let file = common::scratch_file("godwarfsig", "go");
         let check = r#"
 var dat_40302a int32
+type point struct { x,y int64 }
 func main() {
+  pnt:=point{3,-7}; scale(&pnt,4); if pnt.x!=12 || pnt.y!=-28 { panic("record pointer") }
   var x int32
   store(&x,-17)
   if x != -17 || narrow(0x123456789)!=0x23456789 || extend(-128)!=-128 { panic("widths") }

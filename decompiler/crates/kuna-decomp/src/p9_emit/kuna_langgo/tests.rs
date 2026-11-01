@@ -192,6 +192,21 @@ fn go_type_spelling_preserves_machine_widths() {
 }
 
 #[test]
+fn package_local_record_names_reach_pointer_and_array_types() {
+    let cx = SpellCtx { lang: OutLang::Go, go_package: Some(Rc::from("main")), ..SpellCtx::OFF };
+    for (name, expected) in [("main.point", "*point"), ("other.point", "*other.point")] {
+        let mut record = Datatype::new_with_align(16, 8, type_metatype::TYPE_STRUCT);
+        record.name = name.into();
+        record.display_name = name.into();
+        let ptr = pointer(Rc::new(record));
+        assert_eq!(GO_SPELLER.declarator(&cx, &ptr).0, expected);
+        let mut array = Datatype::new_with_align(16, 8, type_metatype::TYPE_ARRAY);
+        array.kind = DatatypeKind::Array { arrayof: ptr, arraysize: 2 };
+        assert_eq!(GO_SPELLER.declarator(&cx, &Rc::new(array)).0, format!("[2]{expected}"));
+    }
+}
+
+#[test]
 fn literals_are_not_sanitized_as_identifiers() {
     let mut p = PrintC::new();
     p.set_name("go-language");

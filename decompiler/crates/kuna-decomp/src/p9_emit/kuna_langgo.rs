@@ -327,7 +327,7 @@ impl GoSpeller {
                     if ty.get_name().is_empty() {
                         self.anonymous(ty)
                     } else {
-                        path(ty.get_display_name())
+                        path(crate::kuna_gopackage::local_type_name(cx.go_package.as_deref(), ty.get_display_name()))
                     }
                 }),
         }
@@ -435,7 +435,7 @@ impl PrintC {
                 self.emit.print(" ", SyntaxHighlight::NoColor);
                 let ty = param
                     .get_type()
-                    .map(|t| declarator_parts(t, self.rt_ctx).0)
+                    .map(|t| declarator_parts(t, self.rt_ctx.clone()).0)
                     .unwrap_or("any".into());
                 self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);
             }
@@ -453,7 +453,7 @@ impl PrintC {
             .flatten()
             .filter(|t| t.get_metatype() != type_metatype::TYPE_VOID)
         {
-            let ty = declarator_parts(output, self.rt_ctx).0;
+            let ty = declarator_parts(output, self.rt_ctx.clone()).0;
             self.emit.print(" ", SyntaxHighlight::NoColor);
             let ret = self.emit.begin_return_type(markup);
             self.emit.tag_type(&ty, SyntaxHighlight::TypeColor, markup);

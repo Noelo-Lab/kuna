@@ -3196,7 +3196,15 @@ are legal Go identifiers with the original qualified symbol in a comment;
 invalid names, keywords, predeclared names and the generated helpers' `math`/`unsafe`
 package names use an injective byte-hex escape, including escaping
 the escape prefix itself. Locals, parameters and member tokens use the same rule.
-Same-package references omit that package qualifier.
+Same-package call references omit that package qualifier. For Go source images,
+`p9_emit/kuna_gopackage.rs` also resolves the current function's package for
+record type spelling: `main.scale` uses `*point` for `main.point`. The context
+reaches nested pointers, arrays, local declarations and conversions. Import-path
+dots, method receivers and generic function arguments do not alter the package
+boundary. Only a simple type identifier with the exact package prefix is
+shortened; external and compound type names retain their existing spelling.
+This per-document context never renames the interned type and is cleared for
+other source or output languages.
 
 Go integer and float names retain the recovered byte width. Unknown or unusual
 widths use `[N]byte` storage rather than assert a different integer size. Arrays
