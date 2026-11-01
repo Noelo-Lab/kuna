@@ -93,7 +93,7 @@ use std::rc::Rc;
 use kuna_base::address::{calc_mask, Address};
 use kuna_base::error::KunaResult;
 use kuna_base::space::{spacetype, AddrSpace};
-use kuna_base::types::{int4, uintb};
+use kuna_base::types::{int4, uint4, uintb};
 use kuna_num::opcodes::OpCode;
 
 use crate::action::{Action, ActionBase, ActionContext, ActionGroupList, ApplyResult};
@@ -1212,23 +1212,28 @@ impl ActionLowerSwitchDetect {
             *var_count.entry(var).or_insert(0) += 1;
         }
 
-        // Pick the switch variable: the Varnode with the most cascade nodes, the
-        // first created on a tie. A Varnode's id is only the arena slot it reused.
-        let mut swvar: Option<(VarnodeId, int4, kuna_base::types::uint4)> = None;
-        for (var, count) in var_count.iter() {
-            if *count < 2 {
-                continue;
-            }
-            let created = data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index());
-            if swvar.is_none_or(|(_, best, first)| *count > best || (*count == best && created < first)) {
-                swvar = Some((*var, *count, created));
+        // Pick the switch variable: the Varnode with the most cascade nodes. Tied
+        // variables are tried in the order they were created, and the first whose
+        // cascade records wins; a Varnode's id is only the arena slot it reused.
+        let Some(best) = var_count.values().copied().max().filter(|c| *c >= 2) else {
+            return 0;
+        };
+        let mut tied: Vec<(uint4, VarnodeId)> = var_count
+            .iter()
+            .filter(|(_, count)| **count == best)
+            .map(|(var, _)| (data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index()), *var))
+            .collect();
+        tied.sort_unstable();
+        for (_, swvar) in tied {
+            if self.record_cascade(data, &cmpmap, swvar) {
+                return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
             }
         }
-        let swvar = match swvar {
-            Some((v, _, _)) => v,
-            None => return 0,
-        };
+        0
+    }
 
+    /// Record the first cascade on `swvar` that recovers, and request a restart.
+    fn record_cascade(&mut self, data: &mut Funcdata, cmpmap: &BTreeMap<BlockId, CmpNode>, swvar: VarnodeId) -> bool {
         // Find the head: a cascade node for swvar that no other cascade node
         // continues into.
         let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
@@ -1254,8 +1259,8 @@ impl ActionLowerSwitchDetect {
         let exact = data.get_arch().lowered_switch_exact;
         let heads = cascade_heads(&spine, &is_child, data.get_arch().lowered_switch_every_head);
         for (i, root) in heads.into_iter().enumerate() {
-            let head = advance_past_guards(data, root, &cmpmap, swvar);
-            let mut rec = match recover_cascade(data, head, &cmpmap, swvar) {
+            let head = advance_past_guards(data, root, cmpmap, swvar);
+            let mut rec = match recover_cascade(data, head, cmpmap, swvar) {
                 Some(r) => r,
                 None => continue,
             };
@@ -1272,9 +1277,9 @@ impl ActionLowerSwitchDetect {
             data.set_restart_pending(true);
             // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
             //   heritage port threads it explicitly); the restart-pending flag is realized.
-            return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
+            return true;
         }
-        0
+        false
     }
 }
 
