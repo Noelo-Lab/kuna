@@ -1,0 +1,50 @@
+[
+  {
+    "artifact": "basics122-on-go.json",
+    "exit_code": 0,
+    "report": "2018 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "basics127-on-go.json",
+    "exit_code": 0,
+    "report": "2552 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "hermetic-on-go.json",
+    "exit_code": 0,
+    "report": "25 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "hermetic-plain-on-go.json",
+    "exit_code": 0,
+    "report": "25 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "langdetect-on-go.json",
+    "exit_code": 0,
+    "report": "1558 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "native-c-on-go.json",
+    "exit_code": 0,
+    "report": "55 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "native-on-go.json",
+    "exit_code": 0,
+    "report": "1156 functions, 0 syntax failures",
+    "errors": ""
+  },
+  {
+    "artifact": "stripped122-on-go.json",
+    "exit_code": 0,
+    "report": "2017 functions, 0 syntax failures",
+    "errors": ""
+  }
+]

@@ -85,7 +85,7 @@
 +func __do_global_dtors_aux() {
 +  if byte(completed._kuna_ident_30) == 0x0 {
 +    deregister_tm_clones()
-+    completed._kuna_ident_30 = int8(0x1)
++    completed._kuna_ident_30 = 1
 +    return
    }
  }

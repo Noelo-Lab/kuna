@@ -1,7 +1,7 @@
 {
-  "state": "proposal",
+  "state": "validated",
   "option": "godwarfsig",
-  "baseline_commit": "1c6766e546660653435623c4f3577813c800bec8",
+  "baseline_commit": "56e01194b98d64ab6e409ab27546ee5914262226",
   "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
   "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
   "scope": "Go amd64 register-ABI scalar and pointer DWARF signatures",
@@ -27,5 +27,199 @@
     "catalog": "passed",
     "counters": "passed",
     "tools": "114 tests, 1 skipped"
+  },
+  "default": "off; explicit opt-in in all modes",
+  "implementation": {
+    "option": "godwarfsig",
+    "architecture": "little-endian amd64",
+    "compiler_model": "abi-internal",
+    "compressed_debug_limit_bytes": 67108864,
+    "input_integer_registers": 9,
+    "input_float_registers": 8,
+    "max_results": 1,
+    "scope": "fixed scalar/pointer inputs and result; pointers to validated flat records; no aggregate ABI decomposition"
+  },
+  "validation": {
+    "original_assertions": 675,
+    "stage_assertions": 3455,
+    "tools": "114 tests, 1 skipped",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "focused_metadata_tests": 5,
+    "focused_console_tests": 6,
+    "workspace": {
+      "passed": 9997,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "lint": "passed"
+  },
+  "breadth": {
+    "inputs": 10,
+    "distinct_functions": 10310,
+    "surfaces": 20675,
+    "disabled_changed_records": 0,
+    "enabled_changed_records": 6730,
+    "enabled_changed_distinct_functions": 3442,
+    "decompilation_errors": 0,
+    "classified_hunks": 9119,
+    "go_parsed_functions": 9406,
+    "go_parse_errors": 0,
+    "contracts_matched_to_pinned_angr": 1183,
+    "contracts_independently_grounded_for_duplicate_name": 1,
+    "jobs": 1,
+    "watchdog_seconds": 600
+  },
+  "execution": {
+    "hermetic_supported_contracts": 12,
+    "hermetic_compiled_functions": 11,
+    "hermetic_images": 2,
+    "native_compiled_functions_without_assertions": 14
+  },
+  "fixtures": {
+    "compressed": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+    "uncompressed": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29"
+  },
+  "limits": [
+    "No aggregate inputs/results by value, multiple results, stack arguments or hidden-context functions",
+    "No zero-input/zero-result contract inferred from absent formal metadata",
+    "Source aliases and receiver syntax remain separate",
+    "Same-package record type qualification and unsafe.Pointer string-literal conversion need Go emission follow-ups"
+  ],
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_arms": [
+      "baseline",
+      "off",
+      "on"
+    ],
+    "measurements": {
+      "scalar-c": {
+        "artifact": "timing-scalar-c.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.6351930397628713,
+            "cpu_ms": 0.6562064448204508
+          },
+          "off_to_on": {
+            "wall_ms": 0.18636813284682585,
+            "cpu_ms": -0.02020562191681341
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.7842270310993715,
+            "cpu_ms": 0.7380339064288588
+          },
+          "off_to_on": {
+            "wall_ms": 0.17721883135604077,
+            "cpu_ms": 0.15126881182621066
+          }
+        }
+      },
+      "native-go": {
+        "artifact": "timing-native-go.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.13353604758642446,
+            "cpu_ms": 0.02682151057076254
+          },
+          "off_to_on": {
+            "wall_ms": 7.6949889529980275,
+            "cpu_ms": 7.701465381450667
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.6056725524830942,
+            "cpu_ms": 0.6044620287940061
+          },
+          "off_to_on": {
+            "wall_ms": 7.035805391269978,
+            "cpu_ms": 7.059112070740503
+          }
+        }
+      },
+      "basics122": {
+        "artifact": "timing-basics122.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -3.262189809327476,
+            "cpu_ms": -1.671064394189914
+          },
+          "off_to_on": {
+            "wall_ms": 10.222385907854514,
+            "cpu_ms": 5.833736423200531
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 1.2219349722536466,
+            "cpu_ms": 0.7177904241009836
+          },
+          "off_to_on": {
+            "wall_ms": 4.5830308026764355,
+            "cpu_ms": 4.594572564727795
+          }
+        }
+      },
+      "hermetic-plain": {
+        "artifact": "timing-hermetic-plain.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.9114999371572896,
+            "cpu_ms": 0.8935888812828585
+          },
+          "off_to_on": {
+            "wall_ms": 0.17190259584063394,
+            "cpu_ms": 0.11484079144576942
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.45506312234435686,
+            "cpu_ms": 0.6946367710948476
+          },
+          "off_to_on": {
+            "wall_ms": 1.1287290783952075,
+            "cpu_ms": 1.1223900305479706
+          }
+        }
+      },
+      "rust": {
+        "artifact": "timing-rust.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.10159565787728475,
+            "cpu_ms": 0.13389805819898903
+          },
+          "off_to_on": {
+            "wall_ms": 1.088267762414441,
+            "cpu_ms": 1.0421503956552503
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.031829606152378176,
+            "cpu_ms": -0.0355814806707766
+          },
+          "off_to_on": {
+            "wall_ms": 0.5966294031234387,
+            "cpu_ms": 0.6105031035600339
+          }
+        }
+      }
+    },
+    "max_disabled_wall_delta_pct": 0.9114999371572896,
+    "max_disabled_cpu_delta_pct": 0.8935888812828585,
+    "max_enabled_wall_delta_pct": 10.222385907854514,
+    "max_enabled_cpu_delta_pct": 7.701465381450667,
+    "default_on_speed_budget_pct": 5,
+    "default_on_speed_budget_passed": false,
+    "rust_control_first_run": "timing-rust-first.json; ratio of medians showed +5.42% CPU during frequency drift, paired median +0.30%; repeat +0.13% CPU"
   }
 }

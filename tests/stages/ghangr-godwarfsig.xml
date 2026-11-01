@@ -1,0 +1,41 @@
+<decompilertest>
+<!-- Go DWARF signature import: compressed cross-CU types, result formals,
+     caller contracts and an incompatible location that retains inference. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-dwarf-signatures/compressed</com>
+  <com>option godwarfsig off</com>
+  <com>read symbols</com>
+  <com>option outlang go</com>
+  <com>load function main.fromWord</com><com>decompile</com><com>print C</com>
+  <com>load function main.narrow</com><com>decompile</com><com>print C</com>
+  <com>load function main.badReg</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-dwarf-signatures/compressed</com>
+  <com>option godwarfsig on</com>
+  <com>read symbols</com>
+  <com>option outlang go</com>
+  <com>load function main.fromWord</com><com>decompile</com><com>print C</com>
+  <com>load function main.narrow</com><com>decompile</com><com>print C</com>
+  <com>load function main.boolNot</com><com>decompile</com><com>print C</com>
+  <com>load function main.mix</com><com>decompile</com><com>print C</com>
+  <com>load function main.scale</com><com>decompile</com><com>print C</com>
+  <com>load function main.callIdentity</com><com>decompile</com><com>print C</com>
+  <com>load function main.abstractIdentity</com><com>decompile</com><com>print C</com>
+  <com>load function main.badReg</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="off loses an untouched pointer result" min="1" max="1">func fromWord\(\) \{</stringmatch>
+<stringmatch name="off loses a narrowing result" min="1" max="1">func narrow\(\) \{</stringmatch>
+<stringmatch name="on recovers input name and pointer result" min="1" max="1">func fromWord\(p uint64\) \*int32</stringmatch>
+<stringmatch name="on recovers exact-width result" min="1" max="1">func narrow\(a uint64\) uint32</stringmatch>
+<stringmatch name="boolean result preserves logical negation" min="1" max="1">return !x</stringmatch>
+<stringmatch name="float and integer register banks stay independent" min="1" max="1">func mix\(x float64, n int64, y float64\) float64</stringmatch>
+<stringmatch name="flat record pointee recovers field names" min="1" max="1">\(\*p\).x = \(\*p\).x \* k</stringmatch>
+<stringmatch name="callers receive the imported contract" min="1" max="1">return fromWord\(p\)</stringmatch>
+<stringmatch name="concrete origin keeps input and result roles" min="1" max="1">func abstractIdentity\(p uint64\) \*int32</stringmatch>
+<stringmatch name="wrong entry register remains uninferred" min="2" max="2">func badReg\(\) \{</stringmatch>
+</decompilertest>

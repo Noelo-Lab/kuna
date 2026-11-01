@@ -614,7 +614,10 @@ mod tests {
         /// `poolentry`) came OFF this list in DIV-93. The joint evaluation this entry
         /// asked for was run over the 110 stripped non-x86-64 decbench twins and all
         /// four passed it, so they are in `AGGRESSIVE_OVERRIDES` above.
+        /// `godwarfsig` remains explicit while aggregate ABI interactions and
+        /// decompression costs across Go corpus sizes are evaluated for automatic selection.
         const UNEVALUATED: &[&str] = &[
+            "godwarfsig",
             // Stack-address liveness can be incidental; synthetic regressions and
             // a local speed measurement do not justify a broad preset flip.
             "stackaddrargtrial",

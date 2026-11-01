@@ -1,0 +1,109 @@
+--- baseline/main.fromWord
++++ on/main.fromWord
+@@ -1,4 +1,4 @@
+-void main.fromWord(void)
++int4 * main.fromWord(unsigned int p)
+ {
+-  return;
++  return (int4 *)p;
+ }
+--- baseline/main.narrow
++++ on/main.narrow
+@@ -1,4 +1,4 @@
+-void main.narrow(void)
++uint4 main.narrow(unsigned int a)
+ {
+-  return;
++  return (uint4)a;
+ }
+--- baseline/main.extend
++++ on/main.extend
+@@ -1,4 +1,4 @@
+-int main.extend(char a0)
++int main.extend(char a)
+ {
+-  return a0;
++  return a;
+ }
+--- baseline/main.boolNot
++++ on/main.boolNot
+@@ -1,4 +1,4 @@
+-unsigned char main.boolNot(unsigned char a0)
++bool main.boolNot(bool x)
+ {
+-  return a0 ^ 1;
++  return !x;
+ }
+--- baseline/main.mix
++++ on/main.mix
+@@ -1,4 +1,4 @@
+-double main.mix(double a0,double a1,int a2)
++double main.mix(double x,int n,double y)
+ {
+-  return a0 + a1 + (double)a2;
++  return x + y + (double)n;
+ }
+--- baseline/main.store
++++ on/main.store
+@@ -1,4 +1,4 @@
+-void main.store(unsigned int *a0,unsigned int a1)
++void main.store(int4 *p,int4 v)
+ {
+-  *a0 = a1;
++  *p = v;
+ }
+--- baseline/main.add
++++ on/main.add
+@@ -1,4 +1,4 @@
+-int main.add(int a0,int a1)
++int main.add(int a,int b)
+ {
+-  return a0 + a1;
++  return a + b;
+ }
+--- baseline/main.scale
++++ on/main.scale
+@@ -1,5 +1,5 @@
+-void main.scale(struct_0 *a0,int a1)
++void main.scale(main.point *p,int k)
+ {
+-  a0->field_0x0 = a0->field_0x0 * a1;
+-  a0->field_0x8 = a1 * a0->field_0x8;
++  p->x = p->x * k;
++  p->y = k * p->y;
+ }
+--- baseline/main.callIdentity
++++ on/main.callIdentity
+@@ -1,4 +1,4 @@
+-void main.callIdentity(void)
++int4 * main.callIdentity(unsigned int p)
+ {
+-  main.fromWord();
++  return main.fromWord(p);
+ }
+--- baseline/main.noResult
++++ on/main.noResult
+@@ -1,4 +1,4 @@
+-void main.noResult(unsigned int a0)
++void main.noResult(int4 a)
+ {
+-  dat_40302a = a0;
++  dat_40302a = a;
+ }
+--- baseline/main.resultOnly
++++ on/main.resultOnly
+@@ -1,4 +1,4 @@
+-unsigned long main.resultOnly(void)
++int main.resultOnly(void)
+ {
+   return 0x2a;
+ }
+--- baseline/main.abstractIdentity
++++ on/main.abstractIdentity
+@@ -1,4 +1,4 @@
+-void main.abstractIdentity(void)
++int4 * main.abstractIdentity(unsigned int p)
+ {
+-  return;
++  return (int4 *)p;
+ }

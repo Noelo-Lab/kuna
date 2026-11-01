@@ -1,0 +1,181 @@
+{
+  "baseline_commit": "56e01194b98d64ab6e409ab27546ee5914262226",
+  "side": "baseline",
+  "fixtures": [
+    {
+      "fixture": "basics122",
+      "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2018,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 2018,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 449,
+          "errors": []
+        },
+        {
+          "language": "rust",
+          "functions": 449,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1558,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 1558,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 55,
+          "errors": []
+        },
+        {
+          "language": "rust",
+          "functions": 55,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 55,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 455,
+          "errors": []
+        },
+        {
+          "language": "rust",
+          "functions": 455,
+          "errors": []
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+      "side": "baseline",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2017,
+          "errors": []
+        },
+        {
+          "language": "go",
+          "functions": 2017,
+          "errors": []
+        }
+      ]
+    }
+  ]
+}

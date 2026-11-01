@@ -3210,8 +3210,15 @@ multi-results, receivers, strings, slices or interfaces.
 The token table puts shifts and bitwise AND with multiplication, OR and XOR
 with addition, and all comparisons below those groups. Boolean XOR is `!=`.
 Equal-precedence right nesting retains parentheses unless the same associative
-operator permits flattening. Numeric conversions use `T(value)`; integer and
-pointer conversions carry `uintptr` and `unsafe.Pointer`, and pointer indexing
+operator permits flattening. Operand and assignment conversions use the type
+actually emitted for each local after declaration collapse and signedness
+selection, rather than an earlier SSA member's type. Integer constant copies
+spell the destination-width bit pattern directly, so an unsigned destination
+receives `0xffffffffffffffff` rather than the invalid constant conversion
+`uint64(-1)`. The same rule follows at most eight implied, same-width integer
+COPY/CAST nodes when a constant reaches a return or operand; it never folds
+named values, arithmetic or effects. Numeric conversions use
+`T(value)`; integer and pointer conversions carry `uintptr` and `unsafe.Pointer`, and pointer indexing
 uses `unsafe.Add` with the IR's byte scale. Boolean-to-integer conversions use a
 single-evaluation function literal. Float storage transfers use the matching
 `math.Float32bits`/`Float64bits` and inverse operations, preserving the distinction

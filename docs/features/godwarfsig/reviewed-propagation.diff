@@ -1,0 +1,707 @@
+
+native c 0x423300 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(struct_4 *a0,unsigned long a1,unsigned long a2)
++void runtime.(*mspan).init(struct_62 *a0,void *a1,unsigned long a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+
+native go 0x423300 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *struct_4, a1 uint64, a2 uint64) {
++func init(a0 *struct_62, a1 unsafe.Pointer, a2 uint64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   
+
+native go 0x4323c0 runtime.badmorestackgsignal
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.badmorestackgsignal
+ func badmorestackgsignal() {
+-  write(2,"fatal: morestack on gsignal\n",0x1c)
++  write(0x2,unsafe.Pointer("fatal: morestack on gsignal\n"),28)
+   return
+ }
+native go 0x432420 runtime.switchToCrashStack
+--- baseline
++++ on
+@@ -17,11 +17,11 @@
+     switchToCrashStack0(a0) // no-return
+   }
+   if uint64(uintptr(unsafe.Pointer(crashingG))) == uint64(uintptr(unsafe.Pointer(g))) {
+-    write(2,"fatal: recursive switchToCrashStack\n",0x24)
++    write(0x2,unsafe.Pointer("fatal: recursive switchToCrashStack\n"),36)
+     abort.abi0() // no-return
+   }
+   usleep.abi0(v1)
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v2 + -8)))
+-  write(2,"fatal: concurrent switchToCrashStack\n",0x25)
++  write(0x2,unsafe.Pointer("fatal: concurrent switchToCrashStack\n"),37)
+   abort.abi0() // no-return
+ }
+native go 0x44a020 runtime.badsystemstack
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.badsystemstack
+ func badsystemstack() {
+-  write(2,"fatal: systemstack called from unexpected goroutine",0x33)
++  write(0x2,unsafe.Pointer("fatal: systemstack called from unexpected goroutine"),51)
+   return
+ }
+native go 0x45c6e0 runtime.newproc
+--- baseline
++++ on
+@@ -1,7 +1,7 @@
+ // runtime.newproc
+ func newproc() {
+   var v1 int64 // fs_offset
+-  var v2 uint64 // rax | stack + 0x8
++  var v2 *runtime.funcval // rax | stack + 0x8
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   newproc(v2)
+
+native go 0x45c720 runtime.args
+--- baseline
++++ on
+@@ -1,8 +1,8 @@
+ // runtime.args
+ func args() {
+   var v1 int64 // fs_offset
+-  var v2 uint32 // stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
++  var v2 int32 // eax | stack + 0x8
++  var v3 **byte // rbx | stack + 0x10
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   args(v2,v3)
+
+native go 0x45c820 runtime.write
+--- baseline
++++ on
+@@ -2,9 +2,8 @@
+ func write() {
+   var v1 int64 // fs_offset
+   var v2 uint64 // rax | stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
+-  var v4 uint32 // stack + 0x18
+-  var v5 uint32 // stack + 0x20
++  var v3 unsafe.Pointer // rbx | stack + 0x10
++  var v4 int32 // ecx | stack + 0x18
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   write(v2,v3,v4)
+
+basics122 c 0x406da0 runtime.(*hchan).raceaddr
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-int runtime.(*hchan).raceaddr(int a0)
++int runtime.(*hchan).raceaddr(void *a0)
+ {
+-  return a0 + 0x10;
++  return (int)a0 + 0x10;
+ }
+basics122 c 0x428b00 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(unsigned long *a0,unsigned long a1,unsigned long a2)
++void runtime.(*mspan).init(unsigned long *a0,void *a1,unsigned long a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+@@ -7,7 +7,7 @@
+   *a0 = v1;
+   a0[1] = v2;
+   a0[2] = 0;
+-  a0[3] = a1;
++  a0[3] = (unsigned long)a1;
+   a0[4] = a2;
+   *(unsigned short *)&a0[0xc] = 0;
+   ((char *)a0)[0x62] = 0;
+
+basics122 c 0x432c20 runtime.netpollready
+--- baseline
++++ on
+@@ -1,13 +1,13 @@
+-unsigned int runtime.netpollready(unsigned long *a0,int a1,int4 a2)
++unsigned int runtime.netpollready(unsigned long *a0,void *a1,int4 a2)
+ {
+-  struct_36 *v1; // rax | rdx | stack - 0x10
+-  struct_36 *v2; // rax | rcx | stack - 0x18
++  struct_32 *v1; // rax | rdx | stack - 0x10
++  struct_32 *v2; // rax | rcx | stack - 0x18
+   unsigned int v3; // eax | stack - 0x1c
+   unsigned long *v4; // rax | stack + 0x8
+-  int v5; // rbx | stack + 0x10
++  void *v5; // rbx | stack + 0x10
+   int4 v6; // ecx | stack + 0x18
+-  struct_36 *v7; // rax | rcx | stack - 0x18
+-  struct_36 *v8; // rax | rdx | stack - 0x10
++  struct_32 *v7; // rax | rcx | stack - 0x18
++  struct_32 *v8; // rax | rdx | stack - 0x10
+   
+   v3 = 0;
+   v4 = a0;
+@@ -16,7 +16,7 @@
+     v1 = NULL;
+   else {
+     v5 = a1;
+-    v1 = (struct_36 *)runtime.netpollunblock(a1,0x72,1,&v3);
++    v1 = (struct_32 *)runtime.netpollunblock(a1,0x72,1,&v3);
+     a0 = v4;
+     a1 = v5;
+     a2 = v6;
+@@ -25,7 +25,7 @@
+   if ((a2 != 0x77) && (a2 != 0xe9))
+     v2 = NULL;
+   else {
+-    v2 = (struct_36 *)runtime.netpollunblock(a1,0x77,1,&v3);
++    v2 = (struct_32 *)runtime.netpollunblock(a1,0x77,1,&v3);
+     a0 = v4;
+     v1 = v8;
+   }
+
+basics122 go 0x406da0 runtime.(*hchan).raceaddr
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+ // runtime.(*hchan).raceaddr
+-func raceaddr(a0 int64) int64 {
+-  return a0 + 16
++func raceaddr(a0 unsafe.Pointer) int64 {
++  return int64(uintptr(unsafe.Pointer(a0))) + 16
+ }
+basics122 go 0x4168e0 runtime.createfing
+--- baseline
++++ on
+@@ -2,7 +2,7 @@
+ func createfing() {
+   if _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74333229.Load(&fingStatus) == 0x0 {
+     if _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74333229.CompareAndSwap(&fingStatus,0,1) != 0x0 {
+-      newproc(0x48d268)
++      newproc((*runtime.funcval)(unsafe.Pointer(uintptr(0x48d268))))
+     }
+   }
+   return
+
+basics122 go 0x428b00 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *uint64, a1 uint64, a2 uint64) {
++func init(a0 *uint64, a1 unsafe.Pointer, a2 uint64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   var v3 *uint64 // rax | stack + 0x8
+@@ -7,7 +7,7 @@
+   *a0 = v1
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),1 * 8)) = v2
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = 0
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = a1
++  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = uint64(uintptr(unsafe.Pointer(a1)))
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),4 * 8)) = a2
+   *(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(a0),0xc * 8)))) = 0
+   *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 98))) = 0
+
+basics122 go 0x432c20 runtime.netpollready
+--- baseline
++++ on
+@@ -1,13 +1,13 @@
+ // runtime.netpollready
+-func netpollready(a0 *uint64, a1 int64, a2 int32) uint32 {
+-  var v1 *struct_36 // rax | rdx | stack - 0x10
+-  var v2 *struct_36 // rax | rcx | stack - 0x18
++func netpollready(a0 *uint64, a1 unsafe.Pointer, a2 int32) uint32 {
++  var v1 *struct_32 // rax | rdx | stack - 0x10
++  var v2 *struct_32 // rax | rcx | stack - 0x18
+   var v3 uint32 // eax | stack - 0x1c
+   var v4 *uint64 // rax | stack + 0x8
+-  var v5 int64 // rbx | stack + 0x10
++  var v5 unsafe.Pointer // rbx | stack + 0x10
+   var v6 int32 // ecx | stack + 0x18
+-  var v7 *struct_36 // rax | rcx | stack - 0x18
+-  var v8 *struct_36 // rax | rdx | stack - 0x10
++  var v7 *struct_32 // rax | rcx | stack - 0x18
++  var v8 *struct_32 // rax | rdx | stack - 0x10
+   
+   v3 = 0x0
+   v4 = a0
+@@ -16,7 +16,7 @@
+     v1 = nil
+   } else {
+     v5 = a1
+-    v1 = (*struct_36)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
++    v1 = (*struct_32)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
+     a0 = v4
+     a1 = v5
+     a2 = v6
+@@ -25,7 +25,7 @@
+   if (uint32(a2) != 0x77 && (uint32(a2) != 0xe9)) {
+     v2 = nil
+   } else {
+-    v2 = (*struct_36)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
++    v2 = (*struct_32)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
+     a0 = v4
+     v1 = v8
+   }
+
+basics122 go 0x448e20 runtime.writeErrStr
+--- baseline
++++ on
+@@ -1,8 +1,5 @@
+ // runtime.writeErrStr
+-func writeErrStr(a0 *int8, a1 uint32) {
+-  var v1 *int8 // rax | stack + 0x8
+-  
+-  v1 = a0
+-  write(2,a0,a1)
++func writeErrStr(a0 *int8, a1 int32) {
++  write(0x2,unsafe.Pointer(a0),a1)
+   return
+ }
+basics122 go 0x461bc0 runtime.writeErr
+--- baseline
++++ on
+@@ -1,8 +1,5 @@
+ // runtime.writeErr
+-func writeErr(a0 uint64, a1 uint32) {
+-  var v1 uint64 // rax | stack + 0x8
+-  
+-  v1 = a0
+-  write(2,a0,a1)
++func writeErr(a0 unsafe.Pointer, a1 int32) {
++  write(0x2,a0,a1)
+   return
+ }
+basics122 go 0x468fa0 runtime.newproc
+--- baseline
++++ on
+@@ -1,7 +1,7 @@
+ // runtime.newproc
+ func newproc() {
+   var v1 int64 // fs_offset
+-  var v2 uint64 // rax | stack + 0x8
++  var v2 *runtime.funcval // rax | stack + 0x8
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   newproc(v2)
+
+basics122 go 0x468fe0 runtime.args
+--- baseline
++++ on
+@@ -1,8 +1,8 @@
+ // runtime.args
+ func args() {
+   var v1 int64 // fs_offset
+-  var v2 uint32 // stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
++  var v2 int32 // eax | stack + 0x8
++  var v3 **byte // rbx | stack + 0x10
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   args(v2,v3)
+
+basics122 go 0x4690e0 runtime.write
+--- baseline
++++ on
+@@ -2,9 +2,8 @@
+ func write() {
+   var v1 int64 // fs_offset
+   var v2 uint64 // rax | stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
+-  var v4 uint32 // stack + 0x18
+-  var v5 uint32 // stack + 0x20
++  var v3 unsafe.Pointer // rbx | stack + 0x10
++  var v4 int32 // ecx | stack + 0x18
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   write(v2,v3,v4)
+
+basics127 c 0x417400 runtime.(*hchan).raceaddr
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-int runtime.(*hchan).raceaddr(int a0)
++int runtime.(*hchan).raceaddr(void *a0)
+ {
+-  return a0 + 0x10;
++  return (int)a0 + 0x10;
+ }
+basics127 c 0x4270c0 runtime.(*cleanupQueue).addWork
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+-void runtime.(*cleanupQueue).addWork(int a0)
++void runtime.(*cleanupQueue).addWork(void *a0)
+ {
+-  internal/runtime/atomic.(*Uint64).Add((int *)(a0 + 8));
++  internal/runtime/atomic.(*Uint64).Add(&((int *)a0)[1]);
+   return;
+ }
+basics127 c 0x43dc60 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(unsigned long *a0,int a1,int a2)
++void runtime.(*mspan).init(unsigned long *a0,void *a1,int a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+@@ -7,9 +7,9 @@
+   *a0 = v1;
+   a0[1] = v2;
+   a0[2] = 0;
+-  a0[3] = a1;
++  a0[3] = (unsigned long)a1;
+   a0[4] = a2;
+-  a0[0xe] = a2 * 0x2000 + a1;
++  a0[0xe] = (unsigned long)(a2 * 0x2000 + (int)a1);
+   *(unsigned short *)&a0[0xc] = 0;
+   ((char *)a0)[0x62] = 0;
+   a0[0xd] = 0;
+
+basics127 c 0x447d00 runtime.netpollready
+--- baseline
++++ on
+@@ -1,13 +1,13 @@
+-unsigned int runtime.netpollready(unsigned long *a0,int a1,int4 a2)
++unsigned int runtime.netpollready(unsigned long *a0,void *a1,int4 a2)
+ {
+-  struct_40 *v1; // rax | rdx | stack - 0x10
+-  struct_40 *v2; // rax | rcx | stack - 0x18
++  struct_38 *v1; // rax | rdx | stack - 0x10
++  struct_38 *v2; // rax | rcx | stack - 0x18
+   unsigned int v3; // eax | stack - 0x1c
+   unsigned long *v4; // rax | stack + 0x8
+-  int v5; // rbx | stack + 0x10
++  void *v5; // rbx | stack + 0x10
+   int4 v6; // ecx | stack + 0x18
+-  struct_40 *v7; // rax | rcx | stack - 0x18
+-  struct_40 *v8; // rax | rdx | stack - 0x10
++  struct_38 *v7; // rax | rcx | stack - 0x18
++  struct_38 *v8; // rax | rdx | stack - 0x10
+   
+   v3 = 0;
+   v4 = a0;
+@@ -16,7 +16,7 @@
+     v1 = NULL;
+   else {
+     v5 = a1;
+-    v1 = (struct_40 *)runtime.netpollunblock(a1,0x72,1,&v3);
++    v1 = (struct_38 *)runtime.netpollunblock(a1,0x72,1,&v3);
+     a0 = v4;
+     a1 = v5;
+     a2 = v6;
+@@ -25,7 +25,7 @@
+   if ((a2 != 0x77) && (a2 != 0xe9))
+     v2 = NULL;
+   else {
+-    v2 = (struct_40 *)runtime.netpollunblock(a1,0x77,1,&v3);
++    v2 = (struct_38 *)runtime.netpollunblock(a1,0x77,1,&v3);
+     a0 = v4;
+     v1 = v8;
+   }
+
+basics127 go 0x417400 runtime.(*hchan).raceaddr
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+ // runtime.(*hchan).raceaddr
+-func raceaddr(a0 int64) int64 {
+-  return a0 + 16
++func raceaddr(a0 unsafe.Pointer) int64 {
++  return int64(uintptr(unsafe.Pointer(a0))) + 16
+ }
+basics127 go 0x4270c0 runtime.(*cleanupQueue).addWork
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.(*cleanupQueue).addWork
+-func addWork(a0 int64) {
+-  _kuna_ident_696e7465726e616c2f72756e74696d652f61746f6d6963._kuna_ident_282a55696e74363429.Add((*int64)(unsafe.Pointer(uintptr(a0 + 8))))
++func addWork(a0 unsafe.Pointer) {
++  _kuna_ident_696e7465726e616c2f72756e74696d652f61746f6d6963._kuna_ident_282a55696e74363429.Add((*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 8))))
+   return
+ }
+basics127 go 0x428740 runtime.createfing
+--- baseline
++++ on
+@@ -2,7 +2,7 @@
+ func createfing() {
+   if _kuna_ident_696e7465726e616c2f72756e74696d652f61746f6d6963._kuna_ident_282a55696e74333229.Load(&fingStatus) == 0x0 {
+     if _kuna_ident_696e7465726e616c2f72756e74696d652f61746f6d6963._kuna_ident_282a55696e74333229.CompareAndSwap(&fingStatus,0,1) != 0x0 {
+-      newproc(0x530728)
++      newproc((*runtime.funcval)(unsafe.Pointer(uintptr(0x530728))))
+     }
+   }
+   return
+
+basics127 go 0x43dc60 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *uint64, a1 int64, a2 int64) {
++func init(a0 *uint64, a1 unsafe.Pointer, a2 int64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   var v3 *uint64 // rax | stack + 0x8
+@@ -7,9 +7,9 @@
+   *a0 = v1
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),1 * 8)) = v2
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = 0
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = a1
++  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),3 * 8)) = uint64(uintptr(unsafe.Pointer(a1)))
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),4 * 8)) = a2
+-  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),0xe * 8)) = a2 * 8192 + a1
++  *(*uint64)(unsafe.Add(unsafe.Pointer(a0),0xe * 8)) = uint64(a2 * 8192 + int64(uintptr(unsafe.Pointer(a1))))
+   *(*uint16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(a0),0xc * 8)))) = 0
+   *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 98))) = 0
+   *(*uint64)(unsafe.Add(unsafe.Pointer(a0),0xd * 8)) = 0
+
+basics127 go 0x447d00 runtime.netpollready
+--- baseline
++++ on
+@@ -1,13 +1,13 @@
+ // runtime.netpollready
+-func netpollready(a0 *uint64, a1 int64, a2 int32) uint32 {
+-  var v1 *struct_40 // rax | rdx | stack - 0x10
+-  var v2 *struct_40 // rax | rcx | stack - 0x18
++func netpollready(a0 *uint64, a1 unsafe.Pointer, a2 int32) uint32 {
++  var v1 *struct_38 // rax | rdx | stack - 0x10
++  var v2 *struct_38 // rax | rcx | stack - 0x18
+   var v3 uint32 // eax | stack - 0x1c
+   var v4 *uint64 // rax | stack + 0x8
+-  var v5 int64 // rbx | stack + 0x10
++  var v5 unsafe.Pointer // rbx | stack + 0x10
+   var v6 int32 // ecx | stack + 0x18
+-  var v7 *struct_40 // rax | rcx | stack - 0x18
+-  var v8 *struct_40 // rax | rdx | stack - 0x10
++  var v7 *struct_38 // rax | rcx | stack - 0x18
++  var v8 *struct_38 // rax | rdx | stack - 0x10
+   
+   v3 = 0x0
+   v4 = a0
+@@ -16,7 +16,7 @@
+     v1 = nil
+   } else {
+     v5 = a1
+-    v1 = (*struct_40)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
++    v1 = (*struct_38)(unsafe.Pointer(uintptr(netpollunblock(a1,0x72,1,&v3))))
+     a0 = v4
+     a1 = v5
+     a2 = v6
+@@ -25,7 +25,7 @@
+   if (uint32(a2) != 0x77 && (uint32(a2) != 0xe9)) {
+     v2 = nil
+   } else {
+-    v2 = (*struct_40)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
++    v2 = (*struct_38)(unsafe.Pointer(uintptr(netpollunblock(a1,0x77,1,&v3))))
+     a0 = v4
+     v1 = v8
+   }
+
+basics127 go 0x4891a0 runtime.newproc
+--- baseline
++++ on
+@@ -1,7 +1,7 @@
+ // runtime.newproc
+ func newproc() {
+   var v1 int64 // fs_offset
+-  var v2 uint64 // rax | stack + 0x8
++  var v2 *runtime.funcval // rax | stack + 0x8
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   newproc(v2)
+
+basics127 go 0x4891e0 runtime.args
+--- baseline
++++ on
+@@ -1,8 +1,8 @@
+ // runtime.args
+ func args() {
+   var v1 int64 // fs_offset
+-  var v2 uint32 // stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
++  var v2 int32 // eax | stack + 0x8
++  var v3 **byte // rbx | stack + 0x10
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   args(v2,v3)
+
+basics127 go 0x4892e0 runtime.write
+--- baseline
++++ on
+@@ -2,9 +2,8 @@
+ func write() {
+   var v1 int64 // fs_offset
+   var v2 uint64 // rax | stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
+-  var v4 uint32 // stack + 0x18
+-  var v5 uint32 // stack + 0x20
++  var v3 unsafe.Pointer // rbx | stack + 0x10
++  var v4 int32 // ecx | stack + 0x18
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   write(v2,v3,v4)
+
+langdetect c 0x426bc0 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-void runtime.(*mspan).init(struct_3 *a0,unsigned long a1,unsigned long a2)
++void runtime.(*mspan).init(struct_73 *a0,void *a1,unsigned long a2)
+ {
+   unsigned long v1; // xmm15_qa
+   unsigned long v2; // xmm15_qb
+
+langdetect c 0x4660e0 sort.stable
+--- baseline
++++ on
+@@ -1,4 +1,4 @@
+-void sort.stable(void *a0,void *a1,unsigned int a2)
++void sort.stable(void *a0,unsigned long a1,unsigned int a2)
+ {
+   unsigned int v1; // rcx | rsi | stack - 0x10
+   int v2; // rdx | rsi
+@@ -7,12 +7,12 @@
+   unsigned int v5; // rcx | rsi | stack - 0x10
+   int v6; // r8 | rcx | rsi | stack - 0x10 | stack - 0x18
+   int v7; // rdx | rsi | stack - 0x18
+-  void *v8; // rbx | stack + 0x10
++  unsigned long v8; // rbx | stack + 0x10
+   int v9; // rdx | rsi | stack - 0x18
+   int v10; // rdi | stack + 0x18
+   int v11; // r8 | rcx | rsi | stack - 0x10 | stack - 0x18
+   void *v12; // rax | stack + 0x8
+-  void *v13; // rbx | stack + 0x10
++  unsigned long v13; // rbx | stack + 0x10
+   unsigned int v14; // rcx | rdi | stack + 0x18
+   
+   v2 = 0x14;
+
+langdetect go 0x415c60 runtime.createfing
+--- baseline
++++ on
+@@ -1,10 +1,11 @@
+ // runtime.createfing
+-func createfing(a0 uint64) uint64 {
+-  if uint32(fingStatus) == 0x0 {
+-    LOCK()
+-    fingStatus = 1
+-    UNLOCK()
+-    a0 = newproc(0x4a6598)
++func createfing() { // return-dupe
++  if uint32(fingStatus) != 0x0 {
++    return
+   }
+-  return a0
++  LOCK()
++  fingStatus = 1
++  UNLOCK()
++  newproc((*runtime.funcval)(unsafe.Pointer(uintptr(0x4a6598))))
++  return
+ }
+langdetect go 0x426bc0 runtime.(*mspan).init
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.(*mspan).init
+-func init(a0 *struct_3, a1 uint64, a2 uint64) {
++func init(a0 *struct_73, a1 unsafe.Pointer, a2 uint64) {
+   var v1 uint64 // xmm15_qa
+   var v2 uint64 // xmm15_qb
+   
+
+langdetect go 0x436760 runtime.badmorestackgsignal
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.badmorestackgsignal
+ func badmorestackgsignal() {
+-  write(2,"fatal: morestack on gsignal\n",0x1c)
++  write(0x2,unsafe.Pointer("fatal: morestack on gsignal\n"),28)
+   return
+ }
+langdetect go 0x4367c0 runtime.switchToCrashStack
+--- baseline
++++ on
+@@ -17,11 +17,11 @@
+     switchToCrashStack0(a0) // no-return
+   }
+   if uint64(uintptr(unsafe.Pointer(crashingG))) == uint64(uintptr(unsafe.Pointer(g))) {
+-    write(2,"fatal: recursive switchToCrashStack\n",0x24)
++    write(0x2,unsafe.Pointer("fatal: recursive switchToCrashStack\n"),36)
+     abort.abi0() // no-return
+   }
+   usleep.abi0(v1)
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v2 + -8)))
+-  write(2,"fatal: concurrent switchToCrashStack\n",0x25)
++  write(0x2,unsafe.Pointer("fatal: concurrent switchToCrashStack\n"),37)
+   abort.abi0() // no-return
+ }
+langdetect go 0x44e8e0 runtime.badsystemstack
+--- baseline
++++ on
+@@ -1,5 +1,5 @@
+ // runtime.badsystemstack
+ func badsystemstack() {
+-  write(2,"fatal: systemstack called from unexpected goroutine",0x33)
++  write(0x2,unsafe.Pointer("fatal: systemstack called from unexpected goroutine"),51)
+   return
+ }
+langdetect go 0x4648c0 runtime.newproc
+--- baseline
++++ on
+@@ -1,7 +1,7 @@
+ // runtime.newproc
+ func newproc() {
+   var v1 int64 // fs_offset
+-  var v2 uint64 // rax | stack + 0x8
++  var v2 *runtime.funcval // rax | stack + 0x8
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   newproc(v2)
+
+langdetect go 0x464900 runtime.args
+--- baseline
++++ on
+@@ -1,8 +1,8 @@
+ // runtime.args
+ func args() {
+   var v1 int64 // fs_offset
+-  var v2 uint32 // stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
++  var v2 int32 // eax | stack + 0x8
++  var v3 **byte // rbx | stack + 0x10
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   args(v2,v3)
+
+langdetect go 0x464a60 runtime.write
+--- baseline
++++ on
+@@ -2,9 +2,8 @@
+ func write() {
+   var v1 int64 // fs_offset
+   var v2 uint64 // rax | stack + 0x8
+-  var v3 uint64 // rbx | stack + 0x10
+-  var v4 uint32 // stack + 0x18
+-  var v5 uint32 // stack + 0x20
++  var v3 unsafe.Pointer // rbx | stack + 0x10
++  var v4 int32 // ecx | stack + 0x18
+   
+   g = *(**runtime.g)(unsafe.Pointer(uintptr(v1 + -8)))
+   write(v2,v3,v4)

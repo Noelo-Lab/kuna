@@ -36,44 +36,44 @@
     "Callback prototype supplied explicitly because nested C DWARF function type is opaque"
   ],
   "timing": {
-    "effects": {
+    "scalar": {
       "baseline_to_current": {
-        "wall_ms": 1.3973905587309154,
-        "cpu_ms": 1.588611695373654
+        "wall_ms": -1.0012976031527843,
+        "cpu_ms": -1.2139526129787748
       },
       "current_to_go": {
-        "wall_ms": 1.255761471769623,
-        "cpu_ms": 0.604541046768392
+        "wall_ms": 0.8828468342770845,
+        "cpu_ms": 1.297141103125976
+      }
+    },
+    "effects": {
+      "baseline_to_current": {
+        "wall_ms": 0.5170171509708332,
+        "cpu_ms": 0.5430700505990815
+      },
+      "current_to_go": {
+        "wall_ms": -0.26400045662163807,
+        "cpu_ms": -0.3288002477070062
       }
     },
     "basics": {
       "baseline_to_current": {
-        "wall_ms": -0.3075649351729881,
-        "cpu_ms": 0.24789862022540632
+        "wall_ms": -0.4254855260559909,
+        "cpu_ms": -0.4294541617490544
       },
       "current_to_go": {
-        "wall_ms": -0.3223568958310552,
-        "cpu_ms": 0.25877411882109236
+        "wall_ms": 1.1183075340036375,
+        "cpu_ms": 1.1148631202690051
       }
     },
     "fmtdemo": {
       "baseline_to_current": {
-        "wall_ms": -0.2875233512822706,
-        "cpu_ms": -0.30363354235671824
+        "wall_ms": -0.23638085172468237,
+        "cpu_ms": -0.34611325335970333
       },
       "current_to_go": {
-        "wall_ms": 0.5874794685349016,
-        "cpu_ms": 0.5693649837485326
-      }
-    },
-    "scalar": {
-      "baseline_to_current": {
-        "wall_ms": 0.548996032123461,
-        "cpu_ms": 0.5538718779415142
-      },
-      "current_to_go": {
-        "wall_ms": -0.19036007381615372,
-        "cpu_ms": -0.1577823548314483
+        "wall_ms": 0.263523708832647,
+        "cpu_ms": 0.35839068564944565
       }
     }
   },
@@ -107,6 +107,16 @@
     "changed_control_records": 0,
     "go_syntax_failures": 0,
     "errors": 0,
-    "review": "All Go functions have recorded diffs and per-hunk presentation classifications; AST flow counts distinguish statements from string contents. Fallthrough case bodies inspected separately; compiled fixtures exercise two shared-case paths and side effects."
+    "review": "All Go functions have recorded diffs and per-hunk presentation classifications; AST flow counts distinguish statements from string contents. Fallthrough case bodies inspected separately; compiled fixtures exercise two shared-case paths and side effects.",
+    "constant_numeric_conversion_failures": 0,
+    "declaration_revision_functions": 152,
+    "declaration_revision_evidence": "declaration-revision.json"
+  },
+  "native_go_validation": {
+    "functions_parsed": 14,
+    "functions_executed_without_supplied_signatures": 4,
+    "functions_executed_with_explicit_source_contracts": 14,
+    "runtime_unsigned_all_ones_functions": 2,
+    "copied_signed_constant_returns": 3
   }
 }

@@ -1,0 +1,15 @@
+{
+  "reviewed_diff": "needs-inspection.diff",
+  "inferred_parameter_changes": {
+    "runtime.(*mspan).init": "The address carrier changes from an integer to void*/unsafe.Pointer. Stores and offsets remain the same; integer stores gain explicit conversions. The native and langdetect variants also renumber an anonymous struct. This function did not receive a source contract.",
+    "runtime.(*hchan).raceaddr": "The inferred input becomes a pointer carrier. The result still adds exactly 16 bytes after converting the address to an integer. No source contract was installed for this function.",
+    "runtime.netpollready": "The inferred poll descriptor carrier becomes a pointer in its formal and saved copy. Both netpollunblock calls, their arguments, guards and assignments remain; anonymous result-struct names are renumbered.",
+    "runtime.(*cleanupQueue).addWork": "The inferred input becomes a pointer. The atomic target remains input address plus 8 bytes, with an explicit typed pointer conversion.",
+    "sort.stable": "The inferred interface data carrier becomes an integer of the same width in the formal and saved copies. The diff changes only those declarations. Source interface reconstruction is outside this feature."
+  },
+  "duplicate_name_and_short_call_changes": "ABI wrappers can share a printed name with a different entry address. runtime.newproc, runtime.args and runtime.write call the verified register-ABI contracts; their stack-loaded carriers acquire the source widths/pointer types. Go calls inside their own package omit runtime., which the initial lexical classifier missed. newproc's stated void result removes an artificial return in the older langdetect createfing function; its conditional store and call remain in order.",
+  "remaining_go_output_limits": [
+    "A same-package named record pointer currently prints *main.point, so scale is checked for layout but excluded from standalone Go execution.",
+    "An unsafe.Pointer formal can expose an existing Go literal-conversion limitation: runtime fatal-message callers print unsafe.Pointer(\"literal\"). This parses but does not type-check; a follow-up must preserve the string data pointer via unsafe.StringData. No standalone compilation claim covers those runtime functions."
+  ]
+}
