@@ -975,6 +975,22 @@ of its functions. Source `macho_trie_exports.c`; recipe, toolchain and SHA-256 i
 Pinned by `loadimage_object.rs (macho_trie_names_fill_a_partial_symbol_table)`
 and `kuna-cli/tests/macho_trie_names_cli.rs`.
 
+`adrnext_{aarch64,macho_arm64,x86_64,arm,rv64,ppc32,mips,mips64,sh4}` (each under 2 KB but
+the 16 KB dylib) are GH #1360's witnesses: an instruction that forms the
+address of the instruction after it (`adr x0,.+4`, `lea rax,[rip]`, `mov
+eax,offset`, `adr.w`, an `auipc`+`addi` that ends right before its label,
+SuperH `mova` alone and in the delay slot of `rts` and `bt/s`) beside
+every spelling of a link whose return address must not be a reference (`bl`,
+`blr`, `blx`, `call`, `call $+5`, `syscall`, `mov lr,pc`, `jal t0`, `bcl 20,31`,
+a `bl` to the next instruction, MIPS `bal` and `nal`, MIPS64 `nal`, whose
+compiler spec names no return-address register, and SuperH `bsr`). Sources
+`adrnext_<arch>.S` and `adrnext_macho.s` (the issue's own assembly); the SuperH
+image is synthetic, written by `adrnext_sh4.py` (regenerate with `python3
+adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
+`adrnext.provenance`. Pinned by
+`kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
+no_link_references_the_return_address_it_leaves)`.
+
 ## Mach-O fat/universal + arm64e (PR-8)
 
 The fat/universal + arm64e gate (`kuna-console/tests/verify_macho_fat.rs`, design
