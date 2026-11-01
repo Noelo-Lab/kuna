@@ -6,8 +6,8 @@
 //!   * **Iteration-order provenance.** The C++ picks the switch variable from a
 //!     `std::map<Varnode *,int4>` (raw allocation-pointer order) and the cascade
 //!     head from a `std::map<BlockBasic *,CmpNode>` (raw pointer order); the
-//!     Rust port keys these on `BTreeMap<VarnodeId/BlockId,_>` (slotmap
-//!     creation order).  The strict-`>` switch-variable pick and the
+//!     Rust port tries tied variables in creation order and keys the heads
+//!     on `BTreeMap<BlockId,_>`.  The strict-`>` switch-variable pick and the
 //!     `break`-at-first head pick are tie-break-sensitive.  These tests pin the
 //!     *deterministic* Rust behavior on a constructed tie (LOSS class of
 //!     LOSS-097: a determinism improvement over non-deterministic C++ pointer
@@ -144,8 +144,8 @@ fn off(a: &Address) -> u64 {
 // V1 (iteration order). Two independent valid cascades on TWO distinct switch
 // variables with an EQUAL number of cascade nodes: a `var_count` tie.  C++ would
 // resolve it by raw `Varnode *` pointer order (non-deterministic); the Rust port
-// resolves it deterministically by slotmap creation order.  The earlier-created
-// variable (`v1`, built first) wins, so its cascade is the one recorded.
+// resolves it deterministically: the variable created first (`v1`) wins, so its
+// cascade is the one recorded.
 // This pins the deterministic divergence (LOSS class of LOSS-097).
 // -----------------------------------------------------------------------------
 
@@ -197,6 +197,71 @@ fn v1_var_count_tie_is_deterministic_first_created_wins() {
     assert_eq!(off(&recs[0].branch_addr), 0x1001, "v1's head, not v2's (0x6001)");
     assert_eq!(off(&recs[0].var_addr), 0x4000, "v1's storage, not v2's (0x4010)");
     // Sanity: the recovered cases are the cascade shape {0,2,3}.
+    assert_eq!(recs[0].case_vals, vec![0u64, 2u64, 3u64]);
+}
+
+/// A tie goes to the variable created first, not to the lower Varnode id:
+/// `v_later` reuses a freed slot below `v_first`'s.
+#[test]
+fn v1b_var_count_tie_goes_to_the_first_created_not_the_lower_slot() {
+    let mut fd = build_fd();
+    let freed: Vec<VarnodeId> = (0..3).map(|i| fd.new_varnode(4, &ram_addr(&fd, 0x4800 + i), None)).collect();
+    let v_first = switch_var_at(&mut fd, 0x0F00, 0x4000);
+    for vn in freed {
+        fd.delete_varnode(vn).unwrap();
+    }
+    let v_later = switch_var_at(&mut fd, 0x0F10, 0x4010);
+    assert!(v_later < v_first, "the later variable sits in the lower slot");
+    build_cascade_on(&mut fd, v_later, 0x1000, 0x2000);
+    build_cascade_on(&mut fd, v_first, 0x6000, 0x7000);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(off(&recs[0].var_addr), 0x4000, "the first-created variable's cascade");
+    assert_eq!(off(&recs[0].branch_addr), 0x6001);
+}
+
+/// A 4-node cascade on `v` at `base` whose two equality nodes test the same
+/// value for different targets, so `recover_cascade` bails on it.
+fn build_duplicate_case_cascade_on(fd: &mut Funcdata, v: VarnodeId, base: u64, tbase: u64) {
+    let b0 = new_block(fd, base);
+    let b1 = new_block(fd, base + 0x100);
+    let b2 = new_block(fd, base + 0x200);
+    let b3 = new_block(fd, base + 0x300);
+    let case_a = new_block(fd, tbase);
+    let case_b = new_block(fd, tbase + 0x100);
+    let case_c = new_block(fd, tbase + 0x200);
+    let default = new_block(fd, tbase + 0x1000);
+    append_cmp_cbranch(fd, b0, base, OpCode::CPUI_INT_LESS, v, 8);
+    fd.bblocks_mut().add_edge(b0, default);
+    fd.bblocks_mut().add_edge(b0, b1);
+    append_cmp_cbranch(fd, b1, base + 0x100, OpCode::CPUI_INT_EQUAL, v, 5);
+    fd.bblocks_mut().add_edge(b1, b2);
+    fd.bblocks_mut().add_edge(b1, case_a);
+    append_cmp_cbranch(fd, b2, base + 0x200, OpCode::CPUI_INT_EQUAL, v, 5);
+    fd.bblocks_mut().add_edge(b2, b3);
+    fd.bblocks_mut().add_edge(b2, case_b);
+    append_cmp_cbranch(fd, b3, base + 0x300, OpCode::CPUI_INT_EQUAL, v, 7);
+    fd.bblocks_mut().add_edge(b3, default);
+    fd.bblocks_mut().add_edge(b3, case_c);
+}
+
+/// A tie whose first-created variable has no recoverable cascade goes to the
+/// next tied variable whose cascade recovers, not to nothing.
+#[test]
+fn v1c_var_count_tie_falls_through_to_the_next_created_cascade() {
+    let mut fd = build_fd();
+    let v_first = switch_var_at(&mut fd, 0x0F00, 0x4000);
+    let v_later = switch_var_at(&mut fd, 0x0F10, 0x4010);
+    build_duplicate_case_cascade_on(&mut fd, v_first, 0x1000, 0x2000);
+    build_cascade_on(&mut fd, v_later, 0x6000, 0x7000);
+
+    let mut act = ActionLowerSwitchDetect::new(true, "base");
+    assert_eq!(act.detect(&mut fd), 1);
+    let recs = act.store().borrow().records(&fd).to_vec();
+    assert_eq!(off(&recs[0].var_addr), 0x4010, "the recoverable cascade of the later variable");
+    assert_eq!(off(&recs[0].branch_addr), 0x6001);
     assert_eq!(recs[0].case_vals, vec![0u64, 2u64, 3u64]);
 }
 

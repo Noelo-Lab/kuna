@@ -2060,6 +2060,13 @@ answered with (`docs/features/fieldtype/default-on-evaluation.md`).
 merged number as controls, and the compiled round trip in `decompile_all_cli.rs`
 checks the printed C computes what the binary does.
 
+A function's accepted bases ask the ledger for their layouts in the order
+their Varnodes were created (`kuna_structsynth.rs (by_creation)`); with
+`locals` on, the widest layout asks first and ties keep that order. The order
+of the asks is the order of the names they mint, and a Varnode's id is only the
+arena slot it reused, so an unrelated change to when the function frees
+Varnodes would otherwise swap two structures' numbers.
+
 Names are program-wide `struct_N`, minted and handed out by the **layout
 ledger** (`decompiler/crates/kuna-decomp/src/p5_types/kuna_structsynth/ledger.rs`),
 which is the set of `struct_N` the program's `TypeFactory` already holds: the
