@@ -88,7 +88,7 @@ fn resolve_from_sections(file: &object::File) -> Vec<PltSym> {
     // by relocations.  It therefore runs its own resolver (`resolve_mips_imports`)
     // *before* the relocation-driven path below, which would otherwise early-return
     // on the empty `build_got_name_map`.  See [`resolve_mips_imports`].
-    if matches!(arch, Architecture::Mips | Architecture::Mips64) {
+    if matches!(arch, Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32) {
         return resolve_mips_imports(file);
     }
 
@@ -214,6 +214,7 @@ fn resolve_from_dynamic_segment(file: &object::File, bytes: &[u8]) -> Vec<PltSym
         arch,
         Architecture::Mips
             | Architecture::Mips64
+            | Architecture::Mips64_N32
             | Architecture::PowerPc
             | Architecture::PowerPc64
     ) {
@@ -994,7 +995,7 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
 /// not — a constant GOT pointer is harmless for non-FUNC slots and matches
 /// Ghidra, which `setConstant`s every external GOT entry).
 pub(crate) fn mips_got_const_ranges(file: &object::File) -> Vec<(u64, u64)> {
-    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64) {
+    if !matches!(file.architecture(), Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32) {
         return Vec::new();
     }
     let ptr = if file.is_64() { 8u64 } else { 4u64 };

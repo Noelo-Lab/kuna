@@ -713,6 +713,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             &engine.path,
             pinned_by,
         );
+        for note in stderr_text.lines().filter(|line| line.starts_with("[kuna target] ")) {
+            kuna_base::notes::say_once(&binary, note);
+        }
         let combined = format!("{stdout_text}\n{stderr_text}");
         if let Some(msg) = check_errors(
             &combined,

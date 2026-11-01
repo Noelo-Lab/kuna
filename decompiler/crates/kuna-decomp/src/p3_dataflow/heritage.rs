@@ -1984,13 +1984,13 @@ impl Heritage {
                         effecttype = effect_type::KILLEDBYCALL;
                     }
                     if output_character == Containment::ContainedBy {
-                        // tryOutputOverlapGuard (heritage.cc:1249/1293): the heritaged
-                        // range properly contains the return storage, so the return
-                        // entry becomes an INDIRECT creation and the bytes around it
-                        // are PIECEd back on.  Gated by `option calloverlap full`.
-                        if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                        // An explicit slot extension defines the surrounding bytes;
+                        // otherwise use the generic `calloverlap full` guard.
+                        if crate::p4_calls::kuna_registerslots::guard_output(
+                            fd, fc, addr, &trans_addr, size, write,
+                        ) || (overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
                             && self
-                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write)
+                                .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
                             // Range is handled, don't do additional guarding.
                             effecttype = effect_type::UNAFFECTED;

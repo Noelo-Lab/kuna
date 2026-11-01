@@ -1,9 +1,9 @@
-
-############################
-#
-# MIPS64 Instructions
-#
-############################
+# MIPS64 double transfers use a register pair with 32-bit FPRs.
+@if FREGSIZE == "4"
+@define FREG64 "fsD"
+@else
+@define FREG64 "fs"
+@endif
 
 # 0111 00ss ssst tttt dddd d000 0010 0101
 :dclo RD, RSsrc                 is $(AMODE) & ((REL6=0 & prime=0x1C & sa=0x0 & fct=0x25) | (REL6=1 & prime=0x00 & sa=0x1 & fct=0x13 & op=0)) & RD & RSsrc {
@@ -71,8 +71,8 @@
 :dmfc0 RT, RD0                  is $(AMODE) & prime=16 & copop=1 & RT & RD0 & zero6=0 {    
     RT = RD0;
 }
-:dmfc1 RT, fs                   is $(AMODE) & prime=17 & copop=1 & RT & fs & bigfunct=0 {    
-    RT = fs;
+:dmfc1 RT, $(FREG64)            is $(AMODE) & prime=17 & copop=1 & RT & $(FREG64) & bigfunct=0 {
+    RT = $(FREG64);
 }
 :dmfc2 RT, immed                is $(AMODE) & prime=18 & copop=1 & RT & immed {
     RT = getCopReg(2:1, immed:4);
@@ -83,8 +83,8 @@
     RD0 = RTsrc;
 }
 # 0100 0100 101t tttt ssss s000 0000 0000
-:dmtc1 RTsrc, fs                is $(AMODE) & prime=17 & copop=5 & RTsrc & fs & bigfunct=0 {
-    fs = RTsrc;
+:dmtc1 RTsrc, $(FREG64)         is $(AMODE) & prime=17 & copop=5 & RTsrc & $(FREG64) & bigfunct=0 {
+    $(FREG64) = RTsrc;
 }
 :dmtc2 RTsrc, immed             is $(AMODE) & prime=18 & copop=5 & RTsrc & immed {
     setCopReg(2:1, immed:4, RTsrc);

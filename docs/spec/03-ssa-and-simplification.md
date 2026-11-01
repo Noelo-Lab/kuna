@@ -768,6 +768,14 @@ definition. At `in` only the input guard runs, which recovers the argument but
 leaves the return value stale; at `full` both run, which is upstream Ghidra's
 behavior.
 
+An explicit ABI slot-to-register extension supplies stronger evidence than this
+overlap heuristic. When a return slot declares that extension and heritage reads
+its whole physical register, `p4_calls/kuna_registerslots.rs (guard_output)`
+creates the logical slot trial and extends it to the register. This applies
+without enabling `calloverlap full`, retains four-byte O32 return slots, and
+leaves a call's preserved ranges alone. Competing entries that overlap the
+physical register cannot supply this unconditional extension.
+
 `heritage.rs
 (Heritage::guard_returns)` symmetrically appends output-trial varnodes to every
 live RETURN when the range overlaps the recovered return storage (truncating

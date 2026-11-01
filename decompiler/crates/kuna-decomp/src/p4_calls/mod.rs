@@ -89,5 +89,6 @@ pub mod kuna_floatregister;
 pub mod kuna_x87free;
 
 pub mod kuna_callmechanisms;
+pub(crate) mod kuna_registerslots;
 
 pub mod kuna_qualifiedcall;

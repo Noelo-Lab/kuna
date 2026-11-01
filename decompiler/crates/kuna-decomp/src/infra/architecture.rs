@@ -7250,20 +7250,27 @@ impl Architecture {
             return Err(KunaError::lowlevel("ParamEntry not fully specified"));
         }
         // Storage address: <register name=".."/> or <addr space=".." offset=".."/>.
-        let (space, addressbase) = self.decode_pentry_storage(pentry)?;
+        let (space, mut addressbase, register) = self.decode_pentry_storage(pentry)?;
+        let extension = crate::p4_calls::kuna_registerslots::decode(
+            pentry, register, size, alignment, flags,
+        )?;
+        if let Some(extension) = &extension {
+            addressbase = extension.input.offset;
+        }
         flags |= crate::p4_calls::kuna_stackparamalign::decode(pentry, &space, alignment, size)?;
-        crate::fspec::ParamEntry::seed(
+        let mut entry = crate::fspec::ParamEntry::seed(
             group, type_, space, addressbase, size, minsize, alignment, flags, normalstack,
             grouped, prev, self.manage(),
-        )
+        )?;
+        entry.register_extension = extension;
+        Ok(entry)
     }
 
-    /// Resolve a `<pentry>`'s storage element to `(space, offset)` (C++
-    /// `Address::decode` over `<register>`/`<addr>`).
+    /// Resolve storage, retaining the physical extent of a named register.
     fn decode_pentry_storage(
         &self,
         pentry: &Rc<kuna_base::xml::Element>,
-    ) -> KunaResult<(Rc<kuna_base::space::AddrSpace>, uintb)> {
+    ) -> KunaResult<(Rc<kuna_base::space::AddrSpace>, uintb, Option<kuna_num::pcoderaw::VarnodeData>)> {
         for child in pentry.get_children().iter() {
             match child.get_name() {
                 "register" => {
@@ -7272,8 +7279,9 @@ impl Architecture {
                     let vd = self.translate.get_register_varnode(nm.as_bytes())?;
                     let space = vd
                         .space
+                        .clone()
                         .ok_or_else(|| KunaError::lowlevel("register has no space"))?;
-                    return Ok((space, vd.offset));
+                    return Ok((space, vd.offset, Some(vd)));
                 }
                 "addr" => {
                     let spname = attr_str(child, "space")
@@ -7293,12 +7301,12 @@ impl Architecture {
                     // decodes to offset 0 and `decode_default_proto` fails -> empty model.
                     if space.get_type() == kuna_base::space::spacetype::IPTR_JOIN {
                         let off = self.decode_join_addr(child)?;
-                        return Ok((space, off));
+                        return Ok((space, off, None));
                     }
                     let off = attr_str(child, "offset")
                         .and_then(|s| parse_int(&s))
                         .unwrap_or(0);
-                    return Ok((space, off));
+                    return Ok((space, off, None));
                 }
                 _ => {}
             }

@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "mips_elf_selection.rs"]
+mod mips_elf_selection;
 mod common;
 
 #[path = "local_array_bits.rs"]

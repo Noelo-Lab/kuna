@@ -31,6 +31,10 @@
 //! defined-function reader lifted out of [`crate::loadimage_object`].
 
 pub mod arm_markers;
+mod kuna_mipsabi;
+pub(crate) mod kuna_mipstarget;
+#[cfg(test)]
+mod mips_target_tests;
 // (kuna) ELF import markup read out of `PT_DYNAMIC`, for an image whose section
 // table is missing or unusable and whose `.dynsym`/`.rela.*`/`.plt*` are
 // therefore invisible.
