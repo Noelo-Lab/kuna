@@ -1,10 +1,10 @@
 {
-  "state": "proposal",
+  "state": "validated",
   "feature": "Go output language",
   "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
   "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
   "reference_codegen_tests": 5,
-  "scope": "Large: existing language infrastructure and statement forms; draft proposal before implementation",
+  "scope": "Go profile, type spelling and statement forms on the existing output-language plane; no Go ABI or runtime-idiom inference",
   "baseline_commit": "9456985dae5ea95a276a98d755f920c4955d866d",
   "option": "outlang",
   "reference_basics_test": "passed: eight functions and all check methods",
@@ -21,5 +21,92 @@
     "counters": "passed",
     "tooling": "114 tests, 1 skipped",
     "lint": "passed"
+  },
+  "implementation_baseline_commit": "e4fd472ae463e60a4643183988f6d0a2556408ee",
+  "compiled_scalar_functions": 41,
+  "compiled_scalar_configurations": [
+    "default",
+    "taildup/crossjumprevert/gotoreduce off"
+  ],
+  "operator_cases": 22,
+  "limits": [
+    "Explicit language selection; automatic policy unchanged",
+    "Go ABI and multi-result recovery remain separate",
+    "Missing types and low-level helpers can prevent arbitrary output compiling",
+    "Callback prototype supplied explicitly because nested C DWARF function type is opaque"
+  ],
+  "timing": {
+    "effects": {
+      "baseline_to_current": {
+        "wall_ms": 1.3973905587309154,
+        "cpu_ms": 1.588611695373654
+      },
+      "current_to_go": {
+        "wall_ms": 1.255761471769623,
+        "cpu_ms": 0.604541046768392
+      }
+    },
+    "basics": {
+      "baseline_to_current": {
+        "wall_ms": -0.3075649351729881,
+        "cpu_ms": 0.24789862022540632
+      },
+      "current_to_go": {
+        "wall_ms": -0.3223568958310552,
+        "cpu_ms": 0.25877411882109236
+      }
+    },
+    "fmtdemo": {
+      "baseline_to_current": {
+        "wall_ms": -0.2875233512822706,
+        "cpu_ms": -0.30363354235671824
+      },
+      "current_to_go": {
+        "wall_ms": 0.5874794685349016,
+        "cpu_ms": 0.5693649837485326
+      }
+    },
+    "scalar": {
+      "baseline_to_current": {
+        "wall_ms": 0.548996032123461,
+        "cpu_ms": 0.5538718779415142
+      },
+      "current_to_go": {
+        "wall_ms": -0.19036007381615372,
+        "cpu_ms": -0.1577823548314483
+      }
+    }
+  },
+  "fixtures": {
+    "output-c": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+    "output-go": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09"
+  },
+  "validation": {
+    "original_assertions": 675,
+    "stage_assertions": 3445,
+    "focused_console_tests": 4,
+    "focused_unit_tests": 4,
+    "tooling_tests": 114,
+    "tooling_skipped": 1,
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "lint": "passed",
+    "workspace": {
+      "passed": 9986,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    }
+  },
+  "default": "c (Go is explicitly selected)",
+  "breadth": {
+    "control_records": 23930,
+    "distinct_functions": 11965,
+    "go_functions": 4202,
+    "changed_control_records": 0,
+    "go_syntax_failures": 0,
+    "errors": 0,
+    "review": "All Go functions have recorded diffs and per-hunk presentation classifications; AST flow counts distinguish statements from string contents. Fallthrough case bodies inspected separately; compiled fixtures exercise two shared-case paths and side effects."
   }
 }

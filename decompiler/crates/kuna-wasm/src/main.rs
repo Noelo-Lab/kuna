@@ -60,7 +60,7 @@ fn main() -> ExitCode {
         eprintln!(
             "usage: {} <binary> <spec-root> <list|decompile|inspect|read|xrefs|strings|data|uses|project> \
              [name|0xaddr|0xaddr len|display-name] [--mode auto|reliable|aggressive|fast] \
-             [--language auto|c|rust] [--assert DIRECTIVE]...",
+             [--language auto|c|rust|go] [--assert DIRECTIVE]...",
             argv[0]
         );
         return ExitCode::from(64);

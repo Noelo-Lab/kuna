@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3438,
-    3438
+    3445,
+    3445
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -152,6 +152,7 @@
     "data:Bit reinterpret x64 #1: storage transfers use a union",
     "data:Bit reinterpret x64 #2: numeric integer conversion stays a cast",
     "data:Bit reinterpret x64 #3: numeric float truncation stays a cast",
+    "data:C selection retains C return punctuation before and after Go",
     "data:CALL-ARRAY-EXTENT #10: indexed parent retains room for every store",
     "data:CALL-ARRAY-EXTENT #11: return reads the copied word in shared storage",
     "data:CALL-ARRAY-EXTENT #12: loop-carried pointer declines",
@@ -900,6 +901,12 @@
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
     "data:Global aggregate fields do not become locals",
+    "data:Go bottom-tested loop skips only its first condition",
+    "data:Go float storage conversion preserves bits",
+    "data:Go integer pointer conversion retains uintptr bridge",
+    "data:Go pointer indexing retains byte scaling",
+    "data:Go selection emits exact-width function parameters",
+    "data:Go switch renders actual shared-case fallthrough",
     "data:HALTLOOPGUARD #1: OFF drops the AIRCR write, leaving the two barriers adjacent (pass 1 only)",
     "data:HALTLOOPGUARD #2: both passes decompile sysreset",
     "data:HALTLOOPGUARD #3: ON keeps the AIRCR write between the barriers (pass 2 only)",

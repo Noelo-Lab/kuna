@@ -33,6 +33,10 @@ macro_rules! kuna_options {
 }
 
 kuna_options! { self, p1;
+    "outlang" => {
+        self.set_print_language_checked(p1)?;
+        Ok(format!("Output language set to {}", self.print().get_name()))
+    },
     "compareform" => {
         let (form, msg) = crate::kuna_compareform::parse_compare_form(p1)?;
         self.present_lessequal = form.present_lessequal();

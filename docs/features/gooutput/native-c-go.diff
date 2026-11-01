@@ -1,0 +1,830 @@
+--- c/_init
++++ go/_init
+@@ -1,5 +1,5 @@
+-void _init(void)
+-{
+-  if (dat_403ff8)
+-    (*dat_403ff8)();
++func _init() {
++  if uint64(uintptr(unsafe.Pointer(dat_403ff8))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    (*dat_403ff8)()
++  }
+ }
+--- c/fallthroughs.cold
++++ go/fallthroughs.cold
+@@ -1,4 +1,4 @@
+-unsigned long fallthroughs.cold(unsigned long a0,unsigned long a1)
+-{
+-  return a1;
++// fallthroughs.cold
++func cold(a0 uint64, a1 uint64) uint64 {
++  return a1
+ }
+--- c/main
++++ go/main
+@@ -1,4 +1,3 @@
+-int main(void)
+-{
+-  return (int)add(1,2);
++func main() int32 {
++  return int32(add(1,2))
+ }
+--- c/_start
++++ go/_start
+@@ -1,9 +1,8 @@
+-__attribute__((noinline)) void _start(unsigned long a0,unsigned long a1,unsigned long a2)
+-{
+-  char v1 [8]; // stack - 0x8
+-  unsigned long v2; // rsi | stack + 0x0
++func _start(a0 uint64, a1 uint64, a2 uint64) {
++  var v1 [8]byte // stack - 0x8
++  var v2 uint64 // rsi | stack + 0x0
+   
+-  (*dat_403ff0)(main,v2,((char *)__builtin_dwarf_cfa()),0,0,a2,v1);
+-  while( true ) {
++  (*dat_403ff0)(main,v2,&Stack0000000000000008,0,0,a2,v1)
++  for {
+   }
+ }
+--- c/_dl_relocate_static_pie
++++ go/_dl_relocate_static_pie
+@@ -1,4 +1,3 @@
+-void _dl_relocate_static_pie(void)
+-{
+-  return;
++func _dl_relocate_static_pie() {
++  return
+ }
+--- c/deregister_tm_clones
++++ go/deregister_tm_clones
+@@ -1,4 +1,3 @@
+-void deregister_tm_clones(void)
+-{
+-  return;
++func deregister_tm_clones() {
++  return
+ }
+--- c/register_tm_clones
++++ go/register_tm_clones
+@@ -1,4 +1,3 @@
+-void register_tm_clones(void)
+-{
+-  return;
++func register_tm_clones() {
++  return
+ }
+--- c/__do_global_dtors_aux
++++ go/__do_global_dtors_aux
+@@ -1,8 +1,7 @@
+-void __do_global_dtors_aux(void)
+-{
+-  if (!completed.0) {
+-    deregister_tm_clones();
+-    completed.0 = 1;
+-    return;
++func __do_global_dtors_aux() {
++  if byte(completed._kuna_ident_30) == 0x0 {
++    deregister_tm_clones()
++    completed._kuna_ident_30 = int8(0x1)
++    return
+   }
+ }
+--- c/frame_dummy
++++ go/frame_dummy
+@@ -1,4 +1,3 @@
+-void frame_dummy(void)
+-{
+-  register_tm_clones(); // tail-call
++func frame_dummy() {
++  register_tm_clones() // tail-call
+ }
+--- c/add
++++ go/add
+@@ -1,4 +1,3 @@
+-long add(long a,long b)
+-{
+-  return a + b;
++func add(a int64, b int64) int64 {
++  return a + b
+ }
+--- c/tiers
++++ go/tiers
+@@ -1,4 +1,3 @@
+-unsigned long tiers(unsigned long a,unsigned long b,unsigned long c)
+-{
+-  return (b >> 3 & a) + c ^ (a | b);
++func tiers(a uint64, b uint64, c uint64) uint64 {
++  return ((b >> 3) & a + c) ^ (a | b)
+ }
+--- c/choose
++++ go/choose
+@@ -1,12 +1,12 @@
+-long choose(long a,long b)
+-{
+-  long v1; // rax | rsi
++func choose(a int64, b int64) int64 {
++  var v1 int64 // rax | rsi
+   
+-  if (a <= 10) {
+-    v1 = b + -1;
+-    if (0 <= a)
+-      v1 = b * 2;
+-    return v1;
++  if a <= 10 {
++    v1 = b + -1
++    if 0 <= a {
++      v1 = b * 2
++    }
++    return v1
+   }
+-  return b + 1;
++  return b + 1
+ }
+--- c/sum_for
++++ go/sum_for
+@@ -1,17 +1,21 @@
+-long sum_for(long n)
+-{
+-  long v1; // r8 | rdx
+-  unsigned long v2; // rax
+-  long v3; // r8 | rdx
++func sum_for(n int64) int64 {
++  var v1 int64 // r8 | rdx
++  var v2 uint64 // rax
++  var v3 int64 // r8 | rdx
+   
+-  v2 = 0;
+-  v3 = 0;
+-  if (0 < n) {
+-    while (v2 = v2 + 1, n != v2) {
+-      v1 = v3 + v2;
+-      if (v2 & 1)
+-        v3 = v1;
++  v2 = 0x0
++  v3 = 0
++  if 0 < n {
++    for {
++      v2 = v2 + 0x1
++      if !(uint64(n) != v2) {
++        break
++      }
++      v1 = v3 + int64(v2)
++      if v2 & 0x1 != 0x0 {
++        v3 = v1
++      }
+     }
+   }
+-  return v3;
++  return v3
+ }
+--- c/bottom
++++ go/bottom
+@@ -1,14 +1,14 @@
+-long bottom(long n)
+-{
+-  long v1; // rax | rdx
+-  long v2; // rax | rdx
++func bottom(n int64) int64 {
++  var v1 int64 // rax | rdx
++  var v2 int64 // rax | rdx
+   
+-  v2 = 0;
+-  do {
+-    n -= 1;
+-    v1 = v2 + n;
+-    if (n & 1U)
+-      v2 = v1;
+-  } while (0 < n);
+-  return v2;
++  v2 = 0
++  for _kuna_first_1 := true; _kuna_first_1 || (0 < n); _kuna_first_1 = false {
++    n = int64(uint64(n) - 0x1)
++    v1 = v2 + n
++    if uint64(n) & 0x1 != 0x0 {
++      v2 = v1
++    }
++  }
++  return v2
+ }
+--- c/bottom_call
++++ go/bottom_call
+@@ -1,17 +1,16 @@
+-long bottom_call(long n,long *p)
+-{
+-  long b; // rdx
+-  long v1; // rax
+-  long v2; // rdx
+-  long v3; // r8
++func bottom_call(n int64, p *int64) int64 {
++  var b int64 // rdx
++  var v1 int64 // rax
++  var v2 int64 // rdx
++  var v3 int64 // r8
+   
+-  b = *p;
+-  v3 = 0;
+-  do {
+-    v3 += n;
+-    n = (((unsigned int)n & 1) - 2UL) + n;
+-    v1 = add(n,b);
+-    b = v2;
+-  } while (0 < v1);
+-  return v3;
++  b = *p
++  v3 = 0
++  for _kuna_first_1 := true; _kuna_first_1 || (0 < v1); _kuna_first_1 = false {
++    v3 = v3 + n
++    n = int64(uint64(uint32(n) & 0x1) - 0x2) + n
++    v1 = add(n,b)
++    b = v2
++  }
++  return v3
+ }
+--- c/short_calls
++++ go/short_calls
+@@ -1,6 +1,6 @@
+-long short_calls(long a,long b) // early-return
+-{
+-  if (a <= 0)
+-    return 2;
+-  return (unsigned long)(4 < add(a,b)) * 5 + 2;
++func short_calls(a int64, b int64) int64 { // early-return
++  if a <= 0 {
++    return 2
++  }
++  return int64(func(value bool) uint64 { if value { return 1 }; return 0 }(4 < add(a,b)) * 0x5 + 0x2)
+ }
+--- c/loop_calls
++++ go/loop_calls
+@@ -1,15 +1,15 @@
+-long loop_calls(long a,long b)
+-{
+-  long v1; // r8
++func loop_calls(a int64, b int64) int64 {
++  var v1 int64 // r8
+   
+-  v1 = 0;
+-  if (0 < a) {
+-    while (5 <= add(a,b)) {
+-      v1 += a;
+-      a -= 1;
+-      if (!a)
+-        return v1;
++  v1 = 0
++  if 0 < a {
++    for 5 <= add(a,b) {
++      v1 = v1 + a
++      a = a + -1
++      if uint64(a) == 0x0 {
++        return v1
++      }
+     }
+   }
+-  return v1;
++  return v1
+ }
+--- c/dispatch
++++ go/dispatch
+@@ -1,21 +1,17 @@
+-long dispatch(long n,long a)
+-{
+-  switch(n) {
++func dispatch(n int64, a int64) int64 {
++  switch n {
+     case 0:
+-      a += 3;
+-      break;
++      a = a + 3
+     case 1:
+-      break;
+-    case 2:
+-    case 3:
+-      return a + -4;
++      break
++    case 2, 3:
++      return a + -4
+     case 4:
+-      return a ^ 7;
++      return int64(uint64(a) ^ 0x7)
+     case 5:
+-      return a + 8;
++      return a + 8
+     default:
+-      return -a;
+-    
++      return -a
+   }
+-  return a * 2;
++  return a * 2
+ }
+--- c/read_at
++++ go/read_at
+@@ -1,4 +1,3 @@
+-int read_at(int *p,long i)
+-{
+-  return p[i];
++func read_at(p *int32, i int64) int32 {
++  return *(*int32)(unsafe.Add(unsafe.Pointer(p),i * 4))
+ }
+--- c/write_at
++++ go/write_at
+@@ -1,4 +1,3 @@
+-void write_at(int *p,long i,int v)
+-{
+-  p[i] = v;
++func write_at(p *int32, i int64, v int32) {
++  *(*int32)(unsafe.Add(unsafe.Pointer(p),i * 4)) = v
+ }
+--- c/from_word
++++ go/from_word
+@@ -1,4 +1,3 @@
+-int * from_word(unsigned long p)
+-{
+-  return (int *)p;
++func from_word(p uint64) *int32 {
++  return (*int32)(unsafe.Pointer(uintptr(p)))
+ }
+--- c/to_word
++++ go/to_word
+@@ -1,4 +1,3 @@
+-unsigned long to_word(int *p)
+-{
+-  return (unsigned long)p;
++func to_word(p *int32) uint64 {
++  return uint64(uintptr(unsafe.Pointer(p)))
+ }
+--- c/retype
++++ go/retype
+@@ -1,4 +1,3 @@
+-int * retype(double *p)
+-{
+-  return (int *)p;
++func retype(p *float64) *int32 {
++  return (*int32)(unsafe.Pointer(p))
+ }
+--- c/narrow
++++ go/narrow
+@@ -1,4 +1,3 @@
+-unsigned int narrow(unsigned long a)
+-{
+-  return a;
++func narrow(a uint64) uint32 {
++  return uint32(a)
+ }
+--- c/extend
++++ go/extend
+@@ -1,4 +1,3 @@
+-long extend(signed char a)
+-{
+-  return a;
++func extend(a int8) int64 {
++  return int64(a)
+ }
+--- c/number
++++ go/number
+@@ -1,4 +1,3 @@
+-double number(long a)
+-{
+-  return (double)a;
++func number(a int64) float64 {
++  return float64(a)
+ }
+--- c/bits
++++ go/bits
+@@ -1,4 +1,3 @@
+-double bits(unsigned long a)
+-{
+-  return ((union { unsigned long long from; double to; }){ .from = a }).to;
++func bits(a uint64) float64 {
++  return math.Float64frombits(uint64(a))
+ }
+--- c/unbits
++++ go/unbits
+@@ -1,4 +1,3 @@
+-unsigned long unbits(double a)
+-{
+-  return ((union { double from; unsigned long long to; }){ .from = a }).to;
++func unbits(a float64) uint64 {
++  return uint64(math.Float64bits(a))
+ }
+--- c/text
++++ go/text
+@@ -1,4 +1,3 @@
+-char * text(void)
+-{
+-  return "quote\" tab\t utf8é";
++func text() *int8 {
++  return (*int8)(unsafe.Pointer(unsafe.StringData("quote\" tab\t utf8\u00e9\x00")))
+ }
+--- c/rune
++++ go/rune
+@@ -1,4 +1,4 @@
+-int rune(void)
+-{
+-  return 0x1f600;
++// rune
++func _kuna_ident_72756e65() int32 {
++  return 128512
+ }
+--- c/negative_zero
++++ go/negative_zero
+@@ -1,4 +1,3 @@
+-double negative_zero(void)
+-{
+-  return dat_402080;
++func negative_zero() float64 {
++  return dat_402080
+ }
+--- c/positive_infinity
++++ go/positive_infinity
+@@ -1,4 +1,3 @@
+-double positive_infinity(void)
+-{
+-  return dat_402088;
++func positive_infinity() float64 {
++  return dat_402088
+ }
+--- c/quiet_nan
++++ go/quiet_nan
+@@ -1,4 +1,3 @@
+-double quiet_nan(void)
+-{
+-  return dat_402090;
++func quiet_nan() float64 {
++  return dat_402090
+ }
+--- c/record
++++ go/record
+@@ -1,4 +1,3 @@
+-void record(long *p,long tag)
+-{
+-  *p = tag + *p * 10;
++func record(p *int64, tag int64) {
++  *p = tag + *p * 10
+ }
+--- c/bottom_continue
++++ go/bottom_continue
+@@ -1,24 +1,28 @@
+-long bottom_continue(long n,long *p)
+-{
+-  long *p_00; // rcx | rdi | rsi
+-  long v1; // r8 | rax | rdx
+-  long v2; // r8 | rax | rdi | rdx
++func bottom_continue(n int64, p *int64) int64 {
++  var p_00 *int64 // rcx | rdi | rsi
++  var v1 int64 // r8 | rax | rdx
++  var v2 int64 // r8 | rax | rdi | rdx
+   
+-  v2 = n;
+-  do {
+-    while( true ) {
+-      n -= 1;
+-      p_00 = p;
+-      record(p,1);
+-      if (!(n & 1U)) break;
+-      record(p_00,2);
+-      if (n <= 0) goto label_401434;
++  v2 = n
++  for _kuna_first_1 := true; _kuna_first_1 || (1 <= n); _kuna_first_1 = false {
++    for {
++      n = int64(uint64(n) - 0x1)
++      p_00 = p
++      record(p,1)
++      if uint64(n) & 0x1 == 0x0 {
++        break
++      }
++      record(p_00,2)
++      if n <= 0 {
++        goto label_401434
++      }
+     }
+-    record(p_00,3);
+-  } while (1 <= n);
++    record(p_00,3)
++  }
+ label_401434:
+-  v1 = 1;
+-  if (1 <= v2)
+-    v1 = v2;
+-  return v2 - v1;
++  v1 = 1
++  if 1 <= v2 {
++    v1 = v2
++  }
++  return v2 - v1
+ }
+--- c/probe
++++ go/probe
+@@ -1,5 +1,4 @@
+-long probe(long *p,long v)
+-{
+-  *p = *p + 1;
+-  return v;
++func probe(p *int64, v int64) int64 {
++  *p = *p + 1
++  return v
+ }
+--- c/condition_calls
++++ go/condition_calls
+@@ -1,8 +1,8 @@
+-long condition_calls(long n,long *p)
+-{
+-  if (0 < n) {
+-    if (3 <= probe(p,n))
+-      return 7;
++func condition_calls(n int64, p *int64) int64 {
++  if 0 < n {
++    if 3 <= probe(p,n) {
++      return 7
++    }
+   }
+-  return 3;
++  return 3
+ }
+--- c/condition_loop
++++ go/condition_loop
+@@ -1,15 +1,15 @@
+-long condition_loop(long n,long *p)
+-{
+-  long v1; // r8
++func condition_loop(n int64, p *int64) int64 {
++  var v1 int64 // r8
+   
+-  v1 = 0;
+-  if (0 < n) {
+-    while (3 <= probe(p,n)) {
+-      v1 += n;
+-      n -= 1;
+-      if (!n)
+-        return v1;
++  v1 = 0
++  if 0 < n {
++    for 3 <= probe(p,n) {
++      v1 = v1 + n
++      n = n + -1
++      if uint64(n) == 0x0 {
++        return v1
++      }
+     }
+   }
+-  return v1;
++  return v1
+ }
+--- c/fallthroughs
++++ go/fallthroughs
+@@ -1,26 +1,23 @@
+-long fallthroughs(unsigned long a0,long a1,long *a2)
+-{
+-  switch(a0) {
++func fallthroughs(a0 uint64, a1 int64, a2 *int64) int64 {
++  switch a0 {
+     case 2:
+-      record(a2,3);
+-      record(a2,4); // return-dupe
+-      return a1 + 2;
++      record(a2,3)
++      record(a2,4) // return-dupe
++      return a1 + 2
+     case 0:
+-      record(a2,1);
+-      break;
++      record(a2,1)
+     case 1:
+-      break;
++      break
+     case 3:
+-      record(a2,4);
+-      return a1 + 2;
++      record(a2,4)
++      return a1 + 2
+     case 4:
+-      return a1 + -1;
++      return a1 + -1
+     case 5:
+-      return a1 + -2;
++      return a1 + -2
+     default:
+-      return a1;
+-    
++      return a1
+   }
+-  record(a2,2);
+-  return a1 + 1;
++  record(a2,2)
++  return a1 + 1
+ }
+--- c/condition_value
++++ go/condition_value
+@@ -1,11 +1,11 @@
+-long condition_value(long n,long *p)
+-{
+-  long v1; // rax
++func condition_value(n int64, p *int64) int64 {
++  var v1 int64 // rax
+   
+-  if (1 <= n) {
+-    v1 = probe(p,n);
+-    if (2 < v1)
+-      return v1 * 2;
++  if 1 <= n {
++    v1 = probe(p,n)
++    if 2 < v1 {
++      return v1 * 2
++    }
+   }
+-  return 3;
++  return 3
+ }
+--- c/condition_for
++++ go/condition_for
+@@ -1,18 +1,20 @@
+-long condition_for(long n,long *p)
+-{
+-  long v1; // r8 | rax
+-  unsigned long v2; // rdx
+-  long v3; // r8 | rax
++func condition_for(n int64, p *int64) int64 {
++  var v1 int64 // r8 | rax
++  var v2 uint64 // rdx
++  var v3 int64 // r8 | rax
+   
+-  v2 = 0;
+-  v3 = 0;
+-  while( true ) {
+-    v1 = probe(p,n - v2);
+-    if (v1 <= 2) break;
+-    v1 += v3;
+-    if (!(v2 & 1))
+-      v3 = v1;
+-    v2 += 1;
++  v2 = 0x0
++  v3 = 0
++  for {
++    v1 = probe(p,int64(uint64(n) - v2))
++    if v1 <= 2 {
++      break
++    }
++    v1 = v1 + v3
++    if v2 & 0x1 == 0x0 {
++      v3 = v1
++    }
++    v2 = v2 + 0x1
+   }
+-  return v3;
++  return v3
+ }
+--- c/name_collision
++++ go/name_collision
+@@ -1,11 +1,10 @@
+-long name_collision(long _kuna_first_1)
+-{
+-  long v1; // rax
++func name_collision(_kuna_first_1 int64) int64 {
++  var v1 int64 // rax
+   
+-  v1 = 0;
+-  do {
+-    v1 += _kuna_first_1;
+-    _kuna_first_1 -= 1;
+-  } while (0 < _kuna_first_1);
+-  return v1;
++  v1 = 0
++  for _kuna_first_1_ := true; _kuna_first_1_ || (0 < _kuna_first_1); _kuna_first_1_ = false {
++    v1 = v1 + _kuna_first_1
++    _kuna_first_1 = _kuna_first_1 + -1
++  }
++  return v1
+ }
+--- c/go
++++ go/go
+@@ -1,4 +1,4 @@
+-long go(long range,long _kuna_ident_72616e6765)
+-{
+-  return range + _kuna_ident_72616e6765;
++// go
++func _kuna_ident_676f(_kuna_ident_72616e6765 int64, _kuna_ident_5f6b756e615f6964656e745f37323631366536373635 int64) int64 {
++  return _kuna_ident_72616e6765 + _kuna_ident_5f6b756e615f6964656e745f37323631366536373635
+ }
+--- c/callback
++++ go/callback
+@@ -1,4 +1,3 @@
+-long callback(long x)
+-{
+-  return x * 3;
++func callback(x int64) int64 {
++  return x * 3
+ }
+--- c/call_callback
++++ go/call_callback
+@@ -1,4 +1,3 @@
+-long call_callback(long (*fn)(long),long x)
+-{
+-  return (*fn)(x) + 1;
++func call_callback(fn func(int64) int64, x int64) int64 {
++  return fn(x) + 1
+ }
+--- c/shadow
++++ go/shadow
+@@ -1,4 +1,3 @@
+-int shadow(int *unsafe,long uint64)
+-{
+-  return unsafe[uint64];
++func shadow(_kuna_ident_756e73616665 *int32, _kuna_ident_75696e743634 int64) int32 {
++  return *(*int32)(unsafe.Add(unsafe.Pointer(_kuna_ident_756e73616665),_kuna_ident_75696e743634 * 4))
+ }
+--- c/bool_value
++++ go/bool_value
+@@ -1,4 +1,3 @@
+-bool bool_value(long x)
+-{
+-  return x != 0;
++func bool_value(x int64) bool {
++  return uint64(x) != 0x0
+ }
+--- c/bool_number
++++ go/bool_number
+@@ -1,4 +1,3 @@
+-long bool_number(bool value)
+-{
+-  return (-(unsigned long)!value & 0xfffffffffffffffc) + 7;
++func bool_number(value bool) int64 {
++  return int64(-func(value bool) uint64 { if value { return 1 }; return 0 }(!value) & 0xfffffffffffffffc + 0x7)
+ }
+--- c/bool_true
++++ go/bool_true
+@@ -1,4 +1,3 @@
+-bool bool_true(void)
+-{
+-  return 1;
++func bool_true() bool {
++  return true
+ }
+--- c/bool_false
++++ go/bool_false
+@@ -1,4 +1,3 @@
+-bool bool_false(void)
+-{
+-  return 0;
++func bool_false() bool {
++  return false
+ }
+--- c/null_pointer
++++ go/null_pointer
+@@ -1,4 +1,3 @@
+-int * null_pointer(void)
+-{
+-  return NULL;
++func null_pointer() *int32 {
++  return nil
+ }
+--- c/is_null
++++ go/is_null
+@@ -1,4 +1,3 @@
+-bool is_null(int *p)
+-{
+-  return p == NULL;
++func is_null(p *int32) bool {
++  return uint64(uintptr(unsafe.Pointer(p))) == uint64(uintptr(unsafe.Pointer(nil)))
+ }
+--- c/shadow_null
++++ go/shadow_null
+@@ -1,6 +1,6 @@
+-long shadow_null(int *p,long nil) // early-return
+-{
+-  if (p)
+-    return 0;
+-  return nil;
++func shadow_null(p *int32, _kuna_ident_6e696c int64) int64 { // early-return
++  if uint64(uintptr(unsafe.Pointer(p))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    return 0
++  }
++  return _kuna_ident_6e696c
+ }
+--- c/nested_calls
++++ go/nested_calls
+@@ -1,8 +1,9 @@
+-bool nested_calls(long n,long *p) // return-dupe
+-{
+-  if (n <= 0)
+-    return 0;
+-  if (3 <= probe(p,n))
+-    return 1;
+-  return probe(p,n + 2) <= 0;
++func nested_calls(n int64, p *int64) bool { // return-dupe
++  if n <= 0 {
++    return false
++  }
++  if 3 <= probe(p,n) {
++    return true
++  }
++  return probe(p,n + 2) <= 0
+ }
+--- c/_fini
++++ go/_fini
+@@ -1,4 +1,3 @@
+-void _fini(void)
+-{
+-  return;
++func _fini() {
++  return
+ }

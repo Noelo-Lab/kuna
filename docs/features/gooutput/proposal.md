@@ -60,3 +60,5 @@ Primary semantic reference: https://go.dev/ref/spec (operators, conversions,
 statements, switches and loops). Reference tests: pinned angr
 6afa0c79a83d9f677a46b0275cdb63bf16c1979e,
 `test_go_codegen_handlers.py` and `test_go_decompiler.py`.
+
+Implemented and validated; final behavior, evidence and limits are in `analysis.md`.

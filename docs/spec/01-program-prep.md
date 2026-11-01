@@ -4265,6 +4265,22 @@ a low-based PIE live: on a control pair differing only in whether the section
 header table is present, the section-less image now answers the *same* data
 references as the sectioned one over the same functions, with none added.
 
+(kuna) A Mach-O section carries no allocation bit, and `object` derives its neutral
+kind from a dozen `(segment, section)` name pairs, so `__DATA_CONST,__got`,
+`__la_symbol_ptr`, `__DATA_CONST,__const`, `__cfstring`, the `__objc_*` and Go
+sections, `__TEXT,__stubs` and a kext's `__TEXT_EXEC,__text` all classified as
+unknown and the oracle answered "not mapped" for every one of them (GH #1376): an
+arm64 dylib's `ldr x16,[x16]` of its `_malloc` GOT slot, and an x86-64 Mach-O's
+`call qword ptr [_malloc@GOTPCREL]`, referenced nothing. dyld maps every section of
+a segment it loads, so on Mach-O every section is mapped except a debug one
+(`S_ATTR_DEBUG`, the `__DWARF` segment). That also makes an x86-64 Mach-O stub's
+`jmp qword ptr [slot]` the forwarding veneer an ELF PLT entry already was. Over 52
+real Mach-O images (arm64, x86-64, armv7, PowerPC, a kext) and the vendored Mach-O
+fixtures, 22,625 rows are added, every one into a section of that kind. An `adrp`
+page in such a section is filed only as the carry below allows: a page completed
+into another address is a step, not a reference to whatever datum the page starts
+with.
+
 (kuna) **Not every `.pdata` record is a function** — the PE exception directory
 answers "where does unwinding start from here", which is a coarser question than
 "where does a function start"
@@ -7144,8 +7160,74 @@ where the two shapes coincide in an executable: `li a1,70000` assembles to
 an RV32 `ET_EXEC` a number that lands in a mapped section files a `Data` row — the
 same floor the constant scan applies to a lone immediate. RV64 builds that number
 with `addiw` and is not affected. The page or high half on its own is not a
-carried reference; an `adrp` page that is itself a mapped address keeps the `Data`
-row the constant scan always gave it.
+carried reference.
+
+A constant subtracted from a carried address biases that address rather than
+naming another one. Swift builds a string literal's object as `adrp/add` of the
+literal, `sub x8,x8,#0x20`, then `orr x1,x8,#0x8000000000000000`, and the literal,
+not the 32 bytes before it, is what the code references: so the `sub` files no
+`Data` row and does not make the literal's `add` a step (with the `add` folded
+into `adr x8,lit; nop` by the linker, the `adr` is the row). Over the Mach-O sweep
+above this drops 294 rows naming whatever lay 32 bytes before a literal and
+restores 14 rows naming the literal. Only a subtraction is a bias: an add of a
+negative constant is how RISC-V and MIPS complete a `%hi` whose `%lo` is negative.
+
+An AArch64 `adrp` page that is a mapped address is also a `Data` row of the
+constant scan's own, which names whatever datum the page starts with: `adrp
+x8,_hook@PAGE` in a function that only goes on to `add x8,x8,#0x8` and read
+`_pair` is no reference to `_hook`. So the carry tracks the page, and when an
+instruction it holds across completes the page into a different address — the
+`add`, the `ldr x1,[x1,#0x5a8]` of a selector reference, the `ldr x16,[x16,#0x18]`
+of a stub — the page was a step to that address and the scan's row is withdrawn.
+A page the run also uses at offset 0 is the datum itself and keeps its row,
+whatever else completes it: an access at the page (`ldr x16,[x16]`, the first
+register of `ldp x0,x1,[x8]`, a post-indexed `ldr x0,[x8],#8`), or the `add
+x0,x0,#0` that is the `:lo12:` half of a page-aligned symbol. That `add` is the
+only trace of a symbol at the page that is used by address: clang compiles
+`s.d = 5; use(&s)` for a page-aligned `s` to `adrp x0,s; add x0,x0,#0; str
+x8,[x0,#0x18]; b use`, and the `str` alone would withdraw the only row naming `s`.
+A page nothing completes, or that is completed only past a join, keeps its row
+too. What the carry cannot see is a use of the page itself on a path it does not
+follow (the far side of a conditional branch, past a join) or the page stored,
+compared or returned without that `add`; a page completed elsewhere on its run
+then loses its row. Compilers do not emit that shape — every such use in the
+sweep below is a register spill the function reloads as a base — and keeping each
+page live across a conditional branch would restore 458 false rows there to
+recover none. Only an `adrp` is a page, read off its encoding: an `adr` of a
+page-aligned label lifts to the same `COPY` and is the label's address. Over the
+Mach-O sweep above (each universal binary split into its slices) and 79 ELF and
+PE controls on eight architectures, 11,924 page rows are withdrawn: 6,627 on
+AArch64 ELF, among them every `.plt` entry's `adrp x16` of the `.got.plt` page,
+and 5,297 on Mach-O, most from `__stubs` and `__objc_stubs`. Every one is an
+`adrp` whose completing instruction names another address, and no other row
+changes.
+
+(kuna) **A call through a loaded slot** (GH #1376). x86's `call qword ptr
+[slot]` takes its destination out of a fixed slot in one instruction, and the scan
+files it as a `Call` to the slot, which is where an import's name lives. A
+fixed-width ISA spells the same call in three: `adrp x16,_malloc@GOTPAGE; ldr
+x16,[x16,…]; blr x16`, and x86-64 sometimes in two, `mov rax,[rip+slot]; call
+rax` (MSVC's i386 `mov esi,[__imp_X]; call esi`, GCC's `if (hook) hook();`). The
+carry already read the `ldr` as a `Read` of the slot; the register it fills now
+holds *the word at that slot*, and a `CALLIND` whose destination is that register,
+or a copy of it, is a `Call` to the slot, filed from the call instruction on the
+same join rule as every carried reference. Only a pointer-width load leaves such a
+word, and a direct pointer-width memory operand copied whole into a register
+starts one (`mov rax,[rip+slot]`). The word itself is unknown, so it is inert: an
+add, a mask or a partial read of it is no value, and a load through it is no
+reference. The load stays the `Read` it was, so an agent sees both observations,
+the read and the call through what was read. `call [slot]` in one instruction is
+still the scan's row alone. Over the Mach-O sweep above plus 30 x86-64 ELF images,
+4 i386 PE and 45 ELF images across eight architectures, the rule adds 981 `Call`
+rows and removes none: GOT and IAT slots (`blr x1` in `ld-linux-aarch64.so.1`,
+`call esi` after `mov esi,[GetProcessHeap]`), function-pointer globals (`tar`'s
+`error_hook`) and Go closures (`mov rax,[fv]; lea rdx,[fv]; call rax`). The
+decompile graph gains the edge to a slot the inventory names, an import; a global
+the inventory does not name gains none. An indirect *branch* through such a register (an arm64
+stub's `br x16`, a tail call) is not filed: the forwarding relation is
+the veneer walk's
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (veneer_at)`), which reads
+the slot from the branch's own operand.
 
 Most instructions never reach the evaluation. One is evaluated when a carry
 reaches it, or when it could start one: it calls nothing, some modelled op yields
@@ -7153,7 +7235,9 @@ an address-like constant, some register is written by a modelled op from constan
 and temporaries alone (the first register an evaluation can know is always written
 that way), and in an `ET_DYN` image some modelled op reads a constant in the
 instruction's PC window. An instruction failing any of these would leave nothing
-to carry or keep, so the gate decides what is evaluated, never what is filed.
+to carry or keep, so the gate decides what is evaluated, never what is filed. A
+register copied whole from a pointer-width direct memory operand also passes the
+gate.
 
 Measured over 86 images (AArch64 ELF and Mach-O, ARM, MIPS, PowerPC, RISC-V,
 x86-64, i386 PE and the vendored fixtures): no row is lost, and of the 14,550 rows

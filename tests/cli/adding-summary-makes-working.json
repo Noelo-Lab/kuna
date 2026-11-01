@@ -30,7 +30,7 @@
     "stdout_matches": [
       "\"count\": 5",
       "\"total\": 5",
-      "\"reachable_from_entry\": 2",
+      "\"reachable_from_entry\": 3",
       "\"address_hex\": \"0x1000005b0\""
     ],
     "stderr_absent": [

@@ -1034,7 +1034,16 @@ load file "/home/u/test dir/a.out"
 openfile write "/tmp/out dir/main.c"
 ```
 
-**`--language auto|c|rust`** selects the output language. **`auto` is the
+`--language go` emits Go function signatures, declarations, operators and control
+flow. The catalog option `--option outlang c|rust|go` selects the same output
+plane; it and `--language`/`--option setlanguage` obey argument order. Go output
+uses explicit width conversions, `unsafe.Pointer`/`uintptr` bridges and
+`unsafe.Add` for pointer indexing. It can retain low-level helpers and incomplete
+ABI/type recovery, so arbitrary output is not promised to compile. This selector
+does not add Go multi-result, string, slice or interface recovery. `auto` still
+selects Rust for a detected Rust image and C otherwise, including Go images.
+
+**`--language auto|c|rust|go`** selects the output language. **`auto` is the
 default and follows the binary**: a Rust binary renders as Rust, because kuna
 already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
 `SourceLanguageAnalyzer`) and rendering it as C is worse in a way the reader has
@@ -2254,7 +2263,7 @@ act on and is answered; see below.
 
 | `kind` | What it is |
 |---|---|
-| `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. |
+| `call` | A CALL to the target (a call site): a direct `CALL 0x1030`, or a `CALL qword ptr [slot]` that reads its destination out of a fixed slot — the shape every imported Windows API call has. The slot is where the edge lands, because the slot is what carries the import's name. Also a call through a register an earlier instruction loaded from such a slot — `adrp x16,_malloc@GOTPAGE; ldr x16,[x16,…]; blr x16`, `mov rax,[rip+slot]; call rax` — filed from the call; the load is its own `read` row of the slot. |
 | `jump` | A direct branch to it: a tail call, a PLT thunk. Intra-function branches are control flow, not references, and are omitted from `--from`. |
 | `data` | The target's address is materialized as a value — address-taken: a function pointer, a string pointer, a global's address. Also the value of a **literal pool** word an instruction loads (`ldr r0,[0x86e4]` where 0x86e4 holds the string's address), which is how an ARM literal gets an owning function at all; the pool word itself is a separate `read` row from the same instruction. Only pointer-sized reads of *non-writable* memory are followed. Also an address a **register pair** forms across instructions (`adrp x0,…; add x0,x0,#0x488`, `lui a0,…; addi a0,a0,0x25`), filed from the instruction that completes it. |
 | `read` | The target is loaded from — including through a register an earlier instruction set to (part of) the address (`adrp x8,…; ldr w0,[x8,#0x1d0]`, `lui a1,…; lw a1,0x1d0(a1)`). |
@@ -2271,12 +2280,17 @@ only forms the address, `read`/`write` where it accesses memory there. A carried
 value lives for at most eight instructions, survives a call only in a callee-saved
 register, and is never believed past a **join** — an instruction another branch,
 switch case or function entry also reaches — so two bases meeting at a label form
-nothing. The page or high half on its own is not the reference (`adrp`'s page row
-appears only where it did before, when the page itself is a mapped address).
+nothing. The page or high half on its own is not the reference: an AArch64 `adrp`
+page is a `data` row only when the run uses the page itself (`ldr x16,[x16]`, or
+the `add x0,x0,#0` that completes a page-aligned symbol) or nothing the walk
+follows completes it, never when the run only completes it into other addresses on
+that page.
 
 Shapes that build a number rather than an address do not file `data`: a copy of the
 register, bitwise composition (`movk`, `ori`, `movt`) and a 32-bit add widened into a
-64-bit register (RV64 `addiw`). In an ELF shared object or PIE an absolute immediate
+64-bit register (RV64 `addiw`). Nor does a constant subtracted from a carried
+address, which biases it: Swift's `sub x8,x8,#0x20` turns a string literal's address
+into its string object, and the literal stays the reference. In an ELF shared object or PIE an absolute immediate
 cannot be an address, so there only a value computed from the instruction's own
 address (`auipc`, A32 `add rX,pc`) is carried; on x86-64 and AArch64 the PC-relative
 form (`lea [rip+…]`, `adrp`) is already a decode-time constant and is carried as
@@ -3816,8 +3830,8 @@ emitted. Two runs of one command are byte-identical.
 | `assembly` | The function's instruction listing, one `<vma>  <MNEMONIC operands>` per line — the `kuna disassemble` walk, so an undecodable byte inside the body is a `.byte 0x..` row rather than the end of the listing. Present whenever a body was attempted, including when the decompile failed: the listing is what is left to look at. |
 | `codeC` | The decompiled body, byte-identical to this function's `decompile-all --json` `code` — including the `--option structdefs on` type-definition preamble, which this document has nowhere else to carry (it has no header artifact). |
 | `error` | Why this function has no `codeC`, when the decompile was attempted and failed. `null` with a `null` `codeC` means no body was attempted: a bodyless `kind`, or a `--functions`/`--addr` narrowing that did not select it. |
-| `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too. An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
-| `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. A non-null target is also a row and a `jump` edge endpoint. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does and an AArch64 `adrp`/`ldr`/`br x16` stub does not — a Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
+| `hasIndirectCalls` | The body contains a computed call (`CALLIND`). It files no edge when its destination is computed at run time; a `call qword ptr [slot]` through a fixed slot does file one, and sets this flag too, as does a call through a register loaded from that slot (`ldr x16,[x16,…]; blr x16`, `mov rax,[rip+slot]; call rax`). An indirect *branch* is not one — see `forwardsTo`. The call site is attributed to the row that contains it, the same rule that decides which function `kuna xrefs --from` lists an instruction under. |
+| `forwardsTo` | Where a forwarding entry sends control: the destination of a direct lone jump, or the fixed pointer slot an indirect one reads. A non-null target is also a row and a `jump` edge endpoint. The slot half needs the jump to name it as a decode-time constant, which an x86 `jmp [rip+disp]` stub does (an x86-64 Mach-O `__stubs` entry forwards to its `__la_symbol_ptr` or `__got` slot) and an AArch64 `adrp`/`ldr`/`br x16` stub does not — an arm64 Mach-O `__stubs` entry is therefore `kind` `thunk` with a `null` `forwardsTo`, and the import slot it reaches is a row of its own found by name. `null` for anything that does not forward. |
 | `isEntryPoint` | This row is the image's declared entry point, resolved through the inventory so an ARM `e_entry` carrying the Thumb mode bit still lands on it, and rebased so a Mach-O `LC_MAIN` — which states a `__TEXT`-relative file offset rather than a VMA — marks the row it names. A format that declares no entry point marks no row. |
 | `edges[].kind` | The `kuna xrefs` kind, so the two surfaces cannot disagree: `call` a call, direct or through the fixed slot an imported API is called through; `jump` a tail call or a branch into a neighbouring entry; `data` an address handed to something else to call — the edge that gives `main` a caller, since `_start` passes it to `__libc_start_main` as a pointer rather than calling it. A caller that both calls and mentions one callee gets one edge carrying the strongest of the two. |
 | `edges[].calleeOrder` | Contiguous and zero-based per caller, in first-reference order, deduplicated on the callee. |
