@@ -2136,8 +2136,11 @@ mod tests {
         // and kuna-pltlocal / a call through a bound PLT stub takes the definition's prototype (option pltlocal)
         // and kuna-floatstore / a float stored into unknown bytes is a float store
         // and kuna-haltloopguard / a store before a loop the function never leaves is kept (option haltloopguard)
+        // and kuna-lanedivide-freefanout / a lane split giving a free varnode two readers is refused, not fatal
+        // and kuna-octeon-core / explicit Octeon integer variants
+        // and kuna-truncptrflow / pointer flow on a truncated address space (option truncptrflow)
         // and kuna-retcopyclone / a cloned return block does not store a global a second time
-        assert_eq!(count, 614, "corpus file count drifted");
+        assert_eq!(count, 623, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

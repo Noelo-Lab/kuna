@@ -1224,8 +1224,8 @@ that output when propagated into integer storage: the declared address remains
 available for named-global recovery instead of becoming an image-address integer.
 This also applies to computed interior addresses: losing the declaration before pointer recovery can leave a base address embedded in integer arithmetic. Without a pointer declaration, integer expressions retain their ordinary meaning.
 
-A `decompiler/crates/kuna-decomp/src/infra/action.rs (Rule)` is a stateless
-pattern→rewrite unit: `get_op_list` declares the opcodes it can fire on
+A `decompiler/crates/kuna-decomp/src/infra/action.rs (Rule)` is a
+pattern→rewrite unit with no state of its own beyond what its `reset` clears: `get_op_list` declares the opcodes it can fire on
 (defaulting to *all* opcodes), and `apply_op(op, data)` either returns 0 (no
 match — every guard along the way simply declines) or performs its whole
 rewrite and returns 1. Rules are owned by an
@@ -1393,9 +1393,35 @@ group):
 
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested
-phis can spill to owned buffers without changing visit order. The lists add
-no persistent state to an operation or rule; both success and failure clear
-the same marks, and successful rewriting iterates copied IDs directly.
+phis can spill to owned buffers without changing visit order. Both success and
+failure clear the same marks, and successful rewriting iterates copied IDs
+directly. The traversal list is read in place: each entry is one
+`MULTIEQUAL`'s run of input slots, in the order upstream appends that op's
+inputs, so a walk that stops early has not copied the inputs of every
+`MULTIEQUAL` it expanded first. Nothing writes an input during the walk, so a
+slot read when the walk reaches it holds the value upstream copied.
+
+The rule is the one stateful member of oppool1: a walk that fails records a
+witness for its op, the input slots leading from the op to the non-matching
+branch it stopped at
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_3.rs
+(RuleMultiCollapse::fails_again)`). The next application derives the defining
+branch as the walk would (the first input no `MULTIEQUAL` writes, else the first
+unmarked input) and replays the witness. When every link is still an input the
+walk would expand (unmarked, not the op's own output, not the defining branch,
+not functionally equal to it, and written by the `MULTIEQUAL` the next link
+names) and the last slot still holds a branch that matches nothing, the walk
+would reach that branch, and an earlier stop is a failure too. The rule
+answers "no change" without walking. Any other outcome walks, and records a
+new witness if the walk fails. The replay comes before the heritage test, whose
+failure is also "no change". Witnesses belong to the rule instance and are
+dropped when its pool resets. On a dispatch loop, where each handler's joins
+take one input per dispatch site, most applications in a sweep repeat a failed
+walk over a web nothing has edited since. On CPython 3.11's
+`_PyEval_EvalFrameDefault` (joins of about 190 inputs), one pass applies the
+rule 17.2 million times. Upstream's walk appends 35 billion entries and reads
+17.7 billion of them. With witnesses, 16.97 million applications answer from a
+witness and 223 thousand walk. The collapses are the same 15,113.
 
 `RulePullsubIndirect`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RulePullsubIndirect)`)
@@ -2060,6 +2086,52 @@ ops are not decoded and the CALLOTHER stays.
 
 ## 3.3 Sub-variable flow
 
+**Pointer flow on a truncated address space** (`option truncptrflow`, default
+on). A truncated default data space has addresses narrower than the registers
+that hold them: MIPS 64-32addr and N32, PowerPC e500 and the 32addr variants,
+AArch64 ilp32. On such an architecture `RulePtrFlow`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs (RulePtrFlow)`)
+narrows
+LOAD/STORE address operands to their referenced space's address width and
+indirect branch/call targets to the code-space width. A SUBPIECE takes the low
+bytes (with storage adjusted for endianness); constants are masked directly.
+Other uses retain the full value. Pointer-flow marks describe address uses;
+they do not prove that upper integer bits are zero or unused. SUBPIECE- and
+INT_ZEXT-triggered sub-variable analysis must apply its normal consumption and
+value-range checks even to marked pointers, including comparisons, returns
+and other consumers reached through arithmetic, copies or merges. In N32,
+this works with the entry stack-register reconstruction (chapter 04) to recover
+stack arguments and locals without truncating their 64-bit contents. Narrow
+operands are never widened. Upstream sets sub-variable flow's aggressive mode
+for a pointer-flow value; kuna does not, since the mark says nothing about the
+upper bits of the full register.
+
+Truncation can leave hundreds of fresh SUBPIECEs of one stack or base
+register in a single pool pass. While the option is live, `RuleSelectCse`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RuleSelectCse)`)
+therefore returns at once when the visited op's own output is not yet
+heritaged. A pair is merged only when both outputs are heritaged, so the pair
+such a visit would have merged is merged instead when one of its own ops is
+visited, later in the pass or in the next one. No merge is lost, but merges can
+happen in a different order, and so can the rules that run between them, which
+changes how a few values group into variables. Rebuilding and sorting the list
+of all siblings at every visit made a large N32 or e500 function several times
+slower (bzip2's `BZ2_compressBlock` on N32: 11.8 s of CPU, against 1.9 s with
+the early return and 1.5 s with the option off).
+
+The option costs real work on the targets it reaches: decompiling a whole
+binary takes 10-80% more CPU there (MIPS N32 17-24%, AArch64 ilp32 18%,
+PowerPC 64-32addr 52%, PowerPC e500 10-77%), because every address use gains a
+SUBPIECE that later passes must simplify, and jump tables that used to stop at
+unmapped targets now have their cases decompiled. As upstream's constructor
+does, the universal schedule registers `RulePtrFlow` on no opcode when the
+default data space is not truncated, and `RuleSelectCse` checks the option and
+the space before its early return, so an untruncated architecture runs none of
+these steps and prints the same output with the option on or off. Off restores
+the earlier output on truncated targets byte for byte: the port had
+`RulePtrFlow` stubbed out (its op list was always empty), the stack register
+was a single wide input, and `RuleSelectCse` visited every op.
+
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`
 shrinks a logical value out of a larger container: given a *root* varnode and a
 bit-mask identifying where the small value lives, it traces the value's flow
@@ -2314,6 +2386,23 @@ storage it had already rewritten, so the next varnode it read could be one the
 failed split had deleted (`ActionLaneDivide: stale vn`), or the pipeline ran
 on over the half-rewritten function. This is a correctness repair with no
 option.
+
+One such failure is now caught before anything is rewritten: a transform that
+would give a free varnode it creates a second reader
+(`decompiler/crates/kuna-decomp/src/substrate/transform.rs
+(check_free_fanout)`). The action runs that check once a trace succeeds and
+counts a refusal as a failed trace: it tries the next lane size, and the
+failure memo holds it like any other failure, since the check reads only what
+the trace built. Upstream throws from `placeInputs` and fails the function.
+x86 code meets this when instructions share unique-space temporaries: the
+three `IMUL`s of `sub_e87b0` in Ubuntu 26.04's bash all compute their flags
+through `u0x5a200`, one at 16 bytes, so heritage carries the 16-byte temporary
+across blocks from an input at the entry, and its lanes, being unique storage,
+become temporaries read by four MULTIEQUALs. The function used to fail with
+`laned register split failed part way: Free varnode has multiple descendants`;
+it now decompiles without that split
+(`tests/stages/kuna-lanedivide-freefanout.xml`). This is a correctness repair
+with no option.
 
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.

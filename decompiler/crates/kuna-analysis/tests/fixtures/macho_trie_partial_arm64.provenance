@@ -1,0 +1,27 @@
+macho_trie_partial_arm64 -- arm64 Mach-O dylib whose symbol table keeps one of
+its three exports.
+
+What it is
+  A 16,896-byte MH_DYLIB, SHA-256
+  a03a23cc11d4ced675c77518bf6c536ec103058059fbeef616060a735e182913, linked
+  from macho_trie_partial.s:
+    0x240 _audit_export_a, _audit_export_b   (both exported)
+    0x248 _audit_caller                      (exported, `b _audit_export_b`)
+  macho_trie_partial_arm64.py then keeps only `_audit_export_a` in the nlist
+  (LC_SYMTAB nsyms 1, one external-defined entry), the shape of a Swift
+  framework that ships a few external nlist entries beside a full export trie.
+  The trie is untouched, so it alone names `_audit_export_b` and
+  `_audit_caller`. The code signature is stale; nothing reads it.
+
+How it was built (no macOS SDK; host clang + the rustup-bundled ld64.lld)
+  clang -target arm64-apple-macos11 -c macho_trie_partial.s -o p.o
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  "$LLD" -arch arm64 -dylib -platform_version macos 11.0 11.0 -fixup_chains \
+         -install_name @rpath/libpartial.dylib -o full.dylib p.o
+  python3 macho_trie_partial_arm64.py full.dylib macho_trie_partial_arm64 _audit_export_a
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). Prebuilt because CI
+  has no Mach-O linker.
+
+What it pins
+  kuna functions lists _audit_caller at 0x248 (base: sub_248), and
+  _audit_export_b is an alias of _audit_export_a at 0x240 that selects it.

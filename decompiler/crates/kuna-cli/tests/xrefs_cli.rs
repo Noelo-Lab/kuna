@@ -212,6 +212,122 @@ fn an_aarch64_call_site_is_not_a_reference_to_itself() {
     }
 }
 
+/// Each `(from, to, kind)` row of a `kuna xrefs ... --json` document.
+fn edges(doc: &str) -> Vec<(String, String, String)> {
+    let document: serde_json::Value = serde_json::from_str(doc).expect("valid xref JSON");
+    let field = |row: &serde_json::Value, key: &str| {
+        row.get(key).and_then(serde_json::Value::as_str).expect("row field").to_owned()
+    };
+    document["xrefs"]
+        .as_array()
+        .expect("xref array")
+        .iter()
+        .map(|row| (field(row, "from_address_hex"), field(row, "to_address_hex"), field(row, "kind")))
+        .collect()
+}
+
+/// An instruction that forms the address of the instruction right after it
+/// references it, exactly as one forming its own address or the one after next
+/// does (GH #1360): AArch64 `adr` on ELF and on the issue's own Mach-O, x86-64
+/// `lea rax,[rip]` and `mov eax,offset`, A32 `adr`, Thumb-2 `adr.w`, a RISC-V
+/// `auipc`+`addi` pair that ends right before its label, and SuperH `mova` in
+/// and out of a branch's delay slot (`rts; mova`, `bt/s; mova`).
+#[test]
+fn an_address_of_the_next_instruction_is_a_data_reference() {
+    for (bin, func, from, to) in [
+        ("adrnext_aarch64", "audit_self", "0x210120", "0x210120"),
+        ("adrnext_aarch64", "audit_next", "0x210128", "0x21012c"),
+        ("adrnext_aarch64", "audit_after", "0x210130", "0x210138"),
+        ("adrnext_macho_arm64", "_audit_self", "0x1250", "0x1250"),
+        ("adrnext_macho_arm64", "_audit_next", "0x1258", "0x125c"),
+        ("adrnext_macho_arm64", "_audit_after", "0x1260", "0x1268"),
+        ("adrnext_x86_64", "lea_next", "0x201120", "0x201127"),
+        ("adrnext_x86_64", "mov_next", "0x201130", "0x201135"),
+        ("adrnext_arm", "a_next", "0x200b4", "0x200b8"),
+        ("adrnext_arm", "t_next", "0x200e6", "0x200ea"),
+        ("adrnext_rv64", "la_next", "0x1112c", "0x11130"),
+    ] {
+        let doc = xrefs(&[&fixture(bin), "--from", func, "--json"]);
+        let want = (from.to_owned(), to.to_owned(), "data".to_owned());
+        assert!(edges(&doc).contains(&want), "{bin} {func}: no data {from} -> {to}:\n{doc}");
+    }
+    let sh4 = fixture("adrnext_sh4");
+    for (func, from, to) in [
+        ("rts_mova", "0x10000", "0x10004"),
+        ("bts_mova", "0x1000c", "0x10010"),
+        ("mova_next", "0x1001a", "0x1001c"),
+    ] {
+        let doc = xrefs(&[&sh4, "--from", func, "--json", "--target", "SuperH4:LE:32:default"]);
+        let want = (from.to_owned(), to.to_owned(), "data".to_owned());
+        assert!(edges(&doc).contains(&want), "adrnext_sh4 {func}: no data {from} -> {to}:\n{doc}");
+    }
+}
+
+/// A link's return address is never a reference, however SLEIGH spells the
+/// link: beside a `CALL` (`bl`, `blr`, `blx`, `call`, `jal`, `jalr`, `bctrl`),
+/// a `BRANCH` (x86 `call $+5`, PowerPC `bcl 20,31` and `bl` to the next, RISC-V
+/// `jal t0`, MIPS `bal` past its delay slot) or a `CALLOTHER` (`syscall`), or
+/// with no branch at all (A32 `mov lr,pc`, MIPS `nal`, on MIPS64 too, whose
+/// compiler spec names no return-address register), and SuperH `bsr` past its
+/// delay slot. Each pair is a link and its fall-through.
+#[test]
+fn no_link_references_the_return_address_it_leaves() {
+    let cases: [(&str, &[(&str, &str)]); 8] = [
+        ("adrnext_aarch64", &[("0x210140", "0x210144"), ("0x210148", "0x21014c"), ("0x21014c", "0x210150")]),
+        ("adrnext_x86_64", &[
+            ("0x201137", "0x20113c"),
+            ("0x201143", "0x201145"),
+            ("0x201145", "0x20114a"),
+            ("0x20114b", "0x20114d"),
+        ]),
+        ("adrnext_arm", &[
+            ("0x200c8", "0x200cc"),
+            ("0x200d0", "0x200d4"),
+            ("0x200d4", "0x200d8"),
+            ("0x200dc", "0x200e0"),
+            ("0x200ee", "0x200f2"),
+        ]),
+        ("adrnext_rv64", &[
+            ("0x11140", "0x11144"),
+            ("0x1114c", "0x11150"),
+            ("0x11150", "0x11154"),
+            ("0x11154", "0x11158"),
+        ]),
+        ("adrnext_ppc32", &[
+            ("0x100100b8", "0x100100bc"),
+            ("0x100100cc", "0x100100d0"),
+            ("0x100100e8", "0x100100ec"),
+            ("0x100100f8", "0x100100fc"),
+        ]),
+        ("adrnext_mips", &[
+            ("0x20154", "0x2015c"),
+            ("0x2016c", "0x20174"),
+            ("0x20188", "0x20190"),
+            ("0x20198", "0x201a0"),
+        ]),
+        ("adrnext_mips64", &[
+            ("0x20214", "0x2021c"),
+            ("0x2022c", "0x20234"),
+            ("0x20248", "0x20250"),
+            ("0x20258", "0x20260"),
+        ]),
+        ("adrnext_sh4", &[("0x10020", "0x10024")]),
+    ];
+    for (bin, links) in cases {
+        let target: &[&str] = match bin {
+            "adrnext_mips64" => &["--target", "MIPS:BE:64:default"],
+            "adrnext_sh4" => &["--target", "SuperH4:LE:32:default"],
+            _ => &[],
+        };
+        for &(site, fall) in links {
+            let path = fixture(bin);
+            let doc = xrefs(&[&[path.as_str(), "--to", fall, "--json"], target].concat());
+            let leaked = (site.to_owned(), fall.to_owned(), "data".to_owned());
+            assert!(!edges(&doc).contains(&leaked), "{bin}: the link at {site} references {fall}:\n{doc}");
+        }
+    }
+}
+
 /// An address target works as well as a name, and resolves the name back.
 #[test]
 fn an_address_target_resolves_its_name() {

@@ -1092,13 +1092,50 @@ impl TransformManager {
     /// `piece` properties via `transferVarnodeProperties`, the `constant_iop`
     /// placeholder via [`crate::funcdata_varnode::op_iop_decode`], and indirect
     /// creation via `markIndirectCreation`.
+    ///
+    /// (kuna) Fails before touching `fd` when [`Self::check_free_fanout`] does.
     pub fn apply(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
+        self.check_free_fanout(fd)?;
         let mut input_list: Vec<TVarRef> = Vec::new();
         self.create_ops(fd)?;
         self.create_varnodes(fd, &mut input_list)?;
         self.remove_old(fd);
         self.transform_input_varnodes(fd, &input_list)?;
         self.place_inputs(fd)?;
+        Ok(())
+    }
+
+    /// (kuna) Reject a transform that would give a free Varnode it creates a
+    /// second reader (`Varnode::addDescend`'s error), which `place_inputs`
+    /// would otherwise raise after `remove_old` has already destroyed IR. A
+    /// constant may have several readers: `opSetInput` gives each a copy.
+    pub fn check_free_fanout(&self, fd: &Funcdata) -> KunaResult<()> {
+        let mut readers: BTreeMap<TVarRef, usize> = BTreeMap::new();
+        for op in &self.new_ops {
+            for rvn in op.input.iter().flatten() {
+                *readers.entry(*rvn).or_default() += 1;
+            }
+        }
+        for (rvn, count) in readers {
+            if count < 2 {
+                continue;
+            }
+            let var = self.var(rvn);
+            if var.def.is_some() {
+                continue;
+            }
+            let free = match var.ty {
+                tvar_type::normal_temp | tvar_type::piece_temp => true,
+                tvar_type::piece => !var
+                    .vn
+                    .and_then(|vn| fd.vbank().get(vn))
+                    .is_some_and(|vn| vn.is_input()),
+                _ => false,
+            };
+            if free {
+                return Err(KunaError::lowlevel("Free varnode has multiple descendants"));
+            }
+        }
         Ok(())
     }
 

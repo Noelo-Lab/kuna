@@ -19,7 +19,7 @@ const DECOMPILE_GROUPS: &[&str] = &[
 
 #[test]
 fn materializes_without_panic_and_names_universal_root() {
-    let act = build_universal_action(None, None, vec![]);
+    let act = build_universal_action(None, None, vec![], false);
     // The C++ outer node is the universal restart group, name "universal",
     // carrying rule_onceperfunc.
     assert_eq!(act.get_name(), UNIVERSAL_NAME);
@@ -29,7 +29,7 @@ fn materializes_without_panic_and_names_universal_root() {
 #[test]
 fn install_into_database_derives_decompile_root() {
     let mut db = ActionDatabase::new();
-    install_universal(&mut db, None, None, vec![]);
+    install_universal(&mut db, None, None, vec![], false);
     // The default groups must be present and the universal registered.
     db.set_current("decompile").expect("derive decompile root");
     assert_eq!(db.get_current_name(), "decompile");
@@ -52,7 +52,7 @@ fn dump_filters_out_excluded_group_actions() {
     // normalizesetup (group "normalanalysis"), funclink_outonly (group
     // "noproto") and normalizebranches (group "normalizebranches") are NOT in
     // the decompile grouplist, so the decompile dump must omit them.
-    let sched = universal_sched(None, None, vec![]);
+    let sched = universal_sched(None, None, vec![], false);
     let filter = ActionListFilter::from_names(DECOMPILE_GROUPS.iter().copied());
     let dump = sched.list_action_dump(&filter);
     for excluded in ["normalizesetup", "funclink_outonly"] {
@@ -86,7 +86,7 @@ fn build_default_groups_decompile_matches_test_constant() {
 
 #[test]
 fn dump_indices_are_sequential_and_dense() {
-    let sched = universal_sched(None, None, vec![]);
+    let sched = universal_sched(None, None, vec![], false);
     let filter = ActionListFilter::from_names(DECOMPILE_GROUPS.iter().copied());
     let dump = sched.list_action_dump(&filter);
     let mut expect = 0u32;
