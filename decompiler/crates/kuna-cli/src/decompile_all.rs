@@ -9,9 +9,11 @@
 //! bodies is a run-level failure.
 
 mod callee_first;
+mod omit;
 
 pub(crate) use callee_first::decompile_callee_first;
 use callee_first::decompile_entries_callee_first;
+pub(crate) use omit::Omit;
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -65,6 +67,10 @@ pub(crate) struct Args {
     /// `--no-vars`: skip the per-function variable extraction (faster; drops the
     /// `variables` array used by decbench's `type_match`).
     pub(crate) no_vars: bool,
+    /// `--omit KEY[,KEY]...` (`decompile-all --json`, `decompile --json`): the
+    /// record collections left out of the document. Omitting `variables` also
+    /// sets `no_vars`, so the extraction is skipped too.
+    pub(crate) omit: Omit,
     /// `--max-fn-seconds N` (decompile-all / decompile-project): per-function
     /// decompile watchdog budget in seconds; `0` disables.  A function that
     /// exceeds it is recorded as that function's `error` (the batch continues)
@@ -156,6 +162,7 @@ impl Args {
             addrs: Vec::new(),
             entry_seeds: Vec::new(),
             no_vars: false,
+            omit: Omit::default(),
             max_fn_seconds: 0,
             max_fn_memory: Some(0),
             options: Vec::new(),
@@ -187,6 +194,12 @@ impl Args {
     /// The Mach-O fat-slice preference this run's `--slice` / `--target` names.
     pub(crate) fn slice_pref(&self) -> SlicePref {
         kuna_analysis::loader::macho_fat::slice_pref(self.slice.as_deref(), self.target.as_deref())
+    }
+
+    /// Whether the decompile runs the markup render: the `--json` line mappings
+    /// and the variables' `line_numbers`/`addresses` both come from it.
+    pub(crate) fn wants_provenance(&self) -> bool {
+        self.json && !(self.omit.line_mappings && self.no_vars)
     }
 }
 
@@ -628,6 +641,7 @@ pub fn run(argv: &[String]) -> i32 {
                     filters.narrows().then_some(run.discovered),
                     &run.assertions,
                     &run.interior,
+                    args.omit,
                 )
             } else {
                 render_c(&run.funcs)
@@ -1297,7 +1311,7 @@ fn decompile_all(args: &Args, filters: &Filters) -> Result<AllRun, String> {
             &targets,
             &inventory,
             /* want_proto= */ false,
-            /* want_provenance= */ args.json,
+            /* want_provenance= */ args.wants_provenance(),
             /* want_types= */ false,
             load_seconds,
             synth,
@@ -1376,7 +1390,7 @@ pub(crate) fn decompile_entries(
     arm_fn_budgets(prog, args);
     let opts = DecompileOptions {
         no_vars: args.no_vars,
-        want_provenance: args.json,
+        want_provenance: args.wants_provenance(),
         single_target: targets.len() == 1,
         want_pointer_arguments: pointer_arguments,
         ..DecompileOptions::default()
@@ -2091,8 +2105,9 @@ pub(crate) fn render_result_json(
     error: Option<&str>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    omit: Omit,
 ) -> String {
-    render_selected_json(binary, funcs, options, error, None, assertions, interior)
+    render_selected_json(binary, funcs, options, error, None, assertions, interior, omit)
 }
 
 /// [`render_result_json`] plus the inventory `total` a NARROWED whole-binary run
@@ -2103,6 +2118,7 @@ pub(crate) fn render_result_json(
 /// whole program. An unfiltered `decompile-all --json` and every
 /// `kuna decompile --json` pass `None` and are byte-identical to before — the
 /// decbench backend consumes the first of those.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_selected_json(
     binary: &str,
     funcs: &[FuncResult],
@@ -2111,13 +2127,14 @@ pub(crate) fn render_selected_json(
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    omit: Omit,
 ) -> String {
     let language = crate::loadtime::explicit_output_language(options)
         .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
         .map(|lang| lang.print_name()).unwrap_or("c-language");
     format!(
         "{}\n",
-        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior))
+        dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior, omit))
     )
 }
 
@@ -2195,7 +2212,9 @@ fn stack_object_json(object: &kuna_decomp::kuna_stackobjectinfo::StackObjectInfo
     ])
 }
 
-/// Build the `decompile-all --json` document.
+/// Build the `decompile-all --json` document. A collection `omit` names is
+/// left out of every record and listed in the top-level `omitted`.
+#[allow(clippy::too_many_arguments)]
 fn result_json(
     binary: &str,
     funcs: &[FuncResult],
@@ -2204,15 +2223,12 @@ fn result_json(
     total: Option<usize>,
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
+    omit: Omit,
 ) -> Json {
     let functions = Json::Array(
         funcs
             .iter()
             .map(|f| {
-                let vars = Json::Array(f.variables.iter().map(var_json).collect());
-                let line_mappings =
-                    Json::Array(f.line_mappings.iter().map(line_mapping_json).collect());
-                let types = Json::Array(f.types.iter().map(type_json).collect());
                 let mut record = vec![
                     ("name".into(), Json::Str(f.name.clone())),
                     ("address".into(), Json::Number(f.address.to_string())),
@@ -2239,14 +2255,23 @@ fn result_json(
                         "unstructured_gotos".into(),
                         Json::Number(f.unstructured_gotos().to_string()),
                     ),
-                    ("line_mappings".into(), line_mappings),
-                    ("variables".into(), vars),
-                    // (kuna `structdefs`) The layout side: the definitions of
-                    // the composites this function's C names, as records.
-                    // Always present, `[]` unless the option is on.
-                    ("types".into(), types),
                 ];
-                if !f.stack_objects.is_empty() {
+                if !omit.line_mappings {
+                    record.push((
+                        "line_mappings".into(),
+                        Json::Array(f.line_mappings.iter().map(line_mapping_json).collect()),
+                    ));
+                }
+                if !omit.variables {
+                    record.push(("variables".into(), Json::Array(f.variables.iter().map(var_json).collect())));
+                }
+                // (kuna `structdefs`) The layout side: the definitions of the
+                // composites this function's C names, as records. Present unless
+                // omitted, `[]` unless the option is on.
+                if !omit.types {
+                    record.push(("types".into(), Json::Array(f.types.iter().map(type_json).collect())));
+                }
+                if !omit.variables && !f.stack_objects.is_empty() {
                     record.push(("stack_objects".into(), Json::Array(
                         f.stack_objects.iter().map(stack_object_json).collect(),
                     )));
@@ -2264,8 +2289,11 @@ fn result_json(
         // the document has to say which language `code` is in -- otherwise a
         // consumer cannot tell a Rust body from a C one without guessing.
         ("language".to_string(), Json::Str(language.to_string())),
-        ("count".to_string(), Json::Number(funcs.len().to_string())),
     ];
+    if let Some(omitted) = omit.json() {
+        fields.push(("omitted".to_string(), omitted));
+    }
+    fields.push(("count".to_string(), Json::Number(funcs.len().to_string())));
     if let Some(total) = total {
         fields.push(("total".to_string(), Json::Number(total.to_string())));
     }
@@ -2409,9 +2437,8 @@ fn var_json(v: &VarInfo) -> Json {
 mod provenance_json_tests {
     use super::*;
 
-    #[test]
-    fn result_schema_adds_line_and_variable_provenance() {
-        let function = FuncResult {
+    fn function() -> FuncResult {
+        FuncResult {
             name: "f".into(),
             address: 0x401000,
             byte_address: 0x401000,
@@ -2451,9 +2478,20 @@ mod provenance_json_tests {
             synth: None,
             pointerargs: None,
             detail: None,
-        };
+        }
+    }
 
-        let rendered = dumps_indent2(&result_json("fixture", &[function], "c-language", None, None, &[], &Default::default()));
+    fn render(omit: Omit) -> serde_json::Value {
+        let text = dumps_indent2(&result_json(
+            "fixture", &[function()], "c-language", None, None, &[], &Default::default(), omit,
+        ));
+        serde_json::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn result_schema_adds_line_and_variable_provenance() {
+        let rendered = dumps_indent2(&result_json("fixture", &[function()], "c-language", None, None, &[], &Default::default(), Default::default()));
+        assert!(!rendered.contains("\"omitted\""));
         assert!(rendered.contains("\"address\": 4198400"));
         assert!(rendered.contains("\"code\": \"int f(int x)\\n{\\n  return x;\\n}\""));
         assert!(rendered.contains("\"line_mappings\": ["));
@@ -2464,6 +2502,29 @@ mod provenance_json_tests {
         // key above it.
         assert!(rendered.contains("\"types\": ["));
         assert!(rendered.contains("\"definition\": \"struct mystruct {"));
+    }
+
+    #[test]
+    fn omitted_collections_leave_every_record_and_are_named() {
+        let mut omit = Omit::default();
+        omit.add("line_mappings,types").unwrap();
+        let doc = render(omit);
+        assert_eq!(doc["omitted"], serde_json::json!(["line_mappings", "types"]));
+        let record = doc["functions"][0].as_object().unwrap();
+        assert!(!record.contains_key("line_mappings") && !record.contains_key("types"));
+        assert_eq!(record["variables"][0]["line_numbers"], serde_json::json!([3]));
+        for key in ["name", "address", "code", "error", "unstructured_gotos"] {
+            assert!(record.contains_key(key), "{key} must survive --omit");
+        }
+        assert_eq!(doc["language"], "c-language");
+
+        omit.add("variables").unwrap();
+        let doc = render(omit);
+        assert_eq!(
+            doc["omitted"],
+            serde_json::json!(["line_mappings", "variables", "types", "stack_objects"])
+        );
+        assert!(!doc["functions"][0].as_object().unwrap().contains_key("variables"));
     }
 }
 
@@ -2559,6 +2620,7 @@ pub(crate) fn parse_args_with_filters(
     let mut addrs: Vec<EntrySelector> = Vec::new();
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
+    let mut omit = Omit::default();
     let mut max_fn_seconds: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
@@ -2601,6 +2663,7 @@ pub(crate) fn parse_args_with_filters(
         match a {
             "--json" => json = true,
             "--no-vars" => no_vars = true,
+            "--omit" if cmd == "decompile-all" => omit.add(&take(argv, &mut i, "--omit")?)?,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -2738,6 +2801,12 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
+    if !omit.is_empty() {
+        if !json {
+            return Err("--omit selects --json record keys; add --json".into());
+        }
+        no_vars |= omit.variables;
+    }
 
     if raw_image {
         if cmd == "decompile-graph" {
@@ -2877,6 +2946,7 @@ pub(crate) fn parse_args_with_filters(
             addrs,
             entry_seeds,
             no_vars,
+            omit,
             max_fn_seconds,
             max_fn_memory,
             options,
@@ -2932,7 +3002,8 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
+         \x20                   [--no-vars] [--omit line_mappings,variables,types] \\\n\
+         \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
@@ -2944,6 +3015,11 @@ fn usage_decompile_all() {
          Decompile every CODE-backed function in one in-process load (load-once,\n\
          decompile-many).  --json emits {{binary,count,functions:[{{name,address,code,variables,..}}]}};\n\
          without it, concatenated C with `// Function:` headers.\n\
+         --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
+         every record -- line_mappings, variables (with stack_objects), types --\n\
+         and lists them in a top-level `omitted` array, so an omitted collection\n\
+         is never mistaken for an empty one.\n\
+         --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\
          budget becomes its own `error` record and the batch continues.\n\
@@ -3217,10 +3293,10 @@ mod discovery_tests {
             failed.contains("\"error\": \"no functions discovered in fixture\""),
             "{failed}"
         );
-        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default());
+        let decompiled = render_result_json("fixture", &[], &[], Some("boom"), &[], &Default::default(), Default::default());
         assert!(decompiled.contains("\"error\": \"boom\""), "{decompiled}");
         assert!(
-            render_result_json("fixture", &[], &[], None, &[], &Default::default()).contains("\"error\": null")
+            render_result_json("fixture", &[], &[], None, &[], &Default::default(), Default::default()).contains("\"error\": null")
         );
     }
 
@@ -3232,13 +3308,13 @@ mod discovery_tests {
             ("setlanguage".into(), "rust-language".into()),
             ("setlanguage".into(), "c-language".into()),
         ];
-        assert!(render_result_json("f", &[], &options, None, &[], &Default::default()).contains("\"c-language\""));
-        assert!(render_result_json("f", &[], &[], None, &[], &Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &options, None, &[], &Default::default(), Default::default()).contains("\"c-language\""));
+        assert!(render_result_json("f", &[], &[], None, &[], &Default::default(), Default::default()).contains("\"c-language\""));
         let mut aliases = options.clone();
         aliases.push(("outlang".into(), "go".into()));
-        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default()).contains("\"go-language\""));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), Default::default()).contains("\"go-language\""));
         aliases.push(("setlanguage".into(), "rust-language".into()));
-        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default()).contains("\"rust-language\""));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default(), Default::default()).contains("\"rust-language\""));
     }
 }
 

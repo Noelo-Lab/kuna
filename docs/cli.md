@@ -259,6 +259,12 @@ step, and a function still running at N seconds in either fails with
 `per-function decompile budget exceeded (N s) in <pass>`, a note naming the
 flag, and exit 1 instead of spinning on.
 
+`--json` emits the `decompile-all` document for the one selected function (see
+*The JSON documents* under `decompile-all`), and takes the same record
+selection: `--no-vars` and `--omit line_mappings,variables,types` behave as they
+do there. Without `--json` both are refused, since the C text carries none of
+those collections.
+
 An option **name** is checked before anything is loaded, on every surface that takes
 `--option`, and an unrecognized one exits 2 rather than running as if it had not been
 given. Names are case- and separator-sensitive, so the message names the nearest
@@ -1760,12 +1766,50 @@ Per-function `code` can include whole-batch inference and pointer-argument casts
 that standalone `kuna decompile` cannot derive (elsewhere, see the injected
 defaults below). `error` isolates a single failed function, and `variables`
 (params in ABI order + DWARF/stack locals) feed type-recovery
-scoring. `--no-vars` leaves `variables` empty but still emits function line mappings.
+scoring. `--no-vars` leaves `variables` empty but still emits function line mappings;
+the empty array is indistinguishable from a function with no variables, which is
+what `--omit variables` below is for.
+
+**`--omit KEY[,KEY]...`** (repeatable, `decompile-all --json` and
+`decompile --json`) leaves whole collections out of every record, for a caller
+that wants the function's identity, `code` and `error` and not the rest. The keys
+are `line_mappings`, `variables` and `types`; `variables` also withholds
+`stack_objects`, which `--no-vars` already ties to it. An omitted key is absent
+from every record, not emptied, and the document says which ones in a top-level
+`omitted` array, in record order. `variables: []` therefore still means a function
+whose variables were examined and none reported, and an absent `stack_objects`
+with no `omitted` still means none were recovered. A document that omits nothing
+has no `omitted` key, so the default document is unchanged. The run-level
+`language`, `count`, `error` and `assertions` and each record's `name`,
+`address`, `address_hex`, `aliases`, `object_location`, `size`, `code`, `error`
+and `unstructured_gotos` (and `interior_to`, where it applies) are always present;
+`code` and the exit status are what they are without the flag. An unknown key
+exits 2.
+
+```bash
+kuna decompile ./fixture audit_many --json --omit line_mappings,variables,types
+#   {"binary": "./fixture", "language": "c-language",
+#    "omitted": ["line_mappings", "variables", "types", "stack_objects"],
+#    "count": 1, "error": null,
+#    "functions": [{"name": "audit_many", ..., "code": "void audit_many(void) ...",
+#                   "error": null, "unstructured_gotos": 0}],
+#    "assertions": []}
+```
+
+Omitting a collection also skips the work behind it where nothing else needs it.
+The line mappings and the variables' `line_numbers`/`addresses` come from a second,
+markup render of each function, which runs unless both `line_mappings` and the
+variables (`--omit variables` or `--no-vars`) are left out; `--omit variables`
+skips the variable and stack-object extraction, as `--no-vars` does. For one
+x86-64 function of 500 volatile stores, omitting all three takes the document
+from 75,234 bytes to 22,603 (its C is 21,623). Over 24 decbench binaries
+(3,830 functions) the whole-binary document shrinks to 18% of its default size,
+and a whole-binary run of `cmp` or `ln` takes 3-6% less time.
 
 `types` is the layout side of the same record: one object per composite, enum or
 typedef the function's C names, carrying its name, its definition text (the same
-line(s) the `decompile-project` header gives it) and its size. It is always
-present and is empty unless `--option structdefs on` — the array and the
+line(s) the `decompile-project` header gives it) and its size. It is present
+unless `--omit types` and is empty unless `--option structdefs on` — the array and the
 definitions that option prints above the function are one decision. `size` is
 the size the type is held at, which an opaque shell has too (a `libctypes`
 `FILE` reports 216 with no member known), so "layout unknown" is read off the
