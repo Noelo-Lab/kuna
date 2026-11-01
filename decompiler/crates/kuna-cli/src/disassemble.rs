@@ -90,6 +90,7 @@
 //! about the decode changes: the same walk, the same bytes, a different view of
 //! them.
 
+mod fixups;
 pub(crate) mod raw_pcode;
 
 use kuna_console::disasm::{
@@ -389,10 +390,13 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             if cut_short_by_image(&region, args.count, rows.len(), end) {
                 notes.push(image_bound_note(prog, &region));
             }
+            let pref = kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref());
+            let fixups = fixups::overlapping(&args.binary, pref, prog, region.start, end);
+            notes.extend(fixups.note());
             if args.json {
                 format!(
                     "{}\n",
-                    dumps_indent2(&data_result_json(args, &region, &rows, truncated, &notes))
+                    dumps_indent2(&data_result_json(args, &region, &rows, truncated, &notes, &fixups))
                 )
             } else {
                 render_data_text(&region, &rows, truncated)
@@ -804,6 +808,7 @@ fn data_result_json(
     rows: &[DataRow],
     truncated: bool,
     notes: &[String],
+    fixups: &fixups::Fixups,
 ) -> Json {
     let end = rows.last().map_or(region.start, |r| r.addr + r.bytes.len() as u64);
     let mut hex = String::new();
@@ -826,6 +831,7 @@ fn data_result_json(
     let mut doc = envelope(args, region, end, rows.len(), truncated, notes, "data");
     doc.push(("hex".into(), Json::Str(hex)));
     doc.push(("rows".into(), listed));
+    doc.extend(fixups.json_fields());
     Json::Object(doc)
 }
 
@@ -1218,7 +1224,12 @@ fn usage() {
          --json emits {{binary,kind,target,start,end,count,bytes,truncated,notes}} plus\n\
          instructions:[{{address,address_hex,size,bytes,mnemonic,operands,text}}] in the\n\
          code view, or hex + rows:[{{address,address_hex,size,bytes,ascii}}] in the data\n\
-         view; without it, a header line and one row per instruction or 16 bytes."
+         view; without it, a header line and one row per instruction or 16 bytes.\n\
+         \n\
+         The data view lists the load image's bytes. Each load-time fixup slot they\n\
+         overlap is in fixups:[{{address,size,kind,symbol,target,file_bytes,image_bytes,\n\
+         returned}}]: returned is `file`, `applied` (the loader's value) or `placeholder`\n\
+         (a bind's zero), and fixups_coverage names the metadata it came from."
     );
 }
 

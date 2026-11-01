@@ -296,3 +296,54 @@ fn unhandled_machine_is_inert() {
     let bytes = image64(21, 8, 6, 7);
     assert!(run(&bytes).writes.is_empty());
 }
+
+/// GH #1379: [`fixup_sites`] lists every slot, the import [`resolve`] leaves
+/// alone included, with what the loader stores where the image says it.
+#[test]
+fn fixup_sites_list_every_slot_with_its_kind() {
+    use crate::loader::kuna_dataptrs::Coverage;
+    let bytes = image64(62, 8, 6, 7);
+    let file = object::File::parse(&*bytes).unwrap();
+    let listed = fixup_sites(&file, &bytes);
+    assert_eq!(listed.coverage, Coverage::DynamicRelocations);
+    let site = |vma, kind, symbol: Option<&str>, addend, target| FixupSite {
+        vma,
+        width: 8,
+        kind,
+        symbol: symbol.map(str::to_owned),
+        addend,
+        target,
+    };
+    assert_eq!(
+        listed.sites,
+        vec![
+            site(GOT_VMA, FixupKind::Rebase, None, None, Some(TEXT_VMA)),
+            site(GOT_VMA + 8, FixupKind::Bind, Some("func"), Some(0), Some(TEXT_VMA)),
+            site(GOT_VMA + 16, FixupKind::Bind, Some("imp"), Some(0), None),
+        ]
+    );
+}
+
+/// A relocation outside the triple is listed, never valued, on a machine kuna
+/// has no triple for as on one it has.
+#[test]
+fn a_relocation_kuna_does_not_apply_is_listed_unvalued() {
+    let bytes = image64(21, 8, 6, 7);
+    let file = object::File::parse(&*bytes).unwrap();
+    let listed = fixup_sites(&file, &bytes);
+    assert_eq!(listed.sites.len(), 3);
+    assert!(listed.sites.iter().all(|s| s.kind == FixupKind::Relocation && s.target.is_none()), "{:?}", listed.sites);
+    assert_eq!(listed.sites[2].symbol.as_deref(), Some("imp"));
+}
+
+/// GH #1379: `SHT_RELR` entries. An address entry names one slot; a bitmap names
+/// the slots after it (bit 1 = the next word), then moves the window on by
+/// `8 * width - 1` words, so a second bitmap continues where the first ended.
+#[test]
+fn relr_entries_decode_to_their_slots() {
+    assert_eq!(relr_decode(&[0x4020, 0x9], 8), vec![0x4020, 0x4038]);
+    assert_eq!(relr_decode(&[0x1000, 0x3, 0x3], 8), vec![0x1000, 0x1008, 0x1008 + 63 * 8]);
+    assert_eq!(relr_decode(&[0x2000, 0x8000_0001], 4), vec![0x2000, 0x2004 + 30 * 4]);
+    assert_eq!(relr_decode(&[0x2000, 0x8000_0001, 0x3], 4), vec![0x2000, 0x2004 + 30 * 4, 0x2004 + 31 * 4]);
+    assert!(relr_decode(&[], 8).is_empty());
+}
