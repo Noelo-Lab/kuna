@@ -190,10 +190,13 @@ named unit test the harness did not run is an error.
 | `0` | every selected test ran and passed, and parity held when `--baseline` was given |
 | `1` | `--baseline` reports a regression or any failure, or (without `--baseline`) a datatest file errored |
 | `N` | without `--baseline`, `N` tests failed (the harness's own count, at most 255) |
-| `2` | a selection error, with the report still printed; or the run could not start (harness missing, unreadable or malformed baseline, usage error), with no report |
+| `2` | a selection error, with the report still printed; or the run could not start or record (harness missing, unreadable or malformed baseline, a `--save-baseline` write failure, usage error), with no report |
 | `128+N` | without `--baseline`, the harness was killed by signal `N` |
 
-A run with two failed tests also exits `2`, so automation should read
+A selection error takes precedence over every other status. With `--baseline`, as
+`make test` and `make test-stages` run it, the status is only ever `0`, `1` or `2`, so
+`2` there always means an error. Without `--baseline` the status is the failure count,
+so a run with two failed tests also exits `2`, and automation should read
 `selection.complete` rather than the status alone.
 
 With `--json` the report is one object: `unit_footer` / `data_footer` (`[passed, total]`
