@@ -4132,8 +4132,15 @@ impl Funcdata {
         while let Some(op) = cur {
             let operation = self.obank.get(op).expect("bb_set_order");
             cur = operation.basic_neighbours().1;
-            let vns: smallvec::SmallVec<[VarnodeId; 4]> =
-                operation.get_out().into_iter().chain((0..operation.num_input()).filter_map(|i| operation.get_in(i))).collect();
+            let mut vns: smallvec::SmallVec<[VarnodeId; 4]> = smallvec::SmallVec::new();
+            if let Some(out) = operation.get_out() {
+                vns.push(out);
+            }
+            for i in 0..operation.num_input() {
+                if let Some(vn) = operation.get_in(i) {
+                    vns.push(vn);
+                }
+            }
             for vn in vns {
                 let marked = self.vbank.get(vn).is_none_or(|v| v.is_cover_dirty_flag() && v.get_high().is_none());
                 if !marked {
@@ -5174,6 +5181,7 @@ impl Funcdata {
     /// `high_bank` <-> `vbank`/`obank` field split (the bridge cannot destructure
     /// private fields from another module).  `which` selects tied (`false`) vs
     /// input (`true`).
+    #[inline]
     pub(crate) fn high_tied_or_input_varnode(
         &self,
         high: crate::context::HighVariableId,
