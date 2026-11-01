@@ -1662,6 +1662,9 @@ pub struct ArchContext {
     /// (kuna) Cut an unguarded jump table where its rows run on into other
     /// functions (`switchrunon`). See [`crate::kuna_switchrunon`].
     pub switch_run_on: bool,
+    /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
+    /// sorted, so `switchrunon` sees the same functions with the option on.
+    pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
     pub const_select_jump: bool,
@@ -2140,6 +2143,7 @@ impl ArchContext {
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
+            lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
@@ -2675,11 +2679,17 @@ impl ArchContext {
     }
 
     /// (kuna `switchrunon`) A lookup of the known function entry at or before
-    /// an offset in `addr`'s space, over one global-scope snapshot.
+    /// an offset in `addr`'s space, over one global-scope snapshot and the
+    /// entries `lazyfuncs` left as names.
     pub fn function_owner(&self, addr: &Address) -> Option<impl Fn(u64) -> Option<u64>> {
         let query = self.effective_global_query(addr)?;
         let space_index = addr.get_space()?.get_index();
-        Some(move |offset| query.function_entry_at_or_before(space_index, offset))
+        let parked = Rc::clone(&self.lazy_entry_starts);
+        Some(move |offset| {
+            let named = query.function_entry_at_or_before(space_index, offset);
+            let after = parked.partition_point(|&start| start <= offset);
+            named.max(after.checked_sub(1).map(|at| parked[at]))
+        })
     }
 
     /// C++ `Scope::queryFunction(addr)` (`database.cc:1292`) restricted to the

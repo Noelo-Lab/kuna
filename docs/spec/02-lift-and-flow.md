@@ -1733,13 +1733,18 @@ the case targets.
    `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrunon.rs (own_rows)`)
    reads each row's owner from the global symbol snapshot (the last known
    function entry at or before it, `context.rs
-   (GlobalQuery::function_entry_at_or_before)`) and keeps only the leading
-   rows the function owns when every later row is owned by another function
-   or by none, and those rows reach at least two different owners. A table
-   that returns into its own function after leaving it, or whose outside
-   rows all land in one place (a split-off cold block, a function start
-   discovery put inside a body), is kept whole, and so is a guarded table or
-   one whose first row is already outside. The rows cut are not dispatched
+   (GlobalQuery::function_entry_at_or_before)`, together with the entries
+   `lazyfuncs` left as names, so that option does not change the cut) and
+   keeps only the leading rows the function owns when every later row is
+   owned by another function or by none, those rows reach at least two
+   different owners, and the first of them lands past the function's entry.
+   The run-on rows are the next functions' tables, which lie after this one,
+   so they run forward; gcc places a function's split-off `.cold` block
+   below every hot body, so a table whose first row out lands below the
+   entry is a cold case, not a run-on. That table is kept whole, and so is
+   one that returns into its own function after leaving it, one whose
+   outside rows all land in one place (a function start discovery put inside
+   a body), a guarded table, and one whose first row is already outside. The rows cut are not dispatched
    (`jumptable.rs (JumpTable::cut_rows_dispatched)`), so the late label pass
    does not read them back. The function then decodes its own body only:
    0x14000a040 prints its four cases in 0.7 s. Off keeps the whole-width
