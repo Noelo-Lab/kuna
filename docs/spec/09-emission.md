@@ -3073,6 +3073,14 @@ What differs, and why each is a language fact rather than a preference:
   numbers, since `b'a'` is a `u8`. A width Rust cannot name (3/5/6/7, x87's 10) spells `[u8; N]`, which
   is *more* faithful than C's `undefined3`: it names the storage exactly and does
   not claim to be a scalar.
+- **Integer widening** remains explicit: Rust has no implicit C integer
+  promotions, even when a wider arithmetic operation consumes the result.
+  `p9_emit/kuna_rustextend.rs` interprets signed core text storage at its
+  signed integer width before `INT_SEXT` widens it. A byte stored as `u8`
+  therefore extends through `as i8`, preserving negative byte values without
+  changing text declarations, pointer pointees, or return signatures. Narrow
+  arithmetic stays inside that interpretation so its original truncation occurs
+  before widening. Zero extension retains unsigned interpretation.
 - **Recovered composite names** are spelled in *type* position rather than
   flattened to an identifier. A composite carries whatever spelling the debug
   info recorded — `Result<u8, u32>`, `Vec<u8, alloc::alloc::Global>`,

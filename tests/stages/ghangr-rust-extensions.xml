@@ -1,0 +1,17 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">480fbec6488d04c74883c040c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="sign_scale"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">4080c60b480fbec64801f8c3</bytechunk>
+<symbol space="ram" offset="0x100020" name="narrow_sum"/>
+</binaryimage>
+<script>
+<com>option outlang rust</com>
+<com>parse line extern long sign_scale(long a, unsigned long b);</com>
+<com>parse line extern long narrow_sum(long a, unsigned long b);</com>
+<com>lo fu sign_scale</com><com>decompile</com><com>print C</com>
+<com>lo fu narrow_sum</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Rust signed byte interpretation precedes widening" min="2" max="2"> as i8</stringmatch>
+<stringmatch name="Rust retains explicit widening after narrow arithmetic" min="2" max="2"> as i64</stringmatch>
+</decompilertest>

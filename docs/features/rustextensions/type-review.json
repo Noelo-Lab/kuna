@@ -1,0 +1,103 @@
+{
+  "review_complete": true,
+  "scope": "Standalone rustc 1.90 compilation of all 481 changed bodies; selected type diagnostics only. Unresolved external names and pre-existing syntax defects prevent whole-program type checking.",
+  "diagnostic_codes": [
+    "E0308",
+    "E0277",
+    "E0605",
+    "E0606",
+    "E0369",
+    "E0600"
+  ],
+  "summary": {
+    "before": {
+      "functions_with_diagnostics": 425,
+      "diagnostics": 15133,
+      "compiles": 1
+    },
+    "after": {
+      "functions_with_diagnostics": 384,
+      "diagnostics": 14002,
+      "compiles": 2
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "increased_message_review": [
+    {
+      "fixture": "rust2025",
+      "address": "0x12e160",
+      "name": "sub_12e160",
+      "before_messages": 105,
+      "after_messages": 106,
+      "classification": "Required boolean-to-u64 widening exposes the existing mixed signed/unsigned arithmetic gap; the original expression already rejects i64 + bool at the same location. No other expression or declaration changed.",
+      "witnesses": [
+        {
+          "before_expression": "v34 = a1 as i64 + v35 + v28;",
+          "after_expression": "v34 = a1 as i64 + v35 as u64 + v28;",
+          "unchanged_declaration": "let mut v35: bool; // cf | r10b | r8b | r9b | stack - 0x50",
+          "before_diagnostics": [
+            {
+              "code": "E0277",
+              "message": "cannot add `bool` to `i64`",
+              "spans": [
+                {
+                  "line_start": 126,
+                  "line_end": 126,
+                  "column_start": 29,
+                  "column_end": 30,
+                  "label": "no implementation for `i64 + bool`",
+                  "text": [
+                    {
+                      "text": "            v34 = a1 as i64 + v35 + v28;",
+                      "highlight_start": 29,
+                      "highlight_end": 30
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "address": "0x318f0",
+      "name": "core::slice::sort::stable::quicksort::quicksort",
+      "before_messages": 104,
+      "after_messages": 106,
+      "classification": "Required boolean-to-u64 widening exposes the existing mixed signed/unsigned arithmetic gap; the original expression already rejects i64 + bool at the same location. No other expression or declaration changed.",
+      "witnesses": [
+        {
+          "before_expression": "v35 = a1 as i64 + v36 + v29;",
+          "after_expression": "v35 = a1 as i64 + v36 as u64 + v29;",
+          "unchanged_declaration": "let mut v36: bool; // cf | cl | r10b | r8b | r9b | stack - 0x50",
+          "before_diagnostics": [
+            {
+              "code": "E0277",
+              "message": "cannot add `bool` to `i64`",
+              "spans": [
+                {
+                  "line_start": 276,
+                  "line_end": 276,
+                  "column_start": 27,
+                  "column_end": 28,
+                  "label": "no implementation for `i64 + bool`",
+                  "text": [
+                    {
+                      "text": "          v35 = a1 as i64 + v36 + v29;",
+                      "highlight_start": 27,
+                      "highlight_end": 28
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limitations": "No newly diagnosed function and no previously compiling body regresses. This does not claim whole-program compilation or absence of every new diagnostic in already-invalid runtime bodies."
+}

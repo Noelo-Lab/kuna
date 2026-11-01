@@ -1,0 +1,954 @@
+[
+  {
+    "fixture": "grep",
+    "language": "c",
+    "side": "before",
+    "address": "0x16d40",
+    "name": "sub_16d40",
+    "consistent_bijective_struct_renaming": {
+      "struct_20": "struct_21",
+      "struct_21": "struct_20"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "grep",
+    "language": "c",
+    "side": "after",
+    "address": "0x16d40",
+    "name": "sub_16d40",
+    "consistent_bijective_struct_renaming": {
+      "struct_20": "struct_21",
+      "struct_21": "struct_20"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "grep",
+    "language": "rust",
+    "side": "before",
+    "address": "0x16d40",
+    "name": "sub_16d40",
+    "consistent_bijective_struct_renaming": {
+      "struct_20": "struct_21",
+      "struct_21": "struct_20"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "grep",
+    "language": "rust",
+    "side": "after",
+    "address": "0x16d40",
+    "name": "sub_16d40",
+    "consistent_bijective_struct_renaming": {
+      "struct_20": "struct_21",
+      "struct_21": "struct_20"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "rust2025",
+    "language": "c",
+    "side": "before",
+    "address": "0xae9a0",
+    "name": "sub_ae9a0",
+    "consistent_bijective_struct_renaming": {
+      "struct_90": "struct_89",
+      "struct_89": "struct_90"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "rust2025",
+    "language": "c",
+    "side": "after",
+    "address": "0xae9a0",
+    "name": "sub_ae9a0",
+    "consistent_bijective_struct_renaming": {
+      "struct_90": "struct_89",
+      "struct_89": "struct_90"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "rust2025",
+    "language": "rust",
+    "side": "before",
+    "address": "0xae9a0",
+    "name": "sub_ae9a0",
+    "consistent_bijective_struct_renaming": {
+      "struct_90": "struct_89",
+      "struct_89": "struct_90"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "rust2025",
+    "language": "rust",
+    "side": "after",
+    "address": "0xae9a0",
+    "name": "sub_ae9a0",
+    "consistent_bijective_struct_renaming": {
+      "struct_90": "struct_89",
+      "struct_89": "struct_90"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x155e0",
+    "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x156a0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x156b0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x24040",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x241b0",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x24a90",
+    "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x24d10",
+    "name": "std::sys::backtrace::output_filename",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x24e00",
+    "name": "std::sys::backtrace::__rust_end_short_backtrace",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x25fd0",
+    "name": "std::alloc::rust_oom::{closure#0}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x26af0",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x27540",
+    "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_53": "struct_53"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x28e30",
+    "name": "core::str::validations::next_code_point",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x2ccc0",
+    "name": "core::error::Error::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x40760",
+    "name": "std::panicking::panic_handler::{impl#4}::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x408a0",
+    "name": "std::panicking::panic_handler::{impl#3}::take_box",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x44f42",
+    "name": "alloc::collections::btree::node::Handle::split",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x45be9",
+    "name": "gimli::read::abbrev::Attributes::push",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x46225",
+    "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "before",
+    "address": "0x4ee60",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0",
+      "struct_57": "struct_57"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x155e0",
+    "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x156a0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x156b0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x24040",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x241b0",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x24a90",
+    "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x24d10",
+    "name": "std::sys::backtrace::output_filename",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x24e00",
+    "name": "std::sys::backtrace::__rust_end_short_backtrace",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x25fd0",
+    "name": "std::alloc::rust_oom::{closure#0}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x26af0",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x27540",
+    "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_53": "struct_53"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x28e30",
+    "name": "core::str::validations::next_code_point",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x2ccc0",
+    "name": "core::error::Error::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x40760",
+    "name": "std::panicking::panic_handler::{impl#4}::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x408a0",
+    "name": "std::panicking::panic_handler::{impl#3}::take_box",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x44f42",
+    "name": "alloc::collections::btree::node::Handle::split",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x45be9",
+    "name": "gimli::read::abbrev::Attributes::push",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x46225",
+    "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "c",
+    "side": "after",
+    "address": "0x4ee60",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0",
+      "struct_57": "struct_57"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x155e0",
+    "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x156a0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x156b0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x24040",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x241b0",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x24a90",
+    "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x24d10",
+    "name": "std::sys::backtrace::output_filename",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x24e00",
+    "name": "std::sys::backtrace::__rust_end_short_backtrace",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x25fd0",
+    "name": "std::alloc::rust_oom::{closure#0}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x26af0",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x27540",
+    "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_53": "struct_53"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x28e30",
+    "name": "core::str::validations::next_code_point",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x2ccc0",
+    "name": "core::error::Error::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x40760",
+    "name": "std::panicking::panic_handler::{impl#4}::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x408a0",
+    "name": "std::panicking::panic_handler::{impl#3}::take_box",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x44f42",
+    "name": "alloc::collections::btree::node::Handle::split",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x45be9",
+    "name": "gimli::read::abbrev::Attributes::push",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x46225",
+    "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "before",
+    "address": "0x4ee60",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0",
+      "struct_57": "struct_57"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x155e0",
+    "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x156a0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x156b0",
+    "name": "T::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x24040",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x241b0",
+    "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x24a90",
+    "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x24d10",
+    "name": "std::sys::backtrace::output_filename",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_44": "struct_44"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x24e00",
+    "name": "std::sys::backtrace::__rust_end_short_backtrace",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x25fd0",
+    "name": "std::alloc::rust_oom::{closure#0}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x26af0",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x27540",
+    "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1",
+      "struct_53": "struct_53"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x28e30",
+    "name": "core::str::validations::next_code_point",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x2ccc0",
+    "name": "core::error::Error::type_id",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x40760",
+    "name": "std::panicking::panic_handler::{impl#4}::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x408a0",
+    "name": "std::panicking::panic_handler::{impl#3}::take_box",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x44f42",
+    "name": "alloc::collections::btree::node::Handle::split",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x45be9",
+    "name": "gimli::read::abbrev::Attributes::push",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x46225",
+    "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+    "consistent_bijective_struct_renaming": {
+      "struct_0": "struct_1"
+    },
+    "all_other_function_fields_identical": true
+  },
+  {
+    "fixture": "native-rust",
+    "language": "rust",
+    "side": "after",
+    "address": "0x4ee60",
+    "name": "&T::fmt",
+    "consistent_bijective_struct_renaming": {
+      "struct_1": "struct_0",
+      "struct_57": "struct_57"
+    },
+    "all_other_function_fields_identical": true
+  }
+]

@@ -1,0 +1,1261 @@
+{
+  "main": "889c21ea00223ba720ccc93a555d146a9bed98a2",
+  "previous_main": "b0b9289a732abab2fffb412f48f3eac6a84f16d3",
+  "fixtures": [
+    {
+      "fixture": "hermetic-plain",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          },
+          "after": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          },
+          "after": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          },
+          "after": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          },
+          "after": {
+            "records": 25,
+            "unchanged": 25,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 2018,
+            "unchanged": 2018,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2018,
+            "unchanged": 2018,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 2018,
+            "unchanged": 2018,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2018,
+            "unchanged": 2018,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 1558,
+            "unchanged": 1558,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1558,
+            "unchanged": 1558,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 1558,
+            "unchanged": 1558,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1558,
+            "unchanged": 1558,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 55,
+            "unchanged": 55,
+            "main_changes": []
+          },
+          "after": {
+            "records": 55,
+            "unchanged": 55,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "rust",
+          "before": {
+            "records": 55,
+            "unchanged": 55,
+            "main_changes": []
+          },
+          "after": {
+            "records": 55,
+            "unchanged": 55,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 55,
+            "unchanged": 55,
+            "main_changes": []
+          },
+          "after": {
+            "records": 55,
+            "unchanged": 55,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 449,
+            "unchanged": 448,
+            "main_changes": [
+              {
+                "address": "0x16d40",
+                "name": "sub_16d40",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          },
+          "after": {
+            "records": 449,
+            "unchanged": 448,
+            "main_changes": [
+              {
+                "address": "0x16d40",
+                "name": "sub_16d40",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "language": "rust",
+          "before": {
+            "records": 449,
+            "unchanged": 448,
+            "main_changes": [
+              {
+                "address": "0x16d40",
+                "name": "sub_16d40",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          },
+          "after": {
+            "records": 449,
+            "unchanged": 448,
+            "main_changes": [
+              {
+                "address": "0x16d40",
+                "name": "sub_16d40",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 2017,
+            "unchanged": 2017,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2017,
+            "unchanged": 2017,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 2017,
+            "unchanged": 2017,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2017,
+            "unchanged": 2017,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          },
+          "after": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          },
+          "after": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "entry-plain",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          },
+          "after": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          },
+          "after": {
+            "records": 9,
+            "unchanged": 9,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native-plain",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1156,
+            "unchanged": 1156,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native1273-plain",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          },
+          "after": {
+            "records": 1495,
+            "unchanged": 1495,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "basics127-plain",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "go",
+          "before": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          },
+          "after": {
+            "records": 2552,
+            "unchanged": 2552,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 455,
+            "unchanged": 455,
+            "main_changes": []
+          },
+          "after": {
+            "records": 455,
+            "unchanged": 455,
+            "main_changes": []
+          }
+        },
+        {
+          "language": "rust",
+          "before": {
+            "records": 455,
+            "unchanged": 455,
+            "main_changes": []
+          },
+          "after": {
+            "records": 455,
+            "unchanged": 455,
+            "main_changes": []
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "rust2025",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 7763,
+            "unchanged": 7762,
+            "main_changes": [
+              {
+                "address": "0xae9a0",
+                "name": "sub_ae9a0",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          },
+          "after": {
+            "records": 7763,
+            "unchanged": 7762,
+            "main_changes": [
+              {
+                "address": "0xae9a0",
+                "name": "sub_ae9a0",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "language": "rust",
+          "before": {
+            "records": 7763,
+            "unchanged": 7762,
+            "main_changes": [
+              {
+                "address": "0xae9a0",
+                "name": "sub_ae9a0",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          },
+          "after": {
+            "records": 7763,
+            "unchanged": 7762,
+            "main_changes": [
+              {
+                "address": "0xae9a0",
+                "name": "sub_ae9a0",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "languages": [
+        {
+          "language": "c",
+          "before": {
+            "records": 550,
+            "unchanged": 531,
+            "main_changes": [
+              {
+                "address": "0x155e0",
+                "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156a0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156b0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24040",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x241b0",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24a90",
+                "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24d10",
+                "name": "std::sys::backtrace::output_filename",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24e00",
+                "name": "std::sys::backtrace::__rust_end_short_backtrace",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x25fd0",
+                "name": "std::alloc::rust_oom::{closure#0}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x26af0",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x27540",
+                "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x28e30",
+                "name": "core::str::validations::next_code_point",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x2ccc0",
+                "name": "core::error::Error::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x40760",
+                "name": "std::panicking::panic_handler::{impl#4}::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x408a0",
+                "name": "std::panicking::panic_handler::{impl#3}::take_box",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x44f42",
+                "name": "alloc::collections::btree::node::Handle::split",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x45be9",
+                "name": "gimli::read::abbrev::Attributes::push",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x46225",
+                "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x4ee60",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          },
+          "after": {
+            "records": 550,
+            "unchanged": 531,
+            "main_changes": [
+              {
+                "address": "0x155e0",
+                "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156a0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156b0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24040",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x241b0",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24a90",
+                "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24d10",
+                "name": "std::sys::backtrace::output_filename",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24e00",
+                "name": "std::sys::backtrace::__rust_end_short_backtrace",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x25fd0",
+                "name": "std::alloc::rust_oom::{closure#0}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x26af0",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x27540",
+                "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x28e30",
+                "name": "core::str::validations::next_code_point",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x2ccc0",
+                "name": "core::error::Error::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x40760",
+                "name": "std::panicking::panic_handler::{impl#4}::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x408a0",
+                "name": "std::panicking::panic_handler::{impl#3}::take_box",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x44f42",
+                "name": "alloc::collections::btree::node::Handle::split",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x45be9",
+                "name": "gimli::read::abbrev::Attributes::push",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x46225",
+                "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x4ee60",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "language": "rust",
+          "before": {
+            "records": 550,
+            "unchanged": 531,
+            "main_changes": [
+              {
+                "address": "0x155e0",
+                "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156a0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156b0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24040",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x241b0",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24a90",
+                "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24d10",
+                "name": "std::sys::backtrace::output_filename",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24e00",
+                "name": "std::sys::backtrace::__rust_end_short_backtrace",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x25fd0",
+                "name": "std::alloc::rust_oom::{closure#0}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x26af0",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x27540",
+                "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x28e30",
+                "name": "core::str::validations::next_code_point",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x2ccc0",
+                "name": "core::error::Error::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x40760",
+                "name": "std::panicking::panic_handler::{impl#4}::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x408a0",
+                "name": "std::panicking::panic_handler::{impl#3}::take_box",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x44f42",
+                "name": "alloc::collections::btree::node::Handle::split",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x45be9",
+                "name": "gimli::read::abbrev::Attributes::push",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x46225",
+                "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x4ee60",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          },
+          "after": {
+            "records": 550,
+            "unchanged": 531,
+            "main_changes": [
+              {
+                "address": "0x155e0",
+                "name": "std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156a0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x156b0",
+                "name": "T::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24040",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x241b0",
+                "name": "std::sys::pal::common::small_c_string::run_with_cstr_allocating",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24a90",
+                "name": "std::sys::backtrace::_print_fmt::{{closure}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24d10",
+                "name": "std::sys::backtrace::output_filename",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x24e00",
+                "name": "std::sys::backtrace::__rust_end_short_backtrace",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x25fd0",
+                "name": "std::alloc::rust_oom::{closure#0}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x26af0",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x27540",
+                "name": "core::ops::function::FnOnce::call_once{{vtable.shim}}",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x28e30",
+                "name": "core::str::validations::next_code_point",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x2ccc0",
+                "name": "core::error::Error::type_id",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x40760",
+                "name": "std::panicking::panic_handler::{impl#4}::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x408a0",
+                "name": "std::panicking::panic_handler::{impl#3}::take_box",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x44f42",
+                "name": "alloc::collections::btree::node::Handle::split",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x45be9",
+                "name": "gimli::read::abbrev::Attributes::push",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x46225",
+                "name": "rustc_demangle::v0::HexNibbles::try_parse_uint",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              },
+              {
+                "address": "0x4ee60",
+                "name": "&T::fmt",
+                "changed_fields": [
+                  "code",
+                  "variables"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

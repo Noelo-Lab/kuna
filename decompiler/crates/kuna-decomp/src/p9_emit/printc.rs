@@ -7515,6 +7515,18 @@ impl PrintC {
             Some(t) => t,
             None => return self.op_func_ir(fd, arch, op),
         };
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if let Some(narrow) = crate::kuna_rustextend::signed_text_input(&intype, &outtype) {
+                self.push_cast_open(&outtype, op);
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                let input = fd.obank().get(op).unwrap().get_in(0).unwrap();
+                self.push_vn_ir(fd, arch, input, op);
+                self.push_atom(&Atom::syntax(narrow, TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+                self.push_cast_close(&outtype);
+                return;
+            }
+        }
         if strat.is_sext_cast(&outtype, &intype) {
             if self.options.hide_exts && self.is_extension_cast_implied(fd, &strat, op, read_op) {
                 self.op_hidden_func_ir(fd, arch, op);
@@ -7896,7 +7908,7 @@ impl PrintC {
         op: OpId,
         read_op: Option<OpId>,
     ) -> bool {
-        if self.out_lang == crate::kuna_lang::OutLang::Go {
+        if !self.lang().caps.integer_promotion {
             return false;
         }
         let ctx = PrintCastContext::new(fd);

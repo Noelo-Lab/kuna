@@ -1,0 +1,48 @@
+{
+  "old_head": "b0b9289a732abab2fffb412f48f3eac6a84f16d3",
+  "new_main": "889c21ea00223ba720ccc93a555d146a9bed98a2",
+  "our_changes_byte_and_mtime_identical": {
+    "decompiler/crates/kuna-console/tests/verify_rustextensions.rs": {
+      "sha256": "b7a67b6f259b45fd59eee93838bbe9497354a86bff0c9fb80ceec858b4e8e5f4",
+      "mtime_ns": 1793546446114565872
+    },
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustextend.rs": {
+      "sha256": "b7a09b63023edbac616598e1f8168f8600738a1795eea3d0cd6fc1a3478b0eb1",
+      "mtime_ns": 1793546287985395978
+    },
+    "tests/fixtures/rust-extensions/extensions.rs": {
+      "sha256": "e059c455e5d6d2a742c74d7ac960ef103cf97e45bfb4ffd7a3569c0b19e1c8b3",
+      "mtime_ns": 1793546446114565872
+    },
+    "tests/stages/ghangr-rust-extensions.xml": {
+      "sha256": "5ab0c74f056cacb17a667d9179accad41d2c76aae6209d43b8cf12c6d073327f",
+      "mtime_ns": 1793546407601251556
+    },
+    "decompiler/crates/kuna-base/src/xml.rs": {
+      "sha256": "f141f1e6dfaf0fcec93c76116c994ce68cadb813a52b34e460a6374ac4f03470",
+      "mtime_ns": 1793546645502045510
+    },
+    "decompiler/crates/kuna-console/tests/integration.rs": {
+      "sha256": "8d750ad5d233178e3ca3d03fbc7a7313537cd9cf9367d6eec012389406438450",
+      "mtime_ns": 1793546446114565872
+    },
+    "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs": {
+      "sha256": "ed65b0018b530930c8f8828197297d6cf9b4fdd990de7fc76ec15482fba5c9a1",
+      "mtime_ns": 1793546298563205351
+    },
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs": {
+      "sha256": "cbc9b36e87b29de7b7fcfb098e3114faba97be94a658415e583057b89f7e1db3",
+      "mtime_ns": 1793546298570205225
+    },
+    "docs/baseline-stages.json": {
+      "sha256": "1b42ebbce983e275691d647c80ba48eef9e9133aa5a106591f131457bbe5d1fd",
+      "mtime_ns": 1793546733431505766
+    },
+    "docs/spec/09-emission.md": {
+      "sha256": "54b192bc9c923ccff89128ce9dd10bc246a999d3799fecd418357a5d5338dded",
+      "mtime_ns": 1793546407603251520
+    }
+  },
+  "tracked_patch_identical": true,
+  "main_changes": "PR1407 deterministic creation-order decisions in P2/P5/P6; requires fresh combined validation"
+}
