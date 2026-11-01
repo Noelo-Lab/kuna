@@ -129,6 +129,7 @@ pub(crate) mod kuna_dwarfcomplex;
 mod kuna_dwarflinkage;
 mod kuna_dwarfsignatures;
 pub mod kuna_godwarfsig;
+mod kuna_goformals;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -1185,7 +1186,8 @@ impl AnalysisPass for DwarfPass {
                 }
             }
 
-            let signatures = kuna_dwarfsignatures::has_signature_information(&dies);
+            let signatures = kuna_goformals::generic_prototype_allowed(&unit)
+                && kuna_dwarfsignatures::has_signature_information(&dies);
             for snap in dies.values() {
                 match snap.tag {
                     gimli::DW_TAG_subprogram => {

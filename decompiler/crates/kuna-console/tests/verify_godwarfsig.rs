@@ -190,6 +190,34 @@ fn empty_entry_ranges_require_the_exact_register_and_ret_body() {
 }
 
 #[test]
+fn uncompressed_go_results_never_become_c_inputs() {
+    let names = ["main.identity", "main.wrongRegister", "main.laterRange", "main.notReturn",
+        "main.longBody", "main.duplicateRange", "main.badBase", "main.resultRange"];
+    for enabled in [false, true] {
+        for cpp in [false, true] {
+            let mut previous = None;
+            for image in ["entry-ranges", "entry-ranges-plain"] {
+                let binary = root().join("tests/fixtures/go-dwarf-entry-ranges").join(image);
+                let mut program = bootstrap_from_object(binary.to_str().unwrap(), "",
+                    &[root().join("specs").display().to_string()]).unwrap();
+                program.arch_mut().set_kuna_option("godwarfsig", if enabled { "on" } else { "off" }).unwrap();
+                program.arch_mut().set_kuna_option("cppproto", if cpp { "on" } else { "off" }).unwrap();
+                program.commit_pending_analysis().unwrap();
+                for name in names {
+                    let address = program.lookup_symbol(name).unwrap();
+                    let present = program.arch().symboltab.function_proto_pieces_across_scopes(&address).is_some();
+                    assert_eq!(present, enabled && name == "main.identity", "{image} {name}, Go={enabled}, C++={cpp}");
+                }
+                let options = [if cpp { "option cppproto on" } else { "option cppproto off" }];
+                let code = decompile(&binary, &[names[0], names[1], names[7]], enabled, &options);
+                if let Some(previous) = previous { assert_eq!(code, previous); }
+                previous = Some(code);
+            }
+        }
+    }
+}
+
+#[test]
 fn a_different_calling_convention_refuses_the_contract() {
     let mut program = bootstrap_from_object(fixture("compressed").to_str().unwrap(), "",
         &[root().join("specs").display().to_string()]).unwrap();

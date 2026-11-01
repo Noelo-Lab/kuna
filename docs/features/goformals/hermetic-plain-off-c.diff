@@ -1,0 +1,200 @@
+--- before/main.fromWord
++++ after/main.fromWord
+@@ -1,4 +1,4 @@
+-void main.fromWord(unsigned long p,unsigned long ~r0)
++void main.fromWord(void)
+ {
+   return;
+ }
+--- before/main.narrow
++++ after/main.narrow
+@@ -1,4 +1,4 @@
+-void main.narrow(unsigned long a,unsigned long ~r0)
++void main.narrow(void)
+ {
+   return;
+ }
+--- before/main.extend
++++ after/main.extend
+@@ -1,4 +1,4 @@
+-void main.extend(unsigned long a,unsigned long ~r0)
++int main.extend(char a0)
+ {
+-  return;
++  return a0;
+ }
+--- before/main.boolNot
++++ after/main.boolNot
+@@ -1,4 +1,4 @@
+-void main.boolNot(unsigned long x,unsigned long ~r0)
++unsigned char main.boolNot(unsigned char a0)
+ {
+-  return;
++  return a0 ^ 1;
+ }
+--- before/main.mix
++++ after/main.mix
+@@ -1,4 +1,4 @@
+-void main.mix(unsigned long x,unsigned long n,unsigned long y,unsigned long ~r0)
++double main.mix(double a0,double a1,int a2)
+ {
+-  return;
++  return a0 + a1 + (double)a2;
+ }
+--- before/main.store
++++ after/main.store
+@@ -1,4 +1,4 @@
+-void main.store(unsigned long p,unsigned long v)
++void main.store(unsigned int *a0,unsigned int a1)
+ {
+-  *p = (unsigned int)v;
++  *a0 = a1;
+ }
+--- before/main.add
++++ after/main.add
+@@ -1,4 +1,4 @@
+-void main.add(unsigned long a,unsigned long b,unsigned long ~r0)
++int main.add(int a0,int a1)
+ {
+-  return;
++  return a0 + a1;
+ }
+--- before/main.scale
++++ after/main.scale
+@@ -1,5 +1,5 @@
+-void main.scale(unsigned long p,unsigned long k)
++void main.scale(struct_0 *a0,int a1)
+ {
+-  p->field_0x0 = p->field_0x0 * k;
+-  p->field_0x8 = k * p->field_0x8;
++  a0->field_0x0 = a0->field_0x0 * a1;
++  a0->field_0x8 = a1 * a0->field_0x8;
+ }
+--- before/main.callIdentity
++++ after/main.callIdentity
+@@ -1,4 +1,4 @@
+-void main.callIdentity(unsigned long p,unsigned long ~r0)
++void main.callIdentity(void)
+ {
+-  main.fromWord(p,~r0);
++  main.fromWord();
+ }
+--- before/main.noResult
++++ after/main.noResult
+@@ -1,4 +1,4 @@
+-void main.noResult(unsigned long a)
++void main.noResult(unsigned int a0)
+ {
+-  dat_40302a = (unsigned int)a;
++  dat_40302a = a0;
+ }
+--- before/main.resultOnly
++++ after/main.resultOnly
+@@ -1,4 +1,4 @@
+-void main.resultOnly(unsigned long ~r0)
++unsigned long main.resultOnly(void)
+ {
+-  return;
++  return 0x2a;
+ }
+--- before/main.badReg
++++ after/main.badReg
+@@ -1,4 +1,4 @@
+-void main.badReg(unsigned long p,unsigned long ~r0)
++void main.badReg(void)
+ {
+   return;
+ }
+--- before/main.missingFlag
++++ after/main.missingFlag
+@@ -1,4 +1,4 @@
+-void main.missingFlag(unsigned long p,unsigned long ~r0)
++void main.missingFlag(void)
+ {
+   return;
+ }
+--- before/main.multiResult
++++ after/main.multiResult
+@@ -1,4 +1,8 @@
+-void main.multiResult(unsigned long p,unsigned long ~r0,unsigned long ~r1)
++undefined16 main.multiResult(int a0)
+ {
+-  return;
++  char v1 [16]; // rbx:rax
++  
++  *(unsigned long *)&v1[8] = a0 + 1;
++  *(unsigned long *)v1 = a0;
++  return *(unsigned __int128 *)v1;
+ }
+--- before/main.trampoline
++++ after/main.trampoline
+@@ -1,4 +1,4 @@
+-void main.trampoline(unsigned long p,unsigned long ~r0)
++void main.trampoline(void)
+ {
+   return;
+ }
+--- before/main.worker.func1
++++ after/main.worker.func1
+@@ -1,4 +1,4 @@
+-void main.worker.func1(unsigned long p,unsigned long ~r0)
++void main.worker.func1(void)
+ {
+   return;
+ }
+--- before/main.badType
++++ after/main.badType
+@@ -1,4 +1,4 @@
+-void main.badType(unsigned long p,unsigned long ~r0)
++void main.badType(void)
+ {
+   return;
+ }
+--- before/main.tooWide
++++ after/main.tooWide
+@@ -1,4 +1,4 @@
+-void main.tooWide(unsigned long p,unsigned long ~r0)
++void main.tooWide(void)
+ {
+   return;
+ }
+--- before/main.wrongProducer
++++ after/main.wrongProducer
+@@ -1,4 +1,4 @@
+-void main.wrongProducer(unsigned long p,unsigned long ~r0)
++void main.wrongProducer(void)
+ {
+   return;
+ }
+--- before/main.badResultReg
++++ after/main.badResultReg
+@@ -1,4 +1,4 @@
+-void main.badResultReg(unsigned long p,unsigned long ~r0)
++void main.badResultReg(void)
+ {
+   return;
+ }
+--- before/main.stackInput
++++ after/main.stackInput
+@@ -1,4 +1,4 @@
+-void main.stackInput(unsigned long p,unsigned long ~r0)
++void main.stackInput(void)
+ {
+   return;
+ }
+--- before/main.tooManyIntegers
++++ after/main.tooManyIntegers
+@@ -1,4 +1,4 @@
+-void main.tooManyIntegers(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5,unsigned long a6,unsigned long a7,unsigned long a8,unsigned long a9,unsigned long ~r0)
++void main.tooManyIntegers(void)
+ {
+   return;
+ }
+--- before/main.tooManyFloats
++++ after/main.tooManyFloats
+@@ -1,4 +1,4 @@
+-void main.tooManyFloats(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5,unsigned long a6,unsigned long a7,unsigned long a8,unsigned long ~r0)
++void main.tooManyFloats(void)
+ {
+   return;
+ }
