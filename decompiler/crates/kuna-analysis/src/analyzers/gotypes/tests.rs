@@ -347,3 +347,49 @@ fn descriptor_walk_stops_conservatively_on_garbage() {
     let img = img_of(&spans);
     assert!(locate_type_meta_descriptors(&img, anchor).is_none());
 }
+
+#[test]
+fn pointer_chains_stop_at_cycles_missing_records_and_depth_limit() {
+    for width in [4usize, 8] {
+        for (length, target, depth, leaf) in [
+            (1, Some(0), 1, type_metatype::TYPE_VOID),
+            (2, Some(0), 2, type_metatype::TYPE_VOID),
+            (3, Some(1), 3, type_metatype::TYPE_VOID),
+            (1, Some(8), 1, type_metatype::TYPE_VOID),
+            (2, None, 2, type_metatype::TYPE_UINT),
+            (130, None, 64, type_metatype::TYPE_VOID),
+        ] {
+            let types = 0x100000u64;
+            let stride = 96;
+            let name = (length + 1) * stride + 16;
+            let mut bytes = vec![0u8; (length + 2) * stride];
+            bytes[name..name + 8].copy_from_slice(b"\0\x06main.P");
+            for index in 0..=length {
+                let off = index * stride;
+                let size = if index == length { 4u64 } else { width as u64 };
+                bytes[off..off + width].copy_from_slice(&size.to_le_bytes()[..width]);
+                bytes[off + 2 * width + 7] = if index == length { KIND_UINT32 } else { KIND_POINTER };
+                bytes[off + 4 * width + 8..off + 4 * width + 12].copy_from_slice(&(name as i32).to_le_bytes());
+                let next = if index + 1 == length { target.unwrap_or(index + 1) } else { index + 1 };
+                let ptr = types + (next * stride) as u64;
+                let elem = off + 4 * width + 16;
+                bytes[elem..elem + width].copy_from_slice(&ptr.to_le_bytes()[..width]);
+            }
+            let meta = TypeMeta { types, etypes: types + bytes.len() as u64, offsets: vec![] };
+            let mut image = GoImage::from_spans(vec![(types, &bytes)]);
+            image.word_size = width as u64;
+            let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+            tf.set_default_alignment_map();
+            tf.set_max_basetype_size(8);
+            tf.setup_sizes(Some(width as i32), width as i32, width as i32);
+            tf.cache_core_types().unwrap();
+            let mut ty = field_type(&tf, &image, &meta, types).unwrap();
+            for _ in 0..depth {
+                assert_eq!(ty.get_size(), width as i32);
+                ty = ty.get_ptr_to().expect("retains each proven pointer layer");
+            }
+            assert_eq!(ty.get_metatype(), leaf, "width {width}, length {length}, target {target:?}");
+            if leaf == type_metatype::TYPE_UINT { assert_eq!(ty.get_size(), 4); }
+        }
+    }
+}

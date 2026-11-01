@@ -1,0 +1,141 @@
+{
+  "baseline_commit": "38b4be20b6ca9d9e86a1cf31afc1557d8d008324",
+  "scope": "Stop recursive pointer-type import from exhausting the loader stack",
+  "reproducers": [
+    {
+      "arch": "amd64",
+      "sha256": "77025ac4d4d1153fcec2934d08546a627a073dbb2b062bb4bc3351cbfeedde98",
+      "before": {
+        "exit_code": 1,
+        "stack_overflow": true,
+        "has_code": false
+      },
+      "after": {
+        "exit_code": 0,
+        "stack_overflow": false,
+        "has_code": true
+      }
+    },
+    {
+      "arch": "arm64",
+      "sha256": "cea90af04462a6665cb64f39c8cc43ddd4089b8408e697150d91dc16fd02c50c",
+      "before": {
+        "exit_code": 1,
+        "stack_overflow": true,
+        "has_code": false
+      },
+      "after": {
+        "exit_code": 0,
+        "stack_overflow": false,
+        "has_code": true
+      }
+    },
+    {
+      "arch": "386",
+      "sha256": "7a8d469ddf981fb723d3785967412cc7d051a962c8380503e639681d16937979",
+      "before": {
+        "exit_code": 1,
+        "stack_overflow": true,
+        "has_code": false
+      },
+      "after": {
+        "exit_code": 0,
+        "stack_overflow": false,
+        "has_code": true
+      }
+    },
+    {
+      "arch": "arm",
+      "sha256": "1f83c922db7e90da0140064c129276d78e399b9a85fb63b6500134f0290b136a",
+      "before": {
+        "exit_code": 1,
+        "stack_overflow": true,
+        "has_code": false
+      },
+      "after": {
+        "exit_code": 0,
+        "stack_overflow": false,
+        "has_code": true
+      }
+    }
+  ],
+  "breadth": [
+    {
+      "fixture": "go122-amd64",
+      "sha256": "71004b175583bce6194b24c6c277919e821959efd5d0ddd76dcd58bee2376c4e",
+      "functions": 1542,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go122-386",
+      "sha256": "d4e7be2cd8ded5c65eebf6d143dbfc7d1b793b60e58d824f10be9a10a94a6169",
+      "functions": 1596,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go118-arm",
+      "sha256": "d977b784970856c87191e2837d290bd2da3104294c6f5d0d136e048240ca7bf6",
+      "functions": 1452,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    },
+    {
+      "fixture": "go127-amd64",
+      "sha256": "50277a8be3b4b7913015956aed583b5c890062ab400a668fa9ccae04b1ee0543",
+      "functions": 2539,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      },
+      "type_surface_identical": true
+    }
+  ],
+  "control_functions": 7129,
+  "reproducer_functions": 6298,
+  "reproducer_comparison": "Baseline with gotypes disabled versus patched default, because baseline default aborts at load.",
+  "reproducer_sweeps": "reproducer-sweeps.json",
+  "timing_artifact": "timing.json",
+  "speed_budget_pct": 5,
+  "speed_samples": 31,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "validation": {
+    "workspace": {
+      "passed": 9920,
+      "failed": 0,
+      "ignored": 39
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3417,
+    "catalog": "passed",
+    "spec": "passed",
+    "lint": "passed",
+    "tool_tests": 114,
+    "tool_tests_skipped": 1,
+    "targeted_go_versions": [
+      "1.18",
+      "1.22.5"
+    ],
+    "targeted_architectures": [
+      "amd64",
+      "arm64",
+      "386",
+      "arm"
+    ]
+  }
+}

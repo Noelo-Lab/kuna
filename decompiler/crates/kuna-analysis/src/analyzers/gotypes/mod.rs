@@ -81,6 +81,8 @@ use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 
 mod kuna_structorder;
 mod kuna_layout;
+mod kuna_fieldtypes;
+use kuna_fieldtypes::field_type;
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
 const KIND_MASK: u8 = 0x1f;
@@ -412,58 +414,6 @@ fn locate_moduledata(file: &object::File, img: &GoImage, header_vma: u64) -> Opt
         }
     }
     None
-}
-
-/// Map a field's `_type` to an interned kuna datatype. Named structs reference
-/// their (possibly still incomplete) shells; scalars map to base widths; the
-/// string/slice/interface kinds map to the well-known header shells; anything
-/// else degrades to `undefined<size>` so the field's extent stays honest.
-fn field_type(
-    tf: &dyn TypeFactory,
-    img: &GoImage,
-    meta: &TypeMeta,
-    type_vma: u64,
-) -> Option<Rc<Datatype>> {
-    if type_vma < meta.types || type_vma.checked_add(img.type_base())? > meta.etypes {
-        return None;
-    }
-    let off = (type_vma - meta.types) as u32;
-    let t = read_type(img, meta.types, meta.etypes, off)?;
-    let m = |mt| tf.get_base(t.size as int4, mt).ok();
-    match t.kind {
-        KIND_BOOL => tf.get_base(1, type_metatype::TYPE_BOOL).ok(),
-        KIND_INT | KIND_INT8 | KIND_INT16 | KIND_INT32 | KIND_INT64 => {
-            m(type_metatype::TYPE_INT)
-        }
-        KIND_UINT | KIND_UINT8 | KIND_UINT16 | KIND_UINT32 | KIND_UINT64 | KIND_UINTPTR => {
-            m(type_metatype::TYPE_UINT)
-        }
-        KIND_FLOAT32 | KIND_FLOAT64 => m(type_metatype::TYPE_FLOAT),
-        KIND_POINTER => {
-            // The element pointer follows the base; a named struct pointee references its
-            // shell, anything else is a void*.
-            let pointee = word(img, t.vma + img.type_base())
-                .and_then(|elem| field_type(tf, img, meta, elem))
-                .unwrap_or_else(|| tf.get_type_void().expect("void type"));
-            tf.get_type_pointer(img.word_size as int4, pointee, 1).ok()
-        }
-        KIND_STRING => shell(tf, "go.string").ok(),
-        KIND_SLICE => shell(tf, "go.slice").ok(),
-        KIND_INTERFACE => {
-            // `any` (no methods) is an eface; everything else an iface. The
-            // method count lives past the base record; phase 1 keys off the
-            // canonical names instead: `interface {}` is the eface.
-            if t.name == "interface {}" {
-                shell(tf, "go.eface").ok()
-            } else {
-                shell(tf, "go.iface").ok()
-            }
-        }
-        KIND_STRUCT if t.tflag & TFLAG_NAMED != 0 && t.name.contains('.') => {
-            shell(tf, &t.name).ok()
-        }
-        _ => m(type_metatype::TYPE_UNKNOWN),
-    }
 }
 
 /// Get-or-create one of the well-known Go header shells: an already-interned
