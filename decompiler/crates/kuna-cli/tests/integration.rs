@@ -262,6 +262,9 @@ mod mapped_flow_boundary;
 #[path = "mixed_tail_returns.rs"]
 mod mixed_tail_returns;
 
+#[path = "macho_alias_names_cli.rs"]
+mod macho_alias_names_cli;
+
 #[path = "name_miss_cli.rs"]
 mod name_miss_cli;
 

@@ -1,0 +1,31 @@
+macho_alias_names_arm64 -- arm64 Mach-O dylib with several nlist names at one
+function entry.
+
+What it is
+  A 17,104-byte MH_DYLIB, SHA-256
+  73f4735a6879b7f9b71d6b9ba2d4b5831b54a57234c8ad556ea4140de8b73855, linked
+  from macho_alias_names.s (GH #1357's assembly plus one block) and
+  macho_alias_names_other.s:
+    0x240 _audit_export_a, _audit_export_b   (both external, both exported)
+    0x248 _audit_local_a, _audit_local_b     (local)
+    0x250 _audit_caller                      (external, `b _audit_local_a`)
+    0x254 _audit_first, _audit_shared, _audit_both   (local, first object)
+    0x25c _audit_shared                      (local, second object)
+    0x264 _audit_second, _audit_both         (local, second object)
+  nlist order puts each object's locals in definition order, then the
+  externals, so the first name listed at each address is the reported one.
+
+How it was built (no macOS SDK; host clang + the rustup-bundled ld64.lld)
+  clang -target arm64-apple-macos11 -c macho_alias_names.s -o a.o
+  clang -target arm64-apple-macos11 -c macho_alias_names_other.s -o b.o
+  LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/gcc-ld/ld64.lld
+  "$LLD" -arch arm64 -dylib -platform_version macos 11.0 11.0 -fixup_chains \
+         -install_name @rpath/libalias.dylib -o macho_alias_names_arm64 a.o b.o
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). Prebuilt because CI
+  has no Mach-O linker.
+
+What it pins
+  One inventory row per address, the second names kept as aliases; decompile by
+  any of them, in either spelling, selects that entry. `_audit_shared` (and
+  `audit_shared`) selects 0x25c, the function of that name, over 0x254's alias;
+  `_audit_both` is an alias at two addresses and is reported ambiguous.

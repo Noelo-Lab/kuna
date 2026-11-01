@@ -678,10 +678,12 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   definition in both selector resolution and canonical name lookup; both entries
   remain in the inventory. Multiple executable definitions or unclassified
   executable competitors remain ambiguous, and explicit address selection
-  remains literal. An ELF load, linked or relocatable, still reports one name
-  per address (the first in `.symtab`, import-stub, `.dynsym` order, the one the
-  symbol table installs for call sites; a PowerPC64 ELFv1 image keeps every
-  name, as before), but no longer discards the other distinct names there: they
+  remains literal. A load of any format, linked or relocatable, still reports
+  one name per address (the first in symbol-table, import-stub, `.dynsym`
+  order, the one the symbol table installs for call sites: on Mach-O the first
+  `nlist` entry, locals ahead of externals as the linker writes them, on a PE
+  the first COFF function symbol; a PowerPC64 ELFv1 image keeps every name, as
+  before), but no longer discards the other distinct names there: they
   become lookup-only aliases
   (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage::func_symbol_aliases)`,
   raw addresses with any Thumb bit), which the console appends to the
@@ -696,7 +698,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   over another function's same-address alias `shared` and a name that selected
   one function keeps selecting it. An alias whose address no entry holds yet
   (discovery has not named it) is still a candidate there, so a lookup sees the
-  same candidates with or without discovery. Loaders that publish no section
+  same candidates with or without discovery. Mach-O and PE kept only the first
+  name until GH #1357, so a second `nlist` label at one entry (`_audit_export_b`
+  beside `_audit_export_a`, two local labels, a function `ld64` folded into an
+  identical one) or a MinGW pair (`_fpreset`/`fpreset`) did not select its own
+  function. A Mach-O export is also reported in its C spelling (`audit_export_a`)
+  by the export stream; at an entry the symbol table named, that is the same name
+  again, and lookup already retries a Mach-O name with its `_`, so it is not kept
+  as an alias (two exports at an entry only the export stream names, as in a
+  kext's `__TEXT_EXEC`, are two names and both are kept). That retry narrows
+  its candidates by the decorated spelling, so `audit_shared` selects the
+  function named `_audit_shared` over another one's `_audit_shared` alias, as
+  `_audit_shared` itself does. Loaders that publish no section
   records, including the XML corpus loader, prove a numeric VMA by probing one
   byte from the load image instead. Which sections are memory-resident
   is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
