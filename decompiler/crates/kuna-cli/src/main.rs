@@ -227,15 +227,19 @@ fn usage_test() {
          results off stdout, and the exit code is nonzero on any failure OR any\n\
          regression against --baseline.  Default is --all.\n\
          --name N (repeatable) narrows to named tests and requires --unittests or\n\
-         --datatests.\n\
+         --datatests.  A name that matches no test, or a datatest corpus with no\n\
+         *.xml files, is a selection error: the tests that exist still run and are\n\
+         reported, the run exits 2, and --save-baseline writes nothing.\n\
          \n\
          --datatests-dir D selects the corpus: tests/datatests (the default, = make\n\
          test) or tests/stages (the kuna-owned issue cases, = make test-stages).\n\
          --baseline F compares against a recorded result; --save-baseline F re-records\n\
          one.  Re-recording docs/baseline.json to absorb a regression is never\n\
          sanctioned -- see docs/agents.md.\n\
-         --json emits {{unit_footer,data_footer,passing,returncode,failures}}, plus\n\
-         parity with --baseline."
+         --json emits {{unit_footer,data_footer,passing,returncode,failures,selection}},\n\
+         plus parity with --baseline; selection is {{complete,errors,data,unit}}, where\n\
+         data is {{corpus,requested,matched,missing}} (file names) and unit is\n\
+         {{requested,matched,missing}}, each null when that half did not run."
     );
 }
 

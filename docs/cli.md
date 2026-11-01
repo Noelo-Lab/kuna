@@ -173,6 +173,52 @@ when adding stage tests. `docs/baseline.json` is re-pinned only for sanctioned i
 changes (an upstream sync per `docs/history.md`, or a deliberate default flip the commit
 message names) — never to absorb a regression.
 
+**Selection.** `--name N` (repeatable) narrows `--datatests` to the corpus file `N.xml`
+(`N` itself when it ends in `.xml`), and `--unittests` to the unit test `N`. The datatest harness only
+runs a name that is the file name of an `*.xml` directly in the corpus directory, and it
+ignores any other name without a word. A name that matches nothing, a corpus directory
+with no `*.xml` files, and an unreadable corpus directory are all **selection errors**.
+Each error gets its own `error:` line on stderr. The tests that do exist still run and
+are reported, the run **exits 2**, and `--save-baseline` writes nothing, so a typo'd
+`--datatests-dir` cannot re-record a baseline as empty. The unit registry of
+`decomp_test_dbg` is empty by design (engine unit tests run under `cargo test`). A plain
+`--unittests` run therefore still reports `unit_footer: [0, 0]` and exits `0`. Only a
+named unit test the harness did not run is an error.
+
+| Exit | Meaning |
+|---|---|
+| `0` | every selected test ran and passed, and parity held when `--baseline` was given |
+| `1` | `--baseline` reports a regression or any failure, or (without `--baseline`) a datatest file errored |
+| `N` | without `--baseline`, `N` tests failed (the harness's own count, at most 255) |
+| `2` | a selection error, with the report still printed; or the run could not start (harness missing, unreadable or malformed baseline, usage error), with no report |
+| `128+N` | without `--baseline`, the harness was killed by signal `N` |
+
+A run with two failed tests also exits `2`, so automation should read
+`selection.complete` rather than the status alone.
+
+With `--json` the report is one object: `unit_footer` / `data_footer` (`[passed, total]`
+for unit tests, `[applied, passing]` for datatests, `null` for a half that did not run),
+`passing` (the `unit:`/`data:` keys a baseline records), `returncode` (the harness's own
+status), `failures` (`unit`, `data`, `data_errors`), `parity` (with `--baseline`) and
+`selection`:
+
+```json
+"selection": {
+  "complete": false,
+  "errors": ["datatest 'nope.xml' not found in /repo/tests/datatests"],
+  "data": {"corpus": "/repo/tests/datatests", "requested": ["forloop1.xml", "nope.xml"],
+           "matched": ["forloop1.xml"], "missing": ["nope.xml"]},
+  "unit": null
+}
+```
+
+`complete` is `false` exactly when `errors` is non-empty, and then the exit is `2`.
+`data.matched` lists the corpus files the harness ran: the whole corpus when no `--name`
+was given, so an empty corpus is `matched: []`. `unit.matched` lists the unit tests
+the harness reported running. `data` is `null` under `--unittests` and `unit` is `null`
+under `--datatests`. A saved baseline keeps its four fields only (`unit_footer`,
+`data_footer`, `passing`, `returncode`), so recording one never depends on `selection`.
+
 A baseline must be a JSON object with one `passing` array containing only strings.
 Other metadata is optional. Malformed JSON, trailing non-whitespace content, a
 missing or repeated `passing` field, and wrongly typed entries exit `2`; they are
