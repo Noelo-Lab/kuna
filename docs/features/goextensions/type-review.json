@@ -1,0 +1,102 @@
+{
+  "review_complete": true,
+  "scope": "Partial Go type checking of 16,122 function records; unresolved external symbols are excluded, so this is not whole-program compilation.",
+  "function_records_with_diagnostics_before": 2201,
+  "function_records_with_diagnostics_after": 1841,
+  "diagnostic_messages_before": 9193,
+  "diagnostic_messages_after": 8167,
+  "newly_diagnosed_function_records": 0,
+  "after_only_message_records": 5,
+  "remaining_findings": [
+    {
+      "fixture": "native1273-go",
+      "address": "0x462e60",
+      "name": "runtime.(*unwinder).resolveInternal",
+      "before_diagnostics": [
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+      ],
+      "after_only_diagnostic": [
+        "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+      ],
+      "unchanged_stores_already_rejected_by_Go": [
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+      ],
+      "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+    },
+    {
+      "fixture": "native-go",
+      "address": "0x451780",
+      "name": "runtime.(*unwinder).resolveInternal",
+      "before_diagnostics": [
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+      ],
+      "after_only_diagnostic": [
+        "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+      ],
+      "unchanged_stores_already_rejected_by_Go": [
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+      ],
+      "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+    },
+    {
+      "fixture": "native-plain-go",
+      "address": "0x451780",
+      "name": "runtime.(*unwinder).resolveInternal",
+      "before_diagnostics": [
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+      ],
+      "after_only_diagnostic": [
+        "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+      ],
+      "unchanged_stores_already_rejected_by_Go": [
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+      ],
+      "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+    },
+    {
+      "fixture": "native1273-plain-go",
+      "address": "0x462e60",
+      "name": "runtime.(*unwinder).resolveInternal",
+      "before_diagnostics": [
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+      ],
+      "after_only_diagnostic": [
+        "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+      ],
+      "unchanged_stores_already_rejected_by_Go": [
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+      ],
+      "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+    },
+    {
+      "fixture": "langdetect-go",
+      "address": "0x456a60",
+      "name": "runtime.(*unwinder).resolveInternal",
+      "before_diagnostics": [
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "cannot use v5 (variable of type uint64) as int64 value in assignment",
+        "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+      ],
+      "after_only_diagnostic": [
+        "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+      ],
+      "unchanged_stores_already_rejected_by_Go": [
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+        "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+      ],
+      "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+    }
+  ]
+}

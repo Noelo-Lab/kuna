@@ -1,0 +1,32 @@
+{
+  "data_footer": [
+    2,
+    0
+  ],
+  "failures": {
+    "data": [
+      "Go widening before scaled signed arithmetic",
+      "Go boolean widening has an explicit zero or one value"
+    ],
+    "data_errors": [],
+    "unit": []
+  },
+  "passing": [],
+  "returncode": 2,
+  "selection": {
+    "complete": true,
+    "data": {
+      "corpus": "/home/mahaloz/kwt/angr-go-extensions/tests/stages",
+      "matched": [
+        "ghangr-go-extensions.xml"
+      ],
+      "missing": [],
+      "requested": [
+        "ghangr-go-extensions.xml"
+      ]
+    },
+    "errors": [],
+    "unit": null
+  },
+  "unit_footer": null
+}

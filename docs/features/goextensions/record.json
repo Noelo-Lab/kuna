@@ -1,0 +1,361 @@
+{
+  "state": "validated",
+  "kind": "strict Go extension spelling correction",
+  "selection": "outlang go; no new option",
+  "baseline_commit": "34bfd388764c6291089183ef7d9c305c18c68826",
+  "base_main_merge": "76905a15ee74fbd97b298ee6fc0a33082156d8bd",
+  "kuna_sha256": "8afbcaf8452fb44fec12765de654643b28faf7055ee2c052ebd92a553c536ecb",
+  "breadth": {
+    "inputs": 16,
+    "distinct_functions": 17026,
+    "records": 34107,
+    "changed_go_records": 1125,
+    "hunks": 1706,
+    "added_conversions": 2239,
+    "conversion_types": {
+      "uint32": 318,
+      "uint64": 1462,
+      "int64": 421,
+      "bool_to_uint64": 36,
+      "bool_to_uint32": 2
+    },
+    "go_parsed_functions": 16122,
+    "unchanged_c_rust_records": 17985,
+    "errors": 0
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10045,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "test_threads": 8,
+    "original_assertions": 675,
+    "stage_assertions": 3490,
+    "tools": "114 tests, 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed: 637 XML files, 363 options",
+    "regression_before": "0/2 stage assertions pass",
+    "regression_after": "2/2 stage assertions pass",
+    "new_console_tests": 1,
+    "native_functions": 10,
+    "input_rows_per_image": 1578,
+    "workspace_go": "1.27.3",
+    "focused_execution_go": [
+      "1.22.5",
+      "1.27.3"
+    ]
+  },
+  "native_execution": [
+    {
+      "fixture": "native-1.22.5-compressed",
+      "sha256": "bdffaf9fdf7e16bb801f44818b86654664397e33f1a84af1c50dd7e5bb1df750",
+      "producer": "1.22.5",
+      "compressed_dwarf": true,
+      "functions": [
+        "shift8",
+        "sign8",
+        "sign16",
+        "sign32",
+        "zero8",
+        "signToUnsigned",
+        "narrowSum",
+        "narrowProduct",
+        "lessDelta",
+        "lessDelta32"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "input_rows": 1578,
+      "results_checked_per_compiler": 15780,
+      "oracle": "native compiler execution"
+    },
+    {
+      "fixture": "native-1.22.5-plain",
+      "sha256": "fa16292d218af23ecae99d4c24e9ec5b8a0695834d27574798cc8436474be176",
+      "producer": "1.22.5",
+      "compressed_dwarf": false,
+      "functions": [
+        "shift8",
+        "sign8",
+        "sign16",
+        "sign32",
+        "zero8",
+        "signToUnsigned",
+        "narrowSum",
+        "narrowProduct",
+        "lessDelta",
+        "lessDelta32"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "input_rows": 1578,
+      "results_checked_per_compiler": 15780,
+      "oracle": "native compiler execution"
+    },
+    {
+      "fixture": "native-1.27.3-compressed",
+      "sha256": "49a475122fa23d466dc273cdd592ae24b9e2e4da1282357551b297c231b15be0",
+      "producer": "1.27.3",
+      "compressed_dwarf": true,
+      "functions": [
+        "shift8",
+        "sign8",
+        "sign16",
+        "sign32",
+        "zero8",
+        "signToUnsigned",
+        "narrowSum",
+        "narrowProduct",
+        "lessDelta",
+        "lessDelta32"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "input_rows": 1578,
+      "results_checked_per_compiler": 15780,
+      "oracle": "native compiler execution"
+    },
+    {
+      "fixture": "native-1.27.3-plain",
+      "sha256": "d64ba0a110b290e77fa5c62b897377c3e605f011b71b2a2e39e5b92807d19030",
+      "producer": "1.27.3",
+      "compressed_dwarf": false,
+      "functions": [
+        "shift8",
+        "sign8",
+        "sign16",
+        "sign32",
+        "zero8",
+        "signToUnsigned",
+        "narrowSum",
+        "narrowProduct",
+        "lessDelta",
+        "lessDelta32"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.22.5",
+        "1.27.3"
+      ],
+      "input_rows": 1578,
+      "results_checked_per_compiler": 15780,
+      "oracle": "native compiler execution"
+    }
+  ],
+  "partial_type_check": {
+    "review_complete": true,
+    "scope": "Partial Go type checking of 16,122 function records; unresolved external symbols are excluded, so this is not whole-program compilation.",
+    "function_records_with_diagnostics_before": 2201,
+    "function_records_with_diagnostics_after": 1841,
+    "diagnostic_messages_before": 9193,
+    "diagnostic_messages_after": 8167,
+    "newly_diagnosed_function_records": 0,
+    "after_only_message_records": 5,
+    "remaining_findings": [
+      {
+        "fixture": "native1273-go",
+        "address": "0x462e60",
+        "name": "runtime.(*unwinder).resolveInternal",
+        "before_diagnostics": [
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+        ],
+        "after_only_diagnostic": [
+          "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+        ],
+        "unchanged_stores_already_rejected_by_Go": [
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+        ],
+        "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+      },
+      {
+        "fixture": "native-go",
+        "address": "0x451780",
+        "name": "runtime.(*unwinder).resolveInternal",
+        "before_diagnostics": [
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+        ],
+        "after_only_diagnostic": [
+          "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+        ],
+        "unchanged_stores_already_rejected_by_Go": [
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+        ],
+        "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+      },
+      {
+        "fixture": "native-plain-go",
+        "address": "0x451780",
+        "name": "runtime.(*unwinder).resolveInternal",
+        "before_diagnostics": [
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+        ],
+        "after_only_diagnostic": [
+          "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+        ],
+        "unchanged_stores_already_rejected_by_Go": [
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+        ],
+        "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+      },
+      {
+        "fixture": "native1273-plain-go",
+        "address": "0x462e60",
+        "name": "runtime.(*unwinder).resolveInternal",
+        "before_diagnostics": [
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+        ],
+        "after_only_diagnostic": [
+          "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+        ],
+        "unchanged_stores_already_rejected_by_Go": [
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+        ],
+        "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+      },
+      {
+        "fixture": "langdetect-go",
+        "address": "0x456a60",
+        "name": "runtime.(*unwinder).resolveInternal",
+        "before_diagnostics": [
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "cannot use v5 (variable of type uint64) as int64 value in assignment",
+          "invalid operation: *(*uint32)(unsafe.Pointer(uintptr(*v12 + 12))) + v5 (mismatched types uint32 and uint64)"
+        ],
+        "after_only_diagnostic": [
+          "cannot use uint64(*(*uint32)(unsafe.Pointer(uintptr(*v12 + 12)))) + v5 + 0x1 (value of type uint64) as int64 value in assignment"
+        ],
+        "unchanged_stores_already_rejected_by_Go": [
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),2 * 8)) = v5",
+          "*(*int64)(unsafe.Add(unsafe.Pointer(a0),7 * 8)) = v5"
+        ],
+        "classification": "The widened uint32 operand makes the unsigned 64-bit sum type-check; it exposes an existing unsigned-RHS/signed-store mismatch. This function already contains two unchanged stores rejected for the same mismatch. Neither their destination nor the surrounding sum/store is changed."
+      }
+    ]
+  },
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 77,
+    "earlier_cpu79_measurements": "retained in timing-cpu79; repeated on CPU77 after observed scheduling contention",
+    "alternating_order": true,
+    "max_cpu_delta_pct": 0.06722513619021875,
+    "max_wall_delta_pct": 0.06936354040696369,
+    "speed_budget_pct": 5,
+    "passed": true,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 112.18635272234678,
+            "cpu_ms": 110.80400000000034
+          },
+          "patched": {
+            "wall_ms": 111.51463026180863,
+            "cpu_ms": 110.21999999999998
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.5987559486853256,
+            "cpu_ms": -0.5270567849539387
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.17572752722423424,
+          "cpu_ms": -0.09657911363868399
+        }
+      },
+      "go-shift8": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 632.8789950348437,
+            "cpu_ms": 632.2040000000015
+          },
+          "patched": {
+            "wall_ms": 633.3179823122919,
+            "cpu_ms": 632.6290000000015
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 0.06936354040696369,
+            "cpu_ms": 0.06722513619021875
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.7215396703197596,
+          "cpu_ms": 0.7199741016510108
+        }
+      },
+      "go-many-extensions": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 446.76833925768733,
+            "cpu_ms": 445.3639999999979
+          },
+          "patched": {
+            "wall_ms": 441.66827388107777,
+            "cpu_ms": 440.84800000000257
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.1415458367267983,
+            "cpu_ms": -1.014002029799288
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.008776746027949756,
+          "cpu_ms": 0.016734146570374087
+        }
+      },
+      "rust": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 386.5752029232681,
+            "cpu_ms": 385.09499999999264
+          },
+          "patched": {
+            "wall_ms": 384.706221986562,
+            "cpu_ms": 382.8089999999946
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.48347150116533344,
+            "cpu_ms": -0.5936197561635548
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.334939748253682,
+          "cpu_ms": -0.45863697039248974
+        }
+      }
+    }
+  }
+}
