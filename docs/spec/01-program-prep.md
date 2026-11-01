@@ -3638,8 +3638,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_structorder.rs (complete_order)`
   follows their descriptors even
   when the child has no independent typelink. Pointer fields do not impose a
-  layout dependency. Cyclic value layouts and malformed descriptors stay
-  opaque. A field whose factory type is still incomplete but whose metadata
+  layout dependency. Named shells use the factory's completion link, so pointers
+  created before field import resolve to the completed record's size and fields.
+  This includes self-references and mutually recursive named structs; an invalid
+  layout leaves the linked shell incomplete. Cyclic value layouts and malformed
+  descriptors stay opaque. A field whose factory type is still incomplete but whose metadata
   declares a nonzero size refuses the enclosing layout instead of disappearing
   as a zero-size marker. True zero-size fields retain the existing treatment.
   The pass also interns the well-known header shells `go.string`/`go.slice`/
