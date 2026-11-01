@@ -113,6 +113,7 @@ fn every_json_surface_names_its_root_in_help() {
         ("decompile-all", "{binary,"),
         ("functions", "{binary,"),
         ("disassemble", "{binary,"),
+        ("raw-pcode", "{binary,"),
         ("read", "{binary,"),
         ("xrefs", "{binary,"),
         ("strings", "{binary,"),
