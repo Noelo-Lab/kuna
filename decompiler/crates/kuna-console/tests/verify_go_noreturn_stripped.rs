@@ -94,6 +94,7 @@ fn decompile_sh(bin: &str, option: Option<&str>) -> String {
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog: ConsoleProgram = bootstrap_from_object(bin, "", &spec_roots)
         .expect("bootstrap go fixture with built processor specs");
+    prog.arch_mut().set_kuna_option("gobounds", "off").expect("retain the check while testing its no-return fact");
     if let Some(v) = option {
         prog.arch_mut().set_kuna_option("gonoreturn", v).expect("gonoreturn option applies");
     }

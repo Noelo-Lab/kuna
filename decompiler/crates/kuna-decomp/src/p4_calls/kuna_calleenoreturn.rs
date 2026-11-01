@@ -20,6 +20,9 @@ pub(crate) fn is_no_return(arch: &Architecture, entry: &Address) -> bool {
         {
             return true;
         }
+        if arch.go_bounds && arch.source_lang().is_go() && crate::kuna_gobounds::is_go_check_name(name) {
+            return true;
+        }
         if arch.strip_security_check && crate::kuna_securitycheck::is_security_check_name(name) {
             return true;
         }

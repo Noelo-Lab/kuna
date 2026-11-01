@@ -39,7 +39,9 @@
 //!    walk — the same projection [`crate::operand_refs`] makes — so it reuses that
 //!    pass's upstream `ScalarOperandAnalyzer.checkOperands` value filter
 //!    (`>= 4096`, no byte masks), and a bare integer that happens to look like an
-//!    address is not reported. A materialized address that is not dereferenced is
+//!    address is not reported. A constant the instruction computed from its own
+//!    address is an address whatever its size, so it is exempt
+//!    ([`super::kuna_pcform`]). A materialized address that is not dereferenced is
 //!    [`XrefKind::Data`]: the address-taken case — a function pointer, a string
 //!    pointer, a global's address.
 //!
@@ -77,6 +79,7 @@ use object::SectionKind;
 
 use super::classify::classify;
 use super::context::ContextPainter;
+use super::kuna_pcform::{Formed, PcForm};
 use super::kuna_picbase::{self, Ctx as PicCtx, PicBase};
 use super::kuna_picpool::{self, GotImage, Insn, PicPool};
 use super::kuna_poolref::PoolImage;
@@ -721,6 +724,10 @@ fn descend(
     let pool = if mapped.is_empty() { None } else { PoolImage::new(file) };
     // (kuna) `picpool`: the GOT's file bytes, read through a PC-composed base.
     let got = if mapped.is_empty() { None } else { GotImage::new(file) };
+    // (kuna) `pcform`: the addresses an instruction forms from its own address,
+    // which the `checkOperands` floor must not drop. `None` unless the image
+    // maps something below that floor. See [`super::kuna_pcform`].
+    let pcform = PcForm::new(file, pool.as_ref(), &mapped);
     let max_entries = match arch.max_jumptable_size {
         0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
         n => n as usize,
@@ -1103,12 +1110,13 @@ fn descend(
                     flow.jumps.extend(c.flows.iter().map(|&to| (vma, to)));
                 }
             }
+            let formed = pcform.as_ref().map_or_else(Formed::default, |p| p.formed(vma, len));
             let mut drefs = if mapped.is_empty() {
                 Vec::new()
             } else {
                 let fall_through = vma.wrapping_add(len as u64);
                 let delayed = || has_delay_slot(translate, vma, &code_space, len);
-                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref(), &delayed)
+                data_refs(cap.ops(), data_space.as_ref(), &mapped, fall_through, pool.as_ref(), &formed, &delayed)
             };
             // (kuna) `regcarry`: the address a register pair forms across
             // instructions. See [`super::kuna_regcarry`].
@@ -1119,6 +1127,7 @@ fn descend(
                     fall: c.fall_through,
                     branches: if c.flow.is_call { &[] } else { &c.flows },
                     calls: c.flow.is_call,
+                    formed,
                 });
             }
             // (kuna) `picpool`: the address a PC-relative literal-pool pair forms,
@@ -1892,12 +1901,17 @@ fn assembly(translate: &dyn Translate, vma: u64, code_space: &Rc<AddrSpace>) -> 
 /// instruction ends past a delay slot ([`has_delay_slot`]); it is asked only of
 /// an instruction that moves its fall-through whole and does not branch
 /// ([`links`], [`branches`]).
+///
+/// A constant below the `checkOperands` floor is still an address where the
+/// instruction computed it from its own address: `formed`, the values
+/// [`super::kuna_pcform`] recomputes from the encoding (`adr`, `lea [rip]`).
 fn data_refs(
     ops: &[FullOp],
     data_space: Option<&Rc<AddrSpace>>,
     mapped: &[(u64, u64)],
     fall_through: u64,
     pool: Option<&PoolImage>,
+    formed: &Formed,
     delayed: &dyn Fn() -> bool,
 ) -> Vec<(u64, XrefKind)> {
     let mut out = Vec::new();
@@ -1965,7 +1979,7 @@ fn data_refs(
                 continue;
             }
             let value = vn.offset;
-            if !looks_like_address(value) || !in_range(mapped, value) {
+            if !(looks_like_address(value) || formed.contains(value)) || !in_range(mapped, value) {
                 continue;
             }
             let kind = match op.opcode {
@@ -2246,7 +2260,7 @@ mod tests {
     /// Run [`data_refs`] with `ram` as the default data space and a fall-through
     /// no op under test materializes.
     fn refs(ram: &Rc<AddrSpace>, ops: &[FullOp]) -> Vec<(u64, XrefKind)> {
-        data_refs(ops, Some(ram), &MAPPED, 0, None, &|| false)
+        data_refs(ops, Some(ram), &MAPPED, 0, None, &Formed::default(), &|| false)
     }
 
     /// The shape a constant-address memory operand actually lifts to: a direct
@@ -2258,6 +2272,21 @@ mod tests {
         assert_eq!(refs(&ram, &[load]), vec![(0x4014, XrefKind::Read)]);
         let store = op(OpCode::CPUI_COPY, Some(vn(&ram, 0x4010)), vec![]);
         assert_eq!(refs(&ram, &[store]), vec![(0x4010, XrefKind::Write)]);
+    }
+
+    /// GH #1364: below the `checkOperands` floor a mapped constant is a
+    /// reference only where the instruction computed it from its own address
+    /// (`adr x0, 0x378` in a dylib's first page); `mov x0, #0x378` is a number.
+    #[test]
+    fn a_pc_relative_constant_below_the_floor_is_a_reference() {
+        let (ram, cst) = spaces();
+        let low = [(0x300, 0x2000)];
+        let copy = [op(OpCode::CPUI_COPY, None, vec![vn(&cst, 0x378)])];
+        let formed = data_refs(&copy, Some(&ram), &low, 0x3a4, None, &Formed::one(0x378), &|| false);
+        assert_eq!(formed, vec![(0x378, XrefKind::Data)]);
+        assert!(data_refs(&copy, Some(&ram), &low, 0x3a4, None, &Formed::default(), &|| false).is_empty());
+        let unmapped = [op(OpCode::CPUI_COPY, None, vec![vn(&cst, 0x200)])];
+        assert!(data_refs(&unmapped, Some(&ram), &low, 0x3a4, None, &Formed::one(0x200), &|| false).is_empty());
     }
 
     /// A branch/call target is also a data-space varnode, and it is already
@@ -2411,15 +2440,15 @@ mod tests {
         ];
         for (what, ops) in &links {
             let decoded = || panic!("{what}: a link needs no second decode");
-            assert!(data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &decoded).is_empty(), "{what}");
+            assert!(data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &decoded).is_empty(), "{what}");
         }
         let nal = [op(OpCode::CPUI_COPY, Some(r(0x7c)), vec![fall()])];
-        assert!(data_refs(&nal, Some(&ram), &MAPPED, 0x1104, None, &|| true).is_empty());
+        assert!(data_refs(&nal, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| true).is_empty());
         let nal_movz = [
             op(OpCode::CPUI_COPY, Some(r(0x7c)), vec![fall()]),
             op(OpCode::CPUI_CBRANCH, None, vec![vn(&cst, 2), r(0x200)]),
         ];
-        assert!(data_refs(&nal_movz, Some(&ram), &MAPPED, 0x1104, None, &|| true).is_empty());
+        assert!(data_refs(&nal_movz, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| true).is_empty());
     }
 
     /// A delay slot behind a branch is an ordinary instruction: SuperH `rts;
@@ -2436,7 +2465,7 @@ mod tests {
         ] {
             let ops = [mova.clone(), flow];
             assert_eq!(
-                data_refs(&ops, Some(&ram), &MAPPED, 0x1104, None, &|| true),
+                data_refs(&ops, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| true),
                 vec![(0x1104, XrefKind::Data)],
                 "{what}"
             );
@@ -2474,7 +2503,7 @@ mod tests {
         ];
         for (what, ops) in &formed {
             assert_eq!(
-                data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &|| false),
+                data_refs(ops, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| false),
                 vec![(0x1104, XrefKind::Data)],
                 "{what}"
             );
@@ -2496,13 +2525,13 @@ mod tests {
             op(OpCode::CPUI_INT_ADD, Some(x30), vec![vn(&cst, 0x1100), vn(&cst, 4)]),
             op(OpCode::CPUI_CALL, None, vec![vn(&ram, 0x1180)]),
         ];
-        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None, &|| false).is_empty());
+        assert!(data_refs(&bl, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| false).is_empty());
         let adr = [op(OpCode::CPUI_COPY, Some(x0.clone()), vec![vn(&cst, 0x1100)])];
-        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&adr, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| false), vec![(0x1100, XrefKind::Data)]);
         let add_pc = [op(OpCode::CPUI_INT_ADD, Some(x0.clone()), vec![vn(&cst, 0x1100), vn(&cst, 0x10)])];
-        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&add_pc, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| false), vec![(0x1100, XrefKind::Data)]);
         let pc_read = [op(OpCode::CPUI_INT_ADD, Some(x0), vec![vn(&cst, 0x1100), vn(&cst, 4)])];
-        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None, &|| false), vec![(0x1100, XrefKind::Data)]);
+        assert_eq!(data_refs(&pc_read, Some(&ram), &MAPPED, 0x1104, None, &Formed::default(), &|| false), vec![(0x1100, XrefKind::Data)]);
     }
 
     /// (kuna) `poolref`: a pointer-sized read of a read-only word files the
@@ -2521,7 +2550,7 @@ mod tests {
             vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
         );
         assert_eq!(
-            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &Formed::default(), &|| false),
             vec![(0x1000, XrefKind::Read), (0x4000, XrefKind::Data), (0x4020, XrefKind::Write)]
         );
     }
@@ -2541,7 +2570,7 @@ mod tests {
             vec![vn(&cst, 0x1b), vn(&ram, 0x1000)],
         );
         assert_eq!(
-            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
+            data_refs(&[load], Some(&ram), &MAPPED, 0, Some(&pool), &Formed::default(), &|| false),
             vec![(0x1000, XrefKind::Read), (0x4020, XrefKind::Write)]
         );
     }
@@ -2556,7 +2585,7 @@ mod tests {
         src.size = 4;
         let copy = op(OpCode::CPUI_COPY, None, vec![src]);
         assert_eq!(
-            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool), &|| false),
+            data_refs(&[copy], Some(&ram), &MAPPED, 0, Some(&pool), &Formed::default(), &|| false),
             vec![(0x1008, XrefKind::Read), (0x4010, XrefKind::Data)]
         );
     }

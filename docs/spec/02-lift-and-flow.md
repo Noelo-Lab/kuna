@@ -2827,6 +2827,27 @@ the compiler's own polarity) and by the kuna-console `verify_go_writebarrier`
 gate, which builds a real stripped Go binary and proves the detection-driven
 `auto` path end to end.
 
+### Early Go jump chains (`gojumpchain`)
+
+`kuna_gojumpchain.rs (ActionGoJumpChain)` runs before Go write-barrier
+recognition, while heritage has not yet built SSA. Unoptimized Go builds place
+unconditional forwarding jumps between the flag test and runtime bookkeeping.
+Later branch cleanup is too late to expose these shapes to the early pass.
+
+The default-on option acts only on Go images with `gowritebarrier` enabled.
+It matches a conditional whose two forwarding paths lead to a single-entry
+block with exactly one recognized barrier call and its common join. It removes
+only forwarding blocks in those paths, including any between the call and join;
+unrelated control flow is unchanged. Each removable block must be non-entry,
+have one predecessor and successor, and contain exactly one unconditional branch.
+Self-loops, two-block cycles, duplicate-edge cases, and blocks with assignments,
+loads, stores, calls, or conditional branches are excluded. The existing
+block-removal primitive redirects the edge and resets structure.
+
+This normalization removes no computation or memory effect. The existing
+`gowritebarrier` pass independently removes the exposed runtime bookkeeping.
+`gojumpchain off` restores the previous recognition boundary.
+
 ## Octeon integer targets
 
 Explicit BE Octeon/Plus/II/III language variants share the MIPS core while replacing the four CP2 load/store opcode meanings with bit-test branches. Their conditions are sampled before delay-slot execution. Integer extension arithmetic, comparisons, population counts and bitfield operations use ordinary p-code; II/III additionally expose indexed loads with exact width and signedness. Generic MIPS retains its opcode meanings and SPECIAL2 fallback; Octeon has no wildcard SPECIAL2 success.

@@ -1561,6 +1561,10 @@ pub struct ArchContext {
     /// (option `securitycheck`, DIV-82 default-on).  Read by
     /// [`crate::kuna_securitycheck`]'s `ActionRemoveSecurityCheck`.
     pub strip_security_check: bool,
+    /// Fold Go compiler bounds/division panic arms (option gobounds).
+    pub go_bounds: bool,
+    /// Normalize Go branch-only blocks before runtime idiom matching.
+    pub go_jump_chain: bool,
     /// (kuna) flip negated-guard if/else branches for linearity (option
     /// `branchflip`, opt-in default-off).  Read by
     /// [`ActionBranchFlip`](crate::blockaction::ActionBranchFlip).
@@ -2085,6 +2089,8 @@ impl ArchContext {
             hide_shadow: false,       // hideshadow (Architecture::reset_defaults sets the shipped default: on)
             strip_stack_guard: false,    // stackguard (opt-in default-off)
             strip_msvc_stack_guard: false, // msvcstackguard (fixture default-off; the live gate rides build_arch_handle)
+            go_bounds: true,
+            go_jump_chain: true,
             strip_security_check: false, // securitycheck (fixture default-off; the live gate rides build_arch_handle)
             branch_flip: false,          // branchflip (opt-in default-off)
             // (kuna) DIV-3 default-on (GH-9203): architecture.cc sets condexe_block_placement=true.

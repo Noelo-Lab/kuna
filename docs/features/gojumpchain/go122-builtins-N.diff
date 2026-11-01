@@ -1,0 +1,2169 @@
+--- off/errors.init
++++ on/errors.init
+@@ -1,39 +1,13 @@
+-void errors.init(void) // return-dupe
++void errors.init(void)
+ {
+-  unsigned long v1; // ram 0x4edc30 | rax
+-  unsigned long v2; // ram 0x4edc40 | rax
+-  unsigned long v3; // rcx
+-  unsigned long v4; // rcx
+-  unsigned long v5; // rbx
+-  unsigned long v6; // rbx
+-  unsigned long v7; // ram 0x4edc38 | rbx
+-  unsigned long v8; // ram 0x4edc48 | rbx
+-  unsigned long v9; // rbx
+-  unsigned long *v10; // r11
+-  unsigned long *v11; // r11
+-  unsigned __int128 v12; // rbx:rax
++  unsigned __int128 v1; // rbx:rax
+   
+-  errors.New("unsupported operation",0x15);
+-  v7 = v5;
+-  *(unsigned long *)errors.ErrUnsupported = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v1,v5,v3);
+-    *v10 = v6;
+-    v10[1] = *(unsigned long *)&errors.ErrUnsupported[8];
+-    v7 = v6;
+-  }
+-  *(unsigned long *)&errors.ErrUnsupported[8] = v7;
+-  v12 = internal/reflectlite.TypeOf(0x474c00,0);
+-  (**(void **)(SUB168(v12,0) + 0x28))(SUB168(v12,8));
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)errors.errorType = v2;
+-    runtime.gcWriteBarrier2(v2,v8,v4);
+-    *v11 = v9;
+-    v11[1] = *(unsigned long *)&errors.errorType[8];
+-    *(unsigned long *)&errors.errorType[8] = v9;
+-    return;
+-  }
+-  *(unsigned long *)errors.errorType = v2;
+-  *(unsigned long *)&errors.errorType[8] = v8;
++  v1 = errors.New("unsupported operation",0x15);
++  *(unsigned long *)&errors.ErrUnsupported[8] = SUB168(v1,8);
++  *(unsigned long *)errors.ErrUnsupported = SUB168(v1,0);
++  v1 = internal/reflectlite.TypeOf(0x474c00,0);
++  v1 = (**(void **)(SUB168(v1,0) + 0x28))(SUB168(v1,8));
++  *(unsigned long *)errors.errorType = SUB168(v1,0);
++  *(unsigned long *)&errors.errorType[8] = SUB168(v1,8);
+   return;
+ }
+--- off/errors.New
++++ on/errors.New
+@@ -1,26 +1,15 @@
+ undefined16 errors.New(unsigned long a0,unsigned long a1)
+ {
+-  char v1 [16]; // rbx:rax
++  char v1 [16]; // tmp
+   unsigned long *v2; // rax | rcx | stack - 0x18 | stack - 0x20
+-  unsigned long *v3; // rax | rcx | stack - 0x18 | stack - 0x20
+-  unsigned long v4; // rcx
+-  unsigned long *v5; // r11
+-  unsigned long v6; // rax | rcx | stack + 0x8
+-  unsigned long v7; // rbx | rdx | stack + 0x10
++  unsigned long v3; // rax | rcx | stack + 0x8
++  unsigned long v4; // rbx | rdx | stack + 0x10
+   
+-  v6 = a0;
+-  v7 = a1;
+-  *(unsigned __int128 *)v1 = runtime.newobject(0x47b460);
+-  v2 = SUB168(*(unsigned __int128 *)v1,0);
+-  v2[1] = v7;
+-  v3 = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v3 = (unsigned long *)runtime.gcWriteBarrier2(v2,SUB168(*(unsigned __int128 *)v1,8),v6);
+-    *v5 = v4;
+-    v5[1] = *v3;
+-    v6 = v4;
+-  }
+-  *v3 = v6;
++  v3 = a0;
++  v4 = a1;
++  v2 = (unsigned long *)runtime.newobject(0x47b460);
++  v2[1] = v4;
++  *v2 = v3;
+   *(unsigned long *)&v1[8] = (unsigned long)v2;
+   *(unsigned long *)v1 = (unsigned long)go:itab.*errors.errorString,error;
+   return *(unsigned __int128 *)v1;
+
+--- off/sync.init
++++ on/sync.init
+@@ -1,16 +1,5 @@
+-void sync.init(void) // return-dupe
++void sync.init(void)
+ {
+-  unsigned long v1; // ram 0x4ed9e0 | rax
+-  unsigned long *v2; // r11
+-  
+-  v1 = runtime.newobject(0x478c20);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v1 = runtime.gcWriteBarrier2(v1);
+-    *v2 = v1;
+-    v2[1] = sync.expunged;
+-    sync.expunged = v1;
+-    return;
+-  }
+-  sync.expunged = v1;
++  sync.expunged = runtime.newobject(0x478c20);
+   return;
+ }
+--- off/sync.(*Once).doSlow
++++ on/sync.(*Once).doSlow
+@@ -1,73 +1,49 @@
+-void sync.(*Once).doSlow(void *a0,unsigned long *a1)
++void sync.(*Once).doSlow(int a0,unsigned long *a1)
+ {
+-  unsigned long v1; // rax
+-  void *v2; // rcx | rdx | stack + 0x8 | stack - 0x20 | stack - 0x28
+-  void **v3; // rcx
+-  void **v4; // rcx
+-  unsigned long v5; // rbx
+-  void *v6; // stack - 0x48
+-  char v7 [24]; // stack - 0x88
+-  void *v8; // stack - 0x18
+-  char v9 [24]; // stack - 0xb8
+-  int *v10; // r11
+-  unsigned long *v11; // r11
+-  unsigned long v12; // stack - 0x10 | stack - 0x40 | xmm15_qb
+-  unsigned __int128 v13; // rbx:rax
+-  void *v14; // rax | rcx | rdx | stack + 0x8 | stack - 0x28
+-  unsigned long *v15; // rbx | rdx | stack + 0x10
+-  void **v16; // rcx | stack - 0x58 | stack - 0xa0
+-  void **v17; // rcx | stack - 0x38 | stack - 0x70
+-  void **v18; // rcx | stack - 0x58
+-  void *v19; // rax | stack + 0x8 | stack - 0x50
+-  unsigned long v20; // stack - 0x40 | xmm15_qb
+-  void **v21; // rcx | stack - 0x38
+-  void *v22; // rax | stack - 0x30
+-  void *v23; // rcx | rdx | stack + 0x8 | stack - 0x28
+-  void *v24; // rcx | rdx | stack - 0x20
+-  unsigned long v25; // stack - 0x10 | xmm15_qb
++  int4 v1; // eax
++  void *v2; // stack - 0x48
++  char v3 [24]; // stack - 0x88
++  void *v4; // stack - 0x18
++  char v5 [24]; // stack - 0xb8
++  int v6; // rax | rcx | rdx | stack + 0x8 | stack - 0x28
++  unsigned long *v7; // rbx | rdx | stack + 0x10
++  void **v8; // rcx | stack - 0x58 | stack - 0xa0
++  void **v9; // rcx | stack - 0x38 | stack - 0x70
++  void **v10; // rcx | stack - 0x58 | stack - 0xa0
++  int v11; // rax | stack + 0x8 | stack - 0x50
++  int v12; // rcx | rdx | stack - 0x20 | stack - 0x40
++  void **v13; // rcx | stack - 0x38 | stack - 0x70
++  int v14; // rax | stack - 0x30
++  int v15; // rcx | rdx | stack + 0x8 | stack - 0x28
++  int v16; // rcx | rdx | stack - 0x20 | stack - 0x40
++  int v17; // rcx | rdx | stack + 0x8 | stack - 0x10 | stack - 0x28
+   
+-  v22 = &a0[4];
+-  v14 = a0;
+-  v15 = a1;
+-  v13 = sync.(*Mutex).Lock(v22);
+-  v2 = &v14[4];
+-  v20 = v12;
+-  v17 = &v6;
+-  v6 = sync.(*Once).doSlow.deferwrap1;
+-  v21 = v17;
+-  v24 = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(SUB168(v13,0),SUB168(v13,8),v17);
+-    *v10 = (int)v2;
+-    v10[1] = (int)v3[1];
+-    v17 = v3;
+-  }
+-  v17[1] = v2;
+-  if (runtime.deferprocStack(v7)) {
++  v14 = a0 + 4;
++  v6 = a0;
++  v7 = a1;
++  sync.(*Mutex).Lock(v14);
++  v12 = v6 + 4;
++  v9 = &v2;
++  v2 = sync.(*Once).doSlow.deferwrap1;
++  v13 = v9;
++  v16 = v12;
++  if (runtime.deferprocStack(v3)) {
+     runtime.deferreturn();
+     return;
+   }
+-  v19 = v14;
+-  v1 = sync/atomic.(*Uint32).Load(v14);
+-  v2 = v14;
+-  if (!(int4)v1) {
+-    v23 = v14;
+-    v25 = v12;
+-    v16 = &v8;
+-    v8 = sync.(*Once).doSlow.deferwrap2;
+-    v18 = v16;
+-    if (*(int4 *)runtime.writeBarrier) {
+-      runtime.gcWriteBarrier2(v1,v5,v16);
+-      *v11 = (unsigned long)v2;
+-      v11[1] = (unsigned long)v4[1];
+-      v16 = v4;
+-    }
+-    v16[1] = v2;
+-    if (runtime.deferprocStack(v9)) {
++  v11 = v6;
++  v1 = sync/atomic.(*Uint32).Load(v6);
++  if (!v1) {
++    v15 = v6;
++    v8 = &v4;
++    v4 = sync.(*Once).doSlow.deferwrap2;
++    v17 = v6;
++    v10 = v8;
++    if (runtime.deferprocStack(v5)) {
+       runtime.deferreturn();
+       return;
+     }
+-    (*(void *)*v15)();
++    (*(void *)*v7)();
+   }
+   runtime.deferreturn();
+   return;
+
+--- off/sync.(*Pool).Put
++++ on/sync.(*Pool).Put
+@@ -1,35 +1,22 @@
+ void sync.(*Pool).Put(unsigned long a0,int a1,int a2)
+ {
+   int *v1; // rax
+-  int v2; // rcx
+-  int v3; // rcx | stack + 0x18
+-  int *v4; // r11
+-  unsigned __int128 v5; // rbx:rax
+-  unsigned long v6; // rax | stack + 0x8
+-  int v7; // rbx | rdx | stack + 0x10
+-  int v8; // rcx | stack + 0x18
++  unsigned long v2; // rax | stack + 0x8
++  int v3; // rbx | rdx | stack + 0x10
++  int v4; // rcx | stack + 0x18
+   
+-  if (a1) {
+-    v6 = a0;
+-    v7 = a1;
+-    v8 = a2;
+-    v5 = sync.(*Pool).pin(a0);
+-    v1 = SUB168(v5,0);
+-    if (*v1) // branch-flip
+-      sync.(*poolChain).pushHead(&v1[2],v7,v8);
+-    else {
+-      *v1 = v7;
+-      v3 = v8;
+-      if (*(int4 *)runtime.writeBarrier) {
+-        v1 = (int *)runtime.gcWriteBarrier2(v1,SUB168(v5,8),v8);
+-        *v4 = v2;
+-        v4[1] = v1[1];
+-        v3 = v2;
+-      }
+-      v1[1] = v3;
+-    }
+-    sync.runtime_procUnpin();
++  if (!a1)
+     return;
++  v2 = a0;
++  v3 = a1;
++  v4 = a2;
++  v1 = (int *)sync.(*Pool).pin(a0);
++  if (*v1) // branch-flip
++    sync.(*poolChain).pushHead(&v1[2],v3,v4);
++  else {
++    *v1 = v3;
++    v1[1] = v4;
+   }
++  sync.runtime_procUnpin();
+   return;
+ }
+--- off/sync.(*Pool).pinSlow
++++ on/sync.(*Pool).pinSlow
+@@ -1,130 +1,90 @@
+ undefined16 sync.(*Pool).pinSlow(int *a0)
+ {
+-  unsigned long *v1; // rdx
+-  unsigned int v2; // rax | rbx | rcx | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
+-  char v3 [16]; // rbx:rax | rcx | stack - 0x70 | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
+-  int v4; // rax
+-  int v5; // rax
+-  int v6; // ram 0x4edeb0 | rax | rbx | rcx | rdx | stack - 0x58 | stack - 0x60 | stack - 0xc8
+-  char v7 [16]; // rbx:rax | rcx | stack - 0x70 | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
+-  char v8 [16]; // rbx:rax | stack - 0x70
+-  void *v9; // rcx
+-  void *v10; // rcx
+-  unsigned int v11; // rcx
+-  unsigned int v12; // rcx
+-  unsigned int v13; // ram 0x4edec0 | rcx
+-  unsigned long v14; // rbx
+-  unsigned int v15; // rbx
+-  unsigned int v16; // rbx
+-  unsigned int v17; // rbx
+-  void *v18; // stack - 0x20
+-  char v19 [24]; // stack - 0xb0
+-  unsigned long v20; // rsi
+-  int *v21; // rsi
+-  int *v22; // rax | rdx | rsi | stack + 0x8
+-  unsigned long v23; // rdi
+-  unsigned long v24; // rdi
+-  unsigned long v25; // rdi
+-  unsigned long v26; // rdi
+-  unsigned long *v27; // r11
+-  unsigned long *v28; // r11
+-  unsigned long v29; // stack - 0x18 | xmm15_qb
+-  int *v30; // rax | rcx | rdx | rsi | stack + 0x8 | stack - 0x28
+-  void **v31; // rax | stack - 0x10 | stack - 0x98
+-  unsigned int v32; // rax | rbx | rcx | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
+-  unsigned int v33; // rax | rbx | rcx | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
+-  unsigned int v34; // rax | stack - 0x70
+-  int v35; // rax | rbx | rdx | stack - 0x30 | stack - 0x68
+-  int v36; // rax | rbx | rcx | rdx | stack - 0x58 | stack - 0x60 | stack - 0xc8
+-  int v37; // rax | rbx | rcx | rdx | stack - 0x58 | stack - 0x60 | stack - 0xc8
+-  int v38; // rax | stack - 0x50
+-  unsigned long v39; // rax | stack - 0x48
+-  unsigned long *v40; // stack - 0x40
+-  int *v41; // rdx | stack - 0x38
+-  int v42; // rax | rbx | rdx | stack - 0x30 | stack - 0x68
+-  int *v43; // rax | rcx | stack + 0x8 | stack - 0x28
+-  unsigned long v44; // stack - 0x18 | xmm15_qb
+-  void **v45; // rax | stack - 0x10
++  unsigned int v1; // rax | rbx | rcx | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
++  char v2 [16]; // rbx:rax | rcx | stack - 0x70 | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
++  int v3; // rax
++  int v4; // ram 0x4edeb0 | rax | rbx | rcx | rdx | stack - 0x58 | stack - 0x60 | stack - 0xc8
++  char v5 [16]; // rbx:rax | rcx | stack - 0x70 | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
++  char v6 [16]; // rbx:rax | stack - 0x70
++  unsigned int v7; // rcx
++  unsigned int v8; // ram 0x4edec0 | rcx
++  unsigned int v9; // rbx
++  unsigned int v10; // rbx
++  void *v11; // stack - 0x20
++  char v12 [24]; // stack - 0xb0
++  int *v13; // rax | rcx | rdx | rsi | stack + 0x8 | stack - 0x28
++  void **v14; // rax | stack - 0x10 | stack - 0x98
++  unsigned int v15; // rax | rbx | rcx | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
++  unsigned int v16; // rax | rbx | rcx | stack - 0x78 | stack - 0x80 | stack - 0xb8 | stack - 0xd0
++  unsigned int v17; // rax | stack - 0x70
++  int v18; // rax | rbx | rdx | stack - 0x30 | stack - 0x68
++  int v19; // rax | rbx | rcx | rdx | stack - 0x58 | stack - 0x60 | stack - 0xc8
++  int v20; // rax | rbx | rcx | rdx | stack - 0x58 | stack - 0x60 | stack - 0xc8
++  int v21; // rax | stack - 0x50
++  unsigned long v22; // rax | stack - 0x48
++  unsigned long *v23; // stack - 0x40
++  int *v24; // rdx | stack - 0x38
++  int v25; // rax | rbx | rdx | stack - 0x30 | stack - 0x68
++  int *v26; // rax | rcx | stack + 0x8 | stack - 0x28
++  unsigned long *v27; // stack - 0x18
++  void **v28; // rax | stack - 0x10 | stack - 0x98
+   
+-  v34 = 0;
+-  v30 = a0;
++  v17 = 0;
++  v13 = a0;
+   sync.runtime_procUnpin();
+   sync.(*Mutex).Lock(&sync.allPoolsMu);
+-  v40 = &sync.allPoolsMu;
+-  v44 = v29;
+-  v31 = &v18;
+-  v18 = sync.(*Pool).pinSlow.deferwrap1;
+-  v10 = (void *)&sync.allPoolsMu;
+-  v45 = v31;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v31 = (void **)runtime.gcWriteBarrier2(v31,v14,&sync.allPoolsMu,v23,v20);
+-    *v27 = (unsigned long)v9;
+-    v27[1] = (unsigned long)v31[1];
+-    v10 = v9;
++  v23 = &sync.allPoolsMu;
++  v14 = &v11;
++  v11 = sync.(*Pool).pinSlow.deferwrap1;
++  v27 = &sync.allPoolsMu;
++  v28 = v14;
++  if (runtime.deferprocStack(v12)) {
++    runtime.deferreturn();
++    *(unsigned long *)&v6[8] = 0;
++    *(unsigned long *)v6 = v17;
++    return *(unsigned __int128 *)v6;
+   }
+-  v31[1] = v10;
+-  if (!runtime.deferprocStack(v19)) {
+-    v2 = sync.runtime_procPin();
+-    v38 = *v30;
+-    if ((unsigned int)v30[1] <= v2) {
+-      if (!*v30) {
+-        v15 = *(unsigned int *)&sync.allPools[8] + 1;
+-        v6 = *(int *)sync.allPools;
+-        v13 = *(unsigned int *)&sync.allPools[0x10];
+-        v26 = v24;
+-        if (*(unsigned int *)&sync.allPools[0x10] < v15) {
+-          runtime.growslice(*(int *)sync.allPools,v15,*(unsigned int *)&sync.allPools[0x10],1,0x47daa0);
+-          v6 = v4;
+-          v13 = v11;
+-          v15 = v16;
+-          v26 = v25;
+-        }
+-        v1 = (unsigned long *)(v6 + v15 * 8 + -8);
+-        v22 = v30;
+-        if (*(int4 *)runtime.writeBarrier) {
+-          runtime.gcWriteBarrier4(v6,v15,v13,v26,v30);
+-          *v28 = (unsigned long)v21;
+-          v28[1] = *v1;
+-          v28[2] = v5;
+-          v28[3] = *(int *)sync.allPools;
+-          v6 = v5;
+-          v13 = v12;
+-          v15 = v17;
+-          v22 = v21;
+-        }
+-        *v1 = (unsigned long)v22;
+-        *(unsigned int *)&sync.allPools[8] = v15;
+-        *(int *)sync.allPools = v6;
+-        *(unsigned int *)&sync.allPools[0x10] = v13;
++  v1 = sync.runtime_procPin();
++  v21 = *v13;
++  if ((unsigned int)v13[1] <= v1) {
++    if (!*v13) {
++      v9 = *(unsigned int *)&sync.allPools[8] + 1;
++      v4 = *(int *)sync.allPools;
++      v8 = *(unsigned int *)&sync.allPools[0x10];
++      if (*(unsigned int *)&sync.allPools[0x10] < v9) {
++        runtime.growslice(*(int *)sync.allPools,v9,*(unsigned int *)&sync.allPools[0x10],1,0x47daa0);
++        v4 = v3;
++        v8 = v7;
++        v9 = v10;
+       }
+-      v6 = runtime.GOMAXPROCS(0);
+-      v35 = runtime.makeslice(0x47d140,v6,v6);
+-      v43 = v30;
+-      v42 = v35;
+-      v36 = v6;
+-      v37 = v6;
+-      sync/atomic.StorePointer(v30,v35);
+-      v41 = &v30[1];
+-      LOCK();
+-      v30[1] = v6;
+-      UNLOCK();
+-      v34 = v2 * 0x80 + v35;
+-      v32 = v2;
+-      runtime.deferreturn();
+-      *(unsigned long *)&v7[8] = v2;
+-      *(unsigned long *)v7 = v34;
+-      return *(unsigned __int128 *)v7;
++      *(int **)(v4 + v9 * 8 + -8) = v13;
++      *(unsigned int *)&sync.allPools[8] = v9;
++      *(int *)sync.allPools = v4;
++      *(unsigned int *)&sync.allPools[0x10] = v8;
+     }
+-    v39 = sync.indexLocal(v38,v2);
+-    v33 = v2;
+-    v34 = v39;
++    v4 = runtime.GOMAXPROCS(0);
++    v18 = runtime.makeslice(0x47d140,v4,v4);
++    v26 = v13;
++    v25 = v18;
++    v19 = v4;
++    v20 = v4;
++    sync/atomic.StorePointer(v13,v18);
++    v24 = &v13[1];
++    LOCK();
++    v13[1] = v4;
++    UNLOCK();
++    v17 = v1 * 0x80 + v18;
++    v15 = v1;
+     runtime.deferreturn();
+-    *(unsigned long *)&v3[8] = v2;
+-    *(unsigned long *)v3 = v34;
+-    return *(unsigned __int128 *)v3;
++    *(unsigned long *)&v5[8] = v1;
++    *(unsigned long *)v5 = v17;
++    return *(unsigned __int128 *)v5;
+   }
++  v22 = sync.indexLocal(v21,v1);
++  v16 = v1;
++  v17 = v22;
+   runtime.deferreturn();
+-  *(unsigned long *)&v8[8] = 0;
+-  *(unsigned long *)v8 = v34;
+-  return *(unsigned __int128 *)v8;
++  *(unsigned long *)&v2[8] = v1;
++  *(unsigned long *)v2 = v17;
++  return *(unsigned __int128 *)v2;
+ }
+--- off/sync.poolCleanup
++++ on/sync.poolCleanup
+@@ -1,86 +1,34 @@
+-void sync.poolCleanup(unsigned long a0,unsigned long a1) // return-dupe
++void sync.poolCleanup(void)
+ {
+   int v1; // ram 0x4edeb0 | rax | rcx | stack - 0x20 | stack - 0x28
+   unsigned long *v2; // rax | rcx | stack - 0x30
+-  int v3; // ram 0x4edeb0 | ram 0x4eded0 | rax | rcx | stack - 0x20
+-  int v4; // ram 0x4edeb8 | ram 0x4eded8 | rax | rcx | stack - 0x40 | stack - 0x50
+-  int v5; // rax
+-  int v6; // ram 0x4edeb8 | rax | stack - 0x28 | stack - 0x50
+-  unsigned long *v7; // rax
+-  unsigned long *v8; // rax
+-  unsigned long *v9; // rax | rcx | stack - 0x30
+-  unsigned long v10; // ram 0x4edec0 | ram 0x4edee0 | rax | rcx | rdx
+-  unsigned long v11; // rcx
+-  unsigned long v12; // rcx
+-  unsigned long v13; // rcx
+-  unsigned long v14; // rbx
+-  unsigned long v15; // rbx
+-  unsigned long v16; // rbx
+-  unsigned long *v17; // r11
+-  unsigned long *v18; // r11
+-  unsigned long *v19; // r11
+-  unsigned long *v20; // r11
+-  unsigned long v21; // ram 0x4edeb8 | xmm15_qa
+-  unsigned long v22; // ram 0x4edec0 | xmm15_qb
+-  int v23; // rax | stack - 0x48
+-  int v24; // rax | stack - 0x38
++  int v3; // ram 0x4edeb8 | rax | stack - 0x50
++  int v4; // ram 0x4eded0 | rcx | stack - 0x20
++  int v5; // ram 0x4eded8 | rax | stack - 0x40
++  unsigned long v6; // xmm15_qa
++  unsigned long v7; // xmm15_qb
++  int v8; // rax | stack - 0x48
++  int v9; // rax | stack - 0x38
+   
+-  v4 = *(int *)&sync.oldPools[8];
+-  v3 = *(int *)sync.oldPools;
+-  for (v24 = 0; v6 = *(int *)&sync.allPools[8], v1 = *(int *)sync.allPools, v24 < v4; v24 = v24 + 1) {
+-    v1 = *(int *)(v24 * 8 + v3);
+-    v6 = v1;
+-    if (*(int4 *)runtime.writeBarrier) {
+-      runtime.gcWriteBarrier1(v1,a1,*(unsigned long *)(v1 + 0x10));
+-      *v17 = v11;
+-      v6 = v5;
+-      a1 = v14;
+-    }
+-    *(unsigned long *)(v6 + 0x10) = 0;
++  v5 = *(int *)&sync.oldPools[8];
++  v4 = *(int *)sync.oldPools;
++  for (v9 = 0; v3 = *(int *)&sync.allPools[8], v1 = *(int *)sync.allPools, v9 < v5; v9 = v9 + 1) {
++    v1 = *(int *)(v9 * 8 + v4);
++    *(unsigned long *)(v1 + 0x10) = 0;
+     *(unsigned long *)(v1 + 0x18) = 0;
+   }
+-  for (v23 = 0; v10 = *(unsigned long *)&sync.allPools[0x10], v4 = *(int *)&sync.allPools[8], v3 = *(int *)sync.allPools, v23 < v6; v23 = v23 + 1) {
+-    v2 = *(unsigned long **)(v23 * 8 + v1);
+-    v10 = *v2;
+-    v9 = v2;
+-    if (*(int4 *)runtime.writeBarrier) {
+-      runtime.gcWriteBarrier2(v2);
+-      *v18 = v12;
+-      v18[1] = v7[2];
+-      v9 = v7;
+-      v10 = v12;
+-      a1 = v15;
+-    }
+-    v9[2] = v10;
++  for (v8 = 0; v8 < v3; v8 = v8 + 1) {
++    v2 = *(unsigned long **)(v8 * 8 + v1);
++    v2[2] = *v2;
+     v2[3] = v2[1];
+-    v9 = v2;
+-    if (*(int4 *)runtime.writeBarrier) {
+-      runtime.gcWriteBarrier1(v2,a1,*v2);
+-      *v19 = v13;
+-      v9 = v8;
+-      a1 = v16;
+-    }
+-    *v9 = 0;
++    *v2 = 0;
+     v2[1] = 0;
+   }
+   *(int *)&sync.oldPools[8] = *(int *)&sync.allPools[8];
+   *(unsigned long *)&sync.oldPools[0x10] = *(unsigned long *)&sync.allPools[0x10];
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v10 = runtime.gcWriteBarrier3(*(int *)sync.allPools);
+-    *v20 = v10;
+-    v20[1] = *(int *)sync.oldPools;
+-    v20[2] = *(int *)sync.allPools;
+-    *(unsigned long *)sync.oldPools = v10;
+-    *(unsigned long *)&sync.allPools[8] = v21;
+-    *(unsigned long *)&sync.allPools[0x10] = v22;
+-    *(unsigned long *)sync.allPools = 0;
+-    return;
+-  }
++  *(int *)sync.oldPools = *(int *)sync.allPools;
++  *(unsigned long *)&sync.allPools[8] = v6;
++  *(unsigned long *)&sync.allPools[0x10] = v7;
+   *(unsigned long *)sync.allPools = 0;
+-  *(unsigned long *)&sync.allPools[8] = v21;
+-  *(unsigned long *)&sync.allPools[0x10] = v22;
+-  *(int *)sync.oldPools = v3;
+-  *(int *)&sync.oldPools[8] = v4;
+-  *(unsigned long *)&sync.oldPools[0x10] = v10;
+   return;
+ }
+--- off/sync.(*poolDequeue).pushHead
++++ on/sync.(*poolDequeue).pushHead
+@@ -1,38 +1,26 @@
+ unsigned long sync.(*poolDequeue).pushHead(void *a0,int a1,int a2)
+ {
+-  int v1; // rdx | stack + 0x18
+-  int v2; // rax
+-  int *v3; // rcx
+-  int *v4; // rcx | stack - 0x28 | stack - 0x38
+-  int *v5; // r11
+-  unsigned __int128 v6; // rbx:rax
+-  void *v7; // rax | rcx | rdx | stack + 0x8
+-  int v8; // rbx | rsi | stack + 0x10
+-  int v9; // rcx | rdx | stack + 0x18
++  int *v1; // rcx | stack - 0x28 | stack - 0x38
++  unsigned __int128 v2; // rbx:rax
++  void *v3; // rax | rcx | rdx | stack + 0x8
++  int v4; // rbx | rsi | stack + 0x10
++  int v5; // rcx | rdx | stack + 0x18
+   
+-  v7 = a0;
+-  v8 = a1;
+-  v9 = a2;
+-  v6 = sync.(*poolDequeue).unpack(v7,sync/atomic.(*Uint64).Load(a0));
+-  if (SUB164(v6,0) == (uint4)((int4)((unsigned long *)v7)[2] + SUB164(v6,8)))
++  v3 = a0;
++  v4 = a1;
++  v5 = a2;
++  v2 = sync.(*poolDequeue).unpack(v3,sync/atomic.(*Uint64).Load(a0));
++  if (SUB164(v2,0) == (uint4)((int4)((unsigned long *)v3)[2] + SUB164(v2,8)))
+     return 0;
+-  v2 = (unsigned int)(uint4)((int4)((unsigned long *)v7)[2] - 1U & SUB164(v6,0)) * 0x10;
+-  v4 = (int *)(((int *)v7)[1] + v2);
+-  if (*v4)
++  v1 = (int *)(((int *)v3)[1] + (unsigned int)(uint4)((int4)((unsigned long *)v3)[2] - 1U & SUB164(v2,0)) * 0x10);
++  if (*v1)
+     return 0;
+-  if (!v8) {
+-    v8 = 0x4777e0;
+-    v9 = 0;
++  if (!v4) {
++    v4 = 0x4777e0;
++    v5 = 0;
+   }
+-  v1 = v9;
+-  *v4 = v8;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v2,SUB168(v6,8),v4);
+-    *v5 = v1;
+-    v5[1] = v3[1];
+-    v4 = v3;
+-  }
+-  v4[1] = v1;
+-  sync/atomic.(*Uint64).Add(v7,0x100000000);
++  *v1 = v4;
++  v1[1] = v5;
++  sync/atomic.(*Uint64).Add(v3,0x100000000);
+   return 1;
+ }
+--- off/sync.(*poolChain).pushHead
++++ on/sync.(*poolChain).pushHead
+@@ -3,137 +3,49 @@
+   char v1; // al
+   unsigned long v2; // rax
+   unsigned long *v3; // rax | rbx | rdi | rdx | stack - 0x10 | stack - 0x28 | stack - 0x60
+-  unsigned long v4; // rax
+-  unsigned long v5; // rax | rcx
+-  int v6; // rcx
+-  int v7; // rax | rbx | rcx | rdx | rsi | stack - 0x58
+-  int *v8; // rcx
+-  unsigned long v9; // rcx
+-  unsigned long v10; // rcx
+-  unsigned long v11; // rcx
+-  int *v12; // rcx
+-  int *v13; // rcx | stack + 0x8
+-  unsigned long v14; // rbx
+-  unsigned long v15; // rbx
+-  unsigned long v16; // rbx
+-  unsigned long v17; // rbx
+-  unsigned long v18; // rbx
+-  unsigned long v19; // rsi
+-  unsigned long v20; // rsi
+-  unsigned long v21; // rdi | rsi
+-  int v22; // rsi
+-  int v23; // rsi
+-  unsigned long v24; // rdi
+-  unsigned long v25; // rdi
+-  unsigned long v26; // rdi
+-  unsigned long v27; // rdi
+-  unsigned long v28; // rdi
+-  unsigned long *v29; // rdi
+-  unsigned long *v30; // rax | rbx | rdi | rdx | stack - 0x10 | stack - 0x28 | stack - 0x60
+-  unsigned long *v31; // r11
+-  int *v32; // r11
+-  int *v33; // r11
+-  unsigned long *v34; // r11
+-  int *v35; // r11
+-  unsigned long v36; // xmm15_qa
+-  unsigned long v37; // xmm15_qb
+-  unsigned __int128 v38; // rbx:rax
+-  int *v39; // rax | rcx | stack + 0x8
+-  unsigned long v40; // rbx | stack + 0x10
+-  unsigned long v41; // rcx | stack + 0x18
+-  int v42; // rbx | rcx | rdx | rsi | stack - 0x70
+-  int v43; // rax | rbx | rcx | rdx | rsi | stack - 0x58
++  unsigned long v4; // xmm15_qa
++  unsigned long v5; // xmm15_qb
++  int *v6; // rax | rcx | stack + 0x8
++  unsigned long v7; // rbx | stack + 0x10
++  unsigned long v8; // rcx | stack + 0x18
++  int v9; // rbx | rcx | rdx | rsi | stack - 0x70
++  int v10; // rax | rbx | rcx | rdx | rsi | stack - 0x58
+   
+-  v43 = *a0;
+-  v39 = a0;
+-  v40 = a1;
+-  v41 = a2;
+-  if (!v43) {
+-    v43 = runtime.newobject(0x47f1c0);
+-    v38 = runtime.makeslice(0x47cec0,8,8);
+-    v18 = SUB168(v38,8);
+-    v5 = SUB168(v38,0);
+-    *(unsigned long *)(v43 + 0x10) = 8;
+-    *(unsigned long *)(v43 + 0x18) = 8;
+-    v7 = v43;
+-    v21 = v19;
+-    v26 = v24;
+-    if (*(int4 *)runtime.writeBarrier) {
+-      runtime.gcWriteBarrier2(v5,v18,v43,v24,v19);
+-      *v31 = v2;
+-      v31[1] = *(unsigned long *)(v6 + 8);
+-      v5 = v2;
+-      v7 = v6;
+-      v18 = v14;
+-      v21 = v20;
+-      v26 = v25;
+-    }
+-    *(unsigned long *)(v7 + 8) = v5;
+-    v13 = v39;
+-    if (*(int4 *)runtime.writeBarrier) {
+-      runtime.gcWriteBarrier2(v5,v18,v39,v26,v21);
+-      *v32 = v43;
+-      v32[1] = *v8;
+-      v13 = v8;
+-    }
+-    *v13 = v43;
+-    sync.storePoolChainElt(&v39[1],v43);
++  v10 = *a0;
++  v6 = a0;
++  v7 = a1;
++  v8 = a2;
++  if (!v10) {
++    v10 = runtime.newobject(0x47f1c0);
++    v2 = runtime.makeslice(0x47cec0,8,8);
++    *(unsigned long *)(v10 + 0x10) = 8;
++    *(unsigned long *)(v10 + 0x18) = 8;
++    *(unsigned long *)(v10 + 8) = v2;
++    *v6 = v10;
++    sync.storePoolChainElt(&v6[1],v10);
+   }
+-  v1 = sync.(*poolDequeue).pushHead(v43,v40,v41);
++  v1 = sync.(*poolDequeue).pushHead(v10,v7,v8);
+   if (v1)
+     return;
+-  v42 = *(int *)(v43 + 0x10) * 2;
+-  if (0x40000000 <= v42)
+-    v42 = 0x40000000;
+-  runtime.newobject(0x47f1c0);
+-  v5 = v9;
+-  v18 = v15;
+-  v21 = v27;
+-  if (*(int4 *)runtime.writeBarrier) {
++  v9 = *(int *)(v10 + 0x10) * 2;
++  if (0x40000000 <= v9)
++    v9 = 0x40000000;
++  v3 = (unsigned long *)runtime.newobject(0x47f1c0);
++  if (*(int4 *)runtime.writeBarrier)
+     runtime.wbZero(0x47f1c0,v3);
+-    v5 = v10;
+-    v18 = v16;
+-    v21 = v28;
+-  }
+-  *v3 = v36;
+-  v3[1] = v37;
+-  v3[2] = v36;
+-  v3[3] = v37;
+-  v3[4] = v36;
+-  v3[5] = v37;
+-  v7 = v43;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v3,v18,v5,v21,v43);
+-    *v33 = v22;
+-    v33[1] = v3[5];
+-    v7 = v22;
+-  }
+-  v3[5] = v7;
+-  runtime.makeslice(0x47cec0,v42,v42);
+-  v3[2] = v42;
+-  v3[3] = v42;
+-  v5 = v4;
+-  v18 = v17;
+-  v30 = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v38 = runtime.gcWriteBarrier2(v4,v17,v11,v3,v42);
+-    v18 = SUB168(v38,8);
+-    v5 = SUB168(v38,0);
+-    *v34 = v5;
+-    v34[1] = v29[1];
+-    v42 = v23;
+-    v30 = v29;
+-  }
+-  v30[1] = v5;
+-  v13 = v39;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v5,v18,v39,v30,v42);
+-    *v35 = (int)v3;
+-    v35[1] = *v12;
+-    v13 = v12;
+-  }
+-  *v13 = (int)v3;
+-  sync.storePoolChainElt(v43 + 0x20,v3);
+-  sync.(*poolDequeue).pushHead(v3,v40,v41);
++  *v3 = v4;
++  v3[1] = v5;
++  v3[2] = v4;
++  v3[3] = v5;
++  v3[4] = v4;
++  v3[5] = v5;
++  v3[5] = v10;
++  v2 = runtime.makeslice(0x47cec0,v9,v9);
++  v3[2] = v9;
++  v3[3] = v9;
++  v3[1] = v2;
++  *v6 = (int)v3;
++  sync.storePoolChainElt(v10 + 0x20,v3);
++  sync.(*poolDequeue).pushHead(v3,v7,v8);
+   return;
+ }
+--- off/internal/oserror.init
++++ on/internal/oserror.init
+@@ -1,82 +1,21 @@
+-void internal/oserror.init(void) // return-dupe
++void internal/oserror.init(void)
+ {
+-  unsigned long v1; // ram 0x4edcb0 | rax
+-  unsigned long v2; // ram 0x4edcc0 | rax
+-  unsigned long v3; // ram 0x4edcd0 | rax
+-  unsigned long v4; // ram 0x4edce0 | rax
+-  unsigned long v5; // ram 0x4edcf0 | rax
+-  unsigned long v6; // rcx
+-  unsigned long v7; // rcx
+-  unsigned long v8; // rcx
+-  unsigned long v9; // rcx
+-  unsigned long v10; // rcx
+-  unsigned long v11; // rbx
+-  unsigned long v12; // rbx
+-  unsigned long v13; // rbx
+-  unsigned long v14; // rbx
+-  unsigned long v15; // rbx
+-  unsigned long v16; // rbx
+-  unsigned long v17; // rbx
+-  unsigned long v18; // rbx
+-  unsigned long v19; // ram 0x4edcb8 | ram 0x4edcc8 | ram 0x4edcd8 | ram 0x4edce8 | rbx
+-  unsigned long v20; // ram 0x4edcf8 | rbx
+-  unsigned long v21; // rbx
+-  unsigned long *v22; // r11
+-  unsigned long *v23; // r11
+-  unsigned long *v24; // r11
+-  unsigned long *v25; // r11
+-  unsigned long *v26; // r11
++  unsigned __int128 v1; // rbx:rax
+   
+-  errors.New(s_4870d5,0x10);
+-  v19 = v11;
+-  *(unsigned long *)internal/oserror.ErrInvalid = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v1,v11,v6);
+-    *v22 = v12;
+-    v22[1] = *(unsigned long *)&internal/oserror.ErrInvalid[8];
+-    v19 = v12;
+-  }
+-  *(unsigned long *)&internal/oserror.ErrInvalid[8] = v19;
+-  errors.New(s_4873da,0x11);
+-  v19 = v13;
+-  *(unsigned long *)internal/oserror.ErrPermission = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v2,v13,v7);
+-    *v23 = v14;
+-    v23[1] = *(unsigned long *)&internal/oserror.ErrPermission[8];
+-    v19 = v14;
+-  }
+-  *(unsigned long *)&internal/oserror.ErrPermission[8] = v19;
+-  errors.New("file already exists",0x13);
+-  v19 = v15;
+-  *(unsigned long *)internal/oserror.ErrExist = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v3,v15,v8);
+-    *v24 = v16;
+-    v24[1] = *(unsigned long *)&internal/oserror.ErrExist[8];
+-    v19 = v16;
+-  }
+-  *(unsigned long *)&internal/oserror.ErrExist[8] = v19;
+-  errors.New("file does not exist",0x13);
+-  v19 = v17;
+-  *(unsigned long *)internal/oserror.ErrNotExist = v4;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v4,v17,v9);
+-    *v25 = v18;
+-    v25[1] = *(unsigned long *)&internal/oserror.ErrNotExist[8];
+-    v19 = v18;
+-  }
+-  *(unsigned long *)&internal/oserror.ErrNotExist[8] = v19;
+-  errors.New("file already closed",0x13);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)internal/oserror.ErrClosed = v5;
+-    runtime.gcWriteBarrier2(v5,v20,v10);
+-    *v26 = v21;
+-    v26[1] = *(unsigned long *)&internal/oserror.ErrClosed[8];
+-    *(unsigned long *)&internal/oserror.ErrClosed[8] = v21;
+-    return;
+-  }
+-  *(unsigned long *)internal/oserror.ErrClosed = v5;
+-  *(unsigned long *)&internal/oserror.ErrClosed[8] = v20;
++  v1 = errors.New(s_4870d5,0x10);
++  *(unsigned long *)&internal/oserror.ErrInvalid[8] = SUB168(v1,8);
++  *(unsigned long *)internal/oserror.ErrInvalid = SUB168(v1,0);
++  v1 = errors.New(s_4873da,0x11);
++  *(unsigned long *)&internal/oserror.ErrPermission[8] = SUB168(v1,8);
++  *(unsigned long *)internal/oserror.ErrPermission = SUB168(v1,0);
++  v1 = errors.New("file already exists",0x13);
++  *(unsigned long *)&internal/oserror.ErrExist[8] = SUB168(v1,8);
++  *(unsigned long *)internal/oserror.ErrExist = SUB168(v1,0);
++  v1 = errors.New("file does not exist",0x13);
++  *(unsigned long *)&internal/oserror.ErrNotExist[8] = SUB168(v1,8);
++  *(unsigned long *)internal/oserror.ErrNotExist = SUB168(v1,0);
++  v1 = errors.New("file already closed",0x13);
++  *(unsigned long *)internal/oserror.ErrClosed = SUB168(v1,0);
++  *(unsigned long *)&internal/oserror.ErrClosed[8] = SUB168(v1,8);
+   return;
+ }
+--- off/syscall.init
++++ on/syscall.init
+@@ -1,33 +1,13 @@
+-void syscall.init(void) // return-dupe
++void syscall.init(void)
+ {
+-  unsigned long v1; // rax
+-  unsigned long v2; // ram 0x4edef0 | rax
+-  unsigned long v3; // ram 0x4ea748 | rax
+-  unsigned long v4; // ram 0x4edf00 | rcx
+-  unsigned long v5; // rcx
+-  unsigned long v6; // ram 0x4edef8 | rbx
+-  unsigned long v7; // rbx
+-  unsigned long *v8; // r11
+-  unsigned long *v9; // r11
++  unsigned long v1; // ram 0x4edef0 | rax
++  unsigned long v2; // ram 0x4edf00 | rcx
++  unsigned long v3; // ram 0x4edef8 | rbx
+   
+   syscall.runtime_envs();
+-  v2 = v1;
+-  *(unsigned long *)&syscall.envs[8] = v6;
+-  *(unsigned long *)&syscall.envs[0x10] = v4;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v2 = runtime.gcWriteBarrier2(v1,v6,v4);
+-    *v8 = v2;
+-    v8[1] = *(unsigned long *)syscall.envs;
+-  }
+-  *(unsigned long *)syscall.envs = v2;
+-  runtime.makemap_small();
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v2 = runtime.gcWriteBarrier2(v3,v7,v5);
+-    *v9 = v2;
+-    v9[1] = dat_4ea748;
+-    dat_4ea748 = v2;
+-    return;
+-  }
+-  dat_4ea748 = v3;
++  *(unsigned long *)syscall.envs = v1;
++  *(unsigned long *)&syscall.envs[8] = v3;
++  *(unsigned long *)&syscall.envs[0x10] = v2;
++  dat_4ea748 = runtime.makemap_small();
+   return;
+ }
+--- off/time.init
++++ on/time.init
+@@ -1,84 +1,23 @@
+-void time.init(void) // return-dupe
++void time.init(void)
+ {
+-  unsigned long v1; // ram 0x4edc50 | rax
+-  unsigned long v2; // ram 0x4edc60 | rax
+-  unsigned long v3; // ram 0x4edc70 | rax
+-  unsigned long v4; // ram 0x4edc80 | rax
+-  unsigned long v5; // ram 0x4edc90 | rax
+-  unsigned long v6; // rcx
+-  unsigned long v7; // rcx
+-  unsigned long v8; // rcx
+-  unsigned long v9; // rcx
+-  unsigned long v10; // rcx
+-  unsigned long v11; // rbx
+-  unsigned long v12; // rbx
+-  unsigned long v13; // rbx
+-  unsigned long v14; // rbx
+-  unsigned long v15; // rbx
+-  unsigned long v16; // rbx
+-  unsigned long v17; // rbx
+-  unsigned long v18; // rbx
+-  unsigned long v19; // ram 0x4edc58 | ram 0x4edc68 | ram 0x4edc78 | ram 0x4edc88 | rbx
+-  unsigned long v20; // ram 0x4edc98 | rbx
+-  unsigned long v21; // rbx
+-  unsigned long *v22; // r11
+-  unsigned long *v23; // r11
+-  unsigned long *v24; // r11
+-  unsigned long *v25; // r11
+-  unsigned long *v26; // r11
++  unsigned __int128 v1; // rbx:rax
+   
+-  errors.New("time: invalid number",0x14);
+-  v19 = v11;
+-  *(unsigned long *)time.errAtoi = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v1,v11,v6);
+-    *v22 = v12;
+-    v22[1] = *(unsigned long *)&time.errAtoi[8];
+-    v19 = v12;
+-  }
+-  *(unsigned long *)&time.errAtoi[8] = v19;
+-  errors.New("bad value for field",0x13);
+-  v19 = v13;
+-  *(unsigned long *)time.errBad = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v2,v13,v7);
+-    *v23 = v14;
+-    v23[1] = *(unsigned long *)&time.errBad[8];
+-    v19 = v14;
+-  }
+-  *(unsigned long *)&time.errBad[8] = v19;
+-  errors.New("time: bad [0-9]*",0x10);
+-  v19 = v15;
+-  *(unsigned long *)time.errLeadingInt = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v3,v15,v8);
+-    *v24 = v16;
+-    v24[1] = *(unsigned long *)&time.errLeadingInt[8];
+-    v19 = v16;
+-  }
+-  *(unsigned long *)&time.errLeadingInt[8] = v19;
++  v1 = errors.New("time: invalid number",0x14);
++  *(unsigned long *)&time.errAtoi[8] = SUB168(v1,8);
++  *(unsigned long *)time.errAtoi = SUB168(v1,0);
++  v1 = errors.New("bad value for field",0x13);
++  *(unsigned long *)&time.errBad[8] = SUB168(v1,8);
++  *(unsigned long *)time.errBad = SUB168(v1,0);
++  v1 = errors.New("time: bad [0-9]*",0x10);
++  *(unsigned long *)&time.errLeadingInt[8] = SUB168(v1,8);
++  *(unsigned long *)time.errLeadingInt = SUB168(v1,0);
+   runtime.mapinitnoop();
+   time.startNano = runtime.nanotime() + -1;
+-  errors.New("time: invalid location name",0x1b);
+-  v19 = v17;
+-  *(unsigned long *)time.errLocation = v4;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v4,v17,v9);
+-    *v25 = v18;
+-    v25[1] = *(unsigned long *)&time.errLocation[8];
+-    v19 = v18;
+-  }
+-  *(unsigned long *)&time.errLocation[8] = v19;
+-  errors.New("malformed time zone information",0x1f);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)time.errBadData = v5;
+-    runtime.gcWriteBarrier2(v5,v20,v10);
+-    *v26 = v21;
+-    v26[1] = *(unsigned long *)&time.errBadData[8];
+-    *(unsigned long *)&time.errBadData[8] = v21;
+-    return;
+-  }
+-  *(unsigned long *)time.errBadData = v5;
+-  *(unsigned long *)&time.errBadData[8] = v20;
++  v1 = errors.New("time: invalid location name",0x1b);
++  *(unsigned long *)&time.errLocation[8] = SUB168(v1,8);
++  *(unsigned long *)time.errLocation = SUB168(v1,0);
++  v1 = errors.New("malformed time zone information",0x1f);
++  *(unsigned long *)time.errBadData = SUB168(v1,0);
++  *(unsigned long *)&time.errBadData[8] = SUB168(v1,8);
+   return;
+ }
+--- off/path.init
++++ on/path.init
+@@ -1,18 +1,9 @@
+-void path.init(void) // return-dupe
++void path.init(void)
+ {
+-  unsigned long v1; // rbx
+-  unsigned long *v2; // r11
+-  unsigned __int128 v3; // rbx:rax
++  unsigned __int128 v1; // rbx:rax
+   
+-  v3 = errors.New("syntax error in pattern",0x17);
+-  *(unsigned long *)path.ErrBadPattern = SUB168(v3,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)path.ErrBadPattern,SUB168(v3,8));
+-    *v2 = v1;
+-    v2[1] = *(unsigned long *)&path.ErrBadPattern[8];
+-    *(unsigned long *)&path.ErrBadPattern[8] = v1;
+-    return;
+-  }
+-  *(unsigned long *)&path.ErrBadPattern[8] = SUB168(v3,8);
++  v1 = errors.New("syntax error in pattern",0x17);
++  *(unsigned long *)path.ErrBadPattern = SUB168(v1,0);
++  *(unsigned long *)&path.ErrBadPattern[8] = SUB168(v1,8);
+   return;
+ }
+--- off/io.init
++++ on/io.init
+@@ -1,142 +1,33 @@
+-void io.init(void) // return-dupe
++void io.init(void)
+ {
+-  unsigned long v1; // ram 0x4edb50 | rax
+-  unsigned long v2; // ram 0x4edb60 | rax
+-  unsigned long v3; // ram 0x4edb70 | rax
+-  unsigned long v4; // ram 0x4edb80 | rax
+-  unsigned long v5; // ram 0x4edb90 | rax
+-  unsigned long v6; // ram 0x4edba0 | rax
+-  unsigned long v7; // ram 0x4edbb0 | rax
+-  unsigned long v8; // ram 0x4edbc0 | rax
+-  unsigned long v9; // ram 0x4edbd0 | rax
+-  unsigned long v10; // rcx
+-  unsigned long v11; // rcx
+-  unsigned long v12; // rcx
+-  unsigned long v13; // rcx
+-  unsigned long v14; // rcx
+-  unsigned long v15; // rcx
+-  unsigned long v16; // rcx
+-  unsigned long v17; // rcx
+-  unsigned long v18; // rcx
+-  unsigned long v19; // rbx
+-  unsigned long v20; // rbx
+-  unsigned long v21; // rbx
+-  unsigned long v22; // rbx
+-  unsigned long v23; // rbx
+-  unsigned long v24; // rbx
+-  unsigned long v25; // rbx
+-  unsigned long v26; // rbx
+-  unsigned long v27; // rbx
+-  unsigned long v28; // rbx
+-  unsigned long v29; // rbx
+-  unsigned long v30; // rbx
+-  unsigned long v31; // rbx
+-  unsigned long v32; // rbx
+-  unsigned long v33; // rbx
+-  unsigned long v34; // rbx
+-  unsigned long v35; // ram 0x4edb58 | ram 0x4edb68 | ram 0x4edb78 | ram 0x4edb88 | ram 0x4edb98 | ram 0x4edba8 | ram 0x4edbb8 | ram 0x4edbc8 | rbx
+-  unsigned long v36; // ram 0x4edbd8 | rbx
+-  unsigned long v37; // rbx
+-  unsigned long *v38; // r11
+-  unsigned long *v39; // r11
+-  unsigned long *v40; // r11
+-  unsigned long *v41; // r11
+-  unsigned long *v42; // r11
+-  unsigned long *v43; // r11
+-  unsigned long *v44; // r11
+-  unsigned long *v45; // r11
+-  unsigned long *v46; // r11
++  unsigned __int128 v1; // rbx:rax
+   
+-  errors.New("short write",0xb);
+-  v35 = v19;
+-  *(unsigned long *)io.ErrShortWrite = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v1,v19,v10);
+-    *v38 = v20;
+-    v38[1] = *(unsigned long *)&io.ErrShortWrite[8];
+-    v35 = v20;
+-  }
+-  *(unsigned long *)&io.ErrShortWrite[8] = v35;
+-  errors.New("invalid write result",0x14);
+-  v35 = v21;
+-  *(unsigned long *)io.errInvalidWrite = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v2,v21,v11);
+-    *v39 = v22;
+-    v39[1] = *(unsigned long *)&io.errInvalidWrite[8];
+-    v35 = v22;
+-  }
+-  *(unsigned long *)&io.errInvalidWrite[8] = v35;
+-  errors.New("short buffer",0xc);
+-  v35 = v23;
+-  *(unsigned long *)io.ErrShortBuffer = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v3,v23,v12);
+-    *v40 = v24;
+-    v40[1] = *(unsigned long *)&io.ErrShortBuffer[8];
+-    v35 = v24;
+-  }
+-  *(unsigned long *)&io.ErrShortBuffer[8] = v35;
+-  errors.New("EOF",3);
+-  v35 = v25;
+-  *(unsigned long *)io.EOF = v4;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v4,v25,v13);
+-    *v41 = v26;
+-    v41[1] = *(unsigned long *)&io.EOF[8];
+-    v35 = v26;
+-  }
+-  *(unsigned long *)&io.EOF[8] = v35;
+-  errors.New("unexpected EOF",0xe);
+-  v35 = v27;
+-  *(unsigned long *)io.ErrUnexpectedEOF = v5;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v5,v27,v14);
+-    *v42 = v28;
+-    v42[1] = *(unsigned long *)&io.ErrUnexpectedEOF[8];
+-    v35 = v28;
+-  }
+-  *(unsigned long *)&io.ErrUnexpectedEOF[8] = v35;
+-  errors.New("multiple Read calls return no data or error",0x2b);
+-  v35 = v29;
+-  *(unsigned long *)io.ErrNoProgress = v6;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v6,v29,v15);
+-    *v43 = v30;
+-    v43[1] = *(unsigned long *)&io.ErrNoProgress[8];
+-    v35 = v30;
+-  }
+-  *(unsigned long *)&io.ErrNoProgress[8] = v35;
+-  errors.New("Seek: invalid whence",0x14);
+-  v35 = v31;
+-  *(unsigned long *)io.errWhence = v7;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v7,v31,v16);
+-    *v44 = v32;
+-    v44[1] = *(unsigned long *)&io.errWhence[8];
+-    v35 = v32;
+-  }
+-  *(unsigned long *)&io.errWhence[8] = v35;
+-  errors.New("Seek: invalid offset",0x14);
+-  v35 = v33;
+-  *(unsigned long *)io.errOffset = v8;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v8,v33,v17);
+-    *v45 = v34;
+-    v45[1] = *(unsigned long *)&io.errOffset[8];
+-    v35 = v34;
+-  }
+-  *(unsigned long *)&io.errOffset[8] = v35;
+-  errors.New("io: read/write on closed pipe",0x1d);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)io.ErrClosedPipe = v9;
+-    runtime.gcWriteBarrier2(v9,v36,v18);
+-    *v46 = v37;
+-    v46[1] = *(unsigned long *)&io.ErrClosedPipe[8];
+-    *(unsigned long *)&io.ErrClosedPipe[8] = v37;
+-    return;
+-  }
+-  *(unsigned long *)io.ErrClosedPipe = v9;
+-  *(unsigned long *)&io.ErrClosedPipe[8] = v36;
++  v1 = errors.New("short write",0xb);
++  *(unsigned long *)&io.ErrShortWrite[8] = SUB168(v1,8);
++  *(unsigned long *)io.ErrShortWrite = SUB168(v1,0);
++  v1 = errors.New("invalid write result",0x14);
++  *(unsigned long *)&io.errInvalidWrite[8] = SUB168(v1,8);
++  *(unsigned long *)io.errInvalidWrite = SUB168(v1,0);
++  v1 = errors.New("short buffer",0xc);
++  *(unsigned long *)&io.ErrShortBuffer[8] = SUB168(v1,8);
++  *(unsigned long *)io.ErrShortBuffer = SUB168(v1,0);
++  v1 = errors.New("EOF",3);
++  *(unsigned long *)&io.EOF[8] = SUB168(v1,8);
++  *(unsigned long *)io.EOF = SUB168(v1,0);
++  v1 = errors.New("unexpected EOF",0xe);
++  *(unsigned long *)&io.ErrUnexpectedEOF[8] = SUB168(v1,8);
++  *(unsigned long *)io.ErrUnexpectedEOF = SUB168(v1,0);
++  v1 = errors.New("multiple Read calls return no data or error",0x2b);
++  *(unsigned long *)&io.ErrNoProgress[8] = SUB168(v1,8);
++  *(unsigned long *)io.ErrNoProgress = SUB168(v1,0);
++  v1 = errors.New("Seek: invalid whence",0x14);
++  *(unsigned long *)&io.errWhence[8] = SUB168(v1,8);
++  *(unsigned long *)io.errWhence = SUB168(v1,0);
++  v1 = errors.New("Seek: invalid offset",0x14);
++  *(unsigned long *)&io.errOffset[8] = SUB168(v1,8);
++  *(unsigned long *)io.errOffset = SUB168(v1,0);
++  v1 = errors.New("io: read/write on closed pipe",0x1d);
++  *(unsigned long *)io.ErrClosedPipe = SUB168(v1,0);
++  *(unsigned long *)&io.ErrClosedPipe[8] = SUB168(v1,8);
+   return;
+ }
+--- off/io/fs.init
++++ on/io/fs.init
+@@ -1,106 +1,27 @@
+-void io/fs.init(unsigned long a0,unsigned long a1,unsigned long a2) // return-dupe
++void io/fs.init(void)
+ {
+-  unsigned long v1; // ram 0x4edb30 | rax
+-  unsigned long v2; // ram 0x4edb40 | rax
+-  unsigned long v3; // rcx
+-  unsigned long v4; // rcx
+-  unsigned long v5; // rcx
+-  unsigned long v6; // rcx
+-  unsigned long v7; // rcx
+-  unsigned long v8; // rcx
+-  unsigned long v9; // rbx
+-  unsigned long v10; // rbx
+-  unsigned long v11; // rbx
+-  unsigned long v12; // rbx
+-  unsigned long v13; // rbx
+-  unsigned long v14; // rbx
+-  unsigned long v15; // rbx
+-  unsigned long v16; // ram 0x4edae8 | ram 0x4edaf8 | ram 0x4edb08 | ram 0x4edb18 | ram 0x4edb28 | ram 0x4edb38 | rbx
+-  unsigned long v17; // ram 0x4edb48 | rbx
+-  unsigned long v18; // rbx
+-  unsigned long *v19; // r11
+-  unsigned long *v20; // r11
+-  unsigned long *v21; // r11
+-  unsigned long *v22; // r11
+-  unsigned long *v23; // r11
+-  unsigned long *v24; // r11
+-  unsigned long *v25; // r11
+-  unsigned __int128 v26; // rbx:rax
++  unsigned __int128 v1; // rbx:rax
+   
+-  v26 = io/fs.errInvalid();
+-  v16 = SUB168(v26,8);
+-  *(unsigned long *)io/fs.ErrInvalid = SUB168(v26,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)io/fs.ErrInvalid,v16);
+-    *v19 = v9;
+-    v19[1] = *(unsigned long *)&io/fs.ErrInvalid[8];
+-    a2 = v3;
+-    v16 = v9;
+-  }
+-  *(unsigned long *)&io/fs.ErrInvalid[8] = v16;
+-  v26 = io/fs.errPermission();
+-  v16 = SUB168(v26,8);
+-  *(unsigned long *)io/fs.ErrPermission = SUB168(v26,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)io/fs.ErrPermission,v16,a2);
+-    *v20 = v10;
+-    v20[1] = *(unsigned long *)&io/fs.ErrPermission[8];
+-    a2 = v4;
+-    v16 = v10;
+-  }
+-  *(unsigned long *)&io/fs.ErrPermission[8] = v16;
+-  v26 = io/fs.errExist();
+-  v16 = SUB168(v26,8);
+-  *(unsigned long *)io/fs.ErrExist = SUB168(v26,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)io/fs.ErrExist,v16,a2);
+-    *v21 = v11;
+-    v21[1] = *(unsigned long *)&io/fs.ErrExist[8];
+-    a2 = v5;
+-    v16 = v11;
+-  }
+-  *(unsigned long *)&io/fs.ErrExist[8] = v16;
+-  v26 = io/fs.errNotExist();
+-  v16 = SUB168(v26,8);
+-  *(unsigned long *)io/fs.ErrNotExist = SUB168(v26,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)io/fs.ErrNotExist,v16,a2);
+-    *v22 = v12;
+-    v22[1] = *(unsigned long *)&io/fs.ErrNotExist[8];
+-    a2 = v6;
+-    v16 = v12;
+-  }
+-  *(unsigned long *)&io/fs.ErrNotExist[8] = v16;
+-  v26 = io/fs.errClosed();
+-  v16 = SUB168(v26,8);
+-  *(unsigned long *)io/fs.ErrClosed = SUB168(v26,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)io/fs.ErrClosed,v16,a2);
+-    *v23 = v13;
+-    v23[1] = *(unsigned long *)&io/fs.ErrClosed[8];
+-    v16 = v13;
+-  }
+-  *(unsigned long *)&io/fs.ErrClosed[8] = v16;
+-  errors.New("skip this directory",0x13);
+-  v16 = v14;
+-  *(unsigned long *)io/fs.SkipDir = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v1,v14,v7);
+-    *v24 = v15;
+-    v24[1] = *(unsigned long *)&io/fs.SkipDir[8];
+-    v16 = v15;
+-  }
+-  *(unsigned long *)&io/fs.SkipDir[8] = v16;
+-  errors.New("skip everything and stop the walk",0x21);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)io/fs.SkipAll = v2;
+-    runtime.gcWriteBarrier2(v2,v17,v8);
+-    *v25 = v18;
+-    v25[1] = *(unsigned long *)&io/fs.SkipAll[8];
+-    *(unsigned long *)&io/fs.SkipAll[8] = v18;
+-    return;
+-  }
+-  *(unsigned long *)io/fs.SkipAll = v2;
+-  *(unsigned long *)&io/fs.SkipAll[8] = v17;
++  v1 = io/fs.errInvalid();
++  *(unsigned long *)&io/fs.ErrInvalid[8] = SUB168(v1,8);
++  *(unsigned long *)io/fs.ErrInvalid = SUB168(v1,0);
++  v1 = io/fs.errPermission();
++  *(unsigned long *)&io/fs.ErrPermission[8] = SUB168(v1,8);
++  *(unsigned long *)io/fs.ErrPermission = SUB168(v1,0);
++  v1 = io/fs.errExist();
++  *(unsigned long *)&io/fs.ErrExist[8] = SUB168(v1,8);
++  *(unsigned long *)io/fs.ErrExist = SUB168(v1,0);
++  v1 = io/fs.errNotExist();
++  *(unsigned long *)&io/fs.ErrNotExist[8] = SUB168(v1,8);
++  *(unsigned long *)io/fs.ErrNotExist = SUB168(v1,0);
++  v1 = io/fs.errClosed();
++  *(unsigned long *)&io/fs.ErrClosed[8] = SUB168(v1,8);
++  *(unsigned long *)io/fs.ErrClosed = SUB168(v1,0);
++  v1 = errors.New("skip this directory",0x13);
++  *(unsigned long *)&io/fs.SkipDir[8] = SUB168(v1,8);
++  *(unsigned long *)io/fs.SkipDir = SUB168(v1,0);
++  v1 = errors.New("skip everything and stop the walk",0x21);
++  *(unsigned long *)io/fs.SkipAll = SUB168(v1,0);
++  *(unsigned long *)&io/fs.SkipAll[8] = SUB168(v1,8);
+   return;
+ }
+--- off/internal/poll.init
++++ on/internal/poll.init
+@@ -1,52 +1,15 @@
+-void internal/poll.init(void) // return-dupe
++void internal/poll.init(void)
+ {
+-  unsigned long v1; // ram 0x4edc00 | rax
+-  unsigned long v2; // ram 0x4edc10 | rax
+-  unsigned long v3; // ram 0x4edc20 | rax
+-  unsigned long v4; // rcx
+-  unsigned long v5; // rcx
+-  unsigned long v6; // rcx
+-  unsigned long v7; // rbx
+-  unsigned long v8; // rbx
+-  unsigned long v9; // rbx
+-  unsigned long v10; // rbx
+-  unsigned long v11; // ram 0x4edc08 | ram 0x4edc18 | rbx
+-  unsigned long v12; // ram 0x4edc28 | rbx
+-  unsigned long v13; // rbx
+-  unsigned long *v14; // r11
+-  unsigned long *v15; // r11
+-  unsigned long *v16; // r11
++  unsigned __int128 v1; // rbx:rax
+   
+-  errors.New("use of closed file",0x12);
+-  v11 = v7;
+-  *(unsigned long *)internal/poll.ErrFileClosing = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v1,v7,v4);
+-    *v14 = v8;
+-    v14[1] = *(unsigned long *)&internal/poll.ErrFileClosing[8];
+-    v11 = v8;
+-  }
+-  *(unsigned long *)&internal/poll.ErrFileClosing[8] = v11;
+-  errors.New("file type does not support deadline",0x23);
+-  v11 = v9;
+-  *(unsigned long *)internal/poll.ErrNoDeadline = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v2,v9,v5);
+-    *v15 = v10;
+-    v15[1] = *(unsigned long *)&internal/poll.ErrNoDeadline[8];
+-    v11 = v10;
+-  }
+-  *(unsigned long *)&internal/poll.ErrNoDeadline[8] = v11;
+-  errors.New("not pollable",0xc);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)internal/poll.ErrNotPollable = v3;
+-    runtime.gcWriteBarrier2(v3,v12,v6);
+-    *v16 = v13;
+-    v16[1] = *(unsigned long *)&internal/poll.ErrNotPollable[8];
+-    *(unsigned long *)&internal/poll.ErrNotPollable[8] = v13;
+-    return;
+-  }
+-  *(unsigned long *)internal/poll.ErrNotPollable = v3;
+-  *(unsigned long *)&internal/poll.ErrNotPollable[8] = v12;
++  v1 = errors.New("use of closed file",0x12);
++  *(unsigned long *)&internal/poll.ErrFileClosing[8] = SUB168(v1,8);
++  *(unsigned long *)internal/poll.ErrFileClosing = SUB168(v1,0);
++  v1 = errors.New("file type does not support deadline",0x23);
++  *(unsigned long *)&internal/poll.ErrNoDeadline[8] = SUB168(v1,8);
++  *(unsigned long *)internal/poll.ErrNoDeadline = SUB168(v1,0);
++  v1 = errors.New("not pollable",0xc);
++  *(unsigned long *)internal/poll.ErrNotPollable = SUB168(v1,0);
++  *(unsigned long *)&internal/poll.ErrNotPollable[8] = SUB168(v1,8);
+   return;
+ }
+--- off/internal/safefilepath.init
++++ on/internal/safefilepath.init
+@@ -1,18 +1,9 @@
+-void internal/safefilepath.init(void) // return-dupe
++void internal/safefilepath.init(void)
+ {
+-  unsigned long v1; // rbx
+-  unsigned long *v2; // r11
+-  unsigned __int128 v3; // rbx:rax
++  unsigned __int128 v1; // rbx:rax
+   
+-  v3 = errors.New("invalid path",0xc);
+-  *(unsigned long *)internal/safefilepath.errInvalidPath = SUB168(v3,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)internal/safefilepath.errInvalidPath,SUB168(v3,8));
+-    *v2 = v1;
+-    v2[1] = *(unsigned long *)&internal/safefilepath.errInvalidPath[8];
+-    *(unsigned long *)&internal/safefilepath.errInvalidPath[8] = v1;
+-    return;
+-  }
+-  *(unsigned long *)&internal/safefilepath.errInvalidPath[8] = SUB168(v3,8);
++  v1 = errors.New("invalid path",0xc);
++  *(unsigned long *)internal/safefilepath.errInvalidPath = SUB168(v1,0);
++  *(unsigned long *)&internal/safefilepath.errInvalidPath[8] = SUB168(v1,8);
+   return;
+ }
+--- off/os.init
++++ on/os.init
+@@ -1,172 +1,34 @@
+-void os.init(unsigned long a0,unsigned long a1) // return-dupe
++void os.init(void)
+ {
+-  unsigned long v1; // ram 0x4eda58 | ram 0x4eda78 | ram 0x4eda98 | ram 0x4edaa8 | ram 0x4edaf8 | ram 0x4edb18 | rax | rbx
+-  unsigned long v2; // ram 0x4eda88 | ram 0x4edb28 | rax
+-  unsigned long v3; // ram 0x4edab0 | rax
+-  unsigned long v4; // rax
+-  unsigned long v5; // ram 0x4ed8e8 | ram 0x4ed8f0 | ram 0x4ed8f8 | ram 0x4eda48 | ram 0x4eda68 | ram 0x4eda88 | ram 0x4edab8 | ram 0x4edac8 | ram 0x4edae8 | ram 0x4edb08 | ram 0x4edb20 | rax | rbx | rcx
+-  unsigned long v6; // rax
+-  unsigned long v7; // rax
+-  unsigned long v8; // ram 0x4edac0 | rax
+-  unsigned long v9; // ram 0x4edad0 | rax
+-  unsigned long v10; // rcx
+-  unsigned long v11; // rcx
+-  unsigned long v12; // rcx
+-  unsigned long v13; // rcx
+-  unsigned long v14; // rcx
+-  unsigned long v15; // rcx
+-  unsigned long v16; // rcx
+-  unsigned long v17; // rbx
+-  unsigned long v18; // rbx
+-  unsigned long v19; // rbx
+-  unsigned long v20; // rbx
+-  unsigned long v21; // rbx
+-  unsigned long v22; // rbx
+-  unsigned long v23; // rbx
+-  unsigned long v24; // rbx
+-  unsigned long v25; // rbx
+-  unsigned long v26; // ram 0x4edad8 | rbx
+-  unsigned long v27; // rbx
+-  unsigned long *v28; // r11
+-  unsigned long *v29; // r11
+-  unsigned long *v30; // r11
+-  unsigned long *v31; // r11
+-  unsigned long *v32; // r11
+-  unsigned long *v33; // r11
+-  unsigned long *v34; // r11
+-  unsigned long *v35; // r11
+-  unsigned long *v36; // r11
+-  unsigned long *v37; // r11
+-  unsigned long *v38; // r11
+-  unsigned long *v39; // r11
+-  unsigned long *v40; // r11
+-  unsigned __int128 v41; // rbx:rax
++  unsigned __int128 v1; // rbx:rax
+   
+   *(unsigned long *)os.ErrInvalid = *(unsigned long *)io/fs.ErrInvalid;
+-  v5 = *(unsigned long *)&io/fs.ErrInvalid[8];
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v41 = runtime.gcWriteBarrier2(*(unsigned long *)&io/fs.ErrInvalid[8],a1,*(unsigned long *)io/fs.ErrInvalid);
+-    a1 = SUB168(v41,8);
+-    *v28 = SUB168(v41,0);
+-    v28[1] = *(unsigned long *)&os.ErrInvalid[8];
+-    v5 = SUB168(v41,0);
+-  }
++  *(unsigned long *)&os.ErrInvalid[8] = *(unsigned long *)&io/fs.ErrInvalid[8];
+   *(unsigned long *)os.ErrPermission = *(unsigned long *)io/fs.ErrPermission;
+-  v1 = *(unsigned long *)&io/fs.ErrPermission[8];
+-  *(unsigned long *)&os.ErrInvalid[8] = v5;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v41 = runtime.gcWriteBarrier2(*(unsigned long *)&io/fs.ErrPermission[8],a1,*(unsigned long *)io/fs.ErrPermission);
+-    a1 = SUB168(v41,8);
+-    *v29 = SUB168(v41,0);
+-    v29[1] = *(unsigned long *)&os.ErrPermission[8];
+-    v1 = SUB168(v41,0);
+-  }
++  *(unsigned long *)&os.ErrPermission[8] = *(unsigned long *)&io/fs.ErrPermission[8];
+   *(unsigned long *)os.ErrExist = *(unsigned long *)io/fs.ErrExist;
+-  v5 = *(unsigned long *)&io/fs.ErrExist[8];
+-  *(unsigned long *)&os.ErrPermission[8] = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v41 = runtime.gcWriteBarrier2(*(unsigned long *)&io/fs.ErrExist[8],a1,*(unsigned long *)io/fs.ErrExist);
+-    a1 = SUB168(v41,8);
+-    *v30 = SUB168(v41,0);
+-    v30[1] = *(unsigned long *)&os.ErrExist[8];
+-    v5 = SUB168(v41,0);
+-  }
++  *(unsigned long *)&os.ErrExist[8] = *(unsigned long *)&io/fs.ErrExist[8];
+   *(unsigned long *)os.ErrNotExist = *(unsigned long *)io/fs.ErrNotExist;
+-  v1 = *(unsigned long *)&io/fs.ErrNotExist[8];
+-  *(unsigned long *)&os.ErrExist[8] = v5;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v41 = runtime.gcWriteBarrier2(*(unsigned long *)&io/fs.ErrNotExist[8],a1,*(unsigned long *)io/fs.ErrNotExist);
+-    a1 = SUB168(v41,8);
+-    *v31 = SUB168(v41,0);
+-    v31[1] = *(unsigned long *)&os.ErrNotExist[8];
+-    v1 = SUB168(v41,0);
+-  }
++  *(unsigned long *)&os.ErrNotExist[8] = *(unsigned long *)&io/fs.ErrNotExist[8];
+   *(unsigned long *)os.ErrClosed = *(unsigned long *)io/fs.ErrClosed;
+-  v2 = *(unsigned long *)&io/fs.ErrClosed[8];
+-  v5 = *(unsigned long *)io/fs.ErrClosed;
+-  *(unsigned long *)&os.ErrNotExist[8] = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v2 = runtime.gcWriteBarrier2(*(unsigned long *)&io/fs.ErrClosed[8],a1,*(unsigned long *)io/fs.ErrClosed);
+-    *v32 = v2;
+-    v5 = *(unsigned long *)&os.ErrClosed[8];
+-    v32[1] = *(unsigned long *)&os.ErrClosed[8];
+-  }
+-  *(unsigned long *)&os.ErrClosed[8] = v2;
+-  v41 = os.errNoDeadline();
+-  v1 = SUB168(v41,8);
+-  *(unsigned long *)os.ErrNoDeadline = SUB168(v41,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)os.ErrNoDeadline,v1,v5);
+-    *v33 = v17;
+-    v33[1] = *(unsigned long *)&os.ErrNoDeadline[8];
+-    v5 = v10;
+-    v1 = v17;
+-  }
+-  *(unsigned long *)&os.ErrNoDeadline[8] = v1;
+-  v41 = os.errDeadlineExceeded();
+-  v1 = SUB168(v41,8);
+-  *(unsigned long *)os.ErrDeadlineExceeded = SUB168(v41,0);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(*(unsigned long *)os.ErrDeadlineExceeded,v1,v5);
+-    *v34 = v18;
+-    v34[1] = *(unsigned long *)&os.ErrDeadlineExceeded[8];
+-    v1 = v18;
+-  }
+-  *(unsigned long *)&os.ErrDeadlineExceeded[8] = v1;
+-  errors.New("os: process already finished",0x1c);
+-  v5 = v19;
+-  *(unsigned long *)os.ErrProcessDone = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v3,v19,v11);
+-    *v35 = v20;
+-    v35[1] = *(unsigned long *)&os.ErrProcessDone[8];
+-    v5 = v20;
+-  }
+-  *(unsigned long *)&os.ErrProcessDone[8] = v5;
+-  os.NewFile(syscall.Stdin,"/dev/stdin",10);
+-  v5 = v4;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v5 = runtime.gcWriteBarrier2(v4,v21,v12);
+-    *v36 = v5;
+-    v36[1] = os.Stdin;
+-  }
+-  os.Stdin = v5;
+-  os.NewFile(syscall.Stdout,"/dev/stdout",0xb);
+-  v5 = v6;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v5 = runtime.gcWriteBarrier2(v6,v22,v13);
+-    *v37 = v5;
+-    v37[1] = os.Stdout;
+-  }
+-  os.Stdout = v5;
+-  os.NewFile(syscall.Stderr,"/dev/stderr",0xb);
+-  v5 = v7;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v5 = runtime.gcWriteBarrier2(v7,v23,v14);
+-    *v38 = v5;
+-    v38[1] = os.Stderr;
+-  }
+-  os.Stderr = v5;
+-  errors.New("os: invalid use of WriteAt on file opened with O_APPEND",0x37);
+-  v5 = v24;
+-  *(unsigned long *)os.errWriteAtInAppendMode = v8;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v8,v24,v15);
+-    *v39 = v25;
+-    v39[1] = *(unsigned long *)&os.errWriteAtInAppendMode[8];
+-    v5 = v25;
+-  }
+-  *(unsigned long *)&os.errWriteAtInAppendMode[8] = v5;
+-  errors.New("pattern contains path separator",0x1f);
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)os.errPatternHasSeparator = v9;
+-    runtime.gcWriteBarrier2(v9,v26,v16);
+-    *v40 = v27;
+-    v40[1] = *(unsigned long *)&os.errPatternHasSeparator[8];
+-    *(unsigned long *)&os.errPatternHasSeparator[8] = v27;
+-    return;
+-  }
+-  *(unsigned long *)os.errPatternHasSeparator = v9;
+-  *(unsigned long *)&os.errPatternHasSeparator[8] = v26;
++  *(unsigned long *)&os.ErrClosed[8] = *(unsigned long *)&io/fs.ErrClosed[8];
++  v1 = os.errNoDeadline();
++  *(unsigned long *)&os.ErrNoDeadline[8] = SUB168(v1,8);
++  *(unsigned long *)os.ErrNoDeadline = SUB168(v1,0);
++  v1 = os.errDeadlineExceeded();
++  *(unsigned long *)&os.ErrDeadlineExceeded[8] = SUB168(v1,8);
++  *(unsigned long *)os.ErrDeadlineExceeded = SUB168(v1,0);
++  v1 = errors.New("os: process already finished",0x1c);
++  *(unsigned long *)&os.ErrProcessDone[8] = SUB168(v1,8);
++  *(unsigned long *)os.ErrProcessDone = SUB168(v1,0);
++  os.Stdin = os.NewFile(syscall.Stdin,"/dev/stdin",10);
++  os.Stdout = os.NewFile(syscall.Stdout,"/dev/stdout",0xb);
++  os.Stderr = os.NewFile(syscall.Stderr,"/dev/stderr",0xb);
++  v1 = errors.New("os: invalid use of WriteAt on file opened with O_APPEND",0x37);
++  *(unsigned long *)&os.errWriteAtInAppendMode[8] = SUB168(v1,8);
++  *(unsigned long *)os.errWriteAtInAppendMode = SUB168(v1,0);
++  v1 = errors.New("pattern contains path separator",0x1f);
++  *(unsigned long *)os.errPatternHasSeparator = SUB168(v1,0);
++  *(unsigned long *)&os.errPatternHasSeparator[8] = SUB168(v1,8);
+   return;
+ }
+--- off/os.init.func1
++++ on/os.init.func1
+@@ -1,25 +1,14 @@
+ undefined16 os.init.func1(void)
+ {
+-  char v1 [16]; // rbx:rax
++  char v1 [16]; // tmp
+   unsigned long *v2; // rax | rcx | stack - 0x10 | stack - 0x20
+   unsigned long v3; // rax
+-  unsigned long *v4; // rcx
+-  unsigned long *v5; // rax | rcx | stack - 0x10 | stack - 0x20
+-  unsigned long *v6; // r11
+   
+   v2 = (unsigned long *)runtime.newobject(0x4761c0);
+-  *(unsigned __int128 *)v1 = runtime.makeslice(0x476d40,0x2000,0x2000);
+-  v3 = SUB168(*(unsigned __int128 *)v1,0);
++  v3 = runtime.makeslice(0x476d40,0x2000,0x2000);
+   v2[1] = 0x2000;
+   v2[2] = 0x2000;
+-  v5 = v2;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v3 = runtime.gcWriteBarrier2(v3,SUB168(*(unsigned __int128 *)v1,8),v2);
+-    *v6 = v3;
+-    v6[1] = *v4;
+-    v5 = v4;
+-  }
+-  *v5 = v3;
++  *v2 = v3;
+   *(unsigned long *)&v1[8] = (unsigned long)v2;
+   *(unsigned long *)v1 = 0x476100;
+   return *(unsigned __int128 *)v1;
+
+--- off/os.(*dirInfo).close
++++ on/os.(*dirInfo).close
+@@ -1,21 +1,11 @@
+ void os.(*dirInfo).close(int *a0) // return-dupe
+ {
+-  int v1; // rax
+-  int *v2; // rdx | stack + 0x8
+-  unsigned long v3; // rcx
+-  unsigned long v4; // rbx
+-  unsigned long *v5; // r11
+-  int *v6; // rax | rdx | stack + 0x8
++  int *v1; // rax | rdx | stack + 0x8
+   
+   if (!*a0)
+     return;
+-  v6 = a0;
++  v1 = a0;
+   sync.(*Pool).Put(os.dirBufPool,0x476100,*a0);
+-  v2 = v6;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v1 = *v6;
+-    *v5 = runtime.gcWriteBarrier1(v1,v4,v3);
+-  }
+-  *v2 = 0;
++  *v1 = 0;
+   return;
+ }
+--- off/os.newFile
++++ on/os.newFile
+@@ -2,103 +2,56 @@
+ {
+   int v1; // rax
+   int *v2; // rax | rdx | stack - 0x18 | stack - 0x68
+-  unsigned long *v3; // rax | rdx | rsi | stack - 0x20 | stack - 0x40
+-  unsigned long *v4; // rax
+-  unsigned long *v5; // rax | rdx | rsi | stack - 0x20 | stack - 0x40
+-  unsigned long v6; // rcx
+-  unsigned long v7; // rcx
+-  unsigned long v8; // rcx
+-  unsigned long v9; // rcx
+-  unsigned long v10; // rbx
+-  unsigned long v11; // rbx
+-  unsigned long v12; // rbx
+-  unsigned long v13; // rbx
+-  unsigned long v14; // rsi
+-  unsigned long v15; // rsi | stack + 0x10
+-  unsigned long *v16; // rsi
+-  unsigned long *v17; // rax | rdx | rsi | stack - 0x20 | stack - 0x40
+-  unsigned long v18; // rdi
+-  unsigned long v19; // rdi
+-  unsigned long v20; // rdi
+-  unsigned long v21; // r8 | stack + 0x18
+-  unsigned long *v22; // r11
+-  int *v23; // r11
+-  unsigned long v24; // xmm15_qa
+-  unsigned long v25; // xmm15_qb
+-  int v26; // rax | rsi | stack + 0x8
+-  unsigned long v27; // rbx | rsi | stack + 0x10
+-  unsigned long v28; // r8 | rcx | stack + 0x18
+-  int v29; // rdi | stack + 0x20
+-  bool v30; // dl | stack - 0x81 | stack - 0x82 | stack - 0x84 | zf
+-  bool v31; // stack - 0x83 | zf
+-  bool v32; // dl | stack - 0x82 | zf
+-  bool v33; // dl | sil | stack - 0x81 | stack - 0x82 | zf
++  struct_44 *v3; // rax | rdx | rsi | stack - 0x20 | stack - 0x40
++  unsigned long v4; // xmm15_qa
++  unsigned long v5; // xmm15_qb
++  int v6; // rax | rsi | stack + 0x8
++  unsigned long v7; // rbx | rsi | stack + 0x10
++  unsigned long v8; // r8 | rcx | stack + 0x18
++  int v9; // rdi | stack + 0x20
++  bool v10; // dl | stack - 0x81 | stack - 0x82 | stack - 0x84 | zf
++  bool v11; // stack - 0x83 | zf
++  bool v12; // dl | stack - 0x82 | zf
++  bool v13; // dl | sil | stack - 0x81 | stack - 0x82 | zf
+   
+-  v33 = a0 == 1 || a0 == 2;
+-  v26 = a0;
+-  v27 = a1;
+-  v28 = a2;
+-  v29 = a3;
++  v13 = a0 == 1 || a0 == 2;
++  v6 = a0;
++  v7 = a1;
++  v8 = a2;
++  v9 = a3;
+   v2 = (int *)runtime.newobject(0x47bb60);
+-  runtime.newobject(0x480fe0);
+-  v9 = v6;
+-  v13 = v10;
+-  if (*(int4 *)runtime.writeBarrier) {
++  v3 = (struct_44 *)runtime.newobject(0x480fe0);
++  if (*(int4 *)runtime.writeBarrier)
+     runtime.wbZero(0x480fe0,v3);
+-    v9 = v7;
+-    v13 = v11;
+-  }
+-  *v3 = v24;
+-  v3[1] = v25;
++  v3->field_0x0 = v4;
++  v3->field_0x8 = v5;
+   sub_467350();
+-  v3[2] = v26;
+-  *(char *)&v3[6] = 1;
+-  ((char *)v3)[0x31] = 1;
+-  v3[8] = v28;
+-  v5 = v3;
+-  v15 = v27;
+-  v20 = v18;
+-  v21 = v28;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v3,v13,v9,v18,v27,v28);
+-    *v22 = v14;
+-    v21 = v3[7];
+-    v22[1] = v21;
+-    v5 = v4;
+-    v9 = v8;
+-    v13 = v12;
+-    v15 = v14;
+-    v20 = v19;
+-  }
+-  v3[7] = v15;
+-  ((bool *)v3)[0x51] = v33;
+-  v17 = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    runtime.gcWriteBarrier2(v5,v13,v9,v20,v3,v21);
+-    *v23 = (int)v16;
+-    v23[1] = *v2;
+-    v17 = v16;
+-  }
+-  *v2 = (int)v17;
+-  v32 = v29 == 1 || v29 == 2;
+-  v33 = v32;
+-  if (v29 != 1 && v29 != 2)
+-    v33 = v29 == 3;
+-  v30 = v33;
+-  v31 = 0;
+-  if ((v33) && (v29 != 3)) {
+-    v31 = syscall.SetNonblock(v26,1) != 0;
+-    if (v31)
+-      v30 = 0;
++  v3->field_0x10 = v6;
++  v3->field_0x30 = 1;
++  v3->field_0x31 = 1;
++  v3->field_0x40 = v8;
++  v3->field_0x38 = v7;
++  v3->field_0x51 = v13;
++  *v2 = (int)v3;
++  v12 = v9 == 1 || v9 == 2;
++  v13 = v12;
++  if (v9 != 1 && v9 != 2)
++    v13 = v9 == 3;
++  v10 = v13;
++  v11 = 0;
++  if ((v13) && (v9 != 3)) {
++    v11 = syscall.SetNonblock(v6,1) != 0;
++    if (v11)
++      v10 = 0;
+     else {
+       *(char *)(*v2 + 0x50) = 1;
+     }
+-    v31 = !v31;
++    v11 = !v11;
+   }
+   v1 = *v2;
+-  if (!internal/poll.(*FD).Init(v1,"file",4,v30))
+-    v31 = 0;
+-  if ((v31) && (!syscall.SetNonblock(v26,0)))
++  if (!internal/poll.(*FD).Init(v1,"file",4,v10))
++    v11 = 0;
++  if ((v11) && (!syscall.SetNonblock(v6,0)))
+     *(char *)(*v2 + 0x50) = 0;
+   runtime.SetFinalizer(0x478e00,*v2,0x477840,0x48ce40);
+   return;
+
+--- off/os.(*file).close
++++ on/os.(*file).close
+@@ -1,114 +1,46 @@
+ undefined16 os.(*file).close(void *a0)
+ {
+-  unsigned long v1; // rsi
++  unsigned long v1; // r8
+   char v2 [16]; // rbx:rax
+   char v3 [16]; // tmp
+   char v4; // al
+-  unsigned long *v5; // rax | rdx | stack - 0x28
+-  unsigned long *v6; // rax
+-  unsigned long *v7; // rax
+-  unsigned long *v8; // rax | rdx | stack - 0x28
+-  void *v9; // rcx
+-  void *v10; // rcx | stack + 0x8
+-  unsigned long v11; // rcx
+-  unsigned long v12; // rcx
+-  unsigned long v13; // rcx
+-  unsigned long v14; // rcx | rdx
+-  unsigned long v15; // rbx
+-  unsigned long v16; // rbx
+-  unsigned long v17; // rbx
+-  unsigned long v18; // rbx
+-  unsigned long v19; // rsi
+-  unsigned long v20; // rsi
+-  unsigned long v21; // rsi
+-  unsigned long v22; // rdi
+-  unsigned long v23; // rdi
+-  unsigned long v24; // rdi
+-  unsigned long v25; // rdi
+-  unsigned long v26; // rdi
+-  unsigned long v27; // r8
+-  unsigned long v28; // r8
+-  unsigned long v29; // r8
+-  unsigned long v30; // r8
+-  unsigned long *v31; // r11
+-  unsigned long *v32; // r11
+-  unsigned long *v33; // r11
+-  unsigned long *v34; // r11
+-  char *v35; // stack - 0x48 | xmm15_qa
+-  unsigned long *v36; // stack - 0x40 | xmm15_qb
+-  void *v37; // rax | rbx | rcx | rsi | stack + 0x8
+-  char *v38; // stack - 0x48 | xmm15_qa
+-  unsigned long *v39; // rax | rdx | stack - 0x28 | stack - 0x40 | xmm15_qb
+-  int v40; // r8 | ram 0x4eda80 | rax | rcx | stack - 0x38
+-  unsigned long v41; // ram 0x4eda88 | rbx | rdx | rsi | stack - 0x30
++  char *v5; // stack - 0x48 | xmm15_qa
++  unsigned long *v6; // stack - 0x40 | xmm15_qb
++  void *v7; // rax | rbx | rcx | rsi | stack + 0x8
++  char *v8; // stack - 0x48 | xmm15_qa
++  unsigned long *v9; // rax | rdx | stack - 0x28 | stack - 0x40 | xmm15_qb
++  int v10; // r8 | ram 0x4eda80 | rax | rcx | stack - 0x38
++  unsigned long v11; // ram 0x4eda88 | rbx | rdx | rsi | stack - 0x30
+   
+   if (a0) {
+-    v37 = a0;
++    v7 = a0;
+     if (((int *)a0)[9]) {
+-      *(unsigned __int128 *)v2 = os.(*dirInfo).close(((unsigned long *)a0)[9]);
+-      v10 = v37;
+-      if (*(int4 *)runtime.writeBarrier) {
+-        v14 = ((unsigned long *)v37)[9];
+-        runtime.gcWriteBarrier1(SUB168(*(unsigned __int128 *)v2,0),SUB168(*(unsigned __int128 *)v2,8),v37,v22,v19,v27);
+-        *v31 = v14;
+-        v10 = v9;
++      os.(*dirInfo).close(((unsigned long *)a0)[9]);
++      ((unsigned long *)v7)[9] = 0;
++    }
++    *(unsigned __int128 *)v2 = internal/poll.(*FD).Close(v7);
++    v11 = SUB168(*(unsigned __int128 *)v2,8);
++    v10 = SUB168(*(unsigned __int128 *)v2,0);
++    v8 = v5;
++    v9 = v6;
++    if (v10) {
++      if ((*(int *)internal/poll.ErrFileClosing == v10) && (v4 = runtime.ifaceeq(v10,v11,*(unsigned long *)&internal/poll.ErrFileClosing[8]), v4)) {
++        v10 = *(int *)os.ErrClosed;
++        v11 = *(unsigned long *)&os.ErrClosed[8];
+       }
+-      ((unsigned long *)v10)[9] = 0;
++      v9 = (unsigned long *)runtime.newobject(0x47e380);
++      v9[1] = 5;
++      *v9 = 0x48591c;
++      v1 = ((unsigned long *)v7)[7];
++      v9[3] = ((unsigned long *)v7)[8];
++      v9[2] = v1;
++      v9[4] = v10;
++      v9[5] = v11;
++      v8 = go:itab.*io/fs.PathError,error;
+     }
+-    *(unsigned __int128 *)v2 = internal/poll.(*FD).Close(v37);
+-    v41 = SUB168(*(unsigned __int128 *)v2,8);
+-    v40 = SUB168(*(unsigned __int128 *)v2,0);
+-    v38 = v35;
+-    v39 = v36;
+-    if (v40) {
+-      if ((*(int *)internal/poll.ErrFileClosing == v40) && (v4 = runtime.ifaceeq(v40,v41,*(unsigned long *)&internal/poll.ErrFileClosing[8]), v4)) {
+-        v40 = *(int *)os.ErrClosed;
+-        v41 = *(unsigned long *)&os.ErrClosed[8];
+-      }
+-      runtime.newobject(0x47e380);
+-      v5[1] = 5;
+-      v8 = v5;
+-      v14 = v11;
+-      v18 = v15;
+-      v26 = v23;
+-      if (*(int4 *)runtime.writeBarrier) {
+-        v14 = *v5;
+-        runtime.gcWriteBarrier1(v5,v15,v11,v23,v20,v28);
+-        *v32 = v14;
+-        v8 = v6;
+-        v14 = v12;
+-        v18 = v16;
+-        v26 = v24;
+-      }
+-      *v8 = 0x48591c;
+-      v30 = ((unsigned long *)v37)[7];
+-      v1 = ((unsigned long *)v37)[8];
+-      v5[3] = v1;
+-      if (*(int4 *)runtime.writeBarrier) {
+-        runtime.gcWriteBarrier2(v8,v18,v14,v26,v1,v30);
+-        *v33 = v29;
+-        v33[1] = v5[2];
+-        v8 = v7;
+-        v14 = v13;
+-        v18 = v17;
+-        v26 = v25;
+-        v30 = v29;
+-      }
+-      v5[2] = v30;
+-      v5[4] = v40;
+-      if (*(int4 *)runtime.writeBarrier) {
+-        runtime.gcWriteBarrier2(v8,v18,v14,v26,v41,v40);
+-        *v34 = v21;
+-        v34[1] = v5[5];
+-        v41 = v21;
+-      }
+-      v5[5] = v41;
+-      v38 = go:itab.*io/fs.PathError,error;
+-      v39 = v5;
+-    }
+-    runtime.SetFinalizer(0x478e00,v37,0,0);
+-    *(unsigned long *)&v3[8] = (unsigned long)v39;
+-    *(unsigned long *)v3 = (unsigned long)v38;
++    runtime.SetFinalizer(0x478e00,v7,0,0);
++    *(unsigned long *)&v3[8] = (unsigned long)v9;
++    *(unsigned long *)v3 = (unsigned long)v8;
+     return *(unsigned __int128 *)v3;
+   }
+   *(unsigned long *)&v2[8] = 0x490948;
+
+--- off/os.init.0
++++ on/os.init.0
+@@ -1,23 +1,12 @@
+-void os.init.0(void) // return-dupe
++void os.init.0(void)
+ {
+-  unsigned long v1; // ram 0x4edd10 | rax
+-  unsigned long v2; // rax
+-  unsigned long v3; // ram 0x4edd20 | rcx
+-  unsigned long v4; // ram 0x4edd18 | rbx
+-  unsigned long *v5; // r11
++  unsigned long v1; // rax
++  unsigned long v2; // rcx
++  unsigned long v3; // rbx
+   
+   os.runtime_args();
+-  if (*(int4 *)runtime.writeBarrier) {
+-    *(unsigned long *)&os.Args[8] = v4;
+-    *(unsigned long *)&os.Args[0x10] = v3;
+-    v2 = runtime.gcWriteBarrier2(v1,v4,v3);
+-    *v5 = v2;
+-    v5[1] = *(unsigned long *)os.Args;
+-    *(unsigned long *)os.Args = v2;
+-    return;
+-  }
++  *(unsigned long *)&os.Args[8] = v3;
++  *(unsigned long *)&os.Args[0x10] = v2;
+   *(unsigned long *)os.Args = v1;
+-  *(unsigned long *)&os.Args[8] = v4;
+-  *(unsigned long *)&os.Args[0x10] = v3;
+   return;
+ }
+--- off/main.newNode
++++ on/main.newNode
+@@ -1,22 +1,12 @@
+ void main.newNode(unsigned long a0)
+ {
+-  unsigned long *v1; // rax | rcx | stack - 0x10
+-  unsigned long *v2; // rax | rcx | stack - 0x10
+-  unsigned long v3; // rcx
+-  unsigned long *v4; // r11
+-  unsigned __int128 v5; // rbx:rax
+-  unsigned long v6; // rax | rdx | stack + 0x8
++  struct_2 *v1; // rax | rcx | stack - 0x10
++  unsigned long v2; // rax | rdx | stack + 0x8
+   
+-  v6 = a0;
+-  v5 = runtime.newobject(0x47c1a0);
+-  v1 = SUB168(v5,0);
+-  *v1 = 0;
+-  v2 = v1;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v2 = (unsigned long *)runtime.gcWriteBarrier1(v1,SUB168(v5,8),v1[1]);
+-    *v4 = v3;
+-  }
+-  v2[1] = 0;
+-  *v1 = v6;
++  v2 = a0;
++  v1 = (struct_2 *)runtime.newobject(0x47c1a0);
++  v1->field_0x0 = 0;
++  v1->field_0x8 = 0;
++  v1->field_0x0 = v2;
+   return;
+ }
+--- off/main.push
++++ on/main.push
+@@ -1,31 +1,11 @@
+-void main.push(unsigned long a0) // return-dupe
++void main.push(unsigned long a0)
+ {
+   int v1; // rax | stack - 0x10
+-  int v2; // rax | stack - 0x10
+-  unsigned long v3; // ram 0x4ed8e0 | rax | rcx
+-  unsigned long v4; // rcx
+-  unsigned long *v5; // r11
+-  unsigned long *v6; // r11
+-  unsigned long v7; // rax | stack + 0x8
++  unsigned long v2; // rax | stack + 0x8
+   
+-  v7 = a0;
++  v2 = a0;
+   v1 = main.newNode(a0);
+-  v2 = v1;
+-  v3 = main.head;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v2 = runtime.gcWriteBarrier2(v1);
+-    *v5 = v4;
+-    v5[1] = *(unsigned long *)(v2 + 8);
+-    v3 = v4;
+-  }
+-  *(unsigned long *)(v2 + 8) = v3;
+-  if (*(int4 *)runtime.writeBarrier) {
+-    v3 = runtime.gcWriteBarrier2(v1);
+-    *v6 = v3;
+-    v6[1] = main.head;
+-    main.head = v3;
+-    return;
+-  }
++  *(int *)(v1 + 8) = main.head;
+   main.head = v1;
+   return;
+ }

@@ -8,3 +8,5 @@ pub mod kuna_securitycheck;
 pub mod kuna_stackguard;
 pub mod kuna_regiongraph;
 pub mod kuna_regionid;
+
+pub mod kuna_gobounds;

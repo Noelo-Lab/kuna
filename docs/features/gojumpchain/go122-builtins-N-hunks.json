@@ -1,0 +1,331 @@
+[
+  {
+    "name": "errors.init",
+    "address": "0x46a5c0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,39 +1,13 @@",
+        "classification": "2 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "errors.New",
+    "address": "0x46a6a0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,26 +1,15 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.init",
+    "address": "0x46a7a0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,16 +1,5 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*Once).doSlow",
+    "address": "0x46ae20",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,73 +1,49 @@",
+        "classification": "2 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*Pool).Put",
+    "address": "0x46b0a0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,35 +1,22 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*Pool).pinSlow",
+    "address": "0x46b2c0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier4": 1,
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,130 +1,90 @@",
+        "classification": "2 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.poolCleanup",
+    "address": "0x46b680",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier1": 2,
+      "runtime.gcWriteBarrier2": 1,
+      "runtime.gcWriteBarrier3": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,86 +1,34 @@",
+        "classification": "4 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*poolDequeue).pushHead",
+    "address": "0x46b960",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,38 +1,26 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "sync.(*poolChain).pushHead",
+    "address": "0x46bba0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 5
+    },
+    "hunks": [
+      {
+        "range": "@@ -3,137 +3,49 @@",
+        "classification": "5 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "internal/oserror.init",
+    "address": "0x46c320",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 5
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,82 +1,21 @@",
+        "classification": "5 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "syscall.init",
+    "address": "0x46c4a0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,33 +1,13 @@",
+        "classification": "2 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "time.init",
+    "address": "0x46d2e0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 5
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,84 +1,23 @@",
+        "classification": "5 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "path.init",
+    "address": "0x46d480",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,9 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "io.init",
+    "address": "0x46d4e0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 9
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,142 +1,33 @@",
+        "classification": "9 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "io/fs.init",
+    "address": "0x46d760",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 7
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,106 +1,27 @@",
+        "classification": "7 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "internal/poll.init",
+    "address": "0x46de60",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 3
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,52 +1,15 @@",
+        "classification": "3 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "internal/safefilepath.init",
+    "address": "0x46eb00",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,18 +1,9 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "os.init",
+    "address": "0x46eb60",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 13
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,172 +1,34 @@",
+        "classification": "13 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "os.init.func1",
+    "address": "0x46eec0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,25 +1,14 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "os.(*dirInfo).close",
+    "address": "0x46ef80",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier1": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,21 +1,11 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "os.newFile",
+    "address": "0x46f220",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -2,103 +2,56 @@",
+        "classification": "2 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "os.(*file).close",
+    "address": "0x46f5a0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier1": 2,
+      "runtime.gcWriteBarrier2": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,114 +1,46 @@",
+        "classification": "4 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "os.init.0",
+    "address": "0x46f800",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,23 +1,12 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "main.newNode",
+    "address": "0x46f9c0",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier1": 1
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,22 +1,12 @@",
+        "classification": "1 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  },
+  {
+    "name": "main.push",
+    "address": "0x46fa60",
+    "direct_callee_count_deltas": {
+      "runtime.gcWriteBarrier2": 2
+    },
+    "hunks": [
+      {
+        "range": "@@ -1,31 +1,11 @@",
+        "classification": "2 GC barrier call(s) and their buffer writes removed after forwarding-path normalization; original common-join stores retained; dead spill, SSA/type and local-numbering cleanup"
+      }
+    ]
+  }
+]

@@ -572,6 +572,7 @@ pub fn universal_sched(
             // fed the drop.  Before `outline`, so a region whose only call was drop
             // glue becomes outline-eligible.  Inert on a non-Rust binary.
             act!(crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode::boxed("deadcode")),
+            act!(crate::kuna_gojumpchain::ActionGoJumpChain::boxed("deadcode")),
             act!(crate::p2_lift::kuna_gomorestack::ActionGoMorestack::boxed("deadcode")),
             act!(crate::p2_lift::kuna_gowritebarrier::ActionGoWriteBarrier::boxed("deadcode")),
             // (kuna) outline (option `outline`, default-OFF - destructive, and inert
@@ -674,6 +675,7 @@ pub fn universal_sched(
             // because it is the same edge-removal primitive pair on a different
             // trigger; the repeating fullloop re-runs mainloop's dead-code and type
             // passes over the reduced graph before P8 structures it.
+            act!(crate::kuna_gobounds::ActionGoBounds::boxed("returnsplit")),
             act!(Box::new(crate::kuna_securitycheck::ActionRemoveSecurityCheck::new(
                 false,
                 "returnsplit"

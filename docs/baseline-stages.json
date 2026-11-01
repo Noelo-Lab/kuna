@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3408,
-    3408
+    3417,
+    3417
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -992,7 +992,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 354 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 356 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2604,6 +2604,15 @@
     "data:globalvalue #7: the conversion reads the value",
     "data:globalvalue #8: the conversion does not read the global",
     "data:globalvalue #9: the strtoul result is stored where the binary stores it",
+    "data:gobounds: conditional retained when disabled or non-Go",
+    "data:gobounds: every pass retains the indexed load",
+    "data:gobounds: global write before panic retained",
+    "data:gobounds: panic retained when disabled or non-Go",
+    "data:gobounds: side effect before panic retained",
+    "data:gojumpchain: a forwarding block with a store is retained",
+    "data:gojumpchain: a jump cycle stays an infinite loop",
+    "data:gojumpchain: forwarded barriers fold only with Go and on",
+    "data:gojumpchain: real stores survive every pass",
     "data:guarded SPARC stack read: capture stays inside success branch",
     "data:guarded SPARC stack read: legacy capture before success branch",
     "data:guarded SPARC stack read: saved value reaches consumer",

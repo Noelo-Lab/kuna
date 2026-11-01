@@ -53,6 +53,7 @@
 //! (`tflagExtraStar` prefixes a `*` to strip). A struct type continues with
 //! `pkgPath (ptr) @48`, `fields slice @56`: each field is
 //! `{name (ptr), typ (ptr), offset (uintptr)}`, 24 bytes, since go1.19.
+//! Go1.18 stores `offset << 1 | embedded` in that final word instead.
 //!
 //! ## Gating
 //!
@@ -74,6 +75,7 @@ use kuna_decomp::kuna_langfacet::LangFacet;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use crate::pclntab::{locate_header, ImageBytes};
+use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
 const KIND_MASK: u8 = 0x1f;
@@ -523,7 +525,9 @@ fn intern_named_structs(
     tf: &dyn TypeFactory,
     img: &ImageBytes,
     meta: &TypeMeta,
+    version: Option<(u16, u16)>,
 ) -> (usize, usize) {
+    let packed_offsets = matches!(version, Some((1, 9..=18)));
     let mut walked = 0usize;
     let mut interned = 0usize;
     // Pass 1: declare every named struct so cross-references resolve by name.
@@ -587,6 +591,7 @@ fn intern_named_structs(
                 good = false;
                 break;
             };
+            let offset = if packed_offsets { offset >> 1 } else { offset };
             let Some(fname) = read_go_name(img, name_ptr) else {
                 good = false;
                 break;
@@ -674,7 +679,8 @@ impl AnalysisPass for GoTypesPass {
         };
         let tf = ctx.arch.types();
         intern_header_shells(tf);
-        let (walked, interned) = intern_named_structs(tf, &img, &meta);
+        let version = buildinfo_blob(ctx.file).and_then(version_from_blob);
+        let (walked, interned) = intern_named_structs(tf, &img, &meta, version);
         let _ = (walked, interned);
         AnalysisOutput::default()
     }

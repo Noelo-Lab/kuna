@@ -1096,48 +1096,123 @@ A PE (`upx/pe.rs`) carries the `PackHeader` in the header padding immediately be
 the compressed data -- outside the tail window entirely -- and holds the whole image
 in a single block, followed by a trailer that the packer's own loader consumes at
 run time and the unpacker replays instead: the original PE header and section table,
-the import descriptors, thunk arrays and hint/name entries UPX strips out of the
-image, and the resource leaves it moves out of it. The DLL *names* are not in the
+then one record per rebuild -- where the stripped import list starts, where the
+relocation stream starts, and the icon count the resource rebuild restores -- then a
+pointer back to that header. `win32/pe` (PE32) and `win64/pe` (PE32+, amd64) are the
+same walk; they differ only in word size: eight-byte import thunks whose ordinal
+flag is bit 63 instead of four-byte ones with bit 31, and `DIR64` relocations
+instead of `HIGHLOW`. The optional-header magic sets the word size, and both the
+packed header and the recovered one must have the size the PackHeader's target
+format names; a PE32+ whose PackHeader claims `win32/pe`, or the reverse, is refused
+as unsupported before anything is rebuilt. A PE header that does not parse is
+reported as what it is; the tail scan that serves every other target can still find
+such a file's PackHeader, but a PE PackHeader has no overlay field, so it is never decoded
+as though it had one -- that misreading is what used to answer a valid `win64/pe`
+file with "PackHeader declares an overlay outside the file".
+
+UPX filters only the code, and every rewritten branch target carries the code's
+distance from the image's first section as a bias, so the unfilter takes that bias
+rather than refusing a code base that does not start the image. `win64/pe` uses the
+`ctok` filter (`0x49`) alone; `win32/pe` adds the plain calltricks `0x11`-`0x16` a
+`--brute` pack can choose.
+
+The import descriptors, thunk arrays and hint/name entries UPX strips out of the
+image come back from the trailer's compact list. The DLL *names* are not in the
 trailer at all; they stay in the packed loader's own import table, which the trailer
 addresses by offset. That table is found by agreement with the trailer rather than
 through the packed image's import data directory, because retargeting the directory
 at a decoy is the first thing a repacker does to a UPX image, and the witness in
-`tests/fixtures/upx_packed_pe_i386.exe` is exactly that.
-
-PE32+ headers are parsed for PackHeader discovery so unsupported 64-bit PE images
-are named as unsupported instead of being interpreted as ELF-style overlays. Only
-PE32 images are reconstructed; both the packed header and the recovered header
-must be PE32, even when the PackHeader claims `win32/pe`.
+`tests/fixtures/upx_packed_pe_i386.exe` is exactly that. Where the original's import
+names were one contiguous run, the trailer says where it started and they are
+written back there in order; where they were scattered -- every MinGW image -- UPX
+leaves each descriptor's name address and each thunk's hint/name address in place
+and only the strings go back where those already point. A `KERNEL32` import by
+ordinal is recorded as the offset of the packer's own loader thunk for it, and the
+ordinal is read out of that thunk rather than out of the offset.
 
 The agreement is over the *set* of DLL names, not a position-by-position walk. The
 loader table holds one descriptor per distinct DLL, while the original image may
 import a single DLL across several descriptors -- a 32-bit MSVC witness names seven
 DLLs from thirteen, `KERNEL32.DLL` four times -- so the two lists differ in length
 whenever a binary does that, and a positional comparison can never agree on one. It
-did not merely lose the table: it reported the image as corrupt.
+did not merely lose the table: it reported the image as corrupt. The table also
+carries the stub's own `KERNEL32.DLL` descriptor even when the original imports
+nothing from that DLL, so one such descriptor is allowed beyond the set.
 
-Base relocations are refused only when the packer kept them. UPX strips an EXE's
-relocations by default, marking the packed header `RELOCS_STRIPPED`, and its own
-unpacker then zeroes the recovered header's relocation directory rather than
-rebuilding anything; `kuna unpack` does the same, so the recovered file is the one
-`upx -d` writes. The relocations UPX keeps -- every DLL's, and every ASLR image's --
-travel as an optimized stream plus a five-byte trailer record that this tier does not
-replay, and such an image is refused by name before the resource rebuild could read
-that record as its icon count. A TLS directory needs no step at all: UPX's own
-`rebuildTls` is empty, so the directory comes back with the image it was packed in.
+Base relocations are rebuilt the way `upx -d` rebuilds them. UPX strips an EXE's
+relocations when it may, marking the packed header `RELOCS_STRIPPED`, and its own
+unpacker then zeroes the recovered header's relocation directory; `kuna unpack` does
+the same. The relocations UPX keeps -- every DLL's, and every ASLR image's, which on
+win64 is nearly all of them -- were rebased to zero, byte-swapped in place and
+recorded as a delta-coded position stream; the rebuild decodes the stream, restores
+each pointer, and lays the positions out as a fresh `.reloc` table (one block per
+page, padded to four bytes), with the 16-bit `LOW`/`HIGH` lists a PE32 may append.
+Entries of a kind UPX does not keep -- anything but `DIR64` in a PE32+ -- were
+dropped when it packed, so they are not in the result either. An export directory
+UPX moved out of the image -- a DLL's always, an EXE's with `--compress-exports=0`
+-- is rebuilt at its original address in the compact layout UPX's `Export::build`
+writes, forwarder strings included. A TLS directory needs no step: UPX's own
+`rebuildTls` is empty. The resource directory comes back with every leaf UPX moved
+repointed, unless UPX could not clear the original's (its pieces were not
+contiguous), in which case the original's is still in the image and stays. What
+comes back is the packed copy whole, names included: UPX's packer lays the directory
+out afresh with every name string behind the directories and data entries, and
+clears only the original's directories and data entries, so the original's names are
+still in the image at offsets the packed copy's entries do not point at.
 
-Every offset these rebuilds follow comes from the file, so each walk is bounded by
-the bytes the file holds. The loader-table scan reads only section bytes present in
-the file -- a section past the end of the file maps nothing, and one at the top of
-the address space does not wrap -- and reads at most two descriptors per four bytes
-of the file, about twice what an honest image needs; a trailer naming more than 256
-distinct DLLs is refused as unsupported, since UPX can pack more. A resource
-tree that reaches one directory or data entry twice is refused: UPX's packer writes
+Which trailer records exist is read from the trailer's length rather than predicted
+from the data directories. The packer writes a record only when it had something to
+put in it, while UPX's own unpacker predicts each one from the original's
+directories, and the two disagree on an image whose import directory names no DLL or
+whose relocations are all of a kind UPX drops -- `upx -d` then reads the next record
+as this one and fails. The three records are 8, 5 and 2 bytes and no two sets of them
+sum alike, so the length names exactly one set, and a length no set reaches is
+refused as a PE feature this tier does not rebuild. The resource record is the one
+the length cannot leave out: the packer writes it exactly when it gives the packed
+header a resource directory, which it does only for an original with one, so a
+trailer without it for an image whose two headers both have a resource directory is
+refused as damaged rather than unpacked with its resources left unrebuilt.
+
+The rebuilt header matches what `upx -d` writes in two ways and keeps the original's
+in two. The bound-import directory is zeroed -- its table lived in header slack the
+packed file's own headers took over -- and so is the checksum, which covers bytes
+the rebuilds re-laid out. The import-address-table directory and `SizeOfHeaders`
+keep the original's values, which `upx -d` zeroes and recomputes, and each rebuilt
+import descriptor's `OriginalFirstThunk` names its `FirstThunk` array rather than
+the zero `upx -d` leaves; with those set aside the file is byte-identical to
+`upx -d`'s. Data past the packed file's last section is the original's overlay -- a
+signature, a MinGW image's COFF symbol table -- and is appended again at the
+original's offset. With nothing dropped from the image, the original's length says
+how long that overlay was, and the packed file's tail can carry more than it on
+either side. UPX 3.9x writes its stub's relocation block twice; the second copy
+spills past the last section's declared end, and the spill and its zero padding to
+the file alignment sit in front of the overlay, where `upx -d` copies them too. Bytes
+appended to the packed file afterwards -- a signature, a payload -- sit behind it. So
+the overlay is read from past a front of exactly the spill's shape, and only for its
+own length; neither shifts it. The reconstructed file must
+be exactly the original's length, or short of it only by what UPX itself drops: the
+trailing `.reloc` section of an image packed without relocations (its directory is
+gone too), or debug data that started the overlay (the debug directory stays).
+
+Every size and offset these rebuilds follow comes from the file, so each walk is
+bounded by the bytes the file holds. The loader-table scan reads only section
+bytes present in the file -- a section past the end of the file maps nothing, and
+one at the top of the address space does not wrap -- and reads at most two
+descriptors per four bytes of the file, about twice what an honest image needs; a
+trailer naming more than 256 distinct DLLs is refused as unsupported, since UPX can
+pack more. A resource tree that reaches one directory or data entry twice is refused: UPX's packer writes
 the directory out afresh with every node once, even for an original whose linker
 shared a subtree, so only an edited file has one, and following it lets a small tree
 fan out into an exponential walk. The leaves it moves may not add up to more than
-the packed file. The output is laid out, and checked against the original length the
-PackHeader declares, before it is allocated.
+the packed file. An export rebuild is sized as its strings are read, and refused once
+it outgrows the image -- every name pointer may name the same long string. The output
+file is laid out, and refused if it would be longer than the declared original,
+before anything is allocated for it.
+
+What is not rebuilt is named. The `win64/arm64` and `wince/arm` targets exit with
+their names; so does PackHeader version 14, UPX's exact-layout PE mode, whose trailer
+stores the original headers and the gaps between sections verbatim instead, and so
+do versions before 12, older than any layout UPX's own unpacker still reads.
 
 (kuna) **NEOLite.** A second packer, recognized before UPX is asked and on evidence
 of its own, so nothing about the UPX arm -- including what it answers for a file that
@@ -3541,7 +3616,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   pointer record's elem to the named struct pointee. It interns
   package-qualified named struct shells (fields at their recorded offsets,
   zero-size embedded markers dropped, overlapping or over-extent layouts
-  refused whole) plus the well-known header shells `go.string`/`go.slice`/
+  refused whole). A validated Go 1.18 build-info version selects the older
+  `offset << 1 | embedded` struct-field encoding: the importer shifts the
+  word before checking the field extent. Go 1.19 and later use byte offsets
+  directly. An absent or unrecognized version retains the direct-offset
+  interpretation; the importer never guesses from a plausible shifted layout.
+  The same bounds and overlap checks apply after decoding. Stripped amd64
+  and arm64 tests include an embedded pointer field at a nonzero offset.
+  The pass also interns the well-known header shells `go.string`/`go.slice`/
   `go.iface`/`go.eface` with their `LangFacet` records
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
   1 is OUTPUT-NEUTRAL by construction — nothing binds the shells to a
@@ -7024,6 +7106,58 @@ precedes nearly every global access. Roughly half of that is the evaluation; the
 rest is the new rows themselves, rendering each one's instruction text (about
 2 µs a row on AArch64) and filing it (the 9,331 rows of a RISC-V PJSIP library).
 Emitted C is unchanged.
+
+(kuna) **Addresses below the floor** (GH #1364). The `checkOperands` floor tells a
+number from an address among *immediates*, and a zero-based image keeps real
+addresses under it: an arm64 Mach-O dylib's `__TEXT` starts at 0, ld.lld puts an
+ELF shared object's or PIE's `.rodata` in its first page, GNU ld an older x86-64
+or AArch64 PIE's `.text`, and firmware is linked at 0. There the floor dropped
+every address a program formed into that page — `adrp x0,0x0; add x0,x0,#0x378`
+naming a dylib's first function, `_start`'s `lea rdi,[rip+0xe6]` passing `main`.
+Lowering the floor is no answer: `mov w0,#0x378` and `add x1,x1,#0x378` carry the
+same constant, and in such an image nearly every small immediate lands in a mapped
+byte (with no floor at all, the sweep below gained some 13,000 rows, almost all
+`mov`/`cmp`/displacement immediates landing in `.dynsym`, `.rela` and their
+neighbours). What separates the two is the PC, so a value computed from the
+instruction's own address is exempt from the floor and has only to land in a
+mapped section — the rule PIC pool composition already applies. SLEIGH folds most
+PC-relative operands at decode time and leaves a plain constant in the p-code, so
+**PC-relative forms** (`decompiler/crates/kuna-analysis/src/listing/kuna_pcform.rs`)
+recognises them from the instruction's encoding and recomputes their value from
+its bytes: AArch64 `adr`/`adrp`; x86-64 RIP-relative `lea`, whose value is the
+fall-through plus its last four bytes (an instruction that ends in an `imm32`
+would need the value `next + imm32`, which it never carries); A32 and Thumb `adr`,
+a four-byte ARM word being read both ways because the value must match. Only a
+constant equal to the recomputed value is exempt, both in the one-instruction
+scan and as a carried value. Register pair carrying also takes an instruction's
+own address as SLEIGH spells the PC (`inst_start`, Thumb's `+ 4`, A32's `+ 8`) to
+be PC-relative where an add or subtract reads it (RISC-V `auipc`), and keeps a
+value PC-relative through an add or subtract of something that is not; the
+difference of two (a switch's `sub eax,r13d` after two RIP-relative `lea`s) is a
+distance, and a mask, a shift or a truncation below 32 bits of one (`movzx
+ecx,al`, Thumb `uxtb`) is a number. PIC base folding exempts what it composes
+through the proven base for the same reason (an ld.lld i386 PIE's `lea
+eax,[ebx-0x3088]` into its first page). The recogniser is built only for an image
+that maps something below the floor. Every PIE and shared object does (its
+`.dynsym`, a PIE's `.interp`), so only a fixed-address executable's walk is
+untouched. Nor does a folded `adr` change which constants may *start* a carry in
+an `ET_DYN` image (only a visible PC does), which keeps the internal address
+register of SLEIGH's `ldm` out of an ARM shared object's rows.
+
+Measured over 375 images (the 127 above, 220 zero-based ELF images from the angr
+test corpus and the vendored fixtures, 30 decbench x86-64 PIEs, and zlib linked
+for seven targets by ld.lld and two by GNU ld): no row is lost, and 700 rows are
+added in 67 images, each a PC-relative formation — 236 x86-64 `lea [rip]`, 179
+A32 and Thumb `adr` and the 170 PLT slot reads they start, 39 AArch64 `adrp`
+pairs and `adr`, and 76 RISC-V `auipc` pairs and the loads through them. 682
+match an independent capstone evaluation of the instruction and its straight-line
+predecessors; the other 18 match GNU objdump's `auipc` pair annotation or were
+checked by hand. A PIE whose first page holds only metadata (every decbench x86-64
+image) gains nothing. The walk costs no measurable time: an in-process interleaved
+A/B over x86-64, AArch64, ARM and RISC-V C libraries and bash stays within ±1.5%,
+the same spread an A/A run shows. Recomputing the forms costs 6 to 24 ns per
+decoded instruction, 0.1–0.4% of the walk over the x86-64, AArch64 and ARM C
+libraries and bash. Emitted C is unchanged.
 
 (kuna) Every rule above widens what the walk reads out of an instruction it
 reached; the complementary defect is the instructions it never reaches at all.
