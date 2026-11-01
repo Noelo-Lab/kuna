@@ -62,24 +62,18 @@ pub(super) struct Fixups {
     slots: Vec<Slot>,
 }
 
-/// Every fixup slot of `binary` that `[start, end)` overlaps, whole.
+/// Every fixup slot of the image that `[start, end)` overlaps, whole. `view` is
+/// the image's bytes and object view.
 ///
 /// An image whose object view cannot be read again lists none, under
 /// `coverage` `none`, as does one whose fixups kuna does not read.
-pub(super) fn overlapping(
-    binary: &str,
-    pref: kuna_analysis::loader::macho_fat::SlicePref,
-    prog: &ConsoleProgram,
-    start: u64,
-    end: u64,
-) -> Fixups {
+pub(super) fn overlapping(view: Option<(&[u8], &object::File)>, prog: &ConsoleProgram, start: u64, end: u64) -> Fixups {
     let none = Fixups { coverage: Coverage::None, slots: Vec::new() };
     if end <= start {
         return none;
     }
-    let Ok(bytes) = crate::image::image_bytes(binary, pref) else { return none };
-    let Ok(file) = kuna_analysis::loadimage_object::parse_object(&bytes) else { return none };
-    let listed = kuna_analysis::loader::kuna_dynrelocs::fixup_sites(&file, &bytes);
+    let Some((bytes, file)) = view else { return none };
+    let listed = kuna_analysis::loader::kuna_dynrelocs::fixup_sites(file, bytes);
     let le = file.is_little_endian();
     let mut slots = Vec::new();
     for site in listed.sites {
@@ -88,7 +82,7 @@ pub(super) fn overlapping(
             continue;
         }
         let Some(image) = prog.read_bytes(site.vma, usize::from(site.width)) else { continue };
-        let file_bytes = file_bytes(&file, site.vma, width);
+        let file_bytes = file_bytes(file, site.vma, width);
         let unchanged = file_bytes.as_deref().unwrap_or(&vec![0; image.len()])[..] == image[..];
         let returned = if unchanged {
             Returned::File

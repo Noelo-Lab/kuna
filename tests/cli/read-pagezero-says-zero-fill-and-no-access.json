@@ -1,0 +1,65 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/readprov_macho_arm64",
+    "binary_sha256": "df44937763178358cb8f5648b662c06a9c65e0cf9df5843a527d5f3eb5ad9ba9",
+    "binary_size": 33504,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/readprov_macho_arm64"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "read",
+    "{{BIN}}",
+    "0x0",
+    "--addr",
+    "--bytes",
+    "16",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "hex",
+        "op": "eq",
+        "value": "00000000000000000000000000000000"
+      },
+      {
+        "path": "provenance",
+        "op": "len_eq",
+        "value": 1
+      },
+      {
+        "path": "provenance[0].source",
+        "op": "eq",
+        "value": "zero-fill"
+      },
+      {
+        "path": "provenance[0].segment.name",
+        "op": "eq",
+        "value": "__PAGEZERO"
+      },
+      {
+        "path": "provenance[0].segment.permissions",
+        "op": "eq",
+        "value": "---"
+      },
+      {
+        "path": "provenance[0].segment.file_size",
+        "op": "eq",
+        "value": 0
+      }
+    ],
+    "stderr_matches": [
+      "zero fill, not file bytes: 0x0\\.\\.0x10 in __PAGEZERO",
+      "no read access: 0x0\\.\\.0x10 in __PAGEZERO \\(permissions ---\\)"
+    ]
+  },
+  "notes": "GH #1401. readprov_macho_arm64's __PAGEZERO (vmaddr 0, vmsize 0x100000000, filesize 0, initprot ---) reads as zeroes, as the load image always served it; provenance says they are zero fill in a segment the image declares unreadable, instead of 16 zeroes with no note."
+}
