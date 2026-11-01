@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::result_store::ResultStore;
 use super::Args;
-use crate::callgraph::{callee_first_plan, CallGraph};
+use crate::callgraph::{callee_first_plan, CallGraph, CallbackRefs};
 
 /// Execute the callee-first plan using decompile-all's output options.
 /// Results retain target order. A missing call graph falls back to target order
@@ -38,6 +38,12 @@ pub(super) fn decompile_entries_callee_first(
 /// renders something other than `decompile-all`'s own payload: the order, the
 /// park and the convergence sweep are the same, only the per-function
 /// [`kuna_console::project::DecompileOptions`] differ.
+///
+/// The call graph's reference index is the largest thing the run would keep
+/// beside the program (hundreds of MiB on a large PE), and only the planning
+/// before the first decompile and the callback park after the last read it:
+/// the park's answers about the targets are taken up front
+/// ([`CallGraph::callback_refs`]) and the graph is dropped before the loop.
 pub(crate) fn decompile_callee_first(
     prog: &mut ConsoleProgram,
     args: &Args,
@@ -84,6 +90,13 @@ pub(crate) fn decompile_callee_first(
         Ok(graph) if prog.arch().narrow_args_callers => graph.arm_closed_sites(&args.binary, args.slice_pref()),
         _ => None,
     };
+    let callback_refs = match (&graph, &open) {
+        (Ok(graph), Some(_)) if prog.arch().callbacktype.is_on() => {
+            Some(graph.callback_refs(targets.iter().filter_map(|t| vote_key(t).map(|k| k.1))))
+        }
+        _ => None,
+    };
+    drop(graph);
     {
         let ledger = &mut prog.arch_mut().kuna_callerargs;
         *ledger = Default::default();
@@ -113,9 +126,9 @@ pub(crate) fn decompile_callee_first(
     }
     converge_callee_first(prog, &targets, &plan, &base, &mut slots);
     prog.arch_mut().kuna_callbacktype.recording = false;
-    if let (Ok(graph), Some(open)) = (&graph, &open) {
+    if let (Some(refs), Some(open)) = (&callback_refs, &open) {
         if prog.arch().callbacktype.is_on() {
-            callback_park_round(prog, graph, open, &targets, &plan, &base, &mut slots);
+            callback_park_round(prog, refs, open, &targets, &plan, &base, &mut slots);
         }
     }
     converge_element_globals_callee_first(prog, &targets, &plan, &base, &mut slots);
@@ -349,7 +362,7 @@ fn vote_key(t: &FunctionEntry) -> Option<(i32, u64)> {
 /// Element-global convergence follows this round.
 fn callback_park_round(
     prog: &mut ConsoleProgram,
-    graph: &CallGraph,
+    graph: &CallbackRefs,
     open: &BTreeSet<u64>,
     targets: &[FunctionEntry],
     plan: &[(usize, bool)],
