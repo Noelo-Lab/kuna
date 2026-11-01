@@ -95,3 +95,17 @@ fn an_elf_got_load_and_call_read_and_call_the_slot() {
     assert!(at(&x64, "read", 0x12c2, 0x2370), "{x64:?}");
     assert!(at(&x64, "call", 0x12c9, 0x2370), "{x64:?}");
 }
+
+/// `adrp x8,_audit_func_ptr@PAGE; ldr x8,[x8,#0x10]; blr x8` uses the page only to
+/// reach the pointer at +0x10. `_audit_global`, which the page starts with, is not
+/// referenced; `ldr w9,[x9]` of the same page is.
+#[test]
+fn an_adrp_page_completed_elsewhere_names_nothing_on_the_page() {
+    let bin = "xrefpairs_macho_arm64";
+    let global = rows(bin, "--to", "_audit_global");
+    assert!(!global.iter().any(|(_, f, _, _)| f == "_audit_indirect_call"), "{global:?}");
+    assert!(at(&global, "data", 0x1_0000_0410, 0x1_0000_4000), "{global:?}");
+    assert!(at(&global, "read", 0x1_0000_0414, 0x1_0000_4000), "{global:?}");
+    let slot = rows(bin, "--to", "_audit_func_ptr");
+    assert!(at(&slot, "call", 0x1_0000_03c0, 0x1_0000_4010), "{slot:?}");
+}
