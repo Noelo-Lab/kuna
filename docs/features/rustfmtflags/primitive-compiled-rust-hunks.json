@@ -1,0 +1,26 @@
+[
+  {
+    "name": "debug",
+    "address": "0x14ab0",
+    "hunks": [
+      "@@ -8,5 +8,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "exponent",
+    "address": "0x14af0",
+    "hunks": [
+      "@@ -8,5 +8,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "width",
+    "address": "0x14c00",
+    "hunks": [
+      "@@ -8,5 +8,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  }
+]

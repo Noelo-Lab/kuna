@@ -751,6 +751,8 @@ pub struct Architecture {
     pub rustc_stable_version: Option<(u16, u16, u16)>,
     /// Primitive Display callback types from full Rust object-symbol identities.
     pub rust_display_formatters: std::collections::BTreeMap<u64, &'static str>,
+    /// Integer callback types and traits from full Rust object-symbol identities.
+    pub rust_integer_formatters: std::collections::BTreeMap<u64, crate::kuna_rustfmtflags::Formatter>,
     /// (kuna) The per-run `option sourcelang` override (`None` = auto).  Kept
     /// apart from the fact so `option sourcelang auto` restores the detected
     /// verdict and the catalog `current` reports the option, not the image.
@@ -1454,6 +1456,8 @@ pub struct Architecture {
     pub rust_fmt_literal: bool,
     /// Render verified primitive Rust formatting arguments as print macros.
     pub rust_fmt_args: bool,
+    /// Extend primitive Rust print recovery to static integer format specifications.
+    pub rust_fmt_flags: bool,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -3075,6 +3079,7 @@ impl Architecture {
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             rustc_stable_version: None,
             rust_display_formatters: std::collections::BTreeMap::new(),
+            rust_integer_formatters: std::collections::BTreeMap::new(),
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
@@ -3220,6 +3225,7 @@ impl Architecture {
             go_jump_chain: true,
             rust_fmt_literal: true,
             rust_fmt_args: true,
+            rust_fmt_flags: true,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -3635,6 +3641,7 @@ impl Architecture {
         self.go_jump_chain = true;
         self.rust_fmt_literal = true;
         self.rust_fmt_args = true;
+        self.rust_fmt_flags = true;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)

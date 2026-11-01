@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
+use super::kuna_rustfmtflags::{Formatter, Options, Trait};
 use crate::architecture::Architecture;
 use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
@@ -29,46 +30,20 @@ pub struct Plan {
 pub fn formatter_symbols(
     symbols: impl IntoIterator<Item = (u64, Option<String>)>,
 ) -> BTreeMap<u64, &'static str> {
-    let mut entries = BTreeMap::new();
-    for (address, name) in symbols {
-        let primitive = name.as_deref().and_then(display_primitive);
-        entries
-            .entry(address)
-            .and_modify(|old| {
-                if *old != primitive {
-                    *old = None;
-                }
-            })
-            .or_insert(primitive);
-    }
-    entries
+    super::kuna_rustfmtflags::formatter_symbols(symbols)
         .into_iter()
-        .filter_map(|(address, ty)| ty.map(|ty| (address, ty)))
+        .filter_map(|(address, formatter)| {
+            (formatter.kind == Trait::Display).then_some((address, formatter.primitive))
+        })
         .collect()
-}
-
-fn display_primitive(name: &str) -> Option<&'static str> {
-    let primitive = name
-        .strip_prefix("core::fmt::num::imp::<impl core::fmt::Display for ")?
-        .strip_suffix(">::fmt")?;
-    match primitive {
-        "u8" => Some("u8"),
-        "u16" => Some("u16"),
-        "u32" => Some("u32"),
-        "u64" | "usize" => Some("u64"),
-        "i8" => Some("i8"),
-        "i16" => Some("i16"),
-        "i32" => Some("i32"),
-        "i64" | "isize" => Some("i64"),
-        _ => None,
-    }
 }
 
 pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Plan> {
     if !arch.rust_fmt_args
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
-        || arch.rust_display_formatters.is_empty()
+        || (arch.rust_display_formatters.is_empty()
+            && (!arch.rust_fmt_flags || arch.rust_integer_formatters.is_empty()))
     {
         return None;
     }
@@ -90,7 +65,7 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
         return None;
     }
     let mut position = 0usize;
-    let decoded = decode_template(|size| {
+    let decoded = decode_template(arch.rust_fmt_flags, |size| {
         let end = position.checked_add(size)?;
         if end > MAX_BYTES {
             return None;
@@ -113,11 +88,19 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
     })?;
     let cells = argument_cells(fd, id, array, decoded.count)?;
     let mut arguments = Vec::with_capacity(decoded.count);
+    let mut formatters = Vec::with_capacity(decoded.count);
     for index in 0..decoded.count {
         let pointer = cells[index * 2];
-        let primitive = *arch
-            .rust_display_formatters
-            .get(&constant_word(fd, cells[index * 2 + 1])?)?;
+        let address = constant_word(fd, cells[index * 2 + 1])?;
+        let formatter = if arch.rust_fmt_flags {
+            *arch.rust_integer_formatters.get(&address)?
+        } else {
+            Formatter {
+                primitive: *arch.rust_display_formatters.get(&address)?,
+                kind: Trait::Display,
+            }
+        };
+        let primitive = formatter.primitive;
         let offset = stack_offset(fd, pointer)?;
         let size = match primitive {
             "u8" | "i8" => 1,
@@ -130,8 +113,9 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
             return None;
         }
         arguments.push(Argument { pointer, primitive });
+        formatters.push(formatter);
     }
-    let (name, literal) = decoded.render(stderr);
+    let (name, literal) = decoded.render(stderr, &formatters)?;
     Some(Plan {
         name,
         literal,
@@ -244,7 +228,7 @@ fn stack_offset(fd: &Funcdata, mut id: VarnodeId) -> Option<i64> {
 #[derive(Debug, PartialEq)]
 enum Piece {
     Literal(String),
-    Argument(usize),
+    Argument(usize, Options),
 }
 
 #[derive(Debug, PartialEq)]
@@ -254,7 +238,10 @@ struct Template {
     indexed: bool,
 }
 
-fn decode_template(mut take: impl FnMut(usize) -> Option<Vec<u8>>) -> Option<Template> {
+fn decode_template(
+    flags: bool,
+    mut take: impl FnMut(usize) -> Option<Vec<u8>>,
+) -> Option<Template> {
     let mut pieces = Vec::new();
     let mut next = 0usize;
     let mut count = 0;
@@ -284,15 +271,22 @@ fn decode_template(mut take: impl FnMut(usize) -> Option<Vec<u8>>) -> Option<Tem
                 }
                 pieces.push(Piece::Literal(String::from_utf8(take(len)?).ok()?));
             }
-            0xc0 | 0xc8 => {
-                if head == 0xc8 {
+            0xc0..=0xff => {
+                let options = if flags {
+                    Options::decode(head, &mut take)?
+                } else if matches!(head, 0xc0 | 0xc8) {
+                    Options::default()
+                } else {
+                    return None;
+                };
+                if head & 8 != 0 {
                     next = u16::from_le_bytes(take(2)?.try_into().ok()?) as usize;
                     indexed = true;
                 }
                 if next >= MAX_ARGS {
                     return None;
                 }
-                pieces.push(Piece::Argument(next));
+                pieces.push(Piece::Argument(next, options));
                 used |= 1 << next;
                 next += 1;
                 count = count.max(next);
@@ -304,7 +298,7 @@ fn decode_template(mut take: impl FnMut(usize) -> Option<Vec<u8>>) -> Option<Tem
 }
 
 impl Template {
-    fn render(mut self, stderr: bool) -> (&'static str, String) {
+    fn render(mut self, stderr: bool, formatters: &[Formatter]) -> Option<(&'static str, String)> {
         let newline = match self.pieces.last_mut() {
             Some(Piece::Literal(text)) if text.ends_with('\n') => {
                 text.pop();
@@ -330,17 +324,22 @@ impl Template {
                         }
                     }
                 }
-                Piece::Argument(index) => {
+                Piece::Argument(index, options) => {
                     literal.push('{');
                     if self.indexed {
                         literal.push_str(&index.to_string());
+                    }
+                    let spec = options.render(formatters.get(index)?.kind)?;
+                    if !spec.is_empty() {
+                        literal.push(':');
+                        literal.push_str(&spec);
                     }
                     literal.push('}');
                 }
             }
         }
         literal.push('"');
-        (name, literal)
+        Some((name, literal))
     }
 }
 
@@ -349,7 +348,7 @@ mod tests {
     use super::*;
 
     fn decode(mut bytes: &[u8]) -> Option<Template> {
-        decode_template(|n| {
+        decode_template(false, |n| {
             let value = bytes.get(..n)?.to_vec();
             bytes = &bytes[n..];
             Some(value)
@@ -359,21 +358,55 @@ mod tests {
     #[test]
     fn templates_preserve_literals_and_argument_indices() {
         assert_eq!(
-            decode(b"\x08value = \xc0\x01\n\0").unwrap().render(false),
+            decode(b"\x08value = \xc0\x01\n\0")
+                .unwrap()
+                .render(
+                    false,
+                    &[Formatter {
+                        primitive: "u64",
+                        kind: Trait::Display
+                    }; 16]
+                )
+                .unwrap(),
             ("println!", "\"value = {}\"".into())
         );
         assert_eq!(
             decode(b"\xc0\x01 \xc0\x01 \xc8\0\0\x01\n\0")
                 .unwrap()
-                .render(false),
+                .render(
+                    false,
+                    &[Formatter {
+                        primitive: "u64",
+                        kind: Trait::Display
+                    }; 16]
+                )
+                .unwrap(),
             ("println!", "\"{0} {1} {0}\"".into())
         );
         assert_eq!(
-            decode(b"\x03{\"\\\xc0\x03}\0\n\0").unwrap().render(true),
+            decode(b"\x03{\"\\\xc0\x03}\0\n\0")
+                .unwrap()
+                .render(
+                    true,
+                    &[Formatter {
+                        primitive: "u64",
+                        kind: Trait::Display
+                    }; 16]
+                )
+                .unwrap(),
             ("eprintln!", "\"{{\\\"\\\\{}}}\\0\"".into())
         );
         assert_eq!(
-            decode(b"\x80\x02\0ok\xc0\0").unwrap().render(false),
+            decode(b"\x80\x02\0ok\xc0\0")
+                .unwrap()
+                .render(
+                    false,
+                    &[Formatter {
+                        primitive: "u64",
+                        kind: Trait::Display
+                    }; 16]
+                )
+                .unwrap(),
             ("print!", "\"ok{}\"".into())
         );
     }
@@ -401,7 +434,10 @@ mod tests {
     #[test]
     fn only_unambiguous_full_display_identities_qualify() {
         let display = |ty| format!("core::fmt::num::imp::<impl core::fmt::Display for {ty}>::fmt");
-        assert_eq!(display_primitive(&display("i64")), Some("i64"));
+        assert_eq!(
+            formatter_symbols([(0, Some(display("i64")))]).get(&0),
+            Some(&"i64")
+        );
         for name in [
             "fmt",
             "core::fmt::num::imp::u64::fmt",
@@ -409,7 +445,7 @@ mod tests {
             "core::fmt::num::<impl core::fmt::Debug for u64>::fmt",
             "<T as core::fmt::Display>::fmt",
         ] {
-            assert_eq!(display_primitive(name), None);
+            assert!(formatter_symbols([(0, Some(name.into()))]).is_empty());
         }
         let found = formatter_symbols([
             (1, Some(display("u64"))),

@@ -4095,5 +4095,34 @@ preserving width and signedness without substituting a later memory version.
 Literal escaping doubles braces and retains all controls; exactly one final LF
 selects an `ln` macro. Explicit indices preserve repeated-argument order. All
 original setup statements and IR remain intact, and C output is unchanged.
-Generic reference formatters, other traits, width/precision, `format!`, `write!`
-and specialized sinks remain explicit.
+Generic reference formatters, `format!`, `write!` and specialized sinks remain
+explicit. Other integer traits and width/precision require `rustfmtflags`.
+
+### Static Rust integer format specifications
+
+`rustfmtflags` (default on) extends `rustfmtargs` through
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtflags.rs`. The same version,
+language, memory, stack descriptor and exact sink requirements apply. Full object
+symbols establish both integer width/signedness and Display, Debug, LowerHex,
+UpperHex, Octal, Binary, LowerExp or UpperExp trait identity. Only exact standard
+library paths for 8-, 16-, 32- and 64-bit integers qualify. Pointer-sized integer
+aliases may share their corresponding 64-bit formatter; different types or traits
+and unknown aliases invalidate the address. Generic formatter types are not inferred.
+
+The bounded template decoder accepts static flags, width and precision before an
+optional explicit argument index. Dynamic count headers are refused before reading
+their fields. Width and precision values must agree with their enable bits: the
+runtime copies encoded values without enabling them. Enabled fields omitted from
+the template have value zero. Width zero without zero-padding is refused because
+the corresponding source spelling would turn on zero-padding. Invalid Unicode
+fill, brace fill, a reserved high bit, conflicting signs or debug-hex modes, and
+non-space fill without explicit alignment also preserve the runtime call.
+
+Rendering retains alignment, fill, sign, alternate form, zero-padding, width and
+precision, followed by the verified trait suffix. Debug hexadecimal flags require
+a Debug callback. Fill characters are escaped for the surrounding Rust string;
+literal braces and repeated argument indices retain their existing treatment.
+Turning the option off restores default-only Display recovery. Disabling
+`rustfmtargs` disables this extension too. Floating-point, pointer and generic
+formatters, dynamic counts, `format!`, `write!` and specialized sinks remain
+explicit. No IR, descriptor setup or C output changes.

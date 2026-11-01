@@ -7940,3 +7940,9 @@ symbol-name normalization removes trait qualifiers. Exact standard-library trait
 identities qualify; conflicting aliases invalidate the address. The P9
 `rustfmtargs` consumer independently checks language, layout and call shape.
 This evidence does not rename symbols or infer a generic formatter's pointee type.
+
+The same symbol walk records integer formatting traits in
+`Architecture::rust_integer_formatters` for P9 `rustfmtflags`. Display, Debug,
+LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
+trait identity; the Display-only map is derived from these facts without another
+object parse. Unknown or conflicting aliases invalidate the shared address.

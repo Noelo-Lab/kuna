@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3427,
-    3427
+    3433,
+    3433
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -992,7 +992,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 358 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 359 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2414,6 +2414,7 @@
     "data:deadwaves #2: both passes keep churn's 256 calls",
     "data:deadwaves #3: both passes leave the same live IR",
     "data:deadwaves #4: both passes create the same ops",
+    "data:debug hexadecimal modes preserve traits",
     "data:declared wide input keeps its complete value",
     "data:declorder #1: with no option line (the shipped default) v2 follows v1",
     "data:declorder #2: and v10 follows v9",
@@ -2714,6 +2715,7 @@
     "data:inputtile-overlap #8: the failure path closes the descriptor",
     "data:integer rounding survives a float-to-double widening",
     "data:integer to float remains a numeric conversion",
+    "data:integer trait identities select eight format suffixes",
     "data:interior replacement retains its native definition",
     "data:interior uses never emit undefined storage or partial tokens",
     "data:intfloatround off folds the float rounding away",
@@ -3081,6 +3083,7 @@
     "data:short UTF-16 #3: adjacent wide literal is preserved",
     "data:short UTF-16 #4: ordinary ASCII literal is preserved",
     "data:signed merge retains signed conversion",
+    "data:signed narrow formats retain flags and type",
     "data:signed shift stays signed",
     "data:signed64 double rounding survives subfloat lowering",
     "data:signedness #1: the masked loop bound is declared unsigned under option signedness upstream, the declaration type inference produces (bug reproduces, once)",
@@ -3203,6 +3206,9 @@
     "data:stalejumptable #3: case 0x80 (CHECK_ORDER) on both passes",
     "data:stalejumptable #4: case 0x83 (TOTAL) on both passes",
     "data:stalejumptable #5: no pipeline failure on either pass",
+    "data:static format off and dynamic counts preserve runtime sinks",
+    "data:static formats retain repeated indices",
+    "data:static unicode fill alignment width precision",
     "data:store order: division call precedes the later global write",
     "data:store order: exactly one global write per function",
     "data:store order: final call remains after both writes",

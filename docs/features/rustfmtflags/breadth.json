@@ -1,0 +1,77 @@
+{
+  "option": "rustfmtflags",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "jobs": 1,
+  "watchdog_seconds": 600,
+  "breadth": [
+    {
+      "fixture": "assembly-c",
+      "sha256": "340f80474bbf2d1f9f211eabc41b1916205811f8ed2ee575a307868ca27ce6e4",
+      "language": "c",
+      "functions": 23,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "assembly-rust",
+      "sha256": "340f80474bbf2d1f9f211eabc41b1916205811f8ed2ee575a307868ca27ce6e4",
+      "language": "rust",
+      "functions": 23,
+      "changed_functions": 4,
+      "errors": []
+    },
+    {
+      "fixture": "primitive-rust",
+      "sha256": "a8ebc53377642d3c4dbc9154a7af0fb4531004a3ebb8b4c466fc340e37eb2c96",
+      "language": "rust",
+      "functions": 28,
+      "changed_functions": 2,
+      "errors": []
+    },
+    {
+      "fixture": "rust-fmtdemo-1931",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "language": "rust",
+      "functions": 455,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "rust-fmt-2025-O3",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "language": "rust",
+      "functions": 7763,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "primitive-compiled-rust",
+      "sha256": "620f996bb34101cba0ce21fed97f0746c5cde547dd14f6b5e80a5651c6ae3991",
+      "language": "rust",
+      "functions": 566,
+      "changed_functions": 3,
+      "errors": []
+    },
+    {
+      "fixture": "compiled-rust",
+      "sha256": "8fc4bd9225151ce8b081866e7de08593cad56795a7c684781a9e9922ad951af0",
+      "language": "rust",
+      "functions": 596,
+      "changed_functions": 10,
+      "errors": []
+    },
+    {
+      "fixture": "compiled-c",
+      "sha256": "8fc4bd9225151ce8b081866e7de08593cad56795a7c684781a9e9922ad951af0",
+      "language": "c",
+      "functions": 596,
+      "changed_functions": 0,
+      "errors": []
+    }
+  ],
+  "distinct_binary_functions": 9431,
+  "language_function_surfaces": 10050,
+  "changed_functions": 19,
+  "c_function_records_byte_identical": 619
+}

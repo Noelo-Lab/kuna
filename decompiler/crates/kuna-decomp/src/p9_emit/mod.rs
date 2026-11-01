@@ -69,6 +69,7 @@ pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;
+pub mod kuna_rustfmtflags;
 pub mod kuna_langrust; // (kuna) the rust-language policy objects (profile + caps)
 pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types

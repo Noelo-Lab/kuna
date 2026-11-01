@@ -4,6 +4,16 @@ use object::{BinaryFormat, Object, ObjectKind, ObjectSymbol, SymbolKind};
 use std::collections::BTreeMap;
 
 pub fn primitive_display_formatters(bytes: &[u8]) -> BTreeMap<u64, &'static str> {
+    integer_formatters(bytes)
+        .into_iter()
+        .filter_map(|(address, formatter)| {
+            (formatter.kind == kuna_decomp::kuna_rustfmtflags::Trait::Display)
+                .then_some((address, formatter.primitive))
+        })
+        .collect()
+}
+
+pub fn integer_formatters(bytes: &[u8]) -> BTreeMap<u64, kuna_decomp::kuna_rustfmtflags::Formatter> {
     let Ok(file) = object::File::parse(bytes) else {
         return BTreeMap::new();
     };
@@ -14,7 +24,7 @@ pub fn primitive_display_formatters(bytes: &[u8]) -> BTreeMap<u64, &'static str>
     {
         return BTreeMap::new();
     }
-    kuna_decomp::kuna_rustfmtargs::formatter_symbols(
+    kuna_decomp::kuna_rustfmtflags::formatter_symbols(
         file.symbols()
             .chain(file.dynamic_symbols())
             .filter(|symbol| symbol.kind() == SymbolKind::Text && symbol.is_definition())
