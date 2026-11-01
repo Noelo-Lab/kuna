@@ -15,7 +15,7 @@ Wide and truncated internal strings are outside this fix.
 The hermetic stage contains three byte-assembled calls with bounded, read-only
 strings: plain ASCII, quotes/backslashes/control characters, and UTF-8. Three of
 its five assertions fail on baseline
-`f26e71b4e867e9d142203e2d4f9fa6ae3d04a4ae`; all five pass with the fix. The console
+`4eee6e61f83115fbc1dafe7a841195a75800b57a`; all five pass with the fix. The console
 integration test compiles the untouched emitted bodies and checks each call's
 bytes, length and terminating zero. Existing ordinary C-string execution checks
 continue to cover the shared helper's other path.
@@ -32,24 +32,26 @@ The change is a strict Go emission correction under the existing `outlang go`
 selection. C and Rust output retain their existing spelling. No new option is
 introduced.
 
-The ten-image comparison covers 10,310 distinct functions and 20,675 C/Rust/Go
+The twelve-image comparison covers 11,814 distinct functions and 23,683 C/Rust/Go
 records, with `godwarfsig on` to exercise typed Go callers as well as the
-stripped-image path. All 11,269 C/Rust records are identical. The 1,919 changed
-Go bodies contain 5,789 added byte-pointer bridges across 2,796 textual hunks.
+stripped-image path. All 12,773 C/Rust records are identical. The 2,309 changed
+Go bodies contain 7,037 added byte-pointer bridges across 3,405 textual hunks.
 The comparison normalizes only those exact bridges and requires identical
 remaining text and preservation of every pre-existing bridge. Function metadata
-is identical. All 9,406 Go bodies parse; no decompilation errors occur.
+is identical. All 10,910 Go bodies parse; no decompilation errors occur.
 `breadth.json` lists every changed body and classifies its hunks; the raw Go
 diffs are included.
 
-Validation: 9,998 workspace tests pass, none fail, and 39 are ignored across
-71 suites. Original datatests remain 675/675; stages are 3,460/3,460. Tooling
+Validation: 9,999 workspace tests pass, none fail, and 39 are ignored across
+71 suites. Original datatests remain 675/675; stages are 3,463/3,463. Tooling
 checks pass 114 tests with one optional skip. Lint, spec links, the option
-catalog and shared counters pass. The original baseline is unchanged.
+catalog and shared counters pass. The suite and native witness execution use Go
+1.27.3. The original baseline is unchanged.
 
 Speed uses 31 alternating baseline/patched pairs after three warmups per arm,
 on CPU 79, after local builds and the workspace suite completed. Median CPU
-changes are -1.94% for default C, +0.98% for the Go string witness and +1.50%
-for the Rust control; maximum wall change is +1.31%. Every timing file records
-raw samples, ratios of medians and median paired changes. All remain within the
-5% budget.
+changes are +0.34% for default C, +0.26%
+for the Go string witness and +0.33% for the Rust control;
+maximum wall change is +0.35%. Every timing file
+records raw samples, ratios of medians and median paired changes. All remain
+within the 5% budget.

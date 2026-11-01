@@ -1,0 +1,9 @@
+--- baseline/main.identity
++++ on/main.identity
+@@ -1,4 +1,4 @@
+ // main.identity
+-func identity() {
+-  return
++func identity(p uint64) *int32 {
++  return (*int32)(unsafe.Pointer(uintptr(p)))
+ }

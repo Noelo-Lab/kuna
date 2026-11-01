@@ -64,23 +64,34 @@ lowering remain outside this change. Same-package Go type qualification is also
 separate: the current emitter prints `*main.point`, which is checked for recovered
 layout but is not included in the standalone Go compilation claim.
 
-The whole-image comparison covers 10,310 distinct functions and 20,675 C/Rust/Go
-function records across ten images. With the option off, every record is
+The whole-image comparison covers 11,814 distinct functions and 23,683 C/Rust/Go
+function records across twelve images. With the option off, every record is
 identical to commit `56e01194b98d64ab6e409ab27546ee5914262226`. Enabling it
-changes 3,442 distinct functions (6,730 language records), including effects of
+changes 4,085 distinct functions (7,977 language records), including effects of
 source contracts on callers, inferred parameter carriers and anonymous type
-numbering. All 9,119 textual hunks are classified in `classification-final.json`;
+numbering. All 10,996 textual hunks are classified in `classification-final.json`;
 `manual-review.json` records the remaining carrier-only changes and output
-limitations. All 9,406 Go function bodies parse.
+limitations. All 10,910 Go function bodies parse.
 
-The import audit checks 1,184 actual installed contracts against independent
-metadata. 1,183 agree with pinned angr's reader on input names, scalar widths,
-pointer shapes and result roles. The remaining contract is the native
-`runtime.asmcgocall` wrapper at `0x45c7e0`: angr's name-keyed map selects the
-separate no-formal ABI0 DIE at `0x459fa0`. Independent DWARF inspection and Go's
-objdump establish that the wrapper consumes RAX/RBX and returns a 32-bit value.
-Kuna binds the matching source contract by address. See
-`native-name-collision.json` and `asmcgocall.txt`.
+The import audit checks 1,386 actual installed contracts against independent
+metadata. 1,384 agree with pinned angr's reader on input names, scalar widths,
+pointer shapes and result roles. Two native `runtime.asmcgocall` wrappers have
+the same names as separate no-formal ABI0 DIEs selected by angr's name-keyed map.
+Independent DWARF inspection and Go's objdump establish their RAX/RBX inputs and
+32-bit results. Kuna binds the source contracts by address. The two collision
+JSON files and `asmcgocall*.txt` retain that evidence.
+
+Go 1.27.3 reproduces the CI failure on one-byte identity functions: it gives
+their inputs a zero-length entry range in DWARF 5. The general DWARF reader
+correctly excludes empty ranges. This Go-specific path accepts only an exact
+entry base followed by one empty register range, with a declared one-byte
+extent and a corroborating C3 RET instruction. It still verifies the expected
+ABI register and rejects empty result ranges. Seven authored negative cases
+vary the register, range, body, extent, multiplicity, base or result role.
+The identity and fourteen native bodies compile and execute under both Go
+1.22.5 and 1.27.3. Across the original ten images, this revision changes only
+`runtime.gclinkptr.ptr` and seven callers in Go 1.27.1 (eight C and eight Go
+records). The revision diffs and `revision-review.json` record that boundary.
 
 The Go emitter's existing `unsafe.Pointer("literal")` conversion appears in
 runtime fatal-message callers once their pointer formals are known. It parses
@@ -89,20 +100,20 @@ separate follow-up. Neither arbitrary runtime bodies nor the same-package record
 case are included in the standalone compilation claim. The feature remains an
 explicit opt-in, including under aggressive mode.
 
-The timing experiment uses 31 alternating samples per arm, three warmups and
-CPU 79. Disabled-option median changes stay at or below +0.92% wall and +0.90%
-CPU across the final five controls. Enabling import adds +7.70% CPU for the
-native Go identity fixture and +5.83% CPU for the Go 1.22.5 basics selector,
-exceeding the 5% default-on budget. These are startup-inclusive single-function
-measurements; the full-image comparison above is an output audit.
+The final timing experiment uses 31 rotating samples per arm, three warmups
+and CPU 79, after this task's builds and sweeps completed. Disabled-option
+median changes reach -0.04% wall and
++1.23% CPU across six controls. Enabling
+import reaches +7.63% wall and
++7.54% CPU. These are startup-inclusive
+single-function measurements; the full-image comparison is an output audit.
+The option remains explicitly off in every mode. Every timing artifact reports
+both ratios of medians and median paired changes. `timing-rust-first.json`
+retains the original pre-repair noisy Rust sample for provenance; the six
+current artifacts measure the repaired implementation.
 
-The initial Rust control had substantial temporal variation: its ratio of
-medians showed +5.42% CPU, while the median paired change was +0.30%. A repeat
-after builds/tests completed measured +0.13% CPU for the disabled option. Both
-runs are retained (`timing-rust-first.json`, `timing-rust.json`); every timing
-artifact reports both ratios of medians and median paired changes.
-
-Validation: 9,997 workspace tests passed, none failed, with 39 ignored across
-71 suites; original datatests remain 675/675; stages are 3,455/3,455. Tooling tests,
-lint, spec links, the catalog and shared counters pass. The original regression
-baseline is unchanged.
+Validation: 9,998 workspace tests passed, none failed, with 39 ignored across
+71 suites; original datatests remain 675/675; stages are 3,458/3,458. Tooling tests,
+lint, spec links, the catalog and shared counters pass. The full suite used Go
+1.27.3; all seven focused signature tests also pass with Go 1.22.5. The original
+regression baseline is unchanged.

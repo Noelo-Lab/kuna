@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3460,
-    3460
+    3463,
+    3463
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2491,6 +2491,9 @@
     "data:elemptr #7: with the option on a .data table of ints is read by subscript",
     "data:elemptr #8: a record walked by a stride keeps its integer form in both passes",
     "data:elemptr #9: a pointer read at two widths is not an array in either pass",
+    "data:empty entry range off retains inference",
+    "data:empty entry range on recovers a proven RET identity",
+    "data:empty entry range wrong register stays uninferred",
     "data:enabled retains declared array",
     "data:enabled short load retains base",
     "data:enabled short store retains base",

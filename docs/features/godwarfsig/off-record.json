@@ -3,75 +3,6 @@
   "side": "off",
   "fixtures": [
     {
-      "fixture": "basics122",
-      "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
-      "side": "off",
-      "languages": [
-        {
-          "language": "c",
-          "functions": 2018,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        },
-        {
-          "language": "go",
-          "functions": 2018,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        }
-      ]
-    },
-    {
-      "fixture": "basics127",
-      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
-      "side": "off",
-      "languages": [
-        {
-          "language": "c",
-          "functions": 2552,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        },
-        {
-          "language": "go",
-          "functions": 2552,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        }
-      ]
-    },
-    {
-      "fixture": "grep",
-      "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
-      "side": "off",
-      "languages": [
-        {
-          "language": "c",
-          "functions": 449,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        },
-        {
-          "language": "rust",
-          "functions": 449,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        }
-      ]
-    },
-    {
       "fixture": "hermetic",
       "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
       "side": "off",
@@ -110,6 +41,75 @@
         {
           "language": "go",
           "functions": 25,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2018,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "functions": 2018,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "functions": 2552,
           "errors": [],
           "added": [],
           "removed": [],
@@ -172,36 +172,13 @@
       ]
     },
     {
-      "fixture": "native",
-      "sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "fixture": "grep",
+      "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
       "side": "off",
       "languages": [
         {
           "language": "c",
-          "functions": 1156,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        },
-        {
-          "language": "go",
-          "functions": 1156,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        }
-      ]
-    },
-    {
-      "fixture": "rust",
-      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
-      "side": "off",
-      "languages": [
-        {
-          "language": "c",
-          "functions": 455,
+          "functions": 449,
           "errors": [],
           "added": [],
           "removed": [],
@@ -209,7 +186,7 @@
         },
         {
           "language": "rust",
-          "functions": 455,
+          "functions": 449,
           "errors": [],
           "added": [],
           "removed": [],
@@ -233,6 +210,75 @@
         {
           "language": "go",
           "functions": 2017,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "sha256": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 455,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "rust",
+          "functions": 455,
           "errors": [],
           "added": [],
           "removed": [],

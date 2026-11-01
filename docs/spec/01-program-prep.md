@@ -2836,7 +2836,13 @@ moves.
 
   Accepted inputs occupy the verified Go integer or float register sequence;
   an explicit empty location is permitted for an optimized-away input. A
-  nonempty location must identify its expected entry register. The existing
+  nonempty location must identify its expected entry register. Go DWARF 5 may
+  give a RET-only input a zero-length entry range. That case requires exactly
+  one raw range, a base equal to function entry, offsets `[0,0)`, and a single
+  register expression matching the input's ABI slot. The function must declare
+  a one-byte extent and the image must contain `RET` (`0xc3`) there. Additional
+  ranges, a wrong register/base, longer bodies and result-range substitutions
+  are refused. General DWARF location-list handling is unchanged. The existing
   calling-convention model must assign every recovered slot to that same
   register with its exact width and no hidden parameter. Stack arguments and
   float arguments beyond the model's eight-register bank are therefore refused.

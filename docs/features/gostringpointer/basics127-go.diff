@@ -6275,7 +6275,7 @@
 +      throw((*int8)(unsafe.Pointer(unsafe.StringData("bad allocCount\x00"))),0xe) // no-return
      }
      v2 = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8))
-     if gclinkptr.ptr(v2) != 0x0 {
+     if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(v2)))) != uint64(uintptr(unsafe.Pointer(nil))) {
 -      throw("bad manualFreeList",0x12) // no-return
 +      throw((*int8)(unsafe.Pointer(unsafe.StringData("bad manualFreeList\x00"))),0x12) // no-return
      }
@@ -6284,11 +6284,11 @@
 @@ -33,7 +33,7 @@
    }
    v2 = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8))
-   if gclinkptr.ptr(v2) == 0x0 {
+   if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(v2)))) == uint64(uintptr(unsafe.Pointer(nil))) {
 -    throw("span has no free stacks",0x17) // no-return
 +    throw((*int8)(unsafe.Pointer(unsafe.StringData("span has no free stacks\x00"))),0x17) // no-return
    }
-   v3 = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v2))))
+   v3 = (*gclinkptr.ptr(v2)).next
    *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8)) = v3
 
 --- before/runtime.stackpoolfree
