@@ -1571,6 +1571,23 @@ CALLOTHER-computed target additionally marks the halt no-return) (unreachable to
 failure mode every rescue below is fighting for: one unbounded table turns a
 switch into an opaque computed call.
 
+(kuna) A panic in the sub-decompilation is not one of these failures.
+`decompile_drive.rs (run_jumptable_pipeline)` catches it so it cannot end the
+batch, but it does not demote the table: the panic is the function's error,
+worded as the main drive words its own (`decompile pipeline reached an
+un-ported seam (LOSS-131) in jump-table recovery at <addr>: <panic>`), and the
+flow's later tables are not attempted (`decompile_drive.rs
+(follow_flow_on_fd)`). A budget already spent when the panic is caught is the
+error instead, as in the main drive; within a drive, one spent while the rest
+of the flow finishes does not replace the panic. An error the sub-decompilation
+returns still demotes that one table, as upstream's `LowlevelError` does.
+Demoting on a panic too printed the panic but left the function with C, its
+table dropped and no error, so a `decompile-all` record could not tell a
+function whose recovery crashed from one with an ordinary unrecoverable table.
+For tests,
+`KUNA_JUMPTABLE_FAULT=<entry>` (`kuna_jumptablefault.rs (check)`) panics the
+recovery of the function at that entry.
+
 ### The JumpBasic model
 
 The base recovery (`jumptable.rs (JumpBasicModel::recover_model_basic)`) is

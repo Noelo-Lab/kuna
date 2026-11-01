@@ -1,7 +1,7 @@
 {
   "state": "validated",
   "option": "godwarfsig",
-  "baseline_commit": "56e01194b98d64ab6e409ab27546ee5914262226",
+  "baseline_commit": "fc88c6af28f47bdafc2a65c4c1b1c51756870a7e",
   "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
   "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
   "scope": "Go amd64 register-ABI scalar and pointer DWARF signatures",
@@ -42,7 +42,7 @@
   },
   "validation": {
     "original_assertions": 675,
-    "stage_assertions": 3458,
+    "stage_assertions": 3464,
     "tools": "114 tests, 1 skipped",
     "spec": "passed",
     "catalog": "passed",
@@ -50,7 +50,7 @@
     "focused_metadata_tests": 5,
     "focused_console_tests": 7,
     "workspace": {
-      "passed": 9998,
+      "passed": 10005,
       "failed": 0,
       "ignored": 39,
       "suites": 71
@@ -112,22 +112,22 @@
         "artifact": "timing-scalar-c.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.03818050978967591,
-            "cpu_ms": -0.04320416170600083
+            "wall_ms": -0.7973844561176335,
+            "cpu_ms": -0.7963662104768399
           },
           "off_to_on": {
-            "wall_ms": 0.055888091648803595,
-            "cpu_ms": 0.09262036236576954
+            "wall_ms": -0.14134136897268057,
+            "cpu_ms": -0.13676636736610348
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.21543747998837848,
-            "cpu_ms": -0.33376009889205527
+            "wall_ms": -0.913420040292634,
+            "cpu_ms": -0.937041321189136
           },
           "off_to_on": {
-            "wall_ms": 0.2746210213860678,
-            "cpu_ms": 0.26398370643654356
+            "wall_ms": -0.179610958971399,
+            "cpu_ms": -0.14234945318203351
           }
         }
       },
@@ -135,22 +135,22 @@
         "artifact": "timing-native-go.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.23957704549987247,
-            "cpu_ms": 1.2275646604037682
+            "wall_ms": 0.7431181317272939,
+            "cpu_ms": 0.7486141654562184
           },
           "off_to_on": {
-            "wall_ms": 3.3321443031590903,
-            "cpu_ms": 5.0247714951619615
+            "wall_ms": 6.510617277756858,
+            "cpu_ms": 6.543847176286022
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.6713956565853385,
-            "cpu_ms": -0.08728271369227159
+            "wall_ms": 0.7659568652599313,
+            "cpu_ms": 0.7606620825767241
           },
           "off_to_on": {
-            "wall_ms": 2.2548458588623754,
-            "cpu_ms": 7.212407401291854
+            "wall_ms": 6.506757785928707,
+            "cpu_ms": 6.515870068279939
           }
         }
       },
@@ -158,22 +158,22 @@
         "artifact": "timing-basics122.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.8317963187322364,
-            "cpu_ms": -0.4495436807573028
+            "wall_ms": 0.7540189995851376,
+            "cpu_ms": 0.7140288171780584
           },
           "off_to_on": {
-            "wall_ms": 5.481647345294682,
-            "cpu_ms": 5.45715672310032
+            "wall_ms": 5.549720015822612,
+            "cpu_ms": 5.537969256597641
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.7442738597056464,
-            "cpu_ms": -0.3461613147410336
+            "wall_ms": 0.8391037156742165,
+            "cpu_ms": 0.8342299646947327
           },
           "off_to_on": {
-            "wall_ms": 5.629650484322779,
-            "cpu_ms": 5.596523285099364
+            "wall_ms": 4.894456770327138,
+            "cpu_ms": 4.908363871833443
           }
         }
       },
@@ -181,22 +181,22 @@
         "artifact": "timing-hermetic-plain.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.3441333230376098,
-            "cpu_ms": -0.310550291374978
+            "wall_ms": -0.34710756327283043,
+            "cpu_ms": -0.3086209414493113
           },
           "off_to_on": {
-            "wall_ms": 0.39914706840080694,
-            "cpu_ms": 0.3790757682413437
+            "wall_ms": -0.31003034012757613,
+            "cpu_ms": -0.30859977733744826
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.08114220180560627,
-            "cpu_ms": -0.14620625232510953
+            "wall_ms": -0.36837279873499496,
+            "cpu_ms": -0.4044881287162627
           },
           "off_to_on": {
-            "wall_ms": -0.12645620688001014,
-            "cpu_ms": -0.04597658011034067
+            "wall_ms": 0.017860190081520066,
+            "cpu_ms": -0.006894921408484578
           }
         }
       },
@@ -204,22 +204,22 @@
         "artifact": "timing-rust.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.3021083870987762,
-            "cpu_ms": -0.3443002766146175
+            "wall_ms": 3.3936923013305975,
+            "cpu_ms": 0.8387172906110463
           },
           "off_to_on": {
-            "wall_ms": -0.6690409263724661,
-            "cpu_ms": -0.6310823494578566
+            "wall_ms": -2.3571029701803026,
+            "cpu_ms": -1.1719858519143256
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.21118088677632985,
-            "cpu_ms": -0.24603307112570638
+            "wall_ms": 0.44441658546916507,
+            "cpu_ms": 1.3641915626755319
           },
           "off_to_on": {
-            "wall_ms": 0.08296352995376122,
-            "cpu_ms": 0.07579702420654755
+            "wall_ms": 0.21215941067600497,
+            "cpu_ms": -0.4746442439988341
           }
         }
       },
@@ -227,39 +227,47 @@
         "artifact": "timing-native1273.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.398692962415792,
-            "cpu_ms": -0.3932303393693437
+            "wall_ms": 0.7441454456483143,
+            "cpu_ms": 0.7436833362543638
           },
           "off_to_on": {
-            "wall_ms": 7.625222380452201,
-            "cpu_ms": 7.538962102282709
+            "wall_ms": 6.688845899943163,
+            "cpu_ms": 6.535986707814012
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.2677158212861075,
-            "cpu_ms": -0.26848336256141137
+            "wall_ms": 0.7184550231245312,
+            "cpu_ms": 0.7115907502326824
           },
           "off_to_on": {
-            "wall_ms": 7.550349215369967,
-            "cpu_ms": 7.56763022272533
+            "wall_ms": 6.551516859438156,
+            "cpu_ms": 6.567657607743382
           }
         }
       }
     },
-    "max_disabled_wall_delta_pct": -0.03818050978967591,
-    "max_disabled_cpu_delta_pct": 1.2275646604037682,
-    "max_enabled_wall_delta_pct": 7.625222380452201,
-    "max_enabled_cpu_delta_pct": 7.538962102282709,
+    "max_disabled_wall_delta_pct": 3.3936923013305975,
+    "max_disabled_cpu_delta_pct": 0.8387172906110463,
+    "max_enabled_wall_delta_pct": 6.688845899943163,
+    "max_enabled_cpu_delta_pct": 6.543847176286022,
     "default_on_speed_budget_pct": 5,
     "default_on_speed_budget_passed": false,
-    "rust_control_first_run": "timing-rust-first.json is the retained original pre-CI-repair outlier; timing-rust.json is the final repaired implementation measurement"
+    "rust_control_first_run": "timing-rust-first.json retains the original pre-CI-repair sample; the six current artifacts use the integrated main baseline"
   },
   "ci_revision": {
     "previous_head": "f26e71b4e867e9d142203e2d4f9fa6ae3d04a4ae",
     "previous_records_rechecked": 20675,
     "changed_records": 16,
     "changed_distinct_functions": 8,
-    "evidence": "revision-review.json"
+    "evidence": "revision-review.json",
+    "implementation_commit": "4eee6e61f83115fbc1dafe7a841195a75800b57a",
+    "scope": "historical empty-entry correction before main integration"
+  },
+  "main_integration": {
+    "baseline_commit": "fc88c6af28f47bdafc2a65c4c1b1c51756870a7e",
+    "comparisons": 71049,
+    "changed_records": 0,
+    "evidence": "reintegration-review.json"
   }
 }
