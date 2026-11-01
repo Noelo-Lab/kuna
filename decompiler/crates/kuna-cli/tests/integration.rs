@@ -704,3 +704,6 @@ mod ppc32_imports;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+
+#[path = "powerpc_apu_selection.rs"]
+mod powerpc_apu_selection;
