@@ -202,6 +202,8 @@ pub enum BraceStyle {
     NextLine = 1,
     /// Opening brace is two lines down.
     SkipLine = 2,
+    /// Required same-line brace in languages with semicolon insertion.
+    SameLineRequired = 3,
 }
 
 /// Resolved markup association carried by a token (see module docs).
@@ -561,7 +563,9 @@ pub trait Emit {
     /// Emit an opening brace with the given format and add an indent level
     /// (C++ `Emit::openBraceIndent`).
     fn open_brace_indent(&mut self, brace: &str, style: BraceStyle) -> int4 {
-        if style == BraceStyle::SameLine {
+        if style == BraceStyle::SameLineRequired {
+            self.print(" ", SyntaxHighlight::NoColor);
+        } else if style == BraceStyle::SameLine {
             self.spaces(1, 0);
         } else if style == BraceStyle::SkipLine {
             self.tag_line();
@@ -577,7 +581,9 @@ pub trait Emit {
     /// Emit an opening brace with the given format; indent is *not* increased
     /// (C++ `Emit::openBrace`).
     fn open_brace(&mut self, brace: &str, style: BraceStyle) {
-        if style == BraceStyle::SameLine {
+        if style == BraceStyle::SameLineRequired {
+            self.print(" ", SyntaxHighlight::NoColor);
+        } else if style == BraceStyle::SameLine {
             self.spaces(1, 0);
         } else if style == BraceStyle::SkipLine {
             self.tag_line();

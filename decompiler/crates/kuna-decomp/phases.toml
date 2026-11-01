@@ -8764,3 +8764,22 @@ inspiration = "angr TestRustFormatMacrosTemplateLayout hex_width expectation and
 change_kind = "opt-in-tool"
 tier = "transform"
 symptoms = "Rust integer String construction retains format_inner with an output pointer|Rust format! results remain runtime calls despite recovered templates"
+
+[[settable]]
+option = "outlang"
+values = "c|rust|go"
+default = "c"
+destructive = false
+phase = "P9"
+subphase = "output-language"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-go-output"
+summary = "Select the C, Rust or Go output-language profile. Go renders recovered types, conversions, operator precedence, declarations and structured statements through the shared printer. Selection preserves the recovered IR and does not infer missing Go ABIs, receiver types or runtime idioms. This is the catalog alias for option setlanguage; the engine default remains C and frontend auto-selection remains independent."
+use_when = "Use go to inspect a function in Go syntax, including a Go binary whose source metadata is incomplete. Use c or rust to compare another spelling of the recovered function. A language selection does not prove source-language semantics that analysis has not recovered."
+example = "option outlang go"
+source_decompiler = "angr"
+inspiration = "angr GoStructuredCodeGenerator, TestGoTypeSpelling and TestGoCodegenHandlers"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Go output language is unavailable|Go functions retain C declarations and control-flow syntax"

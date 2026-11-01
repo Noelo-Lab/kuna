@@ -41,7 +41,9 @@ use crate::args::take_value as take;
 use crate::callgraph::CallGraph;
 use crate::jobs;
 use crate::jsonfmt::{dumps_indent2, Json};
-use crate::loadtime::{apply_to_process as apply_loadtime_env, is_loadtime_gate, last_option_value};
+#[cfg(test)]
+use crate::loadtime::last_option_value;
+use crate::loadtime::{apply_to_process as apply_loadtime_env, is_loadtime_gate};
 use crate::paths;
 
 /// Parsed `decompile-all` / `functions` arguments (the two share a loader;
@@ -2110,7 +2112,9 @@ pub(crate) fn render_selected_json(
     assertions: &[kuna_console::assertions::Outcome],
     interior: &crate::interior::Interiors,
 ) -> String {
-    let language = last_option_value(options, "setlanguage").unwrap_or("c-language");
+    let language = crate::loadtime::explicit_output_language(options)
+        .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
+        .map(|lang| lang.print_name()).unwrap_or("c-language");
     format!(
         "{}\n",
         dumps_indent2(&result_json(binary, funcs, language, error, total, assertions, interior))
@@ -2785,7 +2789,7 @@ pub(crate) fn parse_args_with_filters(
         && jobs_worker.is_none()
         && cmd != "decompile-project"
         && cmd != "decompile-graph"
-        && !options.iter().any(|(n, _)| n == "setlanguage")
+        && crate::loadtime::explicit_output_language(&options).is_none()
     {
         if let Some(lang) = detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
@@ -3230,6 +3234,11 @@ mod discovery_tests {
         ];
         assert!(render_result_json("f", &[], &options, None, &[], &Default::default()).contains("\"c-language\""));
         assert!(render_result_json("f", &[], &[], None, &[], &Default::default()).contains("\"c-language\""));
+        let mut aliases = options.clone();
+        aliases.push(("outlang".into(), "go".into()));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default()).contains("\"go-language\""));
+        aliases.push(("setlanguage".into(), "rust-language".into()));
+        assert!(render_result_json("f", &[], &aliases, None, &[], &Default::default()).contains("\"rust-language\""));
     }
 }
 

@@ -1034,7 +1034,16 @@ load file "/home/u/test dir/a.out"
 openfile write "/tmp/out dir/main.c"
 ```
 
-**`--language auto|c|rust`** selects the output language. **`auto` is the
+`--language go` emits Go function signatures, declarations, operators and control
+flow. The catalog option `--option outlang c|rust|go` selects the same output
+plane; it and `--language`/`--option setlanguage` obey argument order. Go output
+uses explicit width conversions, `unsafe.Pointer`/`uintptr` bridges and
+`unsafe.Add` for pointer indexing. It can retain low-level helpers and incomplete
+ABI/type recovery, so arbitrary output is not promised to compile. This selector
+does not add Go multi-result, string, slice or interface recovery. `auto` still
+selects Rust for a detected Rust image and C otherwise, including Go images.
+
+**`--language auto|c|rust|go`** selects the output language. **`auto` is the
 default and follows the binary**: a Rust binary renders as Rust, because kuna
 already detects one (`kuna-analysis`'s `sourcelang` pass, the port of Ghidra's
 `SourceLanguageAnalyzer`) and rendering it as C is worse in a way the reader has

@@ -3188,13 +3188,71 @@ is consumed by Ghidra's C token model and Rust text in C token slots is a GUI
 regression. `kuna decompile-project` errors, because its `.c`/`.h`/`.asm` export
 is C-shaped end to end.
 
+**Go output (`outlang go`).** `p9_emit/kuna_langgo.rs` adds a Go profile and type
+speller to the shared RPN and block printer. `outlang c|rust|go` is a cataloged
+alias of `setlanguage`; the engine default is C and the CLI automatic policy is
+unchanged. Explicit Go selection applies to any input language. Function names
+are legal Go identifiers with the original qualified symbol in a comment;
+invalid names, keywords, predeclared names and the generated helpers' `math`/`unsafe`
+package names use an injective byte-hex escape, including escaping
+the escape prefix itself. Locals, parameters and member tokens use the same rule.
+Same-package references omit that package qualifier.
+
+Go integer and float names retain the recovered byte width. Unknown or unusual
+widths use `[N]byte` storage rather than assert a different integer size. Arrays
+use `[N]T`, pointers use `*T`, void/opaque pointers use `unsafe.Pointer`, and a
+code pointer with a recovered prototype uses `func(...) T`. Signatures use
+`func name(parameter T) R`, with no return type for void, and locals use `var`.
+Variadic tails use the blank identifier so they cannot capture a source name.
+This is a presentation of the recovered ABI: it does not infer missing Go
+multi-results, receivers, strings, slices or interfaces.
+
+The token table puts shifts and bitwise AND with multiplication, OR and XOR
+with addition, and all comparisons below those groups. Boolean XOR is `!=`.
+Equal-precedence right nesting retains parentheses unless the same associative
+operator permits flattening. Operand and assignment conversions use the type
+actually emitted for each local after declaration collapse and signedness
+selection, rather than an earlier SSA member's type. Integer constant copies
+spell the destination-width bit pattern directly, so an unsigned destination
+receives `0xffffffffffffffff` rather than the invalid constant conversion
+`uint64(-1)`. The same rule follows at most eight implied, same-width integer
+COPY/CAST nodes when a constant reaches a return or operand; it never folds
+named values, arithmetic or effects. Numeric conversions use
+`T(value)`; integer and pointer conversions carry `uintptr` and `unsafe.Pointer`, and pointer indexing
+uses `unsafe.Add` with the IR's byte scale. Boolean-to-integer conversions use a
+single-evaluation function literal. Float storage transfers use the matching
+`math.Float32bits`/`Float64bits` and inverse operations, preserving the distinction
+from numeric conversion. Non-finite and negative-zero literals retain their bits.
+Rune and string escaping uses Go syntax; invalid rune values stay numeric. A
+resolved one-byte C string pointer uses `unsafe.StringData` and includes its
+terminating zero. Wide or truncated pointer strings retain their address.
+
+Go has neither ternary nor comma expressions. Recovered if diamonds remain
+statements. A short-circuit operand with leading statements evaluates those
+inside a `func() bool { ...; return condition }()` operand, so skipped operands
+have no effects. While and C-shaped for loops become Go `for` forms. A bottom-
+tested loop uses a fresh first-iteration boolean in its for header: the first
+condition is skipped, every later condition is tested, including after continue.
+Braces and else clauses share the required lines regardless of C brace options;
+selecting Go does not mutate those options.
+
+Switch labels sharing a body form one comma-separated case. A case's sole goto
+to another case can be rendered by ordering those cases adjacently and replacing
+that goto with `fallthrough`; its now-unused label is suppressed. The decision
+uses the current block graph, not stale chain metadata after return duplication.
+Other gotos remain explicit, including jumps Go's lexical scope rules may reject.
+Unknown machine helpers retain their operands. The broad contract is parseable
+Go; compilation and execution are checked for the supported scalar, pointer,
+conversion and control-flow fixtures. Missing types, low-level helpers and
+incomplete ABI recovery still prevent arbitrary output from compiling.
+
 The Java back-end is deliberately not ported:
 `decompiler/crates/kuna-decomp/src/p9_emit/printjava.rs (PrintJava)` is a
 recorded LOSS whose constructor returns an error — upstream `PrintJava` is a
 thin `PrintC` subclass (shared token table and RPN driver, eight overrides for
 object references and `instanceof`), and no oracle datatest selects the
-`java-language` back-end, so kuna registers only `c-language` (the default
-capability, `printc.rs (CAPABILITY_NAME)`). What *is* live is the Java half of
+`java-language` back-end, so Java remains unregistered; C, Rust and Go are the registered output
+languages, with `c-language` the engine default (`printc.rs (CAPABILITY_NAME)`). What *is* live is the Java half of
 the cast strategy, `cast.rs (CastStrategyJava)` — Java's pointer-encoded
 object references change which extensions and pointer conversions are
 representable as casts — kept current alongside `CastStrategyC` so a future
