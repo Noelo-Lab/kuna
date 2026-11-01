@@ -1,0 +1,25 @@
+{
+  "option": "rustfmtargs",
+  "state": "proposal",
+  "default": "off",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "baseline_commit": "a5246a0647ceb4ad814d3c8d9214dd9c509449d0",
+  "scope": "Primitive Display print_one and reorder expectations only; full Rust formatting parity remains incomplete.",
+  "reference_validation": {
+    "test": "TestRustFormatMacrosTemplateLayout.test_format_macros",
+    "result": "passed",
+    "expectations": 8,
+    "seconds": 28.433
+  },
+  "proposal_validation": {
+    "workspace_passed": 9925,
+    "workspace_ignored": 39,
+    "original_assertions": 675,
+    "stage_assertions": 3420,
+    "spec": "passed",
+    "catalog": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed"
+  }
+}
