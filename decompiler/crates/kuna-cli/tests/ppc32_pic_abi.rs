@@ -172,6 +172,10 @@ fn ppc32_pic_option_controls_names_contracts_and_xrefs() {
 #[test]
 fn ppc32_pic_stage_fixture_matches_authored_bytes() {
     assert_eq!(
+        include_bytes!("fixtures/ppc32-pic-reversed-save.elf").as_slice(),
+        fixture::reversed_save(true, true).bytes()
+    );
+    assert_eq!(
         include_bytes!("fixtures/ppc32-pic-indirect.elf").as_slice(),
         fixture::proof_gap("indirect", false)
     );
@@ -864,6 +868,45 @@ fn counted_branches_select_the_actual_in_function_indirect_target() {
                 assert!(!text.contains("no-return"), "{text}");
                 std::fs::remove_file(path).unwrap();
             }
+        }
+    }
+}
+
+#[test]
+fn unaligned_reversed_stores_cannot_certify_a_saved_pic_base() {
+    for little in [false, true] {
+        for overlap in [false, true] {
+            let fixture = fixture::reversed_save(little, overlap);
+            let imports = pic_imports(&fixture);
+            if overlap {
+                assert!(imports.is_empty(), "little={little}: {imports:?}");
+            } else {
+                assert_eq!(imports, vec![(0x1800, b"__stack_chk_fail".to_vec())]);
+            }
+            let path = common::scratch_file("ppc32-reversed-save", "so");
+            std::fs::write(&path, fixture.bytes()).unwrap();
+            let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .args([
+                    "decompile",
+                    path.to_str().unwrap(),
+                    "check",
+                    "--mode",
+                    "fast",
+                    "--option",
+                    "ppc32picimports",
+                    "abi",
+                ])
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success(),
+                "{text}\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            assert_eq!(text.contains("return 7;"), overlap, "{text}");
+            assert_eq!(text.contains("__stack_chk_fail("), !overlap, "{text}");
+            std::fs::remove_file(path).unwrap();
         }
     }
 }

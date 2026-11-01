@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3502,
-    3502
+    3553,
+    3553
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1017,7 +1017,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 363 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 364 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1529,18 +1529,18 @@
     "data:PEMAIN #1: off, the CRT startup calls the program entry as an anonymous sub",
     "data:PEMAIN #2: default, the same call site names main",
     "data:PEMAIN #3: default, main is defined under its name",
+    "data:PIC abi names every stub despite the start files' jump through CTR",
+    "data:PIC abi names the actual returning import",
     "data:PIC conflicting indirect caller acquires no global contract",
+    "data:PIC conflicting indirect caller acquires no global contract @dup2",
     "data:PIC indirect caller is decompiled",
+    "data:PIC indirect caller is decompiled @dup2",
     "data:PIC indirect returning call retains return 7",
-<<<<<<< HEAD
+    "data:PIC indirect returning call retains return 7 @dup2",
     "data:PIC off and restored off keep the unnamed stub",
-    "data:PIC on names the proved terminal call",
-=======
     "data:PIC off keeps the unnamed stub",
     "data:PIC off leaves every driver-linked stub unnamed",
-    "data:PIC on names every stub despite the start files' jump through CTR",
-    "data:PIC on names the actual returning import",
->>>>>>> refs/rewritten/AUTOMATED-feat-analysis-integrate-ABI-scoped-PPC32-import-recovery
+    "data:PIC on names the proved terminal call",
     "data:PLTLOCAL #1: built at the stub, the forwarded registers are lost",
     "data:PLTLOCAL #2: built at the definition, its declared parameters arrive",
     "data:PLTLOCAL #3: the wrapper gains the parameters it forwards",
@@ -2208,11 +2208,8 @@
     "data:both interior formals initialize the shared extent",
     "data:both passes keep check's return",
     "data:both passes retain the indirect write",
-<<<<<<< HEAD
-    "data:both returning images retain their return",
-=======
     "data:both passes retain the reachable return",
->>>>>>> refs/rewritten/AUTOMATED-feat-analysis-integrate-ABI-scoped-PPC32-import-recovery
+    "data:both returning images retain their return",
     "data:both uses of unchanged contents retained",
     "data:branch alternatives are defined",
     "data:by-value callee reads parameter fields",
@@ -2290,6 +2287,7 @@
     "data:calleereadarg-arm #3: a callee that reads no argument register gets no argument in BOTH passes",
     "data:calleereadarg-arm #4: a push of the dead r2/r3 that reaches the last argument register is no evidence, so bar gets no argument in BOTH passes",
     "data:calleereadarg-arm #5: a dead register gcc pushes beside a parameter to reserve stack is no evidence, so show keeps one argument in BOTH passes",
+    "data:caller contexts do not inherit another callers terminal identity",
     "data:callers receive the imported contract",
     "data:callretmulti #1: one helper assignment in each pass",
     "data:callretmulti #2: helper is never duplicated into the low-word sinks",
@@ -2424,6 +2422,9 @@
     "data:codescalar #4: the cast is gone with it, so the store is a plain assignment",
     "data:codescalar #5: the POINTER keeps its code type in both passes, so the indirect call still renders",
     "data:codescalar #6: the data control is untouched in both passes -- its pointer was never a code pointer",
+    "data:computed and stored interior entries retain returning calls",
+    "data:computed branches and callee fallthrough retain their return",
+    "data:computed interior entry retains returning tail call",
     "data:concrete origin keeps input and result roles",
     "data:condexeret #10: a threaded merge in front of the sfp body keeps comp void in both passes",
     "data:condexeret #11: the same merge behind the body keeps comp2 void in both passes",
@@ -2851,6 +2852,8 @@
     "data:libcnames #7: strlen's results are len and len_2 and malloc's is p",
     "data:libcnames #8: a value used inside an expression names nothing",
     "data:libcnames #9: fopen's result is fp",
+    "data:linked and computed edges acquire no terminal contract",
+    "data:linked and computed paths retain returning callers",
     "data:literal print default recovers exact newline",
     "data:literal print off and rejected shapes keep runtime sink",
     "data:literal stderr retains missing newline",
@@ -3152,6 +3155,9 @@
     "data:returning callers retain their original calls",
     "data:returning unwind caller remains unnamed",
     "data:reused parameter bytes have complete native definitions",
+    "data:reversed save overlap grants no terminal contract",
+    "data:reversed save overlap keeps the stub unnamed",
+    "data:reversed save overlap retains both caller returns",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
     "data:saved narrow interval is passed to the call",
@@ -3404,7 +3410,7 @@
     "data:the loaded pair reaches the first call as two slots",
     "data:the mixed record keeps its double field",
     "data:the mixed record keeps its short field",
-    "data:the no-return import ends refs only with the option on",
+    "data:the no-return import ends refs only with the option abi",
     "data:the non-dominated value reaches the split callee",
     "data:the other valid relocation never supplies a contract",
     "data:the split register delivers a scalar double parameter",
