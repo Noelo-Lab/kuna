@@ -9638,6 +9638,31 @@ impl PrintC {
             return false;
         }
 
+        if self.out_lang == crate::kuna_lang::OutLang::Go && finalcast.is_none() && sz_in > 0 {
+            if let (Some(PartialEntry::Unnamed(offset, size)), Some(container)) =
+                (stack.last(), unnamed_in.as_deref())
+            {
+                let offset = *offset;
+                let rendered = self.go_value_type(fd, arch, vn, op);
+                if let Some(view) = crate::kuna_gobyteview::plan(fd, arch, vn, op, container, offset, *size, rendered) {
+                    stack.pop();
+                    if let crate::kuna_gobyteview::View::Integer(pointer) = &view {
+                        self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                        self.push_cast_open(pointer, op);
+                        self.push_go_call("unsafe.Add", op);
+                        self.push_op(&tokens::COMMA, Some(op_key(op)));
+                        self.push_go_call("unsafe.Pointer", op);
+                        self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                    }
+                    self.push_partial_path(name, stack, vn, op);
+                    if matches!(view, crate::kuna_gobyteview::View::Integer(_)) {
+                        self.push_constant_ir_fmt_sign(offset as uintb, 0, op, display_format::NONE, false);
+                    }
+                    return true;
+                }
+            }
+        }
+
         let piece = match stack.last() {
             Some(PartialEntry::Unnamed(o, s))
                 if *s > 0 && self.options.partial_access && self.out_lang == crate::kuna_lang::OutLang::C =>

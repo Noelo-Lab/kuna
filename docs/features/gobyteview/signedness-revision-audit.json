@@ -1,0 +1,166 @@
+{
+  "counts": {
+    "functions": 135,
+    "declined_integer_views": 13,
+    "new_integer_views": 0
+  },
+  "declines": [
+    {
+      "fixture": "basics122-go",
+      "name": "runtime.gcMarkTermination",
+      "declined": [
+        [
+          "userArenaState",
+          32,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "basics122-go",
+      "name": "runtime.traceWriter.refill.func1",
+      "declined": [
+        [
+          "runtime.trace",
+          16,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "basics127-go",
+      "name": "runtime.gcMarkTermination",
+      "declined": [
+        [
+          "userArenaState",
+          32,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "basics127-go",
+      "name": "runtime.traceWriter.refill.func1",
+      "declined": [
+        [
+          "runtime.trace",
+          16,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "langdetect-go",
+      "name": "runtime.gcMarkTermination",
+      "declined": [
+        [
+          "userArenaState",
+          32,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "langdetect-go",
+      "name": "runtime.markrootFreeGStacks",
+      "declined": [
+        [
+          "sched",
+          168,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "langdetect-go",
+      "name": "runtime.traceWriter.refill.func1",
+      "declined": [
+        [
+          "runtime.trace",
+          16,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "native-go",
+      "name": "runtime.gcMarkTermination",
+      "declined": [
+        [
+          "userArenaState",
+          32,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "native-go",
+      "name": "runtime.markrootFreeGStacks",
+      "declined": [
+        [
+          "sched",
+          168,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "native-go",
+      "name": "runtime.traceWriter.refill.func1",
+      "declined": [
+        [
+          "runtime.trace",
+          16,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "native1273-go",
+      "name": "runtime.gcMarkTermination",
+      "declined": [
+        [
+          "userArenaState",
+          32,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "native1273-go",
+      "name": "runtime.markrootFreeGStacks",
+      "declined": [
+        [
+          "sched",
+          192,
+          8,
+          1
+        ]
+      ]
+    },
+    {
+      "fixture": "native1273-go",
+      "name": "runtime.traceWriter.refill.func1",
+      "declined": [
+        [
+          "runtime.trace",
+          16,
+          8,
+          1
+        ]
+      ]
+    }
+  ],
+  "other_token_changes": []
+}

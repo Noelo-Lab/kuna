@@ -74,6 +74,7 @@ pub(crate) mod kuna_rustfmtresult;
 pub mod kuna_langrust; // (kuna) the rust-language policy objects (profile + caps)
 pub mod kuna_langgo;
 pub mod kuna_gopackage;
+pub(crate) mod kuna_gobyteview;
 pub mod kuna_rusttypes; // (kuna) the rust-language type speller
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;

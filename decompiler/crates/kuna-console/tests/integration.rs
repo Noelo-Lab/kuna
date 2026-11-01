@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "verify_gobyteview.rs"]
+mod verify_gobyteview;
+
 #[path = "octeon_n64_arguments.rs"]
 mod octeon_n64_arguments;
 #[path = "octeon_abi.rs"]
