@@ -2233,6 +2233,13 @@ address (`auipc`, A32 `add rX,pc`) is carried; on x86-64 and AArch64 the PC-rela
 form (`lea [rip+…]`, `adrp`) is already a decode-time constant and is carried as
 before.
 
+An address below `0x1000` is reported when the instruction formed it from the
+program counter. A zero-based image keeps code and constants there: an arm64
+dylib's first functions, the `.rodata` ld.lld puts first in a shared object or
+PIE, firmware linked at 0. So `adrp x0,0x0; add x0,x0,#0x378`, `lea rax,[rip+…]`,
+an `auipc` pair, an i386 GOT-relative `lea` and A32/Thumb `adr` all file their rows
+there. The same value as a plain immediate (`mov x0,#0x378`) is still a number.
+
 ### One import, two addresses
 
 An imported function has two addresses and the import's name is on both: the
