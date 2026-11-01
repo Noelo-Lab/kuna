@@ -2560,8 +2560,9 @@ JSON. `--json` emits
 ```
 
 `bytes` on a row is that instruction's own bytes as contiguous lowercase hex
-(`"4889e5"`); `end` is one past the last instruction actually listed, so a
-truncated listing hands back the address to resume from. `kind` is `"code"` here
+(`"4889e5"`); `end` is one past the furthest byte the listed instructions cover —
+the last one's end, except where `--follow` rows overlap — so a truncated listing
+hands back the address to resume from. `kind` is `"code"` here
 and `"data"` in the byte view below.
 
 Bytes the translator will not decode are listed in place as `.byte` rows and the
@@ -2653,10 +2654,11 @@ nothing about the range. On ordinary compiler output there is nothing to report 
 across ~800 vendored fixture functions the note fires on eight, every one of them
 a real desynchronization.
 
-`--follow` then decodes from those addresses as well as from the start, to a
-fixpoint over whatever the new rows themselves branch to. One re-anchor is not
-enough: at `0x43d092` the very next instruction is another `EB 01`, and only
-following that one too reaches the real `0x43d096`.
+`--follow` then decodes from every address flow from the start reaches — the
+targets of its branches and calls, to a fixpoint over whatever the new rows
+themselves branch to. One re-anchor is not enough: at `0x43d092` the very next
+instruction is another `EB 01`, and only following that one too reaches the real
+`0x43d096`.
 
 ```
 $ kuna disassemble ./corrupt.exe 0x43d060 --addr --count 70 --follow
@@ -2674,12 +2676,51 @@ call and a jump that are not in the file.
 
 `--follow` never lists **less** than the plain listing: bytes no flow reaches are
 still listed, decoded straight-line in between and spelled `.byte` where they do
-not tile an instruction, and the two listings cover the same span. Where two
-reachable paths read the same bytes as different instructions — a conditional
-branch into the middle of the instruction it skips — both rows are listed, so
-rows can overlap under `--follow` and only under it. It is off by default because
-it costs a second walk and a straight line is the right answer for compiler
-output.
+not tile an instruction, and the two listings cover the same span. It is off by
+default because it costs a second walk and a straight line is the right answer
+for compiler output.
+
+Where two reachable paths read the same bytes as different instructions — a
+conditional branch into the middle of the instruction it skips, a jump back into
+an instruction, a `75 01` hop over a junk `e8` lead byte — **both rows are
+listed**, each path decoded until it meets an address the other already starts a
+row at, so rows can overlap under `--follow` and only under it. A note names the
+rows that start inside another:
+
+```
+$ kuna disassemble ./fixture.dylib 0x240 --addr --bytes 12 --as code --follow
+note: --follow decoded from one address the straight line would have walked over -- 0x245 --; ...
+note: 3 rows start inside another listed row -- 0x245, 0x249, 0x24a -- where two reachable
+paths read the same bytes as different instructions; --follow lists both readings, so these
+rows overlap rather than tile
+0x240         85ff                  TEST EDI,EDI
+0x242         7401                  JZ 0x245
+0x244         b8b82a0000            MOV EAX,0x2ab8       <- the fall-through reading
+0x245         b82a000000            MOV EAX,0x2a         <- the branch target's
+0x249         00c3                  ADD BL,AL
+0x24a         c3                    RET
+0x24b         c3                    RET
+```
+
+Rows stay in address order, and `end` (with `bytes`) is one past the furthest
+byte any row covers, which under overlap need not be the last row's own end.
+`--count N` lists the N lowest-addressed rows, however late flow reaches one of
+them, spending at most four decodes per row to find them, so a staircase of
+ever-lower branch targets cannot make a short listing decode its whole window (a
+target the walk did not get to is reported as past the budget); as in the plain
+listing, a `--count` that runs out is the length you asked for and does not set
+`truncated`, which only the 1024-instruction cap below sets.
+
+A branch target `--follow` still has no row for is reported with the reason that
+is true of it, each with its own move, and is never also counted among the
+addresses it decoded from:
+
+| Reason in the note | Move |
+|---|---|
+| only bytes no flow from the start reaches branch there (the straight-line fill) | disassemble from it on its own |
+| flow reaches it and the bytes there do not decode as an instruction | none: the branch, not the listing, is suspect |
+| the window ends at or before it, inside the instruction straddling the end | widen `--bytes` or the range |
+| the `--count N` budget (or the 1024-instruction cap) ran out before it | raise `--count` |
 
 ### The byte view
 
