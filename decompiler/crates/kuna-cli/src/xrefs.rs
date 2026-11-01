@@ -44,7 +44,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_analysis::listing::kuna_unflaggedcode::{
-    declared_data, declared_function, placement, Placement, UnflaggedSection,
+    declared_data, declared_function, named_at, placement, Placement, UnflaggedSection,
 };
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
@@ -106,11 +106,17 @@ struct Target {
 struct EntryNames {
     entries: BTreeMap<u64, String>,
     arm: bool,
+    /// The `[start, end)` of every [`UnflaggedSection`].
+    unflagged: Vec<(u64, u64)>,
 }
 impl EntryNames {
     fn at(&self, address: u64) -> Option<(u64, &str)> {
         let address = if self.arm { address & !1 } else { address };
         self.entries.get(&address).map(|name| (address, name.as_str()))
+    }
+
+    fn in_unflagged(&self, address: u64) -> bool {
+        self.unflagged.iter().any(|&(lo, hi)| address >= lo && address < hi)
     }
 }
 
@@ -257,9 +263,11 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let prog = load_program(&load, DriverDefaults::Query)?;
 
     let entries = prog.function_entries_canonical();
+    let unflagged = kuna_analysis::listing::kuna_unflaggedcode::unflagged_sections(&file);
     let names = EntryNames {
         entries: entries.iter().map(|entry| (entry.addr.get_offset(), entry.name.clone())).collect(),
         arm: prog.description().starts_with("ARM"),
+        unflagged: unflagged.iter().map(|s| (s.start, s.end)).collect(),
     };
     let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
     let seeds = kuna_analysis::listing::xrefs::discovery_seeds(
@@ -274,7 +282,6 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // entries carry points the walk at all of them and is settled afterwards,
     // because whether they are one callable is the walk's own finding.
     let resolution = target_address(&prog, &args.spec)?;
-    let unflagged = kuna_analysis::listing::kuna_unflaggedcode::unflagged_sections(&file);
     let source = unflagged_source(&file, &unflagged, args.direction, &resolution);
     let declared: Vec<u64> = match &resolution {
         Resolution::Settled(spec) if !source.is_empty() && declared_function(&file, spec.addr).is_some() => {
@@ -294,7 +301,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
 
     let target = resolve_target(&prog, &file, &index, &names, resolution.settle(&index)?);
     warn_other_entries(&index, &names, &target);
-    let unwalked = unwalked_code(&index, &unflagged);
+    let unwalked = unwalked_code(&file, &index, &unflagged);
     let coverage = coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked);
     for note in &coverage.notes {
         eprintln!("note: {note}");
@@ -352,10 +359,13 @@ struct Coverage {
 
 /// The `[start, end)` an explicit `--from` source may be decoded in although
 /// its section is not marked as code: the section holding it, when the image
-/// maps that memory executable and does not declare a data object at the
-/// address. Empty for `--to`, whose answer is about other code. The walk still
-/// decodes the source only if the image says it is code
-/// ([`kuna_analysis::listing::xrefs::build_with_unflagged_focus`]).
+/// maps that memory executable, declares no data object at the address and has
+/// a symbol there ([`named_at`]). Empty for `--to`, whose answer is about other
+/// code. The walk still decodes the source only if the image says it is code
+/// ([`kuna_analysis::listing::xrefs::build_with_unflagged_focus`]): a decoded
+/// direct call or branch targets it, or it is an ELF `STT_FUNC`. The symbol is
+/// required because a call alone is not evidence there: an instruction decoded
+/// in the wrong mode reads as a call into the strings beside the code.
 fn unflagged_source(
     file: &object::File,
     unflagged: &[UnflaggedSection],
@@ -371,7 +381,7 @@ fn unflagged_source(
         .filter(|s| spec.addr >= s.start && spec.addr < s.end)
         .map(|s| (s.start, s.end))
         .collect();
-    if ranges.is_empty() || declared_data(file, spec.addr).is_some() {
+    if ranges.is_empty() || declared_data(file, spec.addr).is_some() || named_at(file, spec.addr).is_none() {
         return Vec::new();
     }
     ranges
@@ -397,10 +407,12 @@ fn coverage_of(
     Coverage { decoded, placement, unwalked, notes }
 }
 
-/// The call and jump targets in [`unflagged_sections`] the walk did not decode,
-/// as `(address, section)`: code a decoded instruction transfers control to,
-/// whose own references no answer of this walk contains.
-fn unwalked_code(index: &XrefIndex, unflagged: &[UnflaggedSection]) -> Vec<(u64, String)> {
+/// The call and jump targets in [`unflagged_sections`] the walk did not decode
+/// and a symbol names, as `(address, section)`: code a decoded instruction
+/// transfers control to, whose own references no answer of this walk contains,
+/// and which `--from` it decodes. An unnamed target is left out, as `--from`
+/// leaves it undecoded ([`unflagged_source`]).
+fn unwalked_code(file: &object::File, index: &XrefIndex, unflagged: &[UnflaggedSection]) -> Vec<(u64, String)> {
     if unflagged.is_empty() {
         return Vec::new();
     }
@@ -409,6 +421,7 @@ fn unwalked_code(index: &XrefIndex, unflagged: &[UnflaggedSection]) -> Vec<(u64,
         .filter_map(|at| {
             unflagged.iter().find(|s| at >= s.start && at < s.end).map(|s| (at, s.name.clone()))
         })
+        .filter(|&(at, _)| named_at(file, at).is_some())
         .collect()
 }
 
@@ -423,9 +436,10 @@ fn source_note(
     placement: &Placement,
 ) -> Option<String> {
     let at = format!("0x{addr:x}");
-    let evidence = || match declared_function(file, addr) {
-        Some(name) => format!("the symbol table declares the function {name} there"),
-        None => "a decoded direct call or branch targets it".to_string(),
+    let evidence = || match (declared_function(file, addr), named_at(file, addr)) {
+        (Some(name), _) => format!("the symbol table declares the function {name} there"),
+        (None, Some(name)) => format!("a decoded direct call or branch targets the symbol {name} there"),
+        (None, None) => "a decoded direct call or branch targets it".to_string(),
     };
     Some(match (placement, decoded) {
         (Placement::Code { .. }, true) => return None,
@@ -441,7 +455,9 @@ fn source_note(
                  is not marked as code: it was not decoded, so no instruction references are listed",
                 s.name
             ),
-            None if index.is_stopped_flow_target(addr) || declared_function(file, addr).is_some() => {
+            None if declared_function(file, addr).is_some()
+                || (index.is_stopped_flow_target(addr) && named_at(file, addr).is_some()) =>
+            {
                 format!(
                     "{at} is in {}, which the image maps executable but does not mark as code, \
                      and does not decode as an instruction there: no instruction references are \
@@ -449,6 +465,13 @@ fn source_note(
                     s.name
                 )
             }
+            None if index.is_stopped_flow_target(addr) => format!(
+                "{at} is in {}, which the image maps executable but does not mark as code: a decoded \
+                 direct call or branch targets it, but no symbol names it, so it was not decoded (a \
+                 call there is as often an instruction decoded in the wrong mode pointing into \
+                 data); `kuna disassemble --as code` reads its bytes as instructions",
+                s.name
+            ),
             None => format!(
                 "{at} is in {}, which the image maps executable but does not mark as code, and \
                  nothing says {at} is code (no decoded direct call or branch targets it, and no \
@@ -750,26 +773,30 @@ fn warn_other_entries(index: &XrefIndex, names: &EntryNames, target: &Target) {
 }
 
 /// The program's best name for `vma`: the canonical function entry there, then a
-/// function symbol, then a named global data object, then the placeholder of a
-/// function only the walk knows. `None` when nothing names it.
+/// function symbol, then the placeholder of a function only the walk knows, then
+/// a named global data object. In executable memory not marked as code the data
+/// symbol comes before the placeholder: the image's own name for code linked
+/// there (`_middle` in `__TEXT,__const`) is the better one. `None` when nothing
+/// names it.
 fn name_at(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> Option<String> {
+    let data_symbol = || {
+        prog.global_data_symbols()
+            .into_iter()
+            .find(|(_, addr, _)| *addr == vma)
+            .map(|(name, _, _)| name)
+    };
+    let unflagged = names.in_unflagged(vma);
     names.at(vma)
         .map(|(_, name)| name.to_string())
         .or_else(|| prog.function_named_at(vma))
-        .or_else(|| {
-            prog.global_data_symbols()
-                .into_iter()
-                .find(|(_, addr, _)| *addr == vma)
-                .map(|(name, _, _)| name)
-        })
+        .or_else(|| unflagged.then(data_symbol).flatten())
         // The walk discovers functions the engine's inventory does not carry (it
         // follows the call graph out of its seeds), and a row that names one must
-        // still name it rather than answer `null`. A symbol the image does have
-        // there (`_middle`, called but linked outside every code section) is the
-        // better name.
+        // still name it rather than answer `null`.
         .or_else(|| {
             index.is_function_entry(vma).then(|| default_function_name(prog, vma))
         })
+        .or_else(|| (!unflagged).then(data_symbol).flatten())
 }
 
 /// The function `vma` lies in, as `(entry, name)`: the walk's own attribution

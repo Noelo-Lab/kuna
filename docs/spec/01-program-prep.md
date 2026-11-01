@@ -6950,10 +6950,16 @@ The section holding it must lie wholly inside a segment the image maps executabl
 `S_REGULAR`, `S_SYMBOL_STUBS` or `S_COALESCED`)
 (`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (placement)`).
 An ELF symbol table must not declare a data object at the address, and something
-must say the address is code: a direct call or branch the seeded walk decoded
-targets it (checked when the focus pass reaches it, after that walk has drained), or
-an ELF symbol table declares a function there
+must say the address is code: a symbol names it and a direct call or branch the
+seeded walk decoded targets it (checked when the focus pass reaches it, after that
+walk has drained), or an ELF symbol table declares a function there, an ARM
+`STT_FUNC`'s Thumb bit aside
 (`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (declared_function)`).
+The symbol is any Mach-O `nlist` or ELF function or untyped label, never a mapping
+symbol (`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (named_at)`).
+A call alone is not enough: on a static ARM glibc image the Thumb `_start` read in
+A32 is a `bleq` into the `.rodata` strings, and that target is no more code than any
+other string.
 Selection alone is not enough, because the same memory is mostly data: GNU ld put
 x86-64 `.rodata` in the `R E` segment until `-z separate-code` became its default
 (binutils 2.31), and still does on AArch64, and a string there decodes to a run of
@@ -6970,7 +6976,7 @@ Every answer also carries a `coverage` object
 (`decompiler/crates/kuna-cli/src/xrefs.rs (coverage_of)`): whether the walk decoded
 the queried address, the section it is in, whether that section is marked as code
 and whether its memory is executable, and the call and jump targets in executable
-memory not marked as code that the walk filed but did not decode
+memory not marked as code that the walk filed but did not decode and a symbol names
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (undecoded_flow_targets)`).
 The references those targets make are missing from every answer. Only a direct
 call or branch counts, never a call through a slot: Go's closure call `MOV

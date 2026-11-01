@@ -111,23 +111,55 @@ pub fn placement(file: &object::File, vma: u64) -> Placement {
 /// (`STT_OBJECT`, `STT_COMMON`, `STT_TLS`). A Mach-O `nlist` and a PE image
 /// declare no such type, so the answer there is always `None`.
 pub fn declared_data(file: &object::File, vma: u64) -> Option<String> {
-    declared(file, vma, |kind| matches!(kind, SymbolKind::Data | SymbolKind::Tls))
+    declared(file, vma, 0, |kind| matches!(kind, SymbolKind::Data | SymbolKind::Tls))
 }
 
 /// The name of the function an ELF symbol table declares at `vma`
 /// (`STT_FUNC`, `STT_GNU_IFUNC`); `None` on every other format, for the same
-/// reason as [`declared_data`].
+/// reason as [`declared_data`]. An ARM symbol's bit 0 is its Thumb flag, not
+/// part of the address.
 pub fn declared_function(file: &object::File, vma: u64) -> Option<String> {
-    declared(file, vma, |kind| kind == SymbolKind::Text)
+    let thumb = u64::from(file.architecture() == object::Architecture::Arm);
+    declared(file, vma, thumb, |kind| kind == SymbolKind::Text)
 }
 
-fn declared(file: &object::File, vma: u64, kind: impl Fn(SymbolKind) -> bool) -> Option<String> {
+/// The name of a symbol the image defines at `vma` that can label code: on ELF a
+/// function or an untyped label, never a data object, a section or file symbol,
+/// or an ARM/AArch64 mapping symbol (`$a`, `$d`, `$t`, `$x`); on Mach-O any
+/// `nlist`, which carries no type. `None` on every other format.
+pub fn named_at(file: &object::File, vma: u64) -> Option<String> {
+    let elf = match file.format() {
+        object::BinaryFormat::Elf => true,
+        object::BinaryFormat::MachO => false,
+        _ => return None,
+    };
+    let thumb = file.architecture() == object::Architecture::Arm;
+    file.symbols()
+        .chain(file.dynamic_symbols())
+        .filter(|sym| matches!(sym.section(), object::SymbolSection::Section(_)))
+        .filter(|sym| {
+            let kind = sym.kind();
+            let at = sym.address() == vma || (thumb && kind == SymbolKind::Text && sym.address() & !1 == vma);
+            at && match kind {
+                SymbolKind::Section | SymbolKind::File => false,
+                SymbolKind::Data | SymbolKind::Tls => !elf,
+                _ => true,
+            }
+        })
+        .find_map(|sym| sym.name().ok().filter(|n| !n.is_empty() && !n.starts_with('$')).map(str::to_string))
+}
+
+fn declared(file: &object::File, vma: u64, ignore: u64, kind: impl Fn(SymbolKind) -> bool) -> Option<String> {
     if file.format() != object::BinaryFormat::Elf {
         return None;
     }
     file.symbols()
         .chain(file.dynamic_symbols())
-        .find(|sym| sym.address() == vma && sym.is_definition() && kind(sym.kind()))
+        .find(|sym| {
+            (sym.address() == vma || sym.address() & !ignore == vma)
+                && sym.is_definition()
+                && kind(sym.kind())
+        })
         .map(|sym| sym.name().unwrap_or_default().to_string())
 }
 
@@ -255,6 +287,25 @@ mod tests {
         assert_eq!(declared_data(&file, 0x4000ce).as_deref(), Some("table"));
         assert_eq!(declared_function(&file, 0x4000c8).as_deref(), Some("lonely"));
         assert_eq!((declared_data(&file, 0x4000d3), declared_function(&file, 0x4000d3)), (None, None));
+    }
+
+    /// An ARM `STT_FUNC`'s bit 0 is the Thumb flag, and a mapping symbol
+    /// (`$t`) names no code; Mach-O `nlist`s name code whatever their section.
+    #[test]
+    fn symbols_name_code_by_their_address() {
+        let bytes = fixture("unflagged_elf_thumb");
+        let file = object::File::parse(&*bytes).unwrap();
+        assert_eq!(declared_function(&file, 0x40008c).as_deref(), Some("lonely"));
+        assert_eq!(named_at(&file, 0x400084).as_deref(), Some("middle"));
+        assert_eq!((named_at(&file, 0x400094), declared_function(&file, 0x400094)), (None, None));
+        assert_eq!(named_at(&file, 0x400074).as_deref(), Some("_start"));
+        let bytes = fixture("unflagged_macho_arm64");
+        let file = object::File::parse(&*bytes).unwrap();
+        assert_eq!(named_at(&file, 0x1000003fc).as_deref(), Some("_middle"));
+        assert_eq!(named_at(&file, 0x100000400), None);
+        let bytes = fixture("unflagged_elf_x86_64");
+        let file = object::File::parse(&*bytes).unwrap();
+        assert_eq!(named_at(&file, 0x4000ce), None, "an STT_OBJECT names data");
     }
 
     /// A PE and a separate-code ELF have no gap. An older GNU ld image keeps its

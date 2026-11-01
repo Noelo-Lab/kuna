@@ -15,6 +15,7 @@ use crate::common;
 
 const MACHO: &str = "unflagged_macho_arm64";
 const ELF: &str = "unflagged_elf_x86_64";
+const THUMB: &str = "unflagged_elf_thumb";
 
 fn xrefs(binary: &str, direction: &str, target: &str) -> (Value, String) {
     let path = common::fixture(binary);
@@ -88,7 +89,7 @@ fn an_explicit_source_that_decoded_code_calls_is_decoded() {
         assert!(decoded_unflagged(&doc), "{target}: {}", doc["coverage"]);
         let notes = doc["coverage"]["notes"].as_array().unwrap();
         assert_eq!(notes.len(), 1, "{target}: {notes:?}");
-        assert!(notes[0].as_str().unwrap().contains("a decoded direct call or branch targets it"), "{notes:?}");
+        assert!(notes[0].as_str().unwrap().contains("a decoded direct call or branch targets the symbol _middle"), "{notes:?}");
         assert!(stderr.contains("note: 0x1000003fc is in __TEXT,__const"), "{target}: {stderr}");
     }
 }
@@ -170,4 +171,24 @@ fn elf_rodata_code_needs_a_function_symbol_or_a_caller() {
     let (to, _) = xrefs(ELF, "--to", "goal");
     assert_eq!(rows(&to).iter().map(|r| r.1).collect::<Vec<_>>(), [0x4000bc], "direct_goal only");
     assert_eq!(unwalked(&to), [(0x4000c2, "middle".to_owned(), ".rodata".to_owned())]);
+}
+
+/// An ARM `STT_FUNC` carries the Thumb bit, so `lonely` (value `0x40008d`) is a
+/// declared function at `0x40008c`. A call alone is not evidence: `_start` calls
+/// the unnamed code at `0x400094`, and on a real image such a target is as often
+/// an instruction decoded in the wrong mode pointing into strings, so it is not
+/// decoded, and `--to` does not list it as unwalked code.
+#[test]
+fn thumb_functions_count_and_an_unnamed_call_target_does_not() {
+    for (target, at) in [("middle", 0x400086), ("lonely", 0x40008e)] {
+        let (doc, _) = xrefs(THUMB, "--from", target);
+        assert_eq!(rows(&doc), [call(at, 0x400080, "goal")], "{target}");
+        assert_eq!(coverage(&doc), (true, Some(".rodata"), Some(false), Some(true)), "{target}");
+    }
+    let (anon, stderr) = xrefs(THUMB, "--from", "0x400094");
+    assert_eq!(anon["count"], 0);
+    assert_eq!(coverage(&anon), (false, Some(".rodata"), Some(false), Some(true)));
+    assert!(stderr.contains("but no symbol names it, so it was not decoded"), "{stderr}");
+    let (to, _) = xrefs(THUMB, "--to", "goal");
+    assert_eq!(unwalked(&to), [(0x400084, "middle".to_owned(), ".rodata".to_owned())]);
 }

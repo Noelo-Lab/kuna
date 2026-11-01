@@ -26,6 +26,15 @@ What they are
                            .data   (WA) counter 0x401000
                          one R E PT_LOAD holds .text and .rodata, as GNU ld lays
                          an AArch64 image out.
+  unflagged_elf_thumb    static ARM (Thumb) ELF from unflagged_thumb.S + the same
+                         unflagged_elf.ld:
+                           .text   (AX) _start 0x400074 (bl middle; bl lonely+8),
+                                        goal 0x400080
+                           .rodata (A)  middle 0x400084 (STT_FUNC value 0x400085),
+                                        lonely 0x40008c (STT_FUNC value 0x40008d,
+                                        nothing calls it), and at 0x400094 the
+                                        same body with no symbol, which _start
+                                        calls
 
 How they were built (no macOS SDK; host clang + the rustup-bundled LLD)
   GL=$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld
@@ -36,6 +45,9 @@ How they were built (no macOS SDK; host clang + the rustup-bundled LLD)
   clang -target x86_64-linux-gnu -c unflagged_elf.S -o elf.o
   $GL/ld.lld -static -nostdlib --build-id=none -T unflagged_elf.ld \
       -o unflagged_elf_x86_64 elf.o
+  clang -target armv7-linux-gnueabihf -c unflagged_thumb.S -o thumb.o
+  $GL/ld.lld -static -nostdlib --build-id=none -T unflagged_elf.ld \
+      -o unflagged_elf_thumb thumb.o
   Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). LLVM's assembler
   marks __TEXT,__const S_ATTR_SOME_INSTRUCTIONS once an instruction is in it and
   ld64.lld keeps the attribute; Apple's ld64 does not, which is the layout the
@@ -46,6 +58,7 @@ How they were built (no macOS SDK; host clang + the rustup-bundled LLD)
   sha256:
     37343a81fe2471b9ba2ca2d6beadef04337cb43815e7d4de10247abad7c66be1  unflagged_macho_arm64
     3c61b92b475a52e4d909abf14881d5f087612d4620a127cf3abde7b999ae56c6  unflagged_elf_x86_64
+    6515211ccdbde272706c946b02f70ada37d974f72ec434436ec64638948acf30  unflagged_elf_thumb
   Never executed.
 
 What they pin
@@ -55,4 +68,7 @@ What they pin
   calls), _greeting, _data, the ELF `table` object and the unnamed bytes are not
   decoded, and `coverage` says why; ELF `middle` and `lonely` are decoded because
   their symbols are STT_FUNC. `xrefs --to _goal` still answers _direct_goal alone
-  and lists _middle and _quiet under `coverage.unwalked`.
+  and lists _middle and _quiet under `coverage.unwalked`. The Thumb lonely is
+  decoded although its symbol value carries the Thumb bit; the unnamed code at
+  0x400094 is not, although _start calls it (a call alone is not evidence), and
+  is left out of `coverage.unwalked`.

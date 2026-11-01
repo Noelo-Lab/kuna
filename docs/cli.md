@@ -2484,12 +2484,15 @@ in an `RWE` `PT_LOAD`, and GNU ld puts AArch64 `.rodata` in the `R E` segment. T
 walk does not decode that memory by itself (it is mostly strings and tables, and
 `kuna functions` leaves Mach-O symbols there out), but **an explicit `--from` source there
 is decoded as code when the image says it is code**: a direct call or branch the
-walk decoded targets it, or the ELF symbol table declares a function (`STT_FUNC`)
-at it. A call through a slot is not evidence; its target is the slot.
+walk decoded targets a symbol there, or the ELF symbol table declares a function
+(`STT_FUNC`, its Thumb bit ignored) at it. A call through a slot is not evidence;
+its target is the slot. Nor is a call alone: on an ARM image an instruction decoded
+in the wrong mode reads as a `bleq` into the strings beside the code, so an address
+no symbol names is not decoded however it is reached.
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --from _middle
-note: 0x1000003fc is in __TEXT,__const, which the image maps executable but does not mark as code: it was decoded as code because it was asked about and a decoded direct call or branch targets it (other queries do not walk it)
+note: 0x1000003fc is in __TEXT,__const, which the image maps executable but does not mark as code: it was decoded as code because it was asked about and a decoded direct call or branch targets the symbol _middle there (other queries do not walk it)
 # 1 reference from _middle @ 0x1000003fc
 0x1000003e4	call	_goal	@0x1000003fc	bl 0x1000003e4
 ```
@@ -2518,7 +2521,7 @@ no such gap.
 | `section` | The section the address is in (`__TEXT,__const`, `.rodata`); `null` in none. |
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
-| `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, which the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
+| `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
 
 ```
