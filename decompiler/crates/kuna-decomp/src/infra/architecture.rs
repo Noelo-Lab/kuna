@@ -786,6 +786,10 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
+    /// (kuna) Cut a jump table the basic model found no guard for at the first
+    /// row of a run that leaves the function for good (option `switchrunon`).
+    /// See [`crate::kuna_switchrunon`].
+    pub switch_run_on: bool,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`p2_lift/kuna_constselectjump.rs`).
     pub const_select_jump: bool,
@@ -3093,6 +3097,7 @@ impl Architecture {
             model_stack_probe_loop: false,
             fold_flag_compare: false,
             switch_modulo_bound: false,
+            switch_run_on: false, // (kuna) option switchrunon; reset_defaults sets the shipped default
             const_select_jump: false,
             switch_guard_bound: false,
             switch_shared_case: false,
@@ -3530,6 +3535,7 @@ impl Architecture {
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
+        self.switch_run_on = true; // (kuna) GH-1034 default-on: an unguarded table keeps only its leading rows inside the function when every later row runs on into two or more other functions; 0/675 datatest
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
@@ -4641,6 +4647,7 @@ impl Architecture {
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_modulo_bound = self.switch_modulo_bound;
+        ctx.switch_run_on = self.switch_run_on; // switchrunon
         // (kuna) carry the constant-select indirect-branch gate
         // (`option constselectjump`) so `JumpTable::recoverModel` reaches it.
         ctx.const_select_jump = self.const_select_jump;

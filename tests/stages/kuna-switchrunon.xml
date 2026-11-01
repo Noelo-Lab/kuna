@@ -1,0 +1,72 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-1034, P2 switch model, option switchrunon (default on).
+
+    pick dispatches on a byte with no bounds check, the shape a compiler
+    emits when it knows the selector is in range (Rust matching on a u8 enum
+    parameter): movzbl, lea table, movslq, add, jmp. Its own table has four
+    rows (cases returning 0x11..0x14). The 252 rows after them, which the
+    basic model reads because a byte allows 256 values, land in the bodies of
+    the next two functions, left and right, the way the next functions'
+    tables do in a linked Rust binary.
+
+    Source (GNU as, linked at 0x100000): pick at 0x100000, left at 0x100100,
+    right at 0x100200, the table at 0x100300 (4 own rows, then 126 pairs of
+    rows into left and right).
+
+    Pass 1 (default): the table stops at its four rows, so pick prints four
+        cases and none of left's or right's code (#1, #2, and the single
+        counts of #3-#5).
+    Pass 2 (option switchrunon off): the whole-width table is followed into
+        left and right, whose returns print as cases of pick up to 0xff
+        (#3-#5).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+400fb6c7488d0df5020000486304814801c8ffe0b811000000c3b812000000c3b813000000c3b814000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+b821000000c3b822000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100200" readonly="true">
+b831000000c3b832000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100300" readonly="true">
+14fdffff1afdffff20fdffff26fdffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+<symbol space="ram" offset="0x100100" name="left"/>
+<symbol space="ram" offset="0x100200" name="right"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 pick(uint1 sel);</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchrunon off</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHRUNON #1: both passes print pick" min="2" max="2">pick\(uint1 sel\)</stringmatch>
+<stringmatch name="SWITCHRUNON #2: both passes keep pick's own four cases" min="2" max="2">return 0x14;</stringmatch>
+<stringmatch name="SWITCHRUNON #3: only the whole-width table reads row 0xff, so the default pass prints no case past 3" min="1" max="1">case 0xff:</stringmatch>
+<stringmatch name="SWITCHRUNON #4: with the option off, left's body is decoded into pick" min="1" max="1">return 0x22;</stringmatch>
+<stringmatch name="SWITCHRUNON #5: with the option off, right's body is decoded into pick" min="1" max="1">return 0x32;</stringmatch>
+</decompilertest>

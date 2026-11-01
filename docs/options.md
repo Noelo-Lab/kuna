@@ -147,6 +147,10 @@ Three tiers:
 | getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase) |
 | pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase) |
 | 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase) |
+| a small function decompiles into dozens of its neighbours' bodies | [`switchrunon`](#switchrunon) |
+| a switch on a byte parameter has 256 cases, most of them other functions' code | [`switchrunon`](#switchrunon) |
+| a 1 KB Rust function takes minutes and gigabytes and hits --max-fn-memory | [`switchrunon`](#switchrunon) |
+| the same case bodies appear in several neighbouring functions | [`switchrunon`](#switchrunon) |
 | image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred) |
 | 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred) |
 | msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred) |
@@ -1673,6 +1677,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default (DIV-14): recovers a getopt/dispatch switch inside a loop that would otherwise report 'Could not recover jumptable ... Too many branches' and render as a computed (code *)() call with goto spaghetti. Flip OFF only if the heuristic mis-sizes or accepts an unrelated indirect jump on a specific program (it reads a read-only table at a base it recovers across a loop phi) — it is marked destructive for that reason, but it is byte-identical over the 675 datatests and kept on for quality despite being slower on the functions it recovers.
 - **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-switch-case-shared-case-node
 - **Example:** `option switchsharedcase on`
+
+### `switchrunon` -- on | off, default `on`
+
+- **Symptoms:** a small function decompiles into dozens of its neighbours' bodies; a switch on a byte parameter has 256 cases, most of them other functions' code; a 1 KB Rust function takes minutes and gigabytes and hits --max-fn-memory; the same case bodies appear in several neighbouring functions.
+- **What it does:** Stop a jump table that has no range guard where its rows run on into other functions. When the compiler knows the selector is in range it emits no bounds check (Rust matching on a u8 enum passed by value, C with an unreachable default), so the basic model has no guard and reads one row per value the selector's bits allow, 256 for a byte. Only the first few rows are the function's; the rest are the next functions' tables, which the linker put right after it, read from the wrong base, and flow decodes every one of them into this function, together with the tables those functions hold. On, the sanity check of a table its model found no guard for keeps its leading rows that land inside the function (from its entry to the next known function entry) when every later row lands outside it, in two or more other functions; the rows cut are not dispatched. A table that comes back into its own function after leaving it, or whose outside rows all land in one function, is kept whole, so a split-off cold block or a misplaced function start cannot cut a real case. A guarded table is never touched. Off restores the whole-width table.
+- **When to flip:** On by default. Turn it off if a switch on an unguarded byte selector loses cases that really live in other functions' address ranges (hand-written assembly dispatching into several functions' bodies), or to compare against the upstream table.
+- **Where / provenance:** P2/switch-model · kuna · correctness-fix · gh-1034
+- **Example:** `option switchrunon off`
 
 ### `switchmultipred` -- on | off, default `on` (destructive opt-in)
 

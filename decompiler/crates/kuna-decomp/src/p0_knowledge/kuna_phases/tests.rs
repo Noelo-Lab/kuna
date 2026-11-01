@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_360() {
-    assert_eq!(kuna_num_settables(), 360);
-    assert_eq!(SETTABLE_TABLE.len(), 360);
+fn settable_count_is_361() {
+    assert_eq!(kuna_num_settables(), 361);
+    assert_eq!(SETTABLE_TABLE.len(), 361);
 }
 
 #[test]
-fn tier_counts_are_127_core_141_transform_92_analysis() {
+fn tier_counts_are_127_core_142_transform_92_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_141_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 141, 92));
+    assert_eq!((core, transform, analysis), (127, 142, 92));
 }
 
 #[test]
@@ -929,7 +929,8 @@ fn option_values_live_value_present_for_165() {
     // 159 -> 160: +1 for `pltlocal` (plt_local_calls).
     // 160 -> 161: +1 for `haltloopguard` (halt_loop_guard).
     // 161 -> 162: +1 for `truncptrflow` (trunc_ptr_flow).
-    assert_eq!(with_live, 168);
+    // 168 -> 169: +1 for `switchrunon` (switch_run_on).
+    assert_eq!(with_live, 169);
 }
 
 #[test]
@@ -1152,7 +1153,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `haltloopguard`; its P3 row sits after `earlyrestart`.
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
-    assert_eq!(json.matches("},\n").count(), 359);
+    // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
+    assert_eq!(json.matches("},\n").count(), 360);
 }
 
 #[test]
