@@ -218,6 +218,11 @@ versions and malformed or unsupported requirements require an explicit target.
 Explicit `--target` takes precedence. A selected language never falls back to a
 different ISA if its specification is missing. The explicit e500mc target uses
 the standard PowerPC32 compiler model, preserving FPR arguments and returns.
+The SPE compiler models join 64-bit integer arguments from aligned pairs of
+32-bit GPR slots, preserving byte order and spilling the whole argument when
+no aligned pair remains. Following arguments use the remaining register or
+stack slots, and struct/union arguments are passed indirectly.
+
 
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,

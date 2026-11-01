@@ -138,3 +138,133 @@ fn shared_apu_requirements_preserve_altivec_and_hard_float() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+fn spe_arguments_image(little: bool, words: &[u32]) -> Vec<u8> {
+    let endian = if little {
+        Endianness::Little
+    } else {
+        Endianness::Big
+    };
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::PowerPc, endian);
+    let word = |v: u32| {
+        if little {
+            v.to_le_bytes()
+        } else {
+            v.to_be_bytes()
+        }
+    };
+    let text = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    let code: Vec<u8> = words
+        .iter()
+        .copied()
+        .chain([0x10632200, 0x4e800020])
+        .flat_map(word)
+        .collect();
+    object.append_section_data(text, &code, 4);
+    object.add_symbol(Symbol {
+        name: b"pick".to_vec(),
+        value: 0,
+        size: words.len() as u64 * 4,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Linkage,
+        weak: false,
+        section: SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    let section = object.add_section(Vec::new(), b".PPC.EMB.apuinfo".to_vec(), SectionKind::Note);
+    let mut note: Vec<u8> = [8, 4, 2].into_iter().flat_map(word).collect();
+    note.extend(b"APUinfo\0");
+    note.extend(word(0x0100_0001));
+    object.append_section_data(section, &note, 4);
+    object.write().unwrap()
+}
+
+fn spe_declared(path: &std::path::Path, assertions: &[&str], target: Option<&str>) -> String {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+    command
+        .arg("decompile")
+        .arg(path)
+        .args(["pick", "--mode", "fast", "--assert-strict"]);
+    for assertion in assertions {
+        command.args(["--assert", assertion]);
+    }
+    if let Some(target) = target {
+        command.args(["--target", target]);
+    }
+    let output = command.output().unwrap();
+    assert!(output.status.success(), "{output:?}");
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn spe_integer_pairs_align_and_spill_without_losing_arguments() {
+    let path = common::scratch_file("powerpc-spe-pair", "o");
+    for little in [false, true] {
+        for padding in [0usize, 1, 2, 5, 6, 7, 8, 9] {
+            let mr = |dst: u32, src: u32| 0x7c000378 | (src << 21) | (dst << 16) | (src << 11);
+            let first = 3 + ((padding as u32 + 1) & !1);
+            let stack = (8 + padding.saturating_sub(8) as u32 * 4 + 7) & !7;
+            let words = if first <= 9 {
+                vec![mr(3, first), mr(4, first + 1), 0x4e800020]
+            } else {
+                vec![0x80610000 | stack, 0x80810000 | (stack + 4), 0x4e800020]
+            };
+            std::fs::write(&path, spe_arguments_image(little, &words)).unwrap();
+            let args: String = (0..padding).map(|i| format!("int p{i},")).collect();
+            for ty in ["long long", "unsigned long long"] {
+                let prototype = format!("prototype pick {ty} pick({args}{ty} x)");
+                let text = spe_declared(&path, &[&prototype], None);
+                assert!(!text.contains("; //"), "{little} {padding}: {text}");
+                let target = format!(
+                    "PowerPC:{}:32:e500:default",
+                    if little { "LE" } else { "BE" }
+                );
+                assert_eq!(text, spe_declared(&path, &[&prototype], Some(&target)));
+                let values = "11,".repeat(padding);
+                check_emitted_c(&text, &format!("pick({values}0x123456789abcdef0LL) != 0x123456789abcdef0LL || pick({values}-1) != ({ty})-1"));
+            }
+            let words = if first <= 7 {
+                vec![mr(3, first + 2), 0x4e800020]
+            } else {
+                vec![
+                    0x80610000 | if first <= 9 { 8 } else { stack + 8 },
+                    0x4e800020,
+                ]
+            };
+            std::fs::write(&path, spe_arguments_image(little, &words)).unwrap();
+            let prototype = format!("prototype pick int pick({args}long long x,int tail)");
+            let text = spe_declared(&path, &[&prototype], None);
+            assert!(text.contains("return tail;"), "{little} {padding}: {text}");
+            check_emitted_c(
+                &text,
+                &format!(
+                    "pick({}0x123456789abcdef0LL,-7) != -7",
+                    "11,".repeat(padding)
+                ),
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn spe_aggregate_arguments_remain_indirect() {
+    let path = common::scratch_file("powerpc-spe-aggregate", "o");
+    for little in [false, true] {
+        std::fs::write(
+            &path,
+            spe_arguments_image(little, &[0x88630000, 0x4e800020]),
+        )
+        .unwrap();
+        for kind in ["struct", "union"] {
+            let typedef = format!("typedef {kind} T {{ unsigned char a; }} T;");
+            let text = spe_declared(&path, &[&typedef, "prototype pick int pick(T x)"], None);
+            assert!(text.contains("x.a"), "{text}");
+            check_emitted_c(
+                &format!("{typedef}\n{text}\nstatic T x = {{255}};"),
+                "pick(x) != 255",
+            );
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
