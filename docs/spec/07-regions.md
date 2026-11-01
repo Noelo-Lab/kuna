@@ -627,3 +627,24 @@ virtualize-to-goto tie-break is the structurer's own address-keyed order over
 identification is recomputed by every consumer. How the structurer matches
 schemas over this tree, virtualizes edges, and falls back to
 `CollapseStructure` is chapter [08 — Structuring](08-structuring.md).
+
+## Go compiler checks (`gobounds`)
+
+`decompiler/crates/kuna-decomp/src/p7_regions/kuna_gobounds.rs
+(ActionGoBounds)` runs beside `securitycheck` in the repeating fullloop tail.
+The default-on `gobounds` option is additionally gated on the effective Go source
+language. It recognizes exact runtime names for compiler-generated bounds, slice,
+division, shift, overflow, and unsafe string/slice checks, including the old
+per-kind helpers and newer `panicBounds32`/`panicBounds64` dispatchers and ABI
+suffixes. These names also supply a Go-only no-return fact at the flow seam.
+Explicit `runtime.gopanic`, assertion panics, and merely similar names do not match.
+
+A two-successor conditional loses an edge only when exactly one successor is a
+terminal basic block containing one matching direct call. An arm containing a
+store, another call, or a user operation is retained. Removing one edge and then
+unreachable blocks lets the ordinary dead-code pass remove unused comparison
+operands. The success arm and its memory accesses remain; length parameters used
+only by the eliminated comparison can disappear from the inferred signature.
+Straight-line panic stubs and conditionals with two panic successors are retained.
+This is a source-oriented destructive transform: `option gobounds off` preserves
+the actual checks for auditing. The Go language gate leaves the C corpus untouched.

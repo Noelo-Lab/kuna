@@ -498,6 +498,8 @@ Three tiers:
 | numerical integer conversion is stored in a float local | [`fputruncviews`](#fputruncviews) |
 | short call argument uses inverse floating storage unions | [`fputruncviews`](#fputruncviews) |
 | one floating register carries both integers and genuine floating values | [`fputruncviews`](#fputruncviews) |
+| Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds) |
+| Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2453,6 +2455,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** An integer conversion transported through floating registers is printed through inverse float/integer storage unions. Locked types and names remain authoritative; observable floating storage writes, clobbers and later floating uses are retained. Turn off to restore mixed storage-variable recovery.
 - **Where / provenance:** P6/variable-merging · kuna · transform · kuna-fputruncviews
 - **Example:** `option fputruncviews off`
+
+### `gobounds` -- on | off, default `on` (destructive opt-in)
+
+- **Symptoms:** Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls; Go division retains compiler-generated runtime.panicdivide branches.
+- **What it does:** REMOVES CODE: fold compiler-generated Go bounds, slice, division, shift and unsafe string/slice checks. On Go images only, remove a conditional edge to a terminal block whose sole call is an exact compiler panic helper. Preserve explicit panic calls, type assertions, arms containing stores or other calls, and branches whose two successors are both panic handlers. The surviving access or arithmetic is unchanged; arguments used only by the removed check can disappear from inferred signatures.
+- **When to flip:** Leave on for source-oriented Go decompilation; turn off to audit the actual checks and panic paths. Non-Go images are unchanged. Use sourcelang go for a bytechunk or image whose language metadata was removed.
+- **Where / provenance:** P7/edge-virtualization · angr · opt-in-tool · angr-go-check-remover
+- **Example:** `option gobounds off`
 
 ## Analysis & loader passes
 

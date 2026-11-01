@@ -448,3 +448,6 @@ mod verify_notype_import_prototypes;
 
 #[path = "verify_clear_architecture.rs"]
 mod verify_clear_architecture;
+
+#[path = "verify_go_bounds.rs"]
+mod verify_go_bounds;

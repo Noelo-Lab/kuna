@@ -667,6 +667,7 @@ pub fn universal_sched(
             // because it is the same edge-removal primitive pair on a different
             // trigger; the repeating fullloop re-runs mainloop's dead-code and type
             // passes over the reduced graph before P8 structures it.
+            act!(crate::kuna_gobounds::ActionGoBounds::boxed("returnsplit")),
             act!(Box::new(crate::kuna_securitycheck::ActionRemoveSecurityCheck::new(
                 false,
                 "returnsplit"

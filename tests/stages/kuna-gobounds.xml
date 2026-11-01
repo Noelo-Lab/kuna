@@ -1,0 +1,46 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- angr GoCheckRemover: P7 edge-virtualization, option gobounds.
+     cmp rsi,rdx; jae panic; return buf[idx]+1; panic: runtime.panicIndex(idx,len).
+     Source language is forced because bytechunks carry no Go buildinfo.
+     The off arm keeps the check; default on removes it but keeps the access.
+     A third C-language pass must retain the same branch even with gobounds on. -->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4839d673068b04b7ffc0c34889f74889d6e8ea0f0000cc
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+<symbol space="ram" offset="0x101000" name="runtime.panicIndex"/>
+<bytechunk space="ram" offset="0x110000" readonly="true">
+4839d673068b04b7ffc0c3c70701000000e8ea0fffffcc
+</bytechunk>
+<symbol space="ram" offset="0x110000" name="store_then_panic"/>
+<bytechunk space="ram" offset="0x120000" readonly="true">
+e8fb0ffeffcc
+</bytechunk>
+<symbol space="ram" offset="0x120000" name="panic_wrapper"/>
+<bytechunk space="ram" offset="0x130000" readonly="true">4839d673068b04b7ffc0c3c705ebff1c0001000000e8e60ffdffcc</bytechunk>
+<symbol space="ram" offset="0x130000" name="global_then_panic"/>
+<bytechunk space="ram" offset="0x300000" readonly="false">00000000</bytechunk>
+<symbol space="ram" offset="0x300000" name="marker"/>
+</binaryimage>
+<script>
+<com>option sourcelang go</com>
+<com>option gobounds off</com>
+<com>lo fu pick</com><com>decompile</com><com>print C</com>
+<com>option gobounds on</com>
+<com>decompile</com><com>print C</com>
+<com>option sourcelang c</com>
+<com>decompile</com><com>print C</com>
+<com>option sourcelang go</com>
+<com>lo fu store_then_panic</com><com>decompile</com><com>print C</com>
+<com>lo fu panic_wrapper</com><com>decompile</com><com>print C</com>
+<com>lo fu global_then_panic</com><com>decompile</com><com>print C</com>
+<com>option sourcelang auto</com>
+<com>quit</com>
+</script>
+<stringmatch name="gobounds: panic retained when disabled or non-Go" min="5" max="5">runtime.panicIndex\(</stringmatch>
+<stringmatch name="gobounds: conditional retained when disabled or non-Go" min="4" max="4">if \(</stringmatch>
+<stringmatch name="gobounds: every pass retains the indexed load" min="5" max="5">a0\[a1\] \+ 1</stringmatch>
+<stringmatch name="gobounds: side effect before panic retained" min="1" max="1">\*a0 = 1;</stringmatch>
+<stringmatch name="gobounds: global write before panic retained" min="1" max="1">dat_300000 = 1;</stringmatch>
+</decompilertest>
