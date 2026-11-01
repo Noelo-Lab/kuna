@@ -477,6 +477,36 @@ range lie in an entry covering the least-significant bytes
 (`Containment::NoContainment`)? Entry lookup goes through a range-map resolver built once per
 list (`ParamListStandard::populate_resolver`).
 
+A named register can be wider than its ABI slot. For an exclusion entry with
+an explicit `sign` or `zero` extension, decoding retains both extents: `maxsize`
+still controls argument assignment, and the slot occupies the register's low
+bytes in either byte order. Before SSA, `ActionConstbase` defines the whole
+incoming register by extending that slot
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_registerslots.rs`). This lets
+full-register reads recover the same argument as word reads, including when
+no prototype is declared, without enlarging argument pairs or stack slots.
+Entries with overlapping alternative storage, aliases no wider than the slot,
+and conditional or unspecified extensions do not supply this fact. Explicit
+custom parameter storage takes precedence over the model. The effect
+is installed once per analysis and reset when the function is cleared.
+Wide-register MIPS O32 uses this for the sign extension of each four-byte
+integer argument word into its eight-byte register. The FP32 languages' default
+compiler is O32 too, so `narrowext` applies the same type-aware argument rules
+as the explicit `o32` compiler name.
+
+`registerextension="sign|zero"` can state just the slot-to-register extension,
+separately from how a smaller C type fills the slot. It requires a named register
+wider than a single exclusion slot. Wide O32 return entries use this declaration:
+a four-byte scalar result uses the existing assumed-extension query; a joined
+result extends each returned word in its own register. A smaller result extends
+into the word only when the existing type-aware rule supplies that fact, before
+the word extends into the full register. This preserves unsigned-byte extension
+under `narrowext compiler` without inventing the word's otherwise unspecified bits.
+The call linker handles declared results; output heritage uses the same physical
+extent to recover a four-byte trial for an inferred result read as a whole
+register. Neither path enlarges the return slots or enables generic call-overlap
+recovery. Overlapping alternative entries do not supply an unconditional extension.
+
 The `ParamListStandard` kinds (`decompiler/crates/kuna-decomp/src/p4_calls/fspec.rs
 (ParamListKind)`) collapse the upstream subclass tree into one struct: `Standard`
 (ordered input resources), `StandardOut` / `RegisterOut` (return-value storage),

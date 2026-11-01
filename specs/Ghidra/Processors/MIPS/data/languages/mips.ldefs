@@ -452,4 +452,64 @@
     <compiler name="default" spec="octeon_n32_soft.cspec" id="default"/>
     <compiler name="n32" spec="octeon_n32_soft.cspec" id="n32"/>
   </language>
+  <language processor="MIPS"
+            endian="big"
+            size="32"
+            variant="64-32addr-fp32"
+            version="1.0"
+            slafile="mips64be32addr_fp32.sla"
+            processorspec="mips64.pspec"
+            manualindexfile="../manuals/mipsM16.idx"
+            id="MIPS:BE:64:64-32addr-fp32">
+    <description>MIPS64 with 32-bit addresses and FPRs, big endian</description>
+    <truncate_space space="ram" size="4"/>
+    <compiler name="default" spec="mips64_32_o32_fp32.cspec" id="default"/>
+    <compiler name="o32" spec="mips64_32_o32_fp32.cspec" id="o32"/>
+    <external_name tool="DWARF.register.mapping.file" name="mips.dwarf"/>
+  </language>
+  <language processor="MIPS"
+            endian="big"
+            size="32"
+            variant="micro64-32addr-fp32"
+            version="1.0"
+            slafile="mips64be32addr_fp32.sla"
+            processorspec="mips64micro.pspec"
+            manualindexfile="../manuals/mipsM16.idx"
+            id="MIPS:BE:64:micro64-32addr-fp32">
+    <description>MIPS64 with 32-bit addresses and FPRs, big endian</description>
+    <truncate_space space="ram" size="4"/>
+    <compiler name="default" spec="mips64_32_o32_fp32.cspec" id="default"/>
+    <compiler name="o32" spec="mips64_32_o32_fp32.cspec" id="o32"/>
+    <external_name tool="DWARF.register.mapping.file" name="mips.dwarf"/>
+  </language>
+  <language processor="MIPS"
+            endian="little"
+            size="32"
+            variant="64-32addr-fp32"
+            version="1.0"
+            slafile="mips64le32addr_fp32.sla"
+            processorspec="mips64.pspec"
+            manualindexfile="../manuals/mipsM16.idx"
+            id="MIPS:LE:64:64-32addr-fp32">
+    <description>MIPS64 with 32-bit addresses and FPRs, little endian</description>
+    <truncate_space space="ram" size="4"/>
+    <compiler name="default" spec="mips64_32_o32_fp32.cspec" id="default"/>
+    <compiler name="o32" spec="mips64_32_o32_fp32.cspec" id="o32"/>
+    <external_name tool="DWARF.register.mapping.file" name="mips.dwarf"/>
+  </language>
+  <language processor="MIPS"
+            endian="little"
+            size="32"
+            variant="micro64-32addr-fp32"
+            version="1.0"
+            slafile="mips64le32addr_fp32.sla"
+            processorspec="mips64micro.pspec"
+            manualindexfile="../manuals/mipsM16.idx"
+            id="MIPS:LE:64:micro64-32addr-fp32">
+    <description>MIPS64 with 32-bit addresses and FPRs, little endian</description>
+    <truncate_space space="ram" size="4"/>
+    <compiler name="default" spec="mips64_32_o32_fp32.cspec" id="default"/>
+    <compiler name="o32" spec="mips64_32_o32_fp32.cspec" id="o32"/>
+    <external_name tool="DWARF.register.mapping.file" name="mips.dwarf"/>
+  </language>
 </language_definitions>

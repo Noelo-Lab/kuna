@@ -517,7 +517,7 @@ pub fn for_arch(
         // RISC-V: 2-byte alignment (the compressed C extension).
         A::Riscv32 | A::Riscv64 => cached!(RISCV, compile(&[RISCV_GC], 2)),
         // MIPS: 4-byte fixed-width; pick endianness.
-        A::Mips | A::Mips64 => {
+        A::Mips | A::Mips64 | A::Mips64_N32 => {
             if little_endian {
                 cached!(MIPSLE, compile(&[MIPS_LE], 4))
             } else {
@@ -648,6 +648,8 @@ mod tests {
             (object::Architecture::Riscv64, true),
             (object::Architecture::Mips, false),
             (object::Architecture::Mips, true),
+            (object::Architecture::Mips64_N32, false),
+            (object::Architecture::Mips64_N32, true),
             (object::Architecture::Arm, true),
             // I386: the vendored x86win patterns carry bare `<funcstart/>`
             // patternpairs + `*`-marked bare patterns (the x86-64win MSVC shapes).
