@@ -5048,7 +5048,8 @@ impl JumpBasicModel {
             return None;
         }
         let offsets: Vec<uintb> = rows.iter().map(|row| row.get_offset()).collect();
-        crate::kuna_switchrunon::own_rows(entry.get_offset(), &offsets, owner)
+        let cut = crate::kuna_switchrunon::own_rows(entry.get_offset(), &offsets, owner)?;
+        fd.get_arch().in_section_of(entry, &rows[cut]).then_some(cut)
     }
 
     /// Fold a single guard CBRANCH into the switch's default destination (C++

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3450,
-    3450
+    3452,
+    3452
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1769,6 +1769,8 @@
     "data:SWITCHRUNON #3: only the whole-width table reads row 0xff, so the default pass prints no case past 3",
     "data:SWITCHRUNON #4: with the option off, left's body is decoded into pick",
     "data:SWITCHRUNON #5: with the option off, right's body is decoded into pick",
+    "data:SWITCHRUNON #6: the default pass prints pick2",
+    "data:SWITCHRUNON #7: a table whose first row out lands below its entry keeps that cold case",
     "data:SWITCHSELECTOR #1: the re-rolled switch dispatches on the message parameter, and only the off pass re-rolls",
     "data:SWITCHSELECTOR #2: the case labels exist only in the pass that re-rolled",
     "data:SWITCHSELECTOR #3: with the option on the cascade survives as the compiler lowered it, over the same parameter",

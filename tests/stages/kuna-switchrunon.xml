@@ -21,6 +21,12 @@
     Pass 2 (option switchrunon off): the whole-width table is followed into
         left and right, whose returns print as cases of pick up to 0xff
         (#3-#5).
+
+    pick2 (0x100800) masks its byte to eight rows: four own cases returning
+    0x41..0x44, a fifth returning 0x45 from pick2.cold at 0x100780, below
+    pick2's entry where gcc places a function's split-off cold part, then
+    rows into left2 and right2. The first row out lands below the entry, so
+    the default pass keeps the whole table and the cold case (#6, #7).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 400fb6c7488d0df5020000486304814801c8ffe0b811000000c3b812000000c3b813000000c3b814000000c3
@@ -49,13 +55,36 @@ b831000000c3b832000000c3
 06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
 06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
 </bytechunk>
+<bytechunk space="ram" offset="0x100780" readonly="true">
+b845000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100800" readonly="true">
+400fb6c783e007488d0df2000000486304814801c8ffe0b841000000c3b842000000c3b843000000c3b844000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100900" readonly="true">
+17ffffff1dffffff23ffffff29ffffff80feffff060100000602000006010000
+</bytechunk>
+<bytechunk space="ram" offset="0x100a00" readonly="true">
+b851000000c3b852000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100b00" readonly="true">
+b861000000c3b862000000c3
+</bytechunk>
 <symbol space="ram" offset="0x100000" name="pick"/>
 <symbol space="ram" offset="0x100100" name="left"/>
 <symbol space="ram" offset="0x100200" name="right"/>
+<symbol space="ram" offset="0x100780" name="pick2.cold"/>
+<symbol space="ram" offset="0x100800" name="pick2"/>
+<symbol space="ram" offset="0x100a00" name="left2"/>
+<symbol space="ram" offset="0x100b00" name="right2"/>
 </binaryimage>
 <script>
   <com>parse line extern int4 pick(uint1 sel);</com>
+  <com>parse line extern int4 pick2(uint1 sel);</com>
   <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick2</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option switchrunon off</com>
@@ -69,4 +98,6 @@ b831000000c3b832000000c3
 <stringmatch name="SWITCHRUNON #3: only the whole-width table reads row 0xff, so the default pass prints no case past 3" min="1" max="1">case 0xff:</stringmatch>
 <stringmatch name="SWITCHRUNON #4: with the option off, left's body is decoded into pick" min="1" max="1">return 0x22;</stringmatch>
 <stringmatch name="SWITCHRUNON #5: with the option off, right's body is decoded into pick" min="1" max="1">return 0x32;</stringmatch>
+<stringmatch name="SWITCHRUNON #6: the default pass prints pick2" min="1" max="1">pick2\(uint1 sel\)</stringmatch>
+<stringmatch name="SWITCHRUNON #7: a table whose first row out lands below its entry keeps that cold case" min="1" max="1">return 0x45;</stringmatch>
 </decompilertest>

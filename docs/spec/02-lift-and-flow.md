@@ -1737,14 +1737,18 @@ the case targets.
    `lazyfuncs` left as names, so that option does not change the cut) and
    keeps only the leading rows the function owns when every later row is
    owned by another function or by none, those rows reach at least two
-   different owners, and the first of them lands past the function's entry.
-   The run-on rows are the next functions' tables, which lie after this one,
-   so they run forward; gcc places a function's split-off `.cold` block
-   below every hot body, so a table whose first row out lands below the
-   entry is a cold case, not a run-on. That table is kept whole, and so is
-   one that returns into its own function after leaving it, one whose
-   outside rows all land in one place (a function start discovery put inside
-   a body), a guarded table, and one whose first row is already outside. The rows cut are not dispatched
+   different owners, and the first of them lands past the function's entry
+   and inside the load-image section that holds the entry (`context.rs
+   (ArchContext::in_section_of)`). The run-on rows are the next functions'
+   tables, which lie after this one, so they run forward into neighbouring
+   code. A case the compiler split off does not: gcc places a function's
+   `.cold` block below every hot body, and BOLT moves cold and warm blocks
+   to their own `.text.cold` and `.text.warm` sections, so a table whose
+   first row out lands below the entry or in another section is a real
+   case, not a run-on. That table is kept whole, and so is one that returns
+   into its own function after leaving it, one whose outside rows all land
+   in one place (a function start discovery put inside a body), a guarded
+   table, and one whose first row is already outside. The rows cut are not dispatched
    (`jumptable.rs (JumpTable::cut_rows_dispatched)`), so the late label pass
    does not read them back. The function then decodes its own body only:
    0x14000a040 prints its four cases in 0.7 s. Off keeps the whole-width

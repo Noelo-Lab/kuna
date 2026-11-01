@@ -2692,6 +2692,31 @@ impl ArchContext {
         })
     }
 
+    /// (kuna `switchrunon`) Whether `b` lies in the load-image section that
+    /// holds `a`; true when no section holds `a` or the image reports none.
+    pub fn in_section_of(&self, a: &Address, b: &Address) -> bool {
+        let Some(loader) = self.loader.as_ref() else { return true };
+        let Ok(loader) = loader.try_borrow() else { return true };
+        let holds = |section: &kuna_sleigh::loadimage::LoadImageSection, addr: &Address| {
+            addr.get_offset().wrapping_sub(section.address.get_offset()) < section.size
+        };
+        loader.open_section_info();
+        let mut verdict = true;
+        loop {
+            let mut section = kuna_sleigh::loadimage::LoadImageSection::default();
+            let more = loader.get_next_section(&mut section);
+            if holds(&section, a) {
+                verdict = holds(&section, b);
+                break;
+            }
+            if !more {
+                break;
+            }
+        }
+        loader.close_section_info();
+        verdict
+    }
+
     /// C++ `Scope::queryFunction(addr)` (`database.cc:1292`) restricted to the
     /// global-scope snapshot: resolve an address to the FunctionSymbol that
     /// *starts* there and report its display name, entry address, and recovered

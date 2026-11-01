@@ -15,11 +15,13 @@
 //! for keeps only its leading rows inside the function (from its entry to the
 //! next known function entry) when every later row lands outside it, in at
 //! least two other functions. Those functions' tables lie after this one, so
-//! the first row out runs forward, past the entry. A table whose first row
-//! out lands below the entry (where gcc puts a function's split-off `.cold`
-//! block), whose outside rows all land in one function, or that comes back
-//! into its own function after leaving it, is kept whole, so a cold case or a
-//! misplaced function start cannot be cut. The rows cut are not dispatched.
+//! the first row out runs forward, past the entry, and stays in the
+//! function's section. A table whose first row out lands below the entry
+//! (where gcc puts a function's split-off `.cold` block) or in another
+//! section (BOLT's `.text.cold` and `.text.warm` fragments), whose outside
+//! rows all land in one function, or that comes back into its own function
+//! after leaving it, is kept whole, so a split-off case or a misplaced
+//! function start cannot be cut. The rows cut are not dispatched.
 
 /// The number of leading rows of `rows` (table destinations) that belong to
 /// the function at `entry`, when the rest run on forward into other
