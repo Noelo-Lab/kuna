@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3502,
-    3502
+    3508,
+    3508
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1432,6 +1432,9 @@
     "data:NULTERMINATOR #7: pad_after on closes the array one element after the terminator",
     "data:NULTERMINATOR #8: pad_after on renders buf[33] = 0",
     "data:NULTERMINATOR #9: pad_after off splits the terminator into its own char",
+    "data:O32 aggregate: byte member retains its value",
+    "data:O32 aggregate: declared value argument",
+    "data:O32 aggregate: no residual placement shift",
     "data:O32 slot: full-register test uses the argument",
     "data:O32 slot: inferred input remains a four-byte int",
     "data:O32 slot: no undefined upper half",

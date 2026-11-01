@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- O32 with 64-bit general registers and 32-bit floating-point registers.
+<!-- Big-endian O32 with 64-bit general registers and 32-bit floating-point registers.
      Integer arguments and returns retain four-byte slots. -->
 <compiler_spec>
   <data_organization>
@@ -84,6 +84,14 @@
           </datatype_at>
           <consume storage="float"/>	                    <!-- use f14_f15 -->
           <consume_extra storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="struct"/>
+          <join align="true" reversejustify="true"/>
+        </rule>
+        <rule>
+          <datatype name="union"/>
+          <join align="true" reversejustify="true"/>
         </rule>
         <rule>
           <datatype name="any"/>  <!-- otherwise any parameter -->

@@ -836,3 +836,133 @@ fn fp32_default_compiler_keeps_o32_unsigned_argument_extension() {
     }
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn o32_aggregate_arguments_keep_memory_order_with_wide_registers() {
+    let path = common::scratch_file("mips-o32-aggregate-placement", "elf");
+    for little in [false, true] {
+        for (fpr, abi) in [(1, 1), (2, 6)] {
+            for kind in ["struct", "union"] {
+                for size in [1usize, 2, 4, 8] {
+                    let fields = if kind == "struct" {
+                        (0..size)
+                            .map(|i| format!("unsigned char m{i};"))
+                            .collect::<String>()
+                    } else {
+                        format!("unsigned char m0; unsigned char storage[{size}];")
+                    };
+                    let typedef = format!("typedef {kind} T {{ {fields} }} T;");
+                    for padding in [0usize, 3, 4] {
+                        for index in if kind == "struct" && size > 1 {
+                            vec![0, size - 1]
+                        } else {
+                            vec![0]
+                        } {
+                            let slot = padding + index / 4;
+                            let words = if slot < 4 {
+                                let shift = if little { index % 4 } else { 3 - index % 4 } * 8;
+                                vec![
+                                    ((4 + slot as u32) << 16)
+                                        | (2 << 11)
+                                        | ((shift as u32) << 6)
+                                        | 2,
+                                    0x304200ff,
+                                    0x03e00008,
+                                    0,
+                                ]
+                            } else {
+                                vec![
+                                    0x93a20000 | (16 + (slot as u32 - 4) * 4 + index as u32 % 4),
+                                    0x03e00008,
+                                    0,
+                                ]
+                            };
+                            std::fs::write(
+                                &path,
+                                elf_with_fpr(little, 0x8000_1000, &words, fpr, abi),
+                            )
+                            .unwrap();
+                            let args: String = (0..padding).map(|i| format!("int p{i},")).collect();
+                            let text = asserted(
+                                &path,
+                                &[&typedef, &format!("prototype 0x1000 int f({args}T x)")],
+                            );
+                            assert!(
+                                !text.contains("; //"),
+                                "{little} {fpr} {kind} {size} {padding} {index}: {text}"
+                            );
+                            let values = "11,".repeat(padding);
+                            let replay = format!("{typedef}\n{text}\nstatic int check(void) {{ T x = {{0}}; for (unsigned int i = 0; i < 256; ++i) {{ x.m{index} = i; if (sub_1000({values}x) != i) return 1; }} return 0; }}");
+                            if size == 1 {
+                                assert!(!text.contains(">>"), "{text}");
+                                check_emitted_c(&replay, "check()");
+                            }
+                            check_emitted_mips_c(little, &replay, "check()");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
+fn check_emitted_mips_c(little: bool, code: &str, expression: &str) {
+    let qemu = if little { "qemu-mipsel" } else { "qemu-mips" };
+    for tool in ["clang", "ld.lld", qemu] {
+        if common::process::optional_output(Command::new(tool).arg("--version")).is_none() {
+            eprintln!("{tool} is unavailable; skipping only the MIPS emitted-C replay");
+            return;
+        }
+    }
+    let source = common::scratch_file("mips-o32-aggregate-replay", "c");
+    let executable = common::scratch_file("mips-o32-aggregate-replay", "elf");
+    std::fs::write(
+        &source,
+        format!(
+            r#"{code}
+void _start(void) {{
+    int status = {expression};
+    register int number __asm__("$2") = 4001;
+    register int result __asm__("$4") = status;
+    __asm__ volatile("syscall" : "+r"(number) : "r"(result) : "memory");
+    __builtin_unreachable();
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let output = Command::new("clang")
+        .arg(if little {
+            "--target=mipsel-linux-gnu"
+        } else {
+            "--target=mips-linux-gnu"
+        })
+        .args([
+            "-march=mips32r2",
+            "-mabi=32",
+            "-mno-abicalls",
+            "-fno-pic",
+            "-G0",
+            "-ffreestanding",
+            "-nostdlib",
+            "-static",
+            "-fuse-ld=lld",
+            "-Wl,-e,_start",
+            "-O1",
+        ])
+        .arg(&source)
+        .arg("-o")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{code}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let output = Command::new(qemu).arg(&executable).output().unwrap();
+    assert!(output.status.success(), "{little}: {code}\n{output:?}");
+    std::fs::remove_file(source).unwrap();
+    std::fs::remove_file(executable).unwrap();
+}

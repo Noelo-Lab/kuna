@@ -253,6 +253,11 @@ processor-specific selector. This generic path does not infer those targets.
 Explicit `--target` always wins. An automatically selected MIPS language never
 retries with a different ISA or ABI when its specification is unavailable.
 
+O32 aggregate arguments preserve memory order within their four-byte slots.
+Big-endian models left-justify structs and unions; little-endian models keep
+their native justification. Separate compiler declarations carry this distinction
+for both FPR widths without changing scalar extension or register-pair rules.
+
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
 option `goabi auto|off`, default auto, carried as the `KUNA_GOABI` loadtime
