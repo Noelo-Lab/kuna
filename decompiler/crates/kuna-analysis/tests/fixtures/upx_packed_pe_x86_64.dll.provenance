@@ -1,0 +1,31 @@
+upx_packed_pe_x86_64.dll -- the win64/pe DLL fixture for `kuna_analysis::upx::pe`.
+
+What it is
+  A small MinGW-w64 (llvm-mingw) DLL packed by UPX 5.2.1 with default settings.
+  5,632 bytes packed; 7,680 bytes unpacked. PackHeader at 0x1fd: version=13,
+  format=36 (win64/pe), method=2 (NRV2B_LE32), filter=0x49.
+
+  A DLL is what makes UPX keep every relocation (20 DIR64 entries here) and move
+  the export directory out of the compressed image, so both have to be rebuilt.
+  Its exports, from lib.def, cover each kind: a named export (lib_add @1), a
+  NONAME ordinal (lib_ord_only @2), another named one (lib_unused @3), and a
+  forwarder (lib_fwd = KERNEL32.GetTickCount @4).
+
+  `kuna unpack` writes what `upx -d` (5.3.0) writes except the IAT data directory
+  and each import descriptor's OriginalFirstThunk; the export table, relocations
+  and imports (as a set) equal the linker's original.
+
+Where it came from
+  Built in the mstorsjo/llvm-mingw docker image (clang 23.1.4):
+
+      x86_64-w64-mingw32-clang -O1 -s -shared -o lib.dll lib.c lib.def -Wl,--out-implib,liblib.a
+      upx -o upx_packed_pe_x86_64.dll lib.dll                # UPX 5.2.1
+
+  lib.c: three exported int functions reading through a table of int pointers
+  (so the image needs relocations), and an empty DllMain.
+
+  sha256(original lib.dll)  74b90be829bd169ea4f0517a580dc15655365cf74ca5d417e5676808eac4b121
+  sha256(packed)            759cbdef04671a65d8bce121f4016ca81fb861c95d8b60f1645a45d32eca0eea
+
+Why it is vendored rather than built
+  `upx` is not installed on CI, and neither is a MinGW toolchain.
