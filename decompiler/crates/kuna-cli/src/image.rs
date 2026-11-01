@@ -7,6 +7,41 @@ use kuna_analysis::loader::macho_fat::SlicePref;
 pub(crate) fn image_bytes(binary: &str, pref: SlicePref) -> Result<Vec<u8>, String> {
     let bytes = kuna_analysis::loader::elf_shdr::read_image_sliced(binary, pref)
         .map_err(|e| format!("{binary}: {e}"))?;
+    object_view(binary, bytes)
+}
+
+/// `[start, end)` offsets into an image slice whose bytes are not the file's.
+pub(crate) type Repairs = Vec<(u64, u64)>;
+
+/// [`image_bytes`], and the [`Repairs`]: the header fields the loader's repairs
+/// rewrote so the image parses at all (a corrupt ELF section table, DOS magic
+/// or PE data-directory count). The file is read a second time only when a
+/// repair happened.
+pub(crate) fn image_bytes_and_repairs(binary: &str, pref: SlicePref) -> Result<(Vec<u8>, Repairs), String> {
+    let (bytes, repaired) = kuna_analysis::loader::elf_shdr::read_image_sliced_repaired(binary, pref)
+        .map_err(|e| format!("{binary}: {e}"))?;
+    let bytes = object_view(binary, bytes)?;
+    if !repaired {
+        return Ok((bytes, Vec::new()));
+    }
+    let file = std::fs::read(binary).map_err(|e| format!("{binary}: {e}"))?;
+    let file = kuna_analysis::loader::macho_fat::peel_fat_image(file, pref);
+    let mut spans = Repairs::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        if file.get(i) == Some(&b) {
+            continue;
+        }
+        let at = i as u64; // cast: a byte index
+        match spans.last_mut() {
+            Some(last) if last.1 == at => last.1 = at + 1,
+            _ => spans.push((at, at + 1)),
+        }
+    }
+    Ok((bytes, spans))
+}
+
+/// `bytes`, unless the image has no object-file view (TE, MZ).
+fn object_view(binary: &str, bytes: Vec<u8>) -> Result<Vec<u8>, String> {
     if kuna_analysis::loadimage_te::is_te_image(&bytes) {
         return Err(te_object_view_error(binary));
     }

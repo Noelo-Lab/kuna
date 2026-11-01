@@ -48,11 +48,22 @@ pub fn read_image_sliced(
     path: &str,
     pref: super::macho_fat::SlicePref,
 ) -> std::io::Result<Vec<u8>> {
+    read_image_sliced_repaired(path, pref).map(|(bytes, _)| bytes)
+}
+
+/// [`read_image_sliced`], and whether one of its header repairs rewrote the
+/// slice, so a caller that reports where the bytes came from knows when they
+/// are no longer all the file's.
+pub fn read_image_sliced_repaired(
+    path: &str,
+    pref: super::macho_fat::SlicePref,
+) -> std::io::Result<(Vec<u8>, bool)> {
     let bytes = std::fs::read(path)?;
     let bytes = super::macho_fat::peel_fat_image(bytes, pref);
-    let bytes = tolerate_unusable_section_table(bytes).0;
-    let bytes = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes).0;
-    Ok(super::pe_datadirs::tolerate_oversized_data_directories(bytes).0)
+    let (bytes, shdr) = tolerate_unusable_section_table(bytes);
+    let (bytes, magic) = super::pe_dosmagic::tolerate_corrupt_dos_magic(bytes);
+    let (bytes, dirs) = super::pe_datadirs::tolerate_oversized_data_directories(bytes);
+    Ok((bytes, shdr.is_some() || magic.is_some() || dirs.is_some()))
 }
 
 /// ELF header field offsets, by class. `object` reads these through typed

@@ -11,13 +11,16 @@
 use crate::common;
 
 fn read_in(binary: &str, start: &str, bytes: &str, extra: &[&str]) -> (serde_json::Value, String) {
-    let path = common::fixture(binary);
+    read_path(&common::fixture(binary), start, bytes, extra)
+}
+
+fn read_path(path: &str, start: &str, bytes: &str, extra: &[&str]) -> (serde_json::Value, String) {
     let mut argv = vec!["read", &path, start, "--addr", "--bytes", bytes, "--json"];
     argv.extend_from_slice(extra);
     let (stdout, stderr, rc) = common::run_kuna(&argv);
     assert_eq!(rc, 0, "{stderr}\n{stdout}");
     let doc: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    assert_tiles_and_matches_the_file(&doc, &path);
+    assert_tiles_and_matches_the_file(&doc, path);
     (doc, stderr)
 }
 
@@ -26,7 +29,8 @@ fn read(binary: &str, start: &str, bytes: &str) -> serde_json::Value {
 }
 
 /// The ranges tile the listed span exactly, a `file` range's bytes are the
-/// file's at its offset, and a `zero-fill` range reads zero.
+/// file's at its offset, a `repaired` range's are not, and a `zero-fill`
+/// range reads zero.
 fn assert_tiles_and_matches_the_file(doc: &serde_json::Value, path: &str) {
     let file = std::fs::read(path).unwrap();
     let listed = hex_bytes(doc["hex"].as_str().unwrap());
@@ -41,6 +45,10 @@ fn assert_tiles_and_matches_the_file(doc: &serde_json::Value, path: &str) {
             "file" => {
                 let off = r["file_offset"].as_u64().unwrap() as usize;
                 assert_eq!(got, &file[off..off + got.len()], "{r}");
+            }
+            "repaired" => {
+                let off = r["file_offset"].as_u64().unwrap() as usize;
+                assert!(got.iter().zip(&file[off..off + got.len()]).all(|(a, b)| a != b), "{r}");
             }
             "zero-fill" => assert!(got.iter().all(|&b| b == 0), "{r}"),
             other => assert_eq!(other, "unknown"),
@@ -196,6 +204,51 @@ fn pe_virtual_size_is_zero_fill_and_a_section_without_mem_read_is_unreadable() {
     let header = read("readprov_pe_x86_64.exe", "0x140000000", "2");
     assert_eq!(header["hex"], "4d5a");
     assert_eq!(ranges(&header), [row(0x140000000, 0x140000002, "file", Some(0), None, "r--")]);
+}
+
+/// A header field the loader rewrote so the image parses is cut out of the
+/// file bytes around it: an ELF section table that points past the end of the
+/// file, and a PE whose DOS magic is not `MZ`.
+#[test]
+fn a_repaired_header_field_is_not_reported_as_file_bytes() {
+    let mut elf = std::fs::read(common::fixture("readprov_elf_x86_64")).unwrap();
+    elf[0x28..0x30].copy_from_slice(&0x4141_4141_4141_4141u64.to_le_bytes());
+    let path = common::scratch_file("readprov-shdr", "elf");
+    std::fs::write(&path, &elf).unwrap();
+    let (doc, _) = read_path(path.to_str().unwrap(), "0x400020", "32", &[]);
+    let at = |off: u64| 0x400000 + off;
+    let piece = |lo: u64, hi: u64, source: &str| row(at(lo), at(hi), source, Some(lo), None, "r-x");
+    assert_eq!(
+        ranges(&doc),
+        [
+            piece(0x20, 0x28, "file"),
+            piece(0x28, 0x30, "repaired"),
+            piece(0x30, 0x3c, "file"),
+            piece(0x3c, 0x3d, "repaired"),
+            piece(0x3d, 0x3e, "file"),
+            piece(0x3e, 0x3f, "repaired"),
+            piece(0x3f, 0x40, "file"),
+        ]
+    );
+    let notes = notes(&doc);
+    assert!(
+        notes.iter().any(|n| n.starts_with("repaired, not file bytes: 0x400028..0x400030 in the PT_LOAD at 0x400000 (file offset 0x28)")),
+        "{notes:?}"
+    );
+
+    let mut pe = std::fs::read(common::fixture("readprov_pe_x86_64.exe")).unwrap();
+    pe[..2].copy_from_slice(b"XX");
+    let path = common::scratch_file("readprov-dosmagic", "exe");
+    std::fs::write(&path, &pe).unwrap();
+    let (doc, _) = read_path(path.to_str().unwrap(), "0x140000000", "4", &[]);
+    assert_eq!(doc["hex"], "4d5a7800");
+    assert_eq!(
+        ranges(&doc),
+        [
+            row(0x140000000, 0x140000002, "repaired", Some(0), None, "r--"),
+            row(0x140000002, 0x140000004, "file", Some(2), None, "r--"),
+        ]
+    );
 }
 
 /// A fat Mach-O's offsets are the file's, not the slice's.

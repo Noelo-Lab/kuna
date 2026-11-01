@@ -2893,16 +2893,17 @@ holds and a zero kuna filled in no longer look alike. The ranges tile
 
 | Field | What it is |
 |---|---|
-| `source` | `file` (the file's bytes from `file_offset` on, which are the listed bytes except at a slot `fixups` lists), `zero-fill` (memory the segment declares past the bytes the file holds for it), or `unknown` (an image no segment of the file describes: a relocatable object, whose layout is kuna's own, or a TE or MZ image). |
-| `file_offset` | Where the range starts in the file, counted from the file's first byte, so a fat Mach-O's slice offset is included. `null` unless `source` is `file`. |
-| `segment` | The segment holding the range, as the image declares it: `name` (the Mach-O segment or PE section; `null` for an ELF `PT_LOAD` and for the PE header page), `start`/`start_hex` and `size` (`vmaddr` and `vmsize`, `p_vaddr` and `p_memsz`, a section's address and `VirtualSize`), `file_offset` and `file_size` (the bytes the file holds for it), and `permissions`. `null` where `source` is `unknown`. |
+| `source` | `file` (the file's bytes from `file_offset` on, which are the listed bytes except at a slot `fixups` lists), `zero-fill` (memory the segment declares past the bytes the file holds for it), `repaired` (file-backed bytes kuna rewrote before parsing the image: an ELF section table it cannot read cleared, a PE's DOS magic set to `MZ`, its data-directory count clamped; the file holds other bytes at `file_offset`), or `unknown` (an image no segment of the file describes: a relocatable object, whose layout is kuna's own, or a TE or MZ image). |
+| `file_offset` | Where the range starts in the file, counted from the file's first byte, so a fat Mach-O's slice offset is included. `null` unless `source` is `file` or `repaired`. |
+| `segment` | The segment holding the range, as the image declares it: `name` (the Mach-O segment or PE section; `null` for an ELF `PT_LOAD` and for the PE header page), `start`/`start_hex` and `size` (`vmaddr` and `vmsize`, `p_vaddr` and `p_memsz`, a section's address and `VirtualSize`), `file_offset` and `file_size` (the bytes kuna reads from the file for it: `filesize`, `p_filesz`, a section's raw data up to its `VirtualSize`), and `permissions`. `null` where `source` is `unknown`. |
 
 `permissions` is `r`, `w` and `x`, each or `-`, from Mach-O `initprot`, ELF
 `p_flags` or a section's `IMAGE_SCN_MEM_READ`/`WRITE`/`EXECUTE` bits; the PE
 header page is `r--`, as Windows maps it. A segment that declares no read
 access (`__PAGEZERO`'s `---`, a `PT_LOAD` without `PF_R`, a section without
-`IMAGE_SCN_MEM_READ`) is listed all the same. Both facts are also notes, on
-stderr and in `notes`, and the text view's rows do not change:
+`IMAGE_SCN_MEM_READ`) is listed all the same. Zero fill, repaired bytes and an
+unreadable segment are also notes, on stderr and in `notes`, and the text
+view's rows do not change:
 
 ```
 $ kuna read ./fixture 0x0 --addr --bytes 16

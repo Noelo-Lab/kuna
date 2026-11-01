@@ -10,7 +10,9 @@
 //! that declares no access at all reads like any other. So the listed span is
 //! cut into ranges, each saying whether its bytes are the file's (and at which
 //! offset) or zero fill, and naming the segment that holds them with the
-//! permissions it declares.
+//! permissions it declares. A header field the loader rewrote so the image
+//! would parse at all (`kuna_analysis::loader::elf_shdr::read_image_sliced`)
+//! is not the file's either, and says so.
 //!
 //! The segment map is rebuilt from the object file the way the loader builds
 //! its own, and it is trusted only where its extents are the loader's
@@ -35,6 +37,9 @@ enum Source {
     File,
     /// Memory the segment declares and the file does not back: kuna reads zeroes.
     ZeroFill,
+    /// File-backed, but a header repair rewrote these bytes; the file's own are
+    /// at the range's file offset.
+    Repaired,
     /// Not attributable: the loader's map is not one the object file declares.
     Unknown,
 }
@@ -44,6 +49,7 @@ impl Source {
         match self {
             Source::File => "file",
             Source::ZeroFill => "zero-fill",
+            Source::Repaired => "repaired",
             Source::Unknown => "unknown",
         }
     }
@@ -119,10 +125,13 @@ pub(super) struct Provenance {
 }
 
 /// Where each byte of `[start, end)` comes from. `view` is the image's bytes and
-/// object view, `slice` where those bytes start in the file (a fat Mach-O).
+/// object view, `slice` where those bytes start in the file (a fat Mach-O), and
+/// `repairs` the `[start, end)` offsets into them that are not the file's
+/// ([`crate::image::image_bytes_and_repairs`]).
 pub(super) fn of(
     view: Option<(&[u8], &object::File)>,
     slice: u64,
+    repairs: &[(u64, u64)],
     prog: &ConsoleProgram,
     start: u64,
     end: u64,
@@ -139,7 +148,8 @@ pub(super) fn of(
     if !same_extents(&segments, &prog.segments()) {
         return unknown();
     }
-    let ranges = cut(&segments, start, end);
+    let repairs: Vec<(u64, u64)> = repairs.iter().map(|&(lo, hi)| (slice + lo, slice + hi)).collect();
+    let ranges = cut(&segments, &repairs, start, end);
     Provenance { segments, ranges }
 }
 
@@ -212,13 +222,19 @@ fn same_extents(segments: &[Segment], loader: &[(u64, u64, u32)]) -> bool {
 
 /// The source of the byte at `addr`: the first loaded segment serving it (the
 /// loader's `find_section`), else the segment declaring it, whose bytes there
-/// the loader reads as zero.
-fn classify(segments: &[Segment], addr: u64) -> (Source, Option<u64>, Option<usize>) {
+/// the loader reads as zero. `repairs` are file offsets.
+fn classify(segments: &[Segment], repairs: &[(u64, u64)], addr: u64) -> (Source, Option<u64>, Option<usize>) {
     let serving = segments.iter().position(|s| s.served > 0 && addr >= s.vma && addr - s.vma < s.served);
     if let Some(i) = serving {
         let rel = addr - segments[i].vma;
         if rel < segments[i].file_size {
-            return (Source::File, Some(segments[i].file_offset + rel), Some(i));
+            let offset = segments[i].file_offset + rel;
+            let source = if repairs.iter().any(|&(lo, hi)| offset >= lo && offset < hi) {
+                Source::Repaired
+            } else {
+                Source::File
+            };
+            return (source, Some(offset), Some(i));
         }
         return (Source::ZeroFill, None, Some(i));
     }
@@ -227,10 +243,12 @@ fn classify(segments: &[Segment], addr: u64) -> (Source, Option<u64>, Option<usi
 }
 
 /// `[start, end)` cut at every point where the source or the segment changes.
-fn cut(segments: &[Segment], start: u64, end: u64) -> Vec<Range> {
+fn cut(segments: &[Segment], repairs: &[(u64, u64)], start: u64, end: u64) -> Vec<Range> {
     let mut points = vec![start, end];
     for s in segments {
-        for len in [0, s.file_size, s.served, s.size] {
+        let fixed = repairs.iter().filter(|&&(lo, hi)| lo < s.file_offset + s.file_size && hi > s.file_offset);
+        let repaired = fixed.flat_map(|&(lo, hi)| [lo.saturating_sub(s.file_offset), (hi - s.file_offset).min(s.file_size)]);
+        for len in [0, s.file_size, s.served, s.size].into_iter().chain(repaired) {
             let edge = s.vma.saturating_add(len);
             if edge > start && edge < end {
                 points.push(edge);
@@ -241,7 +259,7 @@ fn cut(segments: &[Segment], start: u64, end: u64) -> Vec<Range> {
     points.dedup();
     let mut ranges: Vec<Range> = Vec::new();
     for piece in points.windows(2) {
-        let (source, file_offset, segment) = classify(segments, piece[0]);
+        let (source, file_offset, segment) = classify(segments, repairs, piece[0]);
         if let Some(last) = ranges.last_mut() {
             let len = last.end - last.start;
             let continues = last.file_offset.zip(file_offset).is_none_or(|(a, b)| a + len == b);
@@ -256,13 +274,13 @@ fn cut(segments: &[Segment], start: u64, end: u64) -> Vec<Range> {
 }
 
 impl Provenance {
-    /// The stderr / `notes` lines: one for zero fill, one for bytes in a segment
-    /// that declares no read access.
+    /// The stderr / `notes` lines: one for zero fill, one for repaired header
+    /// bytes, one for bytes in a segment that declares no read access.
     pub(super) fn notes(&self) -> Vec<String> {
         let mut notes = Vec::new();
         let filled: Vec<&Range> = self.ranges.iter().filter(|r| r.source == Source::ZeroFill).collect();
         if !filled.is_empty() {
-            let parts = self.spell(&filled, |seg| {
+            let parts = self.spell(&filled, |_, seg| {
                 format!("0x{:x} bytes in the file, 0x{:x} in memory", seg.file_size, seg.size)
             });
             notes.push(format!(
@@ -270,13 +288,25 @@ impl Provenance {
                  for it as zeroes; `--json` lists each range's source in `provenance`"
             ));
         }
-        let sealed: Vec<&Range> = self
-            .ranges
-            .iter()
-            .filter(|r| r.segment.and_then(|i| self.segments[i].perms).is_some_and(|p| !p.read))
-            .collect();
+        let repaired: Vec<&Range> = self.ranges.iter().filter(|r| r.source == Source::Repaired).collect();
+        if !repaired.is_empty() {
+            let parts = self.spell(&repaired, |r, _| format!("file offset 0x{:x}", r.file_offset.unwrap_or(0)));
+            notes.push(format!(
+                "repaired, not file bytes: {parts} -- kuna rewrote a header field there so the image would \
+                 parse; the file's own bytes are at that offset"
+            ));
+        }
+        let mut sealed: Vec<Range> = Vec::new();
+        let unreadable = |r: &&Range| r.segment.and_then(|i| self.segments[i].perms).is_some_and(|p| !p.read);
+        for r in self.ranges.iter().filter(unreadable) {
+            match sealed.last_mut() {
+                Some(last) if last.end == r.start && last.segment == r.segment => last.end = r.end,
+                _ => sealed.push(r.clone()),
+            }
+        }
+        let sealed: Vec<&Range> = sealed.iter().collect();
         if !sealed.is_empty() {
-            let parts = self.spell(&sealed, |seg| {
+            let parts = self.spell(&sealed, |_, seg| {
                 format!("permissions {}", seg.perms.map_or("unknown".to_string(), Perms::spelled))
             });
             notes.push(format!("no read access: {parts} -- the image declares the segment unreadable; kuna lists its bytes anyway"));
@@ -285,12 +315,12 @@ impl Provenance {
     }
 
     /// `0x0..0x10 in __PAGEZERO (detail)`, for up to [`NOTE_RANGES`] ranges.
-    fn spell(&self, ranges: &[&Range], detail: impl Fn(&Segment) -> String) -> String {
+    fn spell(&self, ranges: &[&Range], detail: impl Fn(&Range, &Segment) -> String) -> String {
         let mut parts: Vec<String> = ranges
             .iter()
             .take(NOTE_RANGES)
             .map(|r| match r.segment.map(|i| &self.segments[i]) {
-                Some(seg) => format!("0x{:x}..0x{:x} in {} ({})", r.start, r.end, seg.label, detail(seg)),
+                Some(seg) => format!("0x{:x}..0x{:x} in {} ({})", r.start, r.end, seg.label, detail(r, seg)),
                 None => format!("0x{:x}..0x{:x}", r.start, r.end),
             })
             .collect();
@@ -362,7 +392,7 @@ mod tests {
     fn a_span_is_cut_where_the_file_content_ends() {
         let segments = [seg(0x1000, 0x40, 0x10, 0x40)];
         assert_eq!(
-            cut(&segments, 0x1008, 0x1020),
+            cut(&segments, &[], 0x1008, 0x1020),
             [
                 range(0x1008, 0x1010, Source::File, Some(0x108), Some(0)),
                 range(0x1010, 0x1020, Source::ZeroFill, None, Some(0)),
@@ -375,13 +405,26 @@ mod tests {
         // An executable segment serves only its file bytes; the rest of its
         // declared memory still reads back as zero inside a listing.
         let segments = [seg(0x1000, 0x40, 0x10, 0x10)];
-        assert_eq!(classify(&segments, 0x1010), (Source::ZeroFill, None, Some(0)));
+        assert_eq!(classify(&segments, &[], 0x1010), (Source::ZeroFill, None, Some(0)));
     }
 
     #[test]
     fn the_first_serving_segment_owns_a_byte_two_segments_claim() {
         let segments = [seg(0x1000, 0x100, 0x10, 0x20), seg(0x1020, 0x10, 0x10, 0x10)];
-        assert_eq!(classify(&segments, 0x1020), (Source::File, Some(0x100), Some(1)));
+        assert_eq!(classify(&segments, &[], 0x1020), (Source::File, Some(0x100), Some(1)));
+    }
+
+    #[test]
+    fn a_repaired_header_field_is_cut_out_of_the_file_bytes_around_it() {
+        let segments = [seg(0x1000, 0x40, 0x40, 0x40)];
+        assert_eq!(
+            cut(&segments, &[(0x128, 0x12c)], 0x1020, 0x1030),
+            [
+                range(0x1020, 0x1028, Source::File, Some(0x120), Some(0)),
+                range(0x1028, 0x102c, Source::Repaired, Some(0x128), Some(0)),
+                range(0x102c, 0x1030, Source::File, Some(0x12c), Some(0)),
+            ]
+        );
     }
 
     #[test]

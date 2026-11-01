@@ -392,13 +392,14 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
                 notes.push(image_bound_note(prog, &region));
             }
             let pref = kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref());
-            let image = crate::image::image_bytes(&args.binary, pref).ok();
+            let (image, repairs) = crate::image::image_bytes_and_repairs(&args.binary, pref)
+                .map_or((None, Vec::new()), |(bytes, repairs)| (Some(bytes), repairs));
             let file = image.as_deref().and_then(|b| kuna_analysis::loadimage_object::parse_object(b).ok());
             let view = image.as_deref().zip(file.as_ref());
             let fixups = fixups::overlapping(view, prog, region.start, end);
             notes.extend(fixups.note());
             let slice = if view.is_some() { crate::image::slice_offset(&args.binary, pref) } else { 0 };
-            let provenance = provenance::of(view, slice, prog, region.start, end);
+            let provenance = provenance::of(view, slice, &repairs, prog, region.start, end);
             notes.extend(provenance.notes());
             if args.json {
                 let doc = data_result_json(args, &region, &rows, truncated, &notes, &fixups, &provenance);
@@ -1239,7 +1240,8 @@ fn usage() {
          (a bind's zero), and fixups_coverage names the metadata it came from.\n\
          provenance:[{{start,end,size,source,file_offset,segment}}] cuts the span where\n\
          its bytes' source changes: `file`, `zero-fill` (memory the segment declares\n\
-         past its file content) or `unknown`; segment carries the segment's name,\n\
+         past its file content), `repaired` (a header field kuna rewrote so the\n\
+         image parses) or `unknown`; segment carries the segment's name,\n\
          extent, file extent and declared permissions (`r-x`, `---`)."
     );
 }
