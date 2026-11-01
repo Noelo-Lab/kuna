@@ -1,0 +1,20 @@
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">4038f70f9cc00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="unsigned_less8"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">4088f885f67406d0f8ffce75fac3</bytechunk>
+<symbol space="ram" offset="0x100020" name="unsigned_shift8"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">6639f70f9cc00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="unsigned_less16"/>
+<bytechunk space="ram" offset="0x100060" readonly="true">6689f885f6740766d1f8ffce75f9c3</bytechunk>
+<symbol space="ram" offset="0x100060" name="unsigned_shift16"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">39f70f9cc00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100080" name="unsigned_less32"/>
+<bytechunk space="ram" offset="0x1000a0" readonly="true">89f885f67406d1f8ffce75fac3</bytechunk>
+<symbol space="ram" offset="0x1000a0" name="unsigned_shift32"/>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">4839f70f9cc00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x1000c0" name="unsigned_less64"/>
+<bytechunk space="ram" offset="0x1000e0" readonly="true">4889f885f6740748d1f8ffce75f9c3</bytechunk>
+<symbol space="ram" offset="0x1000e0" name="unsigned_shift64"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">4088f885f67406d0f8ffce75fac3</bytechunk>
+<symbol space="ram" offset="0x100100" name="unsigned_loop"/>
+</binaryimage>

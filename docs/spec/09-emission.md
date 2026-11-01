@@ -4157,6 +4157,31 @@ member type, since the declaration representative covers only the field. A
 scalar local or global keeps the type its declaration prints, which can differ
 from its Symbol's scalar type (`kuna_pointerstorecast.rs (target)`).
 
+### Rust signed primitive operations
+
+Rust represents core signed text storage with unsigned integer types so recovered
+bytes remain ordinary storage. Recovered unsigned primitives can also feed signed machine operations when
+prototype constraints keep their storage unsigned. At signed less-than, less-or-equal, and arithmetic
+right-shift operations, `kuna_rustsigned.rs` reinterprets that storage through the
+signed integer of the same width before applying the operator; the IR opcode
+defines signed interpretation even when the recovered input type is unsigned. Comparisons retain
+their boolean result; a shift converts its result back to the declared storage
+type when necessary. This preserves negative ordering and sign-bit propagation
+without changing declarations or shift counts. Unsigned constants retain an
+inner cast to their storage width so Rust does not infer an overflowing signed
+literal before reinterpreting its bits. Each operand is emitted once.
+An in-place assignment is expanded when its unsigned storage cannot itself
+perform the required signed operation.
+
+The plan requires core integer inputs with exact matching operation widths,
+and activates when a numeric operand has unsigned or signed text storage, or a
+signed shift must restore unsigned result storage even when its input already
+prints with the correct signed type. Non-core aliases,
+pointers, floats, unsupported widths and unrelated operators retain their existing
+emission. Shift outputs must be core integer storage of the same width. Explicit
+cast suppression still suppresses these conversions. Unsigned comparisons and
+logical shifts, and output languages other than Rust, are unchanged.
+
 ### Rust machine-operation names
 
 A functional `CALLOTHER` names the architecture's machine operation. When Rust

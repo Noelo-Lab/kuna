@@ -5959,6 +5959,11 @@ impl PrintC {
         if num_input != 2 {
             return false;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts
+            && crate::kuna_rustsigned::plan(fd, op).is_some()
+        {
+            return false;
+        }
         let (out, in0, in1) = match (out, in0, in1) {
             (Some(a), Some(b), Some(c)) => (a, b, c),
             _ => return false,
@@ -6447,6 +6452,12 @@ impl PrintC {
         if self.out_lang == crate::kuna_lang::OutLang::Go && self.op_go_binary(fd, arch, tok, op) {
             return;
         }
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && !self.options.nocasts {
+            if let Some(plan) = crate::kuna_rustsigned::plan(fd, op) {
+                self.emit_rust_signed_text(fd, arch, tok, op, plan);
+                return;
+            }
+        }
         // (kuna truthycond, DIV-37) A comparison consumed as a boolean: after
         // the negate-token flip has settled which comparison actually prints,
         // `x != 0` renders as `x` and `x == 0` as `!x`.  The surviving operand
@@ -6489,6 +6500,39 @@ impl PrintC {
                     self.push_vn_ir(fd, arch, v, op);
                 }
             }
+        }
+    }
+
+    fn emit_rust_signed_text(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        tok: &'static OpToken,
+        op: OpId,
+        plan: crate::kuna_rustsigned::SignedTextPlan,
+    ) {
+        if let Some(output) = &plan.output {
+            self.push_cast_open(output, op);
+        }
+        self.push_op(tok, Some(op_key(op)));
+        for ((input, cast), constant_type) in plan.inputs.into_iter().zip(plan.casts).zip(plan.constant_types) {
+            if cast.is_some() {
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+            }
+            if let Some(ty) = &constant_type {
+                self.push_cast_open(ty, op);
+            }
+            self.push_vn_ir(fd, arch, input, op);
+            if let Some(ty) = &constant_type {
+                self.push_cast_close(ty);
+            }
+            if let Some(name) = cast {
+                self.push_atom(&Atom::syntax(name, TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+            }
+        }
+        if let Some(output) = &plan.output {
+            self.push_cast_close(output);
         }
     }
 

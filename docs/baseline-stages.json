@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3494,
-    3494
+    3502,
+    3502
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1663,9 +1663,17 @@
     "data:RUSTABI #7: with the option on the consumer reads the payload out of the call's result, not out of thin air",
     "data:RUSTABI #8: with the option on the discriminant guard reads the same call result",
     "data:RUSTABI #9: a callee proven never to write the second return register is not paired -- the reader is unchanged in BOTH passes",
+    "data:Rust arithmetic shift overrides unsigned recovered input",
+    "data:Rust byte arithmetic shifts restore storage width",
+    "data:Rust byte arithmetic shifts use signed operands",
     "data:Rust keyword machine operations keep their callee identity",
     "data:Rust retains explicit widening after narrow arithmetic",
+    "data:Rust signed byte compound assignment preserves arithmetic shift",
     "data:Rust signed byte interpretation precedes widening",
+    "data:Rust signed byte less-or-equal reads signed values",
+    "data:Rust signed byte less-than reads signed values",
+    "data:Rust signed comparison overrides unsigned recovered inputs",
+    "data:Rust unsigned byte comparison remains unsigned",
     "data:SAVED-XMM-SYSV fixture #1: a volatile-register spill observed by a direct helper remains mapped",
     "data:SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame",
     "data:SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return",

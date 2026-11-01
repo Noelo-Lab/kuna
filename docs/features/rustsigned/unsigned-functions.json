@@ -1,0 +1,47 @@
+[
+  [
+    "unsigned_less8",
+    "4038f70f9cc00fb6c0c3",
+    "unsigned int unsigned_less8(unsigned char a, unsigned char b)"
+  ],
+  [
+    "unsigned_shift8",
+    "4088f885f67406d0f8ffce75fac3",
+    "unsigned char unsigned_shift8(unsigned char a, unsigned int n)"
+  ],
+  [
+    "unsigned_less16",
+    "6639f70f9cc00fb6c0c3",
+    "unsigned int unsigned_less16(unsigned short a, unsigned short b)"
+  ],
+  [
+    "unsigned_shift16",
+    "6689f885f6740766d1f8ffce75f9c3",
+    "unsigned short unsigned_shift16(unsigned short a, unsigned int n)"
+  ],
+  [
+    "unsigned_less32",
+    "39f70f9cc00fb6c0c3",
+    "unsigned int unsigned_less32(unsigned int a, unsigned int b)"
+  ],
+  [
+    "unsigned_shift32",
+    "89f885f67406d1f8ffce75fac3",
+    "unsigned int unsigned_shift32(unsigned int a, unsigned int n)"
+  ],
+  [
+    "unsigned_less64",
+    "4839f70f9cc00fb6c0c3",
+    "unsigned int unsigned_less64(unsigned long a, unsigned long b)"
+  ],
+  [
+    "unsigned_shift64",
+    "4889f885f6740748d1f8ffce75f9c3",
+    "unsigned long unsigned_shift64(unsigned long a, unsigned int n)"
+  ],
+  [
+    "unsigned_loop",
+    "4088f885f67406d0f8ffce75fac3",
+    "unsigned char unsigned_loop(char a, unsigned int n)"
+  ]
+]
