@@ -1473,8 +1473,9 @@ impl ActionPool {
 }
 
 /// (kuna `deadwaves`) Add `ops` and the definition and readers of each of
-/// `vns` that still exist to a wave.
-fn add_wave_ops(
+/// `vns` that still exist to a wave. The other readers of a shared effect
+/// annotation are guards of the same call or store, not neighbours.
+pub(crate) fn add_wave_ops(
     data: &Funcdata,
     wave: &mut crate::kuna_fasthash::FxHashSet<OpId>,
     ops: &[OpId],
@@ -1486,7 +1487,9 @@ fn add_wave_ops(
             continue;
         };
         wave.extend(v.get_def());
-        wave.extend(v.descend_iter());
+        if v.get_space().get_type() != kuna_base::space::spacetype::IPTR_IOP {
+            wave.extend(v.descend_iter());
+        }
     }
 }
 
