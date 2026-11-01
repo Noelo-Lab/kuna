@@ -208,8 +208,10 @@ four-case `switch (ri)` with the option on and keeps the compare tree with it
 off. The reduced `firstpass` and `register` pipelines run no `ActionDeadCode`,
 so there the pruned markers are absent rather than deleted later.
 
-An invalid entry-input range, including one crossing the end of its address
-space, returns a recoverable error from any of the three input-creation paths
+An invalid entry-input range, such as one that straddles an input piece no
+heritage range holds, or one crossing the end of its address space (heritage
+splits those first, below), returns a recoverable error from any of the three
+input-creation paths
 (ordinary read, same-time INDIRECT, or successor phi). The error propagates
 through recursive renaming and the heritage action to the function driver.
 Analysis stops before later passes can consume partial SSA; batch decompilation
