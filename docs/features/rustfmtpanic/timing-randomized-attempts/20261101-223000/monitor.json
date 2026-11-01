@@ -1,0 +1,241 @@
+{
+  "method": "balanced_randomized_block_bootstrap",
+  "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+  "attempt": "/tmp/kuna-rust-panic-f874/timing-randomized-attempts/20261101-223000",
+  "cpu_assignments": {
+    "0:panic-integers": {
+      "target_cpu": 75,
+      "sibling_cpu": 35
+    },
+    "0:go-control": {
+      "target_cpu": 69,
+      "sibling_cpu": 29
+    },
+    "1:scalar-c": {
+      "target_cpu": 63,
+      "sibling_cpu": 23
+    },
+    "1:pieces-literal": {
+      "target_cpu": 73,
+      "sibling_cpu": 33
+    },
+    "1:pieces-integers": {
+      "target_cpu": 68,
+      "sibling_cpu": 28
+    },
+    "1:older-rust-c-control": {
+      "target_cpu": 76,
+      "sibling_cpu": 36
+    },
+    "1:original-angr-rust": {
+      "target_cpu": 57,
+      "sibling_cpu": 17
+    },
+    "1:rust-newer-control": {
+      "target_cpu": 78,
+      "sibling_cpu": 38
+    },
+    "1:go-control": {
+      "target_cpu": 70,
+      "sibling_cpu": 30
+    },
+    "2:scalar-c": {
+      "target_cpu": 59,
+      "sibling_cpu": 19
+    },
+    "2:str-plain": {
+      "target_cpu": 42,
+      "sibling_cpu": 2
+    },
+    "2:str-flags": {
+      "target_cpu": 58,
+      "sibling_cpu": 18
+    },
+    "2:str-result": {
+      "target_cpu": 79,
+      "sibling_cpu": 39
+    },
+    "2:reference-make-string": {
+      "target_cpu": 74,
+      "sibling_cpu": 34
+    },
+    "2:older-rust-control": {
+      "target_cpu": 64,
+      "sibling_cpu": 24
+    },
+    "2:rust-large-control": {
+      "target_cpu": 72,
+      "sibling_cpu": 32
+    },
+    "2:go-control": {
+      "target_cpu": 62,
+      "sibling_cpu": 22
+    }
+  },
+  "plan": {
+    "declared_at": "2026-11-01 21:33:44.367847+00:00",
+    "reason": "Fresh matched binaries after integrating f8746b973. Same predeclared balanced protocol applied to all five cases.",
+    "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+    "cases": [
+      "scalar-c",
+      "panic-literal",
+      "panic-integers",
+      "rust-large-control",
+      "go-control"
+    ],
+    "samples_per_arm": 192,
+    "warmups_per_arm": 3,
+    "seed": 20261102,
+    "bootstrap_resamples": 20000,
+    "block_rounds": 6,
+    "family_alpha": 0.025,
+    "comparisons": 20,
+    "upper_quantile": 0.99875,
+    "budget_pct": 5,
+    "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+    "cpu_selection": "Rank allowed physical CPU pairs by minimum sibling idle percentage over five seconds; assign the highest-ranked distinct pairs to cases before collecting any timings. No absolute idle threshold. No owned builds/tests/corpus work during measurements; only these measurement workers run concurrently.",
+    "amended_at_before_sampling": "2026-11-01 22:03:06.587897+00:00",
+    "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+    "execution_amendment": "Only benchmark cases share the scheduler. Physical CPU pairs remain disjoint across all cases, with fixed affinity per run and worker-local child CPU accounting. Production sources and binaries are frozen; pending baseline commit identities are bound afterward using existing manifests.",
+    "amended_at_before_new_sampling": "2026-11-01 22:29:49.354939+00:00",
+    "study_family_alpha": 0.05,
+    "maximum_looks": 2,
+    "confirmation": "All 192 initial samples remain included. Re-evaluate the initial look at family alpha .025; allocate another .025 to the single fixed-size final look. Each look uses all 20 comparison slots, conservatively including already-passing cases. No third look or automatic repeat. All median deltas and simultaneous upper mean-ratio bounds must fit 5%.",
+    "additional_rounds_by_case": {
+      "panic-integers": 576,
+      "go-control": 576
+    },
+    "final_samples_by_case": {
+      "scalar-c": 192,
+      "panic-literal": 192,
+      "panic-integers": 768,
+      "rust-large-control": 192,
+      "go-control": 768
+    }
+  },
+  "accepted_for_speed_review": true,
+  "baseline_commit": "f8746b9730b525a065c89c26e358ffd7c2328bc7",
+  "baseline_has_pending_feature": false,
+  "results": {
+    "scalar-c": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.7690677966118997,
+          "wall_ms": -0.7357999705141838
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.5714746678788019,
+          "wall_ms": -0.5526254693703048
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.2346616931729026,
+          "wall_ms": 0.2853161992461254
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.4792003503455593,
+          "wall_ms": 0.5159429596421571
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "panic-literal": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.5649471578936249,
+          "wall_ms": 0.6232274407147242
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.014563964458325085,
+          "wall_ms": 0.1607708079780057
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.5387951387931132,
+          "wall_ms": 3.05364286970434
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.6596243884111456,
+          "wall_ms": 3.805929028132405
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "panic-integers": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.32331483085781265,
+          "wall_ms": -0.08782626600476462
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.17567716668718258,
+          "wall_ms": 0.2531370586103421
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.610533265647149,
+          "wall_ms": 2.509574698522111
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.5276695774841105,
+          "wall_ms": 2.5316788990876513
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "rust-large-control": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.2000389275960468,
+          "wall_ms": -0.0004633651415564266
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.6498304767728058,
+          "wall_ms": 0.12519609626076011
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.5869610924757915,
+          "wall_ms": 0.3205156919467381
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.08907400146330836,
+          "wall_ms": 1.2439071258965486
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "go-control": {
+      "samples": 768,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.5549351200041075,
+          "wall_ms": -0.1091477451600098
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.49743561540753767,
+          "wall_ms": 0.39939545147158473
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.9496250039883216,
+          "wall_ms": 3.093253596348306
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.2150023712805915,
+          "wall_ms": 3.9483931084651345
+        }
+      },
+      "speed_budget_passed": true
+    }
+  }
+}

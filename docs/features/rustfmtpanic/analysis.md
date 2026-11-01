@@ -67,28 +67,34 @@ The raw diffs and per-function records retain the full review evidence.
 
 Original corpus: 675/675, unchanged baseline. Stage corpus: 3,508/3,508; new case
 0/6 on the parent and 6/6 with recovery. The parent capture omits new option
-commands that its catalog cannot recognize. Workspace: 10,074 passed,
+commands that its catalog cannot recognize. Workspace: 10,084 passed,
 zero failed, 39 ignored across 71 suites. Tooling:
 114 passed and one optional skip. Lint, spec, catalog, generated documentation
 and shared counters pass. The new live-option count is 170 (catalog total 364).
 
 Five timing cases compare the parent, the new binary with recovery off, and the
-default. The three smaller cases use 31 alternating samples per arm. The two
-controls use 192 balanced randomized rounds, with all six arm permutations in
-each six-round block. Every case has three warmups per arm and fixed CPU affinity.
-Maximum parent-to-default median CPU delta is +0.802%
-and wall delta is +1.292%; maximum off-to-default median CPU delta is
-+0.044%. Every median comparison fits the five-percent
-budget. The controls additionally require each upper percentile-bootstrap bound
+default. Three cases use 192 balanced randomized rounds per arm; integer panic
+and Go controls use 768, including all 192 initial samples. All six arm
+permutations occur in each six-round block. Every run has three warmups per arm and fixed CPU affinity. Cases run in independent processes on disjoint physical CPU pairs; all arms of one case use that run's assigned CPU. The execution change was declared before fresh sampling.
+Maximum parent-to-default median CPU delta is +0.555%
+and wall delta is +0.623%; maximum off-to-default median CPU delta is
++0.650%. Every median comparison fits the five-percent
+budget. Every case additionally requires each upper percentile-bootstrap bound
 on the ratio of mean CPU/wall times to fit the same budget. Twenty thousand
-resamples preserve complete six-round blocks; the upper quantile is 0.99375,
-using family alpha 0.05 across eight comparisons. The method was declared before
-these samples were collected. Raw samples, orders and binary hashes are retained.
+resamples preserve complete six-round blocks; the upper quantile is 0.99875.
+The initial look is re-evaluated at family alpha 0.025 across twenty comparisons;
+the one fixed confirmation look receives another 0.025. Its 576 additional
+rounds per unresolved case retain every initial sample. The method was declared before
+each relevant sample set was collected. Raw samples, orders and binary hashes are retained.
 
 This implements one panic sink from angr's Rust macro-selection coverage. Other
 panic entry points, older formatting layouts, generic arguments and full Go/Rust
 parity remain separate work.
 
-The final capture includes main commit `d85071a68e917d609d7252004da015da06321b02` (UTF-8 console paths). Both baseline and patched binaries were rebuilt, all repository checks and measurements were repeated, and every patched function record equals the previously reviewed panic output.
+The final capture includes main commit `f8746b9730b525a065c89c26e358ffd7c2328bc7` (shared effect annotations, lazy unknown types and JSON field omission). Both baseline and patched binaries were rebuilt, all repository checks and measurements were repeated, and every patched function record equals the previously reviewed panic output.
 
-Initial control measurements were affected by external CPU contention. The first large Rust control exceeded the median CPU budget, with coefficients of variation around 33%; a subsequent monitored run passed the median budget but failed its contention limits. Both are retained. Repeated idle checks found no sustained quiet interval, so a new randomized comparison and confidence-bound acceptance rule were declared before collecting fresh samples. No earlier samples contribute to those bounds. `timing-monitor.json`, `timing-randomized-plan.json` and the attempt directories retain the decisions and observations.
+Initial control measurements were affected by external CPU contention. The first large Rust control exceeded the median CPU budget, with coefficients of variation around 33%; a subsequent monitored run passed the median budget but failed its contention limits. Both are retained. Repeated idle checks found no sustained quiet interval, so a new randomized comparison and confidence-bound acceptance rule were declared before collecting fresh samples. No earlier samples contribute to those bounds. After the later main integration, the same randomized acceptance rule was declared for all five cases before fresh sampling; every case in the current record uses the rebuilt f874 baseline and patched binary. `timing-monitor.json`, `timing-randomized-plan.json` and the attempt directories retain the decisions and observations.
+
+The first f874 randomized run passed every median comparison but left three wall-time upper bounds above five percent. Those observations remain in the combined record. A single fixed-size confirmation adds 576 rounds to the two affected cases, using stricter two-look family allocation; it does not discard or replace any initial samples. Other feature measurements share disjoint physical CPU pairs under a plan declared before their first samples.
+
+The shared coordinator exits nonzero because the other two features have unresolved first-look bounds. All five parent cases pass their final criteria; the parent-specific monitor is the acceptance record. `batch-result.json` distinguishes these outcomes.

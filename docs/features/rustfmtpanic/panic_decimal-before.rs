@@ -8,5 +8,5 @@ unsafe fn panic_decimal(mut a0: u64)
   v2 = &mut v1;
   v3 = fmt;
   v1 = a0;
-  core::panicking::panic_fmt(0x5e7e,&mut v2,0x5bce8); // no-return
+  core::panicking::panic_fmt(0x5ea9,&mut v2,0x5bce8); // no-return
 }

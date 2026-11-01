@@ -22,7 +22,7 @@ pub(super) fn decompile_entries_callee_first(
     let base = kuna_console::project::DecompileOptions {
         no_vars: args.no_vars,
         want_proto: false,
-        want_provenance: args.json,
+        want_provenance: args.wants_provenance(),
         want_callee_hints: false,
         header_carries_types: false,
         park_recovered_proto: false,

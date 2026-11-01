@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess,time,resource,statistics,json,os,hashlib,sys
-root=Path('/home/mahaloz/kwt/angr-rust-panic-main');base=Path('/home/mahaloz/kwt/angr-rust-panic-base-d850');refs=Path('/tmp/kuna-angr-reference/binaries');out=Path(os.environ.get('KUNA_TIMING_OUT','/tmp/kuna-rust-panic-d850'))
+root=Path('/home/mahaloz/kwt/angr-rust-panic-main');base=Path('/home/mahaloz/kwt/angr-rust-panic-base-f874');refs=Path('/tmp/kuna-angr-reference/binaries');out=Path(os.environ.get('KUNA_TIMING_OUT','/tmp/kuna-rust-panic-f874'))
 bench_cpu=int(os.environ.get('KUNA_TIMING_CPU','77'))
 fixture=root/'decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64'
 rows=[('scalar-c',root/'tests/fixtures/go-output/output-c','choose','c'),('panic-literal',fixture,'panic_literal','rust'),('panic-integers',fixture,'panic_reorder','rust'),('rust-large-control',refs/'rust-fmtdemo-1931','0x13df0','rust'),('go-control',Path('/tmp/kuna-go-dwarf-signatures/native1273'),'main.main','go')]
@@ -21,4 +21,4 @@ for name,binary,selector,language in rows:
   order=sides[i%3:]+sides[:i%3]
   for side in order:raw[side].append(run(side))
  med={s:{m:statistics.median(x[m]for x in xs)for m in ['wall_ms','cpu_ms']}for s,xs in raw.items()};deltas={a+'_to_'+b:{m:100*(med[b][m]/med[a][m]-1)for m in med[a]}for a,b in [('baseline','patched'),('off','patched')]}
- result={'baseline_commit':'d85071a68e917d609d7252004da015da06321b02','fixture':name,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'selector':selector,'language':language,'samples':31,'warmups':3,'affinity_cpu':bench_cpu,'medians':med,'delta_pct':deltas,'paired_median_delta_pct':{m:statistics.median(100*(b[m]/a[m]-1)for a,b in zip(raw['baseline'],raw['patched']))for m in ['wall_ms','cpu_ms']},'raw':raw};(out/f'timing-{name}.json').write_text(json.dumps(result,indent=2)+'\n');print(name,med,deltas,flush=True)
+ result={'baseline_commit':'f8746b9730b525a065c89c26e358ffd7c2328bc7','fixture':name,'sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'selector':selector,'language':language,'samples':31,'warmups':3,'affinity_cpu':bench_cpu,'medians':med,'delta_pct':deltas,'paired_median_delta_pct':{m:statistics.median(100*(b[m]/a[m]-1)for a,b in zip(raw['baseline'],raw['patched']))for m in ['wall_ms','cpu_ms']},'raw':raw};(out/f'timing-{name}.json').write_text(json.dumps(result,indent=2)+'\n');print(name,med,deltas,flush=True)

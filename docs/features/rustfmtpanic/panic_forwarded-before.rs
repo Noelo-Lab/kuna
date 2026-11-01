@@ -8,5 +8,5 @@ unsafe fn panic_forwarded(mut a0: u64, mut a1: u64)
   v2 = &mut v1;
   v3 = fmt;
   v1 = a0;
-  core::panicking::panic_fmt(0x60af,&mut v2,a1); // no-return
+  core::panicking::panic_fmt(0x60da,&mut v2,a1); // no-return
 }

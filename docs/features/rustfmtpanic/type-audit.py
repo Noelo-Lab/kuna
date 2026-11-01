@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess,json,concurrent.futures,hashlib
-w=Path('/tmp/kuna-rust-panic-d850');out=w/'type-audit';out.mkdir(exist_ok=True)
+w=Path('/tmp/kuna-rust-panic-f874');out=w/'type-audit';out.mkdir(exist_ok=True)
 breadth=json.loads((w/'breadth/record.json').read_text())
 tasks=[]
 for fixture in breadth['fixtures']:

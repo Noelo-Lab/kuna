@@ -1,8 +1,9 @@
 from pathlib import Path
 import os,json,time
-w=Path('/tmp/kuna-rust-panic-d850')
-owned=['/home/mahaloz/kwt/angr-rust-panic-main','/home/mahaloz/kwt/angr-rust-extensions','/home/mahaloz/kwt/angr-rust-base-c281','/home/mahaloz/kwt/angr-rust-userop','/home/mahaloz/kwt/angr-rust-panic-base-d850','/tmp/kuna-rust-extensions-c281-review','/tmp/kuna-rust-userop','/tmp/kuna-rust-panic-d850']
+w=Path('/tmp/kuna-rust-panic-f874')
+owned=['/home/mahaloz/kwt/angr-rust-panic-main','/home/mahaloz/kwt/angr-rust-extensions','/home/mahaloz/kwt/angr-rust-base-c281','/home/mahaloz/kwt/angr-rust-userop','/home/mahaloz/kwt/angr-rust-panic-base-f874','/tmp/kuna-rust-extensions-c281-review','/tmp/kuna-rust-userop','/tmp/kuna-rust-panic-f874']
 owned += ['/home/mahaloz/kwt/angr-rust-fmt-str','/tmp/kuna-rust-fmt-str','/tmp/kuna-rust-symbols','/home/mahaloz/kwt/angr-rust-fmt-pieces','/home/mahaloz/kwt/angr-rust-panic','/home/mahaloz/kwt/angr-rust-signed-bytes','/tmp/kuna-rust-fmt-pieces','/tmp/kuna-rust-panic']
+owned += ['/home/mahaloz/kwt/angr-rust-fmt-write','/tmp/kuna-rust-fmt-write']
 bench_cpu=int(os.environ.get('KUNA_TIMING_CPU','77'))
 bench_siblings=list(map(int,Path(f'/sys/devices/system/cpu/cpu{bench_cpu}/topology/thread_siblings_list').read_text().strip().split(',')))
 processes=[]

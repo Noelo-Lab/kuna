@@ -3,6 +3,6 @@ Integration-test layout: all source files registered exactly once
 PYTHONPATH=/home/mahaloz/kwt/angr-rust-panic-main python3 -m unittest discover -s /home/mahaloz/kwt/angr-rust-panic-main/scripts/tests -p 'test_*.py'
 .........................................s........................................................................
 ----------------------------------------------------------------------
-Ran 114 tests in 7.895s
+Ran 114 tests in 10.851s
 
 OK (skipped=1)

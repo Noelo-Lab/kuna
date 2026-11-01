@@ -3,13 +3,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess, os, json, hashlib, difflib, re, sys
 
 root = Path('/home/mahaloz/kwt/angr-rust-panic-main')
-base = Path('/home/mahaloz/kwt/angr-rust-panic-base-d850')
-old = Path('/tmp/kuna-rust-panic-d850/empty-cache')
-out = Path('/tmp/kuna-rust-panic-d850/breadth')
+base = Path('/home/mahaloz/kwt/angr-rust-panic-base-f874')
+old = Path('/tmp/kuna-rust-panic-f874/empty-cache')
+out = Path('/tmp/kuna-rust-panic-f874/breadth')
 out.mkdir(exist_ok=True)
 patched_sha=hashlib.sha256((root/'decompiler/target/release/kuna').read_bytes()).hexdigest()
 refs = Path('/tmp/kuna-angr-reference/binaries')
-sha = 'd85071a68e917d609d7252004da015da06321b02'
+sha = 'f8746b9730b525a065c89c26e358ffd7c2328bc7'
 assert subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=base) == subprocess.check_output(['git', 'rev-parse', sha+'^{tree}'], cwd=base)
 inputs = [
     ('hermetic', root/'tests/fixtures/go-dwarf-signatures/compressed', ['c','go']),
@@ -105,7 +105,7 @@ def run(row):
                 except ValueError:
                     evidence=out/f'{name}-{addr:x}-call-constants.jsonl'
                     if not evidence.exists():
-                        evidence.write_bytes(subprocess.check_output(['/tmp/kuna-rust-panic-d850/call-constants',str(binary),hex(addr)]))
+                        evidence.write_bytes(subprocess.check_output(['/tmp/kuna-rust-panic-f874/call-constants',str(binary),hex(addr)]))
                     calls=[json.loads(line) for line in evidence.read_text().splitlines()]
                     candidates=[call for call in calls if call[2]==tag and call[3]==int(args[2],0)]
                     assert len(candidates)==1,(name,hex(addr),args,calls)

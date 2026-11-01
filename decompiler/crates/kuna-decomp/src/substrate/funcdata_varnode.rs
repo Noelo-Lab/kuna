@@ -31,8 +31,11 @@ impl Funcdata {
     /// unknown-base [`Datatype`] skeleton directly (size `s`, metatype
     /// `TYPE_UNKNOWN`), exactly as the merged `funcdata.rs`/`varnode.rs` tests do.
     /// W6 replaces this with the interned-factory lookup; call sites stay put.
-    fn type_base_unknown(s: int4) -> Rc<Datatype> {
-        Rc::new(Datatype::new(s, type_metatype::TYPE_UNKNOWN))
+    ///
+    /// The skeleton is allocated by the Varnode when its type is first read
+    /// ([`crate::varnode::unknown_skeleton`]); `s` is always the new Varnode's size.
+    fn type_base_unknown(_s: int4) -> Rc<Datatype> {
+        crate::varnode::unknown_skeleton()
     }
 
     /// Materialize the function's recovered/locked input parameters as Symbols in
@@ -218,7 +221,7 @@ impl Funcdata {
                         v.is_type_lock(),
                         v.is_spacebase(),
                         v.get_size(),
-                        v.get_type().get_metatype() == type_metatype::TYPE_BOOL,
+                        v.is_type_lock() && v.get_type().get_metatype() == type_metatype::TYPE_BOOL,
                         v.get_def(),
                     )
                 };
@@ -3419,7 +3422,7 @@ impl AncestorRealistic {
 /// slotmap key's bit pattern is used.  `slotmap` keys expose their packed `u64`
 /// form via `KeyData::as_ffi`; the round-trip is opaque to the IR (the iop-space
 /// value is only ever decoded back to identify the same op).
-fn op_iop_encode(op: OpId) -> uintb {
+pub(crate) fn op_iop_encode(op: OpId) -> uintb {
     use slotmap::Key;
     op.data().as_ffi()
 }
@@ -3637,6 +3640,20 @@ mod tests {
         assert!(Rc::ptr_eq(v.get_space(), iop));
         // The encoded offset round-trips to the same key bit-pattern.
         assert_eq!(v.get_offset(), op_iop_encode(op));
+    }
+
+    #[test]
+    fn an_untyped_varnode_gets_its_own_skeleton_when_first_read() {
+        let mut fd = build_fd();
+        let (a, b, c) = (fd.new_constant(8, 1), fd.new_constant(8, 2), fd.new_constant(4, 3));
+        let ta = Rc::clone(fd.vbank().get(a).unwrap().get_type());
+        assert!(ta.is_unknown_placeholder() && ta.get_size() == 8);
+        assert!(Rc::ptr_eq(&ta, fd.vbank().get(a).unwrap().get_type()), "one skeleton per Varnode");
+        assert!(!Rc::ptr_eq(&ta, fd.vbank().get(b).unwrap().get_type()), "never shared between Varnodes");
+        let factory = unk(4);
+        assert!(fd.vbank_mut().get_mut(c).unwrap().update_type(Rc::clone(&factory)));
+        assert!(Rc::ptr_eq(fd.vbank().get(c).unwrap().get_type(), &factory));
+        assert!(!fd.vbank_mut().get_mut(c).unwrap().update_type(factory));
     }
 
     #[test]

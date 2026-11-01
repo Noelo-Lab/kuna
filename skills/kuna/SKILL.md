@@ -49,7 +49,9 @@ kuna decompile ./challenge 0x401230 --addr --json
 ```
 
 Batch multiple functions instead of looping over `decompile`. Use `decompile-all --json`
-for structured batch output; project export does not accept `--json`.
+for structured batch output; project export does not accept `--json`. When only the code
+is needed, `--omit line_mappings,variables,types` on either `--json` drops those
+collections (named in the document's `omitted`), keeping it near the size of the C.
 
 ## Navigate the export
 

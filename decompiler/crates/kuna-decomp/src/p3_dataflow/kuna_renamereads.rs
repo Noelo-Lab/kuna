@@ -14,8 +14,10 @@
 //! (an edge from a block outside the dominator tree, or a pass stopped by its
 //! deadline) gets upstream's placeholder when the pass finishes.
 
-use crate::context::OpId;
+use crate::context::{OpId, VarnodeId};
 use crate::funcdata::Funcdata;
+use crate::funcdata_varnode::op_iop_encode;
+use crate::kuna_fasthash::FxHashMap;
 use crate::op::pcodeop_addlflags::kuna_rename_read;
 use kuna_base::address::Address;
 use kuna_base::types::{int4, uint4};
@@ -50,7 +52,9 @@ pub(crate) fn storage(fd: &Funcdata, op: OpId) -> Option<(Address, int4)> {
 }
 
 /// Build upstream's guard `INDIRECT` (`newIndirectOp`) on `addr:sz` at
-/// `indeffect`, its input left for renaming.
+/// `indeffect`, its input left for renaming. The pass's guards of one effect
+/// op share its annotation in `iops`; a reuse still takes the annotation's
+/// creation index.
 pub(crate) fn new_indirect(
     fd: &mut Funcdata,
     indeffect: OpId,
@@ -58,6 +62,7 @@ pub(crate) fn new_indirect(
     sz: int4,
     extra_flags: uint4,
     pending: &mut Vec<(OpId, uint4)>,
+    iops: &mut FxHashMap<OpId, VarnodeId>,
 ) -> OpId {
     let first = fd.vbank_mut().reserve_create_index(1);
     let indaddr = fd.obank().get(indeffect).expect("renamereads: stale effect op").get_addr().clone();
@@ -65,7 +70,19 @@ pub(crate) fn new_indirect(
     fd.obank_mut().get_mut(newop).expect("renamereads: new INDIRECT").set_flag(extra_flags);
     let _ = fd.new_varnode_out(sz, addr, newop);
     fd.op_set_opcode_code(newop, OpCode::CPUI_INDIRECT);
-    let iop = fd.new_varnode_iop(indeffect);
+    let code = op_iop_encode(indeffect);
+    let shared = iops.get(&indeffect).copied();
+    let iop = match shared.filter(|&v| fd.vbank().get(v).is_some_and(|x| x.get_offset() == code)) {
+        Some(v) => {
+            fd.vbank_mut().reserve_create_index(1);
+            v
+        }
+        None => {
+            let v = fd.new_varnode_iop(indeffect);
+            iops.insert(indeffect, v);
+            v
+        }
+    };
     let _ = fd.op_set_input(newop, iop, 1);
     fd.op_insert_before(newop, indeffect);
     push(fd, newop, first, pending);

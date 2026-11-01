@@ -1,0 +1,41 @@
+{
+  "declared_at": "2026-11-01 21:33:44.367847+00:00",
+  "reason": "Fresh matched binaries after integrating f8746b973. Same predeclared balanced protocol applied to all five cases.",
+  "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+  "cases": [
+    "scalar-c",
+    "panic-literal",
+    "panic-integers",
+    "rust-large-control",
+    "go-control"
+  ],
+  "samples_per_arm": 192,
+  "warmups_per_arm": 3,
+  "seed": 20261102,
+  "bootstrap_resamples": 20000,
+  "block_rounds": 6,
+  "family_alpha": 0.025,
+  "comparisons": 20,
+  "upper_quantile": 0.99875,
+  "budget_pct": 5,
+  "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+  "cpu_selection": "Rank allowed physical CPU pairs by minimum sibling idle percentage over five seconds; assign the highest-ranked distinct pairs to cases before collecting any timings. No absolute idle threshold. No owned builds/tests/corpus work during measurements; only these measurement workers run concurrently.",
+  "amended_at_before_sampling": "2026-11-01 22:03:06.587897+00:00",
+  "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+  "execution_amendment": "Only benchmark cases share the scheduler. Physical CPU pairs remain disjoint across all cases, with fixed affinity per run and worker-local child CPU accounting. Production sources and binaries are frozen; pending baseline commit identities are bound afterward using existing manifests.",
+  "amended_at_before_new_sampling": "2026-11-01 22:29:49.354939+00:00",
+  "study_family_alpha": 0.05,
+  "maximum_looks": 2,
+  "confirmation": "All 192 initial samples remain included. Re-evaluate the initial look at family alpha .025; allocate another .025 to the single fixed-size final look. Each look uses all 20 comparison slots, conservatively including already-passing cases. No third look or automatic repeat. All median deltas and simultaneous upper mean-ratio bounds must fit 5%.",
+  "additional_rounds_by_case": {
+    "panic-integers": 576,
+    "go-control": 576
+  },
+  "final_samples_by_case": {
+    "scalar-c": 192,
+    "panic-literal": 192,
+    "panic-integers": 768,
+    "rust-large-control": 192,
+    "go-control": 768
+  }
+}

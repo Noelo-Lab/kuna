@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess,os,json,hashlib,re
-w=Path('/tmp/kuna-rust-panic-d850');r=Path('/home/mahaloz/kwt/angr-rust-panic-main');base=Path('/home/mahaloz/kwt/angr-rust-panic-base-d850')
+w=Path('/tmp/kuna-rust-panic-f874');r=Path('/home/mahaloz/kwt/angr-rust-panic-main');base=Path('/home/mahaloz/kwt/angr-rust-panic-base-f874')
 versions=['1.90.0','1.93.1','1.99.1']
 names=['panic_literal','panic_empty','panic_decimal','panic_signed','panic_hex','panic_reorder','panic_narrow','panic_escaped']
 prefix=(r/'decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic.rs').read_text().split('fn main()')[0]
