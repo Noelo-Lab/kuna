@@ -27,12 +27,14 @@ enum Encoding {
     Trimmed,
     LibcTypes,
     SourceLang,
+    Ppc32Pic,
 }
 
 fn binding(name: &str) -> Option<(&'static str, Encoding)> {
     use Encoding::*;
     Some(match name {
         "relocobjects" => (RELOC_OBJECTS_ENV, RelocObjects),
+        "ppc32picimports" => (kuna_decomp::kuna_ppc32picimports::ENV, Ppc32Pic),
         "i386_pie_plt" => (kuna_i386_pie_plt::I386_PIE_PLT_ENV, DefaultOn),
         "ifuncfpret" => (kuna_ifuncfpret::IFUNCFPRET_ENV, DefaultOff),
         "relocrebase" => (kuna_relocrebase::RELOCREBASE_ENV, DefaultOn),
@@ -80,6 +82,8 @@ impl Encoding {
                 .unwrap_or_default()
                 .as_str()
                 .into(),
+            Self::Ppc32Pic => kuna_decomp::kuna_ppc32picimports::Mode::parse(&token)
+                .unwrap_or_default().as_str().into(),
             Self::Trimmed => value.trim().into(),
             Self::LibcTypes => {
                 if off {
@@ -204,6 +208,8 @@ mod tests {
     #[test]
     fn loader_value_vocabularies_are_preserved() {
         for (name, cases) in [
+            ("ppc32picimports", vec![("off", Some("off")), ("on", Some("on")),
+                ("abi", Some("abi")), ("invalid", Some("off"))]),
             (
                 "typedepth",
                 vec![

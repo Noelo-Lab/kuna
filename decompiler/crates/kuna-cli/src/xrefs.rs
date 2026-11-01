@@ -299,7 +299,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &declared,
     );
 
-    if prog.arch().analysis_ppc32picimports && !prog.arch().ppc32_pic_imports.is_empty() {
+    if prog.arch().analysis_ppc32picimports.scoped() && !prog.arch().ppc32_pic_imports.is_empty() {
         for entry in &entries {
             let size = prog.declared_extent(entry.addr.get_offset());
             if let Ok(fd) = kuna_decomp::decompile_drive::build_and_follow_flow(
@@ -735,7 +735,7 @@ fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, Strin
     if let Some(addr) = prog.lookup_data_alias(spec) {
         return Ok(Resolution::Settled(TargetSpec { addr, name: Some(spec.to_string()), fallback: None }));
     }
-    if prog.arch().analysis_ppc32picimports {
+    if prog.arch().analysis_ppc32picimports.scoped() {
         if let Some(slot) = prog.arch().ppc32_pic_imports.values().find(|s| s.name == spec) {
             return Ok(Resolution::Settled(TargetSpec { addr: slot.address, name: Some(spec.to_string()), fallback: None }));
         }
@@ -766,7 +766,7 @@ fn resolve_target(
     let mut class =
         if by_name { index.export_alias_class(file, addr) } else { index.alias_class(addr) };
     let name = name.or_else(|| name_at(prog, index, names, addr)).or(fallback);
-    if by_name && prog.arch().analysis_ppc32picimports {
+    if by_name && prog.arch().analysis_ppc32picimports.scoped() {
         class.extend(prog.arch().ppc32_pic_imports.values()
             .filter(|s| Some(&s.name) == name.as_ref()).map(|s| s.address));
     }
@@ -810,7 +810,7 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u6
     names.at(vma)
         .map(|(_, name)| name.to_string())
         .or_else(|| prog.function_named_at(vma))
-        .or_else(|| prog.arch().analysis_ppc32picimports.then(||
+        .or_else(|| prog.arch().analysis_ppc32picimports.scoped().then(||
             prog.arch().ppc32_pic_imports.get(&vma).map(|s| s.name.clone())).flatten())
         .or_else(|| unflagged.then(data_symbol).flatten())
         // The walk discovers functions the engine's inventory does not carry (it

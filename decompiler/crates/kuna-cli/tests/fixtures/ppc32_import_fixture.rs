@@ -192,12 +192,15 @@ impl Fixture {
             stub.extend(self.words(&match self.plt {
                 Plt::Short => [
                     0x817e0000 | delta as u16 as u32,
-                    0x7d6903a6, 0x4e800420, 0x60000000,
+                    0x7d6903a6,
+                    0x4e800420,
+                    0x60000000,
                 ],
                 Plt::Long => [
                     0x3d7e0000 | (delta.wrapping_add(0x8000) >> 16),
                     0x816b0000 | delta as u16 as u32,
-                    0x7d6903a6, 0x4e800420,
+                    0x7d6903a6,
+                    0x4e800420,
                 ],
                 _ => panic!("second stub requires a PIC layout"),
             }));
@@ -1528,10 +1531,9 @@ pub fn slot_write(little: bool) -> Vec<u8> {
     f.pic_collision = true;
     f.import = "memcpy";
     let mut code = vec![
-        0x7c0802a6, 0x9421ffe0, 0x90010024, 0x93c10018,
-        0x3bc02800, 0x39601100, 0x91610008, 0x38603004, 0x38810008, 0x38a00004,
-        0x480007d9, 0x3bde0004, 0x480007d1,
-        0x38600007, 0x83c10018, 0x80010024, 0x38210020, 0x7c0803a6, 0x4e800020,
+        0x7c0802a6, 0x9421ffe0, 0x90010024, 0x93c10018, 0x3bc02800, 0x39601100, 0x91610008,
+        0x38603004, 0x38810008, 0x38a00004, 0x480007d9, 0x3bde0004, 0x480007d1, 0x38600007,
+        0x83c10018, 0x80010024, 0x38210020, 0x7c0803a6, 0x4e800020,
     ];
     code.resize(0x100 / 4, 0x60000000);
     code.extend([0x38600009, 0x4e800020]);

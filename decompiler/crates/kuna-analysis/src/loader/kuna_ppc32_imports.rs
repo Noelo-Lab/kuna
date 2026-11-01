@@ -90,7 +90,19 @@ fn slots(file: &object::File<'_>) -> (bool, BTreeMap<u64, Vec<u8>>) {
     (bss, slots)
 }
 
+/// Resolve global PIC stub identities under the compiler and ABI assumptions
+/// documented for `ppc32picimports abi`. This is not the caller-local `on` mode.
+pub fn resolve_with_pic_abi(file: &object::File<'_>) -> Vec<super::format::ImportSym> {
+    resolve_impl(file, true).into_iter().map(|s| super::format::ImportSym {
+        addr: s.addr, name: s.name, kind: super::format::ImportSymKind::Import,
+    }).collect()
+}
+
 pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
+    resolve_impl(file, kuna_decomp::kuna_ppc32picimports::abi_enabled())
+}
+
+fn resolve_impl(file: &object::File<'_>, prove_pic: bool) -> Vec<PltSym> {
     let (bss, slots) = slots(file);
     if bss {
         return slots
@@ -132,6 +144,9 @@ pub(super) fn resolve(file: &object::File<'_>) -> Vec<PltSym> {
                 });
             }
         }
+    }
+    if prove_pic {
+        out.extend(super::kuna_ppc32picimports::resolve(file, &slots, &out));
     }
     out
 }

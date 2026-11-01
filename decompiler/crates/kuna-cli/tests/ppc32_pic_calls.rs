@@ -382,3 +382,27 @@ fn targets_loaded_before_a_call_survive_only_in_preserved_registers() {
         }
     }
 }
+
+#[test]
+fn distinct_stubs_do_not_hide_imported_slot_writes() {
+    for little in [false, true] {
+        let mut f = fixture::Fixture::new(fixture::Plt::Short);
+        f.little = little;
+        f.pic_collision = true;
+        f.import = "memcpy";
+        f.second_stub = true;
+        let mut code = vec![0x7c0802a6,0x9421ffe0,0x90010024,0x93c10018,
+            0x3bc02800,0x39601100,0x91610008,0x38603004,0x38810008,0x38a00004,
+            0x480007d9,0x3bde0008,0x480007e1,0x38600007,0x83c10018,
+            0x80010024,0x38210020,0x7c0803a6,0x4e800020];
+        code.resize(0x100/4,0x60000000);
+        code.extend([0x38600009,0x4e800020]);
+        f.caller = Some(code);
+        let mut bytes = f.bytes();
+        let off = bytes.windows(6).position(|b| b == b"extra\0").unwrap();
+        bytes[off..off+6].copy_from_slice(b"abort\0");
+        let on = decompile(&bytes, "check", true);
+        assert!(on.contains("return 7;") && !on.contains("abort("), "{on}");
+        assert_eq!(on, decompile(&bytes, "check", false));
+    }
+}

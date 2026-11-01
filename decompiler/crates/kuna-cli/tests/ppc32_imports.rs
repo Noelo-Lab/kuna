@@ -312,44 +312,60 @@ int check(void) { extra(); return 7; }
             .arg("-o")
             .arg(&obj),
     );
-    for stripped in [false, true] {
-        let path = root.join(if stripped {
-            "stripped.so"
-        } else {
-            "symbolized.so"
-        });
-        let mut link = Command::new("powerpc-linux-gnu-ld");
-        link.args(["-shared", "--secure-plt", "--spare-dynamic-tags=4081"]);
-        if stripped {
-            link.arg("--strip-all");
+    for linker in ["powerpc-linux-gnu-ld", "ld.lld-21"] {
+        if process::optional_output(Command::new(linker).arg("--version")).is_none() {
+            continue;
         }
-        process::required_output(link.arg(&obj).arg("-o").arg(&path));
-        let bytes = std::fs::read(&path).unwrap();
-        let file = object::File::parse(&*bytes).unwrap();
-        assert!(file.section_by_name(".got2").is_none());
-        assert_eq!(file.dynamic_relocations().unwrap().count(), 4);
-        let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
-            .args([
-                "decompile",
-                path.to_str().unwrap(),
-                "check",
-                "--mode",
-                "fast",
-            ])
-            .output()
-            .unwrap();
-        let text = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            out.status.success(),
-            "{text}\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        assert!(
-            text.contains("return 7;")
-                && !text.contains("__stack_chk_fail(")
-                && !text.contains("no-return"),
-            "stripped={stripped}: {text}"
-        );
+        for stripped in [false, true] {
+            let path = root.join(if stripped {
+                "stripped.so"
+            } else {
+                "symbolized.so"
+            });
+            let mut link = Command::new(linker);
+            link.arg("-shared");
+            if linker == "powerpc-linux-gnu-ld" {
+                link.args(["--secure-plt", "--spare-dynamic-tags=4081"]);
+            }
+            if stripped {
+                link.arg("--strip-all");
+            }
+            process::required_output(link.arg(&obj).arg("-o").arg(&path));
+            let bytes = std::fs::read(&path).unwrap();
+            let file = object::File::parse(&*bytes).unwrap();
+            if linker == "powerpc-linux-gnu-ld" {
+                assert!(file.section_by_name(".got2").is_none());
+            }
+            assert_eq!(file.dynamic_relocations().unwrap().count(), 4);
+            for option in ["off", "on", "abi"] {
+                let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .args([
+                        "decompile",
+                        path.to_str().unwrap(),
+                        "check",
+                        "--mode",
+                        "fast",
+                        "--option",
+                        "ppc32picimports",
+                        option,
+                    ])
+                    .output()
+                    .unwrap();
+                let text = String::from_utf8_lossy(&out.stdout);
+                assert!(
+                    out.status.success(),
+                    "{text}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(
+                    text.contains("return 7;")
+                        && text.contains("\n  extra(") == (option == "abi")
+                        && !text.contains("__stack_chk_fail(")
+                        && !text.contains("no-return"),
+                    "{linker} stripped={stripped} option={option}: {text}"
+                );
+            }
+        }
     }
     std::fs::remove_dir_all(root).unwrap();
 }
