@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">4038f7400f9cc00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="byte_less"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">4038f7400f9ec00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100020" name="byte_lesseq"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">4889f8c0f8020fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="byte_shift"/>
+<bytechunk space="ram" offset="0x100060" readonly="true">c03f02c3</bytechunk>
+<symbol space="ram" offset="0x100060" name="byte_store"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">4038f7400f92c00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100080" name="byte_unsigned"/>
+<bytechunk space="ram" offset="0x1000a0" readonly="true">4088f885f67406d0f8ffce75fac3</bytechunk>
+<symbol space="ram" offset="0x1000a0" name="byte_loop_direct"/>
+<bytechunk space="ram" offset="0x1000c0" readonly="true">4088f885f67406d0f8ffce75fac3</bytechunk>
+<symbol space="ram" offset="0x1000c0" name="unsigned_loop"/>
+<bytechunk space="ram" offset="0x1000e0" readonly="true">4839f70f9cc00fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x1000e0" name="unsigned_less64"/>
+</binaryimage>
+<script>
+<com>option outlang rust</com>
+<com>parse line extern unsigned int byte_less(unsigned long a, unsigned long b);</com>
+<com>parse line extern unsigned int byte_lesseq(unsigned long a, unsigned long b);</com>
+<com>parse line extern unsigned int byte_shift(unsigned long a);</com>
+<com>parse line extern void byte_store(char *p);</com>
+<com>parse line extern unsigned int byte_unsigned(unsigned long left, unsigned long right);</com>
+<com>parse line extern char byte_loop_direct(char a, unsigned int n);</com>
+<com>parse line extern unsigned char unsigned_loop(char value, unsigned int n);</com>
+<com>parse line extern unsigned int unsigned_less64(unsigned long left, unsigned long right);</com>
+<com>lo fu byte_less</com><com>decompile</com><com>print C</com>
+<com>lo fu byte_lesseq</com><com>decompile</com><com>print C</com>
+<com>lo fu byte_shift</com><com>decompile</com><com>print C</com>
+<com>lo fu byte_store</com><com>decompile</com><com>print C</com>
+<com>lo fu byte_unsigned</com><com>decompile</com><com>print C</com>
+<com>lo fu byte_loop_direct</com><com>decompile</com><com>print C</com>
+<com>lo fu unsigned_loop</com><com>decompile</com><com>print C</com>
+<com>lo fu unsigned_less64</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Rust signed byte less-than reads signed values" min="1" max="1">as i8\) &lt; \(</stringmatch>
+<stringmatch name="Rust signed byte less-or-equal reads signed values" min="1" max="1">as i8\) &lt;= \(</stringmatch>
+<stringmatch name="Rust byte arithmetic shifts use signed operands" min="2" max="2">as i8\) &gt;&gt; 2</stringmatch>
+<stringmatch name="Rust byte arithmetic shifts restore storage width" min="2" max="2">\) &gt;&gt; 2\) as u8</stringmatch>
+<stringmatch name="Rust unsigned byte comparison remains unsigned" min="1" max="1">return \(\(left as u8\) &lt; \(right as u8\)\) as u32;</stringmatch>
+<stringmatch name="Rust signed byte compound assignment preserves arithmetic shift" min="1" max="1">a = \(\(a as i8\) &gt;&gt; 1\) as u8;</stringmatch>
+<stringmatch name="Rust arithmetic shift overrides unsigned recovered input" min="1" max="1">value = \(\(value as i8\) &gt;&gt; 1\) as u8;</stringmatch>
+<stringmatch name="Rust signed comparison overrides unsigned recovered inputs" min="1" max="1">\(left as i64\) &lt; \(right as i64\)</stringmatch>
+</decompilertest>

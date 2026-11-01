@@ -1,0 +1,136 @@
+--- before/main
++++ after/main
+@@ -712,7 +712,7 @@
+         if v7 == 0x5b {
+           /* kuna: unstructured goto to label_5d53 */ panic!("kuna: unstructured goto to label_5d53");
+         }
+-        if b'\\' <= (v7 as u8) { // branch-flip
++        if (b'\\' as i8) <= ((v7 as u8) as i8) { // branch-flip
+           if v7 != 0x5c { // branch-flip
+             if v7 == 0x5e {
+               /* kuna: unstructured goto to label_5d53 */ panic!("kuna: unstructured goto to label_5d53");
+@@ -723,7 +723,7 @@
+           }
+           else if 2 <= (v22 as i64) {
+             v7 = src[1];
+-            if b'=' <= (v7 as u8) { // branch-flip
++            if (b'=' as i8) <= ((v7 as u8) as i8) { // branch-flip
+               if ((v7 - 0x3e) as u8) <= 0x3e {
+                 v16 = 1 << (v7 - 0x3e & 0x3f);
+                 if v16 & 0x220001402200011 == 0 {
+@@ -737,7 +737,7 @@
+                 /* kuna: unstructured goto to label_5d53 */ panic!("kuna: unstructured goto to label_5d53");
+               }
+             }
+-            else if b'\n' <= (v7 as u8) {
++            else if (b'\n' as i8) <= ((v7 as u8) as i8) {
+               v16 = 1 << (v7 & 0x3f);
+               if v16 & 0x13fe008000000400 == 0 {
+                 v16 &= 0xb0000000000;
+@@ -750,7 +750,7 @@
+             v22 = (v22 as i64 - 1) as *mut i64;
+           }
+         }
+-        else if b'/' <= (v7 as u8) { // branch-flip
++        else if (b'/' as i8) <= ((v7 as u8) as i8) { // branch-flip
+           if v7 == 0x3f {
+ // label_61c8:
+             if v47 == 1 {
+@@ -758,7 +758,7 @@
+             }
+           }
+         }
+-        else if b'$' <= (v7 as u8) {
++        else if (b'$' as i8) <= ((v7 as u8) as i8) {
+           v16 = 1 << (v7 & 0x3f);
+           if v16 & 0x441000000000 != 0 {
+             /* kuna: unstructured goto to label_5d53 */ panic!("kuna: unstructured goto to label_5d53");
+
+--- before/sub_16900
++++ after/sub_16900
+@@ -8,9 +8,9 @@
+   loop {
+     v1 = *a0;
+     v3 = &mut a0[1];
+-    if b'A' <= v1 { // branch-flip
++    if (b'A' as i8) <= (v1 as i8) { // branch-flip
+       if v1 != b'\\' { // branch-flip
+-        if b']' <= v1 { // branch-flip
++        if (b']' as i8) <= (v1 as i8) { // branch-flip
+           if v1 + 0x85 & 0xfd == 0 {
+             /* kuna: unstructured goto to label_16990 */ panic!("kuna: unstructured goto to label_16990");
+           }
+@@ -23,7 +23,7 @@
+         v3 = &mut a0[2];
+       }
+     }
+-    else if b'!' <= v1 { // branch-flip
++    else if (b'!' as i8) <= (v1 as i8) { // branch-flip
+       v2 = 1 << (v1 - 0x21 & 0x3f);
+       if v2 & 0x80000401 != 0 { // branch-flip
+         if (a1 & 0x20 != 0 && (a0[1] == b'(')) {
+
+--- before/sub_1b790
++++ after/sub_1b790
+@@ -174,7 +174,7 @@
+           }
+           if !v21 {
+             v15 = *v10;
+-            if (v15 as u8) <= b'?' {
++            if ((v15 as u8) as i8) <= (b'?' as i8) {
+               match v15 {
+                 0 => {
+                   /* kuna: unstructured goto to label_1be6c */ panic!("kuna: unstructured goto to label_1be6c");
+@@ -225,7 +225,7 @@
+               }
+             }
+             v3 = v18;
+-            if (v15 as u8) <= b'z' {
++            if ((v15 as u8) as i8) <= (b'z' as i8) {
+               if v15 == 0x40 {
+                 /* kuna: unstructured goto to label_1bb43 */ panic!("kuna: unstructured goto to label_1bb43");
+               }
+@@ -242,7 +242,7 @@
+             if v15 == 0x7d {
+               /* kuna: unstructured goto to label_1c3e0 */ panic!("kuna: unstructured goto to label_1c3e0");
+             }
+-            if (v15 as u8) <= b'}' {
++            if ((v15 as u8) as i8) <= (b'}' as i8) {
+               v8 = 0x7b;
+               if v15 == 0x7b {
+                 /* kuna: unstructured goto to label_1c23a */ panic!("kuna: unstructured goto to label_1c23a");
+@@ -270,10 +270,10 @@
+         }
+ // label_1c270:
+         v15 = *v10;
+-        if b'?' < (v15 as u8) {
+-          if b'z' < (v15 as u8) {
++        if (b'?' as i8) < ((v15 as u8) as i8) {
++          if (b'z' as i8) < ((v15 as u8) as i8) {
+             if v15 != 0x7d { // branch-flip
+-              if b'~' <= (v15 as u8) {
++              if (b'~' as i8) <= ((v15 as u8) as i8) {
+                 v18 = 0;
+                 if v15 == 0x7e {
+                   /* kuna: unstructured goto to label_1c394 */ panic!("kuna: unstructured goto to label_1c394");
+@@ -430,8 +430,8 @@
+         /* kuna: unstructured goto to label_1bd62 */ panic!("kuna: unstructured goto to label_1bd62");
+       }
+       v15 = *v10;
+-      if b'?' < (v15 as u8) {
+-        if b'{' <= (v15 as u8) {
++      if (b'?' as i8) < ((v15 as u8) as i8) {
++        if (b'{' as i8) <= ((v15 as u8) as i8) {
+           if v15 == 0x7d {
+ // label_1c3e0:
+             v8 = 0x7d;
+@@ -445,7 +445,7 @@
+             }
+             /* kuna: unstructured goto to label_1bed5 */ panic!("kuna: unstructured goto to label_1bed5");
+           }
+-          if (v15 as u8) <= b'}' {
++          if ((v15 as u8) as i8) <= (b'}' as i8) {
+             v8 = 0x7b;
+             if v15 != 0x7b {
+               if v15 == 0x7c {
+

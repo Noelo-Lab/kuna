@@ -1,0 +1,116 @@
+[
+  {
+    "producer": "1.90.0",
+    "input_sha256": "53d067c57bcd9cd955a82bde62aa8dbdb507fcafb8dcfc58572e5862966bf651",
+    "functions": [
+      "byte_less",
+      "byte_lesseq",
+      "byte_shift",
+      "byte_unsigned",
+      "byte_logical",
+      "byte_store",
+      "byte_call",
+      "byte_loop"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.90.0",
+      "1.93.1",
+      "1.99.1"
+    ],
+    "input_rows": 65536,
+    "results_per_execution": 524288,
+    "call_count_checks_per_execution": 65536,
+    "loop_counts": "0 through 31",
+    "all_byte_pairs": true,
+    "nonzero_high_input_bits": true,
+    "overflow_checks": false,
+    "native_oracle": "original Rust functions executed with rustc",
+    "before_mismatches": {
+      "byte_less": 32768,
+      "byte_lesseq": 32768,
+      "byte_shift": 32768,
+      "byte_unsigned": 0,
+      "byte_logical": 0,
+      "byte_store": 32768,
+      "byte_call": 32768,
+      "byte_loop": 31744
+    }
+  },
+  {
+    "producer": "1.93.1",
+    "input_sha256": "9a57b8df92d881656860b22a21fadc9108dbb4f4be9371001fd5bd18b998849a",
+    "functions": [
+      "byte_less",
+      "byte_lesseq",
+      "byte_shift",
+      "byte_unsigned",
+      "byte_logical",
+      "byte_store",
+      "byte_call",
+      "byte_loop"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.90.0",
+      "1.93.1",
+      "1.99.1"
+    ],
+    "input_rows": 65536,
+    "results_per_execution": 524288,
+    "call_count_checks_per_execution": 65536,
+    "loop_counts": "0 through 31",
+    "all_byte_pairs": true,
+    "nonzero_high_input_bits": true,
+    "overflow_checks": false,
+    "native_oracle": "original Rust functions executed with rustc",
+    "before_mismatches": {
+      "byte_less": 32768,
+      "byte_lesseq": 32768,
+      "byte_shift": 32768,
+      "byte_unsigned": 0,
+      "byte_logical": 0,
+      "byte_store": 32768,
+      "byte_call": 32768,
+      "byte_loop": 31744
+    }
+  },
+  {
+    "producer": "1.99.1",
+    "input_sha256": "474f261573593f44744c2470fcb1ff259ee17afeb95c3e5104bcd6e48d182c72",
+    "functions": [
+      "byte_less",
+      "byte_lesseq",
+      "byte_shift",
+      "byte_unsigned",
+      "byte_logical",
+      "byte_store",
+      "byte_call",
+      "byte_loop"
+    ],
+    "body_is_untouched": true,
+    "execution_compilers": [
+      "1.90.0",
+      "1.93.1",
+      "1.99.1"
+    ],
+    "input_rows": 65536,
+    "results_per_execution": 524288,
+    "call_count_checks_per_execution": 65536,
+    "loop_counts": "0 through 31",
+    "all_byte_pairs": true,
+    "nonzero_high_input_bits": true,
+    "overflow_checks": false,
+    "native_oracle": "original Rust functions executed with rustc",
+    "before_mismatches": {
+      "byte_less": 32768,
+      "byte_lesseq": 32768,
+      "byte_shift": 32768,
+      "byte_unsigned": 0,
+      "byte_logical": 0,
+      "byte_store": 32768,
+      "byte_call": 32768,
+      "byte_loop": 31744
+    }
+  }
+]

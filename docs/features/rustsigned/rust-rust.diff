@@ -1,0 +1,2286 @@
+--- before/addr2line::line::path_push
++++ after/addr2line::line::path_push
+@@ -15,9 +15,9 @@
+   
+   if a2 != core::ptr::null_mut__ { // branch-flip
+     if *a1 != b'/' {
+-      if (a2 != 0x1 as *mut u8 && (0xc0 <= a1[1])) {
++      if (a2 != 0x1 as *mut u8 && ((0xc0 as i8) <= (a1[1] as i8))) {
+         if 4 <= a2 { // branch-flip
+-          if 0xc0 <= a1[3] {
++          if (0xc0 as i8) <= (a1[3] as i8) {
+             /* kuna: unstructured goto to label_11856 */ panic!("kuna: unstructured goto to label_11856");
+           }
+         }
+
+--- before/addr2line::line::has_backward_slash_root
++++ after/addr2line::line::has_backward_slash_root
+@@ -10,9 +10,9 @@
+     if (*a0).field_0x0 == b'\\' {
+       return CONCAT71(v2,1);
+     }
+-    if (a1 != 1 && (0xc0 <= ((*a0).field_0x1[0] as u8))) {
++    if (a1 != 1 && ((0xc0 as i8) <= (((*a0).field_0x1[0] as u8) as i8))) {
+       if 4 <= a1 { // branch-flip
+-        if 0xc0 <= (*a0).field_0x3 {
++        if (0xc0 as i8) <= ((*a0).field_0x3 as i8) {
+           return CONCAT71(v2,*((*a0).field_0x1 as *mut i16) == 0x5c3a);
+         }
+       }
+
+--- before/alloc::fmt::format::format_inner
++++ after/alloc::fmt::format::format_inner
+@@ -34,7 +34,7 @@
+       v7 = a0;
+       loop {
+         v3 = (v3 as i64 + 1) as *mut u16;
+-        if b'\0' <= (v1 as u8) { // branch-flip
++        if (b'\0' as i8) <= ((v1 as u8) as i8) { // branch-flip
+           v8 += v1 as u64;
+           v3 = (v3 as i64 + v1 as u64) as *mut u16;
+         }
+
+--- before/core::fmt::write
++++ after/core::fmt::write
+@@ -28,7 +28,7 @@
+   v13 = 0;
+   loop {
+     v9 = (a2 as i64 + 1) as *mut u16;
+-    if b'\0' <= (v1 as u8) { // branch-flip
++    if (b'\0' as i8) <= ((v1 as u8) as i8) { // branch-flip
+       v4 = (*v3)(a0,v9,v1);
+       if v4 as u8 != b'\0' {
+         return CONCAT71(((v4 as u64) >> 8) as [u8; 7],1);
+
+--- before/core::fmt::Formatter::pad_integral
++++ after/core::fmt::Formatter::pad_integral
+@@ -31,8 +31,8 @@
+     }
+ // label_125e1:
+     v7 = 0;
+-    if (a3 != 0 && (v7 = (0xc0 <= *a2) as u64, a3 != 1)) {
+-      v7 += (0xc0 <= a2[1]) as u64;
++    if (a3 != 0 && (v7 = ((0xc0 as i8) <= (*a2 as i8)) as u64, a3 != 1)) {
++      v7 += ((0xc0 as i8) <= (a2[1] as i8)) as u64;
+     }
+     v8 += v7;
+     v12 = *((a0 as i64 + 0x14) as *mut u16);
+
+--- before/core::str::count::do_count_chars
++++ after/core::str::count::do_count_chars
+@@ -68,20 +68,20 @@
+       v38 = 0;
+       loop {
+         v1 = *((a0 + 2 + v7) as *mut u16);
+-        v19[0] = -(dat_4320 < (*((a0 + v7) as *mut u16) as u8));
+-        v30 = -(dat_4321 < (((*((a0 + v7) as *mut u16) as u16) >> 8) as u8));
+-        v19[0xf] = -(dat_4327 < b'\0');
+-        v19[0xe] = -(dat_4327 < b'\0');
+-        v19[0xd] = -(dat_4326 < b'\0');
+-        v19[0xc] = -(dat_4326 < b'\0');
+-        v19[0xb] = -(dat_4325 < b'\0');
+-        v19[10] = -(dat_4325 < b'\0');
+-        v19[9] = -(dat_4324 < b'\0');
+-        v19[8] = -(dat_4324 < b'\0');
+-        v19[7] = -(dat_4323 < b'\0');
+-        v19[6] = -(dat_4323 < b'\0');
+-        v19[5] = -(dat_4322 < b'\0');
+-        v19[4] = -(dat_4322 < b'\0');
++        v19[0] = -((dat_4320 as i8) < ((*((a0 + v7) as *mut u16) as u8) as i8));
++        v30 = -((dat_4321 as i8) < ((((*((a0 + v7) as *mut u16) as u16) >> 8) as u8) as i8));
++        v19[0xf] = -((dat_4327 as i8) < (b'\0' as i8));
++        v19[0xe] = -((dat_4327 as i8) < (b'\0' as i8));
++        v19[0xd] = -((dat_4326 as i8) < (b'\0' as i8));
++        v19[0xc] = -((dat_4326 as i8) < (b'\0' as i8));
++        v19[0xb] = -((dat_4325 as i8) < (b'\0' as i8));
++        v19[10] = -((dat_4325 as i8) < (b'\0' as i8));
++        v19[9] = -((dat_4324 as i8) < (b'\0' as i8));
++        v19[8] = -((dat_4324 as i8) < (b'\0' as i8));
++        v19[7] = -((dat_4323 as i8) < (b'\0' as i8));
++        v19[6] = -((dat_4323 as i8) < (b'\0' as i8));
++        v19[5] = -((dat_4322 as i8) < (b'\0' as i8));
++        v19[4] = -((dat_4322 as i8) < (b'\0' as i8));
+         v19[3] = v30;
+         v19[2] = v30;
+         v19[1] = v19[0];
+@@ -92,20 +92,20 @@
+         v24._0_16_ &= dat_4350;
+         v9 += SUB168(v24._0_16_,0);
+         v28 += SUB168(v24._0_16_,8);
+-        v32[0] = -(dat_4320 < (v1 as u8));
+-        v30 = -(dat_4321 < (((v1 as u16) >> 8) as u8));
+-        v32[0xf] = -(dat_4327 < b'\0');
+-        v32[0xe] = -(dat_4327 < b'\0');
+-        v32[0xd] = -(dat_4326 < b'\0');
+-        v32[0xc] = -(dat_4326 < b'\0');
+-        v32[0xb] = -(dat_4325 < b'\0');
+-        v32[10] = -(dat_4325 < b'\0');
+-        v32[9] = -(dat_4324 < b'\0');
+-        v32[8] = -(dat_4324 < b'\0');
+-        v32[7] = -(dat_4323 < b'\0');
+-        v32[6] = -(dat_4323 < b'\0');
+-        v32[5] = -(dat_4322 < b'\0');
+-        v32[4] = -(dat_4322 < b'\0');
++        v32[0] = -((dat_4320 as i8) < ((v1 as u8) as i8));
++        v30 = -((dat_4321 as i8) < ((((v1 as u16) >> 8) as u8) as i8));
++        v32[0xf] = -((dat_4327 as i8) < (b'\0' as i8));
++        v32[0xe] = -((dat_4327 as i8) < (b'\0' as i8));
++        v32[0xd] = -((dat_4326 as i8) < (b'\0' as i8));
++        v32[0xc] = -((dat_4326 as i8) < (b'\0' as i8));
++        v32[0xb] = -((dat_4325 as i8) < (b'\0' as i8));
++        v32[10] = -((dat_4325 as i8) < (b'\0' as i8));
++        v32[9] = -((dat_4324 as i8) < (b'\0' as i8));
++        v32[8] = -((dat_4324 as i8) < (b'\0' as i8));
++        v32[7] = -((dat_4323 as i8) < (b'\0' as i8));
++        v32[6] = -((dat_4323 as i8) < (b'\0' as i8));
++        v32[5] = -((dat_4322 as i8) < (b'\0' as i8));
++        v32[4] = -((dat_4322 as i8) < (b'\0' as i8));
+         v32[3] = v30;
+         v32[2] = v30;
+         v32[1] = v32[0];
+@@ -126,7 +126,7 @@
+     v11 = 0;
+     v9 = 0;
+     loop {
+-      v9 += (0xc0 <= *((a0 + v11) as *mut u8)) as u64;
++      v9 += ((0xc0 as i8) <= (*((a0 + v11) as *mut u8) as i8)) as u64;
+       v11 += 1;
+ // label_128e8:
+       if !(v8 != v11) {
+@@ -139,9 +139,9 @@
+   }
+   if v6 & 7 != 0 { // branch-flip
+     v7 = v6 & 0x7ffffffffffffff8;
+-    v8 = (0xc0 <= ((*v4)[v7] as u8)) as u64;
+-    if ((((v2 != 1 && (v8 = v8 + (0xc0 <= ((*v4)[v7 + 1] as u8)) as u64, v2 != 2)) && (v8 = v8 + (0xc0 <= ((*v4)[v7 + 2] as u8)) as u64, v2 != 3)) && ((v8 = v8 + (0xc0 <= ((*v4)[v7 + 3] as u8)) as u64, v2 != 4 && (v8 = v8 + (0xc0 <= ((*v4)[v7 + 4] as u8)) as u64, v2 != 5)))) && (v8 = v8 + (0xc0 <= ((*v4)[v7 + 5] as u8)) as u64, v2 != 6)) {
+-      v8 += (0xc0 <= ((*v4)[v7 + 6] as u8)) as u64;
++    v8 = ((0xc0 as i8) <= (((*v4)[v7] as u8) as i8)) as u64;
++    if ((((v2 != 1 && (v8 = v8 + ((0xc0 as i8) <= (((*v4)[v7 + 1] as u8) as i8)) as u64, v2 != 2)) && (v8 = v8 + ((0xc0 as i8) <= (((*v4)[v7 + 2] as u8) as i8)) as u64, v2 != 3)) && ((v8 = v8 + ((0xc0 as i8) <= (((*v4)[v7 + 3] as u8) as i8)) as u64, v2 != 4 && (v8 = v8 + ((0xc0 as i8) <= (((*v4)[v7 + 4] as u8) as i8)) as u64, v2 != 5)))) && (v8 = v8 + ((0xc0 as i8) <= (((*v4)[v7 + 5] as u8) as i8)) as u64, v2 != 6)) {
++      v8 += ((0xc0 as i8) <= (((*v4)[v7 + 6] as u8) as i8)) as u64;
+     }
+   }
+   else {
+
+--- before/core::unicode::printable::is_printable
++++ after/core::unicode::printable::is_printable
+@@ -69,7 +69,7 @@
+           loop {
+             v8 = (*((v7 + 0x7508) as *mut u8) as i8) as u32;
+             v3 = v7 + 1;
+-            if *((v7 + 0x7508) as *mut u8) < b'\0' {
++            if (*((v7 + 0x7508) as *mut u8) as i8) < (b'\0' as i8) {
+               if v7 + 1 == 0x1f8 {
+                 core::option::unwrap_failed(0x4e648); // no-return, return-dupe
+               }
+
+--- before/str::fmt
++++ after/str::fmt
+@@ -58,7 +58,7 @@
+           v1 = *((a0 + v10) as *mut u8);
+           v15 = v1 as u32;
+           v22 = v4;
+-          if (v1 as u8) < b'\0' {
++          if ((v1 as u8) as i8) < (b'\0' as i8) {
+             break;
+           }
+           a0 = a0 + v10 + 1;
+
+--- before/core::str::slice_error_fail_rt
++++ after/core::str::slice_error_fail_rt
+@@ -28,18 +28,18 @@
+   if 0x101 <= a1 { // branch-flip
+     v22 = 0x100;
+     loop {
+-      if 0xbf < a0[v22] {
++      if (0xbf as i8) < (a0[v22] as i8) {
+         /* kuna: unstructured goto to label_13944 */ panic!("kuna: unstructured goto to label_13944");
+       }
+-      if 0xbf < a0[v22 - 1] {
++      if (0xbf as i8) < (a0[v22 - 1] as i8) {
+         v22 -= 1;
+         /* kuna: unstructured goto to label_13944 */ panic!("kuna: unstructured goto to label_13944");
+       }
+-      if 0xbf < a0[v22 - 2] {
++      if (0xbf as i8) < (a0[v22 - 2] as i8) {
+         v22 -= 2;
+         /* kuna: unstructured goto to label_13944 */ panic!("kuna: unstructured goto to label_13944");
+       }
+-      if 0xbf < a0[v22 - 3] {
++      if (0xbf as i8) < (a0[v22 - 3] as i8) {
+         v22 -= 3;
+         /* kuna: unstructured goto to label_13944 */ panic!("kuna: unstructured goto to label_13944");
+       }
+@@ -78,13 +78,13 @@
+         v19 = fmt;
+         core::panicking::panic_fmt(0x6060,&mut v7,a4); // no-return
+       }
+-      if (a1 <= a2 || a2 == 0 || (v2 = a2, 0xc0 <= a0[a2])) {
++      if (a1 <= a2 || a2 == 0 || (v2 = a2, (0xc0 as i8) <= (a0[a2] as i8))) {
+         v2 = a3;
+       }
+       v4 = v2;
+       if v2 < a1 {
+         while v4 != 0 {
+-          if 0xbf < a0[v4] {
++          if (0xbf as i8) < (a0[v4] as i8) {
+             /* kuna: unstructured goto to label_139cd */ panic!("kuna: unstructured goto to label_139cd");
+           }
+           v4 -= 1;
+@@ -94,7 +94,7 @@
+         if v4 != a1 {
+           v1 = a0[v4];
+           v3 = v1 as u32;
+-          if b'\0' <= (v1 as u8) { // branch-flip
++          if (b'\0' as i8) <= ((v1 as u8) as i8) { // branch-flip
+             v11 = 1;
+           }
+           else {
+
+--- before/core::fmt::Formatter::pad
++++ after/core::fmt::Formatter::pad
+@@ -73,7 +73,7 @@
+             /* kuna: unstructured goto to label_13ecf */ panic!("kuna: unstructured goto to label_13ecf");
+           }
+           v1 = *v8;
+-          if b'\0' <= (v1 as u8) { // branch-flip
++          if (b'\0' as i8) <= ((v1 as u8) as i8) { // branch-flip
+             v12 = &mut v8[1];
+           }
+           else if 0xe0 <= v1 { // branch-flip
+@@ -111,27 +111,27 @@
+         v11 = a2 as u32 & 0x1c;
+         v8 = (v11 as u64) as *mut u8;
+         v24 = SUB161(dat_4320,0);
+-        v17[0] = -(v24 < (*(a1 as *mut u16) as u8));
++        v17[0] = -((v24 as i8) < ((*(a1 as *mut u16) as u8) as i8));
+         v26 = SUB161(dat_4320,1);
+-        v20 = -(v26 < (((*(a1 as *mut u16) as u16) >> 8) as u8));
++        v20 = -((v26 as i8) < ((((*(a1 as *mut u16) as u16) >> 8) as u8) as i8));
+         v27 = SUB161(dat_4320,2);
+         v28 = SUB161(dat_4320,3);
+         v29 = SUB161(dat_4320,4);
+         v30 = SUB161(dat_4320,5);
+         v31 = SUB161(dat_4320,6);
+         v32 = SUB161(dat_4320,7);
+-        v17[0xf] = -(v32 < b'\0');
+-        v17[0xe] = -(v32 < b'\0');
+-        v17[0xd] = -(v31 < b'\0');
+-        v17[0xc] = -(v31 < b'\0');
+-        v17[0xb] = -(v30 < b'\0');
+-        v17[10] = -(v30 < b'\0');
+-        v17[9] = -(v29 < b'\0');
+-        v17[8] = -(v29 < b'\0');
+-        v17[7] = -(v28 < b'\0');
+-        v17[6] = -(v28 < b'\0');
+-        v17[5] = -(v27 < b'\0');
+-        v17[4] = -(v27 < b'\0');
++        v17[0xf] = -((v32 as i8) < (b'\0' as i8));
++        v17[0xe] = -((v32 as i8) < (b'\0' as i8));
++        v17[0xd] = -((v31 as i8) < (b'\0' as i8));
++        v17[0xc] = -((v31 as i8) < (b'\0' as i8));
++        v17[0xb] = -((v30 as i8) < (b'\0' as i8));
++        v17[10] = -((v30 as i8) < (b'\0' as i8));
++        v17[9] = -((v29 as i8) < (b'\0' as i8));
++        v17[8] = -((v29 as i8) < (b'\0' as i8));
++        v17[7] = -((v28 as i8) < (b'\0' as i8));
++        v17[6] = -((v28 as i8) < (b'\0' as i8));
++        v17[5] = -((v27 as i8) < (b'\0' as i8));
++        v17[4] = -((v27 as i8) < (b'\0' as i8));
+         v17[3] = v20;
+         v17[2] = v20;
+         v17[1] = v17[0];
+@@ -140,20 +140,20 @@
+         v18._0_8_ = SUB168(v17._0_16_,0);
+         v18._8_4_ = SUB164(v17._0_16_,4);
+         v19._0_16_ = v18._0_16_ & dat_4350;
+-        v21[0] = -(v24 < (*(&mut a1[2] as *mut u16) as u8));
+-        v20 = -(v26 < (((*(&mut a1[2] as *mut u16) as u16) >> 8) as u8));
+-        v21[0xf] = -(v32 < b'\0');
+-        v21[0xe] = -(v32 < b'\0');
+-        v21[0xd] = -(v31 < b'\0');
+-        v21[0xc] = -(v31 < b'\0');
+-        v21[0xb] = -(v30 < b'\0');
+-        v21[10] = -(v30 < b'\0');
+-        v21[9] = -(v29 < b'\0');
+-        v21[8] = -(v29 < b'\0');
+-        v21[7] = -(v28 < b'\0');
+-        v21[6] = -(v28 < b'\0');
+-        v21[5] = -(v27 < b'\0');
+-        v21[4] = -(v27 < b'\0');
++        v21[0] = -((v24 as i8) < ((*(&mut a1[2] as *mut u16) as u8) as i8));
++        v20 = -((v26 as i8) < ((((*(&mut a1[2] as *mut u16) as u16) >> 8) as u8) as i8));
++        v21[0xf] = -((v32 as i8) < (b'\0' as i8));
++        v21[0xe] = -((v32 as i8) < (b'\0' as i8));
++        v21[0xd] = -((v31 as i8) < (b'\0' as i8));
++        v21[0xc] = -((v31 as i8) < (b'\0' as i8));
++        v21[0xb] = -((v30 as i8) < (b'\0' as i8));
++        v21[10] = -((v30 as i8) < (b'\0' as i8));
++        v21[9] = -((v29 as i8) < (b'\0' as i8));
++        v21[8] = -((v29 as i8) < (b'\0' as i8));
++        v21[7] = -((v28 as i8) < (b'\0' as i8));
++        v21[6] = -((v28 as i8) < (b'\0' as i8));
++        v21[5] = -((v27 as i8) < (b'\0' as i8));
++        v21[4] = -((v27 as i8) < (b'\0' as i8));
+         v21[3] = v20;
+         v21[2] = v20;
+         v21[1] = v21[0];
+@@ -163,20 +163,20 @@
+         v22._8_4_ = SUB164(v17._0_16_,4);
+         v23._0_16_ = v22._0_16_ & dat_4350;
+         if v8 != 0x4 as *mut u8 {
+-          v33[0] = -(v24 < (*(&mut a1[4] as *mut u16) as u8));
+-          v20 = -(v26 < (((*(&mut a1[4] as *mut u16) as u16) >> 8) as u8));
+-          v33[0xf] = -(v32 < b'\0');
+-          v33[0xe] = -(v32 < b'\0');
+-          v33[0xd] = -(v31 < b'\0');
+-          v33[0xc] = -(v31 < b'\0');
+-          v33[0xb] = -(v30 < b'\0');
+-          v33[10] = -(v30 < b'\0');
+-          v33[9] = -(v29 < b'\0');
+-          v33[8] = -(v29 < b'\0');
+-          v33[7] = -(v28 < b'\0');
+-          v33[6] = -(v28 < b'\0');
+-          v33[5] = -(v27 < b'\0');
+-          v33[4] = -(v27 < b'\0');
++          v33[0] = -((v24 as i8) < ((*(&mut a1[4] as *mut u16) as u8) as i8));
++          v20 = -((v26 as i8) < ((((*(&mut a1[4] as *mut u16) as u16) >> 8) as u8) as i8));
++          v33[0xf] = -((v32 as i8) < (b'\0' as i8));
++          v33[0xe] = -((v32 as i8) < (b'\0' as i8));
++          v33[0xd] = -((v31 as i8) < (b'\0' as i8));
++          v33[0xc] = -((v31 as i8) < (b'\0' as i8));
++          v33[0xb] = -((v30 as i8) < (b'\0' as i8));
++          v33[10] = -((v30 as i8) < (b'\0' as i8));
++          v33[9] = -((v29 as i8) < (b'\0' as i8));
++          v33[8] = -((v29 as i8) < (b'\0' as i8));
++          v33[7] = -((v28 as i8) < (b'\0' as i8));
++          v33[6] = -((v28 as i8) < (b'\0' as i8));
++          v33[5] = -((v27 as i8) < (b'\0' as i8));
++          v33[4] = -((v27 as i8) < (b'\0' as i8));
+           v33[3] = v20;
+           v33[2] = v20;
+           v33[1] = v33[0];
+@@ -184,20 +184,20 @@
+           v39._12_4_ = SUB164(v17._0_16_,0xc);
+           v39._0_8_ = SUB168(v17._0_16_,0);
+           v39._8_4_ = SUB164(v17._0_16_,4);
+-          v45[0] = -(v24 < (*(&mut a1[6] as *mut u16) as u8));
+-          v20 = -(v26 < (((*(&mut a1[6] as *mut u16) as u16) >> 8) as u8));
+-          v45[0xf] = -(v32 < b'\0');
+-          v45[0xe] = -(v32 < b'\0');
+-          v45[0xd] = -(v31 < b'\0');
+-          v45[0xc] = -(v31 < b'\0');
+-          v45[0xb] = -(v30 < b'\0');
+-          v45[10] = -(v30 < b'\0');
+-          v45[9] = -(v29 < b'\0');
+-          v45[8] = -(v29 < b'\0');
+-          v45[7] = -(v28 < b'\0');
+-          v45[6] = -(v28 < b'\0');
+-          v45[5] = -(v27 < b'\0');
+-          v45[4] = -(v27 < b'\0');
++          v45[0] = -((v24 as i8) < ((*(&mut a1[6] as *mut u16) as u8) as i8));
++          v20 = -((v26 as i8) < ((((*(&mut a1[6] as *mut u16) as u16) >> 8) as u8) as i8));
++          v45[0xf] = -((v32 as i8) < (b'\0' as i8));
++          v45[0xe] = -((v32 as i8) < (b'\0' as i8));
++          v45[0xd] = -((v31 as i8) < (b'\0' as i8));
++          v45[0xc] = -((v31 as i8) < (b'\0' as i8));
++          v45[0xb] = -((v30 as i8) < (b'\0' as i8));
++          v45[10] = -((v30 as i8) < (b'\0' as i8));
++          v45[9] = -((v29 as i8) < (b'\0' as i8));
++          v45[8] = -((v29 as i8) < (b'\0' as i8));
++          v45[7] = -((v28 as i8) < (b'\0' as i8));
++          v45[6] = -((v28 as i8) < (b'\0' as i8));
++          v45[5] = -((v27 as i8) < (b'\0' as i8));
++          v45[4] = -((v27 as i8) < (b'\0' as i8));
+           v45[3] = v20;
+           v45[2] = v20;
+           v45[1] = v45[0];
+@@ -210,20 +210,20 @@
+           v23._0_8_ = SUB168(v23._0_16_,0) + SUB168(v51._0_16_ & dat_4350,0);
+           v23._8_8_ = SUB168(v23._0_16_,8) + SUB168(v51._0_16_ & dat_4350,8);
+           if v11 != 8 {
+-            v34[0] = -(v24 < (*(&mut a1[8] as *mut u16) as u8));
+-            v20 = -(v26 < (((*(&mut a1[8] as *mut u16) as u16) >> 8) as u8));
+-            v34[0xf] = -(v32 < b'\0');
+-            v34[0xe] = -(v32 < b'\0');
+-            v34[0xd] = -(v31 < b'\0');
+-            v34[0xc] = -(v31 < b'\0');
+-            v34[0xb] = -(v30 < b'\0');
+-            v34[10] = -(v30 < b'\0');
+-            v34[9] = -(v29 < b'\0');
+-            v34[8] = -(v29 < b'\0');
+-            v34[7] = -(v28 < b'\0');
+-            v34[6] = -(v28 < b'\0');
+-            v34[5] = -(v27 < b'\0');
+-            v34[4] = -(v27 < b'\0');
++            v34[0] = -((v24 as i8) < ((*(&mut a1[8] as *mut u16) as u8) as i8));
++            v20 = -((v26 as i8) < ((((*(&mut a1[8] as *mut u16) as u16) >> 8) as u8) as i8));
++            v34[0xf] = -((v32 as i8) < (b'\0' as i8));
++            v34[0xe] = -((v32 as i8) < (b'\0' as i8));
++            v34[0xd] = -((v31 as i8) < (b'\0' as i8));
++            v34[0xc] = -((v31 as i8) < (b'\0' as i8));
++            v34[0xb] = -((v30 as i8) < (b'\0' as i8));
++            v34[10] = -((v30 as i8) < (b'\0' as i8));
++            v34[9] = -((v29 as i8) < (b'\0' as i8));
++            v34[8] = -((v29 as i8) < (b'\0' as i8));
++            v34[7] = -((v28 as i8) < (b'\0' as i8));
++            v34[6] = -((v28 as i8) < (b'\0' as i8));
++            v34[5] = -((v27 as i8) < (b'\0' as i8));
++            v34[4] = -((v27 as i8) < (b'\0' as i8));
+             v34[3] = v20;
+             v34[2] = v20;
+             v34[1] = v34[0];
+@@ -231,20 +231,20 @@
+             v40._12_4_ = SUB164(v17._0_16_,0xc);
+             v40._0_8_ = SUB168(v17._0_16_,0);
+             v40._8_4_ = SUB164(v17._0_16_,4);
+-            v46[0] = -(v24 < (*(&mut a1[10] as *mut u16) as u8));
+-            v20 = -(v26 < (((*(&mut a1[10] as *mut u16) as u16) >> 8) as u8));
+-            v46[0xf] = -(v32 < b'\0');
+-            v46[0xe] = -(v32 < b'\0');
+-            v46[0xd] = -(v31 < b'\0');
+-            v46[0xc] = -(v31 < b'\0');
+-            v46[0xb] = -(v30 < b'\0');
+-            v46[10] = -(v30 < b'\0');
+-            v46[9] = -(v29 < b'\0');
+-            v46[8] = -(v29 < b'\0');
+-            v46[7] = -(v28 < b'\0');
+-            v46[6] = -(v28 < b'\0');
+-            v46[5] = -(v27 < b'\0');
+-            v46[4] = -(v27 < b'\0');
++            v46[0] = -((v24 as i8) < ((*(&mut a1[10] as *mut u16) as u8) as i8));
++            v20 = -((v26 as i8) < ((((*(&mut a1[10] as *mut u16) as u16) >> 8) as u8) as i8));
++            v46[0xf] = -((v32 as i8) < (b'\0' as i8));
++            v46[0xe] = -((v32 as i8) < (b'\0' as i8));
++            v46[0xd] = -((v31 as i8) < (b'\0' as i8));
++            v46[0xc] = -((v31 as i8) < (b'\0' as i8));
++            v46[0xb] = -((v30 as i8) < (b'\0' as i8));
++            v46[10] = -((v30 as i8) < (b'\0' as i8));
++            v46[9] = -((v29 as i8) < (b'\0' as i8));
++            v46[8] = -((v29 as i8) < (b'\0' as i8));
++            v46[7] = -((v28 as i8) < (b'\0' as i8));
++            v46[6] = -((v28 as i8) < (b'\0' as i8));
++            v46[5] = -((v27 as i8) < (b'\0' as i8));
++            v46[4] = -((v27 as i8) < (b'\0' as i8));
+             v46[3] = v20;
+             v46[2] = v20;
+             v46[1] = v46[0];
+@@ -257,20 +257,20 @@
+             v23._0_8_ += SUB168(v52._0_16_ & dat_4350,0);
+             v23._8_8_ += SUB168(v52._0_16_ & dat_4350,8);
+             if v11 != 0xc {
+-              v35[0] = -(v24 < (*(&mut a1[0xc] as *mut u16) as u8));
+-              v20 = -(v26 < (((*(&mut a1[0xc] as *mut u16) as u16) >> 8) as u8));
+-              v35[0xf] = -(v32 < b'\0');
+-              v35[0xe] = -(v32 < b'\0');
+-              v35[0xd] = -(v31 < b'\0');
+-              v35[0xc] = -(v31 < b'\0');
+-              v35[0xb] = -(v30 < b'\0');
+-              v35[10] = -(v30 < b'\0');
+-              v35[9] = -(v29 < b'\0');
+-              v35[8] = -(v29 < b'\0');
+-              v35[7] = -(v28 < b'\0');
+-              v35[6] = -(v28 < b'\0');
+-              v35[5] = -(v27 < b'\0');
+-              v35[4] = -(v27 < b'\0');
++              v35[0] = -((v24 as i8) < ((*(&mut a1[0xc] as *mut u16) as u8) as i8));
++              v20 = -((v26 as i8) < ((((*(&mut a1[0xc] as *mut u16) as u16) >> 8) as u8) as i8));
++              v35[0xf] = -((v32 as i8) < (b'\0' as i8));
++              v35[0xe] = -((v32 as i8) < (b'\0' as i8));
++              v35[0xd] = -((v31 as i8) < (b'\0' as i8));
++              v35[0xc] = -((v31 as i8) < (b'\0' as i8));
++              v35[0xb] = -((v30 as i8) < (b'\0' as i8));
++              v35[10] = -((v30 as i8) < (b'\0' as i8));
++              v35[9] = -((v29 as i8) < (b'\0' as i8));
++              v35[8] = -((v29 as i8) < (b'\0' as i8));
++              v35[7] = -((v28 as i8) < (b'\0' as i8));
++              v35[6] = -((v28 as i8) < (b'\0' as i8));
++              v35[5] = -((v27 as i8) < (b'\0' as i8));
++              v35[4] = -((v27 as i8) < (b'\0' as i8));
+               v35[3] = v20;
+               v35[2] = v20;
+               v35[1] = v35[0];
+@@ -278,20 +278,20 @@
+               v41._12_4_ = SUB164(v17._0_16_,0xc);
+               v41._0_8_ = SUB168(v17._0_16_,0);
+               v41._8_4_ = SUB164(v17._0_16_,4);
+-              v47[0] = -(v24 < (*(&mut a1[0xe] as *mut u16) as u8));
+-              v20 = -(v26 < (((*(&mut a1[0xe] as *mut u16) as u16) >> 8) as u8));
+-              v47[0xf] = -(v32 < b'\0');
+-              v47[0xe] = -(v32 < b'\0');
+-              v47[0xd] = -(v31 < b'\0');
+-              v47[0xc] = -(v31 < b'\0');
+-              v47[0xb] = -(v30 < b'\0');
+-              v47[10] = -(v30 < b'\0');
+-              v47[9] = -(v29 < b'\0');
+-              v47[8] = -(v29 < b'\0');
+-              v47[7] = -(v28 < b'\0');
+-              v47[6] = -(v28 < b'\0');
+-              v47[5] = -(v27 < b'\0');
+-              v47[4] = -(v27 < b'\0');
++              v47[0] = -((v24 as i8) < ((*(&mut a1[0xe] as *mut u16) as u8) as i8));
++              v20 = -((v26 as i8) < ((((*(&mut a1[0xe] as *mut u16) as u16) >> 8) as u8) as i8));
++              v47[0xf] = -((v32 as i8) < (b'\0' as i8));
++              v47[0xe] = -((v32 as i8) < (b'\0' as i8));
++              v47[0xd] = -((v31 as i8) < (b'\0' as i8));
++              v47[0xc] = -((v31 as i8) < (b'\0' as i8));
++              v47[0xb] = -((v30 as i8) < (b'\0' as i8));
++              v47[10] = -((v30 as i8) < (b'\0' as i8));
++              v47[9] = -((v29 as i8) < (b'\0' as i8));
++              v47[8] = -((v29 as i8) < (b'\0' as i8));
++              v47[7] = -((v28 as i8) < (b'\0' as i8));
++              v47[6] = -((v28 as i8) < (b'\0' as i8));
++              v47[5] = -((v27 as i8) < (b'\0' as i8));
++              v47[4] = -((v27 as i8) < (b'\0' as i8));
+               v47[3] = v20;
+               v47[2] = v20;
+               v47[1] = v47[0];
+@@ -304,20 +304,20 @@
+               v23._0_8_ += SUB168(v53._0_16_ & dat_4350,0);
+               v23._8_8_ += SUB168(v53._0_16_ & dat_4350,8);
+               if v11 != 0x10 {
+-                v36[0] = -(v24 < (*(&mut a1[0x10] as *mut u16) as u8));
+-                v20 = -(v26 < (((*(&mut a1[0x10] as *mut u16) as u16) >> 8) as u8));
+-                v36[0xf] = -(v32 < b'\0');
+-                v36[0xe] = -(v32 < b'\0');
+-                v36[0xd] = -(v31 < b'\0');
+-                v36[0xc] = -(v31 < b'\0');
+-                v36[0xb] = -(v30 < b'\0');
+-                v36[10] = -(v30 < b'\0');
+-                v36[9] = -(v29 < b'\0');
+-                v36[8] = -(v29 < b'\0');
+-                v36[7] = -(v28 < b'\0');
+-                v36[6] = -(v28 < b'\0');
+-                v36[5] = -(v27 < b'\0');
+-                v36[4] = -(v27 < b'\0');
++                v36[0] = -((v24 as i8) < ((*(&mut a1[0x10] as *mut u16) as u8) as i8));
++                v20 = -((v26 as i8) < ((((*(&mut a1[0x10] as *mut u16) as u16) >> 8) as u8) as i8));
++                v36[0xf] = -((v32 as i8) < (b'\0' as i8));
++                v36[0xe] = -((v32 as i8) < (b'\0' as i8));
++                v36[0xd] = -((v31 as i8) < (b'\0' as i8));
++                v36[0xc] = -((v31 as i8) < (b'\0' as i8));
++                v36[0xb] = -((v30 as i8) < (b'\0' as i8));
++                v36[10] = -((v30 as i8) < (b'\0' as i8));
++                v36[9] = -((v29 as i8) < (b'\0' as i8));
++                v36[8] = -((v29 as i8) < (b'\0' as i8));
++                v36[7] = -((v28 as i8) < (b'\0' as i8));
++                v36[6] = -((v28 as i8) < (b'\0' as i8));
++                v36[5] = -((v27 as i8) < (b'\0' as i8));
++                v36[4] = -((v27 as i8) < (b'\0' as i8));
+                 v36[3] = v20;
+                 v36[2] = v20;
+                 v36[1] = v36[0];
+@@ -325,20 +325,20 @@
+                 v42._12_4_ = SUB164(v17._0_16_,0xc);
+                 v42._0_8_ = SUB168(v17._0_16_,0);
+                 v42._8_4_ = SUB164(v17._0_16_,4);
+-                v48[0] = -(v24 < (*(&mut a1[0x12] as *mut u16) as u8));
+-                v20 = -(v26 < (((*(&mut a1[0x12] as *mut u16) as u16) >> 8) as u8));
+-                v48[0xf] = -(v32 < b'\0');
+-                v48[0xe] = -(v32 < b'\0');
+-                v48[0xd] = -(v31 < b'\0');
+-                v48[0xc] = -(v31 < b'\0');
+-                v48[0xb] = -(v30 < b'\0');
+-                v48[10] = -(v30 < b'\0');
+-                v48[9] = -(v29 < b'\0');
+-                v48[8] = -(v29 < b'\0');
+-                v48[7] = -(v28 < b'\0');
+-                v48[6] = -(v28 < b'\0');
+-                v48[5] = -(v27 < b'\0');
+-                v48[4] = -(v27 < b'\0');
++                v48[0] = -((v24 as i8) < ((*(&mut a1[0x12] as *mut u16) as u8) as i8));
++                v20 = -((v26 as i8) < ((((*(&mut a1[0x12] as *mut u16) as u16) >> 8) as u8) as i8));
++                v48[0xf] = -((v32 as i8) < (b'\0' as i8));
++                v48[0xe] = -((v32 as i8) < (b'\0' as i8));
++                v48[0xd] = -((v31 as i8) < (b'\0' as i8));
++                v48[0xc] = -((v31 as i8) < (b'\0' as i8));
++                v48[0xb] = -((v30 as i8) < (b'\0' as i8));
++                v48[10] = -((v30 as i8) < (b'\0' as i8));
++                v48[9] = -((v29 as i8) < (b'\0' as i8));
++                v48[8] = -((v29 as i8) < (b'\0' as i8));
++                v48[7] = -((v28 as i8) < (b'\0' as i8));
++                v48[6] = -((v28 as i8) < (b'\0' as i8));
++                v48[5] = -((v27 as i8) < (b'\0' as i8));
++                v48[4] = -((v27 as i8) < (b'\0' as i8));
+                 v48[3] = v20;
+                 v48[2] = v20;
+                 v48[1] = v48[0];
+@@ -351,20 +351,20 @@
+                 v23._0_8_ += SUB168(v54._0_16_ & dat_4350,0);
+                 v23._8_8_ += SUB168(v54._0_16_ & dat_4350,8);
+                 if v11 != 0x14 {
+-                  v37[0] = -(v24 < (*(&mut a1[0x14] as *mut u16) as u8));
+-                  v20 = -(v26 < (((*(&mut a1[0x14] as *mut u16) as u16) >> 8) as u8));
+-                  v37[0xf] = -(v32 < b'\0');
+-                  v37[0xe] = -(v32 < b'\0');
+-                  v37[0xd] = -(v31 < b'\0');
+-                  v37[0xc] = -(v31 < b'\0');
+-                  v37[0xb] = -(v30 < b'\0');
+-                  v37[10] = -(v30 < b'\0');
+-                  v37[9] = -(v29 < b'\0');
+-                  v37[8] = -(v29 < b'\0');
+-                  v37[7] = -(v28 < b'\0');
+-                  v37[6] = -(v28 < b'\0');
+-                  v37[5] = -(v27 < b'\0');
+-                  v37[4] = -(v27 < b'\0');
++                  v37[0] = -((v24 as i8) < ((*(&mut a1[0x14] as *mut u16) as u8) as i8));
++                  v20 = -((v26 as i8) < ((((*(&mut a1[0x14] as *mut u16) as u16) >> 8) as u8) as i8));
++                  v37[0xf] = -((v32 as i8) < (b'\0' as i8));
++                  v37[0xe] = -((v32 as i8) < (b'\0' as i8));
++                  v37[0xd] = -((v31 as i8) < (b'\0' as i8));
++                  v37[0xc] = -((v31 as i8) < (b'\0' as i8));
++                  v37[0xb] = -((v30 as i8) < (b'\0' as i8));
++                  v37[10] = -((v30 as i8) < (b'\0' as i8));
++                  v37[9] = -((v29 as i8) < (b'\0' as i8));
++                  v37[8] = -((v29 as i8) < (b'\0' as i8));
++                  v37[7] = -((v28 as i8) < (b'\0' as i8));
++                  v37[6] = -((v28 as i8) < (b'\0' as i8));
++                  v37[5] = -((v27 as i8) < (b'\0' as i8));
++                  v37[4] = -((v27 as i8) < (b'\0' as i8));
+                   v37[3] = v20;
+                   v37[2] = v20;
+                   v37[1] = v37[0];
+@@ -372,20 +372,20 @@
+                   v43._12_4_ = SUB164(v17._0_16_,0xc);
+                   v43._0_8_ = SUB168(v17._0_16_,0);
+                   v43._8_4_ = SUB164(v17._0_16_,4);
+-                  v49[0] = -(v24 < (*(&mut a1[0x16] as *mut u16) as u8));
+-                  v20 = -(v26 < (((*(&mut a1[0x16] as *mut u16) as u16) >> 8) as u8));
+-                  v49[0xf] = -(v32 < b'\0');
+-                  v49[0xe] = -(v32 < b'\0');
+-                  v49[0xd] = -(v31 < b'\0');
+-                  v49[0xc] = -(v31 < b'\0');
+-                  v49[0xb] = -(v30 < b'\0');
+-                  v49[10] = -(v30 < b'\0');
+-                  v49[9] = -(v29 < b'\0');
+-                  v49[8] = -(v29 < b'\0');
+-                  v49[7] = -(v28 < b'\0');
+-                  v49[6] = -(v28 < b'\0');
+-                  v49[5] = -(v27 < b'\0');
+-                  v49[4] = -(v27 < b'\0');
++                  v49[0] = -((v24 as i8) < ((*(&mut a1[0x16] as *mut u16) as u8) as i8));
++                  v20 = -((v26 as i8) < ((((*(&mut a1[0x16] as *mut u16) as u16) >> 8) as u8) as i8));
++                  v49[0xf] = -((v32 as i8) < (b'\0' as i8));
++                  v49[0xe] = -((v32 as i8) < (b'\0' as i8));
++                  v49[0xd] = -((v31 as i8) < (b'\0' as i8));
++                  v49[0xc] = -((v31 as i8) < (b'\0' as i8));
++                  v49[0xb] = -((v30 as i8) < (b'\0' as i8));
++                  v49[10] = -((v30 as i8) < (b'\0' as i8));
++                  v49[9] = -((v29 as i8) < (b'\0' as i8));
++                  v49[8] = -((v29 as i8) < (b'\0' as i8));
++                  v49[7] = -((v28 as i8) < (b'\0' as i8));
++                  v49[6] = -((v28 as i8) < (b'\0' as i8));
++                  v49[5] = -((v27 as i8) < (b'\0' as i8));
++                  v49[4] = -((v27 as i8) < (b'\0' as i8));
+                   v49[3] = v20;
+                   v49[2] = v20;
+                   v49[1] = v49[0];
+@@ -398,20 +398,20 @@
+                   v23._0_8_ += SUB168(v55._0_16_ & dat_4350,0);
+                   v23._8_8_ += SUB168(v55._0_16_ & dat_4350,8);
+                   if v11 != 0x18 {
+-                    v38[0] = -(v24 < (*(&mut a1[0x18] as *mut u16) as u8));
+-                    v20 = -(v26 < (((*(&mut a1[0x18] as *mut u16) as u16) >> 8) as u8));
+-                    v38[0xf] = -(v32 < b'\0');
+-                    v38[0xe] = -(v32 < b'\0');
+-                    v38[0xd] = -(v31 < b'\0');
+-                    v38[0xc] = -(v31 < b'\0');
+-                    v38[0xb] = -(v30 < b'\0');
+-                    v38[10] = -(v30 < b'\0');
+-                    v38[9] = -(v29 < b'\0');
+-                    v38[8] = -(v29 < b'\0');
+-                    v38[7] = -(v28 < b'\0');
+-                    v38[6] = -(v28 < b'\0');
+-                    v38[5] = -(v27 < b'\0');
+-                    v38[4] = -(v27 < b'\0');
++                    v38[0] = -((v24 as i8) < ((*(&mut a1[0x18] as *mut u16) as u8) as i8));
++                    v20 = -((v26 as i8) < ((((*(&mut a1[0x18] as *mut u16) as u16) >> 8) as u8) as i8));
++                    v38[0xf] = -((v32 as i8) < (b'\0' as i8));
++                    v38[0xe] = -((v32 as i8) < (b'\0' as i8));
++                    v38[0xd] = -((v31 as i8) < (b'\0' as i8));
++                    v38[0xc] = -((v31 as i8) < (b'\0' as i8));
++                    v38[0xb] = -((v30 as i8) < (b'\0' as i8));
++                    v38[10] = -((v30 as i8) < (b'\0' as i8));
++                    v38[9] = -((v29 as i8) < (b'\0' as i8));
++                    v38[8] = -((v29 as i8) < (b'\0' as i8));
++                    v38[7] = -((v28 as i8) < (b'\0' as i8));
++                    v38[6] = -((v28 as i8) < (b'\0' as i8));
++                    v38[5] = -((v27 as i8) < (b'\0' as i8));
++                    v38[4] = -((v27 as i8) < (b'\0' as i8));
+                     v38[3] = v20;
+                     v38[2] = v20;
+                     v38[1] = v38[0];
+@@ -419,20 +419,20 @@
+                     v44._12_4_ = SUB164(v17._0_16_,0xc);
+                     v44._0_8_ = SUB168(v17._0_16_,0);
+                     v44._8_4_ = SUB164(v17._0_16_,4);
+-                    v50[0] = -(v24 < (*(&mut a1[0x1a] as *mut u16) as u8));
+-                    v20 = -(v26 < (((*(&mut a1[0x1a] as *mut u16) as u16) >> 8) as u8));
+-                    v50[0xf] = -(v32 < b'\0');
+-                    v50[0xe] = -(v32 < b'\0');
+-                    v50[0xd] = -(v31 < b'\0');
+-                    v50[0xc] = -(v31 < b'\0');
+-                    v50[0xb] = -(v30 < b'\0');
+-                    v50[10] = -(v30 < b'\0');
+-                    v50[9] = -(v29 < b'\0');
+-                    v50[8] = -(v29 < b'\0');
+-                    v50[7] = -(v28 < b'\0');
+-                    v50[6] = -(v28 < b'\0');
+-                    v50[5] = -(v27 < b'\0');
+-                    v50[4] = -(v27 < b'\0');
++                    v50[0] = -((v24 as i8) < ((*(&mut a1[0x1a] as *mut u16) as u8) as i8));
++                    v20 = -((v26 as i8) < ((((*(&mut a1[0x1a] as *mut u16) as u16) >> 8) as u8) as i8));
++                    v50[0xf] = -((v32 as i8) < (b'\0' as i8));
++                    v50[0xe] = -((v32 as i8) < (b'\0' as i8));
++                    v50[0xd] = -((v31 as i8) < (b'\0' as i8));
++                    v50[0xc] = -((v31 as i8) < (b'\0' as i8));
++                    v50[0xb] = -((v30 as i8) < (b'\0' as i8));
++                    v50[10] = -((v30 as i8) < (b'\0' as i8));
++                    v50[9] = -((v29 as i8) < (b'\0' as i8));
++                    v50[8] = -((v29 as i8) < (b'\0' as i8));
++                    v50[7] = -((v28 as i8) < (b'\0' as i8));
++                    v50[6] = -((v28 as i8) < (b'\0' as i8));
++                    v50[5] = -((v27 as i8) < (b'\0' as i8));
++                    v50[4] = -((v27 as i8) < (b'\0' as i8));
+                     v50[3] = v20;
+                     v50[2] = v20;
+                     v50[1] = v50[0];
+@@ -456,7 +456,7 @@
+       v8 = core::ptr::null_mut__;
+       v13 = 0;
+       loop {
+-        v13 += (0xc0 <= (a1[v8 as i64] as u8)) as u64;
++        v13 += ((0xc0 as i8) <= ((a1[v8 as i64] as u8) as i8)) as u64;
+         v8 = &mut v8[1];
+ // label_14113:
+         if !(a2 != v8) {
+
+--- before/core::str::converts::from_utf8
++++ after/core::str::converts::from_utf8
+@@ -22,7 +22,7 @@
+     loop {
+       v1 = *((a1 + v4) as *mut u8);
+       v8 = v1 as u64;
+-      if (v1 as u8) < b'\0' {
++      if ((v1 as u8) as i8) < (b'\0' as i8) {
+         v2 = (0x71d5 as *mut u8)[v8];
+         v9 = 1;
+         if v2 != 0x4 { // branch-flip
+@@ -35,7 +35,7 @@
+               /* kuna: unstructured goto to label_148e3 */ panic!("kuna: unstructured goto to label_148e3");
+             }
+             v7 = 1;
+-            if *((a1 + v10) as *mut u8) <= 0xbf {
++            if (*((a1 + v10) as *mut u8) as i8) <= (0xbf as i8) {
+ // label_14750:
+               v4 = v10 + 1;
+               /* kuna: unstructured goto to label_14756 */ panic!("kuna: unstructured goto to label_14756");
+@@ -48,17 +48,17 @@
+             v3 = *((a1 + v4 + 1) as *mut u8);
+             if v8 != 0xe0 { // branch-flip
+               if v1 != 0xed { // branch-flip
+-                if ((((v1 + 0x1f) as u8) < 0xc || (v8 = (v1 & 0xfe) as u64, v1 & 0xfe == 0xee)) && ((v3 as u8) <= 0xbf)) {
++                if ((((v1 + 0x1f) as u8) < 0xc || (v8 = (v1 & 0xfe) as u64, v1 & 0xfe == 0xee)) && (((v3 as u8) as i8) <= (0xbf as i8))) {
+                   /* kuna: unstructured goto to label_1488c */ panic!("kuna: unstructured goto to label_1488c");
+                 }
+               }
+-              else if (v3 as u8) <= 0x9f {
++              else if ((v3 as u8) as i8) <= (0x9f as i8) {
+ // label_1488c:
+                 v10 = v4 + 2;
+                 if a2 <= v10 {
+                   /* kuna: unstructured goto to label_148e3 */ panic!("kuna: unstructured goto to label_148e3");
+                 }
+-                if *((a1 + v10) as *mut u8) <= 0xbf {
++                if (*((a1 + v10) as *mut u8) as i8) <= (0xbf as i8) {
+                   /* kuna: unstructured goto to label_14750 */ panic!("kuna: unstructured goto to label_14750");
+                 }
+ // label_148ec:
+@@ -78,20 +78,20 @@
+             v2 = *((a1 + v4 + 1) as *mut u8);
+             if v8 != 0xf0 { // branch-flip
+               if v1 != 0xf4 { // branch-flip
+-                if (((v1 + 0xf) as u8) <= 2 && (v2 <= 0xbf)) {
++                if (((v1 + 0xf) as u8) <= 2 && ((v2 as i8) <= (0xbf as i8))) {
+                   /* kuna: unstructured goto to label_148b0 */ panic!("kuna: unstructured goto to label_148b0");
+                 }
+               }
+-              else if v2 <= 0x8f {
++              else if (v2 as i8) <= (0x8f as i8) {
+ // label_148b0:
+                 v8 = v4 + 2;
+                 if v8 < a2 {
+-                  if 0xbf < *((a1 + v8) as *mut u8) {
++                  if (0xbf as i8) < (*((a1 + v8) as *mut u8) as i8) {
+                     /* kuna: unstructured goto to label_148ec */ panic!("kuna: unstructured goto to label_148ec");
+                   }
+                   v10 = v4 + 3;
+                   if v10 < a2 {
+-                    if *((a1 + v10) as *mut u8) < 0xc0 {
++                    if (*((a1 + v10) as *mut u8) as i8) < (0xc0 as i8) {
+                       /* kuna: unstructured goto to label_14750 */ panic!("kuna: unstructured goto to label_14750");
+                     }
+                     v7 = 3;
+@@ -127,7 +127,7 @@
+           v4 += 0x10;
+         }
+         if v4 < a2 {
+-          while b'\0' <= *((a1 + v4) as *mut u8) {
++          while (b'\0' as i8) <= (*((a1 + v4) as *mut u8) as i8) {
+             v4 += 1;
+             if a2 == v4 {
+               /* kuna: unstructured goto to label_148d7 */ panic!("kuna: unstructured goto to label_148d7");
+
+--- before/core::str::lossy::{impl#4}::next
++++ after/core::str::lossy::{impl#4}::next
+@@ -22,7 +22,7 @@
+   loop {
+     v1 = *((v5 + v6) as *mut u8);
+     v7 = v6 + 1;
+-    if (v1 as u8) <= 0xff {
++    if ((v1 as u8) as i8) <= (0xff as i8) {
+       v2 = (0x71d5 as *mut u8)[v1 as u64];
+       if v2 != 0x4 { // branch-flip
+         if v2 != 0x3 { // branch-flip
+@@ -33,7 +33,7 @@
+           if v4 <= v7 {
+             v9 = __;
+           }
+-          if 0xc0 <= *v9 {
++          if (0xc0 as i8) <= (*v9 as i8) {
+             break;
+           }
+           v7 = v6 + 2;
+@@ -46,11 +46,11 @@
+           v3 = *v8;
+           if v1 != 0xe0 { // branch-flip
+             if v1 != 0xed { // branch-flip
+-              if ((0xc <= ((v1 + 0x1f) as u8) && (v1 & 0xfe != 0xee)) || (0xc0 <= (v3 as u8))) {
++              if ((0xc <= ((v1 + 0x1f) as u8) && (v1 & 0xfe != 0xee)) || ((0xc0 as i8) <= ((v3 as u8) as i8))) {
+                 break;
+               }
+             }
+-            else if 0xa0 <= (v3 as u8) {
++            else if (0xa0 as i8) <= ((v3 as u8) as i8) {
+               break;
+             }
+           }
+@@ -62,7 +62,7 @@
+           if v4 <= v7 {
+             v9 = __;
+           }
+-          if 0xc0 <= *v9 {
++          if (0xc0 as i8) <= (*v9 as i8) {
+             break;
+           }
+           v7 = v6 + 3;
+@@ -76,11 +76,11 @@
+         v2 = *v9;
+         if v1 != 0xf0 { // branch-flip
+           if v1 != 0xf4 { // branch-flip
+-            if (2 < ((v1 + 0xf) as u8) || (0xc0 <= v2)) {
++            if (2 < ((v1 + 0xf) as u8) || ((0xc0 as i8) <= (v2 as i8))) {
+               break;
+             }
+           }
+-          else if 0x90 <= v2 {
++          else if (0x90 as i8) <= (v2 as i8) {
+             break;
+           }
+         }
+@@ -92,7 +92,7 @@
+         if v4 <= v7 {
+           v9 = __;
+         }
+-        if 0xbf < *v9 {
++        if (0xbf as i8) < (*v9 as i8) {
+           break;
+         }
+         v7 = v6 + 3;
+@@ -100,7 +100,7 @@
+         if v4 <= v7 {
+           v9 = __;
+         }
+-        if 0xc0 <= *v9 {
++        if (0xc0 as i8) <= (*v9 as i8) {
+           break;
+         }
+         v7 = v6 + 4;
+
+--- before/core::str::lossy::Debug::fmt
++++ after/core::str::lossy::Debug::fmt
+@@ -67,7 +67,7 @@
+         loop {
+           v2 = *v17;
+           v9 = (v2 as u64) as *mut u8;
+-          if b'\0' <= (v2 as u8) { // branch-flip
++          if (b'\0' as i8) <= ((v2 as u8) as i8) { // branch-flip
+             v35 = &mut v17[1];
+           }
+           else if 0xe0 <= v2 { // branch-flip
+
+--- before/memchr::arch::x86_64::memchr::memchr_raw::detect
++++ after/memchr::arch::x86_64::memchr::memchr_raw::detect
+@@ -150,7 +150,7 @@
+           v28[0xe] = -(a1[0x3e] == v8);
+           v28[0xf] = -(a1[0x3f] == v9);
+           v23._0_16_ = v30._0_16_ | v28._0_16_ | v32._0_16_ | v31._0_16_;
+-          if ((((((((((((((SUB161(v23._0_16_ >> 7,0) & 1 != 0 || SUB161(v23._0_16_ >> 0xf,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x17,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x1f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x27,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x2f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x37,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x3f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x47,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x4f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x57,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x5f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x67,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x6f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x77,0) & 1 != 0) || SUB161(v23._0_16_,0xf) < b'\0' {
++          if ((((((((((((((SUB161(v23._0_16_ >> 7,0) & 1 != 0 || SUB161(v23._0_16_ >> 0xf,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x17,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x1f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x27,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x2f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x37,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x3f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x47,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x4f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x57,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x5f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x67,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x6f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x77,0) & 1 != 0) || (SUB161(v23._0_16_,0xf) as i8) < (b'\0' as i8) {
+             v13 = (((SUB161(v32._0_16_ >> 7,0) & 1) as u16 | ((SUB161(v32._0_16_ >> 0xf,0) & 1) as u16) << 1 | ((SUB161(v32._0_16_ >> 0x17,0) & 1) as u16) << 2 | ((SUB161(v32._0_16_ >> 0x1f,0) & 1) as u16) << 3 | ((SUB161(v32._0_16_ >> 0x27,0) & 1) as u16) << 4 | ((SUB161(v32._0_16_ >> 0x2f,0) & 1) as u16) << 5 | ((SUB161(v32._0_16_ >> 0x37,0) & 1) as u16) << 6 | ((SUB161(v32._0_16_ >> 0x3f,0) & 1) as u16) << 7 | ((SUB161(v32._0_16_ >> 0x47,0) & 1) as u16) << 8 | ((SUB161(v32._0_16_ >> 0x4f,0) & 1) as u16) << 9 | ((SUB161(v32._0_16_ >> 0x57,0) & 1) as u16) << 10 | ((SUB161(v32._0_16_ >> 0x5f,0) & 1) as u16) << 0xb | ((SUB161(v32._0_16_ >> 0x67,0) & 1) as u16) << 0xc | ((SUB161(v32._0_16_ >> 0x6f,0) & 1) as u16) << 0xd | ((SUB161(v32._0_16_ >> 0x77,0) & 1) as u16) << 0xe | ((v32[0xf] >> 7) as u16) << 0xf) as u16) as u32;
+             if v13 == 0 {
+               v1 = (SUB161(v31._0_16_ >> 7,0) & 1) as u16 | ((SUB161(v31._0_16_ >> 0xf,0) & 1) as u16) << 1 | ((SUB161(v31._0_16_ >> 0x17,0) & 1) as u16) << 2 | ((SUB161(v31._0_16_ >> 0x1f,0) & 1) as u16) << 3 | ((SUB161(v31._0_16_ >> 0x27,0) & 1) as u16) << 4 | ((SUB161(v31._0_16_ >> 0x2f,0) & 1) as u16) << 5 | ((SUB161(v31._0_16_ >> 0x37,0) & 1) as u16) << 6 | ((SUB161(v31._0_16_ >> 0x3f,0) & 1) as u16) << 7 | ((SUB161(v31._0_16_ >> 0x47,0) & 1) as u16) << 8 | ((SUB161(v31._0_16_ >> 0x4f,0) & 1) as u16) << 9 | ((SUB161(v31._0_16_ >> 0x57,0) & 1) as u16) << 10 | ((SUB161(v31._0_16_ >> 0x5f,0) & 1) as u16) << 0xb | ((SUB161(v31._0_16_ >> 0x67,0) & 1) as u16) << 0xc | ((SUB161(v31._0_16_ >> 0x6f,0) & 1) as u16) << 0xd | ((SUB161(v31._0_16_ >> 0x77,0) & 1) as u16) << 0xe | ((v31[0xf] >> 7) as u16) << 0xf;
+
+--- before/memchr::arch::x86_64::memchr::memchr_raw::find_sse2
++++ after/memchr::arch::x86_64::memchr::memchr_raw::find_sse2
+@@ -149,7 +149,7 @@
+           v28[0xe] = -(a1[0x3e] == v8);
+           v28[0xf] = -(a1[0x3f] == v9);
+           v23._0_16_ = v30._0_16_ | v28._0_16_ | v32._0_16_ | v31._0_16_;
+-          if ((((((((((((((SUB161(v23._0_16_ >> 7,0) & 1 != 0 || SUB161(v23._0_16_ >> 0xf,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x17,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x1f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x27,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x2f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x37,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x3f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x47,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x4f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x57,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x5f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x67,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x6f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x77,0) & 1 != 0) || SUB161(v23._0_16_,0xf) < b'\0' {
++          if ((((((((((((((SUB161(v23._0_16_ >> 7,0) & 1 != 0 || SUB161(v23._0_16_ >> 0xf,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x17,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x1f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x27,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x2f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x37,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x3f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x47,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x4f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x57,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x5f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x67,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x6f,0) & 1 != 0) || SUB161(v23._0_16_ >> 0x77,0) & 1 != 0) || (SUB161(v23._0_16_,0xf) as i8) < (b'\0' as i8) {
+             v13 = (((SUB161(v32._0_16_ >> 7,0) & 1) as u16 | ((SUB161(v32._0_16_ >> 0xf,0) & 1) as u16) << 1 | ((SUB161(v32._0_16_ >> 0x17,0) & 1) as u16) << 2 | ((SUB161(v32._0_16_ >> 0x1f,0) & 1) as u16) << 3 | ((SUB161(v32._0_16_ >> 0x27,0) & 1) as u16) << 4 | ((SUB161(v32._0_16_ >> 0x2f,0) & 1) as u16) << 5 | ((SUB161(v32._0_16_ >> 0x37,0) & 1) as u16) << 6 | ((SUB161(v32._0_16_ >> 0x3f,0) & 1) as u16) << 7 | ((SUB161(v32._0_16_ >> 0x47,0) & 1) as u16) << 8 | ((SUB161(v32._0_16_ >> 0x4f,0) & 1) as u16) << 9 | ((SUB161(v32._0_16_ >> 0x57,0) & 1) as u16) << 10 | ((SUB161(v32._0_16_ >> 0x5f,0) & 1) as u16) << 0xb | ((SUB161(v32._0_16_ >> 0x67,0) & 1) as u16) << 0xc | ((SUB161(v32._0_16_ >> 0x6f,0) & 1) as u16) << 0xd | ((SUB161(v32._0_16_ >> 0x77,0) & 1) as u16) << 0xe | ((v32[0xf] >> 7) as u16) << 0xf) as u16) as u32;
+             if v13 == 0 {
+               v1 = (SUB161(v31._0_16_ >> 7,0) & 1) as u16 | ((SUB161(v31._0_16_ >> 0xf,0) & 1) as u16) << 1 | ((SUB161(v31._0_16_ >> 0x17,0) & 1) as u16) << 2 | ((SUB161(v31._0_16_ >> 0x1f,0) & 1) as u16) << 3 | ((SUB161(v31._0_16_ >> 0x27,0) & 1) as u16) << 4 | ((SUB161(v31._0_16_ >> 0x2f,0) & 1) as u16) << 5 | ((SUB161(v31._0_16_ >> 0x37,0) & 1) as u16) << 6 | ((SUB161(v31._0_16_ >> 0x3f,0) & 1) as u16) << 7 | ((SUB161(v31._0_16_ >> 0x47,0) & 1) as u16) << 8 | ((SUB161(v31._0_16_ >> 0x4f,0) & 1) as u16) << 9 | ((SUB161(v31._0_16_ >> 0x57,0) & 1) as u16) << 10 | ((SUB161(v31._0_16_ >> 0x5f,0) & 1) as u16) << 0xb | ((SUB161(v31._0_16_ >> 0x67,0) & 1) as u16) << 0xc | ((SUB161(v31._0_16_ >> 0x6f,0) & 1) as u16) << 0xd | ((SUB161(v31._0_16_ >> 0x77,0) & 1) as u16) << 0xe | ((v31[0xf] >> 7) as u16) << 0xf;
+
+--- before/miniz_oxide::inflate::core::decompress
++++ after/miniz_oxide::inflate::core::decompress
+@@ -571,7 +571,7 @@
+         *((v21 + 0x28dc) as *mut u64) = CONCAT44(v43,v42);
+         *((v21 + 0x28f0) as *mut u8) = v44;
+         *((v21 + 0x28c0) as *mut u64) = !(-1 << (v41 as u8 & 0x3f)) & v12;
+-        if b'\0' <= v10 {
++        if (b'\0' as i8) <= (v10 as i8) {
+           if a5 < v17 {
+             core::slice::index::slice_index_fail(0,v17,a5,0x4e7b0); // no-return
+           }
+
+--- before/rustc_demangle::try_demangle
++++ after/rustc_demangle::try_demangle
+@@ -167,7 +167,7 @@
+       }
+       v15 = *v13;
+       v17 = v15 as u32;
+-      if b'\0' <= (v15 as u8) { // branch-flip
++      if (b'\0' as i8) <= ((v15 as u8) as i8) { // branch-flip
+         v13 = &mut v13[1];
+       }
+       else {
+@@ -199,7 +199,7 @@
+       }
+       v15 = *v13;
+       v17 = v15 as u32;
+-      if b'\0' <= (v15 as u8) { // branch-flip
++      if (b'\0' as i8) <= ((v15 as u8) as i8) { // branch-flip
+         v13 = &mut v13[1];
+       }
+       else {
+@@ -243,7 +243,7 @@
+       v15 = 0x2e;
+       v14 = v13;
+       loop {
+-        if b'\0' <= (v15 as u8) { // branch-flip
++        if (b'\0' as i8) <= ((v15 as u8) as i8) { // branch-flip
+           v14 = &mut v14[1];
+           v17 = v15 as u32;
+         }
+@@ -303,7 +303,7 @@
+         core::str::slice_error_fail(a1,a2,v12,a2,v21); // return-dupe, no-return
+       }
+     }
+-    else if *((a1 as i64 + v12) as *mut u8) <= 0xbf {
++    else if (*((a1 as i64 + v12) as *mut u8) as i8) <= (0xbf as i8) {
+       v21 = 0x4eca8;
+       core::str::slice_error_fail(a1,a2,v12,a2,v21);
+     }
+@@ -323,7 +323,7 @@
+     }
+     v15 = *v14;
+     v17 = v15 as u32;
+-    if b'\0' <= (v15 as u8) { // branch-flip
++    if (b'\0' as i8) <= ((v15 as u8) as i8) { // branch-flip
+       v14 = &mut v14[1];
+     }
+     else {
+@@ -355,7 +355,7 @@
+   if 3 <= a2 { // branch-flip
+     if *((a1 as i64 + 2) as *mut u8) != b'N' || *(a1 as *mut i16) != 0x5a5f { // branch-flip
+       if *(a1 as *mut i16) == 0x4e5a {
+-        if *((a1 as i64 + 2) as *mut u8) <= 0xbf {
++        if (*((a1 as i64 + 2) as *mut u8) as i8) <= (0xbf as i8) {
+           v21 = 0x4ec78;
+           v12 = 2;
+           core::str::slice_error_fail(a1,a2,v12,a2,v21);
+@@ -370,7 +370,7 @@
+           v19 = -4;
+           v10 = 4;
+           if 5 <= a2 { // branch-flip
+-            if *(&mut a1[1] as *mut u8) <= 0xbf {
++            if (*(&mut a1[1] as *mut u8) as i8) <= (0xbf as i8) {
+               v21 = 0x4ec60;
+               v12 = 4;
+               core::str::slice_error_fail(a1,a2,v12,a2,v21);
+@@ -388,7 +388,7 @@
+       v19 = -3;
+       v10 = 3;
+       if a2 != 3 { // branch-flip
+-        if *((a1 as i64 + 3) as *mut u8) <= 0xbf {
++        if (*((a1 as i64 + 3) as *mut u8) as i8) <= (0xbf as i8) {
+           v21 = 0x4ec90;
+           v12 = 3;
+           core::str::slice_error_fail(a1,a2,v12,a2,v21);
+@@ -407,7 +407,7 @@
+           if v20 != core::ptr::null_mut__ {
+             v15 = *v11;
+             v17 = v15 as u32;
+-            if b'\0' <= (v15 as u8) { // branch-flip
++            if (b'\0' as i8) <= ((v15 as u8) as i8) { // branch-flip
+               v13 = &mut v11[1];
+             }
+             else if 0xe0 <= v15 { // branch-flip
+@@ -438,7 +438,7 @@
+         }
+         v13 = &mut v11[v5 as i64];
+         v5 = (v5 as i64 + 1) as *mut i16;
+-        if !(b'\0' <= (*v13 as u8)) {
++        if !((b'\0' as i8) <= ((*v13 as u8) as i8)) {
+           break;
+         }
+       }
+@@ -457,7 +457,7 @@
+         /* kuna: unstructured goto to label_19f93 */ panic!("kuna: unstructured goto to label_19f93");
+       }
+       v4 = *((a1 as i64 + 3) as *mut u8);
+-      if v4 <= 0xbf {
++      if (v4 as i8) <= (0xbf as i8) {
+         v21 = 0x4ebd0;
+         v18 = 3;
+         core::str::slice_error_fail(a1,v12,v18,v12,v21); // return-dupe, no-return
+@@ -467,7 +467,7 @@
+     }
+     else {
+       v4 = *((a1 as i64 + 2) as *mut u8);
+-      if v4 <= 0xbf {
++      if (v4 as i8) <= (0xbf as i8) {
+         v21 = 0x4ec00;
+         v18 = 2;
+         core::str::slice_error_fail(a1,v12,v18,v12,v21);
+@@ -495,7 +495,7 @@
+     }
+ // label_19b65:
+     v4 = *((a1 as i64 + 1) as *mut u8);
+-    if v4 <= 0xbf {
++    if (v4 as i8) <= (0xbf as i8) {
+       v21 = 0x4ebe8;
+       v18 = 1;
+       core::str::slice_error_fail(a1,v12,v18,v12,v21);
+@@ -539,7 +539,7 @@
+       }
+       v2 = (v20 as i64 + v6) as *mut u8;
+       v6 += 1;
+-      if !(b'\0' <= *v2) {
++      if !((b'\0' as i8) <= (*v2 as i8)) {
+         break;
+       }
+     }
+
+--- before/core::str::pattern::StrSearcher::next
++++ after/core::str::pattern::StrSearcher::next
+@@ -29,7 +29,7 @@
+       if v4 != (*a1).field_0x50 { // branch-flip
+         v3 = *((v8 + v4) as *mut u8);
+         v14 = v3 as u32;
+-        if (v3 as u8) <= 0xff {
++        if ((v3 as u8) as i8) <= (0xff as i8) {
+           v14 = *((v8 + v4 + 1) as *mut u8) as u32 & 0x3f;
+           if 0xe0 <= v3 { // branch-flip
+             v14 = *((v8 + v4 + 2) as *mut u8) as u32 & 0x3f | v14 << 6;
+@@ -186,7 +186,7 @@
+         /* kuna: unstructured goto to label_1a349 */ panic!("kuna: unstructured goto to label_1a349");
+       }
+     }
+-    else if 0xc0 <= *((v8 + v15) as *mut u8) {
++    else if (0xc0 as i8) <= (*((v8 + v15) as *mut u8) as i8) {
+       v7 = v15;
+       /* kuna: unstructured goto to label_1a349 */ panic!("kuna: unstructured goto to label_1a349");
+     }
+
+--- before/rustc_demangle::v0::Ident::fmt
++++ after/rustc_demangle::v0::Ident::fmt
+@@ -53,7 +53,7 @@
+       loop {
+         v5 = *v12;
+         v7 = v5 as u32;
+-        if b'\0' <= (v5 as u8) { // branch-flip
++        if (b'\0' as i8) <= ((v5 as u8) as i8) { // branch-flip
+           v12 = &mut v12[1];
+         }
+         else {
+
+--- before/rustc_demangle::v0::HexNibbles::try_parse_uint
++++ after/rustc_demangle::v0::HexNibbles::try_parse_uint
+@@ -31,7 +31,7 @@
+     loop {
+       v2 = *v3;
+       v8 = v2 as u32;
+-      if b'\0' <= (v2 as u8) { // branch-flip
++      if (b'\0' as i8) <= ((v2 as u8) as i8) { // branch-flip
+         v3 = &mut v3[1];
+       }
+       else {
+
+--- before/core::iter::sources::from_fn::FromFn::next
++++ after/core::iter::sources::from_fn::FromFn::next
+@@ -49,7 +49,7 @@
+     }
+     if v15 <= 0xf {
+       v7 = v15 as u8 | (v13 as u8) << 4;
+-      if b'\0' <= (v7 as u8) { // branch-flip
++      if (b'\0' as i8) <= ((v7 as u8) as i8) { // branch-flip
+         v8[0] = 0;
+         v8[1] = 0;
+         v8[2] = 0;
+@@ -114,7 +114,7 @@
+       if v17 != core::ptr::null_mut__ {
+         v1 = *v16 as u8;
+         v13 = v1 as u32;
+-        if b'\0' <= (v1 as u8) { // branch-flip
++        if (b'\0' as i8) <= ((v1 as u8) as i8) { // branch-flip
+           v5 = &mut v16[1] as *mut u8;
+         }
+         else if 0xe0 <= v1 { // branch-flip
+
+--- before/core::str::iter::Chars::count
++++ after/core::str::iter::Chars::count
+@@ -60,7 +60,7 @@
+       v7 = 0;
+       v3 = 0;
+       loop {
+-        v3 += (0xc0 <= *((a0 + v7) as *mut u8)) as u64;
++        v3 += ((0xc0 as i8) <= (*((a0 + v7) as *mut u8) as i8)) as u64;
+         v7 += 1;
+         if !(v8 != v7) {
+           break;
+@@ -84,20 +84,20 @@
+       v38 = 0;
+       loop {
+         v1 = *((a0 + 2 + v9) as *mut u16);
+-        v19[0] = -(dat_4320 < (*((a0 + v9) as *mut u16) as u8));
+-        v30 = -(dat_4321 < (((*((a0 + v9) as *mut u16) as u16) >> 8) as u8));
+-        v19[0xf] = -(dat_4327 < b'\0');
+-        v19[0xe] = -(dat_4327 < b'\0');
+-        v19[0xd] = -(dat_4326 < b'\0');
+-        v19[0xc] = -(dat_4326 < b'\0');
+-        v19[0xb] = -(dat_4325 < b'\0');
+-        v19[10] = -(dat_4325 < b'\0');
+-        v19[9] = -(dat_4324 < b'\0');
+-        v19[8] = -(dat_4324 < b'\0');
+-        v19[7] = -(dat_4323 < b'\0');
+-        v19[6] = -(dat_4323 < b'\0');
+-        v19[5] = -(dat_4322 < b'\0');
+-        v19[4] = -(dat_4322 < b'\0');
++        v19[0] = -((dat_4320 as i8) < ((*((a0 + v9) as *mut u16) as u8) as i8));
++        v30 = -((dat_4321 as i8) < ((((*((a0 + v9) as *mut u16) as u16) >> 8) as u8) as i8));
++        v19[0xf] = -((dat_4327 as i8) < (b'\0' as i8));
++        v19[0xe] = -((dat_4327 as i8) < (b'\0' as i8));
++        v19[0xd] = -((dat_4326 as i8) < (b'\0' as i8));
++        v19[0xc] = -((dat_4326 as i8) < (b'\0' as i8));
++        v19[0xb] = -((dat_4325 as i8) < (b'\0' as i8));
++        v19[10] = -((dat_4325 as i8) < (b'\0' as i8));
++        v19[9] = -((dat_4324 as i8) < (b'\0' as i8));
++        v19[8] = -((dat_4324 as i8) < (b'\0' as i8));
++        v19[7] = -((dat_4323 as i8) < (b'\0' as i8));
++        v19[6] = -((dat_4323 as i8) < (b'\0' as i8));
++        v19[5] = -((dat_4322 as i8) < (b'\0' as i8));
++        v19[4] = -((dat_4322 as i8) < (b'\0' as i8));
+         v19[3] = v30;
+         v19[2] = v30;
+         v19[1] = v19[0];
+@@ -108,20 +108,20 @@
+         v24._0_16_ &= dat_4350;
+         v3 += SUB168(v24._0_16_,0);
+         v28 += SUB168(v24._0_16_,8);
+-        v32[0] = -(dat_4320 < (v1 as u8));
+-        v30 = -(dat_4321 < (((v1 as u16) >> 8) as u8));
+-        v32[0xf] = -(dat_4327 < b'\0');
+-        v32[0xe] = -(dat_4327 < b'\0');
+-        v32[0xd] = -(dat_4326 < b'\0');
+-        v32[0xc] = -(dat_4326 < b'\0');
+-        v32[0xb] = -(dat_4325 < b'\0');
+-        v32[10] = -(dat_4325 < b'\0');
+-        v32[9] = -(dat_4324 < b'\0');
+-        v32[8] = -(dat_4324 < b'\0');
+-        v32[7] = -(dat_4323 < b'\0');
+-        v32[6] = -(dat_4323 < b'\0');
+-        v32[5] = -(dat_4322 < b'\0');
+-        v32[4] = -(dat_4322 < b'\0');
++        v32[0] = -((dat_4320 as i8) < ((v1 as u8) as i8));
++        v30 = -((dat_4321 as i8) < ((((v1 as u16) >> 8) as u8) as i8));
++        v32[0xf] = -((dat_4327 as i8) < (b'\0' as i8));
++        v32[0xe] = -((dat_4327 as i8) < (b'\0' as i8));
++        v32[0xd] = -((dat_4326 as i8) < (b'\0' as i8));
++        v32[0xc] = -((dat_4326 as i8) < (b'\0' as i8));
++        v32[0xb] = -((dat_4325 as i8) < (b'\0' as i8));
++        v32[10] = -((dat_4325 as i8) < (b'\0' as i8));
++        v32[9] = -((dat_4324 as i8) < (b'\0' as i8));
++        v32[8] = -((dat_4324 as i8) < (b'\0' as i8));
++        v32[7] = -((dat_4323 as i8) < (b'\0' as i8));
++        v32[6] = -((dat_4323 as i8) < (b'\0' as i8));
++        v32[5] = -((dat_4322 as i8) < (b'\0' as i8));
++        v32[4] = -((dat_4322 as i8) < (b'\0' as i8));
+         v32[3] = v30;
+         v32[2] = v30;
+         v32[1] = v32[0];
+@@ -142,7 +142,7 @@
+     v11 = 0;
+     v3 = 0;
+     loop {
+-      v3 += (0xc0 <= *((a0 + v11) as *mut u8)) as u64;
++      v3 += ((0xc0 as i8) <= (*((a0 + v11) as *mut u8) as i8)) as u64;
+       v11 += 1;
+ // label_128e8:
+       if !(v7 != v11) {
+@@ -155,9 +155,9 @@
+   }
+   if v8 & 7 != 0 { // branch-flip
+     v9 = v8 & 0x7ffffffffffffff8;
+-    v7 = (0xc0 <= ((*v5)[v9] as u8)) as u64;
+-    if ((((v2 != 1 && (v7 = v7 + (0xc0 <= ((*v5)[v9 + 1] as u8)) as u64, v2 != 2)) && (v7 = v7 + (0xc0 <= ((*v5)[v9 + 2] as u8)) as u64, v2 != 3)) && ((v7 = v7 + (0xc0 <= ((*v5)[v9 + 3] as u8)) as u64, v2 != 4 && (v7 = v7 + (0xc0 <= ((*v5)[v9 + 4] as u8)) as u64, v2 != 5)))) && (v7 = v7 + (0xc0 <= ((*v5)[v9 + 5] as u8)) as u64, v2 != 6)) {
+-      v7 += (0xc0 <= ((*v5)[v9 + 6] as u8)) as u64;
++    v7 = ((0xc0 as i8) <= (((*v5)[v9] as u8) as i8)) as u64;
++    if ((((v2 != 1 && (v7 = v7 + ((0xc0 as i8) <= (((*v5)[v9 + 1] as u8) as i8)) as u64, v2 != 2)) && (v7 = v7 + ((0xc0 as i8) <= (((*v5)[v9 + 2] as u8) as i8)) as u64, v2 != 3)) && ((v7 = v7 + ((0xc0 as i8) <= (((*v5)[v9 + 3] as u8) as i8)) as u64, v2 != 4 && (v7 = v7 + ((0xc0 as i8) <= (((*v5)[v9 + 4] as u8) as i8)) as u64, v2 != 5)))) && (v7 = v7 + ((0xc0 as i8) <= (((*v5)[v9 + 5] as u8) as i8)) as u64, v2 != 6)) {
++      v7 += ((0xc0 as i8) <= (((*v5)[v9 + 6] as u8) as i8)) as u64;
+     }
+   }
+   else {
+
+--- before/&T::fmt
++++ after/&T::fmt
+@@ -72,7 +72,7 @@
+   v14 = v37;
+   v19 = v7;
+   loop {
+-    if b'\0' <= (v19 as u8) { // branch-flip
++    if (b'\0' as i8) <= ((v19 as u8) as i8) { // branch-flip
+       v10 = v19 as u32;
+     }
+     else {
+@@ -103,7 +103,7 @@
+       core::option::unwrap_failed(0x4edb8);
+     }
+     v19 = (&mut v5[1])[v4 as i64];
+-    if (v19 as u8) <= 0xbf {
++    if ((v19 as u8) as i8) <= (0xbf as i8) {
+       v18 = 0x4ef20;
+       v11 = 0x1 as *mut u8; // return-dupe
+       v33 = v6; // return-dupe
+@@ -156,7 +156,7 @@
+       v37 = core::ptr::null_mut__;
+     }
+     else {
+-      if (v22[v11 as i64] as u8) <= 0xbf {
++      if ((v22[v11 as i64] as u8) as i8) <= (0xbf as i8) {
+         v18 = 0x4ee00;
+         v33 = v6;
+         core::str::slice_error_fail(v22,v14,v11,v14,v18);
+@@ -164,7 +164,7 @@
+       v14 = v11;
+     }
+     if ((v6 == v34 && (*(&mut a1[2] as *mut u32) & 0x800000 != 0)) && (v19 == 0x68)) {
+-      if (v14 != 0x1 as *mut u8 && ((v22[1] as u8) < 0xc0)) {
++      if (v14 != 0x1 as *mut u8 && (((v22[1] as u8) as i8) < (0xc0 as i8))) {
+         v18 = 0x4ec48;
+         v11 = 0x1 as *mut u8;
+         v33 = v6;
+@@ -177,7 +177,7 @@
+         }
+         v7 = *v5;
+         v10 = v7 as u32;
+-        if b'\0' <= (v7 as u8) { // branch-flip
++        if (b'\0' as i8) <= ((v7 as u8) as i8) { // branch-flip
+           v5 = &mut v5[1];
+         }
+         else {
+@@ -246,7 +246,7 @@
+   }
+   if (0x2 as *mut u8) <= v4 {
+     if *(v22 as *mut i16) == 0x245f {
+-      if (v22[1] as u8) < 0xc0 {
++      if ((v22[1] as u8) as i8) < (0xc0 as i8) {
+         v18 = 0x4ee30;
+         v6 = 1;
+ // label_1ee04:
+@@ -262,7 +262,7 @@
+     v2 = v36;
+     if v4 != core::ptr::null_mut__ {
+       if *v22 == 0x24 {
+-        if (v4 == 0x1 as *mut u8 || (0xc0 <= (v22[1] as u8))) {
++        if (v4 == 0x1 as *mut u8 || ((0xc0 as i8) <= ((v22[1] as u8) as i8))) {
+           v14 = &mut v4[-1];
+           v11 = &mut v22[1];
+           v23 = core::ptr::null_mut__;
+@@ -315,8 +315,8 @@
+         if v4 != 0x1 as *mut u8 {
+           v7 = v22[1];
+           v10 = v7 as u32;
+-          if 0xc0 <= (v7 as u8) { // branch-flip
+-            if (v7 as u8) <= 0xff {
++          if (0xc0 as i8) <= ((v7 as u8) as i8) { // branch-flip
++            if ((v7 as u8) as i8) <= (0xff as i8) {
+               if 0xe0 <= v7 { // branch-flip
+                 v10 = v22[3] as u32 & 0x3f | (v22[2] as u32 & 0x3f) << 6;
+                 if 0xf0 <= v7 { // branch-flip
+@@ -335,7 +335,7 @@
+               if v6 as u8 != b'\0' {
+                 return CONCAT71((v6 >> 8) as [u8; 7],1);
+               }
+-              if (v4 >= (0x3 as *mut u8) && (0xc0 > (v22[2] as u8))) {
++              if (v4 >= (0x3 as *mut u8) && ((0xc0 as i8) > ((v22[2] as u8) as i8))) {
+                 v18 = 0x4eef0;
+                 v6 = 2;
+                 v23 = v4;
+@@ -349,7 +349,7 @@
+             if v6 as u8 != b'\0' {
+               return CONCAT71((v6 >> 8) as [u8; 7],1);
+             }
+-            if 0xc0 <= (v22[1] as u8) {
++            if (0xc0 as i8) <= ((v22[1] as u8) as i8) {
+               /* kuna: unstructured goto to label_1eb92 */ panic!("kuna: unstructured goto to label_1eb92");
+             }
+             v18 = 0x4ef08;
+@@ -380,7 +380,7 @@
+       }
+       v7 = *v14;
+       v10 = v7 as u32;
+-      if b'\0' <= (v7 as u8) { // branch-flip
++      if (b'\0' as i8) <= ((v7 as u8) as i8) { // branch-flip
+         v11 = &mut v14[1];
+       }
+       else if 0xe0 <= v7 { // branch-flip
+@@ -415,7 +415,7 @@
+           /* kuna: unstructured goto to label_1e898 */ panic!("kuna: unstructured goto to label_1e898");
+         }
+       }
+-      else if (v22[v23 as i64] as u8) > 0xbf {
++      else if ((v22[v23 as i64] as u8) as i8) > (0xbf as i8) {
+         v6 = (**((v36[1] + 0x18) as *mut *mut *const ()))(*v36,v22,v23);
+         v3 = v6 as u8;
+         v4 = v23;
+@@ -475,7 +475,7 @@
+     }
+     v7 = *v15;
+     v17 = v7 as u32;
+-    if b'\0' <= (v7 as u8) { // branch-flip
++    if (b'\0' as i8) <= ((v7 as u8) as i8) { // branch-flip
+       v15 = &mut v15[1];
+     }
+     else {
+
+--- before/rust_eh_personality
++++ after/rust_eh_personality
+@@ -99,7 +99,7 @@
+             v25 = &mut v25[1];
+             v8 |= ((v3 as u32 & 0x7f) as u64) << (v12 & 0x3f);
+             v12 += 7;
+-            if !((v3 as u8) < b'\0') {
++            if !(((v3 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -120,7 +120,7 @@
+             v25 = &mut v25[1];
+             v8 |= ((v12 as u32 & 0x7f) as u64) << (v13 as u8 & 0x3f);
+             v13 += 7;
+-            if !((v12 as u8) < b'\0') {
++            if !(((v12 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -164,7 +164,7 @@
+   v6 = *(v25 as *mut *mut u8);
+   v25 = &mut v25[8];
+ // label_1f227:
+-  if (v1 as u8) <= 0xff {
++  if ((v1 as u8) as i8) <= (0xff as i8) {
+     v6 = *(v6 as *mut *mut u8);
+   }
+ // label_1f22f:
+@@ -175,7 +175,7 @@
+       v4 = &mut v7[1];
+       v1 = *v7;
+       v7 = v4;
+-      if !((v1 as u8) < b'\0') {
++      if !(((v1 as u8) as i8) < (b'\0' as i8)) {
+         break;
+       }
+     }
+@@ -189,7 +189,7 @@
+     v22 = (v21 as i64 + 1) as *mut u64;
+     v8 |= ((*(v21 as *mut u8) as u32 & 0x7f) as u64) << (v12 & 0x3f);
+     v12 += 7;
+-    if !((*(v21 as *mut u8) as u8) < b'\0') {
++    if !(((*(v21 as *mut u8) as u8) as i8) < (b'\0' as i8)) {
+       break;
+     }
+   }
+@@ -225,7 +225,7 @@
+             v22 = (v22 as i64 + 1) as *mut u64;
+             v11 |= ((v3 as u32 & 0x7f) as u64) << (v12 & 0x3f);
+             v12 += 7;
+-            if !((v3 as u8) < b'\0') {
++            if !(((v3 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -236,7 +236,7 @@
+             v22 = (v22 as i64 + 1) as *mut u64;
+             v26 |= ((v3 as u32 & 0x7f) as u64) << (v12 & 0x3f);
+             v12 += 7;
+-            if !((v3 as u8) < b'\0') {
++            if !(((v3 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -247,7 +247,7 @@
+             v22 = (v22 as i64 + 1) as *mut u64;
+             v23 |= ((v3 as u32 & 0x7f) as u64) << (v12 & 0x3f);
+             v12 += 7;
+-            if !((v3 as u8) < b'\0') {
++            if !(((v3 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -272,7 +272,7 @@
+             v22 = (v22 as i64 + 1) as *mut u64;
+             v11 |= ((v12 as u32 & 0x7f) as u64) << (v13 as u8 & 0x3f);
+             v13 += 7;
+-            if !((v12 as u8) < b'\0') {
++            if !(((v12 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -283,7 +283,7 @@
+             v22 = (v22 as i64 + 1) as *mut u64;
+             v26 |= ((v3 as u32 & 0x7f) as u64) << (v14 as u8 & 0x3f);
+             v14 += 7;
+-            if !((v3 as u8) < b'\0') {
++            if !(((v3 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -294,7 +294,7 @@
+             v22 = (v22 as i64 + 1) as *mut u64;
+             v23 |= ((v2 as u32 & 0x7f) as u64) << (v19 as u8 & 0x3f);
+             v19 += 7;
+-            if !((v2 as u8) < b'\0') {
++            if !(((v2 as u8) as i8) < (b'\0' as i8)) {
+               break;
+             }
+           }
+@@ -348,7 +348,7 @@
+         v22 = (v22 as i64 + 1) as *mut u64;
+         v10 |= ((v3 as u32 & 0x7f) as u64) << (v12 & 0x3f);
+         v12 += 7;
+-        if !((v3 as u8) < b'\0') {
++        if !(((v3 as u8) as i8) < (b'\0' as i8)) {
+           break;
+         }
+       }
+@@ -370,7 +370,7 @@
+           v6 = &mut v6[1];
+           v11 |= ((v1 as u32 & 0x7f) as u64) << (v13 as u8 & 0x3f);
+           v13 += 7;
+-          if !((v1 as u8) < b'\0') {
++          if !(((v1 as u8) as i8) < (b'\0' as i8)) {
+             break;
+           }
+         }
+
+--- before/std::backtrace_rs::symbolize::gimli::Cache::with_global
++++ after/std::backtrace_rs::symbolize::gimli::Cache::with_global
+@@ -3927,14 +3927,14 @@
+           v127 = &mut v127[-1];
+           *v127 = *v190 as *mut *mut *mut *mut *mut *const ();
+           v115 += 0xff;
+-          if !(b'\0' < v115) {
++          if !((b'\0' as i8) < (v115 as i8)) {
+             break;
+           }
+         }
+         halt_baddata(); // warn: Bad instruction - Truncating control flow here
+       }
+       0x94 => {
+-        v240 = CONCAT62(((v240 as u64) >> 0x10) as [u8; 6],CONCAT11(v135 >> 0x1f,v129)) as *mut *mut *mut *mut *mut *mut *mut *const ();
++        v240 = CONCAT62(((v240 as u64) >> 0x10) as [u8; 6],CONCAT11(((v135 as i8) >> 0x1f) as u8,v129)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+         v161._0_5_ = CONCAT41(v161._1_4_ + -1,v161 as u8);
+         v196 = &mut v151;
+         v211 = &mut Stackfffffffffffffff8;
+@@ -4876,7 +4876,7 @@
+     v243 = (v231 as u64 & 0xff) as *mut *mut *mut *mut *mut *mut *mut *const ();
+     v123 = (v238 as i64 + 1) as *mut *mut *mut *mut *mut *mut *mut *const ();
+     v531 = (v531 as u64 | ((v243 as u32 & 0x7f) as u64) << (v240 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-    if b'\0' <= (v231 as u8) {
++    if (b'\0' as i8) <= ((v231 as u8) as i8) {
+       v208 = &mut Stackfffffffffffffff8;
+       if v128 == core::ptr::null_mut__ {
+         /* kuna: unstructured goto to label_31e89 */ panic!("kuna: unstructured goto to label_31e89");
+@@ -4910,7 +4910,7 @@
+     v243 = (v227 as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
+     v240 = (v123 as i64 + 1) as *mut *mut *mut *mut *mut *mut *mut *const ();
+     v171 = (v136 as u64 | ((v227 as u32 & 0x7f) as u64) << (v116 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-    if b'\0' <= (v227 as u8) {
++    if (b'\0' as i8) <= ((v227 as u8) as i8) {
+       if v121 == core::ptr::null_mut__ {
+         /* kuna: unstructured goto to label_32558 */ panic!("kuna: unstructured goto to label_32558");
+       }
+@@ -4926,7 +4926,7 @@
+   /* kuna: unstructured goto to label_31e89 */ panic!("kuna: unstructured goto to label_31e89");
+   loop {
+     v601 = (v136 as u64 | ((v227 as u32 & 0x7f) as u64) << (v116 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-    if b'\0' <= (v227 as u8) {
++    if (b'\0' as i8) <= ((v227 as u8) as i8) {
+       v521 = core::ptr::null_mut__;
+       v522 = core::ptr::null_mut__;
+       v610 = CONCAT44(v610._4_4_,v118 >> 8) as *mut *mut *mut *mut *mut *mut *mut *const ();
+@@ -4969,7 +4969,7 @@
+   loop {
+     v243 = (((v227 as u32 & 0x7f) as u64) << (v240 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+     v233 = (v233 as u64 | v243 as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-    if b'\0' <= (v227 as u8) {
++    if (b'\0' as i8) <= ((v227 as u8) as i8) {
+       v610 = (CONCAT44(v610._4_4_,((v233 as u64) >> 8) as i32) & 0xffffffff00ffffff) as *mut *mut *mut *mut *mut *mut *mut *const ();
+       v609 = ((v233 as u64) >> 0x10 & 0xffff) as *mut *mut *mut *mut *mut *mut *mut *const ();
+       v611 = ((v233 as u64) >> 0x20) as *mut *mut *mut *mut *mut *mut *mut *const ();
+@@ -5027,7 +5027,7 @@
+   v118 = v240 as i32 + 7;
+   v240 = (v118 as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
+   v226 = (v226 as i64 + 1) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-  if b'\0' <= (v227 as u8) {
++  if (b'\0' as i8) <= ((v227 as u8) as i8) {
+     v242 = -1 << (v118 as u8 & 0x3f);
+     if v227 <= 0x3f {
+       v242 = 0;
+@@ -5072,7 +5072,7 @@
+   }
+   v124 = (v124 as u64 | ((v227 as u32 & 0x7f) as u64) << (v118 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+   v228 = v121;
+-  if b'\0' <= (v227 as u8) {
++  if (b'\0' as i8) <= ((v227 as u8) as i8) {
+     v593 = v121;
+     v594 = v221;
+     v610 = (CONCAT44(v610._4_4_,((v124 as u64) >> 8) as i32) & 0xffffffff00ffffff) as *mut *mut *mut *mut *mut *mut *mut *const ();
+@@ -5113,7 +5113,7 @@
+   /* kuna: unstructured goto to label_31ea3 */ panic!("kuna: unstructured goto to label_31ea3");
+ // label_30d84:
+   v233 = (v124 as u64 | ((v227 as u32 & 0x7f) as u64) << (v240 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-  if b'\0' <= (v227 as u8) {
++  if (b'\0' as i8) <= ((v227 as u8) as i8) {
+     *(&mut v211[-0xd0] as *mut *mut *mut *mut *mut *mut *mut *mut *const ()) = v226;
+     *(&mut v211[-200] as *mut *mut *mut *mut *mut *mut *mut *mut *const ()) = v221;
+     *(&mut v211[-0x38] as *mut u32) = ((v233 as u64) >> 8) as u32 & 0xffffff;
+@@ -5308,7 +5308,7 @@
+           v243 = (((v227 as u32 & 0x7f) as u64) << (v116 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+           v121 = (v123 as i64 + 1) as *mut *mut *mut *mut *mut *mut *mut *const ();
+           v125 = (v125 as u64 | v243 as u64) as *mut *const ();
+-          if b'\0' <= (v227 as u8) {
++          if (b'\0' as i8) <= ((v227 as u8) as i8) {
+             break;
+           }
+           v116 += 7;
+@@ -5422,7 +5422,7 @@
+                 /* kuna: unstructured goto to label_31ea3 */ panic!("kuna: unstructured goto to label_31ea3");
+               }
+               v233 = (v233 as u64 | ((v227 as u32 & 0x7f) as u64) << (v116 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-              if b'\0' <= (v227 as u8) {
++              if (b'\0' as i8) <= ((v227 as u8) as i8) {
+                 break;
+               }
+               v116 += 7;
+@@ -5477,7 +5477,7 @@
+               /* kuna: unstructured goto to label_31ea3 */ panic!("kuna: unstructured goto to label_31ea3");
+             }
+             v242 |= ((v129 as u32 & 0x7f) as u64) << (v116 as u8 & 0x3f);
+-            if b'\0' <= (v129 as u8) {
++            if (b'\0' as i8) <= ((v129 as u8) as i8) {
+               break;
+             }
+             v116 += 7;
+@@ -7486,7 +7486,7 @@
+         v137 = (v227 as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
+         v230 = (((v227 as u32 & 0x7f) as u64) << (v116 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut *const ();
+         v235 = (v235 as u64 | v230 as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-        if b'\0' <= (v227 as u8) {
++        if (b'\0' as i8) <= ((v227 as u8) as i8) {
+           break;
+         }
+         v116 += 7;
+@@ -8573,7 +8573,7 @@
+     v242 = ((v227 as u32 & 0x7f) as u64) << (v240 as u8 & 0x3f);
+ // label_30ee1:
+     v124 = (v124 as u64 | v242) as *mut *mut *mut *mut *mut *mut *mut *const ();
+-    if b'\0' <= (v231 as u8) {
++    if (b'\0' as i8) <= ((v231 as u8) as i8) {
+       v593 = v228;
+       v594 = v221;
+       v610 = (CONCAT44(v610._4_4_,((v124 as u64) >> 8) as i32) & 0xffffffff00ffffff) as *mut *mut *mut *mut *mut *mut *mut *const ();
+
+--- before/std::backtrace_rs::symbolize::gimli::elf::load_dwarf_package
++++ after/std::backtrace_rs::symbolize::gimli::elf::load_dwarf_package
+@@ -166,7 +166,7 @@
+         v10 = v16;
+       }
+       v5 = ((v12 as i64 + v10 as i64) - v14 as i64) as *mut *mut u16;
+-      if (v5 != v2 && v5 != core::ptr::null_mut__ && ((v2 <= v5 || ((((v14 as i64 + -1) as *mut u8)[v5 as i64] <= 0xff && (*((v14 as i64 + v5 as i64) as *mut u8) <= 0xff)))))) {
++      if (v5 != v2 && v5 != core::ptr::null_mut__ && ((v2 <= v5 || (((((v14 as i64 + -1) as *mut u8)[v5 as i64] as i8) <= (0xff as i8) && ((*((v14 as i64 + v5 as i64) as *mut u8) as i8) <= (0xff as i8))))))) {
+         std::sys::os_str::bytes::Slice::check_public_boundary::slow_path(v14,v2,v5);
+       }
+       v14 = v2;
+
+--- before/std::backtrace_rs::symbolize::gimli::Context::new
++++ after/std::backtrace_rs::symbolize::gimli::Context::new
+@@ -862,7 +862,7 @@
+           v51 = (v49 as u64) as *mut *mut *mut *mut *mut *mut *mut u64;
+           v52 = (((v49 as u32 & 0x7f) as u64) << (v21 as u8 & 0x3f)) as *mut *mut *mut *mut *mut *mut *mut u64;
+           v26 = (v26 as u64 | v52 as u64) as *mut *mut *mut *mut *mut *mut *mut u64;
+-          if b'\0' <= (v49 as u8) {
++          if (b'\0' as i8) <= ((v49 as u8) as i8) {
+             break;
+           }
+           v21 += 7;
+
+--- before/gimli::read::dwarf::Unit::new
++++ after/gimli::read::dwarf::Unit::new
+@@ -374,7 +374,7 @@
+       v28 = v44 - 1;
+       v71 = (v46 as i64 + 1) as *mut u64;
+       v64 |= ((v30 as u32 & 0x7f) as u64) << (v27 as u8 & 0x3f);
+-      if b'\0' <= (v30 as u8) {
++      if (b'\0' as i8) <= ((v30 as u8) as i8) {
+         break;
+       }
+       v27 += 7;
+@@ -408,14 +408,14 @@
+     v63 = v44 - 2;
+     v71 = (v46 as i64 + 2) as *mut u64;
+     v62 = *((v46 as i64 + 1) as *mut u8) as u32 & 0x7f;
+-    if (*((v46 as i64 + 1) as *mut u8) as u8) <= 0xff {
++    if ((*((v46 as i64 + 1) as *mut u8) as u8) as i8) <= (0xff as i8) {
+       if v63 == 0 {
+         /* kuna: unstructured goto to label_2e475 */ panic!("kuna: unstructured goto to label_2e475");
+       }
+       v63 = v44 - 3;
+       v71 = (v46 as i64 + 3) as *mut u64;
+       v62 |= (*((v46 as i64 + 2) as *mut u8) as u32 & 0x7f) << 7;
+-      if b'\0' <= (*((v46 as i64 + 2) as *mut u8) as u8) {
++      if (b'\0' as i8) <= ((*((v46 as i64 + 2) as *mut u8) as u8) as i8) {
+         /* kuna: unstructured goto to label_2ddd3 */ panic!("kuna: unstructured goto to label_2ddd3");
+       }
+       if v63 == 0 {
+@@ -482,14 +482,14 @@
+       v69 = v63 + -1;
+       v71 = (v242 as i64 + 1) as *mut u64;
+       v23 = *(v242 as *mut u8) as u16 & 0x7f;
+-      if (*(v242 as *mut u8) as u8) <= 0xff {
++      if ((*(v242 as *mut u8) as u8) as i8) <= (0xff as i8) {
+         if v69 == 0 {
+           /* kuna: unstructured goto to label_2e461 */ panic!("kuna: unstructured goto to label_2e461");
+         }
+         v69 = v63 + -2;
+         v71 = (v242 as i64 + 2) as *mut u64;
+         v23 |= (*((v242 as i64 + 1) as *mut u8) as u16 & 0x7f) << 7;
+-        if (*((v242 as i64 + 1) as *mut u8) as u8) <= 0xff {
++        if ((*((v242 as i64 + 1) as *mut u8) as u8) as i8) <= (0xff as i8) {
+           if v69 == 0 {
+             /* kuna: unstructured goto to label_2e461 */ panic!("kuna: unstructured goto to label_2e461");
+           }
+@@ -511,7 +511,7 @@
+       v61 = v69 + -1;
+       v25 = (v71 as i64 + 1) as *mut u64;
+       v31 = *(v71 as *mut u8) as u16 & 0x7f;
+-      if (*(v71 as *mut u8) as u8) <= 0xff {
++      if ((*(v71 as *mut u8) as u8) as i8) <= (0xff as i8) {
+         if v61 == 0 {
+ // label_2e3a6:
+           v62 = 0;
+@@ -524,7 +524,7 @@
+         v61 = v69 + -2;
+         v25 = (v71 as i64 + 2) as *mut u64;
+         v31 |= (*((v71 as i64 + 1) as *mut u8) as u16 & 0x7f) << 7;
+-        if (*((v71 as i64 + 1) as *mut u8) as u8) <= 0xff {
++        if ((*((v71 as i64 + 1) as *mut u8) as u8) as i8) <= (0xff as i8) {
+           if v61 == 0 {
+             /* kuna: unstructured goto to label_2e3a6 */ panic!("kuna: unstructured goto to label_2e3a6");
+           }
+@@ -570,7 +570,7 @@
+           v71 = (v71 as i64 + 1) as *mut u64;
+           v44 |= ((v30 as u32 & 0x7f) as u64) << (v27 as u8 & 0x3f);
+           v27 += 7;
+-          if !((v30 as u8) <= 0xff) {
++          if !(((v30 as u8) as i8) <= (0xff as i8)) {
+             break;
+           }
+         }
+@@ -656,12 +656,12 @@
+     v66 = v69 - 1;
+     v25 = (v71 as i64 + 1) as *mut u64;
+     v23 = *(v71 as *mut u8) as u16 & 0x7f;
+-    if (*(v71 as *mut u8) as u8) <= 0xff {
++    if ((*(v71 as *mut u8) as u8) as i8) <= (0xff as i8) {
+       if v66 != 0 {
+         v66 = v69 - 2;
+         v25 = (v71 as i64 + 2) as *mut u64;
+         v23 |= (*((v71 as i64 + 1) as *mut u8) as u16 & 0x7f) << 7;
+-        if b'\0' <= (*((v71 as i64 + 1) as *mut u8) as u8) {
++        if (b'\0' as i8) <= ((*((v71 as i64 + 1) as *mut u8) as u8) as i8) {
+           /* kuna: unstructured goto to label_2e1c9 */ panic!("kuna: unstructured goto to label_2e1c9");
+         }
+         if v66 == 0 {
+
+--- before/core::cell::once::OnceCell::try_init
++++ after/core::cell::once::OnceCell::try_init
+@@ -349,7 +349,7 @@
+         v41 = (((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+         v19 = (v35 as i64 + 1) as *mut u32;
+         v25 = (v25 as u64 | v41 as u64) as *mut u16;
+-        if b'\0' <= (v5 as u8) {
++        if (b'\0' as i8) <= ((v5 as u8) as i8) {
+           break;
+         }
+         v17 += 7;
+@@ -452,7 +452,7 @@
+                   v41 = (v5 as u64) as *mut u32;
+                   v35 = (v23 as i64 + 1) as *mut u32;
+                   v58 |= ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f);
+-                  if b'\0' <= (v5 as u8) {
++                  if (b'\0' as i8) <= ((v5 as u8) as i8) {
+                     break;
+                   }
+                   v17 += 7;
+@@ -477,7 +477,7 @@
+                     v36 = (v35 as i64 + 1) as *mut u32;
+                     v22 |= ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f);
+                     v125 = v22;
+-                    if b'\0' <= (v5 as u8) {
++                    if (b'\0' as i8) <= ((v5 as u8) as i8) {
+                       break;
+                     }
+                     v17 += 7;
+@@ -509,7 +509,7 @@
+                     }
+                     v37 |= ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f);
+                     v126 = v37;
+-                    if b'\0' <= (v5 as u8) {
++                    if (b'\0' as i8) <= ((v5 as u8) as i8) {
+                       break;
+                     }
+                     v36 = (v36 as i64 + 1) as *mut u32;
+@@ -571,7 +571,7 @@
+             }
+             v41 = (((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+             v36 = (v36 as u64 | v41 as u64) as *mut u32;
+-            if b'\0' <= (v5 as u8) {
++            if (b'\0' as i8) <= ((v5 as u8) as i8) {
+               break;
+             }
+             v33 = (v33 as i64 - 1) as *mut u32;
+@@ -628,7 +628,7 @@
+               /* kuna: unstructured goto to label_32028 */ panic!("kuna: unstructured goto to label_32028");
+             }
+             v36 = (v36 as u64 | ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+-            if b'\0' <= (v5 as u8) {
++            if (b'\0' as i8) <= ((v5 as u8) as i8) {
+               break;
+             }
+             v17 += 7;
+@@ -692,7 +692,7 @@
+             /* kuna: unstructured goto to label_32028 */ panic!("kuna: unstructured goto to label_32028");
+           }
+           v36 = (v36 as u64 | ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+-          if b'\0' <= (v5 as u8) {
++          if (b'\0' as i8) <= ((v5 as u8) as i8) {
+             break;
+           }
+           v17 += 7;
+@@ -726,7 +726,7 @@
+             /* kuna: unstructured goto to label_32028 */ panic!("kuna: unstructured goto to label_32028");
+           }
+           v36 = (v36 as u64 | ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+-          if b'\0' <= (v5 as u8) {
++          if (b'\0' as i8) <= ((v5 as u8) as i8) {
+             break;
+           }
+           v17 += 7;
+@@ -798,7 +798,7 @@
+             /* kuna: unstructured goto to label_3238e */ panic!("kuna: unstructured goto to label_3238e");
+           }
+           v36 = (v36 as u64 | ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+-          if b'\0' <= (v5 as u8) {
++          if (b'\0' as i8) <= ((v5 as u8) as i8) {
+             break;
+           }
+           v17 += 7;
+@@ -864,7 +864,7 @@
+                       /* kuna: unstructured goto to label_31ea3 */ panic!("kuna: unstructured goto to label_31ea3");
+                     }
+                     v33 = (v33 as u64 | ((v7 as u32 & 0x7f) as u64) << (v18 as u8 & 0x3f)) as *mut u32;
+-                    if b'\0' <= (v7 as u8) {
++                    if (b'\0' as i8) <= ((v7 as u8) as i8) {
+                       break;
+                     }
+                     v18 += 7;
+@@ -917,7 +917,7 @@
+                     /* kuna: unstructured goto to label_31ea3 */ panic!("kuna: unstructured goto to label_31ea3");
+                   }
+                   v36 = (v36 as u64 | ((v6 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f)) as *mut u32;
+-                  if b'\0' <= (v6 as u8) {
++                  if (b'\0' as i8) <= ((v6 as u8) as i8) {
+                     break;
+                   }
+                   v17 += 7;
+@@ -1162,7 +1162,7 @@
+   v32 |= ((v5 as u32 & 0x7f) as u64) << (v17 as u8 & 0x3f);
+   v17 += 7;
+   v20 = &mut v20[1];
+-  if b'\0' <= (v5 as u8) {
++  if (b'\0' as i8) <= ((v5 as u8) as i8) {
+     /* kuna: unstructured goto to label_311d2 */ panic!("kuna: unstructured goto to label_311d2");
+   }
+   /* kuna: unstructured goto to label_30e5c */ panic!("kuna: unstructured goto to label_30e5c");
+
+--- before/core::cell::once::OnceCell::try_init
++++ after/core::cell::once::OnceCell::try_init
+@@ -148,7 +148,7 @@
+           /* kuna: unstructured goto to label_3562c */ panic!("kuna: unstructured goto to label_3562c");
+         }
+         v35 = (v35 as u64 | ((v7 as u32 & 0x7f) as u64) << (v14 as u8 & 0x3f)) as *mut u64;
+-        if b'\0' <= (v7 as u8) {
++        if (b'\0' as i8) <= ((v7 as u8) as i8) {
+           break;
+         }
+         v14 += 7;
+
+--- before/core::cell::once::OnceCell::try_init
++++ after/core::cell::once::OnceCell::try_init
+@@ -98,7 +98,7 @@
+         /* kuna: unstructured goto to label_35bab */ panic!("kuna: unstructured goto to label_35bab");
+       }
+       v23 = (v23 as u64 | ((v20 as u32 & 0x7f) as u64) << (v9 as u8 & 0x3f)) as *mut *mut i32;
+-      if b'\0' <= (v20 as u8) {
++      if (b'\0' as i8) <= ((v20 as u8) as i8) {
+         v14 = v11 as i64 + v18 + 1;
+         if v23 == core::ptr::null_mut__ {
+           core::option::unwrap_failed(0x4fb48); // no-return
+
+--- before/gimli::read::unit::parse_attribute
++++ after/gimli::read::unit::parse_attribute
+@@ -695,7 +695,7 @@
+       /* kuna: unstructured goto to label_36d3b */ panic!("kuna: unstructured goto to label_36d3b");
+     }
+     v28 = (v28 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v7 = ((v28 as u64) >> 8) as u32 & 0xffffff;
+@@ -719,7 +719,7 @@
+       /* kuna: unstructured goto to label_36d3b */ panic!("kuna: unstructured goto to label_36d3b");
+     }
+     v28 = (v28 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v7 = ((v28 as u64) >> 8) as u32 & 0xffffff;
+@@ -743,7 +743,7 @@
+       /* kuna: unstructured goto to label_36d3b */ panic!("kuna: unstructured goto to label_36d3b");
+     }
+     v28 = (v28 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v7 = ((v28 as u64) >> 8) as u32 & 0xffffff;
+@@ -767,7 +767,7 @@
+       /* kuna: unstructured goto to label_36d3b */ panic!("kuna: unstructured goto to label_36d3b");
+     }
+     v28 = (v28 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v7 = ((v28 as u64) >> 8) as u32 & 0xffffff;
+@@ -791,7 +791,7 @@
+       /* kuna: unstructured goto to label_37171 */ panic!("kuna: unstructured goto to label_37171");
+     }
+     v16 = (v16 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v10 = v19;
+@@ -815,7 +815,7 @@
+   (*a1).field_0x0 = v1;
+   (*a1).field_0x8 = v12 as u64;
+   v20 = *(v10 as *mut u8) as u16 & 0x7f;
+-  if b'\0' <= (*(v10 as *mut u8) as u8) {
++  if (b'\0' as i8) <= ((*(v10 as *mut u8) as u8) as i8) {
+     /* kuna: unstructured goto to label_362ba */ panic!("kuna: unstructured goto to label_362ba");
+   }
+   if v12 != core::ptr::null_mut__ {
+@@ -824,7 +824,7 @@
+     (*a1).field_0x0 = v1;
+     (*a1).field_0x8 = v12 as u64;
+     v20 |= (*((v10 as i64 + 1) as *mut u8) as u16 & 0x7f) << 7;
+-    if b'\0' <= (*((v10 as i64 + 1) as *mut u8) as u8) {
++    if (b'\0' as i8) <= ((*((v10 as i64 + 1) as *mut u8) as u8) as i8) {
+       /* kuna: unstructured goto to label_362ba */ panic!("kuna: unstructured goto to label_362ba");
+     }
+     if v12 != core::ptr::null_mut__ {
+@@ -858,7 +858,7 @@
+       /* kuna: unstructured goto to label_36d3b */ panic!("kuna: unstructured goto to label_36d3b");
+     }
+     v28 = (v28 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+ // label_3725d:
+@@ -893,7 +893,7 @@
+     }
+     v14 |= ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f);
+     v8 += 7;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       break;
+     }
+ // label_36beb:
+@@ -1019,7 +1019,7 @@
+       /* kuna: unstructured goto to label_37171 */ panic!("kuna: unstructured goto to label_37171");
+     }
+     v16 = (v16 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v10 = v19;
+@@ -1060,7 +1060,7 @@
+       /* kuna: unstructured goto to label_36d3b */ panic!("kuna: unstructured goto to label_36d3b");
+     }
+     v28 = (v28 as u64 | ((v9 as u32 & 0x7f) as u64) << (v8 as u8 & 0x3f)) as *mut u32;
+-    if b'\0' <= (v9 as u8) {
++    if (b'\0' as i8) <= ((v9 as u8) as i8) {
+       (*a1).field_0x0 = v19;
+       (*a1).field_0x8 = v12 as u64;
+       v7 = ((v28 as u64) >> 8) as u32 & 0xffffff;
+
+--- before/addr2line::function::Function::parse_children
++++ after/addr2line::function::Function::parse_children
+@@ -129,7 +129,7 @@
+         /* kuna: unstructured goto to label_385b7 */ panic!("kuna: unstructured goto to label_385b7");
+       }
+       v31 = (v31 as u64 | ((v2 as u32 & 0x7f) as u64) << (v15 as u8 & 0x3f)) as *mut u8;
+-      if b'\0' <= (v2 as u8) {
++      if (b'\0' as i8) <= ((v2 as u8) as i8) {
+         break;
+       }
+       v15 += 7;
+@@ -792,7 +792,7 @@
+               /* kuna: unstructured goto to label_38605 */ panic!("kuna: unstructured goto to label_38605");
+             }
+             v31 = (v31 as u64 | ((v2 as u32 & 0x7f) as u64) << (v15 as u8 & 0x3f)) as *mut u8;
+-            if b'\0' <= (v2 as u8) {
++            if (b'\0' as i8) <= ((v2 as u8) as i8) {
+               break;
+             }
+             v15 += 7;
+
+--- before/addr2line::function::name_entry
++++ after/addr2line::function::name_entry
+@@ -68,7 +68,7 @@
+       /* kuna: unstructured goto to label_394e5 */ panic!("kuna: unstructured goto to label_394e5");
+     }
+     v16 |= ((v2 as u32 & 0x7f) as u64) << (v6 as u8 & 0x3f);
+-    if b'\0' <= (v2 as u8) {
++    if (b'\0' as i8) <= ((v2 as u8) as i8) {
+       v11 = v13 + v17 + 1;
+       if v16 == 0 {
+         *(&mut a0[1] as *mut u8) = 0x3a;
+
+--- before/gimli::read::unit::skip_attributes
++++ after/gimli::read::unit::skip_attributes
+@@ -181,7 +181,7 @@
+                   /* kuna: unstructured goto to label_3b110 */ panic!("kuna: unstructured goto to label_3b110");
+                 }
+                 v15 = (v15 as u64 | ((v1 as u32 & 0x7f) as u64) << (v6 as u8 & 0x3f)) as *mut u32;
+-                if b'\0' <= (v1 as u8) {
++                if (b'\0' as i8) <= ((v1 as u8) as i8) {
+                   break;
+                 }
+                 v6 += 7;
+@@ -223,7 +223,7 @@
+                 (*a1).field_0x8 = v9;
+                 v1 = *(v16 as *mut u8);
+                 v16 = v12;
+-                if !((v1 as u8) < b'\0') {
++                if !(((v1 as u8) as i8) < (b'\0' as i8)) {
+                   break;
+                 }
+               }
+@@ -246,7 +246,7 @@
+               (*a1).field_0x0 = v10;
+               (*a1).field_0x8 = v15;
+               v14 = *(v12 as *mut u8) as u32 & 0x7f;
+-              if (*(v12 as *mut u8) as u8) < b'\0' {
++              if ((*(v12 as *mut u8) as u8) as i8) < (b'\0' as i8) {
+                 if v15 == core::ptr::null_mut__ {
+ // label_3b184:
+                   v3 = 0x13;
+@@ -259,7 +259,7 @@
+                 (*a1).field_0x0 = v10;
+                 (*a1).field_0x8 = v15;
+                 v14 |= (*((v12 as i64 + 1) as *mut u8) as u32 & 0x7f) << 7;
+-                if b'\0' <= (*((v12 as i64 + 1) as *mut u8) as u8) { // branch-flip
++                if (b'\0' as i8) <= ((*((v12 as i64 + 1) as *mut u8) as u8) as i8) { // branch-flip
+                 }
+                 else {
+                   v13 = v18 as u16;
+@@ -414,7 +414,7 @@
+   (*a1).field_0x0 = v10;
+   (*a1).field_0x8 = v15;
+   v14 = *(v16 as *mut u8) as u32 & 0x7f;
+-  if (*(v16 as *mut u8) as u8) <= 0xff {
++  if ((*(v16 as *mut u8) as u8) as i8) <= (0xff as i8) {
+     if v15 == core::ptr::null_mut__ {
+       /* kuna: unstructured goto to label_3b184 */ panic!("kuna: unstructured goto to label_3b184");
+     }
+@@ -423,7 +423,7 @@
+     (*a1).field_0x0 = v10;
+     (*a1).field_0x8 = v15;
+     v14 |= (*((v16 as i64 + 1) as *mut u8) as u32 & 0x7f) << 7;
+-    if (*((v16 as i64 + 1) as *mut u8) as u8) <= 0xff {
++    if ((*((v16 as i64 + 1) as *mut u8) as u8) as i8) <= (0xff as i8) {
+       if v15 == core::ptr::null_mut__ {
+         /* kuna: unstructured goto to label_3b184 */ panic!("kuna: unstructured goto to label_3b184");
+       }
+
+--- before/gimli::read::rnglists::RngListIter::next
++++ after/gimli::read::rnglists::RngListIter::next
+@@ -392,7 +392,7 @@
+   v22 = v7;
+   /* kuna: unstructured goto to label_3c2f9 */ panic!("kuna: unstructured goto to label_3c2f9");
+   loop {
+-    if b'\0' <= (*(v7 as *mut u8) as u8) {
++    if (b'\0' as i8) <= ((*(v7 as *mut u8) as u8) as i8) {
+       (*a1).field_0x20 = v10;
+       (*a1).field_0x28 = v15;
+       (*((dat_5b08 as i64 + 0x5aec) as *mut *const ()))(); // jump-as-call
+@@ -440,7 +440,7 @@
+     }
+     v18 = v13 - 1;
+     v8 |= ((v1 as u32 & 0x7f) as u64) << (v14 as u8 & 0x3f);
+-    if b'\0' <= (v1 as u8) {
++    if (b'\0' as i8) <= ((v1 as u8) as i8) {
+       v14 = (v7 as i64 + v15 + 2) as *mut u32;
+       (*a1).field_0x20 = v14;
+       (*a1).field_0x28 = v18;
+@@ -454,7 +454,7 @@
+   }
+   /* kuna: unstructured goto to label_3c1cb */ panic!("kuna: unstructured goto to label_3c1cb");
+   loop {
+-    if b'\0' <= (*((v10 as i64 + -1) as *mut u8) as u8) {
++    if (b'\0' as i8) <= ((*((v10 as i64 + -1) as *mut u8) as u8) as i8) {
+       (*a1).field_0x20 = v10;
+       (*a1).field_0x28 = v19;
+       (*((dat_5b00 as i64 + 0x5aec) as *mut *const ()))(v19,a1,0x5aec,v8 >> 0x10,v3); // jump-as-call
+@@ -490,7 +490,7 @@
+     }
+     v18 = v13 - 1;
+     v8 |= ((v1 as u32 & 0x7f) as u64) << (v14 as u8 & 0x3f);
+-    if b'\0' <= (v1 as u8) {
++    if (b'\0' as i8) <= ((v1 as u8) as i8) {
+       v14 = (v7 as i64 + v15 + 2) as *mut u32;
+       (*a1).field_0x20 = v14;
+       (*a1).field_0x28 = v18;
+@@ -514,7 +514,7 @@
+   v9 = 0;
+   /* kuna: unstructured goto to label_3c2f9 */ panic!("kuna: unstructured goto to label_3c2f9");
+   loop {
+-    if b'\0' <= (*((v10 as i64 + -1) as *mut u8) as u8) {
++    if (b'\0' as i8) <= ((*((v10 as i64 + -1) as *mut u8) as u8) as i8) {
+       (*a1).field_0x20 = v10;
+       (*a1).field_0x28 = v19;
+       (*((dat_5afc as i64 + 0x5aec) as *mut *const ()))(v19,a1,0x5aec,v8 >> 0x10,v3); // jump-as-call
+@@ -551,7 +551,7 @@
+     }
+     v18 = v13 - 1;
+     v8 |= ((v1 as u32 & 0x7f) as u64) << (v14 as u8 & 0x3f);
+-    if b'\0' <= (v1 as u8) {
++    if (b'\0' as i8) <= ((v1 as u8) as i8) {
+       v14 = (v7 as i64 + v15 + 2) as *mut u32;
+       (*a1).field_0x20 = v14;
+       (*a1).field_0x28 = v18;
+@@ -571,7 +571,7 @@
+   /* kuna: unstructured goto to label_3c2d2 */ panic!("kuna: unstructured goto to label_3c2d2");
+   loop {
+     v5 |= ((v1 as u32 & 0x7f) as u64) << (v22 as u8 & 0x3f);
+-    if b'\0' <= (v1 as u8) {
++    if (b'\0' as i8) <= ((v1 as u8) as i8) {
+       (*a1).field_0x20 = v10;
+       (*a1).field_0x28 = v19;
+       (*((dat_5af4 as i64 + 0x5aec) as *mut *const ()))(v19,a1,0x5aec,v5 >> 0x10,v3); // jump-as-call
+@@ -597,7 +597,7 @@
+   v10 = (v7 as i64 + v12) as *mut u32;
+   /* kuna: unstructured goto to label_3c22a */ panic!("kuna: unstructured goto to label_3c22a");
+   loop {
+-    if b'\0' <= (*((v10 as i64 + -1) as *mut u8) as u8) {
++    if (b'\0' as i8) <= ((*((v10 as i64 + -1) as *mut u8) as u8) as i8) {
+       (*a1).field_0x20 = v10;
+       (*a1).field_0x28 = v19;
+       (*((dat_5af8 as i64 + 0x5aec) as *mut *const ()))(v19,a1,0x5aec,v8 >> 0x10,v3); // jump-as-call
+
+--- before/gimli::read::unit::EntriesCursor::next_entry
++++ after/gimli::read::unit::EntriesCursor::next_entry
+@@ -128,7 +128,7 @@
+       /* kuna: unstructured goto to label_3e17c */ panic!("kuna: unstructured goto to label_3e17c");
+     }
+     v18 = (v18 as u64 | ((v3 as u32 & 0x7f) as u64) << (v10 as u8 & 0x3f)) as *mut u8;
+-    if b'\0' <= (v3 as u8) {
++    if (b'\0' as i8) <= ((v3 as u8) as i8) {
+       *a1 = v17 as i64;
+       a1[1] = v30;
+       if v18 == core::ptr::null_mut__ {
+
+--- before/gimli::read::line::FileEntryFormat::parse
++++ after/gimli::read::line::FileEntryFormat::parse
+@@ -85,7 +85,7 @@
+           /* kuna: unstructured goto to label_3e655 */ panic!("kuna: unstructured goto to label_3e655");
+         }
+         v17 = (v17 as u64 | ((v4 as u32 & 0x7f) as u64) << (v7 as u8 & 0x3f)) as *mut u8;
+-        if b'\0' <= (v4 as u8) {
++        if (b'\0' as i8) <= ((v4 as u8) as i8) {
+           break;
+         }
+         v7 += 7;
+@@ -125,7 +125,7 @@
+       (*a1).field_0x0 = v22;
+       (*a1).field_0x8 = v16;
+       v8 = v12[1] as u32 & 0x7f;
+-      if (v12[1] as u8) <= 0xff {
++      if ((v12[1] as u8) as i8) <= (0xff as i8) {
+         if v16 == 0 {
+ // label_3e6bf:
+           v5 = 0x13;
+@@ -139,7 +139,7 @@
+         (*a1).field_0x8 = v16;
+         v13 = (v12[2] as u32 & 0x7f) << 7;
+         v8 |= v13;
+-        if (v12[2] as u8) <= 0xff {
++        if ((v12[2] as u8) as i8) <= (0xff as i8) {
+           if v16 == 0 {
+             /* kuna: unstructured goto to label_3e6bf */ panic!("kuna: unstructured goto to label_3e6bf");
+           }
+
+--- before/gimli::read::reader::Reader::read_uleb128
++++ after/gimli::read::reader::Reader::read_uleb128
+@@ -27,7 +27,7 @@
+         return;
+       }
+       v7 = (v7 as u64 | ((v2 as u32 & 0x7f) as u64) << (v4 as u8 & 0x3f)) as *mut u8;
+-      if b'\0' <= (v2 as u8) {
++      if (b'\0' as i8) <= ((v2 as u8) as i8) {
+         (*a1).field_0x0 = v5;
+         (*a1).field_0x8 = v6;
+         (*a0).field_0x8 = v7;
+
+--- before/gimli::read::line::FileEntry::parse
++++ after/gimli::read::line::FileEntry::parse
+@@ -37,7 +37,7 @@
+         /* kuna: unstructured goto to label_3ec32 */ panic!("kuna: unstructured goto to label_3ec32");
+       }
+       v8 |= ((v2 as u32 & 0x7f) as u64) << (v6 as u8 & 0x3f);
+-      if b'\0' <= (v2 as u8) {
++      if (b'\0' as i8) <= ((v2 as u8) as i8) {
+         *a1 = v4 as i64;
+         a1[1] = v11;
+         if v11 == 0 {
+@@ -91,7 +91,7 @@
+       /* kuna: unstructured goto to label_3ecf6 */ panic!("kuna: unstructured goto to label_3ecf6");
+     }
+     v7 |= ((v2 as u32 & 0x7f) as u64) << (v6 as u8 & 0x3f);
+-    if b'\0' <= (v2 as u8) {
++    if (b'\0' as i8) <= ((v2 as u8) as i8) {
+       *a1 = v13;
+       a1[1] = v1;
+       if v1 == 0 {
+@@ -119,7 +119,7 @@
+   /* kuna: unstructured goto to label_3ec4a */ panic!("kuna: unstructured goto to label_3ec4a");
+   loop {
+     v9 |= ((v2 as u32 & 0x7f) as u64) << (v6 as u8 & 0x3f);
+-    if b'\0' <= (v2 as u8) {
++    if (b'\0' as i8) <= ((v2 as u8) as i8) {
+       *a1 = v5;
+       a1[1] = v12;
+       (*a0).field_0x48 = 0;
+
+--- before/gimli::read::line::parse_attribute
++++ after/gimli::read::line::parse_attribute
+@@ -46,7 +46,7 @@
+           /* kuna: unstructured goto to label_3f4ca */ panic!("kuna: unstructured goto to label_3f4ca");
+         }
+         v4 = (v4 as u64 | ((v1 as u32 & 0x7f) as u64) << (v5 as u8 & 0x3f)) as *mut u32;
+-        if b'\0' <= (v1 as u8) {
++        if (b'\0' as i8) <= ((v1 as u8) as i8) {
+           (*a1).field_0x0 = v14;
+           (*a1).field_0x8 = v15 as u64;
+           v6 = (v4 as u32) >> 8;
+@@ -217,7 +217,7 @@
+           /* kuna: unstructured goto to label_3f7a5 */ panic!("kuna: unstructured goto to label_3f7a5");
+         }
+         v14 = (v14 as u64 | ((v1 as u32 & 0x7f) as u64) << (v5 as u8 & 0x3f)) as *mut u32;
+-        if b'\0' <= (v1 as u8) {
++        if (b'\0' as i8) <= ((v1 as u8) as i8) {
+           (*a1).field_0x0 = v4;
+           (*a1).field_0x8 = v15 as u64;
+           if v15 < v14 {
+@@ -317,7 +317,7 @@
+         v13 |= ((v1 as u32 & 0x7f) as u64) << (v5 as u8 & 0x3f);
+         v5 += 7;
+         v4 = v14;
+-        if !((v1 as u8) <= 0xff) {
++        if !(((v1 as u8) as i8) <= (0xff as i8)) {
+           break;
+         }
+       }
+@@ -374,7 +374,7 @@
+             /* kuna: unstructured goto to label_3f4ca */ panic!("kuna: unstructured goto to label_3f4ca");
+           }
+           v4 = (v4 as u64 | ((v1 as u32 & 0x7f) as u64) << (v5 as u8 & 0x3f)) as *mut u32;
+-          if b'\0' <= (v1 as u8) {
++          if (b'\0' as i8) <= ((v1 as u8) as i8) {
+             (*a1).field_0x0 = v14;
+             (*a1).field_0x8 = v15 as u64;
+             v6 = (v4 as u32) >> 8;
+
+--- before/core::str::trim_start_matches
++++ after/core::str::trim_start_matches
+@@ -22,7 +22,7 @@
+   loop {
+     v9 = *v7;
+     v8 = v9 as u64;
+-    if b'\0' <= (v9 as u8) { // branch-flip
++    if (b'\0' as i8) <= ((v9 as u8) as i8) { // branch-flip
+       v1 = &mut v7[1];
+       v6 = v9 as u32;
+     }
+
+--- before/std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}
++++ after/std::backtrace_rs::symbolize::gimli::parse_running_mmaps::{impl#1}::from_str::{closure#2}
+@@ -15,7 +15,7 @@
+   }
+   (*a1).field_0x0 = &mut v3[1];
+   v1 = *v3;
+-  if b'\0' <= (v1 as u8) {
++  if (b'\0' as i8) <= ((v1 as u8) as i8) {
+     *(&mut (*a0).field_0x8 as *mut u32) = v1 as u32;
+     (*a0).field_0x0 = 0;
+     return;
+

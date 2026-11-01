@@ -1,0 +1,4 @@
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">4088f885f67406d0f8ffce75fac3</bytechunk>
+<symbol space="ram" offset="0x100000" name="byte_loop_direct"/>
+</binaryimage>

@@ -1,0 +1,30 @@
+error[E0308]: mismatched types
+  --> /tmp/kuna-rust-signed-bytes/unsigned-before-execution.rs:27:9
+   |
+24 | unsafe fn unsigned_shift16(mut a: u16, mut n: u32) -> u16
+   |                                   --- expected due to this parameter type
+...
+27 |     a = (a as i16) >> 1;
+   |         ^^^^^^^^^^^^^^^ expected `u16`, found `i16`
+
+error[E0308]: mismatched types
+  --> /tmp/kuna-rust-signed-bytes/unsigned-before-execution.rs:43:9
+   |
+40 | unsafe fn unsigned_shift32(mut a: u32, mut n: u32) -> u32
+   |                                   --- expected due to this parameter type
+...
+43 |     a = (a as i32) >> 1;
+   |         ^^^^^^^^^^^^^^^ expected `u32`, found `i32`
+
+error[E0308]: mismatched types
+  --> /tmp/kuna-rust-signed-bytes/unsigned-before-execution.rs:59:9
+   |
+56 | unsafe fn unsigned_shift64(mut a: u64, mut n: u32) -> u64
+   |                                   --- expected due to this parameter type
+...
+59 |     a = (a as i64) >> 1;
+   |         ^^^^^^^^^^^^^^^ expected `u64`, found `i64`
+
+error: aborting due to 3 previous errors
+
+For more information about this error, try `rustc --explain E0308`.
