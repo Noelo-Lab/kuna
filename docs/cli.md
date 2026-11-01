@@ -2765,7 +2765,10 @@ with kuna's own address column, so the two are diffable. `--json` replaces
  "start": N, "start_hex": "0x..", "end": N, "end_hex": "0x..",
  "count": N, "bytes": N, "truncated": false, "notes": ["..."],
  "hex": "000102030405060708090a0b0c0d0e0f",
- "rows": [{"address","address_hex","size","bytes","ascii"}]}
+ "rows": [{"address","address_hex","size","bytes","ascii"}],
+ "fixups_coverage": "chained-fixups",
+ "fixups": [{"address","address_hex","size","kind","symbol","addend",
+             "target","target_hex","file_bytes","image_bytes","returned"}]}
 ```
 
 `hex` is the whole span in one piece and `rows[].bytes` is that same string cut
@@ -2774,6 +2777,39 @@ in both views (instructions, or hexdump rows); `bytes` is the span. A byte view
 honors the requested end exactly, where an instruction listing overshoots to the
 end of the instruction that straddles it. `notes` carries anything the command
 would have said on stderr, so a `--json` caller never has to read two streams.
+
+The bytes are the **load image's**, the ones the decompiler and every other
+surface read, and that is not the file wherever a load-time fixup lands. A
+Mach-O chained-fixup rebase or an ELF `RELATIVE` slot holds the pointer the
+loader stores, not the chain word or the zero on disk; a chained **bind** holds
+a zero, kuna's placeholder for the address the loader looks up in another image
+at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
+
+| Field | What it is |
+|---|---|
+| `kind` | `rebase` (an address in this image, which the loader slides), `bind` (a symbol's address, which the loader looks up: a chained bind, an ELF `GLOB_DAT`/`JUMP_SLOT`), or `relocation` (any other ELF dynamic relocation, which kuna does not apply). |
+| `symbol`, `addend` | The symbol a bind or relocation names, as the image spells it (`_malloc`), and a bind's addend; `null` where there is none. |
+| `target` | The value the loader stores, where this image alone determines it: a rebase's target, a bind to a symbol the image defines. `null` for an import. |
+| `file_bytes`, `image_bytes` | The slot's bytes in the file (`null` past the segment's file content) and in the load image. |
+| `returned` | What `hex`/`rows` hold there: `file` (the file's own bytes), `applied` (the loader's value, `target`), or `placeholder` (zero standing in for an import's address). |
+
+`fixups_coverage` names the metadata the list came from — `chained-fixups`
+(Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF), or
+`none` for an image whose fixups kuna does not apply (a PE at its preferred
+base, a classic Mach-O, whose rebased words are already the unslid pointers),
+where `fixups` is empty and the bytes are the file's. `--option dynrelocs off`
+leaves every slot as the file holds it, and `returned` then says `file`. A span
+that overlaps a bind, an applied slot or an unapplied relocation also gets a
+note naming up to three of them:
+
+```
+$ kuna read ./fixture.dylib 0x4000 --addr --bytes 8
+note: these bytes overlap a load-time fixup slot: 0x4000 bind _malloc (kuna's zero
+placeholder for an address the loader looks up at run time; the file holds
+0000000000000080) -- `--json` lists each in `fixups`
+# 8 bytes at malloc @ 0x4000 (0x4000..0x4008)
+0x4000        00 00 00 00 00 00 00 00                          |........|
+```
 
 A listing stops at the end of **mapped memory**, whatever length was asked for.
 The load image answers a read that starts on a mapped address for its whole

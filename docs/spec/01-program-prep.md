@@ -1557,6 +1557,22 @@ funcsym stream:
   pointer table placed in `.text` after a `mov eax, offset f`, stays a pointer,
   and so does one inside an instruction the walk never decoded or whose reference
   it did not record, so dropping a row never leaves the word unanswered.
+- **Fixup sites** (kuna, GH #1379,
+  `decompiler/crates/kuna-analysis/src/loader/kuna_dynrelocs.rs (fixup_sites)`):
+  the slots whose loaded bytes the two writers above may have rewritten, for a
+  reader of the load image that must say which of its bytes are the file's. It
+  lists every slot of the same metadata `resolve` walks, the ones it leaves alone
+  included: each chained-fixup rebase (with its target) and bind (with the import
+  it names and its addend), and each dynamic relocation of a linked ELF. A
+  `RELATIVE` relocation is a rebase whose target is `B + A`; a `GLOB_DAT` or
+  `JUMP_SLOT` one is a bind, valued `S + A` where the image defines the symbol and
+  unvalued for an import; any other kind (`COPY`, `IRELATIVE`, an absolute word,
+  TLS, and every relocation of a machine without the triple) is listed unvalued,
+  because the loader rewrites the slot and kuna does not. Both callers share one
+  per-relocation classifier (`ElfTable::classify`), and `resolve` writes exactly
+  the valued rebases and binds, as before. The list is read whatever the
+  `dynrelocs` gate says, so a reader compares the loaded bytes with the file's to
+  learn what was applied. Any other image lists none, under coverage `none`.
 - **In-code literal pools** (kuna, `litpoolconst`, default-on, DIV-136,
   `decompiler/crates/kuna-decomp/src/p1_partition/kuna_litpoolconst.rs`): the
   third user of the same "constant by construction, not by policy" exception, and

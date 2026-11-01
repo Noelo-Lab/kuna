@@ -534,6 +534,25 @@ Four front-ends drive one engine assembly:
   nothing in the program, which is what sent two RE-loop testers to `xxd` and
   `objdump -s` (`docs/re-needs/cli-mode-read-raw.md`).
 
+  (kuna) **The byte view says which of its bytes are the file's** (GH #1379).
+  It lists the load image, the bytes the decompiler and the browser's Data tab
+  read, and that image is not the file wherever a load-time fixup lands: a
+  chained-fixup rebase or an ELF `RELATIVE` slot holds the pointer the loader
+  stores rather than the chain word or zero on disk, and a chained bind holds a
+  zero where the loader writes another image's address. Showing the file instead
+  would turn every rebased pointer back into a chain encoding, so the listed bytes
+  stay the image's and every fixup slot the listed span overlaps is reported
+  whole (`decompiler/crates/kuna-cli/src/disassemble/fixups.rs (overlapping)`),
+  from the loader's own list
+  (`decompiler/crates/kuna-analysis/src/loader/kuna_dynrelocs.rs (fixup_sites)`):
+  its kind (`rebase`, `bind`, `relocation`), the symbol a bind names, the value
+  the loader stores where the image determines it, the file's bytes and the
+  image's. What the listed bytes are there is decided by comparing the two, so it
+  holds with `dynrelocs` off too: the file's when they agree, kuna's zero
+  placeholder for a bind whose image bytes are zero, and the loader's value
+  otherwise. A span that overlaps anything but a rebase left as the file holds it
+  also gets one note, on stderr and in the JSON `notes`, naming up to three slots.
+
   (kuna) **A listing names the branch targets it decoded across, and `--follow`
   decodes from them.** A straight-line walk assumes every byte in the range
   starts an instruction or is inside one; hand-written and obfuscated code breaks

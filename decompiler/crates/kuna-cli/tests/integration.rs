@@ -325,6 +325,9 @@ mod push_immediate_ret_cli;
 #[path = "pushed_stack_bytes.rs"]
 mod pushed_stack_bytes;
 
+#[path = "read_fixups_cli.rs"]
+mod read_fixups_cli;
+
 #[path = "recursive_records_cli.rs"]
 mod recursive_records_cli;
 
