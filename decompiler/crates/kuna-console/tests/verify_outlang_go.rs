@@ -1,7 +1,7 @@
 //! Go parses across statement forms and executes the supported scalar surface.
 
 use crate::common;
-use kuna_console::engine::bootstrap_from_object;
+use kuna_console::engine::bootstrap_from_file;
 use kuna_console::ifacedecomp::{
     execute, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
@@ -66,7 +66,7 @@ fn scratch() -> PathBuf {
 }
 
 fn decompile(binary: &Path, names: &[&str], options: &[&str]) -> Vec<String> {
-    let mut program = bootstrap_from_object(
+    let mut program = bootstrap_from_file(
         binary.to_str().unwrap(),
         "",
         &[root().join("specs").display().to_string()],
@@ -150,6 +150,34 @@ fn parse(directory: &Path, code: &[String]) {
         check.arg(file);
     }
     run(&mut check);
+}
+
+#[test]
+fn internal_byte_strings_compile_and_preserve_bytes() {
+    if !go_available() { return; }
+    let code = decompile(
+        &root().join("tests/stages/ghangr-go-string-pointers.xml"),
+        &["plain", "escaped", "unicode"],
+        &[
+            "option outlang go", "option fatstr always",
+            "map prototype sink void sink(void *p, unsigned long n);",
+            "map prototype plain void plain(void);",
+            "map prototype escaped void escaped(void);",
+            "map prototype unicode void unicode(void);",
+        ],
+    );
+    let file = scratch().join("strings.go");
+    let check = r#"
+var expected = []string{"plain bytes", "quote\" slash\\ tab\t newline\n", "café"}
+func sink(p unsafe.Pointer, n uint64) {
+  if len(expected)==0 || string(unsafe.Slice((*byte)(p), n))!=expected[0] { panic("string bytes") }
+  if *(*byte)(unsafe.Add(p,n))!=0 { panic("terminating zero") }
+  expected=expected[1:]
+}
+func main() { plain(); escaped(); unicode(); if len(expected)!=0 { panic("missing call") } }
+"#;
+    std::fs::write(&file, format!("package main\nimport \"unsafe\"\n{}\n{check}", code.join("\n"))).unwrap();
+    run(Command::new("go").arg("run").arg(file));
 }
 
 #[test]

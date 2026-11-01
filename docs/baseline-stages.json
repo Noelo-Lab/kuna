@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3464,
-    3464
+    3469,
+    3469
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -152,6 +152,7 @@
     "data:Bit reinterpret x64 #1: storage transfers use a union",
     "data:Bit reinterpret x64 #2: numeric integer conversion stays a cast",
     "data:Bit reinterpret x64 #3: numeric float truncation stays a cast",
+    "data:C keeps ordinary byte string syntax",
     "data:C selection retains C return punctuation before and after Go",
     "data:CALL-ARRAY-EXTENT #10: indexed parent retains room for every store",
     "data:CALL-ARRAY-EXTENT #11: return reads the copied word in shared storage",
@@ -902,8 +903,12 @@
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
     "data:Global aggregate fields do not become locals",
     "data:Go bottom-tested loop skips only its first condition",
+    "data:Go byte string pointers retain a terminating zero",
     "data:Go float storage conversion preserves bits",
     "data:Go integer pointer conversion retains uintptr bridge",
+    "data:Go internal strings use data pointers",
+    "data:Go keeps the pointer conversion to the formal type",
+    "data:Go never converts a string directly to a pointer",
     "data:Go pointer indexing retains byte scaling",
     "data:Go selection emits exact-width function parameters",
     "data:Go switch renders actual shared-case fallthrough",
