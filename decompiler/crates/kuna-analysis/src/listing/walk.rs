@@ -374,12 +374,12 @@ where
             refs.file(vma, target, RefKind::Code);
         }
     }
-    let skip = vma.wrapping_add(u64::from(decoded.len));
-    if let Some(tables) = ctx.a32_tables
-        .filter(|_| c.flow.is_computed && c.flow.is_jump && c.flows.iter().all(|&t| t == skip))
-    {
+    let skip = c.predicated_skip(vma, decoded.len);
+    if let Some(tables) = ctx.a32_tables.filter(|_| {
+        c.flow.is_computed && c.flow.is_jump && !c.flow.is_call && c.flows.iter().all(|&t| Some(t) == skip)
+    }) {
         let decoded = |at: u64| insns.decoded(at);
-        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma) {
+        for target in tables.targets(ctx.translate, ctx.code_space, ctx.exec_ranges, &decoded, vma).cases {
             out.insn(target);
             refs.file(vma, target, RefKind::Code);
         }

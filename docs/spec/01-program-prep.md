@@ -6740,7 +6740,10 @@ Betaflight pilot exchanges one gained body for one lost body. Default recovery
 therefore targets A32 inventory roots. Short callbacks and vector-only handlers
 remain separate discovery sources.
 
-With `armframes` enabled, the Listing walk also follows an A32 jump table. GCC
+With `armframes` enabled (`inventory`, the default, or `on`), the Listing walk
+also follows an A32 jump table. Unlike frame recovery, table following needs no
+other option: not `funcstart_patterns`, which is off by default, and in the
+reference walk not `listing` either. GCC
 lowers an A32 switch to `cmp rN,#n` and a predicated `ldrls pc,[pc,rN,lsl #2]`
 with its table of case addresses 8 bytes past the dispatch, or to `addls
 pc,pc,rN,lsl #2` followed by one `b` per case. The dispatch's p-code is folded
@@ -7541,6 +7544,42 @@ case bodies, and what they call, on every Listing build, so discovery alone
 takes longer where tables are read (`kuna functions` about 8% on betaflight and
 that libc), while a whole-binary run gets faster because no case body is
 decompiled as a function of its own. It is ARM-only and needs a walk, so it is inert without `--option listing on`.
+
+**A32 tables in the reference walk.** The two A32 forms the Listing walk follows
+under `armframes` (above, `kuna_a32switch.rs`) are read by the xrefs walk too,
+with the same reader and the same option. A guarded `addls pc,pc,rN,lsl #2`
+walks each `b caseN` after `b default`; a guarded `ldrls pc,[pc,rN,lsl #2]`
+walks each word after it. The A32 read comes before the table-base read: the
+dispatch's PC-relative operand names the dispatch itself, which is not a table.
+The cases are the dispatcher's own code, walked as its successors with the state
+the dispatch holds, so a GOT base made before the dispatch reaches every case
+(the `picpool` rule above). The dispatch files one `Jump` to each case, as
+Ghidra's `ArmAnalyzer` adds a computed-jump reference per case. The words of an
+`ldr` table are data the dispatch reads: they are not decoded and file no
+pointer row, which matches Ghidra, whose ARM switch recovery labels and
+disassembles the targets but adds no reference from the words. A predicated
+dispatch lifts as a skip to `b default` ahead of its jump. `classify` keeps that
+skip as one of the jump's flows with no fall-through, on every architecture and
+under every option, so PIC pool composition, no-return propagation and every
+other consumer of the instruction see one shape: a pool word loaded before
+`bxne r3` still reaches the `add rN,pc,rM` after it along the skip, and a
+function that leaves through `bxne r0` or `bl abort` is proved no-return
+exactly as before. Where A32 tables are read, both walks only recognise the
+skip (`Classified::predicated_skip` in
+`decompiler/crates/kuna-analysis/src/listing/classify.rs`): a computed jump
+whose only flow is its skip is read as a table, and the reference walk files
+no `Jump` row for the skip. Under `armframes off`, and on every other
+architecture, the skip keeps its row and no A32 table is read. The switch record states the guard's case count, so a table longer than
+`jumptablemax` is marked truncated. A dispatch whose table gives no case (a run
+shorter than two entries, or `b caseN` slots past the section end) states no
+count, and the other table readers run on it as on any computed jump. A dispatch the walk reaches before the
+guard that falls into it (a branch into the dispatch, or breadth-first order)
+waits at the address the guard read stopped at and is read again, A32 reader
+first, once that code is decoded.
+Without this, the walk stopped at the dispatch and followed only `b default`.
+GCC 14 no longer emits either form from C in ARM state (it compresses the table
+to bytes, `ldrb rN,[rT,rN]; add pc,pc,rN,lsl #2`); that form is not read. Thumb
+`ldr pc` tables are not read either: their PC is 4 bytes ahead, not 8.
 
 (kuna, GH-299) **Bounded i386 switch coverage** (`x86listingswitch`, default-off;
 `decompiler/crates/kuna-analysis/src/listing/kuna_x86listingswitch.rs`) extends
