@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3368,
-    3368
+    3371,
+    3371
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1098,6 +1098,9 @@
     "data:KUNA-X86LISTINGSWITCH #7: direct case-only callee is discovered with the option on",
     "data:KUNA-X86LISTINGSWITCH #8: case-only helper call survives both decompilations",
     "data:KUNA-X86LISTINGSWITCH #9: case result after the helper is explicit in both arms",
+    "data:LANEFANOUT #1: sub_e87b0 decompiles despite the shared unique IMUL temporary",
+    "data:LANEFANOUT #2: the body reaches the ERANGE error path",
+    "data:LANEFANOUT #3: no decompilation failure is reported",
     "data:LIBCTYPES #10: glibc off, a MINTED stream shell has no members, so the refill body reads an offset",
     "data:LIBCTYPES #11: glibc on, the same two accesses are the published field",
     "data:LIBCTYPES #12: glibc off, a MINTED stat shell reads its size through a cast at an offset",

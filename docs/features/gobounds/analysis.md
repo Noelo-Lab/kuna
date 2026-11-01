@@ -28,9 +28,12 @@ The companion hunk inventories classify the CFG changes and their downstream
 signature/type, dead-spill, and local-renumbering effects.
 
 A final 21-pair interleaved CLI measurement (alternating off/on and on/off,
-after two warmups) measured 717.56 ms off versus 736.17 ms on, +2.59%, within
+after two warmups per mode) measured 719.16 ms off versus 726.02 ms on, +0.95%, within
 the 5% budget. Raw samples are in record.json. This includes image loading;
 concurrent activity on the shared host makes individual samples noisy. Earlier
 measurements varied substantially, so no speedup is claimed. The final build
 reproduced both complete off/on corpus outputs byte-for-byte after correcting
 the gobounds/gonoreturn option interaction.
+
+These measurements were repeated after merging main at `6a4e7215a`. Both
+complete off/on corpus outputs were byte-identical to the earlier run.

@@ -546,7 +546,7 @@ Four front-ends drive one engine assembly:
   fold (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs)`), restricted to
   the listed span, because a branch out of the range says nothing about the range.
   `--follow` (`decompiler/crates/kuna-console/src/disasm.rs (follow_rows)`) then
-  decodes from those addresses as well as from the start, to a fixpoint over
+  decodes from every address flow from the start reaches, to a fixpoint over
   whatever the newly decoded rows themselves name: one re-anchor is not enough,
   because the instruction at a jumped-to address is commonly another jump over
   another decoy byte. A run steps forward while the instruction has a
@@ -554,13 +554,33 @@ Four front-ends drive one engine assembly:
   (`decompiler/crates/kuna-console/src/engine.rs (FixedRefs::harvest)`), where a
   `goto` whose destination is the instruction's own fall-through is not a dead
   end, since SLEIGH gives the x86 `E8 00000000` get-PC idiom its own `goto`
-  constructor — and stops where an earlier run already claimed the bytes, so no
-  address is decoded twice and the fixpoint terminates. What flow never reaches is
-  then filled by the ordinary straight-line walk between the claimed rows, clipped
-  so nothing crosses into one, which is why `--follow` never lists less than the
-  plain listing and both cover the same span. It is off by default because it
-  costs a second walk and the straight line is the right answer for compiler
-  output (`docs/re-needs/linear-disassembly-silently-skips.md`).
+  constructor — and stops at an address an earlier run already decoded, so no
+  address is decoded twice and the fixpoint terminates. A run is not stopped by
+  bytes an earlier run read as a different instruction: a conditional branch into
+  the middle of the fall-through it skips, a jump back into an instruction, and a
+  `75 01` hop over a junk lead byte all reach the same bytes along two paths, both
+  readings are reachable, and both are listed, so rows can overlap. Clipping the
+  later path at the earlier one's rows dropped the branch target outright whenever
+  its instruction ran past the next claimed row (GH #1363), and silently ended a
+  re-anchored run the first time it crossed one. A row budget (`--count`, or the
+  derived-length cap) is spent on the lowest addresses: once that many rows are
+  decoded a run continues only below the highest of the lowest that many, so a
+  target flow reaches late still gets its row if it is among the rows the listing
+  prints. Finding those rows is bounded too: the walk spends at most
+  `FOLLOW_DECODES_PER_ROW` (4) decodes per budgeted row plus a small fixed
+  slack, because each lower level of a staircase of branch targets displaces
+  the rows of the one above and would otherwise cost the whole window; a target
+  the walk did not get to is then reported as past the budget. What flow never
+  reaches is then filled by the ordinary straight-line walk between the followed
+  rows, clipped so nothing crosses into one, which is why `--follow` never lists
+  less than the plain listing and both cover the same span. A target still
+  without a row is reported with the reason that is true of it
+  (`decompiler/crates/kuna-console/src/disasm.rs (Skip)`): named only by that
+  straight-line fill, not decodable, at or past the window's end, or past the row
+  budget; the note on what `--follow` re-anchored counts only targets it actually
+  started a row at that the straight line walked over. It is off by default
+  because it costs a second walk and the straight line is the right answer for
+  compiler output (`docs/re-needs/linear-disassembly-silently-skips.md`).
 
   (kuna) **A window the caller bounded is answered without the discovery walk.**
   `--count`, `--bytes` and an explicit `start-end` range each bound the listing on
@@ -2899,6 +2919,21 @@ address offset here would swap the masks of a register pair and allow live
 pointer, loop-bound or floating point values to be replaced with zero. This
 applies to integer and FPU lanes.
 
+Before `TransformManager` materializes anything,
+`decompiler/crates/kuna-decomp/src/substrate/transform.rs (check_free_fanout)`
+refuses a transform that would give a free varnode it creates more than one
+reader: an undefined temporary or a lane of a varnode that is not an input.
+That is the condition `Varnode::addDescend` rejects, and the upstream code only
+meets it in `placeInputs`, after `removeOld` and `transformInputVarnodes` have
+already destroyed ops and varnodes. Failing first keeps a refused transform free
+of side effects, so the rules that treat a failed apply as "no change"
+(`RuleSplitFlow`, `RuleSubfloatConvert`) leave the function as it was. A lane of
+an input stays allowed, since it becomes an input itself, and so does a
+constant, since `opSetInput` gives every reader after the first its own copy
+(a lane-split LOAD from a constant address reads its base pointer twice).
+`ActionLaneDivide` runs the same check once a trace succeeds and counts a
+refusal as a failed trace (chapter 03).
+
 Lookup-only hash maps keyed by engine ids and image addresses (values the
 decompiler makes or reads from the binary, so they need speed rather than
 collision resistance) hash with
@@ -3724,3 +3759,32 @@ to the stack space's signed address width. Reused storage still requires a uniqu
 high variable or a unique matching name. The existing named-high and address-taken
 parameter fallbacks remain in their original order, so the index changes lookup
 cost rather than which rendered uses belong to a variable.
+
+### Raw p-code query
+
+`kuna raw-pcode` (`decompiler/crates/kuna-cli/src/disassemble/raw_pcode.rs`) lifts
+each instruction with `Translate::one_instruction` before the decompiler
+pipeline and reports the opcode and ordered varnode tuples beside the exact
+loaded bytes the translator consumed. It resolves its operand, its window and
+its program load through `kuna disassemble`'s path, so a caller-bounded window
+takes the same windowed load. The straight-line walk never guesses: it stops at
+the first instruction that does not lift or that would cross the window or the
+end of mapped memory, and returns the lifted prefix, its exclusive end, the
+failure and exit status 1. A lift that includes a delay slot reports the
+combined byte span and the slot's operations in the same row.
+
+The `--follow` walk (`raw_pcode/flow.rs`) reads each lift's successors with the
+rule `FlowInfo::xrefControlFlow` applies (`p2_lift/flow.rs`): a branch into the
+constant space is p-code-relative and stays in the lift, ops after an
+unconditional transfer that no relative branch skips are dead, and the lift
+falls through unless its last live op is a BRANCH, BRANCHIND or RETURN or a
+relative branch runs to its end. A predicated instruction therefore continues
+the walk with a branch and a fall-through to the next address. Calls are
+assumed to return. The walk visits direct successors inside its window, groups
+the lifts into basic blocks, and reports indirect, out-of-window, overlapping,
+over-budget and undecodable paths; its completeness flag is scoped to that
+bounded walk and does not prove all dynamic execution paths.
+
+When raw-pcode receives an odd ARM32 code pointer, its private decode context
+starts in Thumb mode at the corresponding even byte address. The mode seed is
+scoped to that query and leaves the loaded program's context unchanged.
