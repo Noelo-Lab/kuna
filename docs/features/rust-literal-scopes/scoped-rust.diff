@@ -1,0 +1,20 @@
+--- before/scoped_stdout
++++ after/scoped_stdout
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn scoped_stdout() -> u64
+ {
+-  _print(0x2000,0x1f);
++  println!("scoped literal");
+   return 0;
+ }
+--- before/scoped_stderr
++++ after/scoped_stderr
+@@ -1,6 +1,6 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn scoped_stderr() -> u64
+ {
+-  _eprint(0x2000,0x1f);
++  eprintln!("scoped literal");
+   return 0;
+ }

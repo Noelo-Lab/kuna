@@ -4045,6 +4045,11 @@ The loader obtains the version from ELF `.comment` records through
 Absent, malformed, prerelease or conflicting Rust records provide no version;
 a forced source-language option cannot manufacture version evidence.
 
+A resolved sink may store its name as a qualified string or as a leaf name plus
+namespace. A leaf `_print`/`_eprint` qualifies only at the exact symbol entry and
+with the complete `std::io::stdio` scope. Missing, extra or unrelated namespaces
+keep the runtime call, including when resolution follows a relocated GOT slot.
+
 The call must have exactly two constant machine-word arguments and no result.
 In this compiler layout the second word's low bit distinguishes a literal from
 a formatting template: odd means `(byte_length << 1) | 1`. The first word must
