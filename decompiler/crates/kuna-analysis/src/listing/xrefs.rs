@@ -448,6 +448,23 @@ impl XrefIndex {
         self.funcs.contains(&vma)
     }
 
+    /// Did the walk decode an instruction at `vma`?
+    pub fn is_decoded(&self, vma: u64) -> bool {
+        self.decoded.contains(&vma)
+    }
+
+    /// The call and jump targets the walk filed but decoded no instruction at,
+    /// in address order: code the descent was pointed at and stopped short of.
+    pub fn undecoded_flow_targets(&self) -> impl Iterator<Item = u64> + '_ {
+        self.by_target
+            .iter()
+            .filter(|(to, refs)| {
+                !self.decoded.contains(to)
+                    && refs.iter().any(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+            })
+            .map(|(&to, _)| to)
+    }
+
     /// How many distinct instructions the walk decoded.
     pub fn instruction_count(&self) -> usize {
         self.insns
@@ -615,7 +632,7 @@ pub fn build(
     translate: &dyn Translate,
     seeds: &[u64],
 ) -> XrefIndex {
-    descend(file, arch, translate, seeds, &[], false)
+    descend(file, arch, translate, seeds, &[], (&[], &[]), false)
 }
 
 /// [`build`], also keeping the successor graph
@@ -628,7 +645,7 @@ pub fn build_measured(
     translate: &dyn Translate,
     seeds: &[u64],
 ) -> XrefIndex {
-    descend(file, arch, translate, seeds, &[], true)
+    descend(file, arch, translate, seeds, &[], (&[], &[]), true)
 }
 
 /// [`build`], plus the addresses the CALLER named.
@@ -650,7 +667,27 @@ pub fn build_with_focus(
     seeds: &[u64],
     focus: &[u64],
 ) -> XrefIndex {
-    descend(file, arch, translate, seeds, focus, false)
+    descend(file, arch, translate, seeds, focus, (&[], &[]), false)
+}
+
+/// [`build_with_focus`], where a focus address may also lie in one of
+/// `unflagged`: executable memory in a section not marked as code
+/// ([`super::kuna_unflaggedcode`]). The caller naming such an address is not
+/// enough to read its bytes as instructions; it is decoded when the image says
+/// it is code, because an instruction the seeded walk decoded calls or jumps to
+/// it, or because it is one of `declared` (an ELF `STT_FUNC`). Only its own body
+/// is decoded: its branches are followed while they stay inside the range it
+/// starts in, and a call out of it is filed and walked under the ordinary rules.
+pub fn build_with_unflagged_focus(
+    file: &object::File,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    seeds: &[u64],
+    focus: &[u64],
+    unflagged: &[(u64, u64)],
+    declared: &[u64],
+) -> XrefIndex {
+    descend(file, arch, translate, seeds, focus, (unflagged, declared), false)
 }
 
 fn descend(
@@ -659,6 +696,7 @@ fn descend(
     translate: &dyn Translate,
     seeds: &[u64],
     focus: &[u64],
+    (unflagged, declared): (&[(u64, u64)], &[u64]),
     measure: bool,
 ) -> XrefIndex {
     let Some(code_space) = arch.manage().get_default_code_space().map(Rc::clone) else {
@@ -811,6 +849,17 @@ fn descend(
     pending_focus.dedup();
     pending_focus.reverse();
     let mut focused: Vec<u64> = Vec::new();
+    let unflagged = range_union(unflagged.to_vec());
+    let forced: HashSet<u64> = if sections_are_runtime {
+        focus.iter().copied()
+            .filter(|&f| !in_range(&exec_set, f) && in_range(&unflagged, f))
+            .collect()
+    } else {
+        HashSet::new()
+    };
+    // Only the focus pass decodes a forced address; the descent that reaches one
+    // as a callee first stops at it, as it always has.
+    let mut admitted: HashSet<u64> = HashSet::new();
 
     loop {
         // Drain known entries first, then merge recovered roots and focus addresses
@@ -859,10 +908,19 @@ fn descend(
             }
             None => match pending_focus.pop() {
                 Some(f) => {
+                    let admit = forced.contains(&f)
+                        && (declared.contains(&f)
+                            || st.by_target.get(&f).is_some_and(|refs| {
+                                refs.iter().any(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+                            }));
                     if st.decoded.contains(&f) || partition_covers(&recovered_spans, f)
-                        || (sections_are_runtime && !in_range(&exec_set, f))
+                        || (sections_are_runtime && !in_range(&exec_set, f) && !admit)
                     {
                         continue;
+                    }
+                    if admit {
+                        walked.remove(&f);
+                        admitted.insert(f);
                     }
                     st.funcs.insert(f);
                     focused.push(f);
@@ -956,6 +1014,7 @@ fn descend(
                         pending_focus.dedup();
                         pending_focus.reverse();
                         focused.clear();
+                        admitted.clear();
                         walked.clear();
                         if let Some(context) = &mut walk_context { context.reset(); }
                         partition.clear();
@@ -998,6 +1057,8 @@ fn descend(
         }
         let entry_mode = walk_context.as_ref().and_then(|context| context.entry(entry));
         let mut insn_queue = VecDeque::from([(entry, entry_mode)]);
+        let body_range = admitted.contains(&entry)
+            .then(|| unflagged[unflagged.partition_point(|&(lo, _)| lo <= entry) - 1]);
         // (kuna) `switchtable`: the dispatches this body's decoding filled the gap
         // above, to read again once it drains.
         let mut woken: Vec<(u64, _, VarnodeData)> = Vec::new();
@@ -1068,7 +1129,9 @@ fn descend(
                 st.refused.insert(vma);
                 continue;
             }
-            if sections_are_runtime && !in_range(&exec_set, vma) {
+            if sections_are_runtime && !in_range(&exec_set, vma)
+                && !body_range.is_some_and(|(lo, hi)| vma >= lo && vma < hi)
+            {
                 continue; // out of bounds (the `flow.rs` gate)
             }
             let selection = super::kuna_walkcontext::InstructionMode::select(arch, translate, &code_space, vma, mode);

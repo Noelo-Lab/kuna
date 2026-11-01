@@ -6932,6 +6932,50 @@ coverage, never re-attribute an instruction another entry owns. An address that 
 not decode is dropped rather than recorded as a function, so a byte in the middle of
 a string does not become `sub_<addr>`.
 
+(kuna, GH #1406) A focus address is decoded only where the walk decodes at all: in
+a section the linker marked as code. The loader obeys the segment instead, so memory
+can be executable without being marked. An Apple toolchain links a function placed
+in `__TEXT,__const` with no instruction attribute although `__TEXT` is `r-x`, a
+bare-metal link script leaves `.ramfunc` flagged `WA` in an `RWE` `PT_LOAD`, and GNU
+ld links AArch64 `.rodata` into the `R E` segment. `kuna xrefs --from` such an
+address answered `count: 0`, the same document a function with no references gets.
+The walk still does not decode that memory on its own account: most of it is
+strings and tables, and the inventory keeps its symbols out of `kuna functions`
+(GH #1339). An explicit `--from` source there is decoded as code when the image
+says it is code
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (build_with_unflagged_focus)`).
+The section holding it must lie wholly inside a segment the image maps executable
+(ELF `PF_X`, Mach-O `initprot` execute) and have a type that can hold instructions
+(ELF allocated `SHT_PROGBITS` that is neither TLS nor merged strings; Mach-O
+`S_REGULAR`, `S_SYMBOL_STUBS` or `S_COALESCED`)
+(`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (placement)`).
+An ELF symbol table must not declare a data object at the address, and something
+must say the address is code: an instruction the seeded walk decoded calls or jumps
+to it (checked when the focus pass reaches it, after that walk has drained), or an
+ELF symbol table declares a function there
+(`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (declared_function)`).
+Selection alone is not enough, because the same memory is mostly data: GNU ld put
+x86-64 `.rodata` in the `R E` segment until `-z separate-code` became its default
+(binutils 2.31), and still does on AArch64, and a string there decodes to a run of
+plausible conditional jumps. A Mach-O `nlist` carries no type,
+so a symbol alone is not evidence there. Only the source's own body is decoded: its
+branches are followed while they stay in that section, and a call out of it is
+filed and walked under the ordinary rules. The seeded descent can reach the address
+first, as a callee, and stops at it as before; only the focus pass decodes it.
+`--to`, and every other surface built on the walk, decodes nothing new. A PE
+section is its own mapping unit, executable and walked or not executable at all, so
+PE has no such gap.
+
+Every answer also carries a `coverage` object
+(`decompiler/crates/kuna-cli/src/xrefs.rs (coverage_of)`): whether the walk decoded
+the queried address, the section it is in, whether that section is marked as code
+and whether its memory is executable, and the call and jump targets in executable
+memory not marked as code that the walk filed but did not decode
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (undecoded_flow_targets)`).
+The references those targets make are missing from every answer. A `--from` answer
+about anything other than code decoded in a code section, and a `--to` answer while
+such targets exist, say so in a note.
+
 (kuna) Both of those rules read a reference out of *one instruction's* p-code,
 which is the whole answer on x86-64 and no answer at all in 32-bit
 position-independent code. There the address of a string, a global or a function

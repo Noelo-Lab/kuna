@@ -1,0 +1,58 @@
+unflagged_* -- code the image maps executable in a section not marked as code,
+for `kuna xrefs` (GH #1406; decompiler/crates/kuna-cli/tests/xrefs_unflagged_cli.rs,
+tests/cli/xrefs-unflagged-*.json).
+
+What they are
+  unflagged_macho_arm64  arm64 Mach-O executable from unflagged_macho.s (the
+                         issue's fixture plus _quiet, _orphan and _greeting):
+                           __TEXT,__text     _main 0x1000003d8 (bl _middle; bl _quiet),
+                                             _goal 0x1000003e4, _direct_goal 0x1000003ec
+                                             (bl _goal), _unrelated 0x1000003f4
+                           __TEXT,__const    flags 0x0 (no instruction attribute):
+                                             _middle 0x1000003fc (bl _goal; ret),
+                                             _quiet 0x100000404 (nop; ret),
+                                             _orphan 0x10000040c (bl _goal; ret; nothing calls it)
+                           __TEXT,__cstring  _greeting 0x100000414 ("hello")
+                           __DATA,__data     _data 0x100004000
+                         __TEXT is r-x, so all of __TEXT,__const is executable.
+  unflagged_elf_x86_64   static x86-64 ELF from unflagged_elf.S + unflagged_elf.ld:
+                           .text   (AX) _start 0x4000b0 (call middle), goal 0x4000b6,
+                                        direct_goal 0x4000bc (call goal)
+                           .rodata (A)  middle 0x4000c2 (STT_FUNC: call goal; ret),
+                                        lonely 0x4000c8 (STT_FUNC, nothing calls it),
+                                        table 0x4000ce (STT_OBJECT, 5 bytes that
+                                        decode as `call goal`), and the same 5
+                                        bytes unnamed at 0x4000d3
+                           .data   (WA) counter 0x401000
+                         one R E PT_LOAD holds .text and .rodata, as GNU ld lays
+                         an AArch64 image out.
+
+How they were built (no macOS SDK; host clang + the rustup-bundled LLD)
+  GL=$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld
+  clang -target arm64-apple-macos11 -c unflagged_macho.s -o macho.o
+  python3 unflagged_macho_arm64.py macho.o
+  $GL/ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -e _main \
+      -o unflagged_macho_arm64 macho.o
+  clang -target x86_64-linux-gnu -c unflagged_elf.S -o elf.o
+  $GL/ld.lld -static -nostdlib --build-id=none -T unflagged_elf.ld \
+      -o unflagged_elf_x86_64 elf.o
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). LLVM's assembler
+  marks __TEXT,__const S_ATTR_SOME_INSTRUCTIONS once an instruction is in it and
+  ld64.lld keeps the attribute; Apple's ld64 does not, which is the layout the
+  issue reports. unflagged_macho_arm64.py clears it in the object before the
+  link, so the output's code signature stays valid. The output names matter:
+  ld64.lld signs with the output file's name.
+
+  sha256:
+    37343a81fe2471b9ba2ca2d6beadef04337cb43815e7d4de10247abad7c66be1  unflagged_macho_arm64
+    3c61b92b475a52e4d909abf14881d5f087612d4620a127cf3abde7b999ae56c6  unflagged_elf_x86_64
+  Never executed.
+
+What they pin
+  `kuna functions` lists none of _middle, _quiet, _orphan (GH #1339). `xrefs
+  --from _middle` decodes it (_main calls it) and answers its call to _goal;
+  _quiet decodes to no references; _orphan (an untyped Mach-O symbol nothing
+  calls), _greeting, _data, the ELF `table` object and the unnamed bytes are not
+  decoded, and `coverage` says why; ELF `middle` and `lonely` are decoded because
+  their symbols are STT_FUNC. `xrefs --to _goal` still answers _direct_goal alone
+  and lists _middle and _quiet under `coverage.unwalked`.
