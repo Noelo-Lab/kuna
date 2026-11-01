@@ -632,10 +632,15 @@ fn ppc32_pic_proof_rejects_missing_bounds_entries_and_relocated_code() {
                 bytes[offset..offset + 4].copy_from_slice(&fixture.word(value));
             }
             let file = object::File::parse(&*bytes).unwrap();
-            assert!(
-                kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file).is_empty(),
-                "{mutation}, little={little}"
-            );
+            let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
+            // A symbol without a size is still an entry: the proof follows the
+            // code, so a missing extent costs nothing.
+            if mutation == "size" {
+                assert_eq!(imports.len(), 1, "{mutation}, little={little}");
+                assert_eq!(imports[0].name, b"extra");
+            } else {
+                assert!(imports.is_empty(), "{mutation}, little={little}");
+            }
         }
     }
 }
@@ -745,11 +750,10 @@ fn ppc32_pic_nested_symbol_overlap_does_not_hide_an_enclosing_function() {
             }
             let file = object::File::parse(&*bytes).unwrap();
             let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
-            let disjoint = outer_size == 4 && duplicate_size.is_none();
-            assert_eq!(imports.len(), usize::from(disjoint));
-            if disjoint {
-                assert_eq!(imports[0].name, b"extra");
-            }
+            // Every symbol is an entry of its own walk; overlapping extents
+            // only widen the scope an unresolved jump would forget.
+            assert_eq!(imports.len(), 1, "{outer_size} {duplicate_size:?}");
+            assert_eq!(imports[0].name, b"extra");
         }
     }
 }
@@ -902,7 +906,7 @@ fn ppc32_pic_relocated_stub_does_not_preserve_the_callers_base() {
 }
 
 #[test]
-fn ppc32_pic_lazy_resolver_requires_its_got_load_and_no_bypass_entry() {
+fn ppc32_pic_lazy_resolver_never_supplies_or_withholds_a_caller_base() {
     use object::ObjectSection;
     for little in [false, true] {
         for mutation in ["none", "got", "load", "entry"] {
@@ -927,14 +931,203 @@ fn ppc32_pic_lazy_resolver_requires_its_got_load_and_no_bypass_entry() {
             }
             let file = object::File::parse(&*bytes).unwrap();
             let imports = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file);
-            assert_eq!(
-                imports.len(),
-                usize::from(mutation == "none"),
-                "{mutation}, little={little}"
-            );
-            if mutation == "none" {
-                assert_eq!(imports[0].name, b"extra");
-            }
+            // The resolver's jump leaves for the dynamic linker; it never
+            // targets a stub, so a damaged or bypassed resolver changes no
+            // caller evidence.
+            assert_eq!(imports.len(), 1, "{mutation}, little={little}");
+            assert_eq!(imports[0].name, b"extra", "{mutation}, little={little}");
         }
     }
+}
+
+fn pic_imports(fixture: &Fixture) -> Vec<(u64, Vec<u8>)> {
+    let bytes = fixture.bytes();
+    let file = object::File::parse(&*bytes).unwrap();
+    kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file)
+        .into_iter()
+        .map(|s| (s.addr, s.name))
+        .collect()
+}
+
+fn bl(pc: u32, target: u32) -> u32 {
+    0x48000001 | (target.wrapping_sub(pc) & 0x03ff_fffc)
+}
+
+#[test]
+fn ppc32_pic_unresolved_jump_withdraws_only_the_stubs_its_walk_reaches() {
+    // check2: save LR, li r30,0x2808, bl stub2, restore LR, then `ending`.
+    let check2 = |ending: &[u32]| {
+        let mut words = vec![
+            0x7c0802a6,
+            0x9421fff0,
+            0x90010014,
+            0x3bc02808,
+            bl(0x1018, 0x1810),
+            0x80010014,
+            0x38210010,
+            0x7c0803a6,
+        ];
+        words.extend(ending);
+        words
+    };
+    for little in [false, true] {
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.little = little;
+        fixture.pic_collision = true;
+        fixture.second_stub = true;
+        // check: li r30,0x2800; b stub1
+        fixture.caller = Some(vec![0x3bc02800, 0x480007fc]);
+        // An unknown jump (mtctr r3; bctr) withdraws check2's stub only.
+        fixture.second_caller = Some(check2(&[0x7c6903a6, 0x4e800420]));
+        assert_eq!(
+            pic_imports(&fixture),
+            vec![(0x1800, b"__stack_chk_fail".to_vec())],
+            "little={little}"
+        );
+        fixture.second_caller = Some(check2(&[0x4e800020]));
+        assert_eq!(
+            pic_imports(&fixture),
+            vec![(0x1800, b"__stack_chk_fail".to_vec()), (0x1810, b"extra".to_vec())],
+            "little={little}"
+        );
+    }
+}
+
+#[test]
+fn ppc32_pic_local_calls_keep_r30_only_when_the_callee_restores_it() {
+    // check: save LR and r30, set r30, call check2, call the stub, return.
+    let caller = vec![
+        0x7c0802a6,
+        0x9421fff0,
+        0x90010014,
+        0x93c10008,
+        0x3bc02804,
+        bl(0x1014, 0x1034),
+        bl(0x1018, 0x1800),
+        0x80010014,
+        0x83c10008,
+        0x38210010,
+        0x7c0803a6,
+        0x4e800020,
+        0x60000000,
+    ];
+    // check2 at 0x1034 sets its own GOT base and branches, so it is
+    // summarized rather than run in place; `restores` reloads the saved r30.
+    let callee = |restores: bool| {
+        vec![
+            0x9421fff0,
+            0x93c10008,
+            0x3bc02800,
+            0x2c030000,
+            0x41820008,
+            0x38600001,
+            if restores { 0x83c10008 } else { 0x60000000 },
+            0x38210010,
+            0x4e800020,
+        ]
+    };
+    for little in [false, true] {
+        for restores in [true, false] {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.little = little;
+            fixture.pic_collision = true;
+            fixture.caller = Some(caller.clone());
+            fixture.second_caller = Some(callee(restores));
+            let expected = if restores {
+                vec![(0x1800, b"extra".to_vec())]
+            } else {
+                vec![]
+            };
+            assert_eq!(pic_imports(&fixture), expected, "restores={restores} little={little}");
+        }
+        // A straight-line helper runs in the caller's state: its r30 reaches
+        // the stub, which then reads the other slot.
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.little = little;
+        fixture.pic_collision = true;
+        fixture.caller = Some(caller.clone());
+        fixture.second_caller = Some(vec![0x3bc02800, 0x4e800020]);
+        assert_eq!(
+            pic_imports(&fixture),
+            vec![(0x1800, b"__stack_chk_fail".to_vec())],
+            "little={little}"
+        );
+    }
+}
+
+#[test]
+fn ppc32_pic_jump_table_cases_carry_the_callers_base() {
+    // mflr r0; li r30,0x2804; cmplwi r3,1; bgt default; bcl 20,31,.+4;
+    // mflr r9; addi r9,r9,0x1c (the table); slwi r3,r3,2; lwzx r10,r9,r3;
+    // add r10,r10,r9; mtctr r10; bctr; table: .long 0xc, 0x14 and a word
+    // whose target leaves the function; default: mtlr r0; blr;
+    // case 1: mtlr r0; b stub.
+    let switch = |bounded: bool, dispatch: [u32; 2]| {
+        vec![
+            0x7c0802a6,
+            0x3bc02804,
+            if bounded { 0x28030001 } else { 0x60000000 },
+            0x41810030,
+            0x429f0005,
+            0x7d2802a6,
+            0x3929001c,
+            0x5463103a,
+            0x7d49182e,
+            0x7d4a4a14,
+            dispatch[0],
+            dispatch[1],
+            0x0000000c,
+            0x00000014,
+            0x00010000,
+            0x7c0803a6,
+            0x4e800020,
+            0x7c0803a6,
+            0x480007b8,
+        ]
+    };
+    for little in [false, true] {
+        // A compare bounds the index to its two entries; without it the table
+        // is read until the first target outside the function.
+        for bounded in [true, false] {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.little = little;
+            fixture.pic_collision = true;
+            fixture.caller = Some(switch(bounded, [0x7d4903a6, 0x4e800420]));
+            assert_eq!(
+                pic_imports(&fixture),
+                vec![(0x1800, b"extra".to_vec())],
+                "bounded={bounded} little={little}"
+            );
+        }
+        // A jump through a register the proof cannot read forgets the base.
+        let mut fixture = Fixture::new(Plt::Short);
+        fixture.little = little;
+        fixture.pic_collision = true;
+        fixture.caller = Some(switch(true, [0x7c6903a6, 0x4e800420]));
+        assert!(pic_imports(&fixture).is_empty(), "little={little}");
+    }
+}
+
+#[test]
+fn ppc32_pic_driver_linked_library_names_every_stub() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ppc32-pic-driver.so");
+    let bytes = std::fs::read(path).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let mut imports: Vec<_> = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file)
+        .into_iter()
+        .map(|s| (s.addr, String::from_utf8(s.name).unwrap()))
+        .collect();
+    imports.sort();
+    assert_eq!(
+        imports,
+        [
+            (0x580, "__stack_chk_fail"),
+            (0x590, "other"),
+            (0x5a0, "__cxa_finalize"),
+            (0x5b0, "another"),
+            (0x5c0, "__gmon_start__"),
+            (0x5d0, "extra"),
+        ]
+        .map(|(a, n)| (a, n.to_string()))
+    );
 }

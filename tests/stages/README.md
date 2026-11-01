@@ -342,3 +342,9 @@ orders, both stub forms, multiple callers and conflicting control-flow paths.
 `kuna-ppc32picimports-indirect.xml` checks a second, indirect caller selecting a
 returning slot through the same PIC stub as a no-return direct caller. The
 ambiguous stub stays unresolved and the indirect caller retains `return 7`.
+
+`kuna-ppc32picimports-driver.xml` loads a small shared object linked through
+the GCC driver, so it carries the standard start files, whose
+`deregister_tm_clones` jumps through CTR. With the option off every PIC stub
+stays `sub_*`. With it on, `refs` calls `other`, `another`, `extra` and
+`__stack_chk_fail`, and `check` keeps `extra(); return 7;`.
