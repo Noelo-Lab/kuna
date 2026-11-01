@@ -173,5 +173,7 @@
       "changed": []
     }
   ],
-  "explanation": "Only runtime.gclinkptr.ptr and its seven callers change in the previously reviewed images. The new RET-only entry contract restores p and the pointer result; callers gain that argument and grounded next field accesses. Anonymous local renaming and inferred unlocked runtime call operands follow existing propagation."
+  "explanation": "Only runtime.gclinkptr.ptr and its seven callers change in the previously reviewed images. The new RET-only entry contract restores p and the pointer result; callers gain that argument and grounded next field accesses. Anonymous local renaming and inferred unlocked runtime call operands follow existing propagation.",
+  "implementation_commit": "4eee6e61f83115fbc1dafe7a841195a75800b57a",
+  "scope": "historical empty-entry-range correction before integration of main fc88c6af28f47bdafc2a65c4c1b1c51756870a7e"
 }

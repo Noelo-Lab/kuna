@@ -270,6 +270,7 @@ fn kuna_command(env: &[(&str, &str)]) -> Command {
     cmd.env_remove("RUST_BACKTRACE");
     cmd.env_remove("KUNA_JOBS_FAULT");
     cmd.env_remove("KUNA_RENDER_FAULT");
+    cmd.env_remove("KUNA_JUMPTABLE_FAULT");
     for name in DECODE_ENV {
         cmd.env_remove(name);
     }
@@ -4742,6 +4743,43 @@ fn a_render_panic_leaves_later_functions_on_the_configured_printer() {
                 );
             } else {
                 assert_eq!(g, w, "{} rendered differently after {name}'s render panicked", record_name(w));
+            }
+        }
+    }
+}
+
+/// A panic while recovering a jump table is that function's error, serially
+/// and under `--jobs`, as a panic in the main pipeline is. The recovery used
+/// to swallow it: the panic was printed, and the function still got C with
+/// its table dropped (a jump-as-call) and no error. The tables after it are
+/// not attempted, so the panic prints once, and every other function is
+/// unchanged.
+#[test]
+fn a_jump_table_recovery_panic_is_the_functions_error() {
+    let (bin, sp) = (common::fixture("switchtable_x86_64"), specs());
+    let run: Vec<&str> =
+        ["decompile-all", &bin, "--json", "--max-fn-seconds", "0", "--sleighpath", &sp]
+            .into_iter()
+            .chain(SERIAL_ORDER_OFF)
+            .collect();
+    let (want, stderr, ok) = run_kuna(&run);
+    assert!(ok, "{stderr}");
+    let want = json_records(&want);
+    for jobs in ["1", "2"] {
+        let args: Vec<&str> = run.iter().copied().chain(["--jobs", jobs]).collect();
+        let (got, stderr, ok) = run_kuna_env(&args, &[("KUNA_JUMPTABLE_FAULT", "0x100000")]);
+        assert!(ok, "one function's panic must not fail the run:\n{stderr}");
+        let fault = "KUNA_JUMPTABLE_FAULT: injected jump-table recovery panic at 0x100000";
+        assert_eq!(stderr.matches(fault).count(), 1, "--jobs {jobs}:\n{stderr}");
+        let got = json_records(&got);
+        assert_eq!(got.len(), want.len(), "one record per target");
+        for (w, g) in want.iter().zip(&got) {
+            if record_name(w) == "dispatch" {
+                let error = "\"error\": \"decompile pipeline reached an un-ported seam (LOSS-131) \
+                             in jump-table recovery at 0x100007: KUNA_JUMPTABLE_FAULT";
+                assert!(g.contains("\"code\": null") && g.contains(error), "--jobs {jobs}:\n{g}");
+            } else {
+                assert_eq!(g, w, "--jobs {jobs}: {} changed", record_name(w));
             }
         }
     }

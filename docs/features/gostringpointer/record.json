@@ -1,7 +1,7 @@
 {
   "state": "validated",
   "kind": "strict Go emission correction",
-  "baseline_commit": "4eee6e61f83115fbc1dafe7a841195a75800b57a",
+  "baseline_commit": "a3363656e81149f5db0d57258fecfa4c0b340768",
   "selection": "outlang go; no new option",
   "breadth": {
     "inputs": 12,
@@ -16,13 +16,13 @@
   },
   "validation": {
     "workspace": {
-      "passed": 9999,
+      "passed": 10006,
       "failed": 0,
       "ignored": 39,
       "suites": 71
     },
     "original_assertions": 675,
-    "stage_assertions": 3463,
+    "stage_assertions": 3469,
     "tools": "114 tests, 1 optional skip",
     "lint": "passed",
     "spec": "passed",
@@ -44,72 +44,72 @@
       "scalar-c": {
         "medians": {
           "baseline": {
-            "wall_ms": 103.28126372769475,
-            "cpu_ms": 102.05700000000029
+            "wall_ms": 101.59207414835691,
+            "cpu_ms": 100.27000000000098
           },
           "patched": {
-            "wall_ms": 103.63901406526566,
-            "cpu_ms": 102.40699999999947
+            "wall_ms": 101.09858913347125,
+            "cpu_ms": 99.78200000000027
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.346384547069567,
-            "cpu_ms": 0.34294560882563996
+            "wall_ms": -0.48575149097263015,
+            "cpu_ms": -0.48668594794126774
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.3282996662106408,
-          "cpu_ms": 0.34294560882563996
+          "wall_ms": -0.6648065266494085,
+          "cpu_ms": -0.6479438515221481
         }
       },
       "go-string": {
         "medians": {
           "baseline": {
-            "wall_ms": 449.1878002882004,
-            "cpu_ms": 447.87500000000335
+            "wall_ms": 447.8599759750068,
+            "cpu_ms": 446.5290000000017
           },
           "patched": {
-            "wall_ms": 450.31944615766406,
-            "cpu_ms": 449.0270000000045
+            "wall_ms": 448.01772432401776,
+            "cpu_ms": 446.6409999999996
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.25193156820768614,
-            "cpu_ms": 0.25721462461649747
+            "wall_ms": 0.03522269402786993,
+            "cpu_ms": 0.025082357472405725
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.24185931013198658,
-          "cpu_ms": 0.24359253042627316
+          "wall_ms": 0.023673467768081657,
+          "cpu_ms": 0.00785158265403929
         }
       },
       "rust": {
         "medians": {
           "baseline": {
-            "wall_ms": 317.820874042809,
-            "cpu_ms": 316.473000000002
+            "wall_ms": 318.37658397853374,
+            "cpu_ms": 316.9650000000104
           },
           "patched": {
-            "wall_ms": 318.86955024674535,
-            "cpu_ms": 317.51700000000227
+            "wall_ms": 317.0657712034881,
+            "cpu_ms": 315.65700000000163
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.3299582530866374,
-            "cpu_ms": 0.3298859618356964
+            "wall_ms": -0.41171770821374354,
+            "cpu_ms": -0.41266385878842016
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.22153226586094643,
-          "cpu_ms": 0.2114585273016667
+          "wall_ms": -0.4748171571013371,
+          "cpu_ms": -0.4516387268362898
         }
       }
     },
-    "max_cpu_delta_pct": 0.34294560882563996,
-    "max_wall_delta_pct": 0.346384547069567,
+    "max_cpu_delta_pct": 0.025082357472405725,
+    "max_wall_delta_pct": 0.03522269402786993,
     "speed_budget_pct": 5,
     "passed": true
   }

@@ -1,62 +1,62 @@
 [
   {
     "fixture": "basics122",
-    "result": "2018 functions, 0 syntax failures",
     "functions": 2018,
-    "errors": 0
+    "errors": 0,
+    "result": "2018 functions, 0 syntax failures"
   },
   {
     "fixture": "basics127",
-    "result": "2552 functions, 0 syntax failures",
     "functions": 2552,
-    "errors": 0
+    "errors": 0,
+    "result": "2552 functions, 0 syntax failures"
   },
   {
     "fixture": "entry-ranges",
-    "result": "9 functions, 0 syntax failures",
     "functions": 9,
-    "errors": 0
+    "errors": 0,
+    "result": "9 functions, 0 syntax failures"
   },
   {
     "fixture": "hermetic",
-    "result": "25 functions, 0 syntax failures",
     "functions": 25,
-    "errors": 0
+    "errors": 0,
+    "result": "25 functions, 0 syntax failures"
   },
   {
     "fixture": "hermetic-plain",
-    "result": "25 functions, 0 syntax failures",
     "functions": 25,
-    "errors": 0
+    "errors": 0,
+    "result": "25 functions, 0 syntax failures"
   },
   {
     "fixture": "langdetect",
-    "result": "1558 functions, 0 syntax failures",
     "functions": 1558,
-    "errors": 0
+    "errors": 0,
+    "result": "1558 functions, 0 syntax failures"
   },
   {
     "fixture": "native-c",
-    "result": "55 functions, 0 syntax failures",
     "functions": 55,
-    "errors": 0
+    "errors": 0,
+    "result": "55 functions, 0 syntax failures"
   },
   {
     "fixture": "native",
-    "result": "1156 functions, 0 syntax failures",
     "functions": 1156,
-    "errors": 0
+    "errors": 0,
+    "result": "1156 functions, 0 syntax failures"
   },
   {
     "fixture": "native1273",
-    "result": "1495 functions, 0 syntax failures",
     "functions": 1495,
-    "errors": 0
+    "errors": 0,
+    "result": "1495 functions, 0 syntax failures"
   },
   {
     "fixture": "stripped122",
-    "result": "2017 functions, 0 syntax failures",
     "functions": 2017,
-    "errors": 0
+    "errors": 0,
+    "result": "2017 functions, 0 syntax failures"
   }
 ]

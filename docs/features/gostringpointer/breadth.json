@@ -1,13 +1,13 @@
 {
-  "baseline_commit": "4eee6e61f83115fbc1dafe7a841195a75800b57a",
+  "baseline_commit": "a3363656e81149f5db0d57258fecfa4c0b340768",
   "baseline_outputs": "cached from final identical production source, input hashes checked",
   "options": {
     "godwarfsig": "on"
   },
   "fixtures": [
     {
-      "fixture": "hermetic",
-      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
       "languages": [
         {
           "language": "c",
@@ -28,8 +28,8 @@
       ]
     },
     {
-      "fixture": "hermetic-plain",
-      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
       "languages": [
         {
           "language": "c",

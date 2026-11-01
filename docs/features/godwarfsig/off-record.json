@@ -1,10 +1,10 @@
 {
-  "baseline_commit": "56e01194b98d64ab6e409ab27546ee5914262226",
+  "baseline_commit": "fc88c6af28f47bdafc2a65c4c1b1c51756870a7e",
   "side": "off",
   "fixtures": [
     {
-      "fixture": "hermetic",
-      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
       "side": "off",
       "languages": [
         {
@@ -26,8 +26,8 @@
       ]
     },
     {
-      "fixture": "hermetic-plain",
-      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
       "side": "off",
       "languages": [
         {
@@ -95,29 +95,6 @@
       ]
     },
     {
-      "fixture": "basics127",
-      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
-      "side": "off",
-      "languages": [
-        {
-          "language": "c",
-          "functions": 2552,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        },
-        {
-          "language": "go",
-          "functions": 2552,
-          "errors": [],
-          "added": [],
-          "removed": [],
-          "changed": []
-        }
-      ]
-    },
-    {
       "fixture": "langdetect",
       "sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
       "side": "off",
@@ -133,6 +110,29 @@
         {
           "language": "go",
           "functions": 1558,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "side": "off",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "errors": [],
+          "added": [],
+          "removed": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "functions": 2552,
           "errors": [],
           "added": [],
           "removed": [],
