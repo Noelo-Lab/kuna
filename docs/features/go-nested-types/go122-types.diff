@@ -1,0 +1,269 @@
+--- before/types
++++ after/types
+@@ -1,5 +1,5 @@
+ struct abi_FuncType {
+-    undefined1 _pad0[48];
++    abi.Type Type;
+     uint2 InCount;
+     uint2 OutCount;
+     undefined1 _pad34[4];
+@@ -11,7 +11,8 @@
+ };
+ 
+ struct abi_InterfaceType {
+-    undefined1 _pad0[56];
++    abi.Type Type;
++    abi.Name PkgPath;
+     go.slice Methods;
+ };
+ 
+@@ -50,7 +51,7 @@
+ };
+ 
+ struct atomic_Bool {
+-    undefined1 _pad0[1];
++    atomic.Uint8 u;
+ };
+ 
+ struct atomic_Int64 {
+@@ -106,7 +107,8 @@
+ 
+ struct fmt_fmt {
+     go.slice *buf;
+-    undefined1 _pad8[16];
++    fmt.fmtFlags fmtFlags;
++    undefined1 _pad11[7];
+     int8 wid;
+     int8 prec;
+     char intbuf[68];
+@@ -128,7 +130,7 @@
+ struct fmt_pp {
+     go.slice buf;
+     go.eface arg;
+-    undefined1 _pad28[24];
++    reflect.Value value;
+     fmt.fmt fmt;
+     bool reordered;
+     bool goodArgNum;
+@@ -172,7 +174,7 @@
+ };
+ 
+ struct main_A {
+-    undefined1 _pad0[8];
++    main.Z Z;
+     int8 Tail;
+ };
+ 
+@@ -191,7 +193,7 @@
+ };
+ 
+ struct os_file {
+-    undefined1 _pad0[56];
++    poll.FD pfd;
+     go.string name;
+     os.dirInfo *dirinfo;
+     bool nonblock;
+@@ -204,9 +206,10 @@
+ };
+ 
+ struct poll_FD {
+-    undefined1 _pad0[16];
++    poll.fdMutex fdmu;
+     int8 Sysfd;
+-    undefined1 _pad18[16];
++    poll.SysFile SysFile;
++    poll.pollDesc pd;
+     uint4 csema;
+     uint4 isBlocking;
+     bool IsStream;
+@@ -236,7 +239,7 @@
+     go.string Name;
+     go.string PkgPath;
+     go.iface Type;
+-    undefined1 _pad30[24];
++    reflect.Value Func;
+     int8 Index;
+ };
+ 
+@@ -263,7 +266,8 @@
+ };
+ 
+ struct reflect_abiDesc {
+-    undefined1 _pad0[144];
++    reflect.abiSeq call;
++    reflect.abiSeq ret;
+     uint8 stackCallArgsSize;
+     uint8 retOffset;
+     uint8 spill;
+@@ -337,7 +341,7 @@
+     int8 Line;
+     int8 startLine;
+     uint8 Entry;
+-    undefined1 _pad48[16];
++    runtime.funcInfo funcInfo;
+ };
+ 
+ struct runtime_Frames {
+@@ -411,7 +415,8 @@
+ };
+ 
+ struct runtime_addrRange {
+-    undefined1 _pad0[16];
++    runtime.offAddr base;
++    runtime.offAddr limit;
+ };
+ 
+ struct runtime_ancestorInfo {
+@@ -489,11 +494,11 @@
+ };
+ 
+ struct runtime_gTraceState {
+-    undefined1 _pad0[32];
++    runtime.traceSchedResourceState traceSchedResourceState;
+ };
+ 
+ struct runtime_gcBgMarkWorkerNode {
+-    undefined1 _pad0[16];
++    runtime.lfnode node;
+     uint8 gp;
+     uint8 m;
+ };
+@@ -543,7 +548,9 @@
+     abi.Type *elemtype;
+     uint8 sendx;
+     uint8 recvx;
+-    undefined1 _pad38[40];
++    runtime.waitq recvq;
++    runtime.waitq sendq;
++    runtime.mutex lock;
+ };
+ 
+ struct runtime_heldLockInfo {
+@@ -754,7 +761,7 @@
+     uint2 allocCountBeforeCache;
+     uint8 elemsize;
+     uint8 limit;
+-    undefined1 _pad78[8];
++    runtime.mutex speciallock;
+     runtime.special *specials;
+     runtime.addrRange userArenaChunkFree;
+     abi.Type *largeType;
+@@ -781,10 +788,10 @@
+     uint8 link;
+     uint4 schedtick;
+     uint4 syscalltick;
+-    undefined1 _pad18[32];
++    runtime.sysmontick sysmontick;
+     uint8 m;
+     runtime.mcache *mcache;
+-    undefined1 _pad48[24];
++    runtime.pageCache pcache;
+     uint8 raceprocctx;
+     go.slice deferpool;
+     char deferpoolbuf[256];
+@@ -799,7 +806,8 @@
+     char sudogbuf[1024];
+     char mspancache[1032];
+     runtime.pinner *pinnerCache;
+-    undefined1 _pad11d8[80];
++    runtime.pTraceState trace;
++    runtime.persistentAlloc palloc;
+     atomic.Int64 timer0When;
+     atomic.Int64 timerModifiedEarliest;
+     int8 gcAssistTime;
+@@ -808,7 +816,7 @@
+     int8 gcMarkWorkerMode;
+     int8 gcMarkWorkerStartTime;
+     runtime.gcWork gcw;
+-    undefined1 _pad1288[4112];
++    runtime.wbBuf wbBuf;
+     uint4 runSafePointFn;
+     atomic.Uint32 statsSeq;
+     runtime.mutex timersLock;
+@@ -824,7 +832,7 @@
+ };
+ 
+ struct runtime_pTraceState {
+-    undefined1 _pad0[32];
++    runtime.traceSchedResourceState traceSchedResourceState;
+     int8 mSyscallID;
+     bool maySweep;
+     bool inSweep;
+@@ -905,10 +913,10 @@
+     undefined1 _pad39[3];
+     uint4 user;
+     uint8 rseq;
+-    undefined1 _pad48[72];
++    runtime.timer rt;
+     int8 rd;
+     uint8 wseq;
+-    undefined1 _pada0[72];
++    runtime.timer wt;
+     int8 wd;
+     runtime.pollDesc *self;
+ };
+@@ -1006,7 +1014,7 @@
+ };
+ 
+ struct runtime_traceBuf {
+-    undefined1 _pad0[32];
++    runtime.traceBufHeader traceBufHeader;
+     char arr[65504];
+ };
+ 
+@@ -1035,7 +1043,7 @@
+ };
+ 
+ struct runtime_workbuf {
+-    undefined1 _pad0[24];
++    runtime.workbufhdr workbufhdr;
+     char obj[2024];
+ };
+ 
+@@ -1057,10 +1065,6 @@
+     unsigned long val;
+ };
+ 
+-struct sync_entry {
+-    undefined1 _pad0[8];
+-};
+-
+ struct sync_noCopy {
+ };
+ 
+@@ -1070,7 +1074,7 @@
+ };
+ 
+ struct sync_poolChainElt {
+-    undefined1 _pad0[32];
++    sync.poolDequeue poolDequeue;
+     sync.poolChainElt *next;
+     sync.poolChainElt *prev;
+ };
+@@ -1081,7 +1085,7 @@
+ };
+ 
+ struct sync_poolLocal {
+-    undefined1 _pad0[32];
++    sync.poolLocalInternal poolLocalInternal;
+     char pad[96];
+ };
+ 
+@@ -1148,8 +1152,6 @@
+ 
+ typedef struct atomic_Int64 atomic_Int64; /* renamed from "atomic.Int64" */
+ 
+-typedef struct atomic_Pointer_interface____ atomic_Pointer_interface____; /* renamed from "atomic.Pointer[interface {}]" */ /* opaque */
+-
+ typedef struct atomic_Pointer_runtime__defer_ atomic_Pointer_runtime__defer_; /* renamed from "atomic.Pointer[runtime._defer]" */ /* opaque */
+ 
+ typedef struct atomic_Uint32 atomic_Uint32; /* renamed from "atomic.Uint32" */
+@@ -1406,7 +1408,7 @@
+ 
+ typedef struct sync_eface sync_eface; /* renamed from "sync.eface" */
+ 
+-typedef struct sync_entry sync_entry; /* renamed from "sync.entry" */
++typedef struct sync_entry sync_entry; /* renamed from "sync.entry" */ /* opaque */
+ 
+ typedef struct sync_noCopy sync_noCopy; /* renamed from "sync.noCopy" */
+ 
