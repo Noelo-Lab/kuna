@@ -203,6 +203,7 @@ struct GlobalSpaceIndex {
     interval_order: Vec<usize>,
     max_last: Vec<u64>,
     leaf_base: usize,
+    function_starts: std::cell::OnceCell<Vec<u64>>,
 }
 
 impl GlobalSpaceIndex {
@@ -231,6 +232,7 @@ impl GlobalSpaceIndex {
             interval_order,
             max_last,
             leaf_base,
+            function_starts: std::cell::OnceCell::new(),
         }
     }
 
@@ -327,6 +329,26 @@ impl GlobalQuery {
         self.symbol_name_set
             .get_or_init(|| self.symbol_names().map(Box::from).collect())
             .contains(name)
+    }
+
+    /// The entry of the last function symbol at or before `offset` in
+    /// `space_index`: the function whose body holds `offset` as far as the
+    /// symbol table can tell. The sorted entries are built on first use.
+    pub fn function_entry_at_or_before(&self, space_index: int4, offset: u64) -> Option<u64> {
+        let index = self.index_for_space(space_index)?;
+        let starts = index.function_starts.get_or_init(|| {
+            let mut starts: Vec<u64> = index
+                .interval_order
+                .iter()
+                .map(|&entry_index| &self.entries[entry_index])
+                .filter(|entry| entry.is_function)
+                .map(|entry| entry.first)
+                .collect();
+            starts.dedup();
+            starts
+        });
+        let after = starts.partition_point(|&start| start <= offset);
+        after.checked_sub(1).map(|at| starts[at])
     }
 
     fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
@@ -1637,6 +1659,12 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
+    /// (kuna) Cut an unguarded jump table where its rows run on into other
+    /// functions (`switchrunon`). See [`crate::kuna_switchrunon`].
+    pub switch_run_on: bool,
+    /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
+    /// sorted, so `switchrunon` sees the same functions with the option on.
+    pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`option constselectjump`, `p2_lift/kuna_constselectjump.rs`).
     pub const_select_jump: bool,
@@ -2114,6 +2142,8 @@ impl ArchContext {
             // the thumb guard never fires regardless of this flag.
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
+            switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
+            lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
@@ -2646,6 +2676,45 @@ impl ArchContext {
     ) -> Option<IndirectSlotType> {
         self.effective_global_query(addr)?
             .indirect_slot_type(addr, size, usepoint)
+    }
+
+    /// (kuna `switchrunon`) A lookup of the known function entry at or before
+    /// an offset in `addr`'s space, over one global-scope snapshot and the
+    /// entries `lazyfuncs` left as names.
+    pub fn function_owner(&self, addr: &Address) -> Option<impl Fn(u64) -> Option<u64>> {
+        let query = self.effective_global_query(addr)?;
+        let space_index = addr.get_space()?.get_index();
+        let parked = Rc::clone(&self.lazy_entry_starts);
+        Some(move |offset| {
+            let named = query.function_entry_at_or_before(space_index, offset);
+            let after = parked.partition_point(|&start| start <= offset);
+            named.max(after.checked_sub(1).map(|at| parked[at]))
+        })
+    }
+
+    /// (kuna `switchrunon`) Whether `b` lies in the load-image section that
+    /// holds `a`; true when no section holds `a` or the image reports none.
+    pub fn in_section_of(&self, a: &Address, b: &Address) -> bool {
+        let Some(loader) = self.loader.as_ref() else { return true };
+        let Ok(loader) = loader.try_borrow() else { return true };
+        let holds = |section: &kuna_sleigh::loadimage::LoadImageSection, addr: &Address| {
+            addr.get_offset().wrapping_sub(section.address.get_offset()) < section.size
+        };
+        loader.open_section_info();
+        let mut verdict = true;
+        loop {
+            let mut section = kuna_sleigh::loadimage::LoadImageSection::default();
+            let more = loader.get_next_section(&mut section);
+            if holds(&section, a) {
+                verdict = holds(&section, b);
+                break;
+            }
+            if !more {
+                break;
+            }
+        }
+        loader.close_section_info();
+        verdict
     }
 
     /// C++ `Scope::queryFunction(addr)` (`database.cc:1292`) restricted to the
