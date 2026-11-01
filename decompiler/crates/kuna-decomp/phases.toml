@@ -8805,3 +8805,22 @@ inspiration = "angr GoStructuredCodeGenerator, TestGoTypeSpelling and TestGoCode
 change_kind = "opt-in-tool"
 tier = "transform"
 symptoms = "Go output language is unavailable|Go functions retain C declarations and control-flow syntax"
+
+[[settable]]
+option = "godwarfsig"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-angr-go-dwarf-signatures"
+summary = "Recover Go scalar and pointer function signatures from compiler DWARF, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. Defer decompression, type interning and address-bound prototype installation until enabled. Aggregates by value, multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference."
+use_when = "Enable when a Go binary with DWARF loses parameter names, pointer types, or an identity function's return value. Requires the abi-internal compiler model; stripped images and other architectures are unchanged."
+example = "option godwarfsig on"
+source_decompiler = "kuna"
+inspiration = "angr Go DWARF signatures and Go cmd/compile DW_AT_variable_parameter metadata"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "go functions lose source parameters despite dwarf|go identity function decompiles as void|go result parameters appear as inputs"

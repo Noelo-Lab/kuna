@@ -1,0 +1,273 @@
+{
+  "state": "validated",
+  "option": "godwarfsig",
+  "baseline_commit": "fc88c6af28f47bdafc2a65c4c1b1c51756870a7e",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "scope": "Go amd64 register-ABI scalar and pointer DWARF signatures",
+  "reference_dwarf_tests": {
+    "passed": 7,
+    "failed": 0,
+    "versions": [
+      "go1.22.5",
+      "go1.27.1"
+    ],
+    "includes_cases_outside_feature_scope": true
+  },
+  "proposal_validation": {
+    "workspace": {
+      "passed": 9986,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3445,
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "tools": "114 tests, 1 skipped"
+  },
+  "default": "off; explicit opt-in in all modes",
+  "implementation": {
+    "option": "godwarfsig",
+    "architecture": "little-endian amd64",
+    "compiler_model": "abi-internal",
+    "compressed_debug_limit_bytes": 67108864,
+    "input_integer_registers": 9,
+    "input_float_registers": 8,
+    "max_results": 1,
+    "scope": "fixed scalar/pointer inputs and result; pointers to validated flat records; no aggregate ABI decomposition",
+    "empty_entry_locations": "DWARF 5 exact base and single zero-length register range; one-byte extent and C3 instruction required; inputs only"
+  },
+  "validation": {
+    "original_assertions": 675,
+    "stage_assertions": 3464,
+    "tools": "114 tests, 1 skipped",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "focused_metadata_tests": 5,
+    "focused_console_tests": 7,
+    "workspace": {
+      "passed": 10005,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "lint": "passed",
+    "native_go_toolchains": [
+      "go1.22.5",
+      "go1.27.3"
+    ]
+  },
+  "breadth": {
+    "inputs": 12,
+    "distinct_functions": 11814,
+    "surfaces": 23683,
+    "disabled_changed_records": 0,
+    "enabled_changed_records": 7977,
+    "enabled_changed_distinct_functions": 4085,
+    "decompilation_errors": 0,
+    "classified_hunks": 10996,
+    "go_parsed_functions": 10910,
+    "go_parse_errors": 0,
+    "contracts_matched_to_pinned_angr": 1384,
+    "contracts_independently_grounded_for_duplicate_name": 2,
+    "jobs": 1,
+    "watchdog_seconds": 600
+  },
+  "execution": {
+    "hermetic_supported_contracts": 12,
+    "hermetic_compiled_functions": 11,
+    "hermetic_images": 2,
+    "native_compiled_functions_without_assertions": 14,
+    "native_compiled_functions_without_assertions_per_toolchain": 14,
+    "empty_entry_identity_compiled": 1,
+    "empty_entry_negative_cases": 7
+  },
+  "fixtures": {
+    "compressed": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+    "uncompressed": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+    "entry-ranges": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+    "native1273": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c"
+  },
+  "limits": [
+    "No aggregate inputs/results by value, multiple results, stack arguments or hidden-context functions",
+    "No zero-input/zero-result contract inferred from absent formal metadata",
+    "Source aliases and receiver syntax remain separate",
+    "Same-package record type qualification and unsafe.Pointer string-literal conversion need Go emission follow-ups"
+  ],
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_arms": [
+      "baseline",
+      "off",
+      "on"
+    ],
+    "measurements": {
+      "scalar-c": {
+        "artifact": "timing-scalar-c.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.7973844561176335,
+            "cpu_ms": -0.7963662104768399
+          },
+          "off_to_on": {
+            "wall_ms": -0.14134136897268057,
+            "cpu_ms": -0.13676636736610348
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.913420040292634,
+            "cpu_ms": -0.937041321189136
+          },
+          "off_to_on": {
+            "wall_ms": -0.179610958971399,
+            "cpu_ms": -0.14234945318203351
+          }
+        }
+      },
+      "native-go": {
+        "artifact": "timing-native-go.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.7431181317272939,
+            "cpu_ms": 0.7486141654562184
+          },
+          "off_to_on": {
+            "wall_ms": 6.510617277756858,
+            "cpu_ms": 6.543847176286022
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.7659568652599313,
+            "cpu_ms": 0.7606620825767241
+          },
+          "off_to_on": {
+            "wall_ms": 6.506757785928707,
+            "cpu_ms": 6.515870068279939
+          }
+        }
+      },
+      "basics122": {
+        "artifact": "timing-basics122.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.7540189995851376,
+            "cpu_ms": 0.7140288171780584
+          },
+          "off_to_on": {
+            "wall_ms": 5.549720015822612,
+            "cpu_ms": 5.537969256597641
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.8391037156742165,
+            "cpu_ms": 0.8342299646947327
+          },
+          "off_to_on": {
+            "wall_ms": 4.894456770327138,
+            "cpu_ms": 4.908363871833443
+          }
+        }
+      },
+      "hermetic-plain": {
+        "artifact": "timing-hermetic-plain.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.34710756327283043,
+            "cpu_ms": -0.3086209414493113
+          },
+          "off_to_on": {
+            "wall_ms": -0.31003034012757613,
+            "cpu_ms": -0.30859977733744826
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.36837279873499496,
+            "cpu_ms": -0.4044881287162627
+          },
+          "off_to_on": {
+            "wall_ms": 0.017860190081520066,
+            "cpu_ms": -0.006894921408484578
+          }
+        }
+      },
+      "rust": {
+        "artifact": "timing-rust.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 3.3936923013305975,
+            "cpu_ms": 0.8387172906110463
+          },
+          "off_to_on": {
+            "wall_ms": -2.3571029701803026,
+            "cpu_ms": -1.1719858519143256
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.44441658546916507,
+            "cpu_ms": 1.3641915626755319
+          },
+          "off_to_on": {
+            "wall_ms": 0.21215941067600497,
+            "cpu_ms": -0.4746442439988341
+          }
+        }
+      },
+      "native1273": {
+        "artifact": "timing-native1273.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.7441454456483143,
+            "cpu_ms": 0.7436833362543638
+          },
+          "off_to_on": {
+            "wall_ms": 6.688845899943163,
+            "cpu_ms": 6.535986707814012
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": 0.7184550231245312,
+            "cpu_ms": 0.7115907502326824
+          },
+          "off_to_on": {
+            "wall_ms": 6.551516859438156,
+            "cpu_ms": 6.567657607743382
+          }
+        }
+      }
+    },
+    "max_disabled_wall_delta_pct": 3.3936923013305975,
+    "max_disabled_cpu_delta_pct": 0.8387172906110463,
+    "max_enabled_wall_delta_pct": 6.688845899943163,
+    "max_enabled_cpu_delta_pct": 6.543847176286022,
+    "default_on_speed_budget_pct": 5,
+    "default_on_speed_budget_passed": false,
+    "rust_control_first_run": "timing-rust-first.json retains the original pre-CI-repair sample; the six current artifacts use the integrated main baseline"
+  },
+  "ci_revision": {
+    "previous_head": "f26e71b4e867e9d142203e2d4f9fa6ae3d04a4ae",
+    "previous_records_rechecked": 20675,
+    "changed_records": 16,
+    "changed_distinct_functions": 8,
+    "evidence": "revision-review.json",
+    "implementation_commit": "4eee6e61f83115fbc1dafe7a841195a75800b57a",
+    "scope": "historical empty-entry correction before main integration"
+  },
+  "main_integration": {
+    "baseline_commit": "fc88c6af28f47bdafc2a65c4c1b1c51756870a7e",
+    "comparisons": 71049,
+    "changed_records": 0,
+    "evidence": "reintegration-review.json"
+  }
+}

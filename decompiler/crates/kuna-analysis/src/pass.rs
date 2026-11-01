@@ -483,6 +483,8 @@ pub struct AnalysisOutput {
     /// at load, upstream of the `option` commands, so the gate cannot live inside
     /// it — this split is what makes the flag live. See [`CppDwarfFacts`].
     pub cpp_dwarf: CppDwarfFacts,
+    /// Go DWARF signatures, with type interning deferred until the commit gate.
+    pub go_dwarf: Vec<crate::dwarf::kuna_godwarfsig::Facts>,
     /// (kuna `cppsig`) The prototypes recovered from the MANGLED SYMBOL, split by
     /// how certain the pass is that argument 0 is an implicit `this`. Held apart
     /// for the same reason as [`Self::cpp_dwarf`] — the producing pass runs at
@@ -541,6 +543,7 @@ impl AnalysisOutput {
     /// escaping THAT belongs with the printer's comment emission, not with a
     /// symbol-name gate.
     pub fn sanitize_names(&mut self, mode: NameChars) {
+        self.go_dwarf.iter_mut().for_each(|facts| facts.sanitize_names(mode));
         if mode == NameChars::Off {
             return;
         }
@@ -682,6 +685,7 @@ impl AnalysisOutput {
         self.cpp_dwarf.symbols.extend(other.cpp_dwarf.symbols);
         self.cpp_dwarf.locals.extend(other.cpp_dwarf.locals);
         self.cpp_dwarf.prototypes.extend(other.cpp_dwarf.prototypes);
+        self.go_dwarf.extend(other.go_dwarf);
         self.cpp_sig.proven.extend(other.cpp_sig.proven);
         self.cpp_sig.inferred.extend(other.cpp_sig.inferred);
         self.cpp_sig.msvc.extend(other.cpp_sig.msvc);

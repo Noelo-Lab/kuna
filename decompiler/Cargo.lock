@@ -241,6 +241,7 @@ name = "kuna-analysis"
 version = "0.1.0"
 dependencies = [
  "cpp_demangle",
+ "flate2",
  "gimli",
  "kuna-base",
  "kuna-decomp",

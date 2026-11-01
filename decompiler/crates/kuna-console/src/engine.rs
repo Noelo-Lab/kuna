@@ -4750,6 +4750,15 @@ fn commit_analysis_output(
     } else {
         out.cpp_dwarf.prototypes.clear();
     }
+    let go_prototypes = if prog.arch().analysis_godwarfsig {
+        out.go_dwarf.iter().flat_map(|facts| facts.materialize(prog.arch())).collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    out.go_dwarf.clear();
+    out.symbols.extend(go_prototypes.iter().map(|(addr, pieces)| kuna_analysis::pass::SymFact {
+        addr: *addr, name: pieces.name.clone(), kind: SymKind::Function,
+    }));
     // 0a. (kuna `cppsig`) The demangled-signature arm's prototypes. Same deferred
     //     shape as `cppproto` above, but the gate is three-valued, so the mode
     //     selects WHICH certainty tiers survive: `proven` only the prototypes the
@@ -5496,6 +5505,10 @@ fn commit_analysis_output(
     //     normalized to `maxof`; a qualified name lives in a nested scope the
     //     global by-name query never reaches). Empty when the gate is off.
     for (addr, pieces) in out.cpp_dwarf.prototypes {
+        let a = Address::new(Rc::clone(code_space), addr);
+        prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
+    }
+    for (addr, pieces) in go_prototypes {
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }

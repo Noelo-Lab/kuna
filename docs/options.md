@@ -881,6 +881,9 @@ Three tiers:
 | kuna functions lists <dll>_Ordinal_<n> imports | [`peordinal`](#peordinal) |
 | a BSTR or VARIANT api call has no prototype because its import is ordinal-only | [`peordinal`](#peordinal) |
 | a winsock program shows socket, connect and recv as ordinal placeholders | [`peordinal`](#peordinal) |
+| go functions lose source parameters despite dwarf | [`godwarfsig`](#godwarfsig) |
+| go identity function decompiles as void | [`godwarfsig`](#godwarfsig) |
+| go result parameters appear as inputs | [`godwarfsig`](#godwarfsig) |
 | comparison constant off by one versus upstream ghidra (x <= 9 vs x < 10) | [`compareform`](#compareform) |
 | need the analysis-canonical compare form to diff against upstream ghidra output | [`compareform`](#compareform) |
 | &base[index] rendering unwanted; consumer expects raw pointer arithmetic | [`arraynotation`](#arraynotation) |
@@ -3291,6 +3294,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On (default) on any PE. The tell-tale of the gap is OLEAUT32_Ordinal_2, WS2_32_Ordinal_23 or MSVBVM60_Ordinal_595 in decompile output, kuna functions or kuna xrefs. Flip off to get back the synthesized <DLL>_Ordinal_<n> names, e.g. to compare against a tool that prints ordinals, or if a target ships a private DLL under one of these names with a different export layout.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-peordinal
 - **Example:** `--option peordinal off`
+
+### `godwarfsig` -- on | off, default `off`
+
+- **Symptoms:** go functions lose source parameters despite dwarf; go identity function decompiles as void; go result parameters appear as inputs.
+- **What it does:** Recover Go scalar and pointer function signatures from compiler DWARF, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. Defer decompression, type interning and address-bound prototype installation until enabled. Aggregates by value, multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference.
+- **When to flip:** Enable when a Go binary with DWARF loses parameter names, pointer types, or an identity function's return value. Requires the abi-internal compiler model; stripped images and other architectures are unchanged.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-angr-go-dwarf-signatures
+- **Example:** `option godwarfsig on`
 
 ## Core rendering defaults
 

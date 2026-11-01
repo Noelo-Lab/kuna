@@ -472,3 +472,6 @@ mod verify_rustfmtflags;
 mod verify_rustfmtresult;
 #[path = "verify_outlang_go.rs"]
 mod verify_outlang_go;
+
+#[path = "verify_godwarfsig.rs"]
+mod verify_godwarfsig;

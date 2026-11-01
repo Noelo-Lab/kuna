@@ -128,6 +128,7 @@ mod kuna_dwarflocation;
 pub(crate) mod kuna_dwarfcomplex;
 mod kuna_dwarflinkage;
 mod kuna_dwarfsignatures;
+pub mod kuna_godwarfsig;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -340,12 +341,29 @@ fn snapshot_unit_for_abi(
     unit: &gimli::Unit<Reader<'_>>,
     abi: kuna_dwarfbyref::ArgumentAbi,
 ) -> BTreeMap<usize, DieSnap> {
+    snapshot_unit_with_go(dwarf, unit, abi, None)
+}
+
+fn snapshot_unit_with_go(
+    dwarf: &gimli::Dwarf<Reader<'_>>,
+    unit: &gimli::Unit<Reader<'_>>,
+    abi: kuna_dwarfbyref::ArgumentAbi,
+    mut go: Option<&mut kuna_godwarfsig::UnitExtras>,
+) -> BTreeMap<usize, DieSnap> {
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
     let mut stack: Vec<(usize, isize)> = Vec::new();
     let mut language = None;
     let mut cursor = unit.entries();
-    while let Ok(Some(entry)) = cursor.next_dfs() {
+    loop {
+        let entry = match cursor.next_dfs() {
+            Ok(Some(entry)) => entry,
+            Ok(None) => {
+                if let Some(go) = go.as_mut() { go.complete = true; }
+                break;
+            }
+            Err(_) => break,
+        };
         let off = entry.offset().0;
         let depth = entry.depth();
         if depth == 0 {
@@ -489,6 +507,11 @@ fn snapshot_unit_for_abi(
             }
         }
 
+        if let Some(go) = go.as_mut() {
+            if depth == 0 || go.enabled() {
+                go.capture(dwarf, unit, &entry, parent_off.and_then(|parent| map.get(&parent)).and_then(|parent| parent.low_pc));
+            }
+        }
         map.insert(off, snap);
         if entry.has_children() {
             stack.push((off, depth));
@@ -1092,6 +1115,10 @@ impl AnalysisPass for DwarfPass {
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
+        if let Some(facts) = kuna_godwarfsig::capture_compressed(ctx) {
+            out.go_dwarf.push(facts);
+            return out;
+        }
         // gimli is **format-neutral** — it parses the DWARF byte stream, not the
         // container. The only container coupling is the *section-name lookup*, and
         // that is delegated to `object`'s format-aware `section_by_name`
@@ -1140,13 +1167,17 @@ impl AnalysisPass for DwarfPass {
 
         let linkage_imports = kuna_dwarflinkage::imports(ctx);
         let linkage_definitions = kuna_dwarflinkage::definitions(ctx, &linkage_imports);
+        let go_target = ctx.file.is_little_endian() && ctx.file.architecture() == object::Architecture::X86_64;
+        let mut go_facts = kuna_godwarfsig::Facts::default();
         let mut units = dwarf.units();
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
-            let mut dies = snapshot_unit_for_abi(
+            let mut go = kuna_godwarfsig::UnitExtras::default();
+            let mut dies = snapshot_unit_with_go(
                 &dwarf,
                 &unit,
                 kuna_dwarfbyref::argument_abi(ctx.file.format(), ctx.file.architecture()),
+                go_target.then_some(&mut go),
             );
             if complex_max > 0 {
                 for die in dies.values_mut() {
@@ -1271,6 +1302,10 @@ impl AnalysisPass for DwarfPass {
                     _ => {}
                 }
             }
+            go_facts.append_unit(dies, go);
+        }
+        if !go_facts.is_empty() {
+            out.go_dwarf.push(go_facts);
         }
         out
     }
