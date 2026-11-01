@@ -122,7 +122,7 @@ fn at1_multiequal_of_identical_inputs_collapses() {
     fd.op_insert(phi, join, None);
     let _out = mk_out(&mut fd, 4, phi);
 
-    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    let res = RuleMultiCollapse::default().apply_op(phi, &mut fd);
     assert_eq!(res, 1, "MULTIEQUAL(v,v) must collapse (absolute equality)");
     // The MULTIEQUAL op is destroyed; its output's reads now point at `edi`.
     assert!(
@@ -157,7 +157,7 @@ fn at2_multiequal_of_functionally_equal_copies_collapses() {
     let _out = mk_out(&mut fd, 4, phi);
     fd.bb_set_order(join);
 
-    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    let res = RuleMultiCollapse::default().apply_op(phi, &mut fd);
     assert_eq!(
         res, 1,
         "MULTIEQUAL(COPY(edi),COPY(edi)) with distinct copies must collapse \
@@ -191,7 +191,7 @@ fn at3_multiequal_with_a_genuinely_different_input_declines() {
     let _out = mk_out(&mut fd, 4, phi);
     fd.bb_set_order(join);
 
-    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    let res = RuleMultiCollapse::default().apply_op(phi, &mut fd);
     assert_eq!(
         res, 0,
         "MULTIEQUAL with a genuinely different (constant) input must NOT collapse"
@@ -236,7 +236,7 @@ fn vt1_w10_stackslot_ssa_aliased_reload_distinct_ssa_does_not_fold() {
     let _out = mk_out(&mut fd, 4, phi);
     fd.bb_set_order(join);
 
-    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    let res = RuleMultiCollapse::default().apply_op(phi, &mut fd);
     assert_eq!(
         res, 0,
         "MULTIEQUAL of COPY(edi) and COPY(esi) — two genuinely-different reloaded \
@@ -279,7 +279,7 @@ fn vt2_w10_stackslot_ssa_funceq_fold_consumes_the_phi() {
     let outvn = mk_out(&mut fd, 4, phi);
     fd.bb_set_order(join);
 
-    let res = RuleMultiCollapse.apply_op(phi, &mut fd);
+    let res = RuleMultiCollapse::default().apply_op(phi, &mut fd);
     assert_eq!(res, 1, "two functionally-equal COPY(edi) reloads must fold");
     // The phi's output must not still be the result of a live MULTIEQUAL: in the
     // func_eq branch C++ rewrites op (== a skiplist member's def) into a COPY of
@@ -325,7 +325,7 @@ fn vt3_w10_stackslot_ssa_nested_multiequal_branch_collapses() {
     let _o1 = mk_out(&mut fd, 4, phi1);
     fd.bb_set_order(join);
 
-    let res = RuleMultiCollapse.apply_op(phi1, &mut fd);
+    let res = RuleMultiCollapse::default().apply_op(phi1, &mut fd);
     assert_eq!(
         res, 1,
         "MULTIEQUAL(edi, MULTIEQUAL(edi,edi)) must collapse (all branches trace to edi)"
@@ -381,7 +381,7 @@ fn vt4_nested_multiequal_failure_grows_scratch_and_clears_all_marks() {
     let outer_out = mk_out(&mut fd, 4, outer);
     fd.bb_set_order(join);
 
-    assert_eq!(RuleMultiCollapse.apply_op(outer, &mut fd), 0);
+    assert_eq!(RuleMultiCollapse::default().apply_op(outer, &mut fd), 0);
     assert_eq!(fd.obank().get(outer).unwrap().code(), OpCode::CPUI_MULTIEQUAL);
     assert!(!fd.vbank().get(outer_out).unwrap().is_mark());
     for (&phi, &out) in nested_ops.iter().zip(&nested_outs) {

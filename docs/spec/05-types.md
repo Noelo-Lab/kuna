@@ -314,6 +314,18 @@ pass with inference live.
    only if it is **strictly more specific** than the target's current temporary
    (`0 > type_order`), and each Varnode is expanded at most once per walk (a
    mark bit), so a single pass is linear-ish and cannot ping-pong.
+   *(kuna perf)* The walk enters a reading op at one input and steps through
+   every other slot of it. At a `MULTIEQUAL` or `INDIRECT`, whose transfer
+   function refuses every input-to-input edge, the walk skips the remaining
+   input slots of that op at once
+   (`decompiler/crates/kuna-decomp/src/p5_types/coreaction_infertypes.rs
+   (joins_only_output)`). It skips only while the entering input's type needs
+   no resolution: resolving a union records the field choice, so those edges are
+   still taken one by one. A skipped edge would change nothing and push
+   nothing, so the walk's order and result are upstream's. On a dispatch loop a
+   join has one input per dispatch site, about 190 in CPython 3.11's
+   `_PyEval_EvalFrameDefault`. Each walk into one of its inputs used to try
+   every other input.
 3. **Returns** (`propagate_across_returns`): unless the output prototype is
    locked, the most specific temporary among all `RETURN` value inputs is
    re-seeded onto the other returns, so one well-typed exit types them all.
