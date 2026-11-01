@@ -250,6 +250,9 @@ mod stable_local_names;
 
 #[path = "loop_cursor_initializer.rs"]
 mod loop_cursor_initializer;
+#[path = "macho_trie_names_cli.rs"]
+mod macho_trie_names_cli;
+
 #[path = "mapped_array_c.rs"]
 mod mapped_array_c;
 
@@ -261,6 +264,9 @@ mod mapped_flow_boundary;
 
 #[path = "mixed_tail_returns.rs"]
 mod mixed_tail_returns;
+
+#[path = "macho_alias_names_cli.rs"]
+mod macho_alias_names_cli;
 
 #[path = "name_miss_cli.rs"]
 mod name_miss_cli;

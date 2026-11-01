@@ -2086,6 +2086,52 @@ ops are not decoded and the CALLOTHER stays.
 
 ## 3.3 Sub-variable flow
 
+**Pointer flow on a truncated address space** (`option truncptrflow`, default
+on). A truncated default data space has addresses narrower than the registers
+that hold them: MIPS 64-32addr and N32, PowerPC e500 and the 32addr variants,
+AArch64 ilp32. On such an architecture `RulePtrFlow`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_7.rs (RulePtrFlow)`)
+narrows
+LOAD/STORE address operands to their referenced space's address width and
+indirect branch/call targets to the code-space width. A SUBPIECE takes the low
+bytes (with storage adjusted for endianness); constants are masked directly.
+Other uses retain the full value. Pointer-flow marks describe address uses;
+they do not prove that upper integer bits are zero or unused. SUBPIECE- and
+INT_ZEXT-triggered sub-variable analysis must apply its normal consumption and
+value-range checks even to marked pointers, including comparisons, returns
+and other consumers reached through arithmetic, copies or merges. In N32,
+this works with the entry stack-register reconstruction (chapter 04) to recover
+stack arguments and locals without truncating their 64-bit contents. Narrow
+operands are never widened. Upstream sets sub-variable flow's aggressive mode
+for a pointer-flow value; kuna does not, since the mark says nothing about the
+upper bits of the full register.
+
+Truncation can leave hundreds of fresh SUBPIECEs of one stack or base
+register in a single pool pass. While the option is live, `RuleSelectCse`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RuleSelectCse)`)
+therefore returns at once when the visited op's own output is not yet
+heritaged. A pair is merged only when both outputs are heritaged, so the pair
+such a visit would have merged is merged instead when one of its own ops is
+visited, later in the pass or in the next one. No merge is lost, but merges can
+happen in a different order, and so can the rules that run between them, which
+changes how a few values group into variables. Rebuilding and sorting the list
+of all siblings at every visit made a large N32 or e500 function several times
+slower (bzip2's `BZ2_compressBlock` on N32: 11.8 s of CPU, against 1.9 s with
+the early return and 1.5 s with the option off).
+
+The option costs real work on the targets it reaches: decompiling a whole
+binary takes 10-80% more CPU there (MIPS N32 17-24%, AArch64 ilp32 18%,
+PowerPC 64-32addr 52%, PowerPC e500 10-77%), because every address use gains a
+SUBPIECE that later passes must simplify, and jump tables that used to stop at
+unmapped targets now have their cases decompiled. As upstream's constructor
+does, the universal schedule registers `RulePtrFlow` on no opcode when the
+default data space is not truncated, and `RuleSelectCse` checks the option and
+the space before its early return, so an untruncated architecture runs none of
+these steps and prints the same output with the option on or off. Off restores
+the earlier output on truncated targets byte for byte: the port had
+`RulePtrFlow` stubbed out (its op list was always empty), the stack register
+was a single wide input, and `RuleSelectCse` visited every op.
+
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`
 shrinks a logical value out of a larger container: given a *root* varnode and a
 bit-mask identifying where the small value lives, it traces the value's flow
@@ -2340,6 +2386,23 @@ storage it had already rewritten, so the next varnode it read could be one the
 failed split had deleted (`ActionLaneDivide: stale vn`), or the pipeline ran
 on over the half-rewritten function. This is a correctness repair with no
 option.
+
+One such failure is now caught before anything is rewritten: a transform that
+would give a free varnode it creates a second reader
+(`decompiler/crates/kuna-decomp/src/substrate/transform.rs
+(check_free_fanout)`). The action runs that check once a trace succeeds and
+counts a refusal as a failed trace: it tries the next lane size, and the
+failure memo holds it like any other failure, since the check reads only what
+the trace built. Upstream throws from `placeInputs` and fails the function.
+x86 code meets this when instructions share unique-space temporaries: the
+three `IMUL`s of `sub_e87b0` in Ubuntu 26.04's bash all compute their flags
+through `u0x5a200`, one at 16 bytes, so heritage carries the 16-byte temporary
+across blocks from an input at the entry, and its lanes, being unique storage,
+become temporaries read by four MULTIEQUALs. The function used to fail with
+`laned register split failed part way: Free varnode has multiple descendants`;
+it now decompiles without that split
+(`tests/stages/kuna-lanedivide-freefanout.xml`). This is a correctness repair
+with no option.
 
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.

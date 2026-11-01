@@ -1,5 +1,5 @@
---- internal/cpu.processOptions off
-+++ internal/cpu.processOptions on
+--- off/internal/cpu.processOptions
++++ on/internal/cpu.processOptions
 @@ -1,4 +1,4 @@
 -void internal/cpu.processOptions(int4 *a0,unsigned int a1)
 +void internal/cpu.processOptions(int4 *a0,int a1)
@@ -137,8 +137,8 @@
 +    a0 = v10;
    }
  }
---- internal/abi.(*IntArgRegBitmap).Get off
-+++ internal/abi.(*IntArgRegBitmap).Get on
+--- off/internal/abi.(*IntArgRegBitmap).Get
++++ on/internal/abi.(*IntArgRegBitmap).Get
 @@ -3,8 +3,5 @@
    int v1; // rbx | rdx
    
@@ -149,8 +149,8 @@
 -  runtime.panicshift(); // no-return
 +  return (unsigned char)((unsigned char)(1 << ((char)a1 + (char)v1 * '\xf8' & 0x1fU)) & a0[v1]) != 0;
  }
---- internal/abi.Kind.String off
-+++ internal/abi.Kind.String on
+--- off/internal/abi.Kind.String
++++ on/internal/abi.Kind.String
 @@ -4,12 +4,9 @@
    char v2 [16]; // rbx:rax
    
@@ -168,8 +168,8 @@
 +  *(unsigned long *)v2 = *(unsigned long *)(*(char (**)[16])internal/abi.kindNames)[v1];
 +  return *(unsigned __int128 *)v2;
  }
---- internal/abi.(*FuncType).OutSlice off
-+++ internal/abi.(*FuncType).OutSlice on
+--- off/internal/abi.(*FuncType).OutSlice
++++ on/internal/abi.(*FuncType).OutSlice
 @@ -3,21 +3,18 @@
    unsigned short v1; // dx
    int4 v2; // eax | esi
@@ -204,8 +204,8 @@
 +  }
 +  return 0;
  }
---- internal/abi.Name.ReadVarint off
-+++ internal/abi.Name.ReadVarint on
+--- off/internal/abi.Name.ReadVarint
++++ on/internal/abi.Name.ReadVarint
 @@ -1,18 +1,13 @@
  int internal/abi.Name.ReadVarint(unsigned long a0,int a1)
  {
@@ -233,8 +233,8 @@
 -  return v2 + 1;
 +  return v1 + 1;
  }
---- internal/abi.Name.Name off
-+++ internal/abi.Name.Name on
+--- off/internal/abi.Name.Name
++++ on/internal/abi.Name.Name
 @@ -6,11 +6,10 @@
      return ZEXT816(0);
    *(unsigned __int128 *)v1 = internal/abi.Name.ReadVarint(a0,1);
@@ -252,8 +252,8 @@
 +  }
 +  return *(unsigned __int128 *)v1;
  }
---- internal/abi.Name.Tag off
-+++ internal/abi.Name.Tag on
+--- off/internal/abi.Name.Tag
++++ on/internal/abi.Name.Tag
 @@ -9,11 +9,10 @@
    v2 = internal/abi.Name.ReadVarint(a0,SUB168(*(unsigned __int128 *)v1,8) + SUB168(*(unsigned __int128 *)v1,0) + 1);
    *(unsigned int *)&v1[8] = SUB168(v2,8);
@@ -271,8 +271,8 @@
 +  }
 +  return *(unsigned __int128 *)v1;
  }
---- internal/byteorder.LEUint32 off
-+++ internal/byteorder.LEUint32 on
+--- off/internal/byteorder.LEUint32
++++ on/internal/byteorder.LEUint32
 @@ -1,9 +1,4 @@
 -unsigned int internal/byteorder.LEUint32(unsigned int *a0,unsigned int a1)
 +unsigned int internal/byteorder.LEUint32(unsigned int *a0)
@@ -285,8 +285,8 @@
 -  runtime.panicBounds(); // no-return
 +  return *a0;
  }
---- internal/byteorder.LEUint64 off
-+++ internal/byteorder.LEUint64 on
+--- off/internal/byteorder.LEUint64
++++ on/internal/byteorder.LEUint64
 @@ -1,9 +1,4 @@
 -unsigned long internal/byteorder.LEUint64(unsigned long *a0,unsigned int a1)
 +unsigned long internal/byteorder.LEUint64(unsigned long *a0)
@@ -299,8 +299,8 @@
 -  runtime.panicBounds(); // no-return
 +  return *a0;
  }
---- internal/byteorder.BEPutUint64 off
-+++ internal/byteorder.BEPutUint64 on
+--- off/internal/byteorder.BEPutUint64
++++ on/internal/byteorder.BEPutUint64
 @@ -1,11 +1,5 @@
 -void internal/byteorder.BEPutUint64(unsigned int *a0,unsigned int a1,unsigned long a2,unsigned int a3)
 +void internal/byteorder.BEPutUint64(unsigned int *a0,unsigned long a1,unsigned long a2,unsigned int a3)
@@ -316,8 +316,8 @@
 +  *a0 = a3 >> 0x38 | (a3 & 0xff000000000000) >> 0x28 | (a3 & 0xff0000000000) >> 0x18 | (a3 & 0xff00000000) >> 8 | (a3 & 0xff000000) << 8 | (a3 & 0xff0000) << 0x18 | (a3 & 0xff00) << 0x28 | a3 << 0x38;
 +  return;
  }
---- internal/runtime/maps.NewMap off
-+++ internal/runtime/maps.NewMap on
+--- off/internal/runtime/maps.NewMap
++++ on/internal/runtime/maps.NewMap
 @@ -40,56 +40,55 @@
      return a2;
    v20 = internal/runtime/maps.alignUpPow2(v1 + 0x3ff >> 10);
@@ -422,8 +422,9 @@
      return a2;
    }
    return a2;
---- internal/runtime/maps.(*Map).installTableSplit off
-+++ internal/runtime/maps.(*Map).installTableSplit on
+
+--- off/internal/runtime/maps.(*Map).installTableSplit
++++ on/internal/runtime/maps.(*Map).installTableSplit
 @@ -1,80 +1,68 @@
  void internal/runtime/maps.(*Map).installTableSplit(void *a0,void *a1,void *a2,void *a3)
  {
@@ -557,8 +558,8 @@
 +  internal/runtime/maps.(*Map).replaceTable(v16,v19);
    return;
  }
---- internal/runtime/maps.(*table).pruneTombstones off
-+++ internal/runtime/maps.(*table).pruneTombstones on
+--- off/internal/runtime/maps.(*table).pruneTombstones
++++ on/internal/runtime/maps.(*table).pruneTombstones
 @@ -8,149 +8,116 @@
    int v6; // rax
    void *v7; // rax | stack + 0x8
@@ -806,8 +807,8 @@
 +  }
 +  return;
  }
---- internal/strconv.ParseUint off
-+++ internal/strconv.ParseUint on
+--- off/internal/strconv.ParseUint
++++ on/internal/strconv.ParseUint
 @@ -1,4 +1,4 @@
 -undefined24 internal/strconv.ParseUint(char *a0,unsigned int a1,unsigned int a2,unsigned int a3)
 +undefined24 internal/strconv.ParseUint(char *a0,int a1,unsigned int a2,unsigned int a3)
@@ -917,8 +918,9 @@
          *(unsigned __int128 *)v12 = ZEXT816(0x52d5c8) << 0x40;
          *(unsigned long *)&v12[0x10] = 0x498d60;
          return v12._0_24_;
---- internal/strconv.AppendComplex off
-+++ internal/strconv.AppendComplex on
+
+--- off/internal/strconv.AppendComplex
++++ on/internal/strconv.AppendComplex
 @@ -12,7 +12,7 @@
    unsigned int v10; // rcx
    unsigned int v11; // r9 | rbx | rcx | stack - 0x30
@@ -978,8 +980,8 @@
 +  *(unsigned short *)(v6 + v15) = 0x2969;
 +  return;
  }
---- internal/strconv.trim off
-+++ internal/strconv.trim on
+--- off/internal/strconv.trim
++++ on/internal/strconv.trim
 @@ -2,11 +2,8 @@
  {
    int v1; // rcx
@@ -994,8 +996,9 @@
    }
    if (v1)
      return;
---- internal/strconv.(*decimal).Assign off
-+++ internal/strconv.(*decimal).Assign on
+
+--- off/internal/strconv.(*decimal).Assign
++++ on/internal/strconv.(*decimal).Assign
 @@ -1,34 +1,19 @@
  void internal/strconv.(*decimal).Assign(void *a0,unsigned int a1)
  {
@@ -1043,8 +1046,8 @@
 +  internal/strconv.trim(a0);
 +  return;
  }
---- internal/strconv.rightShift off
-+++ internal/strconv.rightShift on
+--- off/internal/strconv.rightShift
++++ on/internal/strconv.rightShift
 @@ -3,10 +3,11 @@
    unsigned char v1; // r11b
    unsigned int v2; // r8
@@ -1127,8 +1130,8 @@
 +  internal/strconv.trim(a0);
 +  return;
  }
---- internal/strconv.leftShift off
-+++ internal/strconv.leftShift on
+--- off/internal/strconv.leftShift
++++ on/internal/strconv.leftShift
 @@ -1,75 +1,56 @@
  void internal/strconv.leftShift(void *a0,unsigned int a1)
  {
@@ -1253,8 +1256,8 @@
 +  internal/strconv.trim(v9);
 +  return;
  }
---- internal/strconv.shouldRoundUp off
-+++ internal/strconv.shouldRoundUp on
+--- off/internal/strconv.shouldRoundUp
++++ on/internal/strconv.shouldRoundUp
 @@ -1,14 +1,12 @@
 -bool internal/strconv.shouldRoundUp(void *a0,unsigned int a1) // early-return
 +bool internal/strconv.shouldRoundUp(void *a0,int a1) // early-return
@@ -1274,8 +1277,9 @@
      return 0;
    }
    return 0x35 <= ((unsigned char *)a0)[a1];
---- internal/strconv.(*decimal).RoundUp off
-+++ internal/strconv.(*decimal).RoundUp on
+
+--- off/internal/strconv.(*decimal).RoundUp
++++ on/internal/strconv.(*decimal).RoundUp
 @@ -1,25 +1,21 @@
 -void internal/strconv.(*decimal).RoundUp(char *a0,unsigned int a1)
 +void internal/strconv.(*decimal).RoundUp(char *a0,int a1)
@@ -1312,8 +1316,8 @@
    }
    return;
  }
---- internal/strconv.fmtEFG off
-+++ internal/strconv.fmtEFG on
+--- off/internal/strconv.fmtEFG
++++ on/internal/strconv.fmtEFG
 @@ -1,4 +1,4 @@
 -int internal/strconv.fmtEFG(int a0,unsigned int a1,unsigned int a2,bool a3,char *a4,unsigned int a5,unsigned int a6,unsigned int a7,unsigned int a8,unsigned int a9,unsigned long a10)
 +int internal/strconv.fmtEFG(int a0,unsigned int a1,unsigned int a2,bool a3,char *a4,unsigned long a5,unsigned long a6,int a7,int a8,int a9,unsigned long a10)
@@ -1811,8 +1815,8 @@
    }
    return a0;
  }
---- internal/strconv.fmtX off
-+++ internal/strconv.fmtX on
+--- off/internal/strconv.fmtX
++++ on/internal/strconv.fmtX
 @@ -20,7 +20,7 @@
    unsigned int v18; // rcx
    unsigned int v19; // r11 | rcx
@@ -1845,8 +1849,9 @@
    v45 = a3;
    v52 = v21;
    v53 = a7;
---- internal/strconv.FormatInt off
-+++ internal/strconv.FormatInt on
+
+--- off/internal/strconv.FormatInt
++++ on/internal/strconv.FormatInt
 @@ -6,13 +6,13 @@
    int v4; // rax | rcx | rdx | stack + 0x8
    unsigned int v5; // rax | rcx | rdi | rdx | stack + 0x8 | stack - 0x20
@@ -1874,8 +1879,9 @@
    internal/strconv.formatBase10((int)&v1 + 1,v6,0x17,v5);
    if (v4 <= -1) {
      v1 = CONCAT71(SUB87(v1,1),0x2d);
---- internal/strconv.AppendUint off
-+++ internal/strconv.AppendUint on
+
+--- off/internal/strconv.AppendUint
++++ on/internal/strconv.AppendUint
 @@ -19,7 +19,7 @@
    int v17; // rbx | rcx | rdx | stack + 0x10
    unsigned int v18; // rcx | rsi | stack + 0x18
@@ -1944,8 +1950,8 @@
 +  *(unsigned long *)&v2[0x10] = v21;
 +  return v2._0_24_;
  }
---- internal/strconv.formatBits off
-+++ internal/strconv.formatBits on
+--- off/internal/strconv.formatBits
++++ on/internal/strconv.formatBits
 @@ -1,105 +1,92 @@
  undefined40 internal/strconv.formatBits(int a0,int a1,unsigned int a2,unsigned int a3,unsigned int a4,char a5,char a6)
  {
@@ -2122,8 +2128,8 @@
 +  runtime.memmove(a0 + a1,&v12[v4],v24);
 +  return ZEXT2440(CONCAT816(v23,CONCAT88(v24,v26)));
  }
---- internal/strconv.small off
-+++ internal/strconv.small on
+--- off/internal/strconv.small
++++ on/internal/strconv.small
 @@ -1,26 +1,14 @@
 -undefined16 internal/strconv.small(unsigned int a0)
 +undefined16 internal/strconv.small(int a0)
@@ -2160,8 +2166,8 @@
 +  *(unsigned long *)v2 = (unsigned long)&"00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990919293949596979899"[a0 * 2];
 +  return *(unsigned __int128 *)v2;
  }
---- internal/strconv.RuntimeFormatBase10 off
-+++ internal/strconv.RuntimeFormatBase10 on
+--- off/internal/strconv.RuntimeFormatBase10
++++ on/internal/strconv.RuntimeFormatBase10
 @@ -1,8 +1,8 @@
 -unsigned int internal/strconv.RuntimeFormatBase10(int a0,unsigned int a1,int a2,unsigned int a3)
 +unsigned int internal/strconv.RuntimeFormatBase10(int a0,int a1,int a2,unsigned int a3)
@@ -2186,8 +2192,8 @@
 +  internal/strconv.formatBase10(v2 + ((int)-(v4 - v1) >> 0x3f & v1),v3 - v1,v4 - v1,v5);
 +  return v1;
  }
---- internal/strconv.formatBase10 off
-+++ internal/strconv.formatBase10 on
+--- off/internal/strconv.formatBase10
++++ on/internal/strconv.formatBase10
 @@ -1,70 +1,59 @@
 -void internal/strconv.formatBase10(char *a0,unsigned int a1,unsigned long a2,unsigned int a3) // return-dupe
 +void internal/strconv.formatBase10(char *a0,int a1,unsigned long a2,unsigned int a3) // return-dupe
@@ -2303,8 +2309,9 @@
      return;
    }
    return;
---- internal/strconv.unrounded.div off
-+++ internal/strconv.unrounded.div on
+
+--- off/internal/strconv.unrounded.div
++++ on/internal/strconv.unrounded.div
 @@ -1,6 +1,4 @@
  unsigned int internal/strconv.unrounded.div(unsigned int a0,unsigned int a1)
  {
@@ -2313,8 +2320,8 @@
 -  runtime.panicdivide(); // no-return
 +  return internal/strconv.bool2[go.shape.uint64](&internal/strconv..dict.bool2[internal/strconv.unrounded],a0 % a1 != 0) | (unsigned int)((uint4)a0 & 1) | a0 / a1;
  }
---- internal/strconv.fixedWidthFloat off
-+++ internal/strconv.fixedWidthFloat on
+--- off/internal/strconv.fixedWidthFloat
++++ on/internal/strconv.fixedWidthFloat
 @@ -1,4 +1,4 @@
 -undefined16 internal/strconv.fixedWidthFloat(unsigned long a0,int a1,unsigned int a2,int a3,char a4)
 +undefined16 internal/strconv.fixedWidthFloat(unsigned long a0,int a1,int a2,int a3,char a4)
@@ -2339,8 +2346,9 @@
    v1 = *(unsigned long *)&internal/strconv.uint64pow10[v10 * 8];
    if ((unsigned int)internal/strconv.unmin(v1) <= v2) { // branch-flip
      v2 = internal/strconv.unrounded.div(v2,10);
---- internal/strconv.prescale off
-+++ internal/strconv.prescale on
+
+--- off/internal/strconv.prescale
++++ on/internal/strconv.prescale
 @@ -2,12 +2,9 @@
  {
    int v1; // rcx
@@ -2359,8 +2367,8 @@
 +  a0[2] = -(a3 + a1 + 3);
 +  return;
  }
---- internal/strconv.setDigits off
-+++ internal/strconv.setDigits on
+--- off/internal/strconv.setDigits
++++ on/internal/strconv.setDigits
 @@ -1,24 +1,21 @@
 -undefined16 internal/strconv.setDigits(int a0,int a1,unsigned int a2,unsigned long a3,int a4,unsigned int a5)
 +undefined16 internal/strconv.setDigits(int a0,int a1,unsigned long a2,unsigned long a3,int a4,int a5)
@@ -2391,8 +2399,9 @@
    }
    *(unsigned long *)&v1[8] = v4;
    *(unsigned long *)v1 = v3;
---- internal/strconv.numDigits off
-+++ internal/strconv.numDigits on
+
+--- off/internal/strconv.numDigits
++++ on/internal/strconv.numDigits
 @@ -1,9 +1,7 @@
  int internal/strconv.numDigits(unsigned int a0)
  {
@@ -2419,8 +2428,8 @@
 +  v1 = *(unsigned int *)&internal/strconv.uint64pow10[v2 * 8];
 +  return internal/strconv.bool2[go.shape.int](&internal/strconv..dict.bool2[int],v1 <= a0) + v2;
  }
---- internal/runtime/cgroup.parseV1Number off
-+++ internal/runtime/cgroup.parseV1Number on
+--- off/internal/runtime/cgroup.parseV1Number
++++ on/internal/runtime/cgroup.parseV1Number
 @@ -1,4 +1,4 @@
 -undefined24 internal/runtime/cgroup.parseV1Number(unsigned long a0,unsigned long a1,unsigned int a2)
 +undefined24 internal/runtime/cgroup.parseV1Number(unsigned long a0,unsigned long a1,unsigned long a2)
@@ -2467,8 +2476,8 @@
 +  *(unsigned long *)&v1[0x10] = 0;
 +  return v1._0_24_ << 0x40;
  }
---- internal/runtime/cgroup.parseV2Limit off
-+++ internal/runtime/cgroup.parseV2Limit on
+--- off/internal/runtime/cgroup.parseV2Limit
++++ on/internal/runtime/cgroup.parseV2Limit
 @@ -1,4 +1,4 @@
 -undefined24 internal/runtime/cgroup.parseV2Limit(int a0,unsigned int a1,unsigned int a2)
 +undefined24 internal/runtime/cgroup.parseV2Limit(int a0,unsigned long a1,int a2)
@@ -2565,8 +2574,8 @@
 +  *(unsigned long *)&v2[0x10] = 0;
 +  return v2._0_24_ << 0x40;
  }
---- internal/runtime/cgroup.parseCPUCgroup off
-+++ internal/runtime/cgroup.parseCPUCgroup on
+--- off/internal/runtime/cgroup.parseCPUCgroup
++++ on/internal/runtime/cgroup.parseCPUCgroup
 @@ -4,7 +4,7 @@
    char v2; // al
    unsigned long v3; // rax | stack - 0x20
@@ -2689,8 +2698,8 @@
 +  *(unsigned long *)&v9[0x18] = *(unsigned long *)&internal/runtime/cgroup.errMalformedFile[8];
 +  return v9._0_32_;
  }
---- internal/runtime/cgroup.containsCPU off
-+++ internal/runtime/cgroup.containsCPU on
+--- off/internal/runtime/cgroup.containsCPU
++++ on/internal/runtime/cgroup.containsCPU
 @@ -1,9 +1,9 @@
 -unsigned long internal/runtime/cgroup.containsCPU(short *a0,unsigned int a1,unsigned int a2) // early-return
 +unsigned long internal/runtime/cgroup.containsCPU(short *a0,int a1,int a2) // early-return
@@ -2731,8 +2740,8 @@
 +    return CONCAT71((undefined7)((unsigned int)v4 >> 8),*(char *)&a0[1] == 'u');
 +  return 0;
  }
---- internal/runtime/cgroup.parseCPUMount off
-+++ internal/runtime/cgroup.parseCPUMount on
+--- off/internal/runtime/cgroup.parseCPUMount
++++ on/internal/runtime/cgroup.parseCPUMount
 @@ -1,46 +1,46 @@
  undefined24 internal/runtime/cgroup.parseCPUMount(unsigned long a0,unsigned long a1,int a2,unsigned int a3,int a4,int a5,unsigned int a6,int a7,int a8,unsigned long a9,unsigned long a10,unsigned long a11)
  {
@@ -3119,8 +3128,8 @@
 +    v15 = v45;
    }
  }
---- internal/runtime/cgroup.unescapePath off
-+++ internal/runtime/cgroup.unescapePath on
+--- off/internal/runtime/cgroup.unescapePath
++++ on/internal/runtime/cgroup.unescapePath
 @@ -1,40 +1,32 @@
 -undefined24 internal/runtime/cgroup.unescapePath(char *a0,unsigned int a1,unsigned long a2,int a3,unsigned int a4)
 +undefined24 internal/runtime/cgroup.unescapePath(char *a0,int a1,unsigned long a2,int a3,int a4)
@@ -3185,8 +3194,9 @@
        a0[v6] = (char)v8;
        v5 += 4;
      }
---- internal/runtime/cgroup.OpenCPU off
-+++ internal/runtime/cgroup.OpenCPU on
+
+--- off/internal/runtime/cgroup.OpenCPU
++++ on/internal/runtime/cgroup.OpenCPU
 @@ -1,103 +1,73 @@
 -undefined40 internal/runtime/cgroup.OpenCPU(int a0,unsigned int a1,unsigned int a2)
 +undefined40 internal/runtime/cgroup.OpenCPU(int a0,int a1,int a2)
@@ -3350,8 +3360,8 @@
 +  }
 +  return ZEXT2440(CONCAT816(SUB168(v11,0),CONCAT88(SUB168(v10,0),1)));
  }
---- internal/runtime/cgroup.readV1Number off
-+++ internal/runtime/cgroup.readV1Number on
+--- off/internal/runtime/cgroup.readV1Number
++++ on/internal/runtime/cgroup.readV1Number
 @@ -1,17 +1,12 @@
  unsigned long internal/runtime/cgroup.readV1Number(unsigned long a0)
  {
@@ -3377,8 +3387,8 @@
 +    return 0;
 +  return internal/runtime/cgroup.parseV1Number(v1,SUB168(v2,0),0x40);
  }
---- internal/runtime/cgroup.readV2Limit off
-+++ internal/runtime/cgroup.readV2Limit on
+--- off/internal/runtime/cgroup.readV2Limit
++++ on/internal/runtime/cgroup.readV2Limit
 @@ -1,17 +1,12 @@
  unsigned long internal/runtime/cgroup.readV2Limit(unsigned long a0)
  {
@@ -3404,8 +3414,8 @@
 +    return 0;
 +  return internal/runtime/cgroup.parseV2Limit(v1,SUB168(v2,0),0x40);
  }
---- internal/runtime/cgroup.FindCPU off
-+++ internal/runtime/cgroup.FindCPU on
+--- off/internal/runtime/cgroup.FindCPU
++++ on/internal/runtime/cgroup.FindCPU
 @@ -1,6 +1,6 @@
 -undefined24 internal/runtime/cgroup.FindCPU(unsigned long a0,unsigned long a1,unsigned int a2,unsigned long a3,unsigned long a4,unsigned long a5)
 +undefined24 internal/runtime/cgroup.FindCPU(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5)
@@ -3446,8 +3456,8 @@
 +  *(unsigned long *)&v4[0x10] = v5;
 +  return v4._0_24_;
  }
---- internal/runtime/cgroup.(*lineReader).next off
-+++ internal/runtime/cgroup.(*lineReader).next on
+--- off/internal/runtime/cgroup.(*lineReader).next
++++ on/internal/runtime/cgroup.(*lineReader).next
 @@ -6,7 +6,7 @@
    char v4 [16]; // ram 0x531bb0 | ram 0x531bb8 | rbx:rax
    char v5 [16]; // ram 0x531ba0 | ram 0x531ba8 | rbx:rax
@@ -3533,8 +3543,8 @@
 +  *(unsigned long *)v3 = *(unsigned long *)internal/runtime/cgroup.errIncompleteLine;
 +  return *(unsigned __int128 *)v3;
  }
---- internal/runtime/cgroup.(*lineReader).line off
-+++ internal/runtime/cgroup.(*lineReader).line on
+--- off/internal/runtime/cgroup.(*lineReader).line
++++ on/internal/runtime/cgroup.(*lineReader).line
 @@ -1,11 +1,6 @@
  unsigned long internal/runtime/cgroup.(*lineReader).line(void *a0)
  {
@@ -3549,8 +3559,8 @@
 -  runtime.panicBounds(); // no-return
 +  return ((unsigned long *)a0)[2];
  }
---- internal/stringslite.CutPrefix off
-+++ internal/stringslite.CutPrefix on
+--- off/internal/stringslite.CutPrefix
++++ on/internal/stringslite.CutPrefix
 @@ -1,27 +1,24 @@
 -undefined24 internal/stringslite.CutPrefix(int a0,unsigned int a1,unsigned long a2,unsigned int a3)
 +undefined24 internal/stringslite.CutPrefix(int a0,int a1,unsigned long a2,unsigned int a3)
@@ -3587,8 +3597,8 @@
 +  *(unsigned long *)&v2[0x10] = 0;
 +  return v2._0_24_;
  }
---- runtime.init.0 off
-+++ runtime.init.0 on
+--- off/runtime.init.0
++++ on/runtime.init.0
 @@ -2,13 +2,10 @@
  {
    char v1 [16]; // ram 0x556498 | rcx
@@ -3607,8 +3617,8 @@
 +  runtime.lockInit(runtime.userArenaState,0x26);
 +  return;
  }
---- runtime.(*cpuProfile).addNonGo off
-+++ runtime.(*cpuProfile).addNonGo on
+--- off/runtime.(*cpuProfile).addNonGo
++++ on/runtime.(*cpuProfile).addNonGo
 @@ -1,35 +1,29 @@
  void runtime.(*cpuProfile).addNonGo(unsigned long a0,int a1,int a2)
  {
@@ -3664,8 +3674,9 @@
    }
    internal/runtime/atomic.(*Uint32).Store(&runtime.prof,0);
    return;
---- runtime.(*cpuProfile).addExtra off
-+++ runtime.(*cpuProfile).addExtra on
+
+--- off/runtime.(*cpuProfile).addExtra
++++ on/runtime.(*cpuProfile).addExtra
 @@ -1,49 +1,39 @@
  void runtime.(*cpuProfile).addExtra(int *a0) // return-dupe
  {
@@ -3750,8 +3761,8 @@
 +  v6[0x3ed] = 0;
 +  return;
  }
---- runtime.gogetenv off
-+++ runtime.gogetenv on
+--- off/runtime.gogetenv
++++ on/runtime.gogetenv
 @@ -1,6 +1,6 @@
  undefined16 runtime.gogetenv(unsigned long a0,int a1)
  {
@@ -3778,8 +3789,9 @@
    v6 = (v1 - a1) + -1;
    *(unsigned long *)&v5[8] = v6;
    *(unsigned long *)v5 = v2 + (a1 + 1U & -v6 >> 0x3f);
---- runtime.itoa off
-+++ runtime.itoa on
+
+--- off/runtime.itoa
++++ on/runtime.itoa
 @@ -1,28 +1,15 @@
 -undefined24 runtime.itoa(int a0,unsigned int a1,int a2,unsigned int a3)
 +undefined24 runtime.itoa(int a0,int a1,int a2,unsigned int a3)
@@ -3817,8 +3829,8 @@
 +  *(unsigned long *)&v1[0x10] = a2 - v2;
 +  return v1._0_24_;
  }
---- runtime.boundsError.Error off
-+++ runtime.boundsError.Error on
+--- off/runtime.boundsError.Error
++++ on/runtime.boundsError.Error
 @@ -7,7 +7,7 @@
    unsigned int v5; // r11 | rcx
    unsigned int v6; // r11 | rcx
@@ -4060,8 +4072,8 @@
 +  runtime.slicebytetostring(0,v9,v19);
 +  return;
  }
---- runtime.printindented off
-+++ runtime.printindented on
+--- off/runtime.printindented
++++ on/runtime.printindented
 @@ -1,30 +1,25 @@
 -void runtime.printindented(int a0,unsigned int a1)
 +void runtime.printindented(int a0,int a1)
@@ -4107,8 +4119,8 @@
 +  runtime.printunlock();
 +  return;
  }
---- runtime.panicwrap off
-+++ runtime.panicwrap on
+--- off/runtime.panicwrap
++++ on/runtime.panicwrap
 @@ -1,93 +1,78 @@
  void runtime.panicwrap(void)
  {
@@ -4274,8 +4286,8 @@
 +  v5 = runtime.concatstring2(0,"panicwrap: unexpected string after type name: ",0x2e,v12,v9);
 +  runtime.throw(SUB168(v5,0),SUB168(v5,8)); // no-return
  }
---- runtime.hexdumpWords off
-+++ runtime.hexdumpWords on
+--- off/runtime.hexdumpWords
++++ on/runtime.hexdumpWords
 @@ -1,44 +1,28 @@
  void runtime.hexdumpWords(int a0,unsigned int a1,unsigned long a2)
  {
@@ -4339,8 +4351,8 @@
 +    runtime.panicunsafeslicenilptr(); // no-return
 +  runtime.panicunsafeslicelen(); // no-return
  }
---- runtime.(*hexdumper).write off
-+++ runtime.(*hexdumper).write on
+--- off/runtime.(*hexdumper).write
++++ on/runtime.(*hexdumper).write
 @@ -21,8 +21,6 @@
    }
    v2 = ((unsigned char *)a0)[0x29];
@@ -4350,8 +4362,9 @@
      v3 = -((unsigned int)v2 - 0x10);
      v1 = (int)a0 + ((int)((unsigned int)v2 - 0x10) >> 0x3f & (unsigned int)v2) + 0x19;
      if ((int)a2 < v3)
---- runtime.(*hexdumper).close off
-+++ runtime.(*hexdumper).close on
+
+--- off/runtime.(*hexdumper).close
++++ on/runtime.(*hexdumper).close
 @@ -1,13 +1,7 @@
  void runtime.(*hexdumper).close(void *a0) // return-dupe
  {
@@ -4369,8 +4382,8 @@
 +  runtime.(*hexdumper).flushLine(a0,(int)a0 + 0x19,(unsigned char)((char *)a0)[0x29],0x10);
 +  return;
  }
---- runtime.(*hexdumper).flushLine off
-+++ runtime.(*hexdumper).flushLine on
+--- off/runtime.(*hexdumper).flushLine
++++ on/runtime.(*hexdumper).flushLine
 @@ -1,251 +1,137 @@
  void runtime.(*hexdumper).flushLine(int *a0,char *a1,int a2)
  {
@@ -4748,8 +4761,8 @@
 +  *(unsigned short *)((int)v1 + 0x29) = 0;
 +  return;
  }
---- runtime.(*hexdumper).fmtHex off
-+++ runtime.(*hexdumper).fmtHex on
+--- off/runtime.(*hexdumper).fmtHex
++++ on/runtime.(*hexdumper).fmtHex
 @@ -1,19 +1,11 @@
  void runtime.(*hexdumper).fmtHex(unsigned long a0,char *a1,int a2,unsigned long a3,unsigned int a4) // return-dupe
  {
@@ -4774,8 +4787,8 @@
 +  *a1 = '*';
 +  return;
  }
---- runtime.hexdumpMarker.start off
-+++ runtime.hexdumpMarker.start on
+--- off/runtime.hexdumpMarker.start
++++ on/runtime.hexdumpMarker.start
 @@ -1,21 +1,17 @@
 -void runtime.hexdumpMarker.start(unsigned int a0,unsigned long a1)
 +void runtime.hexdumpMarker.start(int a0)
@@ -4808,8 +4821,9 @@
    runtime.printlock();
    runtime.printstring((char *)0x49001e,2);
    runtime.printunlock();
---- runtime.itabInit off
-+++ runtime.itabInit on
+
+--- off/runtime.itabInit
++++ on/runtime.itabInit
 @@ -4,121 +4,115 @@
    unsigned int v2; // ebx
    int v3; // r8 | rax | rcx | stack - 0x40
@@ -5003,8 +5017,8 @@
 +  v10 += 1;
    goto label_41ad8f;
  }
---- runtime.interfaceSwitch off
-+++ runtime.interfaceSwitch on
+--- off/runtime.interfaceSwitch
++++ on/runtime.interfaceSwitch
 @@ -7,42 +7,38 @@
    char v5 [16]; // rax | rcx | rdi | rdx | rsi | stack - 0x20 | stack - 0x28 | stack - 0x30
    uint4 v6; // eax
@@ -5062,8 +5076,9 @@
      }
      v7 = runtime.getitab(a0[v8 + 2],a1,1);
      if (v7) {
---- runtime.buildInterfaceSwitchCache off
-+++ runtime.buildInterfaceSwitchCache on
+
+--- off/runtime.buildInterfaceSwitchCache
++++ on/runtime.buildInterfaceSwitchCache
 @@ -1,49 +1,42 @@
  int * runtime.buildInterfaceSwitchCache(int *a0,unsigned long a1,unsigned long a2,unsigned long a3)
  {
@@ -5149,8 +5164,8 @@
 +  runtime.buildInterfaceSwitchCache.func1(v7,v8,v9);
 +  return v1;
  }
---- runtime.nextHeapRandBits off
-+++ runtime.nextHeapRandBits on
+--- off/runtime.nextHeapRandBits
++++ on/runtime.nextHeapRandBits
 @@ -2,16 +2,11 @@
  {
    unsigned int v1; // rsi
@@ -5173,8 +5188,8 @@
 -  runtime.panicshift(); // no-return
 +  runtime.throw("not enough heapRandSeed bits remaining",0x26); // no-return
  }
---- runtime.(*mheap).sysAlloc off
-+++ runtime.(*mheap).sysAlloc on
+--- off/runtime.(*mheap).sysAlloc
++++ on/runtime.(*mheap).sysAlloc
 @@ -1,237 +1,215 @@
  undefined16 runtime.(*mheap).sysAlloc(int a0,unsigned long a1,unsigned int *a2,int *a3)
  {
@@ -5585,8 +5600,8 @@
    }
    runtime.throw("arena already initialized",0x19); // no-return
  }
---- runtime.(*mcache).nextFree off
-+++ runtime.(*mcache).nextFree on
+--- off/runtime.(*mcache).nextFree
++++ on/runtime.(*mcache).nextFree
 @@ -5,24 +5,21 @@
    unsigned short v3; // si | stack - 0x1c
    unsigned int v4; // rax
@@ -5659,8 +5674,8 @@
 -  runtime.throw("freeIndex is not valid",0x16); // no-return
 +  return;
  }
---- runtime.mallocgcSmallNoscan off
-+++ runtime.mallocgcSmallNoscan on
+--- off/runtime.mallocgcSmallNoscan
++++ on/runtime.mallocgcSmallNoscan
 @@ -1,76 +1,59 @@
  undefined16 runtime.mallocgcSmallNoscan(unsigned int a0,unsigned long a1,char a2)
  {
@@ -5789,8 +5804,8 @@
 +  memset(&v6[10],0,6);
 +  return *(unsigned __int128 *)v6;
  }
---- runtime.mallocgcSmallScanNoHeader off
-+++ runtime.mallocgcSmallScanNoHeader on
+--- off/runtime.mallocgcSmallScanNoHeader
++++ on/runtime.mallocgcSmallScanNoHeader
 @@ -5,86 +5,60 @@
    unsigned char v3; // al | dl | stack - 0x33
    int v4; // rax | stack - 0x10
@@ -5927,8 +5942,8 @@
 +  memset(&v9[10],0,6);
 +  return *(unsigned __int128 *)v9;
  }
---- runtime.mallocgcSmallScanHeader off
-+++ runtime.mallocgcSmallScanHeader on
+--- off/runtime.mallocgcSmallScanHeader
++++ on/runtime.mallocgcSmallScanHeader
 @@ -1,78 +1,63 @@
  undefined16 runtime.mallocgcSmallScanHeader(int a0,unsigned long a1)
  {
@@ -6057,8 +6072,8 @@
 +  memset(&v7[10],0,6);
 +  return *(unsigned __int128 *)v7;
  }
---- runtime.mallocgcSmallScanSlowPath off
-+++ runtime.mallocgcSmallScanSlowPath on
+--- off/runtime.mallocgcSmallScanSlowPath
++++ on/runtime.mallocgcSmallScanSlowPath
 @@ -3,19 +3,19 @@
    uint4 v1; // edi
    void *v2; // rdx
@@ -6311,8 +6326,8 @@
 +    runtime.postMallocgcDebug(v18,v28,v26);
 +  return v18;
  }
---- runtime.mallocgcSmallNoScanSlowPath off
-+++ runtime.mallocgcSmallNoScanSlowPath on
+--- off/runtime.mallocgcSmallNoScanSlowPath
++++ on/runtime.mallocgcSmallNoScanSlowPath
 @@ -1,17 +1,17 @@
  int runtime.mallocgcSmallNoScanSlowPath(int a0,unsigned long a1,char a2,unsigned char a3,int a4)
  {
@@ -6460,8 +6475,9 @@
      *v7 = *v7 - (v21 - v17);
    }
    if (runtime.debug[0x6c])
---- runtime.typePointers.fastForward off
-+++ runtime.typePointers.fastForward on
+
+--- off/runtime.typePointers.fastForward
++++ on/runtime.typePointers.fastForward
 @@ -12,51 +12,49 @@
    
    if (a5 <= a1 + a4)
@@ -6556,8 +6572,8 @@
 +  *(unsigned long *)&v4[0x18] = (unsigned long)a3;
 +  return v4._0_32_;
  }
---- runtime.progToPointerMask off
-+++ runtime.progToPointerMask on
+--- off/runtime.progToPointerMask
++++ on/runtime.progToPointerMask
 @@ -7,11 +7,9 @@
    v1 = (a1 >> 3) + 7 >> 3;
    v3 = a0;
@@ -6573,8 +6589,8 @@
 +    runtime.throw("progToPointerMask: overflow",0x1b); // no-return
 +  return;
  }
---- runtime.runGCProg off
-+++ runtime.runGCProg on
+--- off/runtime.runGCProg
++++ on/runtime.runGCProg
 @@ -27,8 +27,7 @@
    unsigned int v25; // rax | rbx | rcx | rdi | rsi | stack - 0x68 | stack - 0xa8
    unsigned int v26; // rcx | rdx | rsi | stack - 0x40 | stack - 0x50 | stack - 0x60
@@ -6659,8 +6675,8 @@
 +    a0 = v28;
    }
  }
---- runtime.(*mcache).refill off
-+++ runtime.(*mcache).refill on
+--- off/runtime.(*mcache).refill
++++ on/runtime.(*mcache).refill
 @@ -6,13 +6,10 @@
    char *v4; // rcx | rdx | stack - 0x30
    int v5; // rax | rcx | rdi | stack - 0x10 | stack - 0x30
@@ -6739,8 +6755,8 @@
 -  runtime.throw("span has no free space",0x16); // no-return
 +  runtime.throw("out of memory",0xd); // no-return
  }
---- runtime.(*mcache).allocLarge off
-+++ runtime.(*mcache).allocLarge on
+--- off/runtime.(*mcache).allocLarge
++++ on/runtime.(*mcache).allocLarge
 @@ -18,27 +18,23 @@
    runtime.deductSweepCredit(v4,v5);
    v3 = runtime.makeSpanClass(0,(unsigned char)v8);
@@ -6788,8 +6804,8 @@
 +  runtime.(*mspan).initHeapBits(v5);
 +  return v5;
  }
---- runtime.(*mcache).releaseAll off
-+++ runtime.(*mcache).releaseAll on
+--- off/runtime.(*mcache).releaseAll
++++ on/runtime.(*mcache).releaseAll
 @@ -7,57 +7,26 @@
    int v5; // rax | rbx | rcx | stack - 0x10
    unsigned long *v6; // rcx
@@ -6902,8 +6918,8 @@
 +  runtime.(*gcControllerState).update(runtime.gcController,v8,v4);
 +  return;
  }
---- runtime.(*mcentral).cacheSpan off
-+++ runtime.(*mcentral).cacheSpan on
+--- off/runtime.(*mcentral).cacheSpan
++++ on/runtime.(*mcentral).cacheSpan
 @@ -5,121 +5,117 @@
    short v3; // ax
    int v4; // rax | stack - 0x20 | stack - 0x38
@@ -7096,8 +7112,8 @@
 +  runtime.(*activeSweep).end(0x5364f4,v9,(unsigned char)v14);
    goto label_425bd0;
  }
---- runtime.(*mcentral).grow off
-+++ runtime.(*mcentral).grow on
+--- off/runtime.(*mcentral).grow
++++ on/runtime.(*mcentral).grow
 @@ -2,18 +2,13 @@
  {
    char v1; // al
@@ -7124,8 +7140,8 @@
 +  runtime.(*mspan).initHeapBits(v2);
 +  return v2;
  }
---- runtime.getCheckmark off
-+++ runtime.getCheckmark on
+--- off/runtime.getCheckmark
++++ on/runtime.getCheckmark
 @@ -1,32 +1,23 @@
  undefined16 runtime.getCheckmark(int a0)
  {
@@ -7173,8 +7189,8 @@
 -  runtime.panicBounds(v6,(uint4)*(int4 *)&v4[8],0x100000); // no-return
 +  return ZEXT816(0);
  }
---- runtime.checkFinalizersAndCleanups off
-+++ runtime.checkFinalizersAndCleanups on
+--- off/runtime.checkFinalizersAndCleanups
++++ on/runtime.checkFinalizersAndCleanups
 @@ -3,84 +3,82 @@
    unsigned long v1; // rax
    char v2; // al
@@ -7586,8 +7602,9 @@
      runtime.printlock();
      runtime.printstring("... too many potential issues ...\n",0x22);
      runtime.printunlock();
---- runtime.forEachSpecial off
-+++ runtime.forEachSpecial on
+
+--- off/runtime.forEachSpecial
++++ on/runtime.forEachSpecial
 @@ -2,47 +2,43 @@
  {
    unsigned char v1; // sil | stack - 0x51
@@ -7670,8 +7687,8 @@
    }
 -  runtime.panicBounds(v9,v12,v8); // no-return
  }
---- runtime.(*cleanupBlock).enqueue off
-+++ runtime.(*cleanupBlock).enqueue on
+--- off/runtime.(*cleanupBlock).enqueue
++++ on/runtime.(*cleanupBlock).enqueue
 @@ -6,16 +6,13 @@
    unsigned long v4; // rdi | stack + 0x20
    
@@ -7695,8 +7712,8 @@
 +  runtime.(*cleanupBlock).full(a0);
 +  return;
  }
---- runtime.(*cleanupBlock).take off
-+++ runtime.(*cleanupBlock).take on
+--- off/runtime.(*cleanupBlock).take
++++ on/runtime.(*cleanupBlock).take
 @@ -1,36 +1,29 @@
  void runtime.(*cleanupBlock).take(void *a0,void *a1) // return-dupe
  {
@@ -7748,8 +7765,8 @@
 +  *(unsigned int *)((int)v7 + 0x18) = 0;
 +  return;
  }
---- runtime.queuefinalizer off
-+++ runtime.queuefinalizer on
+--- off/runtime.queuefinalizer
++++ on/runtime.queuefinalizer
 @@ -19,60 +19,59 @@
    unsigned long v17; // rbx | rdi | stack + 0x20
    unsigned long v18; // rsi | stack + 0x28
@@ -7862,8 +7879,8 @@
 -  return;
 +  runtime.throw("queuefinalizer during GC",0x18); // no-return
  }
---- runtime.runFinalizers off
-+++ runtime.runFinalizers on
+--- off/runtime.runFinalizers
++++ on/runtime.runFinalizers
 @@ -74,8 +74,6 @@
        v16 = v2;
        while (v16) {
@@ -7873,8 +7890,9 @@
          v12 = (int *)((unsigned int)v16 * 5);
          v33 = 4;
          v26 = v15;
---- runtime.SetFinalizer off
-+++ runtime.SetFinalizer on
+
+--- off/runtime.SetFinalizer
++++ on/runtime.SetFinalizer
 @@ -88,10 +88,7 @@
      v12 = runtime.concatstring4(0,"runtime.SetFinalizer: cannot pass ",0x22,SUB168(v12,0),SUB168(v12,8)," to finalizer ",0xe,SUB168(v13,0),SUB168(v13,8));
      runtime.throw(SUB168(v12,0),SUB168(v12,8)); // no-return
@@ -7887,8 +7905,9 @@
    if (v9 != v7) {
      if (internal/abi.(*Type).Kind(v9) != '\x16') { // branch-flip
        if (internal/abi.(*Type).Kind(v9) != '\x14') {
---- runtime.findMaybeRunnableGoroutines off
-+++ runtime.findMaybeRunnableGoroutines on
+
+--- off/runtime.findMaybeRunnableGoroutines
++++ on/runtime.findMaybeRunnableGoroutines
 @@ -4,33 +4,31 @@
    unsigned long v2; // rdi
    unsigned int v3; // rax
@@ -7950,8 +7969,9 @@
        v8 = *(int *)&runtime.work[0x1e8];
        if (*(int4 *)runtime.writeBarrier) {
          runtime.gcWriteBarrier2(SUB168(v14,0),SUB168(v14,8),*(int *)&runtime.work[0x1e8],v2,*(unsigned long *)(*(int *)&runtime.work[0x1e8] + v5 * 8),v6);
---- runtime.findGoroutineLeaks off
-+++ runtime.findGoroutineLeaks on
+
+--- off/runtime.findGoroutineLeaks
++++ on/runtime.findGoroutineLeaks
 @@ -2,44 +2,37 @@
  {
    char v1; // al
@@ -8022,8 +8042,8 @@
 -  runtime.panicBounds(); // no-return
 +  return 0;
  }
---- runtime.gcResetMarkState off
-+++ runtime.gcResetMarkState on
+--- off/runtime.gcResetMarkState
++++ on/runtime.gcResetMarkState
 @@ -4,49 +4,40 @@
    int v2; // ram 0x54f8f0 | rcx | stack - 0x10
    int v3; // ram 0x54f8f8 | rcx | stack - 0x30
@@ -8107,8 +8127,8 @@
 -  runtime.panicBounds(); // no-return
 +  runtime.morestackc.abi0(); // no-return
  }
---- runtime.itoaDiv off
-+++ runtime.itoaDiv on
+--- off/runtime.itoaDiv
++++ on/runtime.itoaDiv
 @@ -1,37 +1,27 @@
 -undefined24 runtime.itoaDiv(char *a0,unsigned int a1,int a2,unsigned int a3,int a4)
 +undefined24 runtime.itoaDiv(char *a0,int a1,int a2,unsigned int a3,int a4)
@@ -8169,8 +8189,8 @@
 +  *(unsigned long *)&v2[0x10] = a2 - v5;
 +  return v2._0_24_;
  }
---- runtime.fmtNSAsMS off
-+++ runtime.fmtNSAsMS on
+--- off/runtime.fmtNSAsMS
++++ on/runtime.fmtNSAsMS
 @@ -1,23 +1,19 @@
 -char * runtime.fmtNSAsMS(char *a0,int a1,unsigned long a2,unsigned int a3)
 +char * runtime.fmtNSAsMS(char *a0,unsigned long a1,unsigned long a2,unsigned int a3)
@@ -8206,8 +8226,8 @@
 +  }
 +  return (char *)runtime.itoaDiv(a0,a1,a2,a3,v1);
  }
---- runtime.allGsSnapshotSortedForGC off
-+++ runtime.allGsSnapshotSortedForGC on
+--- off/runtime.allGsSnapshotSortedForGC
++++ on/runtime.allGsSnapshotSortedForGC
 @@ -1,13 +1,13 @@
  void runtime.allGsSnapshotSortedForGC(void)
  {
@@ -8312,8 +8332,8 @@
    }
 +  return;
  }
---- runtime.markroot off
-+++ runtime.markroot on
+--- off/runtime.markroot
++++ on/runtime.markroot
 @@ -94,8 +94,6 @@
              runtime.printunlock();
              runtime.throw("markroot: bad index",0x13); // no-return
@@ -8323,8 +8343,9 @@
            v23 = *(int *)(*(int *)&runtime.work[0x1e8] + (unsigned int)(uint4)(a1 - *(uint4 *)&runtime.work[0x1dc]) * 8);
            v1 = runtime.readgstatus(v23);
            if (((v1 == 4) || (v1 == 3)) && (!*(int *)(v23 + 0xa8)))
---- runtime.markrootSpans off
-+++ runtime.markrootSpans on
+
+--- off/runtime.markrootSpans
++++ on/runtime.markrootSpans
 @@ -3,88 +3,72 @@
    unsigned char v1; // r8b | stack - 0x61
    int4 v2; // ecx | stack - 0x5c
@@ -8449,8 +8470,8 @@
 +    v11 += 1;
    }
  }
---- runtime.gcScanFinalizer off
-+++ runtime.gcScanFinalizer on
+--- off/runtime.gcScanFinalizer
++++ on/runtime.gcScanFinalizer
 @@ -13,13 +13,10 @@
    v7 = a2;
    v4 = runtime.(*mspan).base(a1);
@@ -8471,8 +8492,8 @@
 +  runtime.scanblock((int)v5 + 0x18,8,&runtime.oneptrmask,v7,0);
 +  return;
  }
---- runtime.greyobject off
-+++ runtime.greyobject on
+--- off/runtime.greyobject
++++ on/runtime.greyobject
 @@ -66,11 +66,8 @@
        return;
      runtime.markBits.setMarked(v4,v7 & 0xff,v6);
@@ -8487,8 +8508,9 @@
        LOCK();
        *v1 = *v1 | v5;
        UNLOCK();
---- runtime.gcmarknewobject off
-+++ runtime.gcmarknewobject on
+
+--- off/runtime.gcmarknewobject
++++ on/runtime.gcmarknewobject
 @@ -5,33 +5,27 @@
    unsigned long v3; // rax | rbx | stack - 0x10
    int v4; // rax
@@ -8542,8 +8564,8 @@
 +  *(int *)(v4 + 0x1a98) = *(int *)(v4 + 0x1a98) + ((int *)v7)[0xd];
 +  return;
  }
---- runtime.(*mspan).moveInlineMarks off
-+++ runtime.(*mspan).moveInlineMarks on
+--- off/runtime.(*mspan).moveInlineMarks
++++ on/runtime.(*mspan).moveInlineMarks
 @@ -5,32 +5,26 @@
    unsigned int *v3; // rax | rcx | stack - 0x10
    int v4; // rax | stack - 0x18
@@ -8593,8 +8615,8 @@
 +  runtime.(*spanInlineMarkBits).init(v4,(unsigned char)((char *)v6)[0x62],1);
 +  return;
  }
---- runtime.(*mspan).markBitsForIndex off
-+++ runtime.(*mspan).markBitsForIndex on
+--- off/runtime.(*mspan).markBitsForIndex
++++ on/runtime.(*mspan).markBitsForIndex
 @@ -11,8 +11,6 @@
    v5 = a1;
    if (runtime.gcUsesSpanInlineMarkBits(v1)) { // branch-flip
@@ -8604,8 +8626,9 @@
      v2 = v2 + (v5 >> 3) + 0x40;
    }
    else {
---- runtime.(*mspan).scannedBitsForIndex off
-+++ runtime.(*mspan).scannedBitsForIndex on
+
+--- off/runtime.(*mspan).scannedBitsForIndex
++++ on/runtime.(*mspan).scannedBitsForIndex
 @@ -6,12 +6,9 @@
    
    v3 = a1;
@@ -8624,8 +8647,8 @@
 +  *(unsigned long *)&v2[0x10] = v3;
 +  return v2._0_24_;
  }
---- runtime.tryDeferToSpanScan off
-+++ runtime.tryDeferToSpanScan on
+--- off/runtime.tryDeferToSpanScan
++++ on/runtime.tryDeferToSpanScan
 @@ -6,60 +6,50 @@
    int v4; // rax | rsi | stack - 0x20
    int v5; // rax | rcx | stack - 0x10
@@ -8717,8 +8740,9 @@
        return 1;
      }
      return 1;
---- runtime.(*gcWork).tryStealSpan off
-+++ runtime.(*gcWork).tryStealSpan on
+
+--- off/runtime.(*gcWork).tryStealSpan
++++ on/runtime.(*gcWork).tryStealSpan
 @@ -3,7 +3,7 @@
    bool v1; // zf
    char v2; // al
@@ -8740,8 +8764,9 @@
        if (v17 != v5) {
          v5 = runtime.(*spanQueue).steal(v13 + 0x18,v5 + 0x1270);
          if (v5)
---- runtime.scanSpan off
-+++ runtime.scanSpan on
+
+--- off/runtime.scanSpan
++++ on/runtime.scanSpan
 @@ -7,9 +7,9 @@
    int4 v5; // eax | stack - 0xd4
    unsigned long v6; // rax
@@ -8861,8 +8886,9 @@
      *v1 = *v1 + v39;
    }
    runtime.scanObjectsSmall(v37,v43,v42,v21,&v14);
---- runtime.spanSetScans off
-+++ runtime.spanSetScans on
+
+--- off/runtime.spanSetScans
++++ on/runtime.spanSetScans
 @@ -3,7 +3,7 @@
    unsigned char *v1; // rsi
    unsigned int *v2; // rbx | rcx | stack - 0x10
@@ -8908,8 +8934,8 @@
 -  runtime.panicBounds(v4); // no-return
 +  return v10;
  }
---- runtime.scanObjectSmall off
-+++ runtime.scanObjectSmall on
+--- off/runtime.scanObjectSmall
++++ on/runtime.scanObjectSmall
 @@ -9,7 +9,7 @@
    void *v7; // rbx | rsi | stack + 0x20
    unsigned long v8; // rbx
@@ -8969,8 +8995,8 @@
 +  }
 +  return;
  }
---- runtime.scanObjectsSmall off
-+++ runtime.scanObjectsSmall on
+--- off/runtime.scanObjectsSmall
++++ on/runtime.scanObjectsSmall
 @@ -6,7 +6,7 @@
    int v4; // rax
    unsigned int v5; // rcx | rsi | stack - 0x60
@@ -9000,8 +9026,9 @@
      v1 = **(int **)(v11 + v12 * 8);
      if (v1) {
        if ((!runtime.tryDeferToSpanScan(v1,a3)) && (runtime.findObject(v1,0,0), v4))
---- runtime.scanObject off
-+++ runtime.scanObject on
+
+--- off/runtime.scanObject
++++ on/runtime.scanObject
 @@ -52,93 +52,92 @@
    if (!v20)
      runtime.throw("scanObject n == 0",0x11); // no-return
@@ -9179,8 +9206,8 @@
    }
 +  runtime.throw("scanObject of a noscan object",0x1d); // no-return
  }
---- runtime.(*gcControllerState).enlistWorker off
-+++ runtime.(*gcControllerState).enlistWorker on
+--- off/runtime.(*gcControllerState).enlistWorker
++++ on/runtime.(*gcControllerState).enlistWorker
 @@ -4,11 +4,11 @@
    int v2; // rax
    char v3; // al
@@ -9229,8 +9256,9 @@
      }
      return;
    }
---- runtime.(*scavengerState).run off
-+++ runtime.(*scavengerState).run on
+
+--- off/runtime.(*scavengerState).run
++++ on/runtime.(*scavengerState).run
 @@ -23,8 +23,6 @@
      if (SUB168(*(unsigned __int128 *)v2,8)) // branch-flip
        v7 = (double)SUB168(*(unsigned __int128 *)v2,8);
@@ -9240,8 +9268,9 @@
        *(unsigned long *)&v2[8] = 0;
        *(unsigned long *)v2 = runtime.physPageSize;
        *(unsigned long *)&v3[8] = 0;
---- runtime.printScavTrace off
-+++ runtime.printScavTrace on
+
+--- off/runtime.printScavTrace
++++ on/runtime.printScavTrace
 @@ -15,34 +15,31 @@
    v1 = runtime.(*sysMemStat).load(0x5571b8);
    v2 = runtime.(*sysMemStat).load(0x5571b0);
@@ -9299,8 +9328,8 @@
 +  runtime.printunlock();
 +  return;
  }
---- runtime.(*pageAlloc).scavengeOne off
-+++ runtime.(*pageAlloc).scavengeOne on
+--- off/runtime.(*pageAlloc).scavengeOne
++++ on/runtime.(*pageAlloc).scavengeOne
 @@ -1,4 +1,4 @@
 -int runtime.(*pageAlloc).scavengeOne(void *a0,unsigned int a1,unsigned long a2,unsigned int a3)
 +int runtime.(*pageAlloc).scavengeOne(void *a0,int a1,unsigned long a2,unsigned int a3)
@@ -9325,8 +9354,9 @@
    v3 = *(unsigned long *)(((int *)v10)[0xc] + v11 * 8);
    if (v7 <= (unsigned int)runtime.pallocSum.max(v3)) {
      v3 = runtime.(*pageAlloc).chunkOf(v10,v11);
---- runtime.(*pallocData).findScavengeCandidate off
-+++ runtime.(*pallocData).findScavengeCandidate on
+
+--- off/runtime.(*pallocData).findScavengeCandidate
++++ on/runtime.(*pallocData).findScavengeCandidate
 @@ -38,9 +38,7 @@
    a1 >>= 6;
    v8 = a0;
@@ -9347,8 +9377,9 @@
    v2 = runtime.fillAligned(a0[a1] | a0[a1 + 8],a2);
    v3 = internal/runtime/sys.LeadingZeros64(~v2);
    v6 = a1 * 0x40 - v3;
---- runtime.(*scavengeIndex).find off
-+++ runtime.(*scavengeIndex).find on
+
+--- off/runtime.(*scavengeIndex).find
++++ on/runtime.(*scavengeIndex).find
 @@ -26,41 +26,37 @@
    v17 = a0;
    v18 = a1;
@@ -9422,8 +9453,8 @@
 +  *(unsigned long *)v7 = v6;
 +  return *(unsigned __int128 *)v7;
  }
---- runtime.(*scavengeIndex).alloc off
-+++ runtime.(*scavengeIndex).alloc on
+--- off/runtime.(*scavengeIndex).alloc
++++ on/runtime.(*scavengeIndex).alloc
 @@ -1,4 +1,4 @@
 -void runtime.(*scavengeIndex).alloc(int *a0,unsigned int a1,unsigned long a2)
 +void runtime.(*scavengeIndex).alloc(int *a0,int a1,unsigned long a2)
@@ -9458,8 +9489,8 @@
 +  runtime.(*atomicScavChunkData).store(*v6 + v7 * 8,v4,v9,v10,(unsigned char)v11);
 +  return;
  }
---- runtime.(*scavengeIndex).free off
-+++ runtime.(*scavengeIndex).free on
+--- off/runtime.(*scavengeIndex).free
++++ on/runtime.(*scavengeIndex).free
 @@ -1,4 +1,4 @@
 -void runtime.(*scavengeIndex).free(int *a0,unsigned int a1,int a2,int a3) // return-dupe
 +void runtime.(*scavengeIndex).free(int *a0,int a1,int a2,int a3) // return-dupe
@@ -9505,8 +9536,8 @@
 +  }
    return;
  }
---- runtime.(*scavengeIndex).setEmpty off
-+++ runtime.(*scavengeIndex).setEmpty on
+--- off/runtime.(*scavengeIndex).setEmpty
++++ on/runtime.(*scavengeIndex).setEmpty
 @@ -1,4 +1,4 @@
 -void runtime.(*scavengeIndex).setEmpty(int *a0,unsigned int a1)
 +void runtime.(*scavengeIndex).setEmpty(int *a0,int a1)
@@ -9535,8 +9566,8 @@
 +  runtime.(*atomicScavChunkData).store(*v6 + v7 * 8,v1,v3,v2,(unsigned char)v4[0]);
 +  return;
  }
---- runtime.(*stackScanState).putPtr off
-+++ runtime.(*stackScanState).putPtr on
+--- off/runtime.(*stackScanState).putPtr
++++ on/runtime.(*stackScanState).putPtr
 @@ -1,45 +1,41 @@
  void runtime.(*stackScanState).putPtr(struct_25 *a0,unsigned int a1,bool a2)
  {
@@ -9616,8 +9647,8 @@
 -  runtime.panicBounds(v1,a1,0xfc); // no-return
 +  runtime.throw("address not a stack address",0x1b); // no-return
  }
---- runtime.(*stackScanState).getPtr off
-+++ runtime.(*stackScanState).getPtr on
+--- off/runtime.(*stackScanState).getPtr
++++ on/runtime.(*stackScanState).getPtr
 @@ -1,58 +1,53 @@
  undefined16 runtime.(*stackScanState).getPtr(void *a0,unsigned long a1)
  {
@@ -9713,8 +9744,8 @@
 +    v4 += 1;
    }
  }
---- runtime.(*stackScanState).addObject off
-+++ runtime.(*stackScanState).addObject on
+--- off/runtime.(*stackScanState).addObject
++++ on/runtime.(*stackScanState).addObject
 @@ -1,52 +1,46 @@
  void runtime.(*stackScanState).addObject(unsigned long *a0,unsigned long a1,void *a2)
  {
@@ -9805,8 +9836,8 @@
 +  v4[8] = v4[8] + 1;
    return;
  }
---- runtime.binarySearchTree off
-+++ runtime.binarySearchTree on
+--- off/runtime.binarySearchTree
++++ on/runtime.binarySearchTree
 @@ -2,18 +2,16 @@
  {
    unsigned long v1; // rax | rsi | stack - 0x30
@@ -9837,8 +9868,8 @@
 -  runtime.panicBounds(0x3f); // no-return
 +  return 0;
  }
---- runtime.(*mheap).nextSpanForSweep off
-+++ runtime.(*mheap).nextSpanForSweep on
+--- off/runtime.(*mheap).nextSpanForSweep
++++ on/runtime.(*mheap).nextSpanForSweep
 @@ -15,18 +15,15 @@
        return 0;
      }
@@ -9861,8 +9892,8 @@
 +  runtime.(*sweepClass).update(0x5364f8,v2 & 0xffffffff);
 +  return v3;
  }
---- runtime.(*sweepLocked).sweep off
-+++ runtime.(*sweepLocked).sweep on
+--- off/runtime.(*sweepLocked).sweep
++++ on/runtime.(*sweepLocked).sweep
 @@ -209,81 +209,66 @@
          if (*(char *)(v8 + 0x65)) {
            if (v42)
@@ -9981,8 +10012,9 @@
        v20 = v43[1];
        v14 = runtime.(*mspan).base(v8);
        runtime.(*mspan).markBitsForIndex(v8,v20 / v13);
---- runtime.(*gcWork).putObj off
-+++ runtime.(*gcWork).putObj on
+
+--- off/runtime.(*gcWork).putObj
++++ on/runtime.(*gcWork).putObj
 @@ -3,49 +3,41 @@
    unsigned long v1; // rdx
    int v2; // rdx | stack - 0x10
@@ -10055,8 +10087,8 @@
 +    ((char *)v5)[0x851] = 1;
 +  return;
  }
---- runtime.(*gcWork).putObjFast off
-+++ runtime.(*gcWork).putObjFast on
+--- off/runtime.(*gcWork).putObjFast
++++ on/runtime.(*gcWork).putObjFast
 @@ -1,17 +1,13 @@
  unsigned long runtime.(*gcWork).putObjFast(void *a0,unsigned long a1) // return-dupe
  {
@@ -10077,8 +10109,8 @@
    *(int *)(v1 + 0x10) = *(int *)(v1 + 0x10) + 1;
    return 1;
  }
---- runtime.(*gcWork).putObjBatch off
-+++ runtime.(*gcWork).putObjBatch on
+--- off/runtime.(*gcWork).putObjBatch
++++ on/runtime.(*gcWork).putObjBatch
 @@ -1,7 +1,7 @@
  void runtime.(*gcWork).putObjBatch(void *a0,int a1,int a2,int a3)
  {
@@ -10181,8 +10213,8 @@
 -  runtime.panicBounds(0xfd); // no-return
 +  return;
  }
---- runtime.(*gcWork).tryGetObj off
-+++ runtime.(*gcWork).tryGetObj on
+--- off/runtime.(*gcWork).tryGetObj
++++ on/runtime.(*gcWork).tryGetObj
 @@ -1,36 +1,32 @@
  unsigned long runtime.(*gcWork).tryGetObj(void *a0)
  {
@@ -10243,8 +10275,8 @@
 +  *(int *)(v3 + 0x10) = v1 + -1;
 +  return *(unsigned long *)(v3 + 0x10 + v1 * 8);
  }
---- runtime.(*gcWork).tryGetObjFast off
-+++ runtime.(*gcWork).tryGetObjFast on
+--- off/runtime.(*gcWork).tryGetObjFast
++++ on/runtime.(*gcWork).tryGetObjFast
 @@ -5,10 +5,8 @@
    
    v1 = ((int *)a0)[1];
@@ -10258,8 +10290,8 @@
    }
    return 0;
  }
---- runtime.handoff off
-+++ runtime.handoff on
+--- off/runtime.handoff
++++ on/runtime.handoff
 @@ -9,10 +9,7 @@
    v2 = ((int *)v3)[2] / 2;
    ((int *)v3)[2] = ((int *)v3)[2] - v2;
@@ -10274,8 +10306,8 @@
 +  runtime.putfull(v3);
 +  return v1;
  }
---- runtime.recordspan off
-+++ runtime.recordspan on
+--- off/runtime.recordspan
++++ on/runtime.recordspan
 @@ -4,49 +4,44 @@
    unsigned long v2; // rax
    unsigned int v3; // rbx
@@ -10345,8 +10377,8 @@
 +  *(unsigned long *)(*(int *)(v9 + 0x10148) + v6 * 8) = v10;
    return;
  }
---- runtime.spanOf off
-+++ runtime.spanOf on
+--- off/runtime.spanOf
++++ on/runtime.spanOf
 @@ -3,23 +3,17 @@
    int v1; // ram 0x54f898 | rcx | stack - 0x10
    unsigned long v2; // rax | stack - 0x18
@@ -10376,8 +10408,8 @@
 +    return *(unsigned long *)(v1 + (unsigned int)((uint4)(v4 >> 10) & 0xfff8));
    return 0;
  }
---- runtime.spanOfUnchecked off
-+++ runtime.spanOfUnchecked on
+--- off/runtime.spanOfUnchecked
++++ on/runtime.spanOfUnchecked
 @@ -1,18 +1,12 @@
  unsigned long runtime.spanOfUnchecked(unsigned int a0)
  {
@@ -10402,8 +10434,8 @@
 -  runtime.panicBounds(v3,v4,0x400000); // no-return
 +  return *(unsigned long *)(*(int *)(*(int *)&runtime.mheap_[0x101d8] + v2 * 8) + (unsigned int)((uint4)(v3 >> 10) & 0xfff8));
  }
---- runtime.pageIndexOf off
-+++ runtime.pageIndexOf on
+--- off/runtime.pageIndexOf
++++ on/runtime.pageIndexOf
 @@ -1,25 +1,18 @@
  undefined24 runtime.pageIndexOf(unsigned int a0)
  {
@@ -10441,8 +10473,8 @@
 +  *(unsigned int *)&v3[0x14] = 0;
 +  return v3._0_24_;
  }
---- runtime.heapArenaOf off
-+++ runtime.heapArenaOf on
+--- off/runtime.heapArenaOf
++++ on/runtime.heapArenaOf
 @@ -3,19 +3,13 @@
    int v1; // ram 0x54f898 | rcx | stack - 0x10
    unsigned long v2; // rax | stack - 0x18
@@ -10468,8 +10500,8 @@
 -  runtime.panicBounds(); // no-return
 +  return 0;
  }
---- runtime.(*mheap).reclaimChunk off
-+++ runtime.(*mheap).reclaimChunk on
+--- off/runtime.(*mheap).reclaimChunk
++++ on/runtime.(*mheap).reclaimChunk
 @@ -1,161 +1,139 @@
 -int runtime.(*mheap).reclaimChunk(int a0,int a1,unsigned int a2,unsigned long a3,unsigned int a4,unsigned int a5)
 +int runtime.(*mheap).reclaimChunk(int a0,int a1,unsigned long a2,unsigned long a3,unsigned int a4,unsigned int a5)
@@ -10758,8 +10790,8 @@
 -  runtime.panicBounds(v2,v9,0x400000); // no-return
 +  return 0;
  }
---- runtime.(*mheap).setSpans off
-+++ runtime.(*mheap).setSpans on
+--- off/runtime.(*mheap).setSpans
++++ on/runtime.(*mheap).setSpans
 @@ -1,56 +1,43 @@
  void runtime.(*mheap).setSpans(int a0,unsigned int a1,unsigned int a2,unsigned long a3)
  {
@@ -10850,8 +10882,8 @@
    }
 +  return;
  }
---- runtime.(*mheap).allocNeedsZero off
-+++ runtime.(*mheap).allocNeedsZero on
+--- off/runtime.(*mheap).allocNeedsZero
++++ on/runtime.(*mheap).allocNeedsZero
 @@ -1,48 +1,43 @@
  uint4 runtime.(*mheap).allocNeedsZero(int a0,int a1,int a2)
  {
@@ -10932,8 +10964,8 @@
 +    a2 -= v6 - v5 >> 0xd;
    }
  }
---- runtime.(*mheap).tryAllocMSpan off
-+++ runtime.(*mheap).tryAllocMSpan on
+--- off/runtime.(*mheap).tryAllocMSpan
++++ on/runtime.(*mheap).tryAllocMSpan
 @@ -8,12 +8,9 @@
      runtime.morestackc.abi0(); // no-return
    v3 = runtime.puintptr.ptr(g->m->nextp);
@@ -10950,8 +10982,8 @@
    }
    return 0;
  }
---- runtime.(*mheap).allocMSpanLocked off
-+++ runtime.(*mheap).allocMSpanLocked on
+--- off/runtime.(*mheap).allocMSpanLocked
++++ on/runtime.(*mheap).allocMSpanLocked
 @@ -1,37 +1,32 @@
  unsigned long runtime.(*mheap).allocMSpanLocked(int a0)
  {
@@ -11013,8 +11045,8 @@
 +  *(int *)(v2 + 0xdc8) = *(int *)(v2 + 0xdc8) + -1;
 +  return v1;
  }
---- runtime.(*mheap).freeMSpanLocked off
-+++ runtime.(*mheap).freeMSpanLocked on
+--- off/runtime.(*mheap).freeMSpanLocked
++++ on/runtime.(*mheap).freeMSpanLocked
 @@ -1,24 +1,20 @@
 -void runtime.(*mheap).freeMSpanLocked(int a0,unsigned int a1)
 +void runtime.(*mheap).freeMSpanLocked(int a0,int a1)
@@ -11052,8 +11084,8 @@
 +  runtime.(*fixalloc).free(v2 + 0x168a0,v3);
    return;
  }
---- runtime.(*mheap).initSpan off
-+++ runtime.(*mheap).initSpan on
+--- off/runtime.(*mheap).initSpan
++++ on/runtime.(*mheap).initSpan
 @@ -3,14 +3,14 @@
    unsigned char *v1; // rcx | rdx
    char v2; // al
@@ -11182,8 +11214,9 @@
        UNLOCK();
      }
      internal/runtime/atomic.(*Uintptr).Add(v13 + 0x10160,v18);
---- runtime.(*mheap).freeSpanLocked off
-+++ runtime.(*mheap).freeSpanLocked on
+
+--- off/runtime.(*mheap).freeSpanLocked
++++ on/runtime.(*mheap).freeSpanLocked
 @@ -11,7 +11,7 @@
    int v9; // rax
    unsigned long v10; // rax | stack - 0x18
@@ -11212,8 +11245,9 @@
        LOCK();
        *v2 = *v2 & ~v11;
        UNLOCK();
---- runtime.spanHasSpecials off
-+++ runtime.spanHasSpecials on
+
+--- off/runtime.spanHasSpecials
++++ on/runtime.spanHasSpecials
 @@ -3,24 +3,17 @@
    unsigned char *v1; // rax
    unsigned int v2; // rax | rcx | stack - 0x18
@@ -11249,8 +11283,8 @@
 +  UNLOCK();
 +  return;
  }
---- runtime.spanHasNoSpecials off
-+++ runtime.spanHasNoSpecials on
+--- off/runtime.spanHasNoSpecials
++++ on/runtime.spanHasNoSpecials
 @@ -3,24 +3,17 @@
    unsigned char *v1; // rax
    unsigned int v2; // rax | rcx | stack - 0x18
@@ -11286,8 +11320,8 @@
 +  UNLOCK();
 +  return;
  }
---- runtime.(*gcBitsArena).tryAlloc off
-+++ runtime.(*gcBitsArena).tryAlloc on
+--- off/runtime.(*gcBitsArena).tryAlloc
++++ on/runtime.(*gcBitsArena).tryAlloc
 @@ -1,18 +1,15 @@
  int runtime.(*gcBitsArena).tryAlloc(int *a0,int a1)
  {
@@ -11316,8 +11350,8 @@
 +  }
 +  return 0;
  }
---- runtime.offAddrToLevelIndex off
-+++ runtime.offAddrToLevelIndex on
+--- off/runtime.offAddrToLevelIndex
++++ on/runtime.offAddrToLevelIndex
 @@ -1,6 +1,4 @@
 -unsigned int runtime.offAddrToLevelIndex(unsigned int a0,int a1)
 +unsigned int runtime.offAddrToLevelIndex(int a0,int a1)
@@ -11327,8 +11361,8 @@
 -  runtime.panicBounds(); // no-return
 +  return -(unsigned int)(*(unsigned int *)&runtime.levelShift[a0 * 8] < 0x40) & a1 + 0x800000000000U >> ((unsigned char)*(unsigned int *)&runtime.levelShift[a0 * 8] & 0x3f);
  }
---- runtime.levelIndexToOffAddr off
-+++ runtime.levelIndexToOffAddr on
+--- off/runtime.levelIndexToOffAddr
++++ on/runtime.levelIndexToOffAddr
 @@ -1,6 +1,4 @@
 -int runtime.levelIndexToOffAddr(unsigned int a0,int a1)
 +int runtime.levelIndexToOffAddr(int a0,int a1)
@@ -11338,8 +11372,8 @@
 -  runtime.panicBounds(); // no-return
 +  return (a1 << ((unsigned char)*(unsigned int *)&runtime.levelShift[a0 * 8] & 0x3f) & -(unsigned int)(*(unsigned int *)&runtime.levelShift[a0 * 8] < 0x40)) - 0x800000000000;
  }
---- runtime.addrsToSummaryRange off
-+++ runtime.addrsToSummaryRange on
+--- off/runtime.addrsToSummaryRange
++++ on/runtime.addrsToSummaryRange
 @@ -1,15 +1,12 @@
 -undefined16 runtime.addrsToSummaryRange(unsigned int a0,int a1,int a2)
 +undefined16 runtime.addrsToSummaryRange(int a0,int a1,int a2)
@@ -11362,8 +11396,8 @@
 +  *(unsigned long *)v2 = a1 + 0x800000000000U >> (v3 & 0x3f) & v1;
 +  return *(unsigned __int128 *)v2;
  }
---- runtime.blockAlignSummaryRange off
-+++ runtime.blockAlignSummaryRange on
+--- off/runtime.blockAlignSummaryRange
++++ on/runtime.blockAlignSummaryRange
 @@ -1,14 +1,10 @@
 -undefined16 runtime.blockAlignSummaryRange(unsigned int a0,unsigned long a1,unsigned long a2)
 +undefined16 runtime.blockAlignSummaryRange(int a0,unsigned long a1,unsigned long a2)
@@ -11384,8 +11418,8 @@
 +  *(unsigned long *)&v1[8] = runtime.alignUp(a2,v2);
 +  return *(unsigned __int128 *)v1;
  }
---- runtime.(*pageAlloc).chunkOf off
-+++ runtime.(*pageAlloc).chunkOf on
+--- off/runtime.(*pageAlloc).chunkOf
++++ on/runtime.(*pageAlloc).chunkOf
 @@ -1,18 +1,9 @@
  int runtime.(*pageAlloc).chunkOf(int a0,unsigned long a1)
  {
@@ -11408,8 +11442,8 @@
 -  runtime.panicBounds(v2,v3,0x2000); // no-return
 +  return v2 * 0x80 + *(int *)(a0 + 0x78 + v1 * 8);
  }
---- runtime.(*pageAlloc).grow off
-+++ runtime.(*pageAlloc).grow on
+--- off/runtime.(*pageAlloc).grow
++++ on/runtime.(*pageAlloc).grow
 @@ -6,62 +6,56 @@
    int v4; // rax | rcx | stack - 0x10 | stack - 0x18
    unsigned int v5; // rax | rbx | rcx | stack - 0x28 | stack - 0x38
@@ -11503,8 +11537,8 @@
      v5 += 1;
    }
  }
---- runtime.(*pageAlloc).enableChunkHugePages off
-+++ runtime.(*pageAlloc).enableChunkHugePages on
+--- off/runtime.(*pageAlloc).enableChunkHugePages
++++ on/runtime.(*pageAlloc).enableChunkHugePages
 @@ -18,35 +18,30 @@
    if (&Stack0000000000000000 <= (char *)g->stackguard1)
      runtime.morestackc.abi0(); // no-return
@@ -11562,8 +11596,8 @@
 -  runtime.unlock(runtime.mheap_);
    return;
  }
---- runtime.(*pageAlloc).update off
-+++ runtime.(*pageAlloc).update on
+--- off/runtime.(*pageAlloc).update
++++ on/runtime.(*pageAlloc).update
 @@ -1,135 +1,109 @@
  void runtime.(*pageAlloc).update(void *a0,int a1,int a2,char a3,char a4)
  {
@@ -11769,8 +11803,8 @@
    }
 +  return;
  }
---- runtime.(*pageAlloc).findMappedAddr off
-+++ runtime.(*pageAlloc).findMappedAddr on
+--- off/runtime.(*pageAlloc).findMappedAddr
++++ on/runtime.(*pageAlloc).findMappedAddr
 @@ -2,35 +2,21 @@
  {
    unsigned long v1; // rax | stack - 0x20
@@ -11818,8 +11852,8 @@
 +    return runtime.maxOffAddr;
 +  return v1;
  }
---- runtime.(*pageAlloc).find off
-+++ runtime.(*pageAlloc).find on
+--- off/runtime.(*pageAlloc).find
++++ on/runtime.(*pageAlloc).find
 @@ -5,200 +5,183 @@
    char v3 [16]; // rax | rbx
    unsigned int v4; // rax | rbx | rdi | rdx | stack - 0x38 | stack - 0x98 | stack - 0xb8
@@ -12220,8 +12254,8 @@
 +  v13 = v31;
    goto label_4407b3;
  }
---- runtime.(*pageAlloc).alloc off
-+++ runtime.(*pageAlloc).alloc on
+--- off/runtime.(*pageAlloc).alloc
++++ on/runtime.(*pageAlloc).alloc
 @@ -1,46 +1,43 @@
  undefined16 runtime.(*pageAlloc).alloc(void *a0,unsigned int a1)
  {
@@ -12328,8 +12362,9 @@
    *(unsigned long *)&v6[8] = v5;
    *(unsigned long *)v6 = v4;
    return *(unsigned __int128 *)v6;
---- runtime.mergeSummaries off
-+++ runtime.mergeSummaries on
+
+--- off/runtime.mergeSummaries
++++ on/runtime.mergeSummaries
 @@ -13,33 +13,26 @@
    unsigned int v11; // r11 | r12 | rbx | stack - 0x28
    int v12; // rdi | rsi | stack - 0x20
@@ -12384,8 +12419,8 @@
 +  runtime.packPallocSum(v4,v11,v7);
 +  return;
  }
---- runtime.(*pageAlloc).sysGrow off
-+++ runtime.(*pageAlloc).sysGrow on
+--- off/runtime.(*pageAlloc).sysGrow
++++ on/runtime.(*pageAlloc).sysGrow
 @@ -2,84 +2,75 @@
  {
    int v1; // r8 | rax | stack - 0x50
@@ -12513,8 +12548,9 @@
    runtime.printnl();
    runtime.printunlock();
    runtime.throw("sysGrow bounds not aligned to pallocChunkBytes",0x2e); // no-return
---- runtime.(*scavengeIndex).sysGrow off
-+++ runtime.(*scavengeIndex).sysGrow on
+
+--- off/runtime.(*scavengeIndex).sysGrow
++++ on/runtime.(*scavengeIndex).sysGrow
 @@ -20,30 +20,20 @@
    
    v15 = a1;
@@ -12574,8 +12610,8 @@
 +  runtime.printunlock();
 +  runtime.throw("sysGrow bounds not aligned to pallocChunkBytes",0x2e); // no-return
  }
---- runtime.(*pageAlloc).allocToCache off
-+++ runtime.(*pageAlloc).allocToCache on
+--- off/runtime.(*pageAlloc).allocToCache
++++ on/runtime.(*pageAlloc).allocToCache
 @@ -1,10 +1,10 @@
  undefined24 runtime.(*pageAlloc).allocToCache(void *a0)
  {
@@ -12697,8 +12733,8 @@
 +  *(unsigned long *)&v9[0x10] = v6;
 +  return v9._0_24_;
  }
---- runtime.(*pageBits).block64 off
-+++ runtime.(*pageBits).block64 on
+--- off/runtime.(*pageBits).block64
++++ on/runtime.(*pageBits).block64
 @@ -1,6 +1,4 @@
  unsigned long runtime.(*pageBits).block64(int a0,unsigned int a1)
  {
@@ -12707,8 +12743,8 @@
 -  runtime.panicBounds(); // no-return
 +  return *(unsigned long *)(a0 + (a1 >> 6) * 8);
  }
---- runtime.(*pageBits).set off
-+++ runtime.(*pageBits).set on
+--- off/runtime.(*pageBits).set
++++ on/runtime.(*pageBits).set
 @@ -1,11 +1,5 @@
  void runtime.(*pageBits).set(unsigned int *a0,unsigned int a1)
  {
@@ -12723,8 +12759,8 @@
 +  a0[a1 >> 6] = a0[a1 >> 6] | 1 << (a1 & 0x3f);
 +  return;
  }
---- runtime.(*pageBits).setRange off
-+++ runtime.(*pageBits).setRange on
+--- off/runtime.(*pageBits).setRange
++++ on/runtime.(*pageBits).setRange
 @@ -7,8 +7,6 @@
    unsigned int v5; // rsi
    
@@ -12759,8 +12795,8 @@
 +  *v3 = *v3 | (1 << ((unsigned char)v1 & 0x3f) & -(unsigned int)(v1 < 0x40)) - 1;
 +  return;
  }
---- runtime.(*pageBits).setBlock64 off
-+++ runtime.(*pageBits).setBlock64 on
+--- off/runtime.(*pageBits).setBlock64
++++ on/runtime.(*pageBits).setBlock64
 @@ -1,8 +1,5 @@
  void runtime.(*pageBits).setBlock64(unsigned int *a0,unsigned int a1,unsigned int a2)
  {
@@ -12772,8 +12808,8 @@
 +  a0[a1 >> 6] = a0[a1 >> 6] | a2;
 +  return;
  }
---- runtime.(*pageBits).clear off
-+++ runtime.(*pageBits).clear on
+--- off/runtime.(*pageBits).clear
++++ on/runtime.(*pageBits).clear
 @@ -1,11 +1,5 @@
  void runtime.(*pageBits).clear(unsigned int *a0,unsigned int a1)
  {
@@ -12788,8 +12824,8 @@
 +  a0[a1 >> 6] = a0[a1 >> 6] & ~(1 << (a1 & 0x3f));
 +  return;
  }
---- runtime.(*pageBits).clearRange off
-+++ runtime.(*pageBits).clearRange on
+--- off/runtime.(*pageBits).clearRange
++++ on/runtime.(*pageBits).clearRange
 @@ -8,8 +8,6 @@
    unsigned int *v6; // rax | stack + 0x8
    
@@ -12829,8 +12865,8 @@
 +  a0[v5] = a0[v5] & -(-(unsigned int)(v1 < 0x40) & 1 << ((unsigned char)v1 & 0x3f));
 +  return;
  }
---- runtime.(*pageBits).clearBlock64 off
-+++ runtime.(*pageBits).clearBlock64 on
+--- off/runtime.(*pageBits).clearBlock64
++++ on/runtime.(*pageBits).clearBlock64
 @@ -1,8 +1,5 @@
  void runtime.(*pageBits).clearBlock64(unsigned int *a0,unsigned int a1,unsigned int a2)
  {
@@ -12842,8 +12878,8 @@
 +  a0[a1 >> 6] = a0[a1 >> 6] & ~a2;
 +  return;
  }
---- runtime.(*pageBits).popcntRange off
-+++ runtime.(*pageBits).popcntRange on
+--- off/runtime.(*pageBits).popcntRange
++++ on/runtime.(*pageBits).popcntRange
 @@ -1,29 +1,23 @@
  unsigned int runtime.(*pageBits).popcntRange(unsigned int *a0,unsigned int a1,unsigned int a2)
  {
@@ -12926,8 +12962,9 @@
      v9 = POPCOUNT(v5);
    else {
      v9 = internal/runtime/sys.OnesCount64(v5);
---- runtime.mProf_FlushLocked off
-+++ runtime.mProf_FlushLocked on
+
+--- off/runtime.mProf_FlushLocked
++++ on/runtime.mProf_FlushLocked
 @@ -4,28 +4,27 @@
    int v2; // rax | rdx | stack - 0x10
    int v3; // rax | rdx | stack - 0x20
@@ -12976,8 +13013,8 @@
 -  runtime.panicBounds(); // no-return
 +  return;
  }
---- runtime.mProf_Malloc off
-+++ runtime.mProf_Malloc on
+--- off/runtime.mProf_Malloc
++++ on/runtime.mProf_Malloc
 @@ -1,10 +1,10 @@
  void runtime.mProf_Malloc(void *a0,unsigned long a1,unsigned long a2)
  {
@@ -13031,8 +13068,8 @@
 -  runtime.panicBounds(); // no-return
 +  return;
  }
---- runtime.mProf_Free off
-+++ runtime.mProf_Free on
+--- off/runtime.mProf_Free
++++ on/runtime.mProf_Free
 @@ -10,12 +10,9 @@
    v2 = runtime.(*mProfCycleHolder).read(&runtime.mProfCycle);
    v3 = runtime.(*bucket).mp(v5);
@@ -13051,8 +13088,8 @@
 +  runtime.unlock(&runtime.profMemFutureLock[(unsigned int)v4 * 8]);
 +  return;
  }
---- runtime.saveblockevent off
-+++ runtime.saveblockevent on
+--- off/runtime.saveblockevent
++++ on/runtime.saveblockevent
 @@ -1,11 +1,11 @@
  void runtime.saveblockevent(unsigned long a0,unsigned long a1,int a2,unsigned long a3)
  {
@@ -13156,8 +13193,8 @@
 +  runtime.printunlock();
 +  runtime.throw("invalid skip value",0x12); // no-return
  }
---- runtime.fpTracebackPartialExpand off
-+++ runtime.fpTracebackPartialExpand on
+--- off/runtime.fpTracebackPartialExpand
++++ on/runtime.fpTracebackPartialExpand
 @@ -1,4 +1,4 @@
 -unsigned int runtime.fpTracebackPartialExpand(int a0,unsigned long *a1,int a2,unsigned int a3,unsigned long a4)
 +int runtime.fpTracebackPartialExpand(int a0,unsigned long *a1,int a2,int a3,unsigned long a4)
@@ -13247,8 +13284,8 @@
    }
 -  return v8;
  }
---- runtime.(*mLockProfile).captureStack off
-+++ runtime.(*mLockProfile).captureStack on
+--- off/runtime.(*mLockProfile).captureStack
++++ on/runtime.(*mLockProfile).captureStack
 @@ -11,9 +11,6 @@
    g = *(runtime.g **)(v1 + -8);
    if (((int *)v2)[2] <= 0)
@@ -13261,8 +13298,8 @@
 +  *((unsigned long **)v2)[1] = 0;
 +  return;
  }
---- runtime.(*mLockProfile).storeSlow off
-+++ runtime.(*mLockProfile).storeSlow on
+--- off/runtime.(*mLockProfile).storeSlow
++++ on/runtime.(*mLockProfile).storeSlow
 @@ -1,7 +1,7 @@
  void runtime.(*mLockProfile).storeSlow(void *a0)
  {
@@ -13295,8 +13332,9 @@
    if (1 <= v7) {
      v3 = 0x457b21;
      runtime.saveBlockEventStack(v7,v8,&v3,1,1,3);
---- runtime.doRecordGoroutineProfile off
-+++ runtime.doRecordGoroutineProfile on
+
+--- off/runtime.doRecordGoroutineProfile
++++ on/runtime.doRecordGoroutineProfile
 @@ -32,24 +32,21 @@
      runtime.throw("cannot read stack of running goroutine",0x26); // no-return
    }
@@ -13333,8 +13371,8 @@
 +  *(unsigned long *)(v4 + -8 + v2 * 8) = v6;
 +  return;
  }
---- runtime.(*addrRanges).findSucc off
-+++ runtime.(*addrRanges).findSucc on
+--- off/runtime.(*addrRanges).findSucc
++++ on/runtime.(*addrRanges).findSucc
 @@ -1,9 +1,9 @@
  unsigned int runtime.(*addrRanges).findSucc(int *a0,unsigned long a1)
  {
@@ -13389,8 +13427,8 @@
 -  runtime.panicBounds(); // no-return
 +  return v6 + 1;
  }
---- runtime.(*addrRanges).findAddrGreaterEqual off
-+++ runtime.(*addrRanges).findAddrGreaterEqual on
+--- off/runtime.(*addrRanges).findAddrGreaterEqual
++++ on/runtime.(*addrRanges).findAddrGreaterEqual
 @@ -13,16 +13,11 @@
    v8 = a1;
    v2 = runtime.(*addrRanges).findSucc(a0,a1);
@@ -13412,8 +13450,9 @@
    v1 = runtime.addrRange.contains(*(unsigned long *)(v6 + *v7),*(unsigned long *)(*v7 + 8 + v6),v8);
    if (!v1) {
      if (v2 < v7[1]) {
---- runtime.(*addrRanges).add off
-+++ runtime.(*addrRanges).add on
+
+--- off/runtime.(*addrRanges).add
++++ on/runtime.(*addrRanges).add
 @@ -1,6 +1,6 @@
  void runtime.(*addrRanges).add(int *a0,unsigned long a1,unsigned long a2)
  {
@@ -13519,8 +13558,9 @@
      v7 = *v10;
      *(unsigned long *)(v7 + v5 * 0x10) = a1;
      *(unsigned long *)(v7 + 8 + v5 * 0x10) = a2;
---- runtime.(*addrRanges).cloneInto off
-+++ runtime.(*addrRanges).cloneInto on
+
+--- off/runtime.(*addrRanges).cloneInto
++++ on/runtime.(*addrRanges).cloneInto
 @@ -1,31 +1,28 @@
  void runtime.(*addrRanges).cloneInto(int *a0,int *a1) // return-dupe
  {
@@ -13570,8 +13610,8 @@
 +  runtime.memmove(*a1,*a0,v2 << 4);
    return;
  }
---- runtime.roundupsize off
-+++ runtime.roundupsize on
+--- off/runtime.roundupsize
++++ on/runtime.roundupsize
 @@ -1,6 +1,6 @@
  unsigned int runtime.roundupsize(unsigned int a0,bool a1)
  {
@@ -13599,8 +13639,8 @@
 -  runtime.panicBounds(0x44); // no-return
 +  return (unsigned int)*(unsigned short *)&internal/runtime/gc.SizeClassToSize[(unsigned int)(unsigned char)internal/runtime/gc.SizeToSizeClass8[v1] * 2] - (v2 - v3);
  }
---- runtime.wbBufFlush1 off
-+++ runtime.wbBufFlush1 on
+--- off/runtime.wbBufFlush1
++++ on/runtime.wbBufFlush1
 @@ -1,94 +1,76 @@
  void runtime.wbBufFlush1(int a0)
  {
@@ -13753,8 +13793,8 @@
 +  runtime.(*wbBuf).reset(v16 + 0x2550);
 +  return;
  }
---- runtime.netpoll off
-+++ runtime.netpoll on
+--- off/runtime.netpoll
++++ on/runtime.netpoll
 @@ -2,36 +2,34 @@
  {
    uint4 *v1; // rdi
@@ -13998,8 +14038,9 @@
    runtime.printnl();
    runtime.printunlock();
    runtime.throw("runtime: netpoll failed",0x17); // no-return
---- runtime.getCPUCount off
-+++ runtime.getCPUCount on
+
+--- off/runtime.getCPUCount
++++ on/runtime.getCPUCount
 @@ -29,19 +29,15 @@
    }
    runtime.sched_getaffinity.abi0();
@@ -14029,8 +14070,8 @@
 +    v4 = 1;
 +  return v4;
  }
---- runtime.sysargs off
-+++ runtime.sysargs on
+--- off/runtime.sysargs
++++ on/runtime.sysargs
 @@ -4,7 +4,7 @@
    int v2; // rax
    unsigned long v3; // rax
@@ -14089,8 +14130,9 @@
      return;
    }
    v12 = runtime.mmap(0,0x40000,3,0x22,0xffffffff,0);
---- runtime.sysauxv off
-+++ runtime.sysauxv on
+
+--- off/runtime.sysauxv
++++ on/runtime.sysauxv
 @@ -1,21 +1,15 @@
 -unsigned int runtime.sysauxv(int *a0,unsigned int a1)
 +unsigned int runtime.sysauxv(int *a0,unsigned long a1)
@@ -14124,8 +14166,8 @@
    }
    return v3 >> 1;
  }
---- runtime.getHugePageSize off
-+++ runtime.getHugePageSize on
+--- off/runtime.getHugePageSize
++++ on/runtime.getHugePageSize
 @@ -9,8 +9,6 @@
    int4 v7; // ecx | stack - 0x18 | stack - 0x38
    unsigned long v8; // rax | stack - 0x10
@@ -14158,8 +14200,8 @@
 +  }
 +  return 0;
  }
---- runtime.readRandom off
-+++ runtime.readRandom on
+--- off/runtime.readRandom
++++ on/runtime.readRandom
 @@ -1,21 +1,15 @@
 -int runtime.readRandom(unsigned long a0,int a1)
 +int runtime.readRandom(unsigned long a0,unsigned long a1)
@@ -14187,8 +14229,8 @@
 -  runtime.panicBounds(); // no-return
 +  return v4;
  }
---- runtime.sigaddset off
-+++ runtime.sigaddset on
+--- off/runtime.sigaddset
++++ on/runtime.sigaddset
 @@ -1,11 +1,8 @@
  void runtime.sigaddset(uint4 *a0,int a1)
  {
@@ -14204,8 +14246,8 @@
 +  a0[v1] = a0[v1] | 1 << ((int4)a1 - 1U & 0x1fU);
 +  return;
  }
---- runtime.sigdelset off
-+++ runtime.sigdelset on
+--- off/runtime.sigdelset
++++ on/runtime.sigdelset
 @@ -1,11 +1,8 @@
  void runtime.sigdelset(uint4 *a0,int a1)
  {
@@ -14221,8 +14263,8 @@
 +  a0[v1] = a0[v1] & ~(1 << ((int4)a1 - 1U & 0x1fU));
 +  return;
  }
---- runtime.popDefer off
-+++ runtime.popDefer on
+--- off/runtime.popDefer
++++ on/runtime.popDefer
 @@ -40,63 +40,62 @@
    v1[0x25] = '\0';
    v1[0x26] = '\0';
@@ -14342,8 +14384,8 @@
 -  runtime.releasem(v21);
    return;
  }
---- runtime.readvarintUnsafe off
-+++ runtime.readvarintUnsafe on
+--- off/runtime.readvarintUnsafe
++++ on/runtime.readvarintUnsafe
 @@ -11,11 +11,8 @@
      v1 = *a0;
      a0 = (unsigned char *)runtime.add(a0,1);
@@ -14357,8 +14399,9 @@
      v3 += 7;
      v4 = ((v1 & 0x7f) << (v2 & 0x1f)) + v4;
    } while (0x1d > (int)v3);
---- runtime.(*pinner).unpin off
-+++ runtime.(*pinner).unpin on
+
+--- off/runtime.(*pinner).unpin
++++ on/runtime.(*pinner).unpin
 @@ -4,7 +4,7 @@
    int v2; // rcx | stack - 0x18
    int *v3; // rax | stack + 0x8
@@ -14423,8 +14466,8 @@
    }
    return;
  }
---- runtime.(*mspan).refreshPinnerBits off
-+++ runtime.(*mspan).refreshPinnerBits on
+--- off/runtime.(*mspan).refreshPinnerBits
++++ on/runtime.(*mspan).refreshPinnerBits
 @@ -1,32 +1,27 @@
 -void runtime.(*mspan).refreshPinnerBits(unsigned long a0)
 +void runtime.(*mspan).refreshPinnerBits(unsigned long a0) // return-dupe
@@ -14479,8 +14522,8 @@
 +  runtime.(*mspan).setPinnerBits(v5,v3);
 +  return;
  }
---- runtime.recordForPanic off
-+++ runtime.recordForPanic on
+--- off/runtime.recordForPanic
++++ on/runtime.recordForPanic
 @@ -1,38 +1,32 @@
 -void runtime.recordForPanic(int a0,unsigned int a1)
 +void runtime.recordForPanic(int a0,int a1)
@@ -14542,8 +14585,9 @@
      }
    }
    runtime.printunlock();
---- runtime.gwrite off
-+++ runtime.gwrite on
+
+--- off/runtime.gwrite
++++ on/runtime.gwrite
 @@ -1,9 +1,9 @@
  void runtime.gwrite(int a0,int a1,unsigned long a2)
  {
@@ -14585,8 +14629,9 @@
    }
    runtime.writeErr(v5,v6,v7);
    return;
---- runtime.printuint off
-+++ runtime.printuint on
+
+--- off/runtime.printuint
++++ on/runtime.printuint
 @@ -1,6 +1,6 @@
  void runtime.printuint(unsigned long a0)
  {
@@ -14609,8 +14654,8 @@
 +  runtime.gwrite((int)&v3 + (v1 & (int)(v1 - 0x14) >> 0x3f),v2,v2);
 +  return;
  }
---- runtime.printint off
-+++ runtime.printint on
+--- off/runtime.printint
++++ on/runtime.printint
 @@ -1,35 +1,33 @@
  void runtime.printint(int a0)
  {
@@ -14673,8 +14718,8 @@
 +  runtime.gwrite(&v4[(v2 & (int)(v2 - 0x14) >> 0x3f) + 1],v3,v3);
    return;
  }
---- runtime.printhexopts off
-+++ runtime.printhexopts on
+--- off/runtime.printhexopts
++++ on/runtime.printhexopts
 @@ -1,31 +1,27 @@
  void runtime.printhexopts(bool a0,int a1,unsigned int a2)
  {
@@ -14725,8 +14770,8 @@
 +  runtime.gwrite(&v4[(v2 & (int)(v2 - 100) >> 0x3f) + 2],v3,v3);
    return;
  }
---- runtime.printquoted off
-+++ runtime.printquoted on
+--- off/runtime.printquoted
++++ on/runtime.printquoted
 @@ -1,6 +1,6 @@
 -void runtime.printquoted(int a0,unsigned int a1)
 +void runtime.printquoted(int a0,int a1)
@@ -14776,8 +14821,9 @@
          runtime.printhexopts(0,2,(unsigned char)*(char *)(v26 + v30));
        
      }
---- runtime.acquireSudog off
-+++ runtime.acquireSudog on
+
+--- off/runtime.acquireSudog
++++ on/runtime.acquireSudog
 @@ -1,65 +1,59 @@
  int runtime.acquireSudog(void)
  {
@@ -14888,8 +14934,8 @@
 +  runtime.releasem(v12);
 +  return v3;
  }
---- runtime.releaseSudog off
-+++ runtime.releaseSudog on
+--- off/runtime.releaseSudog
++++ on/runtime.releaseSudog
 @@ -43,65 +43,64 @@
    v3 = (int)v26 + 0x58;
    if (runtime.(*maybeTraceableChan).get(v3))
@@ -15011,8 +15057,8 @@
 -  return;
 +  runtime.throw("runtime: releaseSudog with non-nil gp.param",0x2b); // no-return
  }
---- runtime.allgadd off
-+++ runtime.allgadd on
+--- off/runtime.allgadd
++++ on/runtime.allgadd
 @@ -19,42 +19,41 @@
    unsigned long v17; // rax | rdx | stack + 0x8
    
@@ -15092,8 +15138,8 @@
 -  return;
 +  runtime.throw("allgadd: bad status Gidle",0x19); // no-return
  }
---- runtime.getGodebugEarly off
-+++ runtime.getGodebugEarly on
+--- off/runtime.getGodebugEarly
++++ on/runtime.getGodebugEarly
 @@ -9,9 +9,7 @@
    unsigned __int128 v7; // rbx:rax
    
@@ -15125,8 +15171,9 @@
        v3 = SUB168(v7,0) + (unsigned int)((uint4)(-v6 >> 0x3f) & 8);
        *(unsigned long *)&v5[8] = v6;
        *(unsigned long *)v5 = v3;
---- runtime.stwReason.String off
-+++ runtime.stwReason.String on
+
+--- off/runtime.stwReason.String
++++ on/runtime.stwReason.String
 @@ -1,6 +1,4 @@
  undefined16 runtime.stwReason.String(unsigned char a0)
  {
@@ -15135,8 +15182,8 @@
 -  runtime.panicBounds(); // no-return
 +  return *(char (*)[16])&runtime.stwReasonStrings[(unsigned int)a0 * 0x10];
  }
---- runtime.stealWork off
-+++ runtime.stealWork on
+--- off/runtime.stealWork
++++ on/runtime.stealWork
 @@ -3,7 +3,7 @@
    bool v1; // zf
    char v2; // al | cl
@@ -15158,8 +15205,9 @@
        if (v33 != v5) {
          v34 = v5;
          if (v29 != 3) { // branch-flip
---- runtime.saveAncestors off
-+++ runtime.saveAncestors on
+
+--- off/runtime.saveAncestors
++++ on/runtime.saveAncestors
 @@ -25,73 +25,72 @@
    int v23; // rdi | stack - 0x18
    int v24; // rsi | stack - 0x10
@@ -15301,8 +15349,8 @@
 -  return v1;
 +  return NULL;
  }
---- runtime.sigprof off
-+++ runtime.sigprof on
+--- off/runtime.sigprof
++++ on/runtime.sigprof
 @@ -1,177 +1,163 @@
  void runtime.sigprof(unsigned int a0,unsigned long a1,unsigned long a2,void *a3,void *a4) // ternary
  {
@@ -15602,8 +15650,8 @@
 +  *(int4 *)v5 = *(int4 *)v5 + -1;
    return;
  }
---- runtime.procresize off
-+++ runtime.procresize on
+--- off/runtime.procresize
++++ on/runtime.procresize
 @@ -1,43 +1,43 @@
  int runtime.procresize(int4 a0)
  {
@@ -16043,8 +16091,8 @@
 +    runtime.(*gcCPULimiterState).resetCapacity(runtime.gcCPULimiter,v7,(uint4)v44,v39,(uint4)v5);
 +  return v27;
  }
---- runtime.globrunqgetbatch off
-+++ runtime.globrunqgetbatch on
+--- off/runtime.globrunqgetbatch
++++ on/runtime.globrunqgetbatch
 @@ -17,12 +17,10 @@
    v5 = v6;
    v9 = v7;
@@ -16080,8 +16128,8 @@
 -  runtime.panicdivide(); // no-return
 +  return ZEXT2032(CONCAT416(v10,CONCAT88(v9,v5))) << 0x40;
  }
---- runtime.pMask.read off
-+++ runtime.pMask.read on
+--- off/runtime.pMask.read
++++ on/runtime.pMask.read
 @@ -1,9 +1,4 @@
 -bool runtime.pMask.read(uint4 *a0,unsigned int a1,unsigned long a2,uint4 a3)
 +bool runtime.pMask.read(uint4 *a0,unsigned long a1,unsigned long a2,uint4 a3)
@@ -16094,8 +16142,8 @@
 -  runtime.panicBounds(); // no-return
 +  return (a0[a3 >> 5] >> (a3 & 0x1f) & 1) != 0;
  }
---- runtime.pMask.set off
-+++ runtime.pMask.set on
+--- off/runtime.pMask.set
++++ on/runtime.pMask.set
 @@ -1,18 +1,7 @@
 -void runtime.pMask.set(uint4 *a0,unsigned int a1,unsigned long a2,int4 a3)
 +void runtime.pMask.set(uint4 *a0,unsigned long a1,unsigned long a2,int4 a3)
@@ -16120,8 +16168,8 @@
 +  UNLOCK();
 +  return;
  }
---- runtime.pMask.clear off
-+++ runtime.pMask.clear on
+--- off/runtime.pMask.clear
++++ on/runtime.pMask.clear
 @@ -1,18 +1,7 @@
 -void runtime.pMask.clear(uint4 *a0,unsigned int a1,unsigned long a2,int4 a3)
 +void runtime.pMask.clear(uint4 *a0,unsigned long a1,unsigned long a2,int4 a3)
@@ -16146,8 +16194,8 @@
 +  UNLOCK();
 +  return;
  }
---- runtime.pMask.resize off
-+++ runtime.pMask.resize on
+--- off/runtime.pMask.resize
++++ on/runtime.pMask.resize
 @@ -1,15 +1,12 @@
 -void runtime.pMask.resize(unsigned long a0,unsigned long a1,unsigned int a2,int4 a3)
 +void runtime.pMask.resize(unsigned long a0,unsigned long a1,int4 a2,int4 a3)
@@ -16170,8 +16218,8 @@
 +  runtime.makeslicecopy(0x521e48,(int)v1,a1,a0);
 +  return;
  }
---- runtime.(*randomOrder).start off
-+++ runtime.(*randomOrder).start on
+--- off/runtime.(*randomOrder).start
++++ on/runtime.(*randomOrder).start
 @@ -1,26 +1,12 @@
  undefined32 runtime.(*randomOrder).start(struct_34 *a0,uint4 a1)
  {
@@ -16205,8 +16253,8 @@
 +  *(unsigned int *)&v2[0x1c] = 0;
 +  return v2._0_32_;
  }
---- runtime.(*randomEnum).next off
-+++ runtime.(*randomEnum).next on
+--- off/runtime.(*randomEnum).next
++++ on/runtime.(*randomEnum).next
 @@ -1,14 +1,9 @@
  unsigned int runtime.(*randomEnum).next(int4 *a0)
  {
@@ -16224,8 +16272,8 @@
 +  a0[2] = (uint4)(v1 + a0[3]) % (uint4)a0[1];
 +  return (unsigned int)(uint4)(v1 + a0[3]) / (unsigned int)(uint4)a0[1];
  }
---- runtime.(*profBuf).canWriteRecord off
-+++ runtime.(*profBuf).canWriteRecord on
+--- off/runtime.(*profBuf).canWriteRecord
++++ on/runtime.(*profBuf).canWriteRecord
 @@ -16,19 +16,17 @@
    v4 = runtime.(*profAtomic).load((int)v8 + 8);
    v2 = runtime.profIndex.tagCount(v3);
@@ -16254,8 +16302,8 @@
 -  runtime.panicdivide(); // no-return
 +  return 0;
  }
---- runtime.(*profBuf).canWriteTwoRecords off
-+++ runtime.(*profBuf).canWriteTwoRecords on
+--- off/runtime.(*profBuf).canWriteTwoRecords
++++ on/runtime.(*profBuf).canWriteTwoRecords
 @@ -19,25 +19,24 @@
    v4 = runtime.(*profAtomic).load((int)v9 + 8);
    v2 = runtime.profIndex.tagCount(v3);
@@ -16301,8 +16349,8 @@
 -  return v11 + 2 <= v8;
 +  return 0;
  }
---- runtime.(*profBuf).write off
-+++ runtime.(*profBuf).write on
+--- off/runtime.(*profBuf).write
++++ on/runtime.(*profBuf).write
 @@ -5,28 +5,27 @@
    uint4 v3; // eax | edx | stack - 0x74
    unsigned int v4; // eax | stack - 0x74 | stack - 0x78
@@ -16544,8 +16592,8 @@
 +    runtime.notewakeup((int)a9 + 0x80);
 +  return;
  }
---- runtime.(*profBuf).read off
-+++ runtime.(*profBuf).read on
+--- off/runtime.(*profBuf).read
++++ on/runtime.(*profBuf).read
 @@ -1,198 +1,139 @@
  int * runtime.(*profBuf).read(void *a0,int a1)
  {
@@ -16851,8 +16899,8 @@
 -  return v21;
 +  runtime.throw("runtime: malformed profBuf buffer - tag and data out of sync",0x3c); // no-return
  }
---- runtime.randinit off
-+++ runtime.randinit on
+--- off/runtime.randinit
++++ on/runtime.randinit
 @@ -4,11 +4,11 @@
    char v2; // al
    unsigned long *v3; // ram 0x536310 | rax | rcx
@@ -17017,8 +17065,8 @@
 -  return;
 +  runtime.fatal("randinit twice",0xe); // no-return
  }
---- runtime.goargs off
-+++ runtime.goargs on
+--- off/runtime.goargs
++++ on/runtime.goargs
 @@ -2,23 +2,16 @@
  {
    int v1; // ram 0x536350 | rcx
@@ -17051,8 +17099,8 @@
 -  runtime.panicBounds(); // no-return
 +  return;
  }
---- runtime.goenvs_unix off
-+++ runtime.goenvs_unix on
+--- off/runtime.goenvs_unix
++++ on/runtime.goenvs_unix
 @@ -1,35 +1,25 @@
  void runtime.goenvs_unix(void)
  {
@@ -17107,8 +17155,8 @@
 -  runtime.panicBounds(); // no-return
 +  return;
  }
---- runtime.parsegodebug off
-+++ runtime.parsegodebug on
+--- off/runtime.parsegodebug
++++ on/runtime.parsegodebug
 @@ -33,9 +33,9 @@
    v27 = a2;
    while( true ) {
@@ -17183,8 +17231,9 @@
                  *(int **)runtime.invalidGODEBUG = v15;
                  *(int *)&runtime.invalidGODEBUG[0x18] = v10;
                  *(int *)&runtime.invalidGODEBUG[0x10] = v1;
---- runtime.waitReason.isWaitingForSuspendG off
-+++ runtime.waitReason.isWaitingForSuspendG on
+
+--- off/runtime.waitReason.isWaitingForSuspendG
++++ on/runtime.waitReason.isWaitingForSuspendG
 @@ -1,6 +1,4 @@
  char runtime.waitReason.isWaitingForSuspendG(unsigned char a0)
  {
@@ -17193,8 +17242,8 @@
 -  runtime.panicBounds(0x2f); // no-return
 +  return runtime.isWaitingForSuspendG[a0];
  }
---- runtime.waitReason.isIdleInSynctest off
-+++ runtime.waitReason.isIdleInSynctest on
+--- off/runtime.waitReason.isIdleInSynctest
++++ on/runtime.waitReason.isIdleInSynctest
 @@ -1,6 +1,4 @@
  char runtime.waitReason.isIdleInSynctest(unsigned char a0)
  {
@@ -17203,8 +17252,8 @@
 -  runtime.panicBounds(0x2f); // no-return
 +  return runtime.isIdleInSynctest[a0];
  }
---- runtime.secureEnv off
-+++ runtime.secureEnv on
+--- off/runtime.secureEnv
++++ on/runtime.secureEnv
 @@ -2,45 +2,40 @@
  {
    bool v1; // zf
@@ -17278,8 +17327,8 @@
 +  }
 +  return;
  }
---- runtime.sigInstallGoHandler off
-+++ runtime.sigInstallGoHandler on
+--- off/runtime.sigInstallGoHandler
++++ on/runtime.sigInstallGoHandler
 @@ -4,12 +4,9 @@
      return 0;
    if ((!runtime.iscgo) && (a0 == 0x21))
@@ -17298,8 +17347,8 @@
 +    return 0;
 +  return 1;
  }
---- runtime.sigprofNonGo off
-+++ runtime.sigprofNonGo on
+--- off/runtime.sigprofNonGo
++++ on/runtime.sigprofNonGo
 @@ -1,7 +1,7 @@
  unsigned int runtime.sigprofNonGo(unsigned long a0,unsigned long a1,unsigned long a2)
  {
@@ -17321,8 +17370,9 @@
        runtime.(*cpuProfile).addNonGo(runtime.cpuprof,runtime.sigprofCallers,v2,0x20);
      }
    }
---- runtime.fatalsignal off
-+++ runtime.fatalsignal on
+
+--- off/runtime.fatalsignal
++++ on/runtime.fatalsignal
 @@ -65,8 +65,6 @@
      }
      if ((v9 == 4) || (v9 == 8)) {
@@ -17341,8 +17391,9 @@
          v1 = *(char *)(v4 + v8);
          runtime.printlock((unsigned char)v1);
          runtime.printsp();
---- runtime.dieFromSignal off
-+++ runtime.dieFromSignal on
+
+--- off/runtime.dieFromSignal
++++ on/runtime.dieFromSignal
 @@ -5,21 +5,18 @@
    
    v2 = (uint4)a0;
@@ -17379,8 +17430,8 @@
 +  g = *(runtime.g **)(v1 + -8);
 +  runtime.exit.abi0(); // no-return
  }
---- runtime.blockableSig off
-+++ runtime.blockableSig on
+--- off/runtime.blockableSig
++++ on/runtime.blockableSig
 @@ -1,7 +1,5 @@
  bool runtime.blockableSig(uint4 a0)
  {
@@ -17389,8 +17440,9 @@
    if (*(uint4 *)&runtime.sigtable[(unsigned int)a0 * 0x18] >> 7 & 1)
      return 0;
    if ((a0 == 0x17) && (!*(int4 *)&runtime.debug[0x4c]))
---- runtime.sigInitIgnored off
-+++ runtime.sigInitIgnored on
+
+--- off/runtime.sigInitIgnored
++++ on/runtime.sigInitIgnored
 @@ -1,13 +1,7 @@
  void runtime.sigInitIgnored(uint4 a0)
  {
@@ -17409,8 +17461,8 @@
 +  UNLOCK();
 +  return;
  }
---- runtime.moveSliceNoCapNoScan off
-+++ runtime.moveSliceNoCapNoScan on
+--- off/runtime.moveSliceNoCapNoScan
++++ on/runtime.moveSliceNoCapNoScan
 @@ -8,25 +8,22 @@
    int v6; // rbx | stack + 0x10
    int v7; // rbx | rcx | stack + 0x18
@@ -17451,8 +17503,8 @@
 +    v4 = &runtime.zerobase;
 +  return ZEXT824(v4);
  }
---- runtime.stackpoolalloc off
-+++ runtime.stackpoolalloc on
+--- off/runtime.stackpoolalloc
++++ on/runtime.stackpoolalloc
 @@ -1,48 +1,44 @@
  unsigned long runtime.stackpoolalloc(unsigned char a0)
  {
@@ -17534,8 +17586,8 @@
 +    runtime.(*mSpanList).remove(v1,v4);
 +  return v2;
  }
---- runtime.stackpoolfree off
-+++ runtime.stackpoolfree on
+--- off/runtime.stackpoolfree
++++ on/runtime.stackpoolfree
 @@ -10,26 +10,22 @@
    v5 = a0;
    v6 = a1;
@@ -17580,8 +17632,8 @@
 -  return;
 +  runtime.throw("freeing stack not in a stack span",0x21); // no-return
  }
---- runtime.stackcacherefill off
-+++ runtime.stackcacherefill on
+--- off/runtime.stackcacherefill
++++ on/runtime.stackcacherefill
 @@ -3,35 +3,29 @@
    unsigned char v1; // tmp
    unsigned int v2; // rax | rbx | rcx | stack - 0x38
@@ -17629,8 +17681,8 @@
 -  runtime.panicBounds(); // no-return
 +  runtime.morestackc.abi0(); // no-return
  }
---- runtime.stackcacherelease off
-+++ runtime.stackcacherelease on
+--- off/runtime.stackcacherelease
++++ on/runtime.stackcacherelease
 @@ -3,37 +3,29 @@
    unsigned long v1; // rbx | rcx | stack - 0x20
    unsigned char v2; // tmp
@@ -17689,8 +17741,8 @@
 -  runtime.panicBounds(); // no-return
 +  runtime.morestackc.abi0(); // no-return
  }
---- runtime.stackalloc off
-+++ runtime.stackalloc on
+--- off/runtime.stackalloc
++++ on/runtime.stackalloc
 @@ -4,13 +4,13 @@
    int v2; // rax | rbx | rcx | rdx | stack - 0x38 | stack - 0x40
    runtime.m *v3; // rcx
@@ -17877,8 +17929,8 @@
 -  return *(unsigned __int128 *)v10;
 +  runtime.throw("out of memory (stackalloc)",0x1a); // no-return
  }
---- runtime.stackfree off
-+++ runtime.stackfree on
+--- off/runtime.stackfree
++++ on/runtime.stackfree
 @@ -6,9 +6,9 @@
    unsigned long v4; // rax | stack - 0x10 | stack - 0x30
    unsigned long *v5; // rax
@@ -17947,8 +17999,8 @@
 +  runtime.unlock(runtime.stackLarge);
 +  return;
  }
---- runtime.(*stkframe).getStackMap off
-+++ runtime.(*stkframe).getStackMap on
+--- off/runtime.(*stkframe).getStackMap
++++ on/runtime.(*stkframe).getStackMap
 @@ -113,10 +113,7 @@
      v4 = *v8;
      runtime.add(v8,8);
@@ -17961,8 +18013,9 @@
        if (v9)
          runtime.panicunsafeslicelen(); // no-return
        runtime.panicunsafeslicenilptr(); // no-return
---- runtime.concatstrings off
-+++ runtime.concatstrings on
+
+--- off/runtime.concatstrings
++++ on/runtime.concatstrings
 @@ -1,80 +1,76 @@
 -int runtime.concatstrings(int a0,int *a1,unsigned int a2)
 +int runtime.concatstrings(int a0,int *a1,int a2)
@@ -18096,8 +18149,8 @@
 -  runtime.panicBounds(a0); // no-return
 +  return a1[v4 * 2];
  }
---- runtime.slicebytetostring off
-+++ runtime.slicebytetostring on
+--- off/runtime.slicebytetostring
++++ on/runtime.slicebytetostring
 @@ -8,12 +8,9 @@
    if (!a2)
      return ZEXT816(0);
@@ -18123,8 +18176,9 @@
    if (v4 <= (unsigned int)-a0) {
      *(unsigned long *)&v2[8] = v4;
      *(unsigned long *)v2 = a0;
---- runtime.rawstringtmp off
-+++ runtime.rawstringtmp on
+
+--- off/runtime.rawstringtmp
++++ on/runtime.rawstringtmp
 @@ -1,12 +1,7 @@
 -void runtime.rawstringtmp(int a0,unsigned int a1) // return-dupe
 +void runtime.rawstringtmp(int a0,int a1) // return-dupe
@@ -18142,8 +18196,8 @@
 +  runtime.rawstring(a1);
 +  return;
  }
---- runtime.rawstring off
-+++ runtime.rawstring on
+--- off/runtime.rawstring
++++ on/runtime.rawstring
 @@ -5,11 +5,9 @@
    
    v2 = a0;
@@ -18159,8 +18213,8 @@
 +    runtime.panicunsafestringnilptr(); // no-return
 +  runtime.panicunsafestringlen(); // no-return
  }
---- runtime.parseByteCount off
-+++ runtime.parseByteCount on
+--- off/runtime.parseByteCount
++++ on/runtime.parseByteCount
 @@ -64,13 +64,11 @@
    v5 = SUB168(*(unsigned __int128 *)v4,0);
    if ((SUB168(*(unsigned __int128 *)v4,8)) || ((int)v5 <= -1))
@@ -18178,8 +18232,9 @@
      *(unsigned long *)&v6[8] = 1;
      *(unsigned long *)v6 = v8 * v5;
      return *(unsigned __int128 *)v6;
---- runtime.divRoundUp off
-+++ runtime.divRoundUp on
+
+--- off/runtime.divRoundUp
++++ on/runtime.divRoundUp
 @@ -1,6 +1,4 @@
  unsigned int runtime.divRoundUp(int a0,unsigned int a1)
  {
@@ -18188,8 +18243,8 @@
 -  runtime.panicdivide(); // no-return
 +  return ((a1 + a0) - 1) / a1;
  }
---- runtime.(*Frames).Next off
-+++ runtime.(*Frames).Next on
+--- off/runtime.(*Frames).Next
++++ on/runtime.(*Frames).Next
 @@ -107,8 +107,6 @@
          v67 = v1[8];
          v68 = v1[9];
@@ -18208,8 +18263,9 @@
          v21 = &a0[7];
          v16 = (int *)(a0[4] + 0x58);
          v19 = &a0[7];
---- runtime.modulesinit off
-+++ runtime.modulesinit on
+
+--- off/runtime.modulesinit
++++ on/runtime.modulesinit
 @@ -1,15 +1,15 @@
  void runtime.modulesinit(void)
  {
@@ -18258,8 +18314,8 @@
 +    v10 += 1;
    }
  }
---- runtime.(*moduledata).funcName off
-+++ runtime.(*moduledata).funcName on
+--- off/runtime.(*moduledata).funcName
++++ on/runtime.(*moduledata).funcName
 @@ -2,11 +2,9 @@
  {
    int v1; // rcx
@@ -18274,8 +18330,8 @@
 -  runtime.panicBounds(); // no-return
 +  return 0;
  }
---- runtime.pcvalue off
-+++ runtime.pcvalue on
+--- off/runtime.pcvalue
++++ on/runtime.pcvalue
 @@ -31,12 +31,12 @@
    unsigned long v29; // rcx | stack - 0x88
    int v30; // rbx | rdi | stack - 0x80
@@ -18493,8 +18549,8 @@
 -  return v18;
 +  return 0xffffffff;
  }
---- runtime.funcpkgpath off
-+++ runtime.funcpkgpath on
+--- off/runtime.funcpkgpath
++++ on/runtime.funcpkgpath
 @@ -1,29 +1,17 @@
  undefined16 runtime.funcpkgpath(unsigned long a0,unsigned long a1)
  {
@@ -18531,8 +18587,8 @@
 +  *(unsigned long *)&v1[8] = v2;
 +  return *(unsigned __int128 *)v1;
  }
---- runtime.funcfile off
-+++ runtime.funcfile on
+--- off/runtime.funcfile
++++ on/runtime.funcfile
 @@ -1,21 +1,15 @@
  char * runtime.funcfile(void *a0,void *a1,int4 a2)
  {
@@ -18562,8 +18618,8 @@
 -  runtime.panicBounds(); // no-return
 +  return (char *)runtime.gostringnocopy(v2 + (unsigned int)v1);
  }
---- runtime.funcMaxSPDelta off
-+++ runtime.funcMaxSPDelta on
+--- off/runtime.funcMaxSPDelta
++++ on/runtime.funcMaxSPDelta
 @@ -14,35 +14,32 @@
    int v12; // rcx | stack - 0x40
    void *v13; // rax | stack - 0x38
@@ -18622,8 +18678,8 @@
 -  runtime.panicBounds(); // no-return
 +  return v9;
  }
---- runtime.step off
-+++ runtime.step on
+--- off/runtime.step
++++ on/runtime.step
 @@ -1,4 +1,4 @@
 -undefined32 runtime.step(unsigned char *a0,unsigned int a1,int a2,int *a3,int4 *a4,bool a5)
 +undefined32 runtime.step(unsigned char *a0,int a1,int a2,int *a3,int4 *a4,bool a5)
@@ -18694,8 +18750,8 @@
 +  *(unsigned long *)&v3[0x18] = 1;
 +  return v3._0_32_;
  }
---- runtime.readvarint off
-+++ runtime.readvarint on
+--- off/runtime.readvarint
++++ on/runtime.readvarint
 @@ -1,15 +1,10 @@
 -uint4 runtime.readvarint(char *a0,unsigned int a1)
 +uint4 runtime.readvarint(char *a0)
@@ -18713,8 +18769,9 @@
      v1 = v2;
      v2 += 1;
    } while (a0[v1] & 0x80U);
---- runtime.(*inlineUnwinder).next off
-+++ runtime.(*inlineUnwinder).next on
+
+--- off/runtime.(*inlineUnwinder).next
++++ on/runtime.(*inlineUnwinder).next
 @@ -4,13 +4,11 @@
    int v2; // rax
    unsigned long *v3; // rax | stack + 0x8
@@ -18731,8 +18788,8 @@
 -  runtime.panicBounds(0x100000); // no-return
 +  return 0;
  }
---- runtime.(*timer).updateHeap off
-+++ runtime.(*timer).updateHeap on
+--- off/runtime.(*timer).updateHeap
++++ on/runtime.(*timer).updateHeap
 @@ -8,30 +8,22 @@
    runtime.assertWorldStoppedOrLockHeld();
    runtime.(*timer).trace(v3,"updateHeap",10);
@@ -18781,8 +18838,8 @@
 +  }
 +  return 0;
  }
---- runtime.(*timers).addHeap off
-+++ runtime.(*timers).addHeap on
+--- off/runtime.(*timers).addHeap
++++ on/runtime.(*timers).addHeap
 @@ -77,8 +77,6 @@
    *(unsigned long *)(v24 + 8 + v10) = v3;
    *(void **)(v24 + v10) = v11;
@@ -18792,8 +18849,9 @@
    if ((void *)*((int **)v29)[1] != v30)
      return;
    runtime.(*timers).updateMinWhenHeap(v29);
---- runtime.(*timers).deleteMin off
-+++ runtime.(*timers).deleteMin on
+
+--- off/runtime.(*timers).deleteMin
++++ on/runtime.(*timers).deleteMin
 @@ -4,33 +4,27 @@
    unsigned long *v2; // rsi
    unsigned long v3; // rcx
@@ -18833,8 +18891,9 @@
      runtime.(*timers).siftDown(v6,0);
    runtime.(*timers).updateMinWhenHeap(v6);
    if (v1 != 1)
---- runtime.(*timers).cleanHead off
-+++ runtime.(*timers).cleanHead on
+
+--- off/runtime.(*timers).cleanHead
++++ on/runtime.(*timers).cleanHead
 @@ -3,20 +3,20 @@
    int v1; // rax | stack - 0x18 | stack - 0x20
    int v2; // rdx
@@ -18892,8 +18951,8 @@
 +  }
    return;
  }
---- runtime.(*timers).adjust off
-+++ runtime.(*timers).adjust on
+--- off/runtime.(*timers).adjust
++++ on/runtime.(*timers).adjust
 @@ -1,83 +1,71 @@
  void runtime.(*timers).adjust(void *a0,int a1,char a2)
  {
@@ -19021,8 +19080,8 @@
    }
 +  runtime.throw("bad ts",6); // no-return
  }
---- runtime.(*timers).siftUp off
-+++ runtime.(*timers).siftUp on
+--- off/runtime.(*timers).siftUp
++++ on/runtime.(*timers).siftUp
 @@ -1,51 +1,38 @@
 -void runtime.(*timers).siftUp(void *a0,unsigned int a1,unsigned long a2,unsigned long a3) // return-dupe
 +void runtime.(*timers).siftUp(void *a0,unsigned int a1) // return-dupe
@@ -19103,8 +19162,8 @@
 +  }
    return;
  }
---- runtime.(*timers).siftDown off
-+++ runtime.(*timers).siftDown on
+--- off/runtime.(*timers).siftDown
++++ on/runtime.(*timers).siftDown
 @@ -1,8 +1,8 @@
 -void runtime.(*timers).siftDown(void *a0,unsigned int a1) // return-dupe
 +void runtime.(*timers).siftDown(void *a0,int a1) // return-dupe
@@ -19201,8 +19260,8 @@
 +  *(int *)(v2 + a1) = v5;
    return;
  }
---- runtime.(*unwinder).cgoCallers off
-+++ runtime.(*unwinder).cgoCallers on
+--- off/runtime.(*unwinder).cgoCallers
++++ on/runtime.(*unwinder).cgoCallers
 @@ -1,33 +1,29 @@
  int runtime.(*unwinder).cgoCallers(int *a0,int a1,int a2,unsigned long a3)
  {
@@ -19257,8 +19316,8 @@
    }
    return 0;
  }
---- runtime.tracebackPCs off
-+++ runtime.tracebackPCs on
+--- off/runtime.tracebackPCs
++++ on/runtime.tracebackPCs
 @@ -1,142 +1,139 @@
 -unsigned int runtime.tracebackPCs(unsigned long *a0,int a1,int a2,unsigned int a3,int a4)
 +int runtime.tracebackPCs(unsigned long *a0,int a1,int a2,int a3,int a4)
@@ -19520,8 +19579,8 @@
 -  return v20;
 +  return v22;
  }
---- runtime.printArgs off
-+++ runtime.printArgs on
+--- off/runtime.printArgs
++++ on/runtime.printArgs
 @@ -1,140 +1,108 @@
  void runtime.printArgs(unsigned long a0,unsigned long a1,unsigned long a2,unsigned long a3)
  {
@@ -19735,8 +19794,8 @@
 +    v8 = v7 & 0xff;
    }
  }
---- runtime.funcNamePiecesForPrint off
-+++ runtime.funcNamePiecesForPrint on
+--- off/runtime.funcNamePiecesForPrint
++++ on/runtime.funcNamePiecesForPrint
 @@ -4,13 +4,13 @@
    int v2; // r11 | r8 | rax | stack - 0x10 | stack - 0x60
    char v3 [64]; // edi | r8 | rax | rbp | rbx | rcx | rdi | rdx | register 0x0 | rsi | rsp | stack + 0x18 | stack - 0x18 | stack - 0x48
@@ -19818,8 +19877,9 @@
            v6 = v7;
            goto label_46faa0;
          }
---- runtime.traceback2 off
-+++ runtime.traceback2 on
+
+--- off/runtime.traceback2
++++ on/runtime.traceback2
 @@ -16,32 +16,32 @@
    unsigned long v14; // rax
    unsigned long v15; // rax
@@ -20339,8 +20399,8 @@
 +    runtime.(*unwinder).next(v68);
    }
  }
---- runtime.isExportedRuntime off
-+++ runtime.isExportedRuntime on
+--- off/runtime.isExportedRuntime
++++ on/runtime.isExportedRuntime
 @@ -6,7 +6,7 @@
    char v4; // cl
    unsigned int v5; // rbx | rcx | rsi
@@ -20372,8 +20432,8 @@
 +    return 0;
 +  return CONCAT71((undefined7)((unsigned int)v3 >> 8),*v3 <= 0x5a);
  }
---- runtime.cgoContextPCs off
-+++ runtime.cgoContextPCs on
+--- off/runtime.cgoContextPCs
++++ on/runtime.cgoContextPCs
 @@ -1,14 +1,14 @@
 -void runtime.cgoContextPCs(unsigned long a0,unsigned long a1,int a2)
 +void runtime.cgoContextPCs(unsigned long a0,unsigned long a1,unsigned long a2)
@@ -20414,8 +20474,8 @@
 +  (*(void *)*v1)(_cgo_call_traceback_function,v2);
 +  return;
  }
---- runtime.traceWriter.end off
-+++ runtime.traceWriter.end on
+--- off/runtime.traceWriter.end
++++ on/runtime.traceWriter.end
 @@ -1,13 +1,8 @@
 -void runtime.traceWriter.end(int a0,uint4 a1,unsigned int a2,unsigned long a3)
 +void runtime.traceWriter.end(int a0,uint4 a1,int a2,unsigned long a3)
@@ -20433,8 +20493,8 @@
 -  runtime.panicBounds(); // no-return
 +  return;
  }
---- runtime.(*traceBuf).byte off
-+++ runtime.(*traceBuf).byte on
+--- off/runtime.(*traceBuf).byte
++++ on/runtime.(*traceBuf).byte
 @@ -1,9 +1,6 @@
  void runtime.(*traceBuf).byte(void *a0,char a1)
  {
@@ -20448,8 +20508,8 @@
 +  *(int *)((int)a0 + 0x10) = *(int *)((int)a0 + 0x10) + 1;
 +  return;
  }
---- runtime.(*traceBuf).varint off
-+++ runtime.(*traceBuf).varint on
+--- off/runtime.(*traceBuf).varint
++++ on/runtime.(*traceBuf).varint
 @@ -1,18 +1,14 @@
  void runtime.(*traceBuf).varint(void *a0,unsigned int a1)
  {
@@ -20472,8 +20532,9 @@
        return;
      }
      if (a1 <= 0x7f) {
---- runtime.(*traceBuf).stringData off
-+++ runtime.(*traceBuf).stringData on
+
+--- off/runtime.(*traceBuf).stringData
++++ on/runtime.(*traceBuf).stringData
 @@ -1,25 +1,21 @@
  void runtime.(*traceBuf).stringData(void *a0,int a1,int a2)
  {
@@ -20516,8 +20577,8 @@
 +  *(int *)((int)a0 + 0x10) = *(int *)((int)a0 + 0x10) + v2;
 +  return;
  }
---- runtime.(*traceBuf).varintAt off
-+++ runtime.(*traceBuf).varintAt on
+--- off/runtime.(*traceBuf).varintAt
++++ on/runtime.(*traceBuf).varintAt
 @@ -1,26 +1,17 @@
 -void runtime.(*traceBuf).varintAt(char *a0,unsigned int a1,unsigned int a2)
 +void runtime.(*traceBuf).varintAt(char *a0,int a1,unsigned int a2)
@@ -20551,8 +20612,8 @@
 +    return;
 +  runtime.throw("v could not fit in traceBytesPerNumber",0x26); // no-return
  }
---- runtime.traceReadCPU off
-+++ runtime.traceReadCPU on
+--- off/runtime.traceReadCPU
++++ on/runtime.traceReadCPU
 @@ -1,144 +1,112 @@
  uint4 runtime.traceReadCPU(unsigned long a0)
  {
@@ -20796,8 +20857,8 @@
 -  runtime.panicBounds(v6,v17,v10,v15); // no-return
 +  return (uint4)v25 ^ 1;
  }
---- runtime.(*traceRegionAlloc).alloc off
-+++ runtime.(*traceRegionAlloc).alloc on
+--- off/runtime.(*traceRegionAlloc).alloc
++++ on/runtime.(*traceRegionAlloc).alloc
 @@ -4,39 +4,30 @@
    int v2; // rax | rcx | stack - 0x40
    int v3; // stack - 0x48
@@ -20862,8 +20923,8 @@
 +  g = *(runtime.g **)(v4 + -8);
 +  return v3;
  }
---- runtime.traceLocker.GoStart off
-+++ runtime.traceLocker.GoStart on
+--- off/runtime.traceLocker.GoStart
++++ on/runtime.traceLocker.GoStart
 @@ -25,11 +25,7 @@
    if (!*(int *)(runtime.puintptr.ptr(v1) + 0x1240))
      return;
@@ -20879,8 +20940,8 @@
 +  runtime.traceEventWriter.event(v11,v8,0x27,&v4,1,1);
 +  return;
  }
---- runtime.traceLocker.GoStop off
-+++ runtime.traceLocker.GoStop on
+--- off/runtime.traceLocker.GoStop
++++ on/runtime.traceLocker.GoStop
 @@ -1,35 +1,26 @@
  void runtime.traceLocker.GoStop(unsigned long a0,unsigned int a1,unsigned char a2)
  {
@@ -20938,8 +20999,8 @@
 +  runtime.traceEventWriter.event(v8,v7,0x13,&v1,2,2);
 +  return;
  }
---- runtime.traceLocker.GoPark off
-+++ runtime.traceLocker.GoPark on
+--- off/runtime.traceLocker.GoPark
++++ on/runtime.traceLocker.GoPark
 @@ -1,37 +1,28 @@
  void runtime.traceLocker.GoPark(unsigned long a0,unsigned int a1,unsigned char a2,unsigned long a3)
  {
@@ -21001,8 +21062,8 @@
 +  runtime.traceEventWriter.event(v10,v8,0x14,&v1,2,2);
 +  return;
  }
---- runtime.traceStack off
-+++ runtime.traceStack on
+--- off/runtime.traceStack
++++ on/runtime.traceStack
 @@ -1,133 +1,113 @@
  void runtime.traceStack(runtime.m *a0,runtime.g *a1,unsigned long a2)
  {
@@ -21208,8 +21269,8 @@
 +  runtime.(*traceStackTable).put(v14,v3,v11,v4);
 +  return;
  }
---- runtime.dumpStacksRec off
-+++ runtime.dumpStacksRec on
+--- off/runtime.dumpStacksRec
++++ on/runtime.dumpStacksRec
 @@ -1,7 +1,7 @@
 -undefined16 runtime.dumpStacksRec(void *a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5,unsigned long a6,unsigned int a7)
 +undefined16 runtime.dumpStacksRec(void *a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5,unsigned long a6,unsigned long a7)
@@ -21315,8 +21376,8 @@
 +  *(unsigned long *)v5 = v2;
 +  return *(unsigned __int128 *)v5;
  }
---- runtime.dumpTypesRec off
-+++ runtime.dumpTypesRec on
+--- off/runtime.dumpTypesRec
++++ on/runtime.dumpTypesRec
 @@ -19,11 +19,9 @@
    void *v17; // rax | rcx | stack + 0x8
    unsigned long v18; // rax | rbx | stack + 0x10 | stack - 0x10
@@ -21330,8 +21391,9 @@
    *(unsigned __int128 *)v5 = runtime.rtype.string(runtime.toRType());
    v3 = SUB168(*(unsigned __int128 *)v5,8);
    runtime.traceWriter.ensure(a1,a2,a3,a4,v3 + 0x34);
---- runtime.rtype.string off
-+++ runtime.rtype.string on
+
+--- off/runtime.rtype.string
++++ on/runtime.rtype.string
 @@ -5,9 +5,7 @@
    
    v1 = *(unsigned int *)((int)a0 + 0x28);
@@ -21344,8 +21406,8 @@
 -  runtime.panicBounds(); // no-return
 +  return SUB168(v2,0);
  }
---- runtime.typelinksinit off
-+++ runtime.typelinksinit on
+--- off/runtime.typelinksinit
++++ on/runtime.typelinksinit
 @@ -75,8 +75,6 @@
    if (!*(int *)&runtime.firstmoduledata[0x230])
      return;
@@ -21355,8 +21417,9 @@
    v9 = *v2;
    v62 = runtime.moduleTypelinks(v9,v20,v13,v36,v31);
    v37 = SUB168(v62,8);
---- runtime.typesEqual off
-+++ runtime.typesEqual on
+
+--- off/runtime.typesEqual
++++ on/runtime.typesEqual
 @@ -4,224 +4,210 @@
    int v2; // rax | rcx | stack - 0xa8
    unsigned int v3; // ebx
@@ -21778,8 +21841,8 @@
    }
    return 0;
  }
---- runtime.vdsoInitFromSysinfoEhdr off
-+++ runtime.vdsoInitFromSysinfoEhdr on
+--- off/runtime.vdsoInitFromSysinfoEhdr
++++ on/runtime.vdsoInitFromSysinfoEhdr
 @@ -1,66 +1,57 @@
  void runtime.vdsoInitFromSysinfoEhdr(char *a0,void *a1)
  {
@@ -21965,8 +22028,9 @@
      }
      *a0 = 1;
      return;
---- runtime.vdsoParseSymbols off
-+++ runtime.vdsoParseSymbols on
+
+--- off/runtime.vdsoParseSymbols
++++ on/runtime.vdsoParseSymbols
 @@ -1,109 +1,56 @@
 -void runtime.vdsoParseSymbols(char *a0,unsigned long a1,char *a2,unsigned int a3,unsigned int a4,unsigned long a5)
 +void runtime.vdsoParseSymbols(char *a0)
@@ -22114,8 +22178,8 @@
 +    v5 += 1;
    }
  }
---- runtime.buildInterfaceSwitchCache.func1 off
-+++ runtime.buildInterfaceSwitchCache.func1 on
+--- off/runtime.buildInterfaceSwitchCache.func1
++++ on/runtime.buildInterfaceSwitchCache.func1
 @@ -6,11 +6,7 @@
    
    v3 = *(uint4 *)((int)a0 + 0x10);
@@ -22129,8 +22193,9 @@
      v3 += 1;
    }
    *(void **)(v1 + v3 * 0x18) = a0;
---- runtime.checkFinalizersAndCleanups.func1 off
-+++ runtime.checkFinalizersAndCleanups.func1 on
+
+--- off/runtime.checkFinalizersAndCleanups.func1
++++ on/runtime.checkFinalizersAndCleanups.func1
 @@ -1,75 +1,71 @@
  unsigned long runtime.checkFinalizersAndCleanups.func1(unsigned int a0,unsigned long a1,void *a2) // return-dupe
  {
@@ -22252,8 +22317,8 @@
 +  *v15 = 1;
 +  return 0;
  }
---- runtime.(*pageAlloc).sysGrow.func2 off
-+++ runtime.(*pageAlloc).sysGrow.func2 on
+--- off/runtime.(*pageAlloc).sysGrow.func2
++++ on/runtime.(*pageAlloc).sysGrow.func2
 @@ -1,4 +1,4 @@
 -undefined16 runtime.(*pageAlloc).sysGrow.func2(unsigned int a0,int a1,int a2)
 +undefined16 runtime.(*pageAlloc).sysGrow.func2(int a0,int a1,int a2)
@@ -22285,8 +22350,8 @@
 +  *(unsigned long *)&v5[8] = runtime.add(v2,v4);
 +  return *(unsigned __int128 *)v5;
  }
---- runtime.fpTracebackPartialExpand.func1 off
-+++ runtime.fpTracebackPartialExpand.func1 on
+--- off/runtime.fpTracebackPartialExpand.func1
++++ on/runtime.fpTracebackPartialExpand.func1
 @@ -1,24 +1,18 @@
  bool runtime.fpTracebackPartialExpand.func1(unsigned long a0)
  {
@@ -22323,8 +22388,8 @@
 -  return (int)*v2 < (int)v3;
 +  return *v2 < v3;
  }
---- runtime.doRecordGoroutineProfile.func1 off
-+++ runtime.doRecordGoroutineProfile.func1 on
+--- off/runtime.doRecordGoroutineProfile.func1
++++ on/runtime.doRecordGoroutineProfile.func1
 @@ -2,9 +2,6 @@
  {
    int v1; // rdx
@@ -22337,8 +22402,8 @@
 +  runtime.saveg(0xffffffffffffffff,0xffffffffffffffff,*(unsigned long *)(v1 + 8),*(int *)&runtime.goroutineProfile[0x10] + *(int *)(v1 + 0x10) * 0x18,*(unsigned long *)(v1 + 0x18),*(unsigned long *)(v1 + 0x20),*(unsigned long *)(v1 + 0x28));
 +  return;
  }
---- runtime.(*p).destroy.func1 off
-+++ runtime.(*p).destroy.func1 on
+--- off/runtime.(*p).destroy.func1
++++ on/runtime.(*p).destroy.func1
 @@ -1,23 +1,17 @@
  void runtime.(*p).destroy.func1(unsigned long a0,unsigned long a1)
  {
@@ -22370,8 +22435,8 @@
 +  runtime.unlock(runtime.mheap_);
 +  return;
  }
---- runtime.(*traceRegionAlloc).alloc.func1 off
-+++ runtime.(*traceRegionAlloc).alloc.func1 on
+--- off/runtime.(*traceRegionAlloc).alloc.func1
++++ on/runtime.(*traceRegionAlloc).alloc.func1
 @@ -2,7 +2,7 @@
  {
    int *v1; // rcx | rdx | stack - 0x10
@@ -22414,8 +22479,8 @@
 +  runtime.unlock(v2);
 +  return;
  }
---- runtime.fpunwindExpand.func1 off
-+++ runtime.fpunwindExpand.func1 on
+--- off/runtime.fpunwindExpand.func1
++++ on/runtime.fpunwindExpand.func1
 @@ -1,24 +1,18 @@
  bool runtime.fpunwindExpand.func1(unsigned long a0)
  {
@@ -22452,8 +22517,8 @@
 -  return (int)*v2 < (int)v3;
 +  return *v2 < v3;
  }
---- runtime.startCheckmarks.func1 off
-+++ runtime.startCheckmarks.func1 on
+--- off/runtime.startCheckmarks.func1
++++ on/runtime.startCheckmarks.func1
 @@ -1,36 +1,30 @@
  void runtime.startCheckmarks.func1(unsigned long a0) // return-dupe
  {
@@ -22512,8 +22577,8 @@
 +  *(int *)(v4 + 0x11000) = v3;
 +  return;
  }
---- runtime.getitab off
-+++ runtime.getitab on
+--- off/runtime.getitab
++++ on/runtime.getitab
 @@ -15,37 +15,11 @@
      runtime.throw("internal error - misuse of itab",0x1f); // no-return
    v8 = a0;
@@ -22613,8 +22678,8 @@
 +  }
 +  return NULL;
  }
---- runtime.sigpanic off
-+++ runtime.sigpanic on
+--- off/runtime.sigpanic
++++ on/runtime.sigpanic
 @@ -12,31 +12,31 @@
    if (v1 == 7) {
      if ((g[1].sched.bp == 2) && (g[1].syscallsp < 0x1000))
@@ -22682,8 +22747,8 @@
 -  runtime.panicfloat(); // no-return
 +  runtime.panicmemAddr(g[1].syscallsp); // no-return
  }
---- os/signal.signal_ignored off
-+++ os/signal.signal_ignored on
+--- off/os/signal.signal_ignored
++++ on/os/signal.signal_ignored
 @@ -1,6 +1,4 @@
  unsigned int os/signal.signal_ignored(uint4 a0)
  {
@@ -22692,8 +22757,8 @@
 -  runtime.panicBounds(); // no-return
 +  return CONCAT31((undefined3)(a0 >> 0xd),(*(uint4 *)&runtime.sig[(unsigned int)(a0 >> 5) * 4 + 0x20] >> (a0 & 0x1f) & 1) != 0);
  }
---- runtime.growslice off
-+++ runtime.growslice on
+--- off/runtime.growslice
++++ on/runtime.growslice
 @@ -1,103 +1,99 @@
  undefined24 runtime.growslice(unsigned long a0,int a1,unsigned long a2,int a3,unsigned int *a4)
  {
@@ -22881,8 +22946,8 @@
 +  *(unsigned long *)&v8[0x10] = a1;
 +  return v8._0_24_;
  }
---- runtime.gostring off
-+++ runtime.gostring on
+--- off/runtime.gostring
++++ on/runtime.gostring
 @@ -4,18 +4,15 @@
    unsigned long v2; // rax | stack - 0x10
    undefined8 v3; // rax | stack - 0x10
@@ -22908,8 +22973,8 @@
 -  runtime.panicBounds(); // no-return
 +  return ZEXT816(0);
  }
---- runtime.moduledataverify1 off
-+++ runtime.moduledataverify1 on
+--- off/runtime.moduledataverify1
++++ on/runtime.moduledataverify1
 @@ -1,171 +1,142 @@
  void runtime.moduledataverify1(unsigned long *a0)
  {
@@ -23180,8 +23245,8 @@
 +  runtime.printunlock();
 +  runtime.throw("minpc or maxpc invalid",0x16); // no-return
  }
---- runtime.findfunc off
-+++ runtime.findfunc on
+--- off/runtime.findfunc
++++ on/runtime.findfunc
 @@ -5,34 +5,24 @@
    char v3 [16]; // rbx:rax | rdx | stack - 0x10
    uint4 v4; // ecx | r8d
@@ -23232,8 +23297,8 @@
 -  runtime.panicBounds(); // no-return
 +  return ZEXT816(0);
  }
---- runtime.(*inlineUnwinder).srcFunc off
-+++ runtime.(*inlineUnwinder).srcFunc on
+--- off/runtime.(*inlineUnwinder).srcFunc
++++ on/runtime.(*inlineUnwinder).srcFunc
 @@ -8,15 +8,8 @@
    unsigned long v6; // rbx
    int v7; // rsi
@@ -23263,8 +23328,8 @@
 +  *(unsigned long *)&v4[0x10] = v5;
 +  return v4._0_24_;
  }
---- internal/reflectlite.rtype.String off
-+++ internal/reflectlite.rtype.String on
+--- off/internal/reflectlite.rtype.String
++++ on/internal/reflectlite.rtype.String
 @@ -5,9 +5,7 @@
    
    v1 = *(unsigned int *)((int)a0 + 0x28);
@@ -23277,8 +23342,8 @@
 -  runtime.panicBounds(); // no-return
 +  return SUB168(v2,0);
  }
---- sync.(*Pool).pinSlow off
-+++ sync.(*Pool).pinSlow on
+--- off/sync.(*Pool).pinSlow
++++ on/sync.(*Pool).pinSlow
 @@ -2,57 +2,52 @@
  {
    unsigned int v1; // rax | rbx | rcx | stack - 0x38 | stack - 0x48
@@ -23376,8 +23441,8 @@
 +  *(unsigned long *)&v6[8] = v1;
 +  return *(unsigned __int128 *)v6;
  }
---- sync.(*poolDequeue).pushHead off
-+++ sync.(*poolDequeue).pushHead on
+--- off/sync.(*poolDequeue).pushHead
++++ on/sync.(*poolDequeue).pushHead
 @@ -15,26 +15,21 @@
    v9 = a1;
    v10 = a2;
@@ -23419,8 +23484,8 @@
 +  sync/atomic.(*Uint64).Add(v8,0x100000000);
 +  return 1;
  }
---- syscall.init.func1 off
-+++ syscall.init.func1 on
+--- off/syscall.init.func1
++++ on/syscall.init.func1
 @@ -5,15 +5,15 @@
    int v3; // ram 0x536488 | rsi | stack - 0x20
    int *v4; // ram 0x536480 | rdx | stack - 0x10
@@ -23455,8 +23520,9 @@
          }
          break;
        }
---- internal/syscall/unix.KernelVersion off
-+++ internal/syscall/unix.KernelVersion on
+
+--- off/internal/syscall/unix.KernelVersion
++++ on/internal/syscall/unix.KernelVersion
 @@ -4,7 +4,7 @@
    int *v2; // rax
    int *v3; // rax
@@ -23479,8 +23545,9 @@
        v6 = 0;
      }
      else {
---- main.third off
-+++ main.third on
+
+--- off/main.third
++++ on/main.third
 @@ -1,9 +1,4 @@
 -unsigned long main.third(void *a0,unsigned int a1)
 +unsigned long main.third(void *a0)
@@ -23493,8 +23560,8 @@
 -  runtime.panicBounds(); // no-return
 +  return ((unsigned long *)a0)[2];
  }
---- main.at off
-+++ main.at on
+--- off/main.at
++++ on/main.at
 @@ -1,9 +1,4 @@
 -unsigned long main.at(int a0,unsigned int a1,unsigned long a2,unsigned int a3)
 +unsigned long main.at(int a0,unsigned long a1,unsigned long a2,int a3)
@@ -23507,8 +23574,8 @@
 -  runtime.panicBounds(); // no-return
 +  return *(unsigned long *)(a0 + a3 * 8);
  }
---- main.tail off
-+++ main.tail on
+--- off/main.tail
++++ on/main.tail
 @@ -1,13 +1,8 @@
  undefined16 main.tail(int a0,int a1,int a2)
  {
@@ -23526,8 +23593,8 @@
 +  *(int *)v1 = a0 + (unsigned int)((uint4)(-(a2 + -1) >> 0x3f) & 8);
 +  return *(unsigned __int128 *)v1;
  }
---- main.window off
-+++ main.window on
+--- off/main.window
++++ on/main.window
 @@ -1,15 +1,8 @@
 -undefined16 main.window(int a0,unsigned long a1,unsigned int a2,unsigned int a3,unsigned int a4)
 +undefined16 main.window(int a0,unsigned long a1,int a2,int a3,int a4)
@@ -23548,8 +23615,8 @@
 +  *(unsigned long *)&v1[8] = a4 - a3;
 +  return *(unsigned __int128 *)v1;
  }
---- main.main off
-+++ main.main on
+--- off/main.main
++++ on/main.main
 @@ -63,37 +63,34 @@
    v17 = SUB168(v14,8);
    v26 = SUB168(v14,0);

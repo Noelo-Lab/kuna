@@ -334,6 +334,21 @@ assertion. Locked models retain priority. Compiler-mechanism templates that
 reference instruction-specific placeholders such as `inst_next` are rejected;
 these boundaries do not supply an instruction-length context.
 
+When a stack register is wider than its logical stack address (`option
+truncptrflow`, default on, chapter 03), prototype setup
+seeds the narrow input register and the remaining physical upper bytes as
+separate inputs, reconstructing the full register with PIECE at function entry.
+This links lifted full-register arithmetic to the modeled stack base before
+SSA recovery without assuming zero or sign-extended upper bits. For example,
+BE N32 uses the low four bytes of its eight-byte SP as its stack address while
+an integer read of SP retains all eight physical bytes. Equal-width stack
+registers receive no synthetic reconstruction. Upstream instead defines the
+full register as `INT_ZEXT` of the logical stack pointer, which invents zero
+upper bits. Declared pointers matching a truncated
+code space also seed pointer flow; chapter 03 describes address-use trimming.
+With the option off neither input is seeded, the stack register stays one wide
+input, and no parameter starts with pointer flow.
+
 The model's stack ranges come from the spec too, as upstream `ProtoModel::decode`
 takes them (`option protoranges`, default on, §6.2): the parameter range is every stack `<pentry>` of `<input>` plus any
 `<paramrange>`, and the local range is the `<localrange>` element
@@ -565,6 +580,32 @@ consume register storage: an x87 value has ten meaningful bytes even when its
 stack object occupies twelve or sixteen bytes. Stack resources, general
 register resources and aggregate types retain their aligned object size.
 The declared datatype and its alignment remain unchanged.
+
+The Octeon N32 and N64 soft-float models pass small structs and unions in the leading
+bytes of each eight-byte GPR or stack slot, for both fixed and variadic
+arguments. A scalar `float` instead occupies the low four bytes of a GPR, but
+the leading four bytes of a stack slot. Its input rules therefore try an
+ordinary GPR join with `stackspill="false"` first, then a left-justified join
+when no register remains. A failed first rule consumes no slots. Ordinary
+32-bit integers keep low-word placement in registers and at stack-slot offset
+four. Scalars up to eight bytes return in v0 (using its low bytes when smaller);
+small aggregate results use its leading bytes. These distinctions are exercised by the GCC/DWARF fixture and
+storage assertions in `decompiler/crates/kuna-console/tests/octeon_n64_arguments.rs`.
+Removing hard-float register rules must preserve aggregate placement and must
+not turn the hard-float stack fallback into a GPR allocation rule.
+
+Both models join aggregate arguments across consecutive eight-byte registers,
+including a final register plus a stack tail when registers run out. A two-word
+aggregate with eight-byte alignment can start at an odd argument register.
+Sixteen-byte scalars and aggregates containing them have sixteen-byte alignment
+in type layout and argument allocation: aligned joins skip an odd register and
+align stack slots, preserving the position of later arguments. Quad scalar
+results use the soft-float GCC v0/a0 pair, selected by a sixteen-byte floating
+type rule. Sixteen-byte integer and aggregate results keep v0/v1; this includes
+a struct containing one long double. The joined quad output entry follows its
+overlapping v0 resource so the compiler-spec decoder can resolve the overlap.
+`decompiler/crates/kuna-console/tests/octeon_abi.rs` checks the actual models,
+register exhaustion, following arguments, type layout and original GCC DWARF.
 
 ### Recovery: trials → parameters
 

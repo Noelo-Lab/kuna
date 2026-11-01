@@ -244,6 +244,49 @@ struct WholeOp {
     ins: Vec<VarnodeData>,
 }
 
+/// One unmodified operation emitted by SLEIGH for a machine instruction.
+pub struct RawPcodeOp {
+    pub opcode: &'static str,
+    pub output: Option<RawPcodeVarnode>,
+    pub inputs: Vec<RawPcodeVarnode>,
+}
+
+/// A SLEIGH address-space, offset and byte-size tuple.
+pub struct RawPcodeVarnode {
+    pub space: String,
+    pub offset: u64,
+    pub size: u32,
+}
+
+impl From<&VarnodeData> for RawPcodeVarnode {
+    fn from(v: &VarnodeData) -> Self {
+        Self {
+            space: v.space.as_ref().map_or("<none>", |s| s.get_name()).to_string(),
+            offset: v.offset,
+            size: v.size,
+        }
+    }
+}
+
+#[derive(Default)]
+struct RawPcodeEmit(Vec<RawPcodeOp>);
+
+impl kuna_sleigh::translate::PcodeEmit for RawPcodeEmit {
+    fn dump(
+        &mut self,
+        _: &Address,
+        opcode: OpCode,
+        output: Option<&VarnodeData>,
+        inputs: &[VarnodeData],
+    ) {
+        self.0.push(RawPcodeOp {
+            opcode: kuna_num::opcodes::get_opname(opcode),
+            output: output.map(RawPcodeVarnode::from),
+            inputs: inputs.iter().map(RawPcodeVarnode::from).collect(),
+        });
+    }
+}
+
 /// (kuna) Every FIXED address a RANGE of instructions names, in the two flavours
 /// a listing needs to tell code from data — plus the decode buffer the walk
 /// filling it reuses.
@@ -663,7 +706,7 @@ pub struct ConsoleProgram {
     /// image; see [`ConsoleProgram::load_notes`].
     load_notes: Vec<String>,
     elf_functions: kuna_analysis::loadimage_object::ElfFunctionProvenance,
-    /// The ELF names the loader keeps only as aliases, keyed by normalized entry
+    /// The names the loader keeps only as aliases, keyed by normalized entry
     /// (`ObjectLoadImage::func_symbol_aliases`).
     loader_aliases: BTreeMap<u64, Vec<String>>,
 }
@@ -858,7 +901,7 @@ impl ConsoleProgram {
     ///    carries `_l0`+`first_byte` at `0x0` and `_main`+`main` at `0x40`, and a
     ///    decorated/undecorated PE pair takes the same path.  (The loader's own
     ///    funcsym stream cannot do this — it is address-deduped as it is read;
-    ///    the ELF names that dedup drops are appended as aliases only, see
+    ///    the names that dedup drops are appended as aliases only, see
     ///    `loader_aliases`, so they never change the reported name.)
     ///
     /// Producers 1 and 3 collapse by address; producer 2 needs the same Thumb-bit
@@ -986,11 +1029,12 @@ impl ConsoleProgram {
     /// Append the loader's alias names at `vma` that neither `name` nor `aliases`
     /// already spells.
     fn push_loader_aliases(&self, vma: u64, name: &str, aliases: &mut Vec<String>) {
-        for alias in self.loader_aliases.get(&vma).into_iter().flatten() {
-            if alias != name && !aliases.contains(alias) {
-                aliases.push(alias.clone());
-            }
-        }
+        let Some(names) = self.loader_aliases.get(&vma) else { return };
+        let mut known: std::collections::HashSet<&str> =
+            aliases.iter().map(String::as_str).chain([name]).collect();
+        let fresh: Vec<String> =
+            names.iter().filter(|alias| known.insert(alias.as_str())).cloned().collect();
+        aliases.extend(fresh);
     }
 
     /// (kuna, `functions-json-size`) The byte extent of an arbitrary address,
@@ -1269,7 +1313,9 @@ impl ConsoleProgram {
                     // the C spelling names the same function. Only on a MISS, so an
                     // image carrying both spellings answers the one it was asked.
                     if self.symbol_underscore_prefix && !want.starts_with('_') {
-                        candidates = entries_spelled(&entries, &format!("_{want}"));
+                        let decorated = format!("_{want}");
+                        candidates = self.entries_named(entries, &decorated);
+                        self.keep_direct_candidates(&mut candidates, &decorated);
                     }
                     if candidates.is_empty() {
                         return Err(EntryLookupError::NotFound {
@@ -1729,6 +1775,24 @@ impl ConsoleProgram {
         self.arch().translate().loader_rc().borrow().get_segments()
     }
 
+    /// Decode an ARM code pointer in a private Thumb context until the query ends.
+    pub fn with_thumb_pointer<R>(&self, vma: u64, run: impl FnOnce() -> R) -> KunaResult<R> {
+        let space = Rc::clone(self.arch().manage().get_default_code_space()
+            .ok_or_else(|| KunaError::lowlevel("no default code space"))?);
+        let scope = self.arch().translate().context_scope()
+            .ok_or_else(|| KunaError::lowlevel("translator does not support scoped context"))?;
+        let address = Address::new(space, vma);
+        self.arch().with_context_db_mut(|db| db.set_variable(b"TMode", &address, 1))?;
+        let result = run();
+        drop(scope);
+        Ok(result)
+    }
+
+    /// Whether a numeric code pointer may carry the ARM32 Thumb bit.
+    pub fn is_arm32(&self) -> bool {
+        is_arm32_language(self.arch().get_description())
+    }
+
     /// (kuna) Whether the load image can actually read bytes at `addr` — i.e.
     /// whether an entry there could have a body at all.
     ///
@@ -1800,6 +1864,17 @@ impl ConsoleProgram {
         );
         let addr = Address::new(code_space, vma);
         self.arch().translate().print_assembly_into(&addr, mnem, body)
+    }
+
+    /// Lift exactly one instruction, before decompiler passes or SSA construction.
+    pub fn raw_pcode_at(&self, vma: u64) -> KunaResult<(int4, Vec<RawPcodeOp>)> {
+        let space = Rc::clone(
+            self.arch().manage().get_default_code_space()
+                .ok_or_else(|| KunaError::lowlevel("no default code space"))?,
+        );
+        let mut emit = RawPcodeEmit::default();
+        let len = self.arch().translate().one_instruction(&mut emit, &Address::new(space, vma))?;
+        Ok((len, emit.0))
     }
 
     /// (kuna) The `kuna_wasm` per-function `kind` classification probe: lift

@@ -33,6 +33,8 @@ The optimized Go 1.22.5 fixture (1,996 functions) and Go 1.27.1 fixture (2,539
 functions) are byte-identical with the option off and on. All six whole-binary
 runs completed without decompilation errors.
 
-A 21-pair interleaved CLI measurement after warmup measured 554.34 ms off and
-550.83 ms on (-0.63%), within the 5% budget. These wall-clock numbers include
-image loading; raw samples are recorded rather than claiming a speedup.
+A 21-pair interleaved CLI measurement after warmup measured 1056.31 ms off and
+1081.49 ms on (+2.38%), within the 5% budget. These wall-clock numbers
+include image loading; raw samples are recorded. After integrating main at
+`e27d885452316848c5a8ad17ba25169c5caa3d2a`, all three complete off/on diffs remained
+byte-identical to the reviewed versions and the counts above were rederived.

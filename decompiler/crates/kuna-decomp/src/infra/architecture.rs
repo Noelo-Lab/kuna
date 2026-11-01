@@ -1145,6 +1145,10 @@ pub struct Architecture {
     /// the function never leaves, as at a RETURN
     /// ([`crate::p3_dataflow::kuna_haltloopguard`]).
     pub halt_loop_guard: bool,
+    /// (kuna `truncptrflow`) Narrow address operands to their space's width
+    /// and seed a wide stack register as `PIECE(upper, low)` on a truncated
+    /// default data space (`RulePtrFlow`, `ActionPrototypeTypes`).
+    pub trunc_ptr_flow: bool,
     /// (kuna) Keep a global's COPY of a loaded value whose only reader is the
     /// global's own marker, so the write stays after the call or loop edge
     /// that observes the old value (option `globalcallstore`, default-on).
@@ -3153,6 +3157,7 @@ impl Architecture {
             tied_store_keep: false, // (kuna) option tiedstorekeep; reset_defaults sets the shipped default (on)
             loop_counter_store: false, // (kuna) option loopcounterstore; reset_defaults sets the shipped default (on)
             halt_loop_guard: false,
+            trunc_ptr_flow: false, // (kuna) option truncptrflow; reset_defaults sets the shipped default (on)
             global_field_store: false,
             global_call_store: false, // (kuna) option globalcallstore; reset_defaults sets the shipped default (on)
             int_float_round: false, // (kuna) option intfloatround; reset_defaults sets the shipped default (on)
@@ -3572,6 +3577,7 @@ impl Architecture {
         self.tied_store_keep = true; // (kuna) DIV-105 default-on: RulePropagateCopy refuses the marker propagation that would orphan an address-tied COPY holding a call return, so a `local = f();` frame store survives dead-code elimination (0/675 ablation, speed -0.13%); `option tiedstorekeep off` restores upstream's propagation
         self.loop_counter_store = true; // (kuna) DIV-146 default-on: RulePropagateCopy refuses the marker propagation that would delete a frame-slot loop counter's write-back, so the increment prints on the counter and the emitted `for` terminates (0/675 ablation); `option loopcounterstore off` restores upstream's propagation
         self.halt_loop_guard = true;
+        self.trunc_ptr_flow = true; // (kuna) option truncptrflow default-on: RulePtrFlow narrows address operands and the entry stack register is PIECE(upper, low) on a truncated default data space (0/675 datatest; untruncated targets byte-identical); `option truncptrflow off` restores the stubbed-out pass
         self.global_call_store = true; // (kuna) default-on (0/675 datatest assertions): RulePropagateCopy keeps a global's COPY of a loaded value whose only reader is the global's marker, so the write stays after the call that observes the old value; `option globalcallstore off` restores the propagation
         self.global_field_store = true;
         self.int_float_round = true; // (kuna) default-on (0/675 datatest assertions): RuleFloatCast and SubfloatFlow keep an integer-to-float conversion's rounding unless the float it passes through holds the integer exactly; `option intfloatround off` restores the unconditional fold
@@ -4482,6 +4488,7 @@ impl Architecture {
         ctx.tied_store_keep = self.tied_store_keep; // tiedstorekeep
         ctx.loop_counter_store = self.loop_counter_store; // loopcounterstore
         ctx.halt_loop_guard = self.halt_loop_guard; // haltloopguard
+        ctx.trunc_ptr_flow = self.trunc_ptr_flow; // truncptrflow
         ctx.global_call_store = self.global_call_store; // globalcallstore
         ctx.global_field_store = self.global_field_store;
         ctx.int_float_round = self.int_float_round; // intfloatround
@@ -7348,11 +7355,13 @@ impl Architecture {
     pub fn build_action(&mut self) {
         let stackspace = self.manage().get_stack_space().cloned();
         let stackspace_index = stackspace.as_ref().map(|s| s.get_index());
+        let truncated = self.manage().get_default_data_space().is_some_and(|s| s.is_truncated());
         crate::universalaction::install_universal(
             &mut self.allacts,
             stackspace,
             stackspace_index,
             Vec::new(),
+            truncated,
         );
         // C++ `Architecture::buildAction` runs `allacts.resetDefaults()`
         // (coreaction.cc `ActionDatabase::resetDefaults` -> `setCurrent(...)`),

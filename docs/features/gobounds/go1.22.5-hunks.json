@@ -97,8 +97,8 @@
     "address": "0x401b80",
     "removed_checks": {
       "runtime.panicSliceAlen(": 2,
-      "runtime.panicSliceB(": 3,
-      "runtime.panicIndex(": 5
+      "runtime.panicIndex(": 5,
+      "runtime.panicSliceB(": 3
     },
     "hunks": [
       {
@@ -158,9 +158,9 @@
     "name": "runtime.(*cpuProfile).addExtra",
     "address": "0x4072c0",
     "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceB(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -281,8 +281,8 @@
     "name": "runtime.(*itab).init",
     "address": "0x40a860",
     "removed_checks": {
-      "runtime.panicSlice3Alen(": 2,
-      "runtime.panicIndex(": 2
+      "runtime.panicIndex(": 2,
+      "runtime.panicSlice3Alen(": 2
     },
     "hunks": [
       {
@@ -346,9 +346,9 @@
     "name": "runtime.(*mheap).sysAlloc",
     "address": "0x40c840",
     "removed_checks": {
-      "runtime.panicIndexU(": 4,
       "runtime.panicSliceAcap(": 1,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicIndexU(": 4
     },
     "hunks": [
       {
@@ -386,8 +386,8 @@
     "name": "runtime.mallocgc",
     "address": "0x40d4a0",
     "removed_checks": {
-      "runtime.panicIndexU(": 2,
-      "runtime.panicIndex(": 2
+      "runtime.panicIndex(": 2,
+      "runtime.panicIndexU(": 2
     },
     "hunks": [
       {
@@ -774,11 +774,11 @@
     "name": "runtime.markrootSpans",
     "address": "0x41bec0",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicIndexU(": 3,
-      "runtime.panicSliceBU(": 1,
       "runtime.panicSliceAcap(": 1,
-      "runtime.panicdivide(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 1,
+      "runtime.panicIndexU(": 3,
+      "runtime.panicSliceBU(": 1
     },
     "hunks": [
       {
@@ -1196,9 +1196,9 @@
     "name": "runtime.(*mheap).reclaimChunk",
     "address": "0x426fe0",
     "removed_checks": {
+      "runtime.panicIndex(": 1,
       "runtime.panicIndexU(": 4,
-      "runtime.panicSliceBU(": 1,
-      "runtime.panicIndex(": 1
+      "runtime.panicSliceBU(": 1
     },
     "hunks": [
       {
@@ -1470,12 +1470,12 @@
     "name": "runtime.(*pageAlloc).update",
     "address": "0x42a900",
     "removed_checks": {
-      "runtime.panicIndexU(": 5,
-      "runtime.panicSliceAcapU(": 1,
-      "runtime.panicSliceBU(": 1,
       "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1,
       "runtime.panicSliceB(": 1,
-      "runtime.panicIndex(": 1
+      "runtime.panicSliceAcapU(": 1,
+      "runtime.panicIndexU(": 5,
+      "runtime.panicSliceBU(": 1
     },
     "hunks": [
       {
@@ -1505,8 +1505,8 @@
     "name": "runtime.(*pageAlloc).find",
     "address": "0x42b2e0",
     "removed_checks": {
-      "runtime.panicIndex(": 2,
       "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 2,
       "runtime.panicSliceB(": 1
     },
     "hunks": [
@@ -1953,9 +1953,9 @@
     "name": "runtime.(*addrRanges).add",
     "address": "0x431080",
     "removed_checks": {
+      "runtime.panicSliceAcap(": 4,
       "runtime.panicIndex(": 7,
-      "runtime.panicSliceB(": 5,
-      "runtime.panicSliceAcap(": 4
+      "runtime.panicSliceB(": 5
     },
     "hunks": [
       {
@@ -1981,8 +1981,8 @@
     "name": "runtime.roundupsize",
     "address": "0x4316c0",
     "removed_checks": {
-      "runtime.panicIndexU(": 2,
-      "runtime.panicIndex(": 2
+      "runtime.panicIndex(": 2,
+      "runtime.panicIndexU(": 2
     },
     "hunks": [
       {
@@ -2013,9 +2013,9 @@
     "address": "0x4327c0",
     "removed_checks": {
       "runtime.panicSliceAcap(": 1,
-      "runtime.panicIndexU(": 1,
+      "runtime.panicSliceAlenU(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceAlenU(": 1
+      "runtime.panicIndexU(": 1
     },
     "hunks": [
       {
@@ -2058,8 +2058,8 @@
     "name": "runtime.sysargs",
     "address": "0x433da0",
     "removed_checks": {
-      "runtime.panicSlice3Alen(": 2,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicSlice3Alen(": 2
     },
     "hunks": [
       {
@@ -2161,8 +2161,8 @@
     "name": "runtime.freedefer",
     "address": "0x435dc0",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAcap(": 1
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -2265,8 +2265,8 @@
     "name": "runtime.acquireSudog",
     "address": "0x439f20",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAcap(": 1
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -2279,8 +2279,8 @@
     "name": "runtime.releaseSudog",
     "address": "0x43a1e0",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAcap(": 1
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -2462,8 +2462,8 @@
     "name": "runtime.pMask.set",
     "address": "0x4465e0",
     "removed_checks": {
-      "runtime.panicshift(": 1,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicshift(": 1
     },
     "hunks": [
       {
@@ -2476,8 +2476,8 @@
     "name": "runtime.pMask.clear",
     "address": "0x446640",
     "removed_checks": {
-      "runtime.panicshift(": 1,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicshift(": 1
     },
     "hunks": [
       {
@@ -2503,8 +2503,8 @@
     "name": "runtime.(*randomOrder).start",
     "address": "0x447840",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 2
     },
     "hunks": [
       {
@@ -2556,8 +2556,8 @@
     "name": "runtime.(*profBuf).write",
     "address": "0x448320",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
       "runtime.panicIndex(": 4,
+      "runtime.panicdivide(": 2,
       "runtime.panicSliceB(": 2,
       "runtime.panicSliceAcapU(": 1,
       "runtime.panicIndexU(": 2
@@ -3039,8 +3039,8 @@
     "name": "runtime.findfunc",
     "address": "0x4541e0",
     "removed_checks": {
-      "runtime.panicIndexU(": 1,
-      "runtime.panicIndex(": 3
+      "runtime.panicIndex(": 3,
+      "runtime.panicIndexU(": 1
     },
     "hunks": [
       {
@@ -3053,9 +3053,9 @@
     "name": "runtime.pcvalue",
     "address": "0x454400",
     "removed_checks": {
-      "runtime.panicIndexU(": 2,
+      "runtime.panicIndex(": 1,
       "runtime.panicSliceB(": 2,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndexU(": 2
     },
     "hunks": [
       {
@@ -3194,8 +3194,8 @@
     "name": "runtime.dodeltimer",
     "address": "0x455cc0",
     "removed_checks": {
-      "runtime.panicIndex(": 4,
-      "runtime.panicSliceAcap(": 1
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 4
     },
     "hunks": [
       {
@@ -3208,8 +3208,8 @@
     "name": "runtime.dodeltimer0",
     "address": "0x455ee0",
     "removed_checks": {
-      "runtime.panicIndex(": 2,
-      "runtime.panicSliceAcap(": 1
+      "runtime.panicSliceAcap(": 1,
+      "runtime.panicIndex(": 2
     },
     "hunks": [
       {
@@ -3473,9 +3473,9 @@
     "name": "runtime.tracebackPCs",
     "address": "0x45c3c0",
     "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceB(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -3599,10 +3599,10 @@
     "name": "runtime.vdsoInitFromSysinfoEhdr",
     "address": "0x4613a0",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceB(": 4,
+      "runtime.panicSliceAlen(": 2,
       "runtime.panicSliceAcap(": 1,
-      "runtime.panicSliceAlen(": 2
+      "runtime.panicIndex(": 1,
+      "runtime.panicSliceB(": 4
     },
     "hunks": [
       {
@@ -3619,8 +3619,8 @@
     "name": "runtime.vdsoParseSymbols",
     "address": "0x461960",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
-      "runtime.panicIndex(": 4
+      "runtime.panicIndex(": 4,
+      "runtime.panicdivide(": 2
     },
     "hunks": [
       {
