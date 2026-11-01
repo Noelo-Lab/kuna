@@ -1,0 +1,25 @@
+{
+  "state": "proposal",
+  "feature": "Go output language",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "reference_codegen_tests": 5,
+  "scope": "Large: existing language infrastructure and statement forms; draft proposal before implementation",
+  "baseline_commit": "9456985dae5ea95a276a98d755f920c4955d866d",
+  "option": "outlang",
+  "reference_basics_test": "passed: eight functions and all check methods",
+  "proposal_validation": {
+    "workspace": {
+      "passed": 9968,
+      "failed": 0,
+      "ignored": 39
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3438,
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "tooling": "114 tests, 1 skipped",
+    "lint": "passed"
+  }
+}
