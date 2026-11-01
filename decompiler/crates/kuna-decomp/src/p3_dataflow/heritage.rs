@@ -923,6 +923,8 @@ pub struct Heritage {
     /// This pass's ops whose reads of their own storage renaming fills
     /// ([`super::kuna_renamereads`]).
     rename_reads: Vec<(crate::context::OpId, uint4)>,
+    /// This pass's effect annotation per guarded call or store, shared by its guards.
+    guard_iops: crate::kuna_fasthash::FxHashMap<crate::context::OpId, crate::context::VarnodeId>,
     /// (kuna) C++ `Heritage::splitmanage`: the compiler spec's preferred
     /// register splits, run once at heritage pass 0.
     splitmanage: crate::p5_types::prefersplit::PreferSplitManager,
@@ -972,6 +974,7 @@ impl Heritage {
             partial_global_loads: Vec::new(),
             load_reads: Default::default(),
             rename_reads: Vec::new(),
+            guard_iops: Default::default(),
             splitmanage: Default::default(),
         }
     }
@@ -2044,7 +2047,7 @@ impl Heritage {
             } else if effecttype == effect_type::UNKNOWN_EFFECT
                 || effecttype == effect_type::RETURN_ADDRESS
             {
-                let indop = super::kuna_renamereads::new_indirect(fd, op, addr, size, 0, &mut self.rename_reads);
+                let indop = super::kuna_renamereads::new_indirect(fd, op, addr, size, 0, &mut self.rename_reads, &mut self.guard_iops);
                 if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
                     if let Some(v) = fd.vbank_mut().get_mut(out) {
                         v.set_active_heritage();
@@ -2999,7 +3002,7 @@ impl Heritage {
                 continue;
             }
             let indop = super::kuna_renamereads::new_indirect(
-                fd, op, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads,
+                fd, op, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads, &mut self.guard_iops,
             );
             guarded.push(op);
             let outvn = fd.obank().get(indop).and_then(|o| o.get_out());
@@ -3044,7 +3047,7 @@ impl Heritage {
         }
         for store in stores {
             let indop = super::kuna_renamereads::new_indirect(
-                fd, store, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads,
+                fd, store, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads, &mut self.guard_iops,
             );
             let Some(outvn) = fd.obank().get(indop).and_then(|o| o.get_out()) else {
                 continue;
@@ -3098,7 +3101,7 @@ impl Heritage {
         self.global_store_guards += stores.len();
         for op in stores {
             let indop = super::kuna_renamereads::new_indirect(
-                fd, op, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads,
+                fd, op, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads, &mut self.guard_iops,
             );
             if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
                 if let Some(v) = fd.vbank_mut().get_mut(out) {
@@ -5980,10 +5983,12 @@ impl Heritage {
         self.place_multiequals(fd);
         if self.deadline_passed() {
             super::kuna_renamereads::finish(fd, &mut self.rename_reads);
+            self.guard_iops.clear();
             return Ok(());
         }
         let renamed = self.rename(fd);
         super::kuna_renamereads::finish(fd, &mut self.rename_reads);
+        self.guard_iops.clear();
         renamed?;
         if super::kuna_loadguardreads::Reads::enabled(fd) {
             self.place_load_guard_reads(fd);
@@ -7235,6 +7240,40 @@ mod tests {
         assert!(!super::super::kuna_renamereads::pending(&fd, phi));
         assert!(!super::super::kuna_renamereads::pending(&fd, copy));
         let _ = (phi_out, copy_out);
+    }
+
+    #[test]
+    fn the_guards_of_one_call_share_its_annotation() {
+        use kuna_base::space::IopSpace;
+        use kuna_num::opcodes::OpCode;
+        let mut manager = build_manager();
+        manager.insert_space(Rc::new(IopSpace::new(3))).unwrap();
+        let glb = Rc::new(ArchContext::new(manager));
+        let entry = Address::new(Rc::clone(glb.manage().get_space_by_name("ram").unwrap()), 0x1000);
+        let mut fd = Funcdata::new("func", "func", glb, entry, 0x10000000, 0x40).unwrap();
+        let b = build_cfg(&mut fd, 1, &[]);
+        let call = fd.new_op(1, raddr(&fd, 0x1000));
+        fd.op_set_opcode_code(call, OpCode::CPUI_CALL);
+        fd.op_insert_end(call, b[0]);
+        let (mut pending, mut iops) = (Vec::new(), Default::default());
+        let renamereads = super::super::kuna_renamereads::new_indirect;
+        let (a1, a2) = (raddr(&fd, 0x100), raddr(&fd, 0x200));
+        let g1 = renamereads(&mut fd, call, &a1, 4, 0, &mut pending, &mut iops);
+        let g2 = renamereads(&mut fd, call, &a2, 8, 0, &mut pending, &mut iops);
+        let index = |fd: &Funcdata, op: crate::context::OpId, slot: Option<int4>| {
+            let o = fd.obank().get(op).unwrap();
+            let vn = slot.map_or_else(|| o.get_out(), |s| o.get_in(s)).unwrap();
+            fd.vbank().get(vn).unwrap().get_create_index()
+        };
+        let iop = fd.obank().get(g1).unwrap().get_in(1).unwrap();
+        assert_eq!(fd.obank().get(g2).unwrap().get_in(1), Some(iop));
+        assert_eq!(fd.vbank().get(iop).unwrap().descend_iter().count(), 2);
+        assert_eq!(index(&fd, g2, None), index(&fd, g1, None) + 3, "a reuse keeps the numbering");
+        assert_eq!(index(&fd, g1, Some(1)), index(&fd, g1, None) + 1);
+        super::super::kuna_renamereads::finish(&mut fd, &mut pending);
+        fd.op_destroy(g1);
+        assert_eq!(fd.obank().get(g2).unwrap().get_in(1), Some(iop));
+        assert_eq!(fd.vbank().get(iop).unwrap().descend_iter().collect::<Vec<_>>(), vec![g2]);
     }
 
     // ---- w10-proto-cluster verifier: processJoins join-space splitting ----

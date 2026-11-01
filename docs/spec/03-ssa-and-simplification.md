@@ -161,6 +161,19 @@ the arena keeps for the rest of the function: 5.4 million of the 10.8 million
 Varnodes of serde-hkx hkxc.exe 0x1406198f0's first full pass, 11.2 million of
 the 26.5 million of libpython3.11 0x3b72c0's.
 
+**Shared guard annotations.** Upstream's `newIndirectOp` gives every guard
+INDIRECT its own iop-space annotation Varnode naming the call or store it
+guards, so a call guarded on N ranges carries N identical annotations. Within a
+heritage pass kuna's guards of one call or store share one
+(`kuna_renamereads.rs (new_indirect)`): readers only decode the guarded op from
+the annotation's offset, and annotations get no cover or HighVariable. An iop
+annotation is the one free Varnode that may have several descendants
+(`varnode.rs (Varnode::add_descend)`). A guard that reuses the annotation still
+takes the creation index its own would have taken, so later Varnodes are
+numbered as before. libpython3.11 0x3b72c0 guards 1,725 writable globals at each
+of 4,060 calls, and its 7 million annotations were 7 million of the 15.3 million
+Varnodes alive at the first full pass.
+
 **Pruned joins.** Under `option prunedssa` (default on) phi placement is
 pruned by liveness for a range that is neither persistent nor address-tied,
 in the unique and stack spaces (`kuna_prunedssa.rs (prune_merges)`). After

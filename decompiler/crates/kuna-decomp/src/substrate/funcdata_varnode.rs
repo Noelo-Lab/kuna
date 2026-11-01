@@ -3419,7 +3419,7 @@ impl AncestorRealistic {
 /// slotmap key's bit pattern is used.  `slotmap` keys expose their packed `u64`
 /// form via `KeyData::as_ffi`; the round-trip is opaque to the IR (the iop-space
 /// value is only ever decoded back to identify the same op).
-fn op_iop_encode(op: OpId) -> uintb {
+pub(crate) fn op_iop_encode(op: OpId) -> uintb {
     use slotmap::Key;
     op.data().as_ffi()
 }
