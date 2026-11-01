@@ -114,6 +114,11 @@ pub(crate) fn last_option_value<'a>(
         .map(|(_, value)| value.as_str())
 }
 
+pub(crate) fn explicit_output_language(options: &[(String, String)]) -> Option<&str> {
+    options.iter().rev().find(|(name, _)| matches!(name.as_str(), "setlanguage" | "outlang"))
+        .map(|(_, value)| value.as_str())
+}
+
 fn settings(
     options: &[(String, String)],
     slice: Option<&str>,
@@ -125,7 +130,7 @@ fn settings(
             values.insert(key, encoding.encode(value));
         }
     }
-    if last_option_value(options, "setlanguage").is_some_and(|l| l.starts_with("rust")) {
+    if explicit_output_language(options).is_some_and(|l| l.starts_with("rust")) {
         values.insert(kuna_calltargettype::CALLTARGETTYPE_ENV, Some("off".into()));
     }
     if let Some(slice) = slice.filter(|s| !s.trim().is_empty()) {

@@ -1085,7 +1085,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
 
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
-    if !saw_language && !options.iter().any(|(n, _)| n == "setlanguage") {
+    if !saw_language && crate::loadtime::explicit_output_language(&options).is_none() {
         if let Some(lang) = decompile_all::detected_output_language(&binary, &options) {
             options.push(("setlanguage".into(), lang.into()));
         }
@@ -1128,7 +1128,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
 fn usage() {
     eprintln!(
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
-         \x20                     [--language auto|c|rust] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\

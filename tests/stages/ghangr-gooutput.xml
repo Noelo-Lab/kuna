@@ -1,0 +1,50 @@
+<decompilertest>
+<!-- angr 6afa0c79 TestGoTypeSpelling/TestGoCodegenHandlers: P9 output-language.
+     outlang c retains the existing C surface; outlang go selects Go functions,
+     exact-width types, conversions and statement forms. Both C passes must agree.
+     The committed GCC fixture and source also drive compiled Go semantic checks. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-output/output-c</com>
+  <com>read symbols</com>
+  <com>option outlang c</com>
+  <com>load function add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang go</com>
+  <com>print C</com>
+  <com>load function read_at</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function from_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function bottom</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option taildup off</com>
+  <com>option crossjumprevert off</com>
+  <com>option gotoreduce off</com>
+  <com>load function fallthroughs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang c</com>
+  <com>load function add</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="C selection retains C return punctuation before and after Go" min="2" max="2">return a \+ b;</stringmatch>
+<stringmatch name="Go selection emits exact-width function parameters" min="1" max="1">func add\(a int64, b int64\) int64 \{</stringmatch>
+<stringmatch name="Go pointer indexing retains byte scaling" min="1" max="1">unsafe.Add\(unsafe.Pointer\(p\),i \* 4\)</stringmatch>
+<stringmatch name="Go integer pointer conversion retains uintptr bridge" min="1" max="1">unsafe.Pointer\(uintptr\(p\)\)</stringmatch>
+<stringmatch name="Go float storage conversion preserves bits" min="1" max="1">math.Float64frombits\(uint64\(a\)\)</stringmatch>
+<stringmatch name="Go bottom-tested loop skips only its first condition" min="1" max="1">for _kuna_first_[0-9]+ := true; _kuna_first_[0-9]+ \|\| \(</stringmatch>
+<stringmatch name="Go switch renders actual shared-case fallthrough" min="2" max="2">^ *fallthrough$</stringmatch>
+</decompilertest>

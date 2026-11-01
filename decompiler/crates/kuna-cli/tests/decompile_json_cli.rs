@@ -166,6 +166,9 @@ fn decompile_json_is_byte_identical_to_decompile_all_for_one_function() {
     for options in [
         &[][..],
         &["--option", "setlanguage", "rust-language"][..],
+        &["--option", "outlang", "go"][..],
+        &["--language", "rust", "--option", "outlang", "go"][..],
+        &["--option", "outlang", "go", "--language", "c"][..],
         &["--option", "setlanguage", "rust-language", "--option", "setlanguage", "c-language"][..],
     ] {
         let mut one_args = vec!["decompile", &bin, "_DT_INIT", "--json", "--sleighpath", &sp];

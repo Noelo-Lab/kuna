@@ -1,0 +1,278 @@
+{
+  "12128": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "12176": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "12288": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "12352": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "12368": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "12704": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "13088": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "13472": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "13872": {
+    "condition_closures": 1,
+    "fallthrough": 0
+  },
+  "14544": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "14592": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "15056": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "15840": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "15968": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "15984": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "16000": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "16048": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "16084": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "8192": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "8224": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "8992": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9008": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9024": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9040": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9056": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9072": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9088": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9104": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9120": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9136": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9152": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9168": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9184": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9200": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9216": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9232": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9248": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9264": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9280": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9296": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9312": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9328": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9344": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9360": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9376": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9392": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9408": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9424": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9440": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9456": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9472": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9488": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9504": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9520": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9536": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9552": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9568": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9584": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9600": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9616": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9632": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9648": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9664": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9680": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9696": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9712": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9728": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9744": {
+    "condition_closures": 0,
+    "fallthrough": 0
+  },
+  "9760": {
+    "condition_closures": 10,
+    "fallthrough": 0
+  }
+}

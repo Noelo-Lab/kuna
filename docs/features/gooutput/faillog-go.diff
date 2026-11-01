@@ -1,0 +1,2048 @@
+--- c/_DT_INIT
++++ go/_DT_INIT
+@@ -1,5 +1,5 @@
+-void _DT_INIT(void)
+-{
+-  if (dat_5fe0)
+-    (*dat_5fe0)();
++func _DT_INIT() {
++  if uint64(uintptr(unsafe.Pointer(dat_5fe0))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    (*dat_5fe0)()
++  }
+ }
+--- c/sub_2020
++++ go/sub_2020
+@@ -1,4 +1,3 @@
+-void sub_2020(void)
+-{
+-  (*dat_5e50)(); // jump-as-call
++func sub_2020() {
++  (*dat_5e50)() // jump-as-call
+ }
+--- c/__cxa_finalize
++++ go/__cxa_finalize
+@@ -1,4 +1,3 @@
+-void __cxa_finalize(void)
+-{
+-  (*dat_5ff0)(); // jump-as-call
++func __cxa_finalize() {
++  (*dat_5ff0)() // jump-as-call
+ }
+--- c/localtime
++++ go/localtime
+@@ -1,7 +1,6 @@
+-tm * localtime(void *a0)
+-{
+-  tm *v1; // rax
++func localtime(a0 unsafe.Pointer) *tm {
++  var v1 *tm // rax
+   
+-  v1 = (tm *)(*dat_5e58)(); // jump-as-call
+-  return v1;
++  v1 = (*tm)(unsafe.Pointer(uintptr((*dat_5e58)()))) // jump-as-call
++  return v1
+ }
+--- c/__errno_location
++++ go/__errno_location
+@@ -1,7 +1,6 @@
+-int * __errno_location(void)
+-{
+-  int *v1; // rax
++func __errno_location() *int32 {
++  var v1 *int32 // rax
+   
+-  v1 = (int *)(*dat_5e60)(); // jump-as-call
+-  return v1;
++  v1 = (*int32)(unsafe.Pointer(uintptr((*dat_5e60)()))) // jump-as-call
++  return v1
+ }
+--- c/strncmp
++++ go/strncmp
+@@ -1,7 +1,6 @@
+-int strncmp(char *a0,char *a1,unsigned long a2)
+-{
+-  int v1; // eax
++func strncmp(a0 *int8, a1 *int8, a2 uint64) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5e68)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5e68)() // jump-as-call
++  return v1
+ }
+--- c/chroot
++++ go/chroot
+@@ -1,7 +1,6 @@
+-int chroot(char *a0)
+-{
+-  int v1; // eax
++func chroot(a0 *int8) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5e70)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5e70)() // jump-as-call
++  return v1
+ }
+--- c/puts
++++ go/puts
+@@ -1,7 +1,6 @@
+-int puts(char *a0)
+-{
+-  int v1; // eax
++func puts(a0 *int8) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5e78)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5e78)() // jump-as-call
++  return v1
+ }
+--- c/ferror
++++ go/ferror
+@@ -1,7 +1,6 @@
+-int ferror(FILE *a0)
+-{
+-  int v1; // eax
++func ferror(a0 *FILE) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5e80)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5e80)() // jump-as-call
++  return v1
+ }
+--- c/fread
++++ go/fread
+@@ -1,7 +1,6 @@
+-unsigned long fread(void *a0,unsigned long a1,unsigned long a2,FILE *a3)
+-{
+-  unsigned long v1; // rax
++func fread(a0 unsafe.Pointer, a1 uint64, a2 uint64, a3 *FILE) uint64 {
++  var v1 uint64 // rax
+   
+-  v1 = (*dat_5e88)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5e88)() // jump-as-call
++  return v1
+ }
+--- c/textdomain
++++ go/textdomain
+@@ -1,7 +1,6 @@
+-char * textdomain(char *a0)
+-{
+-  char *v1; // rax
++func textdomain(a0 *int8) *int8 {
++  var v1 *int8 // rax
+   
+-  v1 = (char *)(*dat_5e90)(); // jump-as-call
+-  return v1;
++  v1 = (*int8)(unsafe.Pointer(uintptr((*dat_5e90)()))) // jump-as-call
++  return v1
+ }
+--- c/fclose
++++ go/fclose
+@@ -1,7 +1,6 @@
+-int fclose(FILE *a0)
+-{
+-  int v1; // eax
++func fclose(a0 *FILE) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5e98)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5e98)() // jump-as-call
++  return v1
+ }
+--- c/getpwuid
++++ go/getpwuid
+@@ -1,7 +1,6 @@
+-passwd * getpwuid(unsigned int a0)
+-{
+-  passwd *v1; // rax
++func getpwuid(a0 uint32) *passwd {
++  var v1 *passwd // rax
+   
+-  v1 = (passwd *)(*dat_5ea0)(); // jump-as-call
+-  return v1;
++  v1 = (*passwd)(unsafe.Pointer(uintptr((*dat_5ea0)()))) // jump-as-call
++  return v1
+ }
+--- c/bindtextdomain
++++ go/bindtextdomain
+@@ -1,7 +1,6 @@
+-char * bindtextdomain(char *a0,char *a1)
+-{
+-  char *v1; // rax
++func bindtextdomain(a0 *int8, a1 *int8) *int8 {
++  var v1 *int8 // rax
+   
+-  v1 = (char *)(*dat_5ea8)(); // jump-as-call
+-  return v1;
++  v1 = (*int8)(unsafe.Pointer(uintptr((*dat_5ea8)()))) // jump-as-call
++  return v1
+ }
+--- c/dcgettext
++++ go/dcgettext
+@@ -1,7 +1,6 @@
+-char * dcgettext(char *a0,char *a1,int a2)
+-{
+-  char *v1; // rax
++func dcgettext(a0 *int8, a1 *int8, a2 int32) *int8 {
++  var v1 *int8 // rax
+   
+-  v1 = (char *)(*dat_5eb0)(); // jump-as-call
+-  return v1;
++  v1 = (*int8)(unsafe.Pointer(uintptr((*dat_5eb0)()))) // jump-as-call
++  return v1
+ }
+--- c/chdir
++++ go/chdir
+@@ -1,7 +1,6 @@
+-int chdir(char *a0)
+-{
+-  int v1; // eax
++func chdir(a0 *int8) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5eb8)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5eb8)() // jump-as-call
++  return v1
+ }
+--- c/__stack_chk_fail
++++ go/__stack_chk_fail
+@@ -1,4 +1,3 @@
+-void __stack_chk_fail(void)
+-{
+-  (*dat_5ec0)(); // jump-as-call
++func __stack_chk_fail() {
++  (*dat_5ec0)() // jump-as-call
+ }
+--- c/getuid
++++ go/getuid
+@@ -1,7 +1,6 @@
+-unsigned int getuid(void)
+-{
+-  unsigned int v1; // eax
++func getuid() uint32 {
++  var v1 uint32 // eax
+   
+-  v1 = (*dat_5ec8)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5ec8)() // jump-as-call
++  return v1
+ }
+--- c/getopt_long
++++ go/getopt_long
+@@ -1,7 +1,6 @@
+-int getopt_long(int a0,char **a1,char *a2,option *a3,int *a4)
+-{
+-  int v1; // eax
++func getopt_long(a0 int32, a1 **int8, a2 *int8, a3 *option, a4 *int32) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5ed0)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5ed0)() // jump-as-call
++  return v1
+ }
+--- c/strrchr
++++ go/strrchr
+@@ -1,7 +1,6 @@
+-char * strrchr(char *a0,int a1)
+-{
+-  char *v1; // rax
++func strrchr(a0 *int8, a1 int32) *int8 {
++  var v1 *int8 // rax
+   
+-  v1 = (char *)(*dat_5ed8)(); // jump-as-call
+-  return v1;
++  v1 = (*int8)(unsafe.Pointer(uintptr((*dat_5ed8)()))) // jump-as-call
++  return v1
+ }
+--- c/__assert_fail
++++ go/__assert_fail
+@@ -1,4 +1,3 @@
+-void __assert_fail(char *a0,char *a1,unsigned int a2,char *a3)
+-{
+-  (*dat_5ee0)(); // jump-as-call
++func __assert_fail(a0 *int8, a1 *int8, a2 uint32, a3 *int8) {
++  (*dat_5ee0)() // jump-as-call
+ }
+--- c/fputs
++++ go/fputs
+@@ -1,7 +1,6 @@
+-int fputs(char *a0,FILE *a1)
+-{
+-  int v1; // eax
++func fputs(a0 *int8, a1 *FILE) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5ee8)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5ee8)() // jump-as-call
++  return v1
+ }
+--- c/strcmp
++++ go/strcmp
+@@ -1,7 +1,6 @@
+-int strcmp(char *a0,char *a1)
+-{
+-  int v1; // eax
++func strcmp(a0 *int8, a1 *int8) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5ef0)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5ef0)() // jump-as-call
++  return v1
+ }
+--- c/putc
++++ go/putc
+@@ -1,7 +1,6 @@
+-int putc(int a0,FILE *a1)
+-{
+-  int v1; // eax
++func putc(a0 int32, a1 *FILE) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5ef8)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5ef8)() // jump-as-call
++  return v1
+ }
+--- c/getpwnam
++++ go/getpwnam
+@@ -1,7 +1,6 @@
+-passwd * getpwnam(char *a0)
+-{
+-  passwd *v1; // rax
++func getpwnam(a0 *int8) *passwd {
++  var v1 *passwd // rax
+   
+-  v1 = (passwd *)(*dat_5f00)(); // jump-as-call
+-  return v1;
++  v1 = (*passwd)(unsafe.Pointer(uintptr((*dat_5f00)()))) // jump-as-call
++  return v1
+ }
+--- c/setpwent
++++ go/setpwent
+@@ -1,4 +1,3 @@
+-void setpwent(void)
+-{
+-  (*dat_5f08)(); // jump-as-call
++func setpwent() {
++  (*dat_5f08)() // jump-as-call
+ }
+--- c/strtol
++++ go/strtol
+@@ -1,7 +1,6 @@
+-long strtol(char *a0,char **a1,int a2)
+-{
+-  long v1; // rax
++func strtol(a0 *int8, a1 **int8, a2 int32) int64 {
++  var v1 int64 // rax
+   
+-  v1 = (*dat_5f10)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f10)() // jump-as-call
++  return v1
+ }
+--- c/getpwent
++++ go/getpwent
+@@ -1,7 +1,6 @@
+-passwd * getpwent(void)
+-{
+-  passwd *v1; // rax
++func getpwent() *passwd {
++  var v1 *passwd // rax
+   
+-  v1 = (passwd *)(*dat_5f18)(); // jump-as-call
+-  return v1;
++  v1 = (*passwd)(unsafe.Pointer(uintptr((*dat_5f18)()))) // jump-as-call
++  return v1
+ }
+--- c/time
++++ go/time
+@@ -1,4 +1,3 @@
+-void time(void)
+-{
+-  (*dat_5f20)(); // jump-as-call
++func time() {
++  (*dat_5f20)() // jump-as-call
+ }
+--- c/fileno
++++ go/fileno
+@@ -1,7 +1,6 @@
+-int fileno(FILE *a0)
+-{
+-  int v1; // eax
++func fileno(a0 *FILE) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f28)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f28)() // jump-as-call
++  return v1
+ }
+--- c/getgid
++++ go/getgid
+@@ -1,7 +1,6 @@
+-unsigned int getgid(void)
+-{
+-  unsigned int v1; // eax
++func getgid() uint32 {
++  var v1 uint32 // eax
+   
+-  v1 = (*dat_5f30)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f30)() // jump-as-call
++  return v1
+ }
+--- c/fflush
++++ go/fflush
+@@ -1,7 +1,6 @@
+-int fflush(FILE *a0)
+-{
+-  int v1; // eax
++func fflush(a0 *FILE) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f38)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f38)() // jump-as-call
++  return v1
+ }
+--- c/endpwent
++++ go/endpwent
+@@ -1,4 +1,3 @@
+-void endpwent(void)
+-{
+-  (*dat_5f40)(); // jump-as-call
++func endpwent() {
++  (*dat_5f40)() // jump-as-call
+ }
+--- c/setreuid
++++ go/setreuid
+@@ -1,7 +1,6 @@
+-int setreuid(unsigned int a0,unsigned int a1)
+-{
+-  int v1; // eax
++func setreuid(a0 uint32, a1 uint32) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f48)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f48)() // jump-as-call
++  return v1
+ }
+--- c/setregid
++++ go/setregid
+@@ -1,7 +1,6 @@
+-int setregid(unsigned int a0,unsigned int a1)
+-{
+-  int v1; // eax
++func setregid(a0 uint32, a1 uint32) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f50)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f50)() // jump-as-call
++  return v1
+ }
+--- c/setlocale
++++ go/setlocale
+@@ -1,7 +1,6 @@
+-char * setlocale(int a0,char *a1)
+-{
+-  char *v1; // rax
++func setlocale(a0 int32, a1 *int8) *int8 {
++  var v1 *int8 // rax
+   
+-  v1 = (char *)(*dat_5f58)(); // jump-as-call
+-  return v1;
++  v1 = (*int8)(unsafe.Pointer(uintptr((*dat_5f58)()))) // jump-as-call
++  return v1
+ }
+--- c/__printf_chk
++++ go/__printf_chk
+@@ -1,7 +1,6 @@
+-int __printf_chk(int a0,char *a1,...)
+-{
+-  int v1; // eax
++func __printf_chk(a0 int32, a1 *int8, _ ...any) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f60)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f60)() // jump-as-call
++  return v1
+ }
+--- c/strftime
++++ go/strftime
+@@ -1,7 +1,6 @@
+-unsigned long strftime(char *a0,unsigned long a1,char *a2,tm *a3)
+-{
+-  unsigned long v1; // rax
++func strftime(a0 *int8, a1 uint64, a2 *int8, a3 *tm) uint64 {
++  var v1 uint64 // rax
+   
+-  v1 = (*dat_5f68)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f68)() // jump-as-call
++  return v1
+ }
+--- c/fsync
++++ go/fsync
+@@ -1,7 +1,6 @@
+-int fsync(int a0)
+-{
+-  int v1; // eax
++func fsync(a0 int32) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f70)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f70)() // jump-as-call
++  return v1
+ }
+--- c/__explicit_bzero_chk
++++ go/__explicit_bzero_chk
+@@ -1,4 +1,3 @@
+-void __explicit_bzero_chk(void *a0,unsigned long a1,unsigned long a2)
+-{
+-  (*dat_5f78)(); // jump-as-call
++func __explicit_bzero_chk(a0 unsafe.Pointer, a1 uint64, a2 uint64) {
++  (*dat_5f78)() // jump-as-call
+ }
+--- c/access
++++ go/access
+@@ -1,7 +1,6 @@
+-int access(char *a0,int a1)
+-{
+-  int v1; // eax
++func access(a0 *int8, a1 int32) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f80)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f80)() // jump-as-call
++  return v1
+ }
+--- c/fseeko
++++ go/fseeko
+@@ -1,7 +1,6 @@
+-int fseeko(FILE *a0,long a1,int a2)
+-{
+-  int v1; // eax
++func fseeko(a0 *FILE, a1 int64, a2 int32) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5f88)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f88)() // jump-as-call
++  return v1
+ }
+--- c/fopen
++++ go/fopen
+@@ -1,7 +1,6 @@
+-FILE * fopen(char *a0,char *a1)
+-{
+-  FILE *v1; // rax
++func fopen(a0 *int8, a1 *int8) *FILE {
++  var v1 *FILE // rax
+   
+-  v1 = (FILE *)(*dat_5f90)(); // jump-as-call
+-  return v1;
++  v1 = (*FILE)(unsafe.Pointer(uintptr((*dat_5f90)()))) // jump-as-call
++  return v1
+ }
+--- c/strtoul
++++ go/strtoul
+@@ -1,7 +1,6 @@
+-unsigned long strtoul(char *a0,char **a1,int a2)
+-{
+-  unsigned long v1; // rax
++func strtoul(a0 *int8, a1 **int8, a2 int32) uint64 {
++  var v1 uint64 // rax
+   
+-  v1 = (*dat_5f98)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5f98)() // jump-as-call
++  return v1
+ }
+--- c/exit
++++ go/exit
+@@ -1,4 +1,3 @@
+-void exit(int a0)
+-{
+-  (*dat_5fa0)(); // jump-as-call
++func exit(a0 int32) {
++  (*dat_5fa0)() // jump-as-call
+ }
+--- c/fwrite
++++ go/fwrite
+@@ -1,7 +1,6 @@
+-unsigned long fwrite(void *a0,unsigned long a1,unsigned long a2,FILE *a3)
+-{
+-  unsigned long v1; // rax
++func fwrite(a0 unsafe.Pointer, a1 uint64, a2 uint64, a3 *FILE) uint64 {
++  var v1 uint64 // rax
+   
+-  v1 = (*dat_5fa8)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5fa8)() // jump-as-call
++  return v1
+ }
+--- c/__fprintf_chk
++++ go/__fprintf_chk
+@@ -1,7 +1,6 @@
+-int __fprintf_chk(FILE *a0,int a1,char *a2,...)
+-{
+-  int v1; // eax
++func __fprintf_chk(a0 *FILE, a1 int32, a2 *int8, _ ...any) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5fb0)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5fb0)() // jump-as-call
++  return v1
+ }
+--- c/strerror
++++ go/strerror
+@@ -1,7 +1,6 @@
+-char * strerror(int a0)
+-{
+-  char *v1; // rax
++func strerror(a0 int32) *int8 {
++  var v1 *int8 // rax
+   
+-  v1 = (char *)(*dat_5fb8)(); // jump-as-call
+-  return v1;
++  v1 = (*int8)(unsafe.Pointer(uintptr((*dat_5fb8)()))) // jump-as-call
++  return v1
+ }
+--- c/fstat
++++ go/fstat
+@@ -1,7 +1,6 @@
+-int fstat(int a0,stat *a1)
+-{
+-  int v1; // eax
++func fstat(a0 int32, a1 *stat) int32 {
++  var v1 int32 // eax
+   
+-  v1 = (*dat_5fc0)(); // jump-as-call
+-  return v1;
++  v1 = (*dat_5fc0)() // jump-as-call
++  return v1
+ }
+--- c/__ctype_b_loc
++++ go/__ctype_b_loc
+@@ -1,7 +1,6 @@
+-void * __ctype_b_loc(void)
+-{
+-  void *v1; // rax
++func __ctype_b_loc() unsafe.Pointer {
++  var v1 unsafe.Pointer // rax
+   
+-  v1 = (void *)(*dat_5fc8)(); // jump-as-call
+-  return v1;
++  v1 = unsafe.Pointer(uintptr((*dat_5fc8)())) // jump-as-call
++  return v1
+ }
+--- c/main
++++ go/main
+@@ -1,283 +1,333 @@
+-int main(int argc,char **argv,char **envp)
+-{
+-  FILE *stream; // ram 0x6298 | rbp
+-  char *v1; // r12 | ram 0x61c0 | rcx
+-  unsigned long v2; // r12 | stack - 0x58
+-  char v3; // al
+-  short v4; // ax | r15w
+-  int v5; // eax
+-  char *v6; // r8 | ram 0x6180 | rax | rbx | rsi
+-  char *v7; // r12 | r9 | ram 0x61c0 | rax | rbx | rsi
+-  passwd *v8; // rax | rdi
+-  unsigned int v9; // ebx | edi | ram 0x6288
+-  unsigned long v10; // rbx | rdi
+-  unsigned long v11; // r12 | stack - 0x58
+-  long v12; // stack - 0x50
+-  long v13; // rax | stack - 0x48
+-  unsigned int v14; // eax | ebp | edi | ram 0x6278
+-  long v16; // fs_offset
+-  unsigned long v17; // rax | stack - 0x40
++func main(argc int32, argv **int8, envp **int8) int32 {
++  var stream *FILE // ram 0x6298 | rbp
++  var v1 *int8 // r12 | ram 0x61c0 | rcx
++  var v2 uint64 // r12 | stack - 0x58
++  var v3 int8 // al
++  var v4 int16 // ax | r15w
++  var v5 int32 // eax
++  var v6 *int8 // r8 | ram 0x6180 | rax | rbx | rsi
++  var v7 *int8 // r12 | r9 | ram 0x61c0 | rax | rbx | rsi
++  var v8 *passwd // rax | rdi
++  var v9 uint32 // ebx | edi | ram 0x6288
++  var v10 uint64 // rbx | rdi
++  var v11 uint64 // r12 | stack - 0x58
++  var v12 int64 // stack - 0x50
++  var v13 int64 // rax | stack - 0x48
++  var v14 uint32 // eax | ebp | edi | ram 0x6278
++  var v16 int64 // fs_offset
++  var v17 uint64 // rax | stack - 0x40
+   
+-  v4 = 0;
+-  v17 = *(unsigned long *)(v16 + 0x28);
+-  v11 = 0;
+-  v12 = 0;
+-  dat_61c0 = (char *)sub_38d0(*argv);
+-  sub_3e60(dat_61c0);
+-  sub_3e80(stderr);
+-  setlocale(6,"");
+-  bindtextdomain("shadow","/usr/share/locale");
+-  textdomain("shadow");
+-  sub_3ad0("-R",argc,argv);
++  v4 = 0
++  v17 = *(*uint64)(unsafe.Pointer(uintptr(v16 + 40)))
++  v11 = 0x0
++  v12 = 0
++  dat_61c0 = (*int8)(unsafe.Pointer(uintptr(sub_38d0(*argv))))
++  sub_3e60(dat_61c0)
++  sub_3e80(stderr)
++  setlocale(6,(*int8)(unsafe.Pointer(unsafe.StringData("\x00"))))
++  bindtextdomain((*int8)(unsafe.Pointer(unsafe.StringData("shadow\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("/usr/share/locale\x00"))))
++  textdomain((*int8)(unsafe.Pointer(unsafe.StringData("shadow\x00"))))
++  sub_3ad0((*int8)(unsafe.Pointer(unsafe.StringData("-R\x00"))),argc,argv)
+ label_26d3:
+-  v5 = getopt_long(argc,argv,"ahl:m:rR:t:u:",&dat_6020,NULL);
+-  v7 = dat_61c0;
+-  if (v5 == -1) {
+-    if (optind < argc) {
+-      v6 = argv[optind];
+-      __fprintf_chk(stderr,1,dcgettext(NULL,"%s: unexpected argument: %s\n",5),v7,v6);
+-      sub_3050(1); // no-return
+-    }
+-    if (dat_6273) { // branch-flip
+-      if (((dat_6272) || (dat_6271)) || (dat_6270)) {
+-        sub_3050(2); // no-return, return-dupe
++  v5 = getopt_long(argc,argv,(*int8)(unsafe.Pointer(unsafe.StringData("ahl:m:rR:t:u:\x00"))),(*option)(unsafe.Pointer(uintptr(0x6020))),nil)
++  v7 = dat_61c0
++  if uint32(v5) == 0xffffffff {
++    if optind < argc {
++      v6 = *(**int8)(unsafe.Add(unsafe.Pointer(argv),optind * 8))
++      __fprintf_chk(stderr,1,dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: unexpected argument: %s\n\x00"))),5),v7,v6)
++      sub_3050(1) // no-return
++    }
++    if byte(dat_6273) != 0x0 { // branch-flip
++      if ((byte(dat_6272) != 0x0 || (byte(dat_6271) != 0x0)) || (byte(dat_6270) != 0x0)) {
++        sub_3050(2) // no-return, return-dupe
+       }
+ label_29f1:
+-      if (dat_6270) goto label_282e;
+-      dat_6298 = fopen("/var/log/faillog","r");
+-    }
+-    else {
+-      if ((!dat_6272) && (!dat_6271)) goto label_29f1;
++      if byte(dat_6270) != 0x0 {
++        goto label_282e
++      }
++      dat_6298 = fopen((*int8)(unsafe.Pointer(unsafe.StringData("/var/log/faillog\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("r\x00"))))
++    } else {
++      if (byte(dat_6272) == 0x0 && (byte(dat_6271) == 0x0)) {
++        goto label_29f1
++      }
+ label_282e:
+-      dat_6298 = fopen("/var/log/faillog","r+");
+-    }
+-    if (!dat_6298) {
+-      v7 = strerror(*__errno_location());
+-      v6 = "%s: Cannot open %s: %s\n";
++      dat_6298 = fopen((*int8)(unsafe.Pointer(unsafe.StringData("/var/log/faillog\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("r+\x00"))))
++    }
++    if uint64(uintptr(unsafe.Pointer(dat_6298))) == uint64(uintptr(unsafe.Pointer(nil))) {
++      v7 = strerror(*__errno_location())
++      v6 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Cannot open %s: %s\n\x00")))
+ label_2aaa:
+-      v1 = dat_61c0;
+-      __fprintf_chk(stderr,1,dcgettext(NULL,v6,5),v1,"/var/log/faillog",v7);
+-      exit(1); // no-return
+-    }
+-    v5 = fileno(dat_6298);
+-    if (fstat(v5,(stat *)0x61e0)) {
+-      v7 = strerror(*__errno_location());
+-      v6 = "%s: Cannot get the size of %s: %s\n";
+-      goto label_2aaa;
+-    }
+-    v2 = v11;
+-    if (dat_6272) {
+-      if (((dat_6274) && (dat_6280)) && ((dat_6277 && (dat_6288 == dat_6278)))) {
+-        v3 = sub_31a0(dat_6288 & 0xffffffff,v11);
+-        if (v3)
+-          dat_6276 = 1;
+-      }
+-      else if (dat_6275) { // branch-flip
+-        v14 = (unsigned int)(dat_6210 >> 5);
+-        v10 = 0;
+-        if (dat_6280)
+-          v10 = dat_6288 & 0xffffffff;
+-        v14 = (v14 - 1) + (unsigned int)(v14 < 2);
+-        if (dat_6277)
+-          v14 = dat_6278;
+-        for (; (unsigned int)v10 <= v14; v10 = (unsigned int)v10 + 1) {
+-          if (sub_31a0(v10,v2))
+-            dat_6276 = 1;
+-        }
+-      }
+-      else {
+-        setpwent();
+-        while (v8 = getpwent(), v8) {
+-          v14 = *(unsigned int *)&v8->field_0x10;
+-          if (((!dat_6274) || (((!dat_6280 || (dat_6288 <= v14)) && ((!dat_6277 || (v14 <= dat_6278)))))) && (sub_31a0(v14,v2)))
+-            dat_6276 = 1;
+-        }
+-        endpwent();
+-      }
+-    }
+-    if (dat_6271) {
+-      if ((((dat_6274) && (dat_6280)) && (dat_6277)) && (dat_6288 == dat_6278)) {
+-        v10 = dat_6288 & 0xffffffff;
+-        if (sub_3320(v10,v4))
+-          dat_6276 = 1;
+-      }
+-      else if (dat_6275) { // branch-flip
+-        v14 = (unsigned int)(dat_6210 >> 5);
+-        v10 = 0;
+-        if (dat_6280)
+-          v10 = dat_6288 & 0xffffffff;
+-        v14 = (v14 - 1) + (unsigned int)(v14 < 2);
+-        if (dat_6277)
+-          v14 = dat_6278;
+-        for (; (unsigned int)v10 <= v14; v10 = (unsigned int)v10 + 1) {
+-          if (sub_3320(v10,v4))
+-            dat_6276 = 1;
+-        }
+-      }
+-      else {
+-        setpwent();
+-        while (v8 = getpwent(), v8) {
+-          v14 = *(unsigned int *)&v8->field_0x10;
+-          if (((!dat_6274) || (((!dat_6280 || (dat_6288 <= v14)) && ((!dat_6277 || (v14 <= dat_6278)))))) && (sub_3320(v14,v4)))
+-            dat_6276 = 1;
+-        }
+-        endpwent();
+-      }
+-    }
+-    if (dat_6270) {
+-      if ((dat_6274) && (dat_6280)) {
+-        if (!dat_6277) {
+-          v14 = (unsigned int)(dat_6210 >> 5);
+-          if (2 <= v14) goto label_2b51;
+-          if (dat_6275) goto label_2de8;
+-          goto label_2df3;
+-        }
+-        if (dat_6288 != dat_6278) {
+-          v14 = (unsigned int)(dat_6210 >> 5);
+-          if (2 <= v14) goto label_2b51;
+-          goto label_2b58;
+-        }
+-        v10 = dat_6288 & 0xffffffff;
+-        if (sub_34a0(v10))
+-          dat_6276 = 1;
+-      }
+-      else {
+-        v14 = (unsigned int)(dat_6210 >> 5);
+-        if (2 <= v14) {
++      v1 = dat_61c0
++      __fprintf_chk(stderr,1,dcgettext(nil,v6,5),v1,(*int8)(unsafe.Pointer(unsafe.StringData("/var/log/faillog\x00"))),v7)
++      exit(1) // no-return
++    }
++    v5 = fileno(dat_6298)
++    if uint32(fstat(v5,(*stat)(unsafe.Pointer(uintptr(0x61e0))))) != 0x0 {
++      v7 = strerror(*__errno_location())
++      v6 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Cannot get the size of %s: %s\n\x00")))
++      goto label_2aaa
++    }
++    v2 = v11
++    if byte(dat_6272) != 0x0 {
++      if ((byte(dat_6274) != 0x0 && (byte(dat_6280) != 0x0)) && (func() bool {
++        return (byte(dat_6277) != 0x0 && (dat_6288 == dat_6278))
++      }())) {
++        v3 = sub_31a0(dat_6288 & 0xffffffff,v11)
++        if byte(v3) != 0x0 {
++          dat_6276 = 0x1
++        }
++      } else if byte(dat_6275) != 0x0 { // branch-flip
++        v14 = uint32(dat_6210 >> 5)
++        v10 = 0x0
++        if byte(dat_6280) != 0x0 {
++          v10 = dat_6288 & 0xffffffff
++        }
++        v14 = (v14 - 0x1) + func(value bool) uint32 { if value { return 1 }; return 0 }(v14 < 0x2)
++        if byte(dat_6277) != 0x0 {
++          v14 = dat_6278
++        }
++        for ; uint32(v10) <= v14; v10 = uint64(uint32(v10) + 0x1) {
++          if sub_31a0(v10,v2) != 0x0 {
++            dat_6276 = 0x1
++          }
++        }
++      } else {
++        setpwent()
++        for {
++          v8 = getpwent()
++          if !(uint64(uintptr(unsafe.Pointer(v8))) != uint64(uintptr(unsafe.Pointer(nil)))) {
++            break
++          }
++          v14 = *(*uint32)(unsafe.Pointer(&(*v8).field_0x10))
++          if ((byte(dat_6274) == 0x0 || (func() bool {
++            return ((byte(dat_6280) == 0x0 || (dat_6288 <= v14)) && (func() bool {
++              return (byte(dat_6277) == 0x0 || (v14 <= dat_6278))
++            }()))
++          }())) && (sub_31a0(v14,v2) != 0x0)) {
++            dat_6276 = 0x1
++          }
++        }
++        endpwent()
++      }
++    }
++    if byte(dat_6271) != 0x0 {
++      if (((byte(dat_6274) != 0x0 && (byte(dat_6280) != 0x0)) && (byte(dat_6277) != 0x0)) && (dat_6288 == dat_6278)) {
++        v10 = dat_6288 & 0xffffffff
++        if sub_3320(v10,v4) != 0x0 {
++          dat_6276 = 0x1
++        }
++      } else if byte(dat_6275) != 0x0 { // branch-flip
++        v14 = uint32(dat_6210 >> 5)
++        v10 = 0x0
++        if byte(dat_6280) != 0x0 {
++          v10 = dat_6288 & 0xffffffff
++        }
++        v14 = (v14 - 0x1) + func(value bool) uint32 { if value { return 1 }; return 0 }(v14 < 0x2)
++        if byte(dat_6277) != 0x0 {
++          v14 = dat_6278
++        }
++        for ; uint32(v10) <= v14; v10 = uint64(uint32(v10) + 0x1) {
++          if sub_3320(v10,v4) != 0x0 {
++            dat_6276 = 0x1
++          }
++        }
++      } else {
++        setpwent()
++        for {
++          v8 = getpwent()
++          if !(uint64(uintptr(unsafe.Pointer(v8))) != uint64(uintptr(unsafe.Pointer(nil)))) {
++            break
++          }
++          v14 = *(*uint32)(unsafe.Pointer(&(*v8).field_0x10))
++          if ((byte(dat_6274) == 0x0 || (func() bool {
++            return ((byte(dat_6280) == 0x0 || (dat_6288 <= v14)) && (func() bool {
++              return (byte(dat_6277) == 0x0 || (v14 <= dat_6278))
++            }()))
++          }())) && (sub_3320(v14,v4) != 0x0)) {
++            dat_6276 = 0x1
++          }
++        }
++        endpwent()
++      }
++    }
++    if byte(dat_6270) != 0x0 {
++      if (byte(dat_6274) != 0x0 && (byte(dat_6280) != 0x0)) {
++        if byte(dat_6277) == 0x0 {
++          v14 = uint32(dat_6210 >> 5)
++          if 0x2 <= v14 {
++            goto label_2b51
++          }
++          if byte(dat_6275) != 0x0 {
++            goto label_2de8
++          }
++          goto label_2df3
++        }
++        if dat_6288 != dat_6278 {
++          v14 = uint32(dat_6210 >> 5)
++          if 0x2 <= v14 {
++            goto label_2b51
++          }
++          goto label_2b58
++        }
++        v10 = dat_6288 & 0xffffffff
++        if sub_34a0(v10) != 0x0 {
++          dat_6276 = 0x1
++        }
++      } else {
++        v14 = uint32(dat_6210 >> 5)
++        if 0x2 <= v14 {
+ label_2b51:
+-          v14 -= 1;
+-        }
+-        if (dat_6277) {
++          v14 = v14 - 0x1
++        }
++        if byte(dat_6277) != 0x0 {
+ label_2b58:
+-          if ((unsigned int)dat_6278 < v14)
+-            v14 = (unsigned int)dat_6278;
+-        }
+-        if (dat_6275) { // branch-flip
+-          v9 = 0;
+-          if (dat_6280) {
++          if uint32(dat_6278) < v14 {
++            v14 = uint32(dat_6278)
++          }
++        }
++        if byte(dat_6275) != 0x0 { // branch-flip
++          v9 = 0x0
++          if byte(dat_6280) != 0x0 {
+ label_2de8:
+-            v9 = dat_6288;
+-          }
+-          for (; v9 <= v14; v9 = v9 + 1) {
+-            if (sub_34a0(v9))
+-              dat_6276 = 1;
+-          }
+-        }
+-        else {
++            v9 = dat_6288
++          }
++          for ; v9 <= v14; v9 = v9 + 0x1 {
++            if sub_34a0(v9) != 0x0 {
++              dat_6276 = 0x1
++            }
++          }
++        } else {
+ label_2df3:
+-          setpwent();
+-          while (v8 = getpwent(), v8) {
+-            v9 = *(unsigned int *)&v8->field_0x10;
+-            if (((!dat_6274) || (((!dat_6280 || (dat_6288 <= v9)) && (v9 <= v14)))) && (sub_34a0(v9)))
+-              dat_6276 = 1;
+-          }
+-          endpwent();
+-        }
+-      }
+-    }
+-    if ((dat_6272) || (dat_6271)) {
++          setpwent()
++          for {
++            v8 = getpwent()
++            if !(uint64(uintptr(unsafe.Pointer(v8))) != uint64(uintptr(unsafe.Pointer(nil)))) {
++              break
++            }
++            v9 = *(*uint32)(unsafe.Pointer(&(*v8).field_0x10))
++            if ((byte(dat_6274) == 0x0 || (func() bool {
++              return ((byte(dat_6280) == 0x0 || (dat_6288 <= v9)) && (v9 <= v14))
++            }())) && (sub_34a0(v9) != 0x0)) {
++              dat_6276 = 0x1
++            }
++          }
++          endpwent()
++        }
++      }
++    }
++    if (byte(dat_6272) != 0x0 || (byte(dat_6271) != 0x0)) {
+ label_2a7c:
+-      stream = dat_6298;
+-    }
+-    else if (dat_6270) { // branch-flip
++      stream = dat_6298
++    } else if byte(dat_6270) != 0x0 { // branch-flip
+ label_28c4:
+-      stream = dat_6298;
+-      if (!dat_6270) {
+-        fclose(dat_6298);
+-        exit((unsigned int)dat_6276); // return-dupe, no-return
+-      }
+-    }
+-    else {
+-      if (((dat_6274) && (dat_6280)) && ((dat_6277 && (dat_6288 == dat_6278)))) {
+-        v14 = (unsigned int)dat_6288;
+-        sub_3630(getpwuid(v14),1);
+-      }
+-      else {
+-        setpwent();
+-        while (v8 = getpwent(), v8) {
+-          if ((!dat_6274) || (((!dat_6280 || (dat_6288 <= *(unsigned int *)&v8->field_0x10)) && ((!dat_6277 || (*(unsigned int *)&v8->field_0x10 <= dat_6278))))))
+-            sub_3630(v8,(unsigned char)dat_6275);
+-        }
+-        endpwent();
+-      }
+-      if (dat_6272) goto label_2a7c;
+-      stream = dat_6298;
+-      if (!dat_6271) goto label_28c4;
+-    }
+-    if ((!ferror(stream)) && (!fflush(stream))) {
+-      v5 = fileno(dat_6298);
+-      if ((!fsync(v5)) && (!fclose(dat_6298))) {
+-        exit((unsigned int)dat_6276);
+-      }
+-    }
+-    v6 = strerror(*__errno_location());
+-    v7 = dat_61c0;
+-    __fprintf_chk(stderr,1,dcgettext(NULL,"%s: Failed to write %s: %s\n",5),v7,"/var/log/faillog",v6);
+-    fclose(dat_6298);
+-    dat_6276 = 1;
+-    exit((unsigned int)dat_6276);
++      stream = dat_6298
++      if byte(dat_6270) == 0x0 {
++        fclose(dat_6298)
++        exit(int32(uint32(dat_6276))) // return-dupe, no-return
++      }
++    } else {
++      if ((byte(dat_6274) != 0x0 && (byte(dat_6280) != 0x0)) && (func() bool {
++        return (byte(dat_6277) != 0x0 && (dat_6288 == dat_6278))
++      }())) {
++        v14 = uint32(dat_6288)
++        sub_3630(getpwuid(v14),1)
++      } else {
++        setpwent()
++        for {
++          v8 = getpwent()
++          if !(uint64(uintptr(unsafe.Pointer(v8))) != uint64(uintptr(unsafe.Pointer(nil)))) {
++            break
++          }
++          if (byte(dat_6274) == 0x0 || (func() bool {
++            return ((byte(dat_6280) == 0x0 || (dat_6288 <= *(*uint32)(unsafe.Pointer(&(*v8).field_0x10)))) && (func() bool {
++              return (byte(dat_6277) == 0x0 || (*(*uint32)(unsafe.Pointer(&(*v8).field_0x10)) <= dat_6278))
++            }()))
++          }())) {
++            sub_3630(v8,dat_6275)
++          }
++        }
++        endpwent()
++      }
++      if byte(dat_6272) != 0x0 {
++        goto label_2a7c
++      }
++      stream = dat_6298
++      if byte(dat_6271) == 0x0 {
++        goto label_28c4
++      }
++    }
++    if (uint32(ferror(stream)) == 0x0 && (uint32(fflush(stream)) == 0x0)) {
++      v5 = fileno(dat_6298)
++      if (uint32(fsync(v5)) == 0x0 && (uint32(fclose(dat_6298)) == 0x0)) {
++        exit(int32(uint32(dat_6276)))
++      }
++    }
++    v6 = strerror(*__errno_location())
++    v7 = dat_61c0
++    __fprintf_chk(stderr,1,dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to write %s: %s\n\x00"))),5),v7,(*int8)(unsafe.Pointer(unsafe.StringData("/var/log/faillog\x00"))),v6)
++    fclose(dat_6298)
++    dat_6276 = 0x1
++    exit(int32(uint32(dat_6276)))
+   }
+-  switch(v5) {
++  switch v5 {
+     case 0x52:
+-      goto label_26d3;
++      goto label_26d3
+     default:
+-      goto label_2701;
++      goto label_2701
+     case 0x61:
+-      dat_6275 = '\x01';
+-      goto label_26d3;
++      dat_6275 = 1
++      goto label_26d3
+     case 0x68:
+-      sub_3050(0); // no-return
++      sub_3050(0) // no-return
+     case 0x6c:
+-      v5 = sub_3de0(optarg,&v11);
+-      if (v5) {
+-        dat_6272 = '\x01';
+-        goto label_26d3;
+-      }
+-      break;
++      v5 = sub_3de0(optarg,&v11)
++      if uint32(v5) != 0x0 {
++        dat_6272 = 1
++        goto label_26d3
++      }
+     case 0x6d:
+-      v5 = sub_3de0(optarg,&v13);
+-      if ((v5) && (v4 = v13, v13 == v4)) {
+-        dat_6271 = '\x01';
+-        goto label_26d3;
+-      }
+-      break;
++      v5 = sub_3de0(optarg,&v13)
++      if (uint32(v5) != 0x0 && (func() bool {
++        v4 = int16(v13)
++        return uint64(v13) == uint64(v4)
++      }())) {
++        dat_6271 = 1
++        goto label_26d3
++      }
+     case 0x72:
+-      dat_6270 = '\x01';
+-      goto label_26d3;
++      dat_6270 = 1
++      goto label_26d3
+     case 0x74:
+-      v5 = sub_3de0(optarg,&v12);
+-      if (v5) {
+-        dat_6273 = '\x01';
+-        dat_6290 = v12 * 0x15180;
+-        goto label_26d3;
+-      }
+-      break;
++      v5 = sub_3de0(optarg,&v12)
++      if uint32(v5) != 0x0 {
++        dat_6273 = 1
++        dat_6290 = v12 * 86400
++        goto label_26d3
++      }
+     case 0x75:
+-      dat_6274 = '\x01';
+-      v8 = getpwnam(optarg);
+-      if (v8) { // branch-flip
+-        v14 = *(unsigned int *)&v8->field_0x10;
+-        dat_6280 = '\x01';
+-        dat_6277 = '\x01';
+-        dat_6288 = (unsigned long)v14;
+-        dat_6278 = (unsigned long)v14;
+-      }
+-      else {
+-        v5 = sub_3900(optarg,(unsigned long *)0x6288,(char *)0x6280,(unsigned long *)0x6278,(char *)0x6277);
+-        if (!v5) {
+-          v7 = "%s: Unknown user or range: %s\n";
+-          goto label_29a2;
+-        }
+-      }
+-      goto label_26d3;
+-    
++      dat_6274 = 1
++      v8 = getpwnam(optarg)
++      if uint64(uintptr(unsafe.Pointer(v8))) != uint64(uintptr(unsafe.Pointer(nil))) { // branch-flip
++        v14 = *(*uint32)(unsafe.Pointer(&(*v8).field_0x10))
++        dat_6280 = 1
++        dat_6277 = 1
++        dat_6288 = uint64(v14)
++        dat_6278 = uint64(v14)
++      } else {
++        v5 = sub_3900(optarg,(*uint64)(unsafe.Pointer(uintptr(0x6288))),(*byte)(unsafe.Pointer(uintptr(0x6280))),(*uint64)(unsafe.Pointer(uintptr(0x6278))),(*byte)(unsafe.Pointer(uintptr(0x6277))))
++        if uint32(v5) == 0x0 {
++          v7 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Unknown user or range: %s\n\x00")))
++          goto label_29a2
++        }
++      }
++      goto label_26d3
+   }
+-  v7 = "%s: invalid numeric argument \'%s\'\n";
++  v7 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: invalid numeric argument '%s'\n\x00")))
+ label_29a2:
+-  v1 = dat_61c0;
+-  v6 = optarg;
+-  __fprintf_chk(stderr,1,dcgettext(NULL,v7,5),v1,v6);
+-  exit(3); // no-return
++  v1 = dat_61c0
++  v6 = optarg
++  __fprintf_chk(stderr,1,dcgettext(nil,v7,5),v1,v6)
++  exit(3) // no-return
+ label_2701:
+-  sub_3050(2);
++  sub_3050(2)
+ }
+--- c/sub_2f60
++++ go/sub_2f60
+@@ -1,9 +1,8 @@
+-__attribute__((noinline)) void sub_2f60(unsigned long a0,unsigned long a1,unsigned long a2)
+-{
+-  char v1 [8]; // stack - 0x8
+-  unsigned long v2; // rsi | stack + 0x0
++func sub_2f60(a0 uint64, a1 uint64, a2 uint64) {
++  var v1 [8]byte // stack - 0x8
++  var v2 uint64 // rsi | stack + 0x0
+   
+-  (*dat_5fd0)(main,v2,((char *)__builtin_dwarf_cfa()),0,0,a2,v1);
+-  while( true ) {
++  (*dat_5fd0)(main,v2,&Stack0000000000000008,0,0,a2,v1)
++  for {
+   }
+ }
+--- c/sub_2f90
++++ go/sub_2f90
+@@ -1,4 +1,3 @@
+-void sub_2f90(void)
+-{
+-  return;
++func sub_2f90() {
++  return
+ }
+--- c/_FINI_0
++++ go/_FINI_0
+@@ -1,10 +1,10 @@
+-void _FINI_0(void)
+-{
+-  if (!dat_61a8) {
+-    if (dat_5ff0)
+-      __cxa_finalize(dat_6008);
+-    sub_2f90();
+-    dat_61a8 = 1;
+-    return;
++func _FINI_0() {
++  if byte(dat_61a8) == 0x0 {
++    if uint64(dat_5ff0) != 0x0 {
++      __cxa_finalize(dat_6008)
++    }
++    sub_2f90()
++    dat_61a8 = 1
++    return
+   }
+ }
+--- c/_INIT_0
++++ go/_INIT_0
+@@ -1,4 +1,3 @@
+-void _INIT_0(void)
+-{
+-  return;
++func _INIT_0() {
++  return
+ }
+--- c/sub_3050
++++ go/sub_3050
+@@ -1,21 +1,21 @@
+-void sub_3050(int a0)
+-{
+-  FILE *stream; // ram 0x6160 | ram 0x61a0 | rbp | rdi
+-  char *v1; // r13 | ram 0x61c0
++func sub_3050(a0 int32) {
++  var stream *FILE // ram 0x6160 | ram 0x61a0 | rbp | rdi
++  var v1 *int8 // r13 | ram 0x61c0
+   
+-  v1 = dat_61c0;
+-  stream = stderr;
+-  if (!a0)
+-    stream = stdout;
+-  __fprintf_chk(stream,1,dcgettext(NULL,"Usage: %s [options]\n\nOptions:\n",5),v1);
+-  fputs(dcgettext(NULL,"  -a, --all                     display faillog records for all users\n",5),stream);
+-  fputs(dcgettext(NULL,"  -h, --help                    display this help message and exit\n",5),stream);
+-  fputs(dcgettext(NULL,"  -l, --lock-secs SEC           after failed login lock account for SEC seconds\n",5),stream);
+-  fputs(dcgettext(NULL,"  -m, --maximum MAX             set maximum failed login counters to MAX\n",5),stream);
+-  fputs(dcgettext(NULL,"  -r, --reset                   reset the counters of login failures\n",5),stream);
+-  fputs(dcgettext(NULL,"  -R, --root CHROOT_DIR         directory to chroot into\n",5),stream);
+-  fputs(dcgettext(NULL,"  -t, --time DAYS               display faillog records more recent than DAYS\n",5),stream);
+-  fputs(dcgettext(NULL,"  -u, --user LOGIN/RANGE        display faillog record or maintains failure\n                                counters and limits (if used with -r, -m,\n                                or -l) only for the specified LOGIN(s)\n",5),stream);
+-  fputs("\n",stream);
+-  exit(a0); // no-return
++  v1 = dat_61c0
++  stream = stderr
++  if uint32(a0) == 0x0 {
++    stream = stdout
++  }
++  __fprintf_chk(stream,1,dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("Usage: %s [options]\n\nOptions:\n\x00"))),5),v1)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -a, --all                     display faillog records for all users\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -h, --help                    display this help message and exit\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -l, --lock-secs SEC           after failed login lock account for SEC seconds\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -m, --maximum MAX             set maximum failed login counters to MAX\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -r, --reset                   reset the counters of login failures\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -R, --root CHROOT_DIR         directory to chroot into\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -t, --time DAYS               display faillog records more recent than DAYS\n\x00"))),5),stream)
++  fputs(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("  -u, --user LOGIN/RANGE        display faillog record or maintains failure\n                                counters and limits (if used with -r, -m,\n                                or -l) only for the specified LOGIN(s)\n\x00"))),5),stream)
++  fputs((*int8)(unsafe.Pointer(unsafe.StringData("\n\x00"))),stream)
++  exit(a0) // no-return
+ }
+--- c/sub_31a0
++++ go/sub_31a0
+@@ -1,34 +1,34 @@
+-unsigned long sub_31a0(unsigned int a0,long a1)
+-{
+-  char *msgid; // rsi
+-  unsigned long off; // r12
+-  unsigned long v1; // r12 | ram 0x61c0 | rcx
+-  char v2 [24]; // stack - 0x58
+-  long v5; // rbp | rsi | stack - 0x40
++func sub_31a0(a0 uint32, a1 int64) uint64 {
++  var msgid *int8 // rsi
++  var off uint64 // r12
++  var v1 uint64 // r12 | ram 0x61c0 | rcx
++  var v2 [24]byte // stack - 0x58
++  var v5 int64 // rbp | rsi | stack - 0x40
+   
+-  off = a0 * 0x20UL;
+-  if (off + 0x20U <= dat_6210) { // branch-flip
+-    if (fseeko(dat_6298,off,0))
+-      __assert_fail("0 == err","faillog.c",0x1b3,"set_locktime_one"); // no-return
+-    if (fread(v2,0x20,1,dat_6298) != 1) {
+-      msgid = "%s: Failed to get the entry for UID %lu\n";
+-      v1 = dat_61c0; // return-dupe
+-      __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
+-      return 1;
++  off = uint64(int64(uint64(a0)) * 32)
++  if off + 0x20 <= dat_6210 { // branch-flip
++    if uint32(fseeko(dat_6298,int64(off),0)) != 0x0 {
++      __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0x1b3,(*int8)(unsafe.Pointer(unsafe.StringData("set_locktime_one\x00")))) // no-return
+     }
++    if fread(unsafe.Pointer(v2),0x20,0x1,dat_6298) != 0x1 {
++      msgid = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to get the entry for UID %lu\n\x00")))
++      v1 = dat_61c0 // return-dupe
++      __fprintf_chk(stderr,1,dcgettext(nil,msgid,5),v1,uint64(a0))
++      return 0x1
++    }
++  } else {
++    __explicit_bzero_chk(unsafe.Pointer(v2),0x20,0x20)
+   }
+-  else {
+-    __explicit_bzero_chk(v2,0x20,0x20);
++  if uint64(v5) == uint64(a1) {
++    return 0x0
+   }
+-  if (v5 == a1)
+-    return 0;
+-  v5 = a1;
+-  if ((!fseeko(dat_6298,off,0)) && (fwrite(v2,0x20,1,dat_6298) == 1)) {
+-    fflush(dat_6298);
+-    return 0;
++  v5 = a1
++  if (uint32(fseeko(dat_6298,int64(off),0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
++    fflush(dat_6298)
++    return 0x0
+   }
+-  msgid = "%s: Failed to set locktime for UID %lu\n";
+-  v1 = dat_61c0;
+-  __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
+-  return 1;
++  msgid = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to set locktime for UID %lu\n\x00")))
++  v1 = dat_61c0
++  __fprintf_chk(stderr,1,dcgettext(nil,msgid,5),v1,uint64(a0))
++  return 0x1
+ }
+--- c/sub_3320
++++ go/sub_3320
+@@ -1,34 +1,34 @@
+-unsigned long sub_3320(unsigned int a0,short a1)
+-{
+-  char *msgid; // rsi
+-  unsigned long off; // r12
+-  unsigned long v1; // r12 | ram 0x61c0 | rcx
+-  char v2 [2]; // stack - 0x58
+-  short v5; // bp | si | stack - 0x56
++func sub_3320(a0 uint32, a1 int16) uint64 {
++  var msgid *int8 // rsi
++  var off uint64 // r12
++  var v1 uint64 // r12 | ram 0x61c0 | rcx
++  var v2 [2]byte // stack - 0x58
++  var v5 int16 // bp | si | stack - 0x56
+   
+-  off = a0 * 0x20UL;
+-  if (off + 0x20U <= dat_6210) { // branch-flip
+-    if (fseeko(dat_6298,off,0))
+-      __assert_fail("0 == err","faillog.c",0x13e,"setmax_one"); // no-return
+-    if (fread(v2,0x20,1,dat_6298) != 1) {
+-      msgid = "%s: Failed to get the entry for UID %lu\n";
+-      v1 = dat_61c0; // return-dupe
+-      __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
+-      return 1;
++  off = uint64(int64(uint64(a0)) * 32)
++  if off + 0x20 <= dat_6210 { // branch-flip
++    if uint32(fseeko(dat_6298,int64(off),0)) != 0x0 {
++      __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0x13e,(*int8)(unsafe.Pointer(unsafe.StringData("setmax_one\x00")))) // no-return
+     }
++    if fread(unsafe.Pointer(v2),0x20,0x1,dat_6298) != 0x1 {
++      msgid = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to get the entry for UID %lu\n\x00")))
++      v1 = dat_61c0 // return-dupe
++      __fprintf_chk(stderr,1,dcgettext(nil,msgid,5),v1,uint64(a0))
++      return 0x1
++    }
++  } else {
++    __explicit_bzero_chk(unsafe.Pointer(v2),0x20,0x20)
+   }
+-  else {
+-    __explicit_bzero_chk(v2,0x20,0x20);
++  if uint16(v5) == uint16(a1) {
++    return 0x0
+   }
+-  if (v5 == a1)
+-    return 0;
+-  v5 = a1;
+-  if ((!fseeko(dat_6298,off,0)) && (fwrite(v2,0x20,1,dat_6298) == 1)) {
+-    fflush(dat_6298);
+-    return 0;
++  v5 = a1
++  if (uint32(fseeko(dat_6298,int64(off),0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
++    fflush(dat_6298)
++    return 0x0
+   }
+-  msgid = "%s: Failed to set max for UID %lu\n";
+-  v1 = dat_61c0;
+-  __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
+-  return 1;
++  msgid = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to set max for UID %lu\n\x00")))
++  v1 = dat_61c0
++  __fprintf_chk(stderr,1,dcgettext(nil,msgid,5),v1,uint64(a0))
++  return 0x1
+ }
+--- c/sub_34a0
++++ go/sub_34a0
+@@ -1,33 +1,33 @@
+-unsigned long sub_34a0(unsigned int a0)
+-{
+-  char *msgid; // rsi
+-  unsigned long off; // rbp
+-  unsigned long v1; // r12 | ram 0x61c0 | rcx
+-  short v2 [16]; // stack - 0x58
++func sub_34a0(a0 uint32) uint64 {
++  var msgid *int8 // rsi
++  var off uint64 // rbp
++  var v1 uint64 // r12 | ram 0x61c0 | rcx
++  var v2 [16]int16 // stack - 0x58
+   
+-  off = a0 * 0x20UL;
+-  if (off + 0x20U <= dat_6210) { // branch-flip
+-    if (fseeko(dat_6298,off,0))
+-      __assert_fail("0 == err","faillog.c",0xcc,"reset_one"); // no-return
+-    if (fread(v2,0x20,1,dat_6298) != 1) {
+-      msgid = "%s: Failed to get the entry for UID %lu\n";
+-      v1 = dat_61c0; // return-dupe
+-      __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
+-      return 1;
++  off = uint64(int64(uint64(a0)) * 32)
++  if off + 0x20 <= dat_6210 { // branch-flip
++    if uint32(fseeko(dat_6298,int64(off),0)) != 0x0 {
++      __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0xcc,(*int8)(unsafe.Pointer(unsafe.StringData("reset_one\x00")))) // no-return
+     }
++    if fread(unsafe.Pointer(v2),0x20,0x1,dat_6298) != 0x1 {
++      msgid = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to get the entry for UID %lu\n\x00")))
++      v1 = dat_61c0 // return-dupe
++      __fprintf_chk(stderr,1,dcgettext(nil,msgid,5),v1,uint64(a0))
++      return 0x1
++    }
++  } else {
++    __explicit_bzero_chk(unsafe.Pointer(v2),0x20,0x20)
+   }
+-  else {
+-    __explicit_bzero_chk(v2,0x20,0x20);
++  if uint16(v2[0]) == 0x0 {
++    return 0x0
+   }
+-  if (!v2[0])
+-    return 0;
+-  v2[0] = 0;
+-  if ((!fseeko(dat_6298,off,0)) && (fwrite(v2,0x20,1,dat_6298) == 1)) {
+-    fflush(dat_6298);
+-    return 0;
++  v2[0] = 0
++  if (uint32(fseeko(dat_6298,int64(off),0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
++    fflush(dat_6298)
++    return 0x0
+   }
+-  msgid = "%s: Failed to reset fail count for UID %lu\n";
+-  v1 = dat_61c0;
+-  __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
+-  return 1;
++  msgid = (*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to reset fail count for UID %lu\n\x00")))
++  v1 = dat_61c0
++  __fprintf_chk(stderr,1,dcgettext(nil,msgid,5),v1,uint64(a0))
++  return 0x1
+ }
+--- c/sub_3630
++++ go/sub_3630
+@@ -1,55 +1,55 @@
+-void sub_3630(struct_0 *a0,bool a1)
+-{
+-  unsigned long n; // rax
+-  tm *tp; // rax
+-  unsigned int v1; // ebx
+-  struct_1 v4; // r12 | rax | stack - 0x98
+-  long v5; // rax | rdx | stack - 0xa0
+-  char v6 [80]; // stack - 0x78
+-  unsigned long v7; // r12 | rax | rdx | rsi | stack - 0x80
+-  char *v8; // r12 | ram 0x61c0 | rsi
++func sub_3630(a0 *struct_0, a1 bool) {
++  var n uint64 // rax
++  var tp *tm // rax
++  var v1 uint32 // ebx
++  var v4 struct_1 // r12 | rax | stack - 0x98
++  var v5 int64 // rax | rdx | stack - 0xa0
++  var v6 [80]int8 // stack - 0x78
++  var v7 uint64 // r12 | rax | rdx | rsi | stack - 0x80
++  var v8 *int8 // r12 | ram 0x61c0 | rsi
+   
+-  if (a0) {
+-    v7 = a0->field_0x10 * 0x20UL;
+-    if (v7 + 0x20U <= dat_6210) { // branch-flip
+-      if (fseeko(dat_6298,v7,0))
+-        __assert_fail("0 == err","faillog.c",0x66,"print_one"); // no-return
+-      n = fread(&v4,0x20,1,dat_6298);
+-      v8 = dat_61c0;
+-      if (n != 1) {
+-        v1 = a0->field_0x10;
+-        __fprintf_chk(stderr,1,dcgettext(NULL,"%s: Failed to get the entry for UID %lu\n",5),v8,(unsigned long)v1);
+-        return;
++  if uint64(uintptr(unsafe.Pointer(a0))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    v7 = uint64(int64(uint64((*a0).field_0x10)) * 32)
++    if v7 + 0x20 <= dat_6210 { // branch-flip
++      if uint32(fseeko(dat_6298,int64(v7),0)) != 0x0 {
++        __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0x66,(*int8)(unsafe.Pointer(unsafe.StringData("print_one\x00")))) // no-return
+       }
++      n = fread(unsafe.Pointer(&v4),0x20,0x1,dat_6298)
++      v8 = dat_61c0
++      if n != 0x1 {
++        v1 = (*a0).field_0x10
++        __fprintf_chk(stderr,1,dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: Failed to get the entry for UID %lu\n\x00"))),5),v8,uint64(v1))
++        return
++      }
++    } else {
++      __explicit_bzero_chk(unsafe.Pointer(&v4),0x20,0x20)
+     }
+-    else {
+-      __explicit_bzero_chk(&v4,0x20,0x20);
+-    }
+-    if (((a1) || (v4.field_0x10)) && ((time(&v5), !dat_6273 || (v5 - v4.field_0x10 <= dat_6290)))) {
+-      if (!dat_61c8) {
+-        puts(dcgettext(NULL,"Login       Failures Maximum Latest                   On\n",5));
+-        dat_61c8 = '\x01';
++    if ((func(value bool) byte { if value { return 1 }; return 0 }(a1) != func(value bool) byte { if value { return 1 }; return 0 }(false) || (uint64(v4.field_0x10) != 0x0)) && (func() bool {
++      time(&v5)
++      return (byte(dat_6273) == 0x0 || (v5 - v4.field_0x10 <= dat_6290))
++    }())) {
++      if byte(dat_61c8) == 0x0 {
++        puts(dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("Login       Failures Maximum Latest                   On\n\x00"))),5))
++        dat_61c8 = 1
+       }
+-      tp = localtime(&v4.field_0x10);
+-      if (tp) { // branch-flip
+-        strftime(v6,0x50,"%D %H:%M:%S %z",tp);
+-        __printf_chk(1,"%-9s   %5d    %5d   ",a0->field_0x0,(int)v4.field_0x0,(int)v4.field_0x2);
+-        __printf_chk(1,"%s  %s",v6,v4.field_0x4);
+-        if (v4.field_0x18) {
+-          if ((v4.field_0x10 + v4.field_0x18 <= v5) || (!v4.field_0x0)) {
+-            v8 = " [%lds lock]";
+-            v7 = v4.field_0x18;
++      tp = localtime(unsafe.Pointer(&v4.field_0x10))
++      if uint64(uintptr(unsafe.Pointer(tp))) != uint64(uintptr(unsafe.Pointer(nil))) { // branch-flip
++        strftime(v6,0x50,(*int8)(unsafe.Pointer(unsafe.StringData("%D %H:%M:%S %z\x00"))),tp)
++        __printf_chk(1,(*int8)(unsafe.Pointer(unsafe.StringData("%-9s   %5d    %5d   \x00"))),(*a0).field_0x0,int32(v4.field_0x0),int32(v4.field_0x2))
++        __printf_chk(1,(*int8)(unsafe.Pointer(unsafe.StringData("%s  %s\x00"))),v6,(*int8)(unsafe.Pointer(v4.field_0x4)))
++        if uint64(v4.field_0x18) != 0x0 {
++          if (v4.field_0x10 + v4.field_0x18 <= v5 || (uint16(v4.field_0x0) == 0x0)) {
++            v8 = (*int8)(unsafe.Pointer(unsafe.StringData(" [%lds lock]\x00")))
++            v7 = uint64(v4.field_0x18)
++          } else {
++            v7 = uint64((v4.field_0x10 + v4.field_0x18) - v5)
++            v8 = (*int8)(unsafe.Pointer(unsafe.StringData(" [%lus left]\x00")))
+           }
+-          else {
+-            v7 = (v4.field_0x10 + v4.field_0x18) - v5;
+-            v8 = " [%lus left]";
+-          }
+-          __printf_chk(1,dcgettext(NULL,v8,5),v7);
++          __printf_chk(1,dcgettext(nil,v8,5),v7)
+         }
+-        putc(10,stdout);
+-      }
+-      else {
+-        __fprintf_chk(stderr,1,"Cannot read time from faillog.\n");
++        putc(10,stdout)
++      } else {
++        __fprintf_chk(stderr,1,(*int8)(unsafe.Pointer(unsafe.StringData("Cannot read time from faillog.\n\x00"))))
+       }
+     }
+   }
+
+--- c/sub_38d0
++++ go/sub_38d0
+@@ -1,9 +1,9 @@
+-char * sub_38d0(char *a0)
+-{
+-  char *p; // rax
++func sub_38d0(a0 *int8) *int8 {
++  var p *int8 // rax
+   
+-  p = strrchr(a0,0x2f);
+-  if (p)
+-    a0 = &p[1];
+-  return a0;
++  p = strrchr(a0,47)
++  if uint64(uintptr(unsafe.Pointer(p))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    a0 = (*int8)(unsafe.Add(unsafe.Pointer(p),1 * 1))
++  }
++  return a0
+ }
+--- c/sub_3900
++++ go/sub_3900
+@@ -1,63 +1,61 @@
+-unsigned long sub_3900(char *a0,unsigned long *a1,char *a2,unsigned long *a3,char *a4)
+-{
+-  char *nptr; // rdi | stack - 0x48 | stack - 0x58
+-  char v2; // dl | stack - 0x60
+-  long *v3; // rax
+-  int *v4; // rax | rbx
+-  unsigned long v5; // rax | rbp
+-  char *v6; // rdi | rdx | stack - 0x48 | stack - 0x58
++func sub_3900(a0 *int8, a1 *uint64, a2 *byte, a3 *uint64, a4 *byte) uint64 {
++  var nptr *int8 // rdi | stack - 0x48 | stack - 0x58
++  var v2 int8 // dl | stack - 0x60
++  var v3 *int64 // rax
++  var v4 *int32 // rax | rbx
++  var v5 uint64 // rax | rbp
++  var v6 *int8 // rdi | rdx | stack - 0x48 | stack - 0x58
+   
+-  if (a0) {
+-    if (*a0 != '-') { // branch-flip
+-      v4 = __errno_location();
+-      *v4 = 0;
+-      v5 = strtoul(a0,&v6,10);
+-      if (*v4 != 0x22) {
+-        if (!*v6) {
+-          *a2 = 1;
+-          *a4 = 1;
+-          *a1 = v5;
+-          *a3 = v5;
+-          return 1;
++  if uint64(uintptr(unsafe.Pointer(a0))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    if byte(*a0) != 0x2d { // branch-flip
++      v4 = __errno_location()
++      *v4 = 0
++      v5 = strtoul(a0,&v6,10)
++      if uint32(*v4) != 0x22 {
++        if byte(*v6) == 0x0 {
++          *a2 = 1
++          *a4 = 1
++          *a1 = v5
++          *a3 = v5
++          return 0x1
+         }
+-        if (*v6 == '-') {
+-          nptr = &v6[1];
+-          v2 = v6[1];
+-          if (!v2) {
+-            *a2 = 1;
+-            *a4 = 0;
+-            *a1 = v5;
+-            return 1;
++        if byte(*v6) == 0x2d {
++          nptr = (*int8)(unsafe.Add(unsafe.Pointer(v6),1 * 1))
++          v2 = *(*int8)(unsafe.Add(unsafe.Pointer(v6),1 * 1))
++          if byte(v2) == 0x0 {
++            *a2 = 1
++            *a4 = 0
++            *a1 = v5
++            return 0x1
+           }
+-          v6 = nptr;
+-          if (*(unsigned char *)(*(long *)__ctype_b_loc() + 1 + v2 * 2L) & 8) {
+-            *a2 = 1;
+-            *a1 = v5;
+-            *v4 = 0;
+-            v5 = strtoul(nptr,&v6,10);
+-            if ((!*v6) && (*v4 != 0x22)) {
+-              *a4 = 1;
+-              *a3 = v5;
+-              return 1;
++          v6 = nptr
++          if *(*byte)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Pointer(__ctype_b_loc())) + 1 + int64(v2) * 2))) & 0x8 != 0x0 {
++            *a2 = 1
++            *a1 = v5
++            *v4 = 0
++            v5 = strtoul(nptr,&v6,10)
++            if (byte(*v6) == 0x0 && (uint32(*v4) != 0x22)) {
++              *a4 = 1
++              *a3 = v5
++              return 0x1
+             }
+           }
+         }
+       }
+-    }
+-    else {
+-      v3 = __ctype_b_loc();
+-      if (*(unsigned char *)(*v3 + 1 + a0[1] * 2L) & 8) {
+-        v4 = __errno_location();
+-        *v4 = 0;
+-        v5 = strtoul(&a0[1],&v6,10);
+-        if ((!*v6) && (*v4 != 0x22)) {
+-          *a2 = 0;
+-          *a4 = 1;
+-          *a3 = v5;
+-          return 1;
++    } else {
++      v3 = __ctype_b_loc()
++      if *(*byte)(unsafe.Pointer(uintptr(*v3 + 1 + int64(*(*int8)(unsafe.Add(unsafe.Pointer(a0),1 * 1))) * 2))) & 0x8 != 0x0 {
++        v4 = __errno_location()
++        *v4 = 0
++        v5 = strtoul((*int8)(unsafe.Add(unsafe.Pointer(a0),1 * 1)),&v6,10)
++        if (byte(*v6) == 0x0 && (uint32(*v4) != 0x22)) {
++          *a2 = 0
++          *a4 = 1
++          *a3 = v5
++          return 0x1
+         }
+       }
+     }
+   }
+-  return 0;
++  return 0x0
+ }
+--- c/sub_3ad0
++++ go/sub_3ad0
+@@ -1,92 +1,99 @@
+-void sub_3ad0(char *a0,int a1,char **a2) // return-dupe x2
+-{
+-  FILE *stream; // rax | rdi
+-  unsigned int v1; // eax | ebp | esi
+-  unsigned int v2; // eax | edi
+-  char *v3; // r12 | r8 | rax | rbx
+-  char *v4; // r12 | r15 | r8 | r9 | rax | rbp | rbx | rdi
+-  unsigned long v5; // r13 | rax | rcx
+-  int v7; // ebp
+-  char *v8; // r12 | rax | rsi
++func sub_3ad0(a0 *int8, a1 int32, a2 **int8) { // return-dupe x2
++  var stream *FILE // rax | rdi
++  var v1 uint32 // eax | ebp | esi
++  var v2 uint32 // eax | edi
++  var v3 *int8 // r12 | r8 | rax | rbx
++  var v4 *int8 // r12 | r15 | r8 | r9 | rax | rbp | rbx | rdi
++  var v5 uint64 // r13 | rax | rcx
++  var v7 int32 // ebp
++  var v8 *int8 // r12 | rax | rsi
+   
+-  if (a1 <= 0)
+-    return;
+-  v3 = NULL;
+-  v7 = 0;
+-  do {
+-    while( true ) {
+-      v4 = a2[v7];
+-      if (strcmp(v4,"--root")) break;
++  if a1 <= 0 {
++    return
++  }
++  v3 = nil
++  v7 = 0
++  for _kuna_first_2 := true; _kuna_first_2 || (v7 < a1); _kuna_first_2 = false {
++    for {
++      v4 = *(**int8)(unsafe.Add(unsafe.Pointer(a2),v7 * 8))
++      if uint32(strcmp(v4,(*int8)(unsafe.Pointer(unsafe.StringData("--root\x00"))))) != 0x0 {
++        break
++      }
+ label_3b5b:
+-      if (v3) {
++      if uint64(uintptr(unsafe.Pointer(v3))) != uint64(uintptr(unsafe.Pointer(nil))) {
+ label_3c2a:
+-        v5 = sub_3e70();
+-        v3 = dcgettext(NULL,"%s: multiple --root options\n",5);
+-        __fprintf_chk(sub_3eb0(),1,v3,v5);
+-        exit(3); // no-return
++        v5 = sub_3e70()
++        v3 = dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: multiple --root options\n\x00"))),5)
++        __fprintf_chk(sub_3eb0(),1,v3,v5)
++        exit(3) // no-return
+       }
+-      if (v7 + 1 == a1) {
+-        v5 = sub_3e70();
+-        v8 = dcgettext(NULL,"%s: option \'%s\' requires an argument\n",5);
+-        stream = sub_3eb0();
+-        __fprintf_chk(stream,1,v8,v5,v4); // return-dupe
+-        exit(3); // no-return
++      if uint32(v7 + 1) == uint32(a1) {
++        v5 = sub_3e70()
++        v8 = dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: option '%s' requires an argument\n\x00"))),5)
++        stream = sub_3eb0()
++        __fprintf_chk(stream,1,v8,v5,v4) // return-dupe
++        exit(3) // no-return
+       }
+-      v3 = a2[v7 + 1L];
+-      v7 += 2;
+-      if (a1 <= v7) goto label_3b7f;
++      v3 = *(**int8)(unsafe.Add(unsafe.Pointer(a2),(int64(v7) + 1) * 8))
++      v7 = v7 + 2
++      if a1 <= v7 {
++        goto label_3b7f
++      }
+     }
+-    if (strncmp(v4,"--root=",7)) { // branch-flip
+-      if (!strcmp(v4,a0)) goto label_3b5b;
++    if uint32(strncmp(v4,(*int8)(unsafe.Pointer(unsafe.StringData("--root=\x00"))),0x7)) != 0x0 { // branch-flip
++      if uint32(strcmp(v4,a0)) == 0x0 {
++        goto label_3b5b
++      }
++    } else {
++      if uint64(uintptr(unsafe.Pointer(v3))) != uint64(uintptr(unsafe.Pointer(nil))) {
++        goto label_3c2a
++      }
++      v3 = (*int8)(unsafe.Add(unsafe.Pointer(v4),7 * 1))
+     }
+-    else {
+-      if (v3) goto label_3c2a;
+-      v3 = &v4[7];
+-    }
+-    v7 += 1;
+-  } while (v7 < a1);
++    v7 = v7 + 1
++  }
+ label_3b7f:
+-  if (!v3)
+-    return;
+-  v1 = getgid();
+-  v2 = getgid();
+-  if (!setregid(v2,v1)) {
+-    v1 = getuid();
+-    v2 = getuid();
+-    if (!setreuid(v2,v1)) {
+-      if (*v3 == '/') {
+-        if (access(v3,0)) { // branch-flip
+-          v4 = strerror(*__errno_location());
+-          v5 = sub_3e70();
+-          v8 = "%s: cannot access chroot directory %s: %s\n";
++  if uint64(uintptr(unsafe.Pointer(v3))) == uint64(uintptr(unsafe.Pointer(nil))) {
++    return
++  }
++  v1 = getgid()
++  v2 = getgid()
++  if uint32(setregid(v2,v1)) == 0x0 {
++    v1 = getuid()
++    v2 = getuid()
++    if uint32(setreuid(v2,v1)) == 0x0 {
++      if byte(*v3) == 0x2f {
++        if uint32(access(v3,0)) != 0x0 { // branch-flip
++          v4 = strerror(*__errno_location())
++          v5 = sub_3e70()
++          v8 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: cannot access chroot directory %s: %s\n\x00")))
++        } else if uint32(chdir(v3)) != 0x0 { // branch-flip
++          v4 = strerror(*__errno_location())
++          v5 = sub_3e70()
++          v8 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: cannot chdir to chroot directory %s: %s\n\x00")))
++        } else {
++          if uint32(chroot(v3)) == 0x0 {
++            return
++          }
++          v4 = strerror(*__errno_location())
++          v5 = sub_3e70()
++          v8 = (*int8)(unsafe.Pointer(unsafe.StringData("%s: unable to chroot to directory %s: %s\n\x00")))
+         }
+-        else if (chdir(v3)) { // branch-flip
+-          v4 = strerror(*__errno_location());
+-          v5 = sub_3e70();
+-          v8 = "%s: cannot chdir to chroot directory %s: %s\n";
+-        }
+-        else {
+-          if (!chroot(v3))
+-            return;
+-          v4 = strerror(*__errno_location());
+-          v5 = sub_3e70();
+-          v8 = "%s: unable to chroot to directory %s: %s\n";
+-        }
+-        v8 = dcgettext(NULL,v8,5);
+-        __fprintf_chk(sub_3eb0(),1,v8,v5,v3,v4);
+-        exit(3); // no-return
++        v8 = dcgettext(nil,v8,5)
++        __fprintf_chk(sub_3eb0(),1,v8,v5,v3,v4)
++        exit(3) // no-return
+       }
+-      v5 = sub_3e70();
+-      v8 = dcgettext(NULL,"%s: invalid chroot path \'%s\', only absolute paths are supported.\n",5);
+-      stream = sub_3eb0();
+-      v4 = v3;
+-      __fprintf_chk(stream,1,v8,v5,v4);
+-      exit(3);
++      v5 = sub_3e70()
++      v8 = dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: invalid chroot path '%s', only absolute paths are supported.\n\x00"))),5)
++      stream = sub_3eb0()
++      v4 = v3
++      __fprintf_chk(stream,1,v8,v5,v4)
++      exit(3)
+     }
+   }
+-  v3 = strerror(*__errno_location());
+-  v5 = sub_3e70();
+-  v4 = dcgettext(NULL,"%s: failed to drop privileges (%s)\n",5);
+-  __fprintf_chk(sub_3eb0(),1,v4,v5,v3);
+-  exit(1); // no-return
++  v3 = strerror(*__errno_location())
++  v5 = sub_3e70()
++  v4 = dcgettext(nil,(*int8)(unsafe.Pointer(unsafe.StringData("%s: failed to drop privileges (%s)\n\x00"))),5)
++  __fprintf_chk(sub_3eb0(),1,v4,v5,v3)
++  exit(1) // no-return
+ }
+--- c/sub_3de0
++++ go/sub_3de0
+@@ -1,17 +1,16 @@
+-unsigned long sub_3de0(char *a0,long *a1)
+-{
+-  int *v1; // rax | rbp
+-  long v2; // rax
+-  char *v3; // rdx | stack - 0x28
+-  unsigned long v4; // r8 | rax
++func sub_3de0(a0 *int8, a1 *int64) uint64 {
++  var v1 *int32 // rax | rbp
++  var v2 int64 // rax
++  var v3 *int8 // rdx | stack - 0x28
++  var v4 uint64 // r8 | rax
+   
+-  v1 = __errno_location();
+-  *v1 = 0;
+-  v2 = strtol(a0,&v3,0);
+-  v4 = 0;
+-  if (((*a0) && (!*v3)) && (*v1 != 0x22)) {
+-    *a1 = v2;
+-    v4 = 1;
++  v1 = __errno_location()
++  *v1 = 0
++  v2 = strtol(a0,&v3,0)
++  v4 = 0x0
++  if ((byte(*a0) != 0x0 && (byte(*v3) == 0x0)) && (uint32(*v1) != 0x22)) {
++    *a1 = v2
++    v4 = 0x1
+   }
+-  return v4;
++  return v4
+ }
+--- c/sub_3e60
++++ go/sub_3e60
+@@ -1,4 +1,3 @@
+-void sub_3e60(unsigned long a0)
+-{
+-  dat_6140 = a0;
++func sub_3e60(a0 uint64) {
++  dat_6140 = a0
+ }
+--- c/sub_3e70
++++ go/sub_3e70
+@@ -1,4 +1,3 @@
+-unsigned long sub_3e70(void)
+-{
+-  return dat_6140;
++func sub_3e70() uint64 {
++  return dat_6140
+ }
+--- c/sub_3e80
++++ go/sub_3e80
+@@ -1,8 +1,7 @@
+-void sub_3e80(long a0)
+-{
+-  if (a0) {
+-    dat_62a0 = (FILE *)a0;
+-    return;
++func sub_3e80(a0 int64) {
++  if uint64(a0) != 0x0 {
++    dat_62a0 = (*FILE)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer((*FILE)(unsafe.Pointer(uintptr(a0)))))))))
++    return
+   }
+-  dat_62a0 = stderr;
++  dat_62a0 = stderr
+ }
+--- c/sub_3eb0
++++ go/sub_3eb0
+@@ -1,6 +1,6 @@
+-FILE * sub_3eb0(void)
+-{
+-  if (dat_62a0)
+-    return dat_62a0;
+-  return stderr;
++func sub_3eb0() *FILE {
++  if uint64(uintptr(unsafe.Pointer(dat_62a0))) != uint64(uintptr(unsafe.Pointer(nil))) {
++    return dat_62a0
++  }
++  return stderr
+ }
+--- c/_DT_FINI
++++ go/_DT_FINI
+@@ -1,4 +1,3 @@
+-void _DT_FINI(void)
+-{
+-  return;
++func _DT_FINI() {
++  return
+ }

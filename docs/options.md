@@ -517,6 +517,8 @@ Three tiers:
 | Rust static format specifications remain opaque template bytes | [`rustfmtflags`](#rustfmtflags) |
 | Rust integer String construction retains format_inner with an output pointer | [`rustfmtresult`](#rustfmtresult) |
 | Rust format! results remain runtime calls despite recovered templates | [`rustfmtresult`](#rustfmtresult) |
+| Go output language is unavailable | [`outlang`](#outlang) |
+| Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2541,6 +2543,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on with rustfmtargs to read verified integer String construction as format!. Turn off to inspect the runtime call and hidden output buffer. This does not change function signatures, infer generic formatter types or recover write!/writeln! sinks.
 - **Where / provenance:** P9/format-result · angr · opt-in-tool · angr-rust-format-result
 - **Example:** `option rustfmtresult off`
+
+### `outlang` -- c | rust | go, default `c`
+
+- **Symptoms:** Go output language is unavailable; Go functions retain C declarations and control-flow syntax.
+- **What it does:** Select the C, Rust or Go output-language profile. Go renders recovered types, conversions, operator precedence, declarations and structured statements through the shared printer. Selection preserves the recovered IR and does not infer missing Go ABIs, receiver types or runtime idioms. This is the catalog alias for option setlanguage; the engine default remains C and frontend auto-selection remains independent.
+- **When to flip:** Use go to inspect a function in Go syntax, including a Go binary whose source metadata is incomplete. Use c or rust to compare another spelling of the recovered function. A language selection does not prove source-language semantics that analysis has not recovered.
+- **Where / provenance:** P9/output-language · angr · opt-in-tool · angr-go-output
+- **Example:** `option outlang go`
 
 ## Analysis & loader passes
 
