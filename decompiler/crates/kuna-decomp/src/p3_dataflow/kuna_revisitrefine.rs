@@ -10,6 +10,10 @@
 //! `Heritage::refinement` and renaming both assume every Varnode of a range
 //! lies inside it: the partition's reads are linked to the whole marker, and a
 //! second refinement of the partition indexes past its refinement array.
+//!
+//! A retired return-form COPY leaves no read behind, so each partition a
+//! retired marker spans is flagged to be guarded again: skipping one with no
+//! reads would leave a global's bytes without a return COPY and its store dead.
 
 use kuna_base::types::int4;
 
@@ -44,6 +48,11 @@ impl Partitions {
     }
 }
 
+/// Does the partition starting at `start` lie in one of the retired `spans`?
+pub(crate) fn spanned(spans: &[(usize, usize)], start: usize) -> bool {
+    spans.iter().any(|&(lo, hi)| lo <= start && start < hi)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,6 +81,17 @@ mod tests {
         assert_eq!(parts.cut_span(3, 2), None);
         assert_eq!(parts.cut_span(4, 1), None);
         assert_eq!(parts.cut_span(0, 0), None);
+    }
+
+    #[test]
+    fn a_partition_is_spanned_when_it_starts_inside_a_retired_span() {
+        let spans = [(0, 8), (11, 16)];
+        assert!(spanned(&spans, 0));
+        assert!(spanned(&spans, 3));
+        assert!(!spanned(&spans, 8));
+        assert!(spanned(&spans, 11));
+        assert!(!spanned(&spans, 16));
+        assert!(!spanned(&[], 0));
     }
 
     #[test]

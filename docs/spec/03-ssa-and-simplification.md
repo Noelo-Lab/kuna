@@ -262,8 +262,13 @@ marker it would cut
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_revisitrefine.rs (Partitions::cut_span)`)
 is retired first, as a revisited marker always is, against the partitions it
 spans, and the read of those partitions that replaces it is refined with the
-other reads. A marker that one partition holds is left to that partition's own
-revisit, as before, so a refinement that cuts no marker is unchanged.
+other reads. Each partition a retired marker spans is flagged
+(`memrange_flags::retired_markers`) and guarded again even when nothing in it
+is read: a retired return-form COPY leaves no read behind, and skipping such a
+partition as an old range would leave a global's bytes with no return COPY, so
+the store of those bytes would die. A marker that one partition holds is left
+to that partition's own revisit, as before, so a refinement that cuts no marker
+is unchanged.
 
 **Register pairs refined at their midpoint** (`option pairrefine`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,

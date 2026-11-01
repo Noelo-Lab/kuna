@@ -300,6 +300,9 @@ pub mod memrange_flags {
     pub const new_addresses: uint4 = 1;
     /// The range covers addresses that were seen in previous passes.
     pub const old_addresses: uint4 = 2;
+    /// (kuna) A refinement retired an earlier pass's marker spanning the
+    /// range, so it is guarded again even when nothing in it is read.
+    pub const retired_markers: uint4 = 4;
 }
 
 /// An address range to be processed (C++ `MemRange`).
@@ -326,6 +329,11 @@ impl MemRange {
     /// Does this range cover old addresses? (C++ `oldAddresses`).
     pub fn old_addresses(&self) -> bool {
         (self.flags & memrange_flags::old_addresses) != 0
+    }
+
+    /// Did a refinement retire an earlier marker spanning this range?
+    pub fn retired_markers(&self) -> bool {
+        (self.flags & memrange_flags::retired_markers) != 0
     }
 
     /// Clear specific properties from the memory range (C++ `clearProperty`).
@@ -4851,6 +4859,7 @@ impl Heritage {
             );
         }
         let mut retired = Vec::new();
+        let mut spans = Vec::new();
         if !removevars.is_empty() {
             let parts = super::kuna_revisitrefine::Partitions::new(&refine);
             let space = addr.get_space().expect("refinement: space").clone();
@@ -4865,6 +4874,7 @@ impl Heritage {
             for (vn, (lo, hi)) in cut {
                 let at = &addr + lo as i64;
                 retired.extend(self.remove_revisited_markers(fd, &[vn], &at, (hi - lo) as int4));
+                spans.push((lo, hi));
             }
         }
         let straddles = |vn: crate::context::VarnodeId| {
@@ -4887,6 +4897,13 @@ impl Heritage {
         // Alter the disjoint cover (both locally and globally) to reflect the
         // refinement.  The C++ erases the old range and inserts the partition.
         let flags = self.disjoint.get(idx).flags;
+        let flags_at = |cut: usize| {
+            if super::kuna_revisitrefine::spanned(&spans, cut) {
+                flags | memrange_flags::retired_markers
+            } else {
+                flags
+            }
+        };
         let mut pos = self.disjoint.erase(idx); // erase returns the following index
         let curpass = self.globaldisjoint.find_pass(&addr);
         self.globaldisjoint.erase(&addr);
@@ -4895,14 +4912,14 @@ impl Heritage {
         let mut curaddr = addr.clone();
         // First partition: this is the resiter the caller re-collects from.
         let resiter = pos;
-        self.disjoint.insert(pos, curaddr.clone(), sz, flags);
+        self.disjoint.insert(pos, curaddr.clone(), sz, flags_at(cut));
         self.globaldisjoint.add(curaddr.clone(), sz, curpass);
         pos += 1;
         cut += sz as usize;
         curaddr = &curaddr + i64::from(sz);
         while cut < size as usize {
             sz = refine[cut];
-            self.disjoint.insert(pos, curaddr.clone(), sz, flags);
+            self.disjoint.insert(pos, curaddr.clone(), sz, flags_at(cut));
             self.globaldisjoint.add(curaddr.clone(), sz, curpass);
             pos += 1;
             cut += sz as usize;
@@ -4995,7 +5012,7 @@ impl Heritage {
                     let is_internal = memrange.addr.get_space().map(|s| {
                         s.get_type() == spacetype::IPTR_INTERNAL
                     }).unwrap_or(false);
-                    if is_internal || memrange.old_addresses() {
+                    if is_internal || (memrange.old_addresses() && !memrange.retired_markers()) {
                         skip = true;
                     }
                 }

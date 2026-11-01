@@ -42,13 +42,34 @@
     #1: the unaligned read is the 3 low bytes of rsp+0x18 over the 5 high
     bytes of rsp+0x10 (the old build printed CONCAT85).  #2: both slots are
     one 8-byte variable each.
+
+    g is the same join on a global, from gcc -O0 of
+
+        long G[2];
+        long g(long a, long b) {
+            G[0] = a; G[1] = b;
+            return *(long *)((char *)G + 3);
+        }
+
+    The first ram pass gives each slot a return COPY and nothing else. The
+    read through the spilled constant pointer joins them on a later pass,
+    and the refinement cuts both COPYs; the partitions holding bytes 0-2 and
+    11-15 have no read of their own. Retiring the COPYs without guarding
+    those partitions again left their bytes with no return COPY, so both
+    stores lost them and the second argument shrank to 3 bytes.  #4-#6:
+    every byte of both stores survives.
 -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x401000" readonly="true">4883ec3848897c2410488974241885d2741248c74424100100000048c744241802000000488d4424134889442408488b4c2408488b01480344241048034424184883c438c3</bytechunk>
 <symbol space="ram" offset="0x401000" name="f"/>
+<bytechunk space="ram" offset="0x401136" readonly="true">f30f1efa554889e548897de8488975e0488b45e8488905ef2e0000488b45e0488905ec2e000048c745f843404000488b45f8488b00488945f0488b45f05dc3</bytechunk>
+<symbol space="ram" offset="0x401136" name="g"/>
 </binaryimage>
 <script>
   <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -56,4 +77,7 @@
 <stringmatch name="REVISITREFINE #1: the unaligned read pieces 3 + 5 bytes, never an 8-byte phi as its high piece" min="1" max="1">return CONCAT35\(\(undefined3\)v2,v1\._3_5_\) \+ v1 \+ v2;</stringmatch>
 <stringmatch name="REVISITREFINE #2: each slot is one 8-byte variable" min="2" max="2">^  int8 v[12]; // stack - 0x2[08]$</stringmatch>
 <stringmatch name="REVISITREFINE #3: no 13-byte concatenation" min="0" max="0">CONCAT85</stringmatch>
+<stringmatch name="REVISITREFINE #4: a global's bytes no read reaches are still stored" min="1" max="1">^  dat_404040 = </stringmatch>
+<stringmatch name="REVISITREFINE #5: the second argument stays 8 bytes" min="1" max="1">^unsigned long g\(unsigned long a0,unsigned long a1\)$</stringmatch>
+<stringmatch name="REVISITREFINE #6: the high bytes of the second global are stored" min="1" max="1">^  dat_4040(4b = \(undefined5\)|48 = a1;)</stringmatch>
 </decompilertest>
