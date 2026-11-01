@@ -1,0 +1,85 @@
+{
+  "option": "rustfmtliteral",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "breadth": [
+    {
+      "fixture": "literal-fixture",
+      "sha256": "29a892cc34882f660ce17d36bbe54987529c04d82e5cf0751921e3b72d01a793",
+      "language": "rust",
+      "functions": 20,
+      "changed_functions": 7,
+      "errors": {
+        "off": 0,
+        "on": 0
+      }
+    },
+    {
+      "fixture": "literal-fixture-c",
+      "sha256": "29a892cc34882f660ce17d36bbe54987529c04d82e5cf0751921e3b72d01a793",
+      "language": "c",
+      "functions": 20,
+      "changed_functions": 0,
+      "errors": {
+        "off": 0,
+        "on": 0
+      }
+    },
+    {
+      "fixture": "rust-fmtdemo-1931",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "language": "rust",
+      "functions": 455,
+      "changed_functions": 1,
+      "errors": {
+        "off": 0,
+        "on": 0
+      }
+    },
+    {
+      "fixture": "rust-fmt-2025-O3",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "language": "rust",
+      "functions": 7763,
+      "changed_functions": 0,
+      "errors": {
+        "off": 0,
+        "on": 0
+      }
+    }
+  ],
+  "baseline_commit": "81aee549edeb8ec099589dc0e723fd409a40b36b",
+  "distinct_functions": 8238,
+  "rendered_surfaces": 8258,
+  "changed_functions": 8,
+  "whole_sweep_errors": 0,
+  "reference_scope": "One literal expectation in TestRustFormatMacrosTemplateLayout.test_format_macros; the full multi-expectation reference test is not yet satisfied.",
+  "binary": "angr/binaries/tests/x86_64/rust/fmt_arguments/fmtdemo-1.93.1",
+  "selector": "0x10520",
+  "func_addr": "0x10520",
+  "speed_off_ms": 320.37827372550964,
+  "speed_on_ms": 319.7434637695551,
+  "speed_delta_pct": -0.198143884281754,
+  "speed_samples": 31,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "baseline_speed_delta_pct": -0.46698239298590405,
+  "timing_artifact": "timing.json",
+  "default": "on",
+  "validation": {
+    "workspace": {
+      "passed": 9917,
+      "failed": 0,
+      "ignored": 39
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3411,
+    "spec": "passed",
+    "catalog": "passed",
+    "lint": "passed",
+    "tool_tests": 114,
+    "tool_tests_skipped": 1,
+    "compiled_macro_stdout_stderr": "exact bytes matched"
+  }
+}

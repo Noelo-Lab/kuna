@@ -1,0 +1,72 @@
+[
+  {
+    "name": "literal_lf",
+    "address": "0x401000",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  },
+  {
+    "name": "literal_plain",
+    "address": "0x40101e",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  },
+  {
+    "name": "literal_stderr",
+    "address": "0x40103c",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  },
+  {
+    "name": "literal_stderr_lf",
+    "address": "0x40105a",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  },
+  {
+    "name": "literal_braces",
+    "address": "0x401078",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  },
+  {
+    "name": "literal_unicode",
+    "address": "0x401096",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  },
+  {
+    "name": "literal_empty",
+    "address": "0x40114a",
+    "hunks": [
+      "@@ -1,6 +1,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+  }
+]

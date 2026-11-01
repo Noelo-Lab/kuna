@@ -84,6 +84,9 @@
 //! `Rustc`/`Go` — so a PE/Mach-O detecting as `Gcc`/`Clang`/`Unknown` produces
 //! byte-identical output, and the **ELF path is untouched**.
 
+mod kuna_rustversion;
+pub use kuna_rustversion::stable_rustc_version;
+
 use object::macho::{MachHeader32, MachHeader64};
 use object::read::macho::{
     FatArch, LoadCommandVariant, MachHeader, MachOFatFile32, MachOFatFile64,

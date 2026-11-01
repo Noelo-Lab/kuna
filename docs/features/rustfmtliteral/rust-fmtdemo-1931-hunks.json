@@ -1,0 +1,12 @@
+[
+  {
+    "name": "fmtdemo::print_const",
+    "address": "0x10520",
+    "hunks": [
+      "@@ -2,6 +2,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal _print call becomes println!(\"just a literal\"); tail-call annotation and return are unchanged. Matches the pinned angr literal witness."
+  }
+]

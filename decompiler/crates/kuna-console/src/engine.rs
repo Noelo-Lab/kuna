@@ -4600,6 +4600,8 @@ pub fn bootstrap_from_object_with_isa(
     // datatest corpus by construction.
     let compiler = kuna_analysis::sourcelang::effective_compiler_bytes(&bytes);
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
+    sleigh.base_mut().unwrap().rustc_stable_version =
+        kuna_analysis::sourcelang::stable_rustc_version(&bytes);
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.
