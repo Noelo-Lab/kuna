@@ -484,6 +484,9 @@ mod xrefs_cli;
 #[path = "xrefs_data_refs_cli.rs"]
 mod xrefs_data_refs_cli;
 
+#[path = "xrefs_low_page.rs"]
+mod xrefs_low_page;
+
 #[path = "xrefs_own_export_plt.rs"]
 mod xrefs_own_export_plt;
 

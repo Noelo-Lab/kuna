@@ -171,7 +171,7 @@ impl<'a> PoolImage<'a> {
     }
 
     /// The `width` bytes of read-only image content at `vma`.
-    fn bytes_at(&self, vma: u64, width: u32) -> Option<&'a [u8]> {
+    pub(super) fn bytes_at(&self, vma: u64, width: u32) -> Option<&'a [u8]> {
         let i = self.ro.partition_point(|&(lo, _, _)| lo <= vma).checked_sub(1)?;
         let (lo, hi, data) = self.ro[i];
         if vma >= hi {
