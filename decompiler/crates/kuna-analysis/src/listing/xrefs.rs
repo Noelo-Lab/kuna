@@ -1327,6 +1327,9 @@ fn descend(
             st.file(vma, to, kind, &text);
         }
     }
+    for (vma, page) in st.carry.superseded(&st.funcs) {
+        st.unfile(vma, page, XrefKind::Data);
+    }
     // A focus address that did not decode is not a function: recording it as one
     // would answer `sub_<addr>` for a byte in the middle of a string.
     for f in focused {
@@ -1660,6 +1663,20 @@ impl State {
         let r = Xref { from, to, kind, instruction: instruction.to_string() };
         self.by_target.entry(to).or_default().push(r.clone());
         self.by_source.entry(from).or_default().push(r);
+    }
+
+    /// Withdraw every `from -> to` row of `kind`.
+    fn unfile(&mut self, from: u64, to: u64, kind: XrefKind) {
+        let withdraw = |map: &mut BTreeMap<u64, Vec<Xref>>, key: u64| {
+            if let Some(refs) = map.get_mut(&key) {
+                refs.retain(|r| (r.from, r.to, r.kind) != (from, to, kind));
+                if refs.is_empty() {
+                    map.remove(&key);
+                }
+            }
+        };
+        withdraw(&mut self.by_source, from);
+        withdraw(&mut self.by_target, to);
     }
 
     /// Use the same owners for incoming rows, outgoing buckets and computed calls.

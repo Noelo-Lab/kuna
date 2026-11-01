@@ -4241,10 +4241,10 @@ a segment it loads, so on Mach-O every section is mapped except a debug one
 (`S_ATTR_DEBUG`, the `__DWARF` segment). That also makes an x86-64 Mach-O stub's
 `jmp qword ptr [slot]` the forwarding veneer an ELF PLT entry already was. Over 52
 real Mach-O images (arm64, x86-64, armv7, PowerPC, a kext) and the vendored Mach-O
-fixtures, 22,625 rows are added and none is lost, every one into a section of that
-kind. The `adrp` page that is itself the start of such a section keeps the `Data`
-row the constant scan gives it on ELF, whatever datum the page holds first. ELF and
-PE answers are unchanged.
+fixtures, 22,625 rows are added, every one into a section of that kind. An `adrp`
+page in such a section is filed only as the carry below allows: a page completed
+into another address is a step, not a reference to whatever datum the page starts
+with.
 
 (kuna) **Not every `.pdata` record is a function** — the PE exception directory
 answers "where does unwinding start from here", which is a coarser question than
@@ -7125,8 +7125,25 @@ where the two shapes coincide in an executable: `li a1,70000` assembles to
 an RV32 `ET_EXEC` a number that lands in a mapped section files a `Data` row — the
 same floor the constant scan applies to a lone immediate. RV64 builds that number
 with `addiw` and is not affected. The page or high half on its own is not a
-carried reference; an `adrp` page that is itself a mapped address keeps the `Data`
-row the constant scan always gave it.
+carried reference.
+
+An AArch64 `adrp` page that is a mapped address is also a `Data` row of the
+constant scan's own, which names whatever datum the page starts with: `adrp
+x8,_hook@PAGE` in a function that only goes on to `add x8,x8,#0x8` and read
+`_pair` is no reference to `_hook`. So the carry tracks the page, and when an
+instruction it holds across completes the page into a different address — the
+`add`, the `ldr x1,[x1,#0x5a8]` of a selector reference, the `ldr x16,[x16,#0x18]`
+of a stub — the page was a step to that address and the scan's row is withdrawn.
+A page completed at offset 0 (`ldr x16,[x16]`, `add x0,x0,#0`) is the datum
+itself, and one nothing completes, or that is completed only past a join, keeps
+its row. Only an `adrp` is a page, read off its encoding: an `adr` of a
+page-aligned label lifts to the same `COPY` and is the label's address. Over the
+Mach-O sweep above (each universal binary split into its slices) and 79 ELF and
+PE controls on eight architectures, 11,924 page rows are withdrawn: 6,627 on
+AArch64 ELF, among them every `.plt` entry's `adrp x16` of the `.got.plt` page,
+and 5,297 on Mach-O, most from `__stubs` and `__objc_stubs`. Every one is an
+`adrp` whose completing instruction names another address, and no other row
+changes.
 
 (kuna) **A call through a loaded slot** (GH #1376). x86's `call qword ptr
 [slot]` takes its destination out of a fixed slot in one instruction, and the scan

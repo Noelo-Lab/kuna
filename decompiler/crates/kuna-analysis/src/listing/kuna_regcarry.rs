@@ -50,9 +50,12 @@
 //!    into an address, and only a copy of it is still the slot's word.
 //!
 //! Only a value a carried register contributed to is reported; a single
-//! instruction's own constants are [`super::xrefs`]' to report. The `Data`
-//! shape is narrower than the other two because nothing dereferences the value
-//! to vouch for it, and the same pair builds integers:
+//! instruction's own constants are [`super::xrefs`]' to report. An AArch64
+//! `adrp` page is one of those, and names whatever datum the page starts with:
+//! when an instruction the carry holds across completes it into another address,
+//! the page was a step, and [`Tracker::superseded`] withdraws the scan's row.
+//! The `Data` shape is narrower than the other two because nothing dereferences
+//! the value to vouch for it, and the same pair builds integers:
 //!
 //!  * a copy of a carried value (`mv a1,a0`, which RISC-V spells `addi a1,a0,0`)
 //!    is the reference its source already was;
@@ -171,11 +174,14 @@ pub(super) struct Machine<'a> {
     pool: Option<&'a PoolImage<'a>>,
     /// The width of a pointer, the only load whose result can be a callee.
     ptr: u32,
+    /// AArch64's code, whose `adrp` forms a page the instruction completing
+    /// it supersedes.
+    code: Option<PoolImage<'a>>,
 }
 
 impl<'a> Machine<'a> {
     pub(super) fn new(
-        file: &object::File,
+        file: &object::File<'a>,
         reg: Option<&Rc<AddrSpace>>,
         data_space: Option<&Rc<AddrSpace>>,
         preserved: &'a [(u64, u64)],
@@ -200,7 +206,14 @@ impl<'a> Machine<'a> {
             mapped,
             pool,
             ptr: if file.is_64() { 8 } else { 4 },
+            code: code(file),
         })
+    }
+
+    /// Is the instruction at `vma` an AArch64 `adrp`? Read off its encoding,
+    /// since `adr` to a page-aligned label lifts to the same `COPY`.
+    fn is_adrp(&self, vma: u64) -> bool {
+        self.code.as_ref().and_then(|c| c.bytes_at(vma, 4)).is_some_and(|b| b[3] & 0x9f == 0x90)
     }
 
     fn is_register(&self, vn: &VarnodeData) -> bool {
@@ -219,6 +232,24 @@ impl<'a> Machine<'a> {
         let data = matches!((&vn.space, &self.data), (Some(s), Some(d)) if Rc::ptr_eq(s, d));
         (data && vn.size == self.ptr && self.admits(vn.offset, false)).then_some(vn.offset)
     }
+}
+
+/// An AArch64 image's executable sections, which an `adrp` is read from.
+fn code<'a>(file: &object::File<'a>) -> Option<PoolImage<'a>> {
+    use object::{Object, ObjectSection};
+    if !matches!(file.architecture(), object::Architecture::Aarch64 | object::Architecture::Aarch64_Ilp32) {
+        return None;
+    }
+    let ranges = file
+        .sections()
+        .filter(crate::entry::is_executable)
+        .filter_map(|sec| {
+            let data = sec.data().ok().filter(|d| !d.is_empty())?;
+            let lo = sec.address();
+            Some((lo, lo.saturating_add(sec.size().min(data.len() as u64)), data))
+        })
+        .collect();
+    PoolImage::from_ranges(ranges, 8, true)
 }
 
 /// The walk-wide record: what is in flight, every branch target, and the
@@ -243,6 +274,8 @@ struct Found {
     writeback: bool,
     /// The trails of later references that only used this one as a step.
     stepped: Vec<Trail>,
+    /// The `adrp` page [`super::xrefs`] filed on its own, not a row of ours.
+    page: bool,
 }
 
 /// One instruction, as [`Tracker::step`] reads it.
@@ -575,6 +608,7 @@ struct Hit {
     age: u8,
     /// The earlier `Data` row the address was computed from, when it differs.
     base: Option<usize>,
+    page: bool,
 }
 
 impl Tracker {
@@ -650,10 +684,10 @@ impl Tracker {
                         if a.carried && !a.loaded && !joined && from_data() && m.admits(a.v, a.addr) {
                             let kind = if load { XrefKind::Read } else { XrefKind::Write };
                             let base = base_of(found, &a, a.v);
-                            hits.push(Hit { to: a.v, kind, age: a.age, base });
+                            hits.push(Hit { to: a.v, kind, age: a.age, base, page: false });
                             let width = op.out.as_ref().map(|o| o.size).filter(|_| load);
                             if let Some(t) = width.and_then(|w| m.pool?.follow(a.v, w, m.mapped)) {
-                                hits.push(Hit { to: t, kind: XrefKind::Data, age: a.age, base: None });
+                                hits.push(Hit { to: t, kind: XrefKind::Data, age: a.age, base: None, page: false });
                             }
                             word = (width == Some(m.ptr)).then(|| Val::loaded(&a));
                         }
@@ -666,7 +700,7 @@ impl Tracker {
                     let dest = op.ins.first().filter(|_| op.opcode == OpCode::CPUI_CALLIND);
                     if let Some(d) = dest.and_then(|vn| frame.read(m, vn)) {
                         if d.loaded && d.carried && !joined {
-                            hits.push(Hit { to: d.v, kind: XrefKind::Call, age: d.age, base: None });
+                            hits.push(Hit { to: d.v, kind: XrefKind::Call, age: d.age, base: None, page: false });
                         }
                     }
                     if let Some(out) = &op.out {
@@ -700,7 +734,17 @@ impl Tracker {
                             && m.admits(v.v, v.addr)
                         {
                             let base = base_of(found, v, v.v);
-                            hits.push(Hit { to: v.v, kind: XrefKind::Data, age: v.age, base });
+                            hits.push(Hit { to: v.v, kind: XrefKind::Data, age: v.age, base, page: false });
+                            v.formed = Some(first + hits.len() - 1);
+                        } else if !v.carried
+                            && op.opcode == OpCode::CPUI_COPY
+                            && op.ins.first().is_some_and(is_constant)
+                            && v.v & 0xfff == 0
+                            && m.is_register(out)
+                            && m.admits(v.v, v.addr)
+                            && m.is_adrp(vma)
+                        {
+                            hits.push(Hit { to: v.v, kind: XrefKind::Data, age: 0, base: None, page: true });
                             v.formed = Some(first + hits.len() - 1);
                         }
                     }
@@ -714,13 +758,13 @@ impl Tracker {
             let mut trail: Trail = carry.trail[carry.trail.len() - reach..].iter().copied().collect();
             trail.push(vma);
             if let Some(i) = h.base {
-                if !frame.regs.iter().any(|&(_, _, v)| v.formed == Some(i)) {
+                if found[i].page || !frame.regs.iter().any(|&(_, _, v)| v.formed == Some(i)) {
                     found[i].stepped.push(trail.clone());
                 }
             }
             let writeback = h.kind == XrefKind::Data
                 && hits.iter().enumerate().any(|(j, o)| j != k && o.to == h.to && o.kind != XrefKind::Data);
-            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped: Vec::new() });
+            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped: Vec::new(), page: h.page });
         }
 
         let Some(next) = fall else { return };
@@ -754,8 +798,21 @@ impl Tracker {
         let holds = |trail: &[u64]| trail.iter().all(|at| !self.targets.contains(at) && !funcs.contains(at));
         self.found
             .iter()
-            .filter(|f| !f.writeback && holds(&f.trail) && !f.stepped.iter().any(|t| holds(t)))
+            .filter(|f| !f.page && !f.writeback && holds(&f.trail) && !f.stepped.iter().any(|t| holds(t)))
             .map(|f| (f.from, f.to, f.kind))
+            .collect()
+    }
+
+    /// The `adrp` pages, as `(adrp, page)`, that an instruction the carry holds
+    /// across completed into another address: the page was a step to it, and
+    /// [`super::xrefs`]' own `Data` row for it names whatever datum the page
+    /// happens to start with.
+    pub(super) fn superseded(&self, funcs: &BTreeSet<u64>) -> Vec<(u64, u64)> {
+        let holds = |trail: &[u64]| trail.iter().all(|at| !self.targets.contains(at) && !funcs.contains(at));
+        self.found
+            .iter()
+            .filter(|f| f.page && f.stepped.iter().any(|t| holds(t)))
+            .map(|f| (f.from, f.to))
             .collect()
     }
 }
@@ -810,6 +867,7 @@ mod tests {
                 mapped: &MAPPED,
                 pool: None,
                 ptr: 8,
+                code: None,
             }
         }
         fn k(&self, v: u64) -> VarnodeData {
@@ -1100,6 +1158,50 @@ mod tests {
         ];
         let got = walk(&m, &[isa.set(16, 0x24000), narrow, isa.call_reg(0x20008, 16)], &[]);
         assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Read)], "`ldr w16` loads no pointer");
+    }
+
+    /// The `adrp` pages a straight-line run supersedes, and the rows it files.
+    fn pages(m: &Machine, insns: &[Vec<FullOp>], targets: &[u64]) -> (Vec<(u64, u64)>, Vec<(u64, u64, XrefKind)>) {
+        let mut t = Tracker::default();
+        for &at in targets {
+            t.enter(at);
+        }
+        for (i, ops) in insns.iter().enumerate() {
+            let vma = 0x20000 + 4 * i as u64;
+            let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+            t.step(m, Insn { vma, ops, fall: Some(vma + 4), branches: &[], calls, formed: Formed::default() });
+        }
+        let funcs = BTreeSet::from([0x20000]);
+        (t.superseded(&funcs), t.finish(&funcs))
+    }
+
+    /// An `adrp` page completed into another address was a step to it; one
+    /// completed at offset 0, or never completed, is the page's own datum.
+    #[test]
+    fn an_adrp_page_the_pair_completes_elsewhere_is_superseded() {
+        use super::super::kuna_poolref::PoolImage;
+        let isa = Isa::new();
+        // `adrp x16, ..`, then three `nop`s.
+        let adrp: [u8; 16] = [0x10, 0, 0, 0x90, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5];
+        let img = PoolImage::from_ranges(vec![(0x20000, 0x20010, &adrp[..])], 8, true).unwrap();
+        let m = Machine { code: Some(img), ..isa.machine(false) };
+        let (gone, rows) = pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]);
+        assert_eq!(gone, vec![(0x20000, 0x24000)]);
+        assert_eq!(rows, vec![(0x20004, 0x24010, XrefKind::Read)], "the page is no row of the carry's");
+        let (gone, _) = pages(&m, &[isa.set(8, 0x24000), isa.add(9, 8, 0x10), isa.load(0, 8, 0x20)], &[]);
+        assert_eq!(gone, vec![(0x20000, 0x24000)], "the page still in x8 is still only a base");
+        for at_page in [vec![isa.set(16, 0x24000), isa.load(16, 16, 0)], vec![isa.set(0, 0x24000), isa.add(0, 0, 0)]] {
+            assert!(pages(&m, &at_page, &[]).0.is_empty(), "offset 0 names the page itself");
+        }
+        assert!(pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[0x20004]).0.is_empty(), "past a join");
+        assert!(pages(&m, &[isa.set(16, 0x24010), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "not a page");
+        let mut adr = adrp;
+        adr[3] = 0x10;
+        let img = PoolImage::from_ranges(vec![(0x20000, 0x20010, &adr[..])], 8, true).unwrap();
+        let m = Machine { code: Some(img), ..isa.machine(false) };
+        assert!(pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "`adr` names its label");
+        let x86 = isa.machine(false);
+        assert!(pages(&x86, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "no adrp");
     }
 
     /// `mov rax,[rip+slot]; call rax` calls through the slot; `call [rip+slot]`
