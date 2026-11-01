@@ -151,6 +151,9 @@ Three tiers:
 | a switch on a byte parameter has 256 cases, most of them other functions' code | [`switchrunon`](#switchrunon) |
 | a 1 KB Rust function takes minutes and gigabytes and hits --max-fn-memory | [`switchrunon`](#switchrunon) |
 | the same case bodies appear in several neighbouring functions | [`switchrunon`](#switchrunon) |
+| a small function with a byte switch inside a loop hits the time budget or --max-fn-memory | [`switchrunonguard`](#switchrunonguard) |
+| a switch preceded by an unrelated check has 256 cases, most of them other functions' code | [`switchrunonguard`](#switchrunonguard) |
+| a 600-byte Rust function decodes thousands of instructions from its neighbours | [`switchrunonguard`](#switchrunonguard) |
 | image-base-relative switch whose bound guard is duplicated across multiple predecessors renders as a computed call | [`switchmultipred`](#switchmultipred) |
 | 'Too many branches' where the dispatch block has several guarded incoming paths | [`switchmultipred`](#switchmultipred) |
 | msvc memmove small-count tail dispatch truncated to an indirect call | [`switchmultipred`](#switchmultipred) |
@@ -1692,6 +1695,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default. Turn it off if a switch on an unguarded byte selector loses cases that really live in other functions' address ranges (hand-written assembly dispatching into several functions' bodies), or to compare against the upstream table.
 - **Where / provenance:** P2/switch-model · kuna · correctness-fix · gh-1034
 - **Example:** `option switchrunon off`
+
+### `switchrunonguard` -- on | off, default `on`
+
+- **Symptoms:** a small function with a byte switch inside a loop hits the time budget or --max-fn-memory; a switch preceded by an unrelated check has 256 cases, most of them other functions' code; a 600-byte Rust function decodes thousands of instructions from its neighbours.
+- **What it does:** Let switchrunon cut a table whose guards do not bound it. The basic model records the conditional branches just before the dispatch as guards whether or not they test the selector, so a byte switch that a Result or Option tag check precedes (a Rust deserializer's `match self.next_key()?`) counts as guarded although the check limits nothing, and switchrunon left its whole-width table alone: 256 rows that run on into the next functions' tables and the tables those reach. On, a table counts as unguarded when the model recorded no guard or when the range it was sized from is as wide as the selector's size and known-zero bits allow, so no recorded guard narrowed it; switchrunon's own conditions then decide the cut. A table a guard does narrow, and a model-2 table (whose default comes from a guard), is never touched. Off, any recorded guard keeps the table whole.
+- **When to flip:** On by default. Turn it off when a switch whose selector a preceding branch does not bound loses cases that really live in other functions' address ranges, or to compare against switchrunon's guard-free-only rule.
+- **Where / provenance:** P2/switch-model · kuna · correctness-fix · gh-1034
+- **Example:** `option switchrunonguard off`
 
 ### `switchmultipred` -- on | off, default `on` (destructive opt-in)
 

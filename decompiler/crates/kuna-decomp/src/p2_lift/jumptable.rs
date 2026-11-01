@@ -2218,20 +2218,8 @@ impl JumpBasicModel {
     /// Calculate the range of values in `vn` that direct control-flow to the
     /// switch (C++ `JumpBasic::calcRange`, `jumptable.cc:1136`).
     fn calc_range(&self, fd: &Funcdata, vn: VarnodeId, rng: &mut CircleRange) {
-        // Get an initial range, based on the size/type of -vn-.
-        let mut stride = 1;
-        let v = fd.vbank().get(vn).unwrap();
-        if v.is_constant() {
-            *rng = CircleRange::new_value(v.get_offset(), v.get_size());
-        } else if v.is_written()
-            && fd.obank().get(v.get_def().unwrap()).unwrap().is_bool_output()
-        {
-            *rng = CircleRange::new(0, 2, 1, 1); // Only 0 or 1 possible
-        } else {
-            let max_value = JumpBasic::get_max_value(fd, vn);
-            stride = JumpBasic::get_stride(fd, vn);
-            *rng = CircleRange::new(0, max_value, v.get_size(), stride);
-        }
+        let stride;
+        (*rng, stride) = Self::width_range(fd, vn);
 
         crate::kuna_switchguardrange::intersect(fd, &self.selectguards, vn, rng);
 
@@ -2245,6 +2233,24 @@ impl JumpBasicModel {
                 *rng = positive;
                 crate::kuna_switchguardrange::intersect(fd, &self.selectguards, vn, rng);
             }
+        }
+    }
+
+    /// The range `vn` can hold given only its size and known-zero bits, and
+    /// its stride: the initial range of C++ `JumpBasic::calcRange`, before
+    /// any guard is applied.
+    fn width_range(fd: &Funcdata, vn: VarnodeId) -> (CircleRange, int4) {
+        let v = fd.vbank().get(vn).unwrap();
+        if v.is_constant() {
+            (CircleRange::new_value(v.get_offset(), v.get_size()), 1)
+        } else if v.is_written()
+            && fd.obank().get(v.get_def().unwrap()).unwrap().is_bool_output()
+        {
+            (CircleRange::new(0, 2, 1, 1), 1) // Only 0 or 1 possible
+        } else {
+            let max_value = JumpBasic::get_max_value(fd, vn);
+            let stride = JumpBasic::get_stride(fd, vn);
+            (CircleRange::new(0, max_value, v.get_size(), stride), stride)
         }
     }
 
@@ -4964,7 +4970,7 @@ impl JumpModel for JumpBasicModel {
             return Ok(false);
         }
         self.run_on = false;
-        if fd.get_arch().switch_run_on && self.selectguards.is_empty() {
+        if fd.get_arch().switch_run_on && self.unguarded(fd) {
             if let Some(own) = Self::own_rows(fd, &addresstable[..i]) {
                 i = own;
                 self.run_on = true;
@@ -5036,6 +5042,24 @@ impl JumpBasicModel {
             i += 1;
         }
         i
+    }
+
+    /// (kuna `switchrunon`) Whether no guard bounds the table: the model
+    /// recorded none, or (`switchrunonguard`) none of the ones it recorded
+    /// narrowed the variable the table was sized from below every value its
+    /// width allows.
+    fn unguarded(&self, fd: &Funcdata) -> bool {
+        if self.selectguards.is_empty() {
+            return true;
+        }
+        if !fd.get_arch().switch_run_on_guard
+            || self.is_model2
+            || self.varnode_index >= self.path_meld.num_common_varnode()
+        {
+            return false;
+        }
+        let vn = self.path_meld.get_varnode(self.varnode_index);
+        self.jrange().get_size() >= Self::width_range(fd, vn).0.get_size()
     }
 
     /// (kuna `switchrunon`) How many leading rows of an unguarded table belong

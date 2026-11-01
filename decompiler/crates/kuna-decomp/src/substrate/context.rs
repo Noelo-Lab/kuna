@@ -1662,6 +1662,9 @@ pub struct ArchContext {
     /// (kuna) Cut an unguarded jump table where its rows run on into other
     /// functions (`switchrunon`). See [`crate::kuna_switchrunon`].
     pub switch_run_on: bool,
+    /// (kuna) Count only a guard that narrows the selector as a guard for
+    /// `switchrunon` (`switchrunonguard`). See [`crate::kuna_switchrunon`].
+    pub switch_run_on_guard: bool,
     /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
     /// sorted, so `switchrunon` sees the same functions with the option on.
     pub lazy_entry_starts: Rc<Vec<u64>>,
@@ -2143,6 +2146,7 @@ impl ArchContext {
             preserve_thumb_funcptr: true,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
             switch_run_on: false, // switchrunon (the ArchSeam carries the real default)
+            switch_run_on_guard: false, // switchrunonguard (the ArchSeam carries the real default)
             lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)

@@ -22,6 +22,13 @@
 //! rows all land in one function, or that comes back into its own function
 //! after leaving it, is kept whole, so a split-off case or a misplaced
 //! function start cannot be cut. The rows cut are not dispatched.
+//!
+//! The model records the conditional branches just before the dispatch as
+//! guards whether or not they test the selector. With `switchrunonguard`
+//! on, a table also counts as unguarded when the range it was sized from is
+//! as wide as the selector's width allows, so no recorded guard narrowed
+//! it: the `jnz` on a call's Result tag in front of a Rust deserializer's
+//! byte key dispatch limits nothing.
 
 /// The number of leading rows of `rows` (table destinations) that belong to
 /// the function at `entry`, when the rest run on forward into other
