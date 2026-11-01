@@ -852,7 +852,7 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // drive; the tables after it are not attempted.
     {
         let arch_ptr: *mut Architecture = arch;
-        let mut panicked: Option<String> = None;
+        let mut panicked: Option<KunaError> = None;
         let mut run_jt_pipeline = |partial: &mut Funcdata,
                                    visited: &crate::flow::VisitedMap|
          -> KunaResult<()> {
@@ -868,8 +868,8 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
         };
         let generated = flow.generate_ops_with_jumptables(&mut run_jt_pipeline);
         drop(run_jt_pipeline);
-        if let Some(message) = panicked {
-            return Err(budget_error(arch).unwrap_or_else(|| KunaError::lowlevel(message)));
+        if let Some(error) = panicked {
+            return Err(error);
         }
         generated?;
     }
@@ -923,13 +923,14 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 /// `sortCallSpecs` (the `startProcessing` prerequisites), then drives the
 /// "jumptable" action set to simplify it so the BRANCHIND's switch calculation
 /// becomes a straight-line index expression the recovery can emulate.  A panic
-/// in the pipeline is also left in `panicked`, as the function's error.
+/// in the pipeline leaves the function's error in `panicked`: a budget already
+/// spent when it is caught, or else the panic.
 #[allow(clippy::mutable_key_type)]
 fn run_jumptable_pipeline(
     arch: &mut Architecture,
     partial: &mut Funcdata,
     visited: &crate::flow::VisitedMap,
-    panicked: &mut Option<String>,
+    panicked: &mut Option<KunaError>,
 ) -> KunaResult<()> {
     // Build the partial's basic blocks (partialflow.generateBlocks).
     let env = ArchFlowEnv {
@@ -981,7 +982,7 @@ fn run_jumptable_pipeline(
                 "decompile pipeline reached an un-ported seam (LOSS-131) in jump-table recovery{at}: {}",
                 panic_message(payload)
             );
-            *panicked = Some(message.clone());
+            *panicked = Some(budget_error(arch).unwrap_or_else(|| KunaError::lowlevel(message.clone())));
             Err(KunaError::lowlevel(message))
         }
     }
