@@ -222,6 +222,11 @@ pub mod pcodeop_addlflags {
     /// writes a narrowed call result back into its register.  Set and read by
     /// [`crate::p4_calls::kuna_narrowret`].
     pub const kuna_narrowret: uint4 = 0x400000;
+    /// (kuna) Heritage left this op's read of its own output storage empty
+    /// for renaming to fill, instead of linking a placeholder Varnode. Set and
+    /// cleared within one heritage pass by
+    /// [`crate::p3_dataflow::kuna_renamereads`].
+    pub const kuna_rename_read: uint4 = 0x800000;
 }
 
 // ---------------------------------------------------------------------------

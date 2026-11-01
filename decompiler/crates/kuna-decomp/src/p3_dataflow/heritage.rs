@@ -920,6 +920,9 @@ pub struct Heritage {
     partial_global_loads: Vec<crate::kuna_partialglobalload::Guard>,
     /// (kuna `loadguardreads`) This pass's LOAD guards, read at renaming.
     load_reads: super::kuna_loadguardreads::Reads,
+    /// This pass's ops whose reads of their own storage renaming fills
+    /// ([`super::kuna_renamereads`]).
+    rename_reads: Vec<(crate::context::OpId, uint4)>,
     /// (kuna) C++ `Heritage::splitmanage`: the compiler spec's preferred
     /// register splits, run once at heritage pass 0.
     splitmanage: crate::p5_types::prefersplit::PreferSplitManager,
@@ -968,6 +971,7 @@ impl Heritage {
             global_load_ranges: Vec::new(),
             partial_global_loads: Vec::new(),
             load_reads: Default::default(),
+            rename_reads: Vec::new(),
             splitmanage: Default::default(),
         }
     }
@@ -2040,12 +2044,7 @@ impl Heritage {
             } else if effecttype == effect_type::UNKNOWN_EFFECT
                 || effecttype == effect_type::RETURN_ADDRESS
             {
-                let indop = fd.new_indirect_op(op, addr, size, 0);
-                if let Some(in0) = fd.obank().get(indop).and_then(|o| o.get_in(0)) {
-                    if let Some(v) = fd.vbank_mut().get_mut(in0) {
-                        v.set_active_heritage();
-                    }
-                }
+                let indop = super::kuna_renamereads::new_indirect(fd, op, addr, size, 0, &mut self.rename_reads);
                 if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
                     if let Some(v) = fd.vbank_mut().get_mut(out) {
                         v.set_active_heritage();
@@ -2827,11 +2826,7 @@ impl Heritage {
             if let Some(o) = fd.obank_mut().get_mut(copyop) {
                 o.set_flag(crate::op::pcodeop_flags::return_copy);
             }
-            let invn = fd.new_varnode(size, addr, None);
-            if let Some(v) = fd.vbank_mut().get_mut(invn) {
-                v.set_active_heritage();
-            }
-            let _ = fd.op_set_input(copyop, invn, 0);
+            super::kuna_renamereads::mark(fd, copyop, 1, &mut self.rename_reads);
             fd.op_insert_before(copyop, op);
         }
     }
@@ -3003,12 +2998,10 @@ impl Heritage {
             if !((contained && uses_spacebase) || Rc::ptr_eq(&spc, &store_space) || indirect_frame_store) {
                 continue;
             }
-            let indop = fd.new_indirect_op(op, addr, size, pcodeop_flags::indirect_store);
+            let indop = super::kuna_renamereads::new_indirect(
+                fd, op, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads,
+            );
             guarded.push(op);
-            let invn = fd.obank().get(indop).and_then(|o| o.get_in(0));
-            if let Some(v) = invn.and_then(|v| fd.vbank_mut().get_mut(v)) {
-                v.set_active_heritage();
-            }
             let outvn = fd.obank().get(indop).and_then(|o| o.get_out());
             if let Some(out) = outvn {
                 if let Some(v) = fd.vbank_mut().get_mut(out) {
@@ -3050,16 +3043,12 @@ impl Heritage {
             return;
         }
         for store in stores {
-            let indop = fd.new_indirect_op(store, addr, size, pcodeop_flags::indirect_store);
-            let (Some(invn), Some(outvn)) = (
-                fd.obank().get(indop).and_then(|o| o.get_in(0)),
-                fd.obank().get(indop).and_then(|o| o.get_out()),
-            ) else {
+            let indop = super::kuna_renamereads::new_indirect(
+                fd, store, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads,
+            );
+            let Some(outvn) = fd.obank().get(indop).and_then(|o| o.get_out()) else {
                 continue;
             };
-            if let Some(v) = fd.vbank_mut().get_mut(invn) {
-                v.set_active_heritage();
-            }
             if let Some(v) = fd.vbank_mut().get_mut(outvn) {
                 v.set_active_heritage();
             }
@@ -3108,11 +3097,9 @@ impl Heritage {
         }
         self.global_store_guards += stores.len();
         for op in stores {
-            let indop = fd.new_indirect_op(op, addr, size, pcodeop_flags::indirect_store);
-            let invn = fd.obank().get(indop).and_then(|o| o.get_in(0));
-            if let Some(v) = invn.and_then(|v| fd.vbank_mut().get_mut(v)) {
-                v.set_active_heritage();
-            }
+            let indop = super::kuna_renamereads::new_indirect(
+                fd, op, addr, size, pcodeop_flags::indirect_store, &mut self.rename_reads,
+            );
             if let Some(out) = fd.obank().get(indop).and_then(|o| o.get_out()) {
                 if let Some(v) = fd.vbank_mut().get_mut(out) {
                     v.set_active_heritage();
@@ -4181,22 +4168,29 @@ impl Heritage {
                 }
                 // First replace reads with top of stack.
                 let ninput = fd.obank().get(op).expect("rename_recurse: stale op").num_input();
+                let pending = super::kuna_renamereads::pending(fd, op);
                 for slot in 0..ninput {
-                    let vnin = match fd.obank().get(op).expect("rename_recurse: stale op").get_in(slot) {
-                        Some(v) => v,
-                        None => continue,
-                    };
-                    let vinref = fd.vbank().get(vnin).expect("rename_recurse: stale in");
-                    if vinref.is_heritage_known() {
-                        continue; // not free
-                    }
-                    if !vinref.is_active_heritage() {
-                        continue; // Not being heritaged this round
-                    }
-                    fd.vbank_mut().get_mut(vnin).expect("rename_recurse: in").clear_active_heritage();
-                    let key = fd.vbank().get(vnin).expect("rename_recurse: in").get_addr().clone();
-                    let in_size =
-                        fd.vbank().get(vnin).expect("rename_recurse: in").get_size();
+                    let (vnin, key, in_size) =
+                        match fd.obank().get(op).expect("rename_recurse: stale op").get_in(slot) {
+                            Some(vnin) => {
+                                let vinref = fd.vbank().get(vnin).expect("rename_recurse: stale in");
+                                if vinref.is_heritage_known() {
+                                    continue; // not free
+                                }
+                                if !vinref.is_active_heritage() {
+                                    continue; // Not being heritaged this round
+                                }
+                                let key = vinref.get_addr().clone();
+                                let in_size = vinref.get_size();
+                                fd.vbank_mut().get_mut(vnin).expect("rename_recurse: in").clear_active_heritage();
+                                (Some(vnin), key, in_size)
+                            }
+                            None if pending => match super::kuna_renamereads::storage(fd, op) {
+                                Some((key, in_size)) => (None, key, in_size),
+                                None => continue,
+                            },
+                            None => continue,
+                        };
                     let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                         Some(top) => top,
                         None => {
@@ -4244,8 +4238,10 @@ impl Heritage {
                         }
                     }
                     fd.op_set_input(op, vnnew, slot).expect("rename_recurse: op_set_input read");
-                    if fd.vbank().get(vnin).expect("rename_recurse: in").has_no_descend() {
-                        fd.delete_varnode(vnin).expect("rename_recurse: delete free read");
+                    if let Some(vnin) = vnin {
+                        if fd.vbank().get(vnin).expect("rename_recurse: in").has_no_descend() {
+                            fd.delete_varnode(vnin).expect("rename_recurse: delete free read");
+                        }
                     }
                 }
             }
@@ -4293,15 +4289,23 @@ impl Heritage {
                 leading
             };
             for multiop in subops {
-                let vnin = match fd.obank().get(multiop).expect("rename_recurse: multiop").get_in(slot) {
-                    Some(v) => v,
-                    None => continue,
-                };
-                if fd.vbank().get(vnin).expect("rename_recurse: multi in").is_heritage_known() {
-                    continue;
-                }
-                let key = fd.vbank().get(vnin).expect("rename_recurse: multi in").get_addr().clone();
-                let in_size = fd.vbank().get(vnin).expect("rename_recurse: multi in").get_size();
+                let (vnin, key, in_size) =
+                    match fd.obank().get(multiop).expect("rename_recurse: multiop").get_in(slot) {
+                        Some(vnin) => {
+                            let vinref = fd.vbank().get(vnin).expect("rename_recurse: multi in");
+                            if vinref.is_heritage_known() {
+                                continue;
+                            }
+                            (Some(vnin), vinref.get_addr().clone(), vinref.get_size())
+                        }
+                        None if super::kuna_renamereads::pending(fd, multiop) => {
+                            match super::kuna_renamereads::storage(fd, multiop) {
+                                Some((key, in_size)) => (None, key, in_size),
+                                None => continue,
+                            }
+                        }
+                        None => continue,
+                    };
                 let mut vnnew = match varstack.get(&key).and_then(|s| s.last().copied()) {
                     Some(top) => top,
                     None => {
@@ -4317,8 +4321,10 @@ impl Heritage {
                     }
                 }
                 fd.op_set_input(multiop, vnnew, slot).expect("rename_recurse: op_set_input multi");
-                if fd.vbank().get(vnin).expect("rename_recurse: multi in").has_no_descend() {
-                    fd.delete_varnode(vnin).expect("rename_recurse: delete multi free in");
+                if let Some(vnin) = vnin {
+                    if fd.vbank().get(vnin).expect("rename_recurse: multi in").has_no_descend() {
+                        fd.delete_varnode(vnin).expect("rename_recurse: delete multi free in");
+                    }
                 }
             }
         }
@@ -5065,10 +5071,7 @@ impl Heritage {
                     .expect("place_multiequals: new_varnode_out");
                 fd.vbank_mut().get_mut(vnout).expect("place_multiequals: vnout").set_active_heritage();
                 fd.op_set_opcode(multiop, multi_typeop.clone());
-                for j in 0..size_in {
-                    let vnin = fd.new_varnode(size, &memrange.addr, None);
-                    fd.op_set_input(multiop, vnin, j).expect("place_multiequals: op_set_input");
-                }
+                super::kuna_renamereads::mark(fd, multiop, size_in as uint4, &mut self.rename_reads);
                 fd.op_insert_begin(multiop, bl);
             }
             idx += 1;
@@ -5976,9 +5979,12 @@ impl Heritage {
         }
         self.place_multiequals(fd);
         if self.deadline_passed() {
+            super::kuna_renamereads::finish(fd, &mut self.rename_reads);
             return Ok(());
         }
-        self.rename(fd)?;
+        let renamed = self.rename(fd);
+        super::kuna_renamereads::finish(fd, &mut self.rename_reads);
+        renamed?;
         if super::kuna_loadguardreads::Reads::enabled(fd) {
             self.place_load_guard_reads(fd);
         }
@@ -7141,6 +7147,7 @@ mod tests {
         assert!(before_w1out_def, "the writes are defined");
 
         // Run the full driver.
+        let first = fd.vbank_mut().reserve_create_index(0);
         let mut h = Heritage::new();
         h.build_info_list(&fd);
         h.heritage(&mut fd, None).unwrap();
@@ -7178,6 +7185,56 @@ mod tests {
             .filter_map(|&v| fd.vbank().get(v).unwrap().get_def())
             .collect();
         assert!(in_defs.contains(&w1) && in_defs.contains(&w2), "phi merges the two writes");
+
+        // Renaming filled the slots directly, and the two placeholders upstream
+        // builds kept their creation indices: the next Varnode is numbered
+        // after them.
+        assert_eq!(fd.vbank().get(phi_out).unwrap().get_create_index(), first);
+        assert_eq!(fd.vbank_mut().reserve_create_index(0), first + 3);
+        assert!(!super::super::kuna_renamereads::pending(&fd, phi), "phi no longer marked");
+    }
+
+    #[test]
+    fn a_slot_renaming_never_reaches_gets_upstreams_placeholder() {
+        use kuna_num::opcodes::OpCode;
+        let mut fd = build_fd();
+        let b = build_cfg(&mut fd, 3, &[(0, 1), (0, 2), (1, 2)]);
+        let loc = raddr(&fd, 0x100);
+        let mut pending = Vec::new();
+
+        let phi = fd.new_op(2, raddr(&fd, 0x1002));
+        let phi_out = fd.new_varnode_out(1, &loc, phi).unwrap();
+        fd.op_set_opcode(phi, typeop_skeleton(OpCode::CPUI_MULTIEQUAL));
+        super::super::kuna_renamereads::mark(&mut fd, phi, 2, &mut pending);
+        fd.op_insert_begin(phi, b[2]);
+        let first = pending[0].1;
+        let reached = fd.new_varnode(1, &loc, None);
+        fd.op_set_input(phi, reached, 0).unwrap();
+
+        let copy = fd.new_op(1, raddr(&fd, 0x1002));
+        let copy_out = fd.new_varnode_out(1, &raddr(&fd, 0x200), copy).unwrap();
+        fd.op_set_opcode_code(copy, OpCode::CPUI_COPY);
+        super::super::kuna_renamereads::mark(&mut fd, copy, 1, &mut pending);
+        fd.op_insert_end(copy, b[2]);
+        let copy_first = pending[1].1;
+        assert_eq!(copy_first, first + 4, "the slots' indices are taken when they are left empty");
+
+        super::super::kuna_renamereads::finish(&mut fd, &mut pending);
+        assert!(pending.is_empty());
+        assert_eq!(fd.obank().get(phi).unwrap().get_in(0), Some(reached));
+        let slot = fd.obank().get(phi).unwrap().get_in(1).expect("unreached slot filled");
+        let v = fd.vbank().get(slot).unwrap();
+        assert!(v.is_free() && !v.is_active_heritage());
+        assert_eq!((v.get_addr(), v.get_size()), (&loc, 1));
+        assert_eq!(v.get_create_index(), first + 1);
+        let slot = fd.obank().get(copy).unwrap().get_in(0).expect("COPY input filled");
+        let v = fd.vbank().get(slot).unwrap();
+        assert!(v.is_free() && v.is_active_heritage(), "a guard read stays a heritage read");
+        assert_eq!((v.get_addr(), v.get_size()), (&raddr(&fd, 0x200), 1));
+        assert_eq!(v.get_create_index(), copy_first);
+        assert!(!super::super::kuna_renamereads::pending(&fd, phi));
+        assert!(!super::super::kuna_renamereads::pending(&fd, copy));
+        let _ = (phi_out, copy_out);
     }
 
     // ---- w10-proto-cluster verifier: processJoins join-space splitting ----
