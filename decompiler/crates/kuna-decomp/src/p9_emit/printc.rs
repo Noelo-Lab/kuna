@@ -7538,6 +7538,32 @@ impl PrintC {
     /// (printc.cc:882-888).  A non-special SUBPIECE falls to the cast/functional
     /// dispatch (the existing `is_subpiece_cast` → `opTypeCast` / `opFunc`).
     fn op_subpiece_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
+        if self.out_lang == crate::kuna_lang::OutLang::Go {
+            let view = fd.obank().get(op).and_then(|operation| operation.get_in(0))
+                .and_then(|input| {
+                    let source = self.go_value_type(fd, arch, input, op);
+                    let store_type = read_op.and_then(|read| {
+                        let reader = fd.obank().get(read)?;
+                        if reader.code() != OpCode::CPUI_STORE { return None; }
+                        self.go_value_type(fd, arch, reader.get_in(1)?, read).get_ptr_to()
+                    });
+                    let extraction = crate::kuna_gobyteextract::plan(fd, arch, op, read_op, &source, store_type)?;
+                    let (name, _) = self.local_byte_array_name(fd, arch, input)?;
+                    Some((extraction, name))
+                });
+            if let Some((extraction, name)) = view {
+                self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+                self.push_cast_open(&extraction.pointer, op);
+                self.push_go_call("unsafe.Add", op);
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_go_call("unsafe.Pointer", op);
+                self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+                self.push_atom(&Atom::with_op_vn(name, TagType::VarToken,
+                    crate::printlanguage::SyntaxHighlight::var_color, op_key(op), vn_key(extraction.input)));
+                self.push_constant_ir_fmt_sign(extraction.offset, 0, op, display_format::NONE, false);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::C {
             let operation = fd.obank().get(op).unwrap();
             let input = operation.get_in(0).unwrap();
