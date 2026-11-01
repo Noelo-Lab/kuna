@@ -3215,6 +3215,24 @@ Variadic tails use the blank identifier so they cannot capture a source name.
 This is a presentation of the recovered ABI: it does not infer missing Go
 multi-results, receivers, strings, slices or interfaces.
 
+`p9_emit/kuna_gobyteview.rs` makes bounded artificial members of byte-array
+storage usable under Go output. A final unnamed piece covering the whole array
+reads or writes the array value directly. A one-, two-, four- or eight-byte
+integer piece uses `*(*T)(unsafe.Add(unsafe.Pointer(&path), offset))`, preserving
+the named member/subscript prefix and the exact memory offset. This is an lvalue
+for stores as well as a read. Its integer type follows the emitted Go value type,
+so its signedness agrees with the surrounding assignment and operand conversions;
+the facing IR type must independently qualify for the same kind of view.
+The varnode and both value types must have the access
+width, and the complete access must fit inside an array of one-byte unsigned or
+unknown elements. Anonymous partial types of such arrays use their cached
+unsigned or unknown stripped type. Negative or overflowing offsets, unsupported
+widths, other containers, volatile or annotation values, address-position
+accesses and pending casts keep their existing handling. An unknown scalar
+carrying floating-point data also declines the integer view. This changes only
+Go spelling; it neither changes the ABI nor infers source tuples. In particular,
+an inferred two-word result remains `[16]byte`, with both words preserved.
+
 The token table puts shifts and bitwise AND with multiplication, OR and XOR
 with addition, and all comparisons below those groups. Boolean XOR is `!=`.
 Equal-precedence right nesting retains parentheses unless the same associative

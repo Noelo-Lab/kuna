@@ -1,0 +1,10 @@
+{
+  "explicit_conversion_assignments_checked": 1769,
+  "pairs": {
+    "int32 <- int32": 9,
+    "int64 <- int64": 116,
+    "uint32 <- uint32": 122,
+    "uint64 <- uint64": 1522
+  },
+  "mismatches": []
+}

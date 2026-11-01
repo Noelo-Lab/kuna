@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3479,
-    3479
+    3483,
+    3483
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -904,6 +904,8 @@
     "data:Global aggregate fields do not become locals",
     "data:Go bottom-tested loop skips only its first condition",
     "data:Go byte string pointers retain a terminating zero",
+    "data:Go byte-array results have no artificial fields",
+    "data:Go byte-array writes have their eight-byte width",
     "data:Go float storage conversion preserves bits",
     "data:Go integer pointer conversion retains uintptr bridge",
     "data:Go internal strings use data pointers",
@@ -911,9 +913,11 @@
     "data:Go never converts a string directly to a pointer",
     "data:Go pointer indexing retains byte scaling",
     "data:Go record type in its own package is unqualified",
+    "data:Go register result retains a sixteen-byte carrier",
     "data:Go result formals never become generic inputs",
     "data:Go selection emits exact-width function parameters",
     "data:Go switch renders actual shared-case fallthrough",
+    "data:Go whole byte-array result returns the array value",
     "data:HALTLOOPGUARD #1: OFF drops the AIRCR write, leaving the two barriers adjacent (pass 1 only)",
     "data:HALTLOOPGUARD #2: both passes decompile sysreset",
     "data:HALTLOOPGUARD #3: ON keeps the AIRCR write between the barriers (pass 2 only)",

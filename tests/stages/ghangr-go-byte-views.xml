@@ -1,0 +1,20 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-dwarf-signatures/compressed</com>
+  <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.multiResult</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-dwarf-signatures/uncompressed</com>
+  <com>option godwarfsig off</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.multiResult</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Go register result retains a sixteen-byte carrier" min="2" max="2">func multiResult\(a0 int64\) \[16\]byte</stringmatch>
+<stringmatch name="Go byte-array writes have their eight-byte width" min="4" max="4">\*\(\*uint64\)\(unsafe.Add\(unsafe.Pointer\(&amp;v1\),</stringmatch>
+<stringmatch name="Go whole byte-array result returns the array value" min="2" max="2">return v1$</stringmatch>
+<stringmatch name="Go byte-array results have no artificial fields" min="0" max="0">\._[0-9]+_[0-9]+_</stringmatch>
+</decompilertest>
