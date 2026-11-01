@@ -8433,3 +8433,13 @@ image's source language is Go; `always` drops the language test (the
 stage-test bytechunk); `off` keeps the faithful concatenation. Pinned by
 `tests/stages/kuna-gobool.xml` (two-pass over a hand-assembled
 `mov %rdi,%rax; cmp $1,%rdi; sete %al; ret`).
+
+### Go compiler panic contracts
+
+`kuna_calleenoreturn.rs (is_no_return)` recognizes the exact Go compiler-check
+helpers listed by `kuna_gobounds.rs (is_go_check_name)` when the effective source
+language is Go and `gobounds` is enabled. These bounds, division, shift and unsafe string/slice helpers
+never resume their caller, including their ABI wrappers. Disabling `gobounds`
+leaves the no-return decision to the existing `gonoreturn` analysis facts, so
+turning off both options preserves the original flow for auditing. Similar
+application names and explicit type-assertion panics are outside this list.

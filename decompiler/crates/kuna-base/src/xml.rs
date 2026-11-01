@@ -2139,7 +2139,7 @@ mod tests {
         // and kuna-lanedivide-freefanout / a lane split giving a free varnode two readers is refused, not fatal
         // and kuna-octeon-core / explicit Octeon integer variants
         // and kuna-truncptrflow / pointer flow on a truncated address space (option truncptrflow)
-        assert_eq!(count, 622, "corpus file count drifted");
+        assert_eq!(count, 623, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
