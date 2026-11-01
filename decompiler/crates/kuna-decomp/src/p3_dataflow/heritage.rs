@@ -3277,14 +3277,15 @@ impl Heritage {
     /// away the op, letting the data-flow for the new larger range determine the
     /// data-flow for the old Varnode.  The original Varnode is redefined as the
     /// output of a SUBPIECE of a larger free Varnode.  Return-form COPYs are
-    /// simply removed, in preparation for a larger COPY.
+    /// simply removed, in preparation for a larger COPY.  Returns the larger
+    /// free Varnodes.
     fn remove_revisited_markers(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         remove: &[crate::context::VarnodeId],
         addr: &Address,
         size: int4,
-    ) {
+    ) -> Vec<crate::context::VarnodeId> {
         use kuna_num::opcodes::OpCode;
 
         let space = addr.get_space().expect("remove_revisited_markers: addr space").clone();
@@ -3300,6 +3301,7 @@ impl Heritage {
             }
         }
 
+        let mut bigs = Vec::new();
         for &vn in remove {
             let op = fd
                 .vbank()
@@ -3408,7 +3410,9 @@ impl Heritage {
                 .get_mut(vn)
                 .expect("remove_revisited_markers: stale vn for setWriteMask")
                 .set_write_mask();
+            bigs.push(big);
         }
+        bigs
     }
 
     /// Determine if a CALL/CALLIND `op` has an indirect effect on the memory
@@ -4771,6 +4775,13 @@ impl Heritage {
     /// (the index of the first refined sub-range) on a non-trivial refinement, or
     /// `None` when there is nothing to refine.  The disjoint cover is altered both
     /// locally (`self.disjoint`) and globally (`self.globaldisjoint`).
+    ///
+    /// `removevars` are the earlier pass's markers `collect` set aside.  A
+    /// marker the partition would cut is retired first, against the
+    /// partitions it spans, and the read that replaces it is refined with the
+    /// others ([`kuna_revisitrefine`](super::kuna_revisitrefine)), so every
+    /// Varnode of each partition lies inside it.
+    #[allow(clippy::too_many_arguments)]
     fn refinement(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -4778,6 +4789,7 @@ impl Heritage {
         readvars: &[crate::context::VarnodeId],
         writevars: &[crate::context::VarnodeId],
         inputvars: &[crate::context::VarnodeId],
+        removevars: &[crate::context::VarnodeId],
         byte_copy: bool,
         halves: bool,
     ) -> Option<usize> {
@@ -4838,10 +4850,27 @@ impl Heritage {
                 },
             );
         }
+        let mut retired = Vec::new();
+        if !removevars.is_empty() {
+            let parts = super::kuna_revisitrefine::Partitions::new(&refine);
+            let space = addr.get_space().expect("refinement: space").clone();
+            let cut: Vec<_> = removevars
+                .iter()
+                .filter_map(|&vn| {
+                    let v = fd.vbank().get(vn).expect("refinement: marker");
+                    let start = space.wrap_offset(v.get_addr().get_offset().wrapping_sub(addr.get_offset()));
+                    parts.cut_span(start as usize, v.get_size() as usize).map(|span| (vn, span))
+                })
+                .collect();
+            for (vn, (lo, hi)) in cut {
+                let at = &addr + lo as i64;
+                retired.extend(self.remove_revisited_markers(fd, &[vn], &at, (hi - lo) as int4));
+            }
+        }
         let straddles = |vn: crate::context::VarnodeId| {
             !halves || crate::p3_dataflow::kuna_pairrefine::straddles_middle(fd, vn, &addr, size)
         };
-        let readvars: Vec<_> = readvars.iter().copied().filter(|&vn| straddles(vn)).collect();
+        let readvars: Vec<_> = readvars.iter().copied().chain(retired).filter(|&vn| straddles(vn)).collect();
         let writevars: Vec<_> = writevars.iter().copied().filter(|&vn| straddles(vn)).collect();
         let inputvars: Vec<_> = inputvars.iter().copied().filter(|&vn| straddles(vn)).collect();
         let mut newvn: Vec<crate::context::VarnodeId> = Vec::new();
@@ -4929,7 +4958,16 @@ impl Heritage {
             let normal = memrange.size > 4 && maxw < memrange.size;
             if byte_copy || pair_split || normal {
                 if let Some(refiter) =
-                    self.refinement(fd, idx, &readvars, &writevars, &inputvars, byte_copy, pair_split && !normal)
+                    self.refinement(
+                        fd,
+                        idx,
+                        &readvars,
+                        &writevars,
+                        &inputvars,
+                        &removevars,
+                        byte_copy,
+                        pair_split && !normal,
+                    )
                 {
                     idx = refiter;
                     memrange = self.disjoint.get(idx).clone();
@@ -6876,6 +6914,78 @@ mod tests {
             assert!(error.to_string().contains("requested input stack[0xfffffffa,0x100000004)"),
                 "{path}: {error}");
         }
+    }
+
+    /// A later pass whose unaligned read joins two ranges heritaged apart,
+    /// refined at every byte by a frame byte copy into the second. Each earlier
+    /// MULTIEQUAL spans several of the new partitions; the one starting at the
+    /// copied byte used to be collected as an 8-byte write of a 1-byte range,
+    /// and that range's own byte-copy refinement indexed past its array.
+    #[test]
+    fn a_revisited_range_refined_across_old_phis_keeps_each_partition_whole() {
+        use kuna_num::opcodes::OpCode;
+        let mut manager = build_manager();
+        let ram = manager.get_space_by_name("ram").unwrap().clone();
+        let stack = Rc::new(kuna_base::space::SpacebaseSpace::new("stack", 3, 4, &ram, 0, true, false));
+        manager.insert_space(stack.clone()).unwrap();
+        manager.insert_space(Rc::new(kuna_base::space::IopSpace::new(4))).unwrap();
+        let arch = Rc::new(ArchContext::new(manager));
+        let entry = Address::new(ram, 0x1000);
+        let mut fd = Funcdata::new("func", "func", arch, entry, 0x10000000, 0x40).unwrap();
+        let blocks = build_cfg(&mut fd, 4, &[(0, 1), (0, 2), (1, 3), (2, 3)]);
+        let at = |off: u64| Address::new(stack.clone(), 0xffff_ffd8 + off);
+        let copy = |fd: &mut Funcdata, block: BlockId, input: crate::context::VarnodeId, out: &Address, size: int4| {
+            let op = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(op, OpCode::CPUI_COPY);
+            fd.op_set_input(op, input, 0).unwrap();
+            fd.new_varnode_out(size, out, op).unwrap();
+            fd.op_insert_end(op, block);
+            op
+        };
+        let read = |fd: &mut Funcdata, block: BlockId, from: &Address, size: int4| {
+            let input = fd.new_varnode(size, from, None);
+            let op = fd.new_op(1, fd.get_address().clone());
+            fd.op_set_opcode_code(op, OpCode::CPUI_COPY);
+            fd.op_set_input(op, input, 0).unwrap();
+            fd.new_unique_out(size, op).unwrap();
+            fd.op_insert_end(op, block);
+            op
+        };
+        for (block, base) in [(blocks[1], 1), (blocks[2], 3)] {
+            for (slot, value) in [(0, base), (8, base + 1)] {
+                let constant = fd.new_constant(8, value);
+                copy(&mut fd, block, constant, &at(slot), 8);
+            }
+        }
+        read(&mut fd, blocks[3], &at(0), 8);
+        read(&mut fd, blocks[3], &at(8), 8);
+        let mut h = Heritage::new();
+        h.build_info_list(&fd);
+        h.build_adt(&fd);
+        h.heritage(&mut fd, None).unwrap();
+        let phis = |fd: &Funcdata| {
+            fd.obank().iter_alive().filter(|&op| fd.obank().get(op).unwrap().code() == OpCode::CPUI_MULTIEQUAL).count()
+        };
+        assert_eq!(phis(&fd), 2, "one phi per 8-byte slot");
+
+        let unaligned = read(&mut fd, blocks[3], &at(3), 8);
+        let byte = fd.new_constant(1, 5);
+        let copied = copy(&mut fd, blocks[3], byte, &at(8), 1);
+        fd.note_stack_byte_copy_op(copied);
+        h.heritage(&mut fd, None).unwrap();
+
+        for vn in fd.vbank().loc_space_ids(&stack) {
+            let v = fd.vbank().get(vn).unwrap();
+            if v.is_write_mask() || (!v.is_written() && v.has_no_descend()) {
+                continue;
+            }
+            let (start, range) = h.globaldisjoint.find(v.get_addr()).expect("heritaged");
+            let off = v.get_addr().get_offset() - start.get_offset();
+            assert!(off + v.get_size() as u64 <= range.size as u64,
+                "{:#x}+{} lies across the cover {:#x}+{}", v.get_addr().get_offset(), v.get_size(), start.get_offset(), range.size);
+        }
+        let input = fd.obank().get(unaligned).unwrap().get_in(0).unwrap();
+        assert!(!fd.vbank().get(input).unwrap().is_free(), "the unaligned read is linked");
     }
 
     #[test]
