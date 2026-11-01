@@ -3149,6 +3149,20 @@ function's banks hold millions of Varnodes and ops at once, retired ops included
 put 10.8 million Varnodes and 4.3 million ops in the arenas in one pass), so these
 are 32 bytes off every Varnode slot (264 to 232) and one allocation off every op.
 
+A Varnode created without a data-type has the unnamed unknown base of its size
+(`Datatype::is_unknown_placeholder`), and it allocates that 168-byte skeleton the
+first time its type is read, not when it is created
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (unknown_skeleton)`).
+Most such Varnodes are retyped before anything reads the skeleton, or are never
+read at all, like the iop annotations of call guards; nonzero-mask propagation,
+which visits every Varnode before type inference, reads an input's type only when
+it is type-locked (`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs
+(Funcdata::calc_nz_mask)`). Each skeleton still belongs
+to exactly one Varnode: merging and retyping compare types by identity, so
+sharing one skeleton per size would let two unrelated unknown-typed variables
+compare equal and merge. In libpython3.11's `0x3b72c0` the guards' outputs and
+annotations held 1.9 GB of skeletons at the first full heritage pass.
+
 Read-only block queries walk the stored Varnode descendants without copying
 them. Common-subexpression lookup returns the first eligible equal op in that
 sequence; earliest-use lookup instead compares block-local op order. The common
