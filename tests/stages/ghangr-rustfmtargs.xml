@@ -8,6 +8,7 @@
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_args_x86_64</com>
   <com>read symbols</com>
   <com>option setlanguage rust-language</com>
+  <com>option rustfmtflags off</com>
   <com>option rustfmtargs off</com>
   <com>load function decimal_lf</com>
   <com>decompile</com>

@@ -1,0 +1,39 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_flags_real_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmtflags off</com>
+  <com>load function traits</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmtflags on</com>
+  <com>print C</com>
+  <com>load function signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function align</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function debug_hex</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function reorder</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function dynamic</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="static format off and dynamic counts preserve runtime sinks" min="2" max="2">\b_print\(</stringmatch>
+<stringmatch name="integer trait identities select eight format suffixes" min="1" max="1">println!\("\{\} \{:\?\} \{:x\} \{:X\} \{:o\} \{:b\} \{:e\} \{:E\}"</stringmatch>
+<stringmatch name="signed narrow formats retain flags and type" min="1" max="1">eprintln!\("\{:\+07\} \{:-5\} \{:#08x\} \{:#010b\}".*\*const i16</stringmatch>
+<stringmatch name="static unicode fill alignment width precision" min="1" max="1">println!\("\|\{:·&lt;8\}\|\{:🦀\^10\}\|\{:&gt;7\.3\}\|"</stringmatch>
+<stringmatch name="debug hexadecimal modes preserve traits" min="1" max="1">println!\("\{:#x\?\} \{:#X\?\}"</stringmatch>
+<stringmatch name="static formats retain repeated indices" min="1" max="1">println!\("\{0:#08x\} \{1:\+06\} \{2:&gt;5o\} \{1:\+06\}"</stringmatch>
+</decompilertest>

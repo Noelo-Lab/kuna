@@ -1,0 +1,34 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "timeout_s": 120,
+  "cmd": [
+    "{{KUNA}}",
+    "test",
+    "--datatests",
+    "--datatests-dir",
+    "{{WORK}}/tests/datatests",
+    "--sleighpath",
+    "{{SPECS}}",
+    "--name",
+    "forloop1",
+    "--name",
+    "rea_missing_selection",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 2
+    },
+    "stderr_matches": [
+      "error: datatest 'rea_missing_selection\\.xml' not found in "
+    ],
+    "stdout_matches": [
+      "\"complete\": false",
+      "\"matched\": \\[\\s*\"forloop1\\.xml\"\\s*\\]",
+      "\"missing\": \\[\\s*\"rea_missing_selection\\.xml\"\\s*\\]",
+      "\"data:For-loop #1\""
+    ]
+  },
+  "notes": "Issue #1375: a requested datatest that matches no corpus file used to be skipped with a stderr warning while the run exited 0 and scored the rest as complete. The real one still runs and passes; the missing one is named in selection.missing and the run exits 2."
+}

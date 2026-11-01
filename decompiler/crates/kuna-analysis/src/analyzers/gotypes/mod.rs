@@ -417,8 +417,8 @@ fn locate_moduledata(file: &object::File, img: &GoImage, header_vma: u64) -> Opt
 }
 
 /// Get-or-create one of the well-known Go header shells: an already-interned
-/// (possibly completed) struct is returned as-is — `get_type_struct` alone
-/// refuses a name it has already completed.
+/// (possibly completed) struct is returned as-is. New shells retain a completion
+/// link so pointers created before field import see the completed layout.
 fn shell(tf: &dyn TypeFactory, name: &str) -> kuna_base::error::KunaResult<Rc<Datatype>> {
     if let Some(held) = tf.find_by_name(name)? {
         if held.get_metatype() == type_metatype::TYPE_STRUCT {
@@ -428,7 +428,7 @@ fn shell(tf: &dyn TypeFactory, name: &str) -> kuna_base::error::KunaResult<Rc<Da
             "gotypes: `{name}` is already held by a non-struct"
         )));
     }
-    tf.get_type_struct(name)
+    tf.kuna_declare_record(name, false)
 }
 
 /// Intern the four well-known header shells and their facets. Idempotent: an

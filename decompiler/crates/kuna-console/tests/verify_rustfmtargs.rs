@@ -46,6 +46,7 @@ fn decompile_fixture(
     assert!(!program.arch().rust_display_formatters.is_empty());
     program.arch_mut().rustc_stable_version = version;
     program.arch_mut().rust_fmt_args = enabled;
+    program.arch_mut().rust_fmt_flags = false;
     if !evidence {
         program.arch_mut().rust_display_formatters.clear();
     }

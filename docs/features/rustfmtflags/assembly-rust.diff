@@ -1,0 +1,40 @@
+--- off/hex_width
++++ on/hex_width
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402000,&mut v2);
++  println!("{:08x}",&*((v2 as *const _) as *const u32));
+   return 0;
+ }
+--- off/zero_precision
++++ on/zero_precision
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x40200a,&mut v2);
++  println!("{:.0}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }
+--- off/zero_width
++++ on/zero_width
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402012,&mut v2);
++  println!("{:00}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }
+--- off/debug_upper
++++ on/debug_upper
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x40201a,&mut v2);
++  println!("{:#X?}",&*((v2 as *const _) as *const u32));
+   return 0;
+ }

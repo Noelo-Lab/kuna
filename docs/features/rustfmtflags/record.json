@@ -1,7 +1,7 @@
 {
   "option": "rustfmtflags",
-  "state": "proposal",
-  "default": "off",
+  "state": "implemented",
+  "default": "on",
   "baseline_commit": "afe19872beb3b91aff7cb14e32e8c0f3b474a23c",
   "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
   "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
@@ -12,6 +12,80 @@
     "workspace_ignored": 39,
     "original_assertions": 675,
     "stage_assertions": 3427,
+    "spec": "passed",
+    "catalog": "passed",
+    "shared_counters": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed"
+  },
+  "proposal_pr": 1391,
+  "integrated_main": "e9b0a35f1e42b81de9a471871c63d57e664cc1d3",
+  "catalog": {
+    "settables": 359,
+    "tiers": [
+      127,
+      140,
+      92
+    ],
+    "live_fields": 167,
+    "xml_corpus_files": 628
+  },
+  "focused_validation": {
+    "rustfmt_unit_tests": 7,
+    "static_format_integration_tests": 5,
+    "native_stdout_stderr_comparison": "passed",
+    "omitted_static_fields_compiled_output": "7\n7\n0x7\n"
+  },
+  "timing": {
+    "compiled": {
+      "baseline_to_on": {
+        "wall_ms": 2.17323688400739,
+        "cpu_ms": 0.43414942877626483
+      },
+      "off_to_on": {
+        "wall_ms": -0.5773365484684545,
+        "cpu_ms": -0.5760271071573064
+      }
+    },
+    "assembly": {
+      "baseline_to_on": {
+        "wall_ms": 0.8225899219183264,
+        "cpu_ms": 1.0254268745450101
+      },
+      "off_to_on": {
+        "wall_ms": -0.8044353093787038,
+        "cpu_ms": 0.901827753694584
+      }
+    },
+    "fmtdemo": {
+      "baseline_to_on": {
+        "wall_ms": 0.4544004459599682,
+        "cpu_ms": 0.4980650709459189
+      },
+      "off_to_on": {
+        "wall_ms": 0.0625705530120424,
+        "cpu_ms": 0.053510273976908884
+      }
+    }
+  },
+  "fixtures": {
+    "rust_fmt_flags_real_x86_64": "8fc4bd9225151ce8b081866e7de08593cad56795a7c684781a9e9922ad951af0",
+    "rust_fmt_flags_x86_64": "340f80474bbf2d1f9f211eabc41b1916205811f8ed2ee575a307868ca27ce6e4"
+  },
+  "breadth": {
+    "distinct_binary_functions": 9431,
+    "language_function_surfaces": 10050,
+    "changed_functions": 19,
+    "c_function_records_byte_identical": 619,
+    "errors": 0
+  },
+  "validation": {
+    "workspace_passed": 9954,
+    "workspace_failed": 0,
+    "workspace_ignored": 39,
+    "original_assertions_off": 675,
+    "original_assertions_on": 675,
+    "stage_assertions": 3433,
     "spec": "passed",
     "catalog": "passed",
     "shared_counters": "passed",

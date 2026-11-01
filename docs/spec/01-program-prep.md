@@ -3638,8 +3638,11 @@ every other binary's pass list is byte-identical to before the pass existed):
   `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_structorder.rs (complete_order)`
   follows their descriptors even
   when the child has no independent typelink. Pointer fields do not impose a
-  layout dependency. Cyclic value layouts and malformed descriptors stay
-  opaque. A field whose factory type is still incomplete but whose metadata
+  layout dependency. Named shells use the factory's completion link, so pointers
+  created before field import resolve to the completed record's size and fields.
+  This includes self-references and mutually recursive named structs; an invalid
+  layout leaves the linked shell incomplete. Cyclic value layouts and malformed
+  descriptors stay opaque. A field whose factory type is still incomplete but whose metadata
   declares a nonzero size refuses the enclosing layout instead of disappearing
   as a zero-size marker. True zero-size fields retain the existing treatment.
   The pass also interns the well-known header shells `go.string`/`go.slice`/
@@ -7918,3 +7921,9 @@ symbol-name normalization removes trait qualifiers. Exact standard-library trait
 identities qualify; conflicting aliases invalidate the address. The P9
 `rustfmtargs` consumer independently checks language, layout and call shape.
 This evidence does not rename symbols or infer a generic formatter's pointee type.
+
+The same symbol walk records integer formatting traits in
+`Architecture::rust_integer_formatters` for P9 `rustfmtflags`. Display, Debug,
+LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
+trait identity; the Display-only map is derived from these facts without another
+object parse. Unknown or conflicting aliases invalidate the shared address.

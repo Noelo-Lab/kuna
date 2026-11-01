@@ -1,0 +1,20 @@
+--- off/reject_flags
++++ on/reject_flags
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402018,&mut v2);
++  print!("{}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }
+--- off/reject_trait
++++ on/reject_trait
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402000,&mut v2);
++  print!("{:e}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }

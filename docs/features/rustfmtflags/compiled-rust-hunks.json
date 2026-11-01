@@ -1,0 +1,82 @@
+[
+  {
+    "name": "align",
+    "address": "0x15dc0",
+    "hunks": [
+      "@@ -16,5 +16,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "debug_hex",
+    "address": "0x15e10",
+    "hunks": [
+      "@@ -12,5 +12,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "escaped",
+    "address": "0x15ec0",
+    "hunks": [
+      "@@ -20,5 +20,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "narrow_signed",
+    "address": "0x15fa0",
+    "hunks": [
+      "@@ -16,5 +16,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "narrow_unsigned",
+    "address": "0x16000",
+    "hunks": [
+      "@@ -12,5 +12,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "reorder",
+    "address": "0x16090",
+    "hunks": [
+      "@@ -18,5 +18,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "signed",
+    "address": "0x16100",
+    "hunks": [
+      "@@ -20,5 +20,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "traits",
+    "address": "0x16170",
+    "hunks": [
+      "@@ -36,5 +36,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "wide_signed",
+    "address": "0x16230",
+    "hunks": [
+      "@@ -12,5 +12,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  },
+  {
+    "name": "wide_unsigned",
+    "address": "0x16280",
+    "hunks": [
+      "@@ -12,5 +12,5 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical."
+  }
+]

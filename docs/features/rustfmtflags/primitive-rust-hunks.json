@@ -1,0 +1,20 @@
+[
+  {
+    "name": "reject_flags",
+    "address": "0x401173",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical.",
+    "note": "Previously refused by the default-Display-only feature; valid static flags or an exact integer exponent trait now qualify."
+  },
+  {
+    "name": "reject_trait",
+    "address": "0x401247",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "Exactly one runtime print-call line becomes a verified typed integer macro; all setup and other lines are byte-identical.",
+    "note": "Previously refused by the default-Display-only feature; valid static flags or an exact integer exponent trait now qualify."
+  }
+]
