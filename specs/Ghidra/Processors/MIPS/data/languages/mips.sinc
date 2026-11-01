@@ -499,6 +499,12 @@ define context contextreg
 # Instruction fields
 
 define token instr(32)
+@ifdef OCTEON
+    oct_p = (6,10)
+    oct_len = (11,15)
+    oct_bit = (16,20)
+    oct_imm = (6,15) signed
+@endif
     prime       = (26,31)
     bit25       = (25,25)
     zero2425    = (24,25)

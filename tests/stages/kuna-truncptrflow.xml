@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:64-32addr:n32">
+<!--
+    Stage P3, pointer flow on a truncated default data space: option
+    truncptrflow (p3_dataflow/ruleaction_7.rs RulePtrFlow, and the entry
+    stack register in p4_calls/coreaction_protos.rs ActionPrototypeTypes),
+    default on.
+
+    MIPS N32 addresses are 32 bits wide and its registers 64. The bytes are the
+    GCC 7.3 N32 soft-float build of tests/fixtures/mips-n32-stack/stack.c, the
+    same chunk tests/stages/kuna-n32-stack.xml decompiles on the Octeon N32
+    target, here on the generic MIPS 64-32addr N32 language.
+
+    sum_ten (0x100000, no declared prototype) adds its ten arguments; the
+    ninth and tenth arrive on the stack:
+
+        ld v0,0(sp); ld v1,8(sp); daddu v0,v0,v1; daddu t3,v0,t3; ...
+
+    pointer_ninth (0x100068) returns *p for a declared ninth argument p,
+    read from the low word of its stack slot:
+
+        lw v0,4(sp); jr ra; ld v0,0(v0)
+
+    Pass 1 (option truncptrflow off) reproduces the stubbed-out pass: the
+    eight-byte sp never reaches the four-byte stack base, so sum_ten reads its
+    stack arguments as fields of an sp struct and pointer_ninth loads through
+    `(long long)*(int *)(v1 + 4)`. Pass 2 (on, the default) narrows each
+    address to the stack's width and rebuilds sp as PIECE(upper, low) at
+    entry, so both stack arguments are parameters and *p is a plain read.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">dfa20000dfa300080043102d004b582d016a582d0169582d0168582d0167582d0166582d0165582d03e000080164102d27bdffe0dfa30020ffa40010ffa30018dfa20010dfa50018ffa30008dfa300280045102dffa4000027bd002003e000080043102d000000008fa2000403e00008dc4200000000000003e000088fa2000403e000088fa20000000410000004203edc42000003e000080082102d00000000fc85000003e0000800a010250000000027bdffe000801025ffa50000dfa40000ffbf00180040f80900000000dfa30000dfbf001827bd002003e000080043102d03e000080004103e0000000000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="sum_ten"/>
+<symbol space="ram" offset="0x100068" name="pointer_ninth"/>
+</binaryimage>
+<script>
+<com>parse line extern unsigned long long pointer_ninth(unsigned long long a,unsigned long long b,unsigned long long c,unsigned long long d,unsigned long long e,unsigned long long f,unsigned long long g,unsigned long long h,const unsigned long long *p);</com>
+<com>option truncptrflow off</com>
+<com>lo fu sum_ten</com><com>decompile</com><com>print C</com>
+<com>lo fu pointer_ninth</com><com>decompile</com><com>print C</com>
+<com>option truncptrflow on</com>
+<com>lo fu sum_ten</com><com>decompile</com><com>print C</com>
+<com>lo fu pointer_ninth</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="TRUNCPTRFLOW #1: OFF reads sum_ten's stack arguments as fields of sp (pass 1 only)" min="1" max="1">return [a-z_0-9]+->field_0x0 \+ [a-z_0-9]+->field_0x8 \+</stringmatch>
+<stringmatch name="TRUNCPTRFLOW #2: OFF loads p through a sign-extended stack word (pass 1 only)" min="1" max="1">return \*\(uint8 \*\)\(int8\)\*\(int4 \*\)\([a-z_0-9]+ \+ 4\);</stringmatch>
+<stringmatch name="TRUNCPTRFLOW #3: OFF declares sp as a local in both functions (pass 1 only)" min="2" max="2">; // sp$</stringmatch>
+<stringmatch name="TRUNCPTRFLOW #4: ON gives sum_ten all ten arguments (pass 2 only)" min="1" max="1">^int8 sum_ten\(int8 a0,int8 a1,int8 a2,int8 a3,int8 a4,int8 a5,int8 a6,int8 a7,int8 a8,int8 a9\)$</stringmatch>
+<stringmatch name="TRUNCPTRFLOW #5: ON adds both stack arguments (pass 2 only)" min="1" max="1">return a8 \+ a9 \+ a7 \+ a6 \+ a5 \+ a4 \+ a3 \+ a2 \+ a1 \+ a0;</stringmatch>
+<stringmatch name="TRUNCPTRFLOW #6: ON reads the declared pointer argument directly (pass 2 only)" min="1" max="1">return \*p;</stringmatch>
+<stringmatch name="TRUNCPTRFLOW #7: both passes decompile pointer_ninth" min="2" max="2">^uint8 pointer_ninth\(</stringmatch>
+</decompilertest>
