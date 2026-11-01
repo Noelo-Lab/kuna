@@ -27,6 +27,7 @@ enum Location {
     Unsupported,
     Unavailable,
     Register(u16),
+    EmptyEntryRegister(u16),
 }
 
 #[derive(Clone, Default)]
@@ -40,6 +41,7 @@ struct Extra {
     trampoline: bool,
     closure: bool,
     invalid: bool,
+    code_size: Option<u64>,
 }
 
 #[derive(Default)]
@@ -84,13 +86,11 @@ impl UnitExtras {
         };
         let location = if entry.tag() == gimli::DW_TAG_formal_parameter {
             entry.attr_value(gimli::DW_AT_location)
-                .and_then(|location| kuna_dwarfbyref::location_at_entry(dwarf, unit, &location, function_entry))
-                .map(|expression| {
-                    let mut operations = expression.operations(unit.encoding());
-                    match (operations.next(), operations.next()) {
-                        (Ok(None), Ok(None)) => Location::Unavailable,
-                        (Ok(Some(gimli::Operation::Register { register })), Ok(None)) => Location::Register(register.0),
-                        _ => Location::Unsupported,
+                .map(|location| {
+                    if let Some(expression) = kuna_dwarfbyref::location_at_entry(dwarf, unit, &location, function_entry) {
+                        simple_location(expression, unit.encoding())
+                    } else {
+                        empty_entry_location(dwarf, unit, &location, function_entry).unwrap_or_default()
                     }
                 }).unwrap_or_default()
         } else {
@@ -111,7 +111,50 @@ impl UnitExtras {
             invalid: [gimli::DW_AT_type, gimli::DW_AT_abstract_origin].iter()
                 .any(|attribute| entry.attr_value(*attribute).is_some() && reference(*attribute).is_none())
                 || entry.attr_value(gimli::DW_AT_specification).is_some(),
+            code_size: (entry.tag() == gimli::DW_TAG_subprogram).then(|| {
+                let low = dwarf.attr_address(unit, entry.attr_value(gimli::DW_AT_low_pc)?).ok()??;
+                let high = entry.attr_value(gimli::DW_AT_high_pc)?;
+                match dwarf.attr_address(unit, high.clone()).ok()? {
+                    Some(address) => address.checked_sub(low),
+                    None => high.udata_value(),
+                }
+            }).flatten(),
         });
+    }
+}
+
+fn simple_location(expression: gimli::Expression<Reader<'_>>, encoding: gimli::Encoding) -> Location {
+    let mut operations = expression.operations(encoding);
+    match (operations.next(), operations.next()) {
+        (Ok(None), Ok(None)) => Location::Unavailable,
+        (Ok(Some(gimli::Operation::Register { register })), Ok(None)) => Location::Register(register.0),
+        _ => Location::Unsupported,
+    }
+}
+
+/// Go 1.27 can give RET-only inputs an empty entry range; materialization also checks the body.
+fn empty_entry_location(
+    dwarf: &gimli::Dwarf<Reader<'_>>,
+    unit: &gimli::Unit<Reader<'_>>,
+    location: &gimli::AttributeValue<Reader<'_>>,
+    entry: Option<u64>,
+) -> Option<Location> {
+    if unit.encoding().version != 5 { return None; }
+    let entry = entry?;
+    let mut locations = dwarf.attr_locations(unit, location.clone()).ok()??;
+    let base = match locations.next_raw().ok()?? {
+        gimli::RawLocListEntry::BaseAddress { addr } => addr,
+        gimli::RawLocListEntry::BaseAddressx { addr } => dwarf.address(unit, addr).ok()?,
+        _ => return None,
+    };
+    if base != entry { return None; }
+    let gimli::RawLocListEntry::OffsetPair { begin: 0, end: 0, data } = locations.next_raw().ok()?? else {
+        return None;
+    };
+    if locations.next_raw().ok()?.is_some() { return None; }
+    match simple_location(data, unit.encoding()) {
+        Location::Register(register) => Some(Location::EmptyEntryRegister(register)),
+        _ => None,
     }
 }
 
@@ -255,12 +298,24 @@ impl Facts {
         if parameters.is_empty() || seen != inherited {
             return None;
         }
+        if parameters.iter().any(|(_, location, _)| matches!(location, Location::EmptyEntryRegister(_))) {
+            if extra.code_size != Some(1) { return None; }
+            let address = kuna_base::address::Address::new(arch.manage().get_default_code_space()?.clone(), sub.low_pc?);
+            let mut opcode = [0u8];
+            arch.translate().loader_rc().borrow_mut().load_fill(&mut opcode, &address).ok()?;
+            if opcode != [0xc3] { return None; }
+        }
         let mut expected = Vec::new();
         let mut inputs = Vec::new();
         let mut names = Vec::new();
         let mut output = None;
         let (mut integers, mut floats) = (0, 0);
         for (parameter, location, result) in parameters {
+            let location = match location {
+                Location::EmptyEntryRegister(register) if !result => Location::Register(register),
+                Location::EmptyEntryRegister(_) => return None,
+                location => location,
+            };
             let scalar = self.scalar(parameter.type_ref?, &mut BTreeSet::new(), &mut 256)?;
             let registers = if scalar.float { FLOAT_REGISTERS } else { INTEGER_REGISTERS };
             if result {

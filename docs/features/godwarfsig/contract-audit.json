@@ -11778,7 +11778,7 @@
   },
   {
     "fixture": "basics127",
-    "verified_contracts": 470,
+    "verified_contracts": 471,
     "mismatches": [],
     "contracts": [
       {
@@ -15187,6 +15187,28 @@
           "*TYPE_UINT:1:uint1"
         ],
         "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gclinkptr.ptr",
+        "address": "0x4250c0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "*runtime.gclink"
+            ]
+          ],
+          "recv": [
+            "p",
+            "runtime.gclinkptr"
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "*TYPE_STRUCT:8:runtime.gclink"
       },
       {
         "proof": "pinned angr signature reader",
@@ -27002,6 +27024,4710 @@
           "TYPE_INT:8:int8"
         ],
         "result": "TYPE_INT:8:int8"
+      }
+    ]
+  },
+  {
+    "fixture": "native1273",
+    "verified_contracts": 201,
+    "mismatches": [],
+    "contracts": [
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/sys.OnesCount64",
+        "address": "0x401520",
+        "reference": {
+          "params": [
+            [
+              "x",
+              "uint64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.SM10",
+        "address": "0x402680",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.[8SM10K6]",
+        "address": "0x402700",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/maps.MemHash",
+        "address": "0x4034a0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "h",
+              "uintptr"
+            ],
+            [
+              "s",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/maps.MemHash32",
+        "address": "0x403500",
+        "reference": {
+          "params": [
+            [
+              "k",
+              "uint32"
+            ],
+            [
+              "h",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/maps.MemHash64",
+        "address": "0x403580",
+        "reference": {
+          "params": [
+            [
+              "k",
+              "uint64"
+            ],
+            [
+              "h",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/maps.memHashFallback",
+        "address": "0x4041c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "seed",
+              "uintptr"
+            ],
+            [
+              "s",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M36K4M8",
+        "address": "0x4079e0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M7K1M24",
+        "address": "0x407a20",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/exithook.Run",
+        "address": "0x4103a0",
+        "reference": {
+          "params": [
+            [
+              "code",
+              "int"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memhash128",
+        "address": "0x410fa0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "h",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memhash64",
+        "address": "0x410fe0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "seed",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memhash32",
+        "address": "0x411000",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "seed",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memequal0",
+        "address": "0x411020",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memequal8",
+        "address": "0x411040",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memequal16",
+        "address": "0x411060",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memequal32",
+        "address": "0x411080",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memequal64",
+        "address": "0x4110a0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memequal128",
+        "address": "0x4110c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.f32equal",
+        "address": "0x4110e0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.f64equal",
+        "address": "0x411100",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.c64equal",
+        "address": "0x411120",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.c128equal",
+        "address": "0x411160",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.strequal",
+        "address": "0x4111a0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.interequal",
+        "address": "0x411200",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.nilinterequal",
+        "address": "0x411260",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.munmap",
+        "address": "0x411700",
+        "reference": {
+          "params": [
+            [
+              "addr",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sigaction",
+        "address": "0x4117a0",
+        "reference": {
+          "params": [
+            [
+              "sig",
+              "uint32"
+            ],
+            [
+              "new",
+              "*runtime.sigactiont"
+            ],
+            [
+              "old",
+              "*runtime.sigactiont"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4",
+          "*TYPE_STRUCT:32:runtime.sigactiont",
+          "*TYPE_STRUCT:32:runtime.sigactiont"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.defaultGOMAXPROCS",
+        "address": "0x411ac0",
+        "reference": {
+          "params": [
+            [
+              "ncpu",
+              "int32"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.debugCallWrap",
+        "address": "0x413c40",
+        "reference": {
+          "params": [
+            [
+              "dispatch",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.debugCallWrap2",
+        "address": "0x413da0",
+        "reference": {
+          "params": [
+            [
+              "dispatch",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.floor",
+        "address": "0x415c60",
+        "reference": {
+          "params": [
+            [
+              "x",
+              "float64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "float64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_FLOAT:8:float8"
+        ],
+        "result": "TYPE_FLOAT:8:float8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*lfstack).push",
+        "address": "0x417720",
+        "reference": {
+          "params": [
+            [
+              "node",
+              "*runtime.lfnode"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "head",
+            "*runtime.lfstack"
+          ]
+        },
+        "input_types": [
+          "*TYPE_UINT:8:uint8",
+          "*TYPE_STRUCT:16:runtime.lfnode"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*lfstack).pop",
+        "address": "0x4177a0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "unsafe.Pointer"
+            ]
+          ],
+          "recv": [
+            "head",
+            "*runtime.lfstack"
+          ]
+        },
+        "input_types": [
+          "*TYPE_UINT:8:uint8"
+        ],
+        "result": "*TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.lfnodeValidate",
+        "address": "0x4177e0",
+        "reference": {
+          "params": [
+            [
+              "node",
+              "*runtime.lfnode"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:16:runtime.lfnode"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*listHeadManual).push",
+        "address": "0x417860",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "head",
+            "*runtime.listHeadManual"
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:24:runtime.listHeadManual",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*listHeadManual).pop",
+        "address": "0x417900",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "unsafe.Pointer"
+            ]
+          ],
+          "recv": [
+            "head",
+            "*runtime.listHeadManual"
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:24:runtime.listHeadManual"
+        ],
+        "result": "*TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*listHeadManual).remove",
+        "address": "0x4179c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "head",
+            "*runtime.listHeadManual"
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:24:runtime.listHeadManual",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.notewakeup",
+        "address": "0x417a80",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "*runtime.note"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.note"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.notesleep",
+        "address": "0x417b20",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "*runtime.note"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.note"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.notetsleep_internal",
+        "address": "0x417c20",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "*runtime.note"
+            ],
+            [
+              "ns",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.note",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.notetsleep",
+        "address": "0x417de0",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "*runtime.note"
+            ],
+            [
+              "ns",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.note",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.notetsleepg",
+        "address": "0x417e60",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "*runtime.note"
+            ],
+            [
+              "ns",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.note",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.semasleep",
+        "address": "0x417f00",
+        "reference": {
+          "params": [
+            [
+              "ns",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.nextHeapRandBits",
+        "address": "0x418a40",
+        "reference": {
+          "params": [
+            [
+              "bits",
+              "int"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memclrNoHeapPointersChunked",
+        "address": "0x41a720",
+        "reference": {
+          "params": [
+            [
+              "size",
+              "uintptr"
+            ],
+            [
+              "x",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.fastexprand",
+        "address": "0x41a8e0",
+        "reference": {
+          "params": [
+            [
+              "mean",
+              "int"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.persistentalloc",
+        "address": "0x41aa00",
+        "reference": {
+          "params": [
+            [
+              "size",
+              "uintptr"
+            ],
+            [
+              "align",
+              "uintptr"
+            ],
+            [
+              "sysStat",
+              "*runtime.sysMemStat"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "unsafe.Pointer"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "*TYPE_UINT:8:uint8"
+        ],
+        "result": "*TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.deductAssistCredit",
+        "address": "0x41e5a0",
+        "reference": {
+          "params": [
+            [
+              "size",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.isMarkedOrNotInHeap",
+        "address": "0x41f7c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.bulkBarrierBitmap",
+        "address": "0x41fac0",
+        "reference": {
+          "params": [
+            [
+              "dst",
+              "uintptr"
+            ],
+            [
+              "src",
+              "uintptr"
+            ],
+            [
+              "size",
+              "uintptr"
+            ],
+            [
+              "maskOffset",
+              "uintptr"
+            ],
+            [
+              "bits",
+              "*uint8"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "*TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.runGCProg",
+        "address": "0x41ff40",
+        "reference": {
+          "params": [
+            [
+              "prog",
+              "*uint8"
+            ],
+            [
+              "dst",
+              "*uint8"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_UINT:1:uint1",
+          "*TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysFree",
+        "address": "0x422620",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ],
+            [
+              "sysStat",
+              "*runtime.sysMemStat"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8",
+          "*TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysUnusedOS",
+        "address": "0x422920",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysUsedOS",
+        "address": "0x422b00",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysHugePageOS",
+        "address": "0x422bc0",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysNoHugePageOS",
+        "address": "0x422c40",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysFaultOS",
+        "address": "0x422cc0",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.pollFractionalWorkerExit",
+        "address": "0x424260",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.findMaybeRunnableGoroutines",
+        "address": "0x425080",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "moreWork",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.findGoroutineLeaks",
+        "address": "0x425240",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcEndWork",
+        "address": "0x426960",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "last",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcMark",
+        "address": "0x426a80",
+        "reference": {
+          "params": [
+            [
+              "startTime",
+              "int64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcSweep",
+        "address": "0x426ea0",
+        "reference": {
+          "params": [
+            [
+              "mode",
+              "runtime.gcMode"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcParkAssist",
+        "address": "0x4294c0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcFlushBgCredit",
+        "address": "0x429600",
+        "reference": {
+          "params": [
+            [
+              "scanWork",
+              "int64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.shade",
+        "address": "0x42ae20",
+        "reference": {
+          "params": [
+            [
+              "b",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.extractHeapBitsSmall",
+        "address": "0x42d480",
+        "reference": {
+          "params": [
+            [
+              "hbits",
+              "*uint8"
+            ],
+            [
+              "spanBase",
+              "uintptr"
+            ],
+            [
+              "addr",
+              "uintptr"
+            ],
+            [
+              "elemsize",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_UINT:1:uint1",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.readGOGC",
+        "address": "0x42f360",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.readGOMEMLIMIT",
+        "address": "0x42f3e0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcPaceScavenger",
+        "address": "0x42f840",
+        "reference": {
+          "params": [
+            [
+              "memoryLimit",
+              "int64"
+            ],
+            [
+              "heapGoal",
+              "uint64"
+            ],
+            [
+              "lastHeapGoal",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printScavTrace",
+        "address": "0x4302c0",
+        "reference": {
+          "params": [
+            [
+              "releasedBg",
+              "uintptr"
+            ],
+            [
+              "releasedEager",
+              "uintptr"
+            ],
+            [
+              "forced",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.fillAligned",
+        "address": "0x430880",
+        "reference": {
+          "params": [
+            [
+              "x",
+              "uint64"
+            ],
+            [
+              "m",
+              "uint"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uint64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*scavChunkData).alloc",
+        "address": "0x4313c0",
+        "reference": {
+          "params": [
+            [
+              "npages",
+              "uint"
+            ],
+            [
+              "newGen",
+              "uint32"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "sc",
+            "*runtime.scavChunkData"
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:12:runtime.scavChunkData",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*scavChunkData).free",
+        "address": "0x4314c0",
+        "reference": {
+          "params": [
+            [
+              "npages",
+              "uint"
+            ],
+            [
+              "newGen",
+              "uint32"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "sc",
+            "*runtime.scavChunkData"
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:12:runtime.scavChunkData",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sweepone",
+        "address": "0x4321c0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.deductSweepCredit",
+        "address": "0x4338a0",
+        "reference": {
+          "params": [
+            [
+              "spanBytes",
+              "uintptr"
+            ],
+            [
+              "callerSweepPages",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gcPaceSweeper",
+        "address": "0x433ae0",
+        "reference": {
+          "params": [
+            [
+              "trigger",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.freeSomeWbufs",
+        "address": "0x434700",
+        "reference": {
+          "params": [
+            [
+              "preemptible",
+              "bool"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.recordspan",
+        "address": "0x4347c0",
+        "reference": {
+          "params": [
+            [
+              "vh",
+              "unsafe.Pointer"
+            ],
+            [
+              "p",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.removefinalizer",
+        "address": "0x4372c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.clearCleanupContext",
+        "address": "0x4375a0",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "uintptr"
+            ],
+            [
+              "cleanupID",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.setTinyBlockContext",
+        "address": "0x437800",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.mProf_FlushLocked",
+        "address": "0x43ca20",
+        "reference": {
+          "params": [
+            [
+              "index",
+              "uint32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.saveblockevent",
+        "address": "0x43cd40",
+        "reference": {
+          "params": [
+            [
+              "cycles",
+              "int64"
+            ],
+            [
+              "rate",
+              "int64"
+            ],
+            [
+              "skip",
+              "int"
+            ],
+            [
+              "which",
+              "runtime.bucketType"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.mutexevent",
+        "address": "0x43d700",
+        "reference": {
+          "params": [
+            [
+              "cycles",
+              "int64"
+            ],
+            [
+              "skip",
+              "int"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*sysMemStat).add",
+        "address": "0x43ecc0",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "int64"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "s",
+            "*runtime.sysMemStat"
+          ]
+        },
+        "input_types": [
+          "*TYPE_UINT:8:uint8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.(*cpuStats).accumulate",
+        "address": "0x43eee0",
+        "reference": {
+          "params": [
+            [
+              "now",
+              "int64"
+            ],
+            [
+              "gcMarkPhase",
+              "bool"
+            ]
+          ],
+          "results": [],
+          "recv": [
+            "s",
+            "*runtime.cpuStats"
+          ]
+        },
+        "input_types": [
+          "*TYPE_STRUCT:88:runtime.cpuStats",
+          "TYPE_INT:8:int8",
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.futexsleep",
+        "address": "0x43fbc0",
+        "reference": {
+          "params": [
+            [
+              "addr",
+              "*uint32"
+            ],
+            [
+              "val",
+              "uint32"
+            ],
+            [
+              "ns",
+              "int64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_UINT:4:uint4",
+          "TYPE_UINT:4:uint4",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.futexwakeup",
+        "address": "0x43fc80",
+        "reference": {
+          "params": [
+            [
+              "addr",
+              "*uint32"
+            ],
+            [
+              "cnt",
+              "uint32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_UINT:4:uint4",
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.getCPUCount",
+        "address": "0x43fd20",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysargs",
+        "address": "0x43ffa0",
+        "reference": {
+          "params": [
+            [
+              "argc",
+              "int32"
+            ],
+            [
+              "argv",
+              "**uint8"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:4:int4",
+          "**TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.getHugePageSize",
+        "address": "0x440380",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.setsig",
+        "address": "0x440620",
+        "reference": {
+          "params": [
+            [
+              "i",
+              "uint32"
+            ],
+            [
+              "fn",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.setsigstack",
+        "address": "0x4406a0",
+        "reference": {
+          "params": [
+            [
+              "i",
+              "uint32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sysSigaction",
+        "address": "0x440700",
+        "reference": {
+          "params": [
+            [
+              "sig",
+              "uint32"
+            ],
+            [
+              "new",
+              "*runtime.sigactiont"
+            ],
+            [
+              "old",
+              "*runtime.sigactiont"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4",
+          "*TYPE_STRUCT:32:runtime.sigactiont",
+          "*TYPE_STRUCT:32:runtime.sigactiont"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.setThreadCPUProfiler",
+        "address": "0x440800",
+        "reference": {
+          "params": [
+            [
+              "hz",
+              "int32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.fatalthrow",
+        "address": "0x442460",
+        "reference": {
+          "params": [
+            [
+              "t",
+              "runtime.throwType"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.startpanic_m",
+        "address": "0x4425a0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.canpanic",
+        "address": "0x442ae0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.isAbortPC",
+        "address": "0x442c80",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.setPinned",
+        "address": "0x443180",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "unsafe.Pointer"
+            ],
+            [
+              "pin",
+              "bool"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printbool",
+        "address": "0x444b60",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printfloat64",
+        "address": "0x444bc0",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "float64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_FLOAT:8:float8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printfloat32",
+        "address": "0x444c20",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "float32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_FLOAT:4:float4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printuint",
+        "address": "0x444da0",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printint",
+        "address": "0x444e20",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "int64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printhexopts",
+        "address": "0x444ee0",
+        "reference": {
+          "params": [
+            [
+              "include0x",
+              "bool"
+            ],
+            [
+              "mindigits",
+              "int"
+            ],
+            [
+              "v",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool",
+          "TYPE_INT:8:int8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printhex",
+        "address": "0x445000",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printpointer",
+        "address": "0x4453c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.printuintptr",
+        "address": "0x445400",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.mReserveID",
+        "address": "0x446f40",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.mexit",
+        "address": "0x448d80",
+        "reference": {
+          "params": [
+            [
+              "osStack",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.needm",
+        "address": "0x449700",
+        "reference": {
+          "params": [
+            [
+              "signal",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.pollWork",
+        "address": "0x44c2e0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.wakeNetPoller",
+        "address": "0x44cb00",
+        "reference": {
+          "params": [
+            [
+              "when",
+              "int64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.injectglist",
+        "address": "0x44cbe0",
+        "reference": {
+          "params": [
+            [
+              "glist",
+              "*runtime.gList"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:16:runtime.gList"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.save",
+        "address": "0x44e140",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ],
+            [
+              "sp",
+              "uintptr"
+            ],
+            [
+              "bp",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.reentersyscall",
+        "address": "0x44e1a0",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ],
+            [
+              "sp",
+              "uintptr"
+            ],
+            [
+              "bp",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.newproc",
+        "address": "0x44eb60",
+        "reference": {
+          "params": [
+            [
+              "fn",
+              "*runtime.funcval"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.funcval"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.incidlelocked",
+        "address": "0x451580",
+        "reference": {
+          "params": [
+            [
+              "v",
+              "int32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.retake",
+        "address": "0x451dc0",
+        "reference": {
+          "params": [
+            [
+              "now",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uint32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_UINT:4:uint4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.preemptall",
+        "address": "0x4523a0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.schedtrace",
+        "address": "0x452500",
+        "reference": {
+          "params": [
+            [
+              "detailed",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.schedEnableUser",
+        "address": "0x4531c0",
+        "reference": {
+          "params": [
+            [
+              "enable",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.doInit1",
+        "address": "0x453f60",
+        "reference": {
+          "params": [
+            [
+              "t",
+              "*runtime.initTask"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:8:runtime.initTask"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.writeErrData",
+        "address": "0x455a00",
+        "reference": {
+          "params": [
+            [
+              "data",
+              "*uint8"
+            ],
+            [
+              "n",
+              "int32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_UINT:1:uint1",
+          "TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.args",
+        "address": "0x455a80",
+        "reference": {
+          "params": [
+            [
+              "c",
+              "int32"
+            ],
+            [
+              "v",
+              "**uint8"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:4:int4",
+          "**TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.getcallerfp",
+        "address": "0x456980",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.semacquire1",
+        "address": "0x456ba0",
+        "reference": {
+          "params": [
+            [
+              "addr",
+              "*uint32"
+            ],
+            [
+              "lifo",
+              "bool"
+            ],
+            [
+              "profile",
+              "runtime.semaProfileFlags"
+            ],
+            [
+              "skipframes",
+              "int"
+            ],
+            [
+              "reason",
+              "runtime.waitReason"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_UINT:4:uint4",
+          "TYPE_BOOL:1:bool",
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8",
+          "TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.semrelease1",
+        "address": "0x456ee0",
+        "reference": {
+          "params": [
+            [
+              "addr",
+              "*uint32"
+            ],
+            [
+              "handoff",
+              "bool"
+            ],
+            [
+              "skipframes",
+              "int"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_UINT:4:uint4",
+          "TYPE_BOOL:1:bool",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.initsig",
+        "address": "0x458380",
+        "reference": {
+          "params": [
+            [
+              "preinit",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sigprofNonGoPC",
+        "address": "0x4589a0",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.dieFromSignal",
+        "address": "0x4596c0",
+        "reference": {
+          "params": [
+            [
+              "sig",
+              "uint32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sigblock",
+        "address": "0x459cc0",
+        "reference": {
+          "params": [
+            [
+              "exiting",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.unblocksig",
+        "address": "0x459d60",
+        "reference": {
+          "params": [
+            [
+              "sig",
+              "uint32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.signalstack",
+        "address": "0x45a0a0",
+        "reference": {
+          "params": [
+            [
+              "s",
+              "*runtime.stack"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:16:runtime.stack"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.sigsend",
+        "address": "0x45a100",
+        "reference": {
+          "params": [
+            [
+              "s",
+              "uint32"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.stackpoolalloc",
+        "address": "0x45a560",
+        "reference": {
+          "params": [
+            [
+              "order",
+              "uint8"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "runtime.gclinkptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.stackpoolfree",
+        "address": "0x45a700",
+        "reference": {
+          "params": [
+            [
+              "x",
+              "runtime.gclinkptr"
+            ],
+            [
+              "order",
+              "uint8"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.gostartcallfn",
+        "address": "0x45c980",
+        "reference": {
+          "params": [
+            [
+              "gobuf",
+              "*runtime.gobuf"
+            ],
+            [
+              "fv",
+              "*runtime.funcval"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:48:runtime.gobuf",
+          "*TYPE_STRUCT:8:runtime.funcval"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.findnull",
+        "address": "0x45e160",
+        "reference": {
+          "params": [
+            [
+              "s",
+              "*uint8"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.taggedPointerPack",
+        "address": "0x4601e0",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "unsafe.Pointer"
+            ],
+            [
+              "tag",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "runtime.taggedPointer"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.timeSleepUntil",
+        "address": "0x461b00",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.traceRegisterLabelsAndReasons",
+        "address": "0x4622e0",
+        "reference": {
+          "params": [
+            [
+              "gen",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.callCgoSymbolizer",
+        "address": "0x466a40",
+        "reference": {
+          "params": [
+            [
+              "arg",
+              "*runtime.cgoSymbolizerArg"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_STRUCT:56:runtime.cgoSymbolizerArg"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.traceReadCPU",
+        "address": "0x4673e0",
+        "reference": {
+          "params": [
+            [
+              "gen",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.traceCPUFlush",
+        "address": "0x4679a0",
+        "reference": {
+          "params": [
+            [
+              "gen",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.traceAllocFreeEnabled",
+        "address": "0x4685e0",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.startPCForTrace",
+        "address": "0x46b320",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.goStatusToTraceGoStatus",
+        "address": "0x46b720",
+        "reference": {
+          "params": [
+            [
+              "status",
+              "uint32"
+            ],
+            [
+              "wr",
+              "runtime.waitReason"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "internal/trace/tracev2.GoStatus"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:4:uint4",
+          "TYPE_UINT:1:uint1"
+        ],
+        "result": "TYPE_UINT:1:uint1"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.traceSyncBatch",
+        "address": "0x46bbc0",
+        "reference": {
+          "params": [
+            [
+              "gen",
+              "uintptr"
+            ],
+            [
+              "frequency",
+              "uint64"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.panicunsafeslicelen1",
+        "address": "0x46e7a0",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.panicunsafeslicenilptr1",
+        "address": "0x46e840",
+        "reference": {
+          "params": [
+            [
+              "pc",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.vdsoauxv",
+        "address": "0x46f180",
+        "reference": {
+          "params": [
+            [
+              "tag",
+              "uintptr"
+            ],
+            [
+              "val",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.strhash",
+        "address": "0x475000",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "h",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.atomicwb",
+        "address": "0x475020",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "*unsafe.Pointer"
+            ],
+            [
+              "new",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "**TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/atomic.storePointer",
+        "address": "0x4750a0",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "*unsafe.Pointer"
+            ],
+            [
+              "new",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "**TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/atomic.casPointer",
+        "address": "0x4750e0",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "*unsafe.Pointer"
+            ],
+            [
+              "old",
+              "unsafe.Pointer"
+            ],
+            [
+              "new",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "**TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.cgocall",
+        "address": "0x475140",
+        "reference": {
+          "params": [
+            [
+              "fn",
+              "unsafe.Pointer"
+            ],
+            [
+              "arg",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.makemap_small",
+        "address": "0x475880",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "*internal/runtime/maps.Map"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "*TYPE_STRUCT:48:internal/runtime/maps.Map"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.memclrHasPointers",
+        "address": "0x475a80",
+        "reference": {
+          "params": [
+            [
+              "ptr",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "uintptr"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.blockevent",
+        "address": "0x475c00",
+        "reference": {
+          "params": [
+            [
+              "cycles",
+              "int64"
+            ],
+            [
+              "skip",
+              "int"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.bootstrapRand",
+        "address": "0x476960",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "uint64"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.rand",
+        "address": "0x476a00",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "uint64"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "internal/runtime/maps.rand",
+        "address": "0x476a80",
+        "reference": {
+          "params": [],
+          "results": [
+            [
+              "~r0",
+              "uint64"
+            ]
+          ]
+        },
+        "input_types": [],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.write",
+        "address": "0x4782c0",
+        "reference": {
+          "params": [
+            [
+              "fd",
+              "uintptr"
+            ],
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "n",
+              "int32"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8",
+          "*TYPE_VOID:0:void",
+          "TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "runtime.traceAdvance",
+        "address": "0x478320",
+        "reference": {
+          "params": [
+            [
+              "stopTrace",
+              "bool"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "TYPE_BOOL:1:bool"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "independent address-specific DWARF; name collision in reference",
+        "function": "runtime.asmcgocall",
+        "address": "0x47d280",
+        "reference": {
+          "params": [
+            [
+              "fn",
+              "unsafe.Pointer"
+            ],
+            [
+              "arg",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.EM76",
+        "address": "0x47d300",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M42K1M1",
+        "address": "0x47d380",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M24K8M40",
+        "address": "0x47d3e0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.SSM8",
+        "address": "0x47d440",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M4K4M8",
+        "address": "0x47d4e0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M26K2M84",
+        "address": "0x47d500",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M12K4M16",
+        "address": "0x47d580",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M54K2M104",
+        "address": "0x47d5c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M12K4M26K6M16",
+        "address": "0x47d660",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M4K4M2122K6M2720",
+        "address": "0x47d6c0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M17K7M20K4M8",
+        "address": "0x47d740",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M1K7M44K4M9",
+        "address": "0x47d7a0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M6K2M12",
+        "address": "0x47d800",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M16SSM40",
+        "address": "0x47d840",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.SM8",
+        "address": "0x47d920",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.M24S",
+        "address": "0x47d980",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.GGGGGGM2",
+        "address": "0x47da00",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "type:.eq.[2M16SSM40]",
+        "address": "0x47da80",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "unsafe.Pointer"
+            ],
+            [
+              "q",
+              "unsafe.Pointer"
+            ]
+          ],
+          "results": [
+            [
+              "r",
+              "bool"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_VOID:0:void",
+          "*TYPE_VOID:0:void"
+        ],
+        "result": "TYPE_BOOL:1:bool"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.add",
+        "address": "0x47db00",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "int64"
+            ],
+            [
+              "b",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.choose",
+        "address": "0x47db20",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "int64"
+            ],
+            [
+              "b",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.sumFor",
+        "address": "0x47db40",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.shortCalls",
+        "address": "0x47db80",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "int64"
+            ],
+            [
+              "b",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.loopCalls",
+        "address": "0x47dbe0",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "int64"
+            ],
+            [
+              "b",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.dispatch",
+        "address": "0x47dc60",
+        "reference": {
+          "params": [
+            [
+              "n",
+              "int64"
+            ],
+            [
+              "a",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.readAt",
+        "address": "0x47dcc0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "*int32"
+            ],
+            [
+              "i",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_INT:4:int4",
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.writeAt",
+        "address": "0x47dce0",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "*int32"
+            ],
+            [
+              "i",
+              "int64"
+            ],
+            [
+              "v",
+              "int32"
+            ]
+          ],
+          "results": []
+        },
+        "input_types": [
+          "*TYPE_INT:4:int4",
+          "TYPE_INT:8:int8",
+          "TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_VOID:0:void"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.fromWord",
+        "address": "0x47dd00",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "uintptr"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "*int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "*TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.toWord",
+        "address": "0x47dd20",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "*int32"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uintptr"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_INT:4:int4"
+        ],
+        "result": "TYPE_UINT:8:uint8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.retype",
+        "address": "0x47dd40",
+        "reference": {
+          "params": [
+            [
+              "p",
+              "*float64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "*int32"
+            ]
+          ]
+        },
+        "input_types": [
+          "*TYPE_FLOAT:8:float8"
+        ],
+        "result": "*TYPE_INT:4:int4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.narrow",
+        "address": "0x47dd60",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "uint64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "uint32"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_UINT:8:uint8"
+        ],
+        "result": "TYPE_UINT:4:uint4"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.extend",
+        "address": "0x47dd80",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "int8"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "int64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:1:char"
+        ],
+        "result": "TYPE_INT:8:int8"
+      },
+      {
+        "proof": "pinned angr signature reader",
+        "function": "main.number",
+        "address": "0x47dda0",
+        "reference": {
+          "params": [
+            [
+              "a",
+              "int64"
+            ]
+          ],
+          "results": [
+            [
+              "~r0",
+              "float64"
+            ]
+          ]
+        },
+        "input_types": [
+          "TYPE_INT:8:int8"
+        ],
+        "result": "TYPE_FLOAT:8:float8"
       }
     ]
   }

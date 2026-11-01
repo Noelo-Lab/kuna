@@ -1,50 +1,62 @@
 [
   {
-    "artifact": "basics122-on-go.json",
-    "exit_code": 0,
-    "report": "2018 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "basics122",
+    "result": "2018 functions, 0 syntax failures",
+    "functions": 2018,
+    "errors": 0
   },
   {
-    "artifact": "basics127-on-go.json",
-    "exit_code": 0,
-    "report": "2552 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "basics127",
+    "result": "2552 functions, 0 syntax failures",
+    "functions": 2552,
+    "errors": 0
   },
   {
-    "artifact": "hermetic-on-go.json",
-    "exit_code": 0,
-    "report": "25 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "entry-ranges",
+    "result": "9 functions, 0 syntax failures",
+    "functions": 9,
+    "errors": 0
   },
   {
-    "artifact": "hermetic-plain-on-go.json",
-    "exit_code": 0,
-    "report": "25 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "hermetic",
+    "result": "25 functions, 0 syntax failures",
+    "functions": 25,
+    "errors": 0
   },
   {
-    "artifact": "langdetect-on-go.json",
-    "exit_code": 0,
-    "report": "1558 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "hermetic-plain",
+    "result": "25 functions, 0 syntax failures",
+    "functions": 25,
+    "errors": 0
   },
   {
-    "artifact": "native-c-on-go.json",
-    "exit_code": 0,
-    "report": "55 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "langdetect",
+    "result": "1558 functions, 0 syntax failures",
+    "functions": 1558,
+    "errors": 0
   },
   {
-    "artifact": "native-on-go.json",
-    "exit_code": 0,
-    "report": "1156 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "native-c",
+    "result": "55 functions, 0 syntax failures",
+    "functions": 55,
+    "errors": 0
   },
   {
-    "artifact": "stripped122-on-go.json",
-    "exit_code": 0,
-    "report": "2017 functions, 0 syntax failures",
-    "errors": ""
+    "fixture": "native",
+    "result": "1156 functions, 0 syntax failures",
+    "functions": 1156,
+    "errors": 0
+  },
+  {
+    "fixture": "native1273",
+    "result": "1495 functions, 0 syntax failures",
+    "functions": 1495,
+    "errors": 0
+  },
+  {
+    "fixture": "stripped122",
+    "result": "2017 functions, 0 syntax failures",
+    "functions": 2017,
+    "errors": 0
   }
 ]

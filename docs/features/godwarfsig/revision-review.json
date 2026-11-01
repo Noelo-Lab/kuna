@@ -1,0 +1,177 @@
+{
+  "baseline_commit": "f26e71b4e867e9d142203e2d4f9fa6ae3d04a4ae",
+  "old_inputs": [
+    {
+      "file": "basics122-on-c.json",
+      "functions": 2018,
+      "changed": []
+    },
+    {
+      "file": "basics122-on-go.json",
+      "functions": 2018,
+      "changed": []
+    },
+    {
+      "file": "basics127-on-c.json",
+      "functions": 2552,
+      "changed": [
+        {
+          "address": "0x4250c0",
+          "name": "runtime.gclinkptr.ptr"
+        },
+        {
+          "address": "0x4645c0",
+          "name": "runtime.stackpoolalloc"
+        },
+        {
+          "address": "0x4647c0",
+          "name": "runtime.stackpoolfree"
+        },
+        {
+          "address": "0x464920",
+          "name": "runtime.stackcacherefill"
+        },
+        {
+          "address": "0x464a40",
+          "name": "runtime.stackcacherelease"
+        },
+        {
+          "address": "0x464b80",
+          "name": "runtime.stackcache_clear"
+        },
+        {
+          "address": "0x464c80",
+          "name": "runtime.stackalloc"
+        },
+        {
+          "address": "0x465020",
+          "name": "runtime.stackfree"
+        }
+      ]
+    },
+    {
+      "file": "basics127-on-go.json",
+      "functions": 2552,
+      "changed": [
+        {
+          "address": "0x4250c0",
+          "name": "runtime.gclinkptr.ptr"
+        },
+        {
+          "address": "0x4645c0",
+          "name": "runtime.stackpoolalloc"
+        },
+        {
+          "address": "0x4647c0",
+          "name": "runtime.stackpoolfree"
+        },
+        {
+          "address": "0x464920",
+          "name": "runtime.stackcacherefill"
+        },
+        {
+          "address": "0x464a40",
+          "name": "runtime.stackcacherelease"
+        },
+        {
+          "address": "0x464b80",
+          "name": "runtime.stackcache_clear"
+        },
+        {
+          "address": "0x464c80",
+          "name": "runtime.stackalloc"
+        },
+        {
+          "address": "0x465020",
+          "name": "runtime.stackfree"
+        }
+      ]
+    },
+    {
+      "file": "grep-on-c.json",
+      "functions": 449,
+      "changed": []
+    },
+    {
+      "file": "grep-on-rust.json",
+      "functions": 449,
+      "changed": []
+    },
+    {
+      "file": "hermetic-on-c.json",
+      "functions": 25,
+      "changed": []
+    },
+    {
+      "file": "hermetic-on-go.json",
+      "functions": 25,
+      "changed": []
+    },
+    {
+      "file": "hermetic-plain-on-c.json",
+      "functions": 25,
+      "changed": []
+    },
+    {
+      "file": "hermetic-plain-on-go.json",
+      "functions": 25,
+      "changed": []
+    },
+    {
+      "file": "langdetect-on-c.json",
+      "functions": 1558,
+      "changed": []
+    },
+    {
+      "file": "langdetect-on-go.json",
+      "functions": 1558,
+      "changed": []
+    },
+    {
+      "file": "native-c-on-c.json",
+      "functions": 55,
+      "changed": []
+    },
+    {
+      "file": "native-c-on-go.json",
+      "functions": 55,
+      "changed": []
+    },
+    {
+      "file": "native-c-on-rust.json",
+      "functions": 55,
+      "changed": []
+    },
+    {
+      "file": "native-on-c.json",
+      "functions": 1156,
+      "changed": []
+    },
+    {
+      "file": "native-on-go.json",
+      "functions": 1156,
+      "changed": []
+    },
+    {
+      "file": "rust-on-c.json",
+      "functions": 455,
+      "changed": []
+    },
+    {
+      "file": "rust-on-rust.json",
+      "functions": 455,
+      "changed": []
+    },
+    {
+      "file": "stripped122-on-c.json",
+      "functions": 2017,
+      "changed": []
+    },
+    {
+      "file": "stripped122-on-go.json",
+      "functions": 2017,
+      "changed": []
+    }
+  ],
+  "explanation": "Only runtime.gclinkptr.ptr and its seven callers change in the previously reviewed images. The new RET-only entry contract restores p and the pointer result; callers gain that argument and grounded next field accesses. Anonymous local renaming and inferred unlocked runtime call operands follow existing propagation."
+}

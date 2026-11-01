@@ -27,6 +27,15 @@
   <com>load function main.callIdentity</com><com>decompile</com><com>print C</com>
   <com>load function main.abstractIdentity</com><com>decompile</com><com>print C</com>
   <com>load function main.badReg</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-dwarf-entry-ranges/entry-ranges</com>
+  <com>option godwarfsig off</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.identity</com><com>decompile</com><com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/go-dwarf-entry-ranges/entry-ranges</com>
+  <com>option godwarfsig on</com><com>read symbols</com><com>option outlang go</com>
+  <com>load function main.identity</com><com>decompile</com><com>print C</com>
+  <com>load function main.wrongRegister</com><com>decompile</com><com>print C</com>
 </script>
 <stringmatch name="off loses an untouched pointer result" min="1" max="1">func fromWord\(\) \{</stringmatch>
 <stringmatch name="off loses a narrowing result" min="1" max="1">func narrow\(\) \{</stringmatch>
@@ -38,4 +47,7 @@
 <stringmatch name="callers receive the imported contract" min="1" max="1">return fromWord\(p\)</stringmatch>
 <stringmatch name="concrete origin keeps input and result roles" min="1" max="1">func abstractIdentity\(p uint64\) \*int32</stringmatch>
 <stringmatch name="wrong entry register remains uninferred" min="2" max="2">func badReg\(\) \{</stringmatch>
+<stringmatch name="empty entry range off retains inference" min="1" max="1">func identity\(\) \{</stringmatch>
+<stringmatch name="empty entry range on recovers a proven RET identity" min="1" max="1">func identity\(p uint64\) \*int32</stringmatch>
+<stringmatch name="empty entry range wrong register stays uninferred" min="1" max="1">func wrongRegister\(\) \{</stringmatch>
 </decompilertest>

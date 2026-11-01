@@ -51,7 +51,7 @@ fn run(command: &mut Command) {
 }
 fn go_available() -> bool {
     match Command::new("go").arg("version").output() {
-        Ok(output) => { assert!(output.status.success()); true }
+        Ok(output) => { assert!(output.status.success()); eprintln!("{}", String::from_utf8_lossy(&output.stdout)); true }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             eprintln!("Go toolchain absent; external execution check skipped"); false
         }
@@ -163,6 +163,30 @@ func main() {
 "#;
     std::fs::write(&file, format!("package main\nimport \"unsafe\"\n{}\n{check}", code.join("\n"))).unwrap();
     run(Command::new("go").arg("run").arg(file));
+}
+
+#[test]
+fn empty_entry_ranges_require_the_exact_register_and_ret_body() {
+    let binary = root().join("tests/fixtures/go-dwarf-entry-ranges/entry-ranges");
+    let mut program = bootstrap_from_object(binary.to_str().unwrap(), "",
+        &[root().join("specs").display().to_string()]).unwrap();
+    program.arch_mut().set_kuna_option("godwarfsig", "on").unwrap();
+    program.commit_pending_analysis().unwrap();
+    for name in ["identity", "wrongRegister", "laterRange", "notReturn", "longBody",
+        "duplicateRange", "badBase", "resultRange"] {
+        let address = program.lookup_symbol(&format!("main.{name}")).unwrap();
+        let present = program.arch().symboltab.function_proto_pieces_across_scopes(&address).is_some();
+        assert_eq!(present, name == "identity", "{name}");
+    }
+    let on = decompile(&binary, &["main.identity"], true, &[]);
+    let off = decompile(&binary, &["main.identity"], false, &[]);
+    assert!(on[0].contains("func identity(p uint64) *int32"), "{}", on[0]);
+    assert!(off[0].contains("func identity()"), "{}", off[0]);
+    if go_available() {
+        let file = common::scratch_file("godwarfsig-entry", "go");
+        std::fs::write(&file, format!("package main\nimport \"unsafe\"\n{}\nfunc main() {{ var x int32; if identity(uint64(uintptr(unsafe.Pointer(&x))))!=&x {{ panic(\"identity\") }} }}\n", on[0])).unwrap();
+        run(Command::new("go").arg("run").arg(file));
+    }
 }
 
 #[test]

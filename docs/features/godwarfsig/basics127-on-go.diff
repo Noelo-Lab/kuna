@@ -14975,6 +14975,15 @@
 +    prog = v16
    }
  }
+--- baseline/runtime.gclinkptr.ptr
++++ on/runtime.gclinkptr.ptr
+@@ -1,4 +1,4 @@
+ // runtime.gclinkptr.ptr
+-func ptr() {
+-  return
++func ptr(p uint64) *runtime.gclink {
++  return (*runtime.gclink)(unsafe.Pointer(uintptr(p)))
+ }
 --- baseline/runtime.getMCache
 +++ on/runtime.getMCache
 @@ -1,5 +1,5 @@
@@ -42697,7 +42706,7 @@
 +  var v1 *uint64 // rax | rbx | rcx | rdx | stack - 0x30
 +  var v2 uint64 // rax | rcx | rdx | stack - 0x20 | stack - 0x38
 +  var v3 uint64 // rax | rcx | stack - 0x18
-+  var v4 *uint64 // rax
++  var v4 *runtime.gclink // rax
 +  var v5 byte // al | cl | stack + 0x8
    
 -  v2 = *(**int64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(a0) * 0x40 + 0x8) * 1))))
@@ -42720,7 +42729,7 @@
 -    v4 = *(*int64)(unsafe.Add(unsafe.Pointer(v2),5 * 8))
 -    if gclinkptr.ptr(v4) != 0x0 {
 +    v2 = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8))
-+    if gclinkptr.ptr(v2) != 0x0 {
++    if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(v2)))) != uint64(uintptr(unsafe.Pointer(nil))) {
        throw("bad manualFreeList",0x12) // no-return
      }
 -    osStackAlloc(v2)
@@ -42734,8 +42743,8 @@
 +    *(*uint64)(unsafe.Add(unsafe.Pointer(v1),0xd * 8)) = int64(0x800 << (v5 & 0x3f))
 +    for v2 = 0x0; v2 < 0x8000; v2 = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),0xd * 8)) + v2 {
 +      v3 = _kuna_ident_282a6d7370616e29.base(v1) + v2
-+      v4 = (*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v3))))
-+      *v4 = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8))
++      v4 = gclinkptr.ptr(v3)
++      (*v4).next = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8))
 +      *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8)) = v3
      }
 -    _kuna_ident_282a6d5370616e4c69737429.insert((*struct_33)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(a0) * 0x40 + 0x8) * 1)))),v2)
@@ -42744,7 +42753,7 @@
 -  v4 = *(*int64)(unsafe.Add(unsafe.Pointer(v2),5 * 8))
 -  if gclinkptr.ptr(v4) == 0x0 {
 +  v2 = *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8))
-+  if gclinkptr.ptr(v2) == 0x0 {
++  if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(v2)))) == uint64(uintptr(unsafe.Pointer(nil))) {
      throw("span has no free stacks",0x17) // no-return
    }
 -  v1 = *(*int64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v4))))
@@ -42752,10 +42761,10 @@
 -  *(*int16)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v2),0xc * 8)))) = *(*int16)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v2),0xc * 8)))) + 1
 -  if gclinkptr.ptr(v1) == 0x0 {
 -    _kuna_ident_282a6d5370616e4c69737429.remove((*struct_33)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(a0) * 0x40 + 0x8) * 1)))),v2)
-+  v3 = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v2))))
++  v3 = (*gclinkptr.ptr(v2)).next
 +  *(*uint64)(unsafe.Add(unsafe.Pointer(v1),5 * 8)) = v3
 +  *(*int16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v1),0xc * 8)))) = *(*int16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v1),0xc * 8)))) + 1
-+  if gclinkptr.ptr(v3) == 0x0 {
++  if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(v3)))) == uint64(uintptr(unsafe.Pointer(nil))) {
 +    _kuna_ident_282a6d5370616e4c69737429.remove((*struct_31)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(order) * 0x40 + 0x8) * 1)))),v1)
    }
 -  return v4
@@ -42763,101 +42772,107 @@
  }
 --- baseline/runtime.stackpoolfree
 +++ on/runtime.stackpoolfree
-@@ -1,28 +1,28 @@
+@@ -1,30 +1,30 @@
  // runtime.stackpoolfree
 -func stackpoolfree(a0 uint64, a1 byte) {
 +func stackpoolfree(x uint64, order byte) {
++  var p uint64 // rax
    var v1 int16 // cx
 -  var v2 int64 // rax
 -  var v3 *int64 // rax | rbx | rcx | stack - 0x10
 -  var v4 *int64 // rax
-+  var v2 uint64 // rax
-+  var v3 *uint64 // rax | rbx | rcx | stack - 0x10
-+  var v4 *uint64 // rax
-   var v5 uint64 // rax | rcx | stack + 0x8
-   var v6 byte // bl | cl | dl | stack + 0x10
+-  var v5 uint64 // rax | rcx | stack + 0x8
+-  var v6 byte // bl | cl | dl | stack + 0x10
++  var v2 *uint64 // rax | rbx | rcx | stack - 0x10
++  var v3 *runtime.gclink // rax
++  var v4 uint64 // rax | rcx | stack + 0x8
++  var v5 byte // bl | cl | dl | stack + 0x10
    
 -  v5 = a0
 -  v6 = a1
 -  v3 = (*int64)(unsafe.Pointer(uintptr(spanOfUnchecked(a0))))
-+  v5 = x
-+  v6 = order
-+  v3 = (*uint64)(unsafe.Pointer(uintptr(spanOfUnchecked(x))))
-   if _kuna_ident_282a6d5370616e5374617465426f7829.get(int64(uintptr(unsafe.Pointer(v3))) + 99) == 0x2 {
+-  if _kuna_ident_282a6d5370616e5374617465426f7829.get(int64(uintptr(unsafe.Pointer(v3))) + 99) == 0x2 {
 -    v2 = *(*int64)(unsafe.Add(unsafe.Pointer(v3),5 * 8))
-+    v2 = *(*uint64)(unsafe.Add(unsafe.Pointer(v3),5 * 8))
-     if gclinkptr.ptr(v2) == 0x0 {
+-    if gclinkptr.ptr(v2) == 0x0 {
 -      _kuna_ident_282a6d5370616e4c69737429.insert((*struct_33)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(v6) * 0x40 + 0x8) * 1)))),v3)
-+      _kuna_ident_282a6d5370616e4c69737429.insert((*struct_31)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(v6) * 0x40 + 0x8) * 1)))),v3)
++  v4 = x
++  v5 = order
++  v2 = (*uint64)(unsafe.Pointer(uintptr(spanOfUnchecked(x))))
++  if _kuna_ident_282a6d5370616e5374617465426f7829.get(int64(uintptr(unsafe.Pointer(v2))) + 99) == 0x2 {
++    p = *(*uint64)(unsafe.Add(unsafe.Pointer(v2),5 * 8))
++    if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(p)))) == uint64(uintptr(unsafe.Pointer(nil))) {
++      _kuna_ident_282a6d5370616e4c69737429.insert((*struct_31)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(v5) * 0x40 + 0x8) * 1)))),v2)
      }
 -    v4 = (*int64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v5))))
 -    *v4 = *(*int64)(unsafe.Add(unsafe.Pointer(v3),5 * 8))
 -    *(*int64)(unsafe.Add(unsafe.Pointer(v3),5 * 8)) = v5
 -    v1 = *(*int16)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v3),0xc * 8))))
 -    *(*int16)(unsafe.Pointer((*int64)(unsafe.Add(unsafe.Pointer(v3),0xc * 8)))) = v1 + -1
-+    v4 = (*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v5))))
-+    *v4 = *(*uint64)(unsafe.Add(unsafe.Pointer(v3),5 * 8))
-+    *(*uint64)(unsafe.Add(unsafe.Pointer(v3),5 * 8)) = v5
-+    v1 = *(*int16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v3),0xc * 8))))
-+    *(*int16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v3),0xc * 8)))) = v1 + -1
++    v3 = gclinkptr.ptr(v4)
++    (*v3).next = *(*uint64)(unsafe.Add(unsafe.Pointer(v2),5 * 8))
++    *(*uint64)(unsafe.Add(unsafe.Pointer(v2),5 * 8)) = v4
++    v1 = *(*int16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v2),0xc * 8))))
++    *(*int16)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(v2),0xc * 8)))) = v1 + -1
      if (uint32(gcphase) == 0x0 && (uint16(v1 + -1) == 0x0)) {
-       _kuna_ident_282a6d5370616e4c69737429.remove((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(v6) * 0x40 + 0x8) * 1)),v3)
+-      _kuna_ident_282a6d5370616e4c69737429.remove((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(v6) * 0x40 + 0x8) * 1)),v3)
 -      *(*int64)(unsafe.Add(unsafe.Pointer(v3),5 * 8)) = 0
-+      *(*uint64)(unsafe.Add(unsafe.Pointer(v3),5 * 8)) = 0
++      _kuna_ident_282a6d5370616e4c69737429.remove((*byte)(unsafe.Add(unsafe.Pointer(stackpool),(uint64(v5) * 0x40 + 0x8) * 1)),v2)
++      *(*uint64)(unsafe.Add(unsafe.Pointer(v2),5 * 8)) = 0
        osStackFree()
-       _kuna_ident_282a6d6865617029.freeManual(mheap_,v3,1)
+-      _kuna_ident_282a6d6865617029.freeManual(mheap_,v3,1)
++      _kuna_ident_282a6d6865617029.freeManual(mheap_,v2,1)
      }
+     return
+   }
 
 --- baseline/runtime.stackcacherefill
 +++ on/runtime.stackcacherefill
-@@ -2,28 +2,29 @@
+@@ -1,11 +1,12 @@
+ // runtime.stackcacherefill
  func stackcacherefill(a0 int64, a1 byte) {
++  var p uint64 // rax | rbx | stack - 0x20
    var v1 byte // tmp
    var v2 uint64 // rax | rbx | rcx | stack - 0x38
 -  var v3 int64 // rax | rbx | rdx | stack - 0x20
 -  var v4 int64 // rax | rbx | rcx | stack - 0x20 | stack - 0x30
--  var v5 int64 // rax | rcx | stack + 0x8
++  var v3 int64 // rdx
++  var v4 uint64 // rax | rbx | rcx | stack - 0x20 | stack - 0x30
+   var v5 int64 // rax | rcx | stack + 0x8
 -  var v6 byte // bl | cl | stack + 0x10
-+  var v3 uint64 // rax | rbx | stack - 0x20
-+  var v4 int64 // rdx
-+  var v5 uint64 // rax | rbx | rcx | stack - 0x20 | stack - 0x30
-+  var v6 int64 // rax | rcx | stack + 0x8
-+  var v7 byte // al | bl | cl | stack + 0x10
++  var v6 byte // al | bl | cl | stack + 0x10
    
--  v5 = a0
--  v6 = a1
-+  v6 = a0
-+  v7 = a1
-   if uint64(uintptr(unsafe.Pointer((*byte)(unsafe.Pointer(uintptr((*g).stackguard1)))))) < uint64(uintptr(unsafe.Pointer(&Stack0000000000000000))) {
+   v5 = a0
+   v6 = a1
+@@ -13,16 +14,16 @@
      lock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(a1) * 0x40 * 1)))
--    v1 = v6 & 0x3f
-+    v1 = v7 & 0x3f
+     v1 = v6 & 0x3f
      v2 = 0x0
 -    v4 = 0
-+    v5 = 0x0
++    v4 = 0x0
      for v2 <= 0x3fff {
 -      v3 = stackpoolalloc(v6)
 -      *(*int64)(unsafe.Pointer(uintptr(gclinkptr.ptr()))) = v4
-+      v3 = stackpoolalloc(v7)
-+      *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr()))) = v5
++      p = stackpoolalloc(v6)
++      (*gclinkptr.ptr(p)).next = v4
        v2 = v2 + uint64(int64(0x800 << v1))
 -      v4 = v3
-+      v5 = v3
++      v4 = p
      }
      unlock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(a1) * 0x40 * 1)))
--    v3 = int64(uint64(a1)) * 16
+     v3 = int64(uint64(a1)) * 16
 -    *(*int64)(unsafe.Pointer(uintptr(v5 + 2224 + v3))) = v4
--    *(*uint64)(unsafe.Pointer(uintptr(v5 + 2232 + v3))) = v2
-+    v4 = int64(uint64(a1)) * 16
-+    *(*uint64)(unsafe.Pointer(uintptr(v6 + 2224 + v4))) = v5
-+    *(*uint64)(unsafe.Pointer(uintptr(v6 + 2232 + v4))) = v2
++    *(*uint64)(unsafe.Pointer(uintptr(v5 + 2224 + v3))) = v4
+     *(*uint64)(unsafe.Pointer(uintptr(v5 + 2232 + v3))) = v2
      return
    }
-   morestackc.abi0() // no-return
 
 --- baseline/runtime.stackcacherelease
 +++ on/runtime.stackcacherelease
-@@ -4,27 +4,27 @@
+@@ -1,30 +1,30 @@
+ // runtime.stackcacherelease
+ func stackcacherelease(a0 int64, a1 byte) {
++  var p uint64 // rax | rbx | rcx | rdx | stack - 0x20 | stack - 0x38
+   var v1 uint64 // rbx | rcx | stack - 0x20
    var v2 byte // tmp
    var v3 uint64 // rax | rcx | rdx | stack - 0x30
    var v4 int64 // rcx | stack - 0x28
@@ -42866,7 +42881,6 @@
 -  var v7 byte // bl | cl | stack + 0x10
 +  var v5 int64 // rax | rbx | stack + 0x8
 +  var v6 byte // bl | cl | stack + 0x10
-+  var x uint64 // rax | rbx | rcx | rdx | stack - 0x20 | stack - 0x38
    
 -  v6 = a0
 -  v7 = a1
@@ -42875,7 +42889,7 @@
    if uint64(uintptr(unsafe.Pointer((*byte)(unsafe.Pointer(uintptr((*g).stackguard1)))))) < uint64(uintptr(unsafe.Pointer(&Stack0000000000000000))) {
      v4 = int64(uint64(a1)) * 16
 -    v5 = *(*uint64)(unsafe.Pointer(uintptr(a0 + 2224 + v4)))
-+    x = *(*uint64)(unsafe.Pointer(uintptr(a0 + 2224 + v4)))
++    p = *(*uint64)(unsafe.Pointer(uintptr(a0 + 2224 + v4)))
      v3 = *(*uint64)(unsafe.Pointer(uintptr(a0 + 2232 + v4)))
      lock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(a1) * 0x40 * 1)))
 -    v2 = v7 & 0x3f
@@ -42883,16 +42897,17 @@
      for 0x4001 <= v3 {
 -      v1 = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v5,v5,v7))))
 -      stackpoolfree(v5,v7)
-+      v1 = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(x,x,v6))))
-+      stackpoolfree(x,v6)
++      v1 = (*gclinkptr.ptr(p)).next
++      stackpoolfree(p,v6)
        v3 = v3 - uint64(int64(0x800 << v2))
 -      v5 = v1
-+      x = v1
++      p = v1
      }
-     unlock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(a1) * 0x40 * 1)))
+-    unlock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(a1) * 0x40 * 1)))
 -    *(*uint64)(unsafe.Pointer(uintptr(v6 + 2224 + v4))) = v5
 -    *(*uint64)(unsafe.Pointer(uintptr(v6 + 2232 + v4))) = v3
-+    *(*uint64)(unsafe.Pointer(uintptr(v5 + 2224 + v4))) = x
++    unlock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(a1) * 0x40 * 1)),p,v6)
++    *(*uint64)(unsafe.Pointer(uintptr(v5 + 2224 + v4))) = p
 +    *(*uint64)(unsafe.Pointer(uintptr(v5 + 2232 + v4))) = v3
      return
    }
@@ -42904,6 +42919,7 @@
  // runtime.stackcache_clear
  func stackcache_clear(a0 int64) int64 {
 +  var order byte // bl | cl | dl | stack - 0x20 | stack - 0x29
++  var p uint64 // rax | rcx | stack - 0x18 | stack - 0x28
    var v1 int64 // rcx
    var v2 uint64 // rax | rcx | stack - 0x18
 -  var v3 uint64 // rax | rcx | stack - 0x18 | stack - 0x28
@@ -42914,7 +42930,6 @@
 +  var v3 uint64 // xmm15_qa
 +  var v4 uint64 // xmm15_qb
 +  var v5 int64 // rax | rcx | rdx | stack + 0x8
-+  var x uint64 // rax | rcx | stack - 0x18 | stack - 0x28
    
 -  v7 = a0
 +  v5 = a0
@@ -42926,18 +42941,18 @@
 +    order = 0x0
 +    for order <= 0x3 {
 +      lock((*byte)(unsafe.Add(unsafe.Pointer(stackpool),uint64(order) * 0x40 * 1)))
-+      x = *(*uint64)(unsafe.Pointer(uintptr(uint64(v5 + 2224) + uint64(order) * 0x10)))
++      p = *(*uint64)(unsafe.Pointer(uintptr(uint64(v5 + 2224) + uint64(order) * 0x10)))
        for {
 -        if gclinkptr.ptr(v3) == 0x0 {
-+        if gclinkptr.ptr(x) == 0x0 {
++        if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(p)))) == uint64(uintptr(unsafe.Pointer(nil))) {
            break
          }
 -        v2 = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(v3))))
 -        stackpoolfree(v3,v4)
 -        v3 = v2
-+        v2 = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(x))))
-+        stackpoolfree(x,order)
-+        x = v2
++        v2 = (*gclinkptr.ptr(p)).next
++        stackpoolfree(p,order)
++        p = v2
        }
 -      v1 = v7 + int64(uint64(v4) * 0x10)
 -      *(*uint64)(unsafe.Pointer(uintptr(v1 + 2224))) = v5
@@ -43053,13 +43068,14 @@
 -        v2 = *(*int64)(unsafe.Pointer(uintptr(int64(puintptr.ptr(v11,v7)) + 56)))
 -        v17 = int64(uint64(v14)) * 16
 -        v12 = *(*int64)(unsafe.Pointer(uintptr(v2 + 2224 + v17)))
+-        if gclinkptr.ptr() == 0x0 {
+-          stackcacherefill(v2,v14)
+-          v12 = *(*int64)(unsafe.Pointer(uintptr(v2 + 2224 + v17)))
 +        v11 = a0
 +        v2 = *(*int64)(unsafe.Pointer(uintptr(int64(puintptr.ptr(v8,v9)) + 56)))
 +        v10 = int64(uint64(order)) * 16
 +        v9 = *(*uint64)(unsafe.Pointer(uintptr(v2 + 2224 + v10)))
-         if gclinkptr.ptr() == 0x0 {
--          stackcacherefill(v2,v14)
--          v12 = *(*int64)(unsafe.Pointer(uintptr(v2 + 2224 + v17)))
++        if uint64(uintptr(unsafe.Pointer(gclinkptr.ptr(v9)))) == uint64(uintptr(unsafe.Pointer(nil))) {
 +          stackcacherefill(v2,order)
 +          v9 = *(*uint64)(unsafe.Pointer(uintptr(v2 + 2224 + v10)))
          }
@@ -43067,7 +43083,7 @@
 -        v7 = uint64(v18)
 -        v1 = (*int64)(unsafe.Pointer(uintptr(v2 + 2232 + v17)))
 -        *v1 = uint64(*v1) - uint64(v18)
-+        *(*uint64)(unsafe.Pointer(uintptr(v2 + 2224 + v10))) = *(*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr())))
++        *(*uint64)(unsafe.Pointer(uintptr(v2 + 2224 + v10))) = (*gclinkptr.ptr(v9)).next
 +        v1 = (*int64)(unsafe.Pointer(uintptr(v2 + 2232 + v10)))
 +        *v1 = uint64(*v1) - uint64(v11)
        } else {
@@ -43140,7 +43156,7 @@
 +  var v3 *runtime.m // rcx
 +  var v4 uint64 // rax | stack - 0x10
 +  var v5 *uint64 // rax | rbx | rcx | stack - 0x58
-+  var v6 *uint64 // rax
++  var v6 *runtime.gclink // rax
 +  var v7 uint64 // rbx | rcx | stack - 0x30 | stack - 0x50
 +  var v8 int64 // rcx | stack - 0x38
    var v9 uint64 // rax | rbx | rcx | stack - 0x30 | stack - 0x50
@@ -43213,8 +43229,8 @@
 -      *(*uint64)(unsafe.Pointer(uintptr(v1 + 2224 + v7))) = a0
 -      v4 = (*int64)(unsafe.Pointer(uintptr(v1 + 2232 + v7)))
 -      *v4 = uint64(*v4) + v9
-+      v6 = (*uint64)(unsafe.Pointer(uintptr(gclinkptr.ptr(a0))))
-+      *v6 = *(*uint64)(unsafe.Pointer(uintptr(v2 + 2224 + v8)))
++      v6 = gclinkptr.ptr(uint64(uintptr(unsafe.Pointer(a0))))
++      (*v6).next = *(*uint64)(unsafe.Pointer(uintptr(v2 + 2224 + v8)))
 +      *(*unsafe.Pointer)(unsafe.Pointer(uintptr(v2 + 2224 + v8))) = a0
 +      v1 = (*int64)(unsafe.Pointer(uintptr(v2 + 2232 + v8)))
 +      *v1 = uint64(*v1) + v9

@@ -37,38 +37,43 @@
     "input_integer_registers": 9,
     "input_float_registers": 8,
     "max_results": 1,
-    "scope": "fixed scalar/pointer inputs and result; pointers to validated flat records; no aggregate ABI decomposition"
+    "scope": "fixed scalar/pointer inputs and result; pointers to validated flat records; no aggregate ABI decomposition",
+    "empty_entry_locations": "DWARF 5 exact base and single zero-length register range; one-byte extent and C3 instruction required; inputs only"
   },
   "validation": {
     "original_assertions": 675,
-    "stage_assertions": 3455,
+    "stage_assertions": 3458,
     "tools": "114 tests, 1 skipped",
     "spec": "passed",
     "catalog": "passed",
     "counters": "passed",
     "focused_metadata_tests": 5,
-    "focused_console_tests": 6,
+    "focused_console_tests": 7,
     "workspace": {
-      "passed": 9997,
+      "passed": 9998,
       "failed": 0,
       "ignored": 39,
       "suites": 71
     },
-    "lint": "passed"
+    "lint": "passed",
+    "native_go_toolchains": [
+      "go1.22.5",
+      "go1.27.3"
+    ]
   },
   "breadth": {
-    "inputs": 10,
-    "distinct_functions": 10310,
-    "surfaces": 20675,
+    "inputs": 12,
+    "distinct_functions": 11814,
+    "surfaces": 23683,
     "disabled_changed_records": 0,
-    "enabled_changed_records": 6730,
-    "enabled_changed_distinct_functions": 3442,
+    "enabled_changed_records": 7977,
+    "enabled_changed_distinct_functions": 4085,
     "decompilation_errors": 0,
-    "classified_hunks": 9119,
-    "go_parsed_functions": 9406,
+    "classified_hunks": 10996,
+    "go_parsed_functions": 10910,
     "go_parse_errors": 0,
-    "contracts_matched_to_pinned_angr": 1183,
-    "contracts_independently_grounded_for_duplicate_name": 1,
+    "contracts_matched_to_pinned_angr": 1384,
+    "contracts_independently_grounded_for_duplicate_name": 2,
     "jobs": 1,
     "watchdog_seconds": 600
   },
@@ -76,11 +81,16 @@
     "hermetic_supported_contracts": 12,
     "hermetic_compiled_functions": 11,
     "hermetic_images": 2,
-    "native_compiled_functions_without_assertions": 14
+    "native_compiled_functions_without_assertions": 14,
+    "native_compiled_functions_without_assertions_per_toolchain": 14,
+    "empty_entry_identity_compiled": 1,
+    "empty_entry_negative_cases": 7
   },
   "fixtures": {
     "compressed": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
-    "uncompressed": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29"
+    "uncompressed": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+    "entry-ranges": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+    "native1273": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c"
   },
   "limits": [
     "No aggregate inputs/results by value, multiple results, stack arguments or hidden-context functions",
@@ -102,22 +112,22 @@
         "artifact": "timing-scalar-c.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.6351930397628713,
-            "cpu_ms": 0.6562064448204508
+            "wall_ms": -0.03818050978967591,
+            "cpu_ms": -0.04320416170600083
           },
           "off_to_on": {
-            "wall_ms": 0.18636813284682585,
-            "cpu_ms": -0.02020562191681341
+            "wall_ms": 0.055888091648803595,
+            "cpu_ms": 0.09262036236576954
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.7842270310993715,
-            "cpu_ms": 0.7380339064288588
+            "wall_ms": -0.21543747998837848,
+            "cpu_ms": -0.33376009889205527
           },
           "off_to_on": {
-            "wall_ms": 0.17721883135604077,
-            "cpu_ms": 0.15126881182621066
+            "wall_ms": 0.2746210213860678,
+            "cpu_ms": 0.26398370643654356
           }
         }
       },
@@ -125,22 +135,22 @@
         "artifact": "timing-native-go.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.13353604758642446,
-            "cpu_ms": 0.02682151057076254
+            "wall_ms": -0.23957704549987247,
+            "cpu_ms": 1.2275646604037682
           },
           "off_to_on": {
-            "wall_ms": 7.6949889529980275,
-            "cpu_ms": 7.701465381450667
+            "wall_ms": 3.3321443031590903,
+            "cpu_ms": 5.0247714951619615
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.6056725524830942,
-            "cpu_ms": 0.6044620287940061
+            "wall_ms": 0.6713956565853385,
+            "cpu_ms": -0.08728271369227159
           },
           "off_to_on": {
-            "wall_ms": 7.035805391269978,
-            "cpu_ms": 7.059112070740503
+            "wall_ms": 2.2548458588623754,
+            "cpu_ms": 7.212407401291854
           }
         }
       },
@@ -148,22 +158,22 @@
         "artifact": "timing-basics122.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -3.262189809327476,
-            "cpu_ms": -1.671064394189914
+            "wall_ms": -0.8317963187322364,
+            "cpu_ms": -0.4495436807573028
           },
           "off_to_on": {
-            "wall_ms": 10.222385907854514,
-            "cpu_ms": 5.833736423200531
+            "wall_ms": 5.481647345294682,
+            "cpu_ms": 5.45715672310032
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 1.2219349722536466,
-            "cpu_ms": 0.7177904241009836
+            "wall_ms": -0.7442738597056464,
+            "cpu_ms": -0.3461613147410336
           },
           "off_to_on": {
-            "wall_ms": 4.5830308026764355,
-            "cpu_ms": 4.594572564727795
+            "wall_ms": 5.629650484322779,
+            "cpu_ms": 5.596523285099364
           }
         }
       },
@@ -171,22 +181,22 @@
         "artifact": "timing-hermetic-plain.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.9114999371572896,
-            "cpu_ms": 0.8935888812828585
+            "wall_ms": -0.3441333230376098,
+            "cpu_ms": -0.310550291374978
           },
           "off_to_on": {
-            "wall_ms": 0.17190259584063394,
-            "cpu_ms": 0.11484079144576942
+            "wall_ms": 0.39914706840080694,
+            "cpu_ms": 0.3790757682413437
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.45506312234435686,
-            "cpu_ms": 0.6946367710948476
+            "wall_ms": -0.08114220180560627,
+            "cpu_ms": -0.14620625232510953
           },
           "off_to_on": {
-            "wall_ms": 1.1287290783952075,
-            "cpu_ms": 1.1223900305479706
+            "wall_ms": -0.12645620688001014,
+            "cpu_ms": -0.04597658011034067
           }
         }
       },
@@ -194,32 +204,62 @@
         "artifact": "timing-rust.json",
         "median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": 0.10159565787728475,
-            "cpu_ms": 0.13389805819898903
+            "wall_ms": -0.3021083870987762,
+            "cpu_ms": -0.3443002766146175
           },
           "off_to_on": {
-            "wall_ms": 1.088267762414441,
-            "cpu_ms": 1.0421503956552503
+            "wall_ms": -0.6690409263724661,
+            "cpu_ms": -0.6310823494578566
           }
         },
         "paired_median_delta_pct": {
           "baseline_to_off": {
-            "wall_ms": -0.031829606152378176,
-            "cpu_ms": -0.0355814806707766
+            "wall_ms": -0.21118088677632985,
+            "cpu_ms": -0.24603307112570638
           },
           "off_to_on": {
-            "wall_ms": 0.5966294031234387,
-            "cpu_ms": 0.6105031035600339
+            "wall_ms": 0.08296352995376122,
+            "cpu_ms": 0.07579702420654755
+          }
+        }
+      },
+      "native1273": {
+        "artifact": "timing-native1273.json",
+        "median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.398692962415792,
+            "cpu_ms": -0.3932303393693437
+          },
+          "off_to_on": {
+            "wall_ms": 7.625222380452201,
+            "cpu_ms": 7.538962102282709
+          }
+        },
+        "paired_median_delta_pct": {
+          "baseline_to_off": {
+            "wall_ms": -0.2677158212861075,
+            "cpu_ms": -0.26848336256141137
+          },
+          "off_to_on": {
+            "wall_ms": 7.550349215369967,
+            "cpu_ms": 7.56763022272533
           }
         }
       }
     },
-    "max_disabled_wall_delta_pct": 0.9114999371572896,
-    "max_disabled_cpu_delta_pct": 0.8935888812828585,
-    "max_enabled_wall_delta_pct": 10.222385907854514,
-    "max_enabled_cpu_delta_pct": 7.701465381450667,
+    "max_disabled_wall_delta_pct": -0.03818050978967591,
+    "max_disabled_cpu_delta_pct": 1.2275646604037682,
+    "max_enabled_wall_delta_pct": 7.625222380452201,
+    "max_enabled_cpu_delta_pct": 7.538962102282709,
     "default_on_speed_budget_pct": 5,
     "default_on_speed_budget_passed": false,
-    "rust_control_first_run": "timing-rust-first.json; ratio of medians showed +5.42% CPU during frequency drift, paired median +0.30%; repeat +0.13% CPU"
+    "rust_control_first_run": "timing-rust-first.json is the retained original pre-CI-repair outlier; timing-rust.json is the final repaired implementation measurement"
+  },
+  "ci_revision": {
+    "previous_head": "f26e71b4e867e9d142203e2d4f9fa6ae3d04a4ae",
+    "previous_records_rechecked": 20675,
+    "changed_records": 16,
+    "changed_distinct_functions": 8,
+    "evidence": "revision-review.json"
   }
 }
