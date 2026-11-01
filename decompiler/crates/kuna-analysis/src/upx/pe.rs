@@ -1189,6 +1189,12 @@ fn rebuild_export_dir(
 /// relocation records, the packer writes this one exactly when it gives the
 /// packed header a resource directory, so a trailer without it for an image
 /// whose headers both have one is damaged, not a variant.
+///
+/// The directory written back is the packed copy as `Resource::build` laid it
+/// out: every directory and data entry, then the names they point at, padded
+/// with zeros to four bytes. The packer clears only the original's directories
+/// and data entries, so its names are still in the image at the offsets the
+/// original used, which are not the ones the packed copy points at.
 fn rebuild_resources(
     img: &Image<'_>,
     obuf: &mut [u8],
@@ -1220,7 +1226,9 @@ fn rebuild_resources(
 
     let mut walk = ResourceWalk::default();
     walk_resource_dir(&tree, 0, 0, 0, &mut walk)?;
-    confine_to_section(oh, res_rva, walk.extent, "rebuilt resource directory")?;
+    let padded = walk.extent.saturating_add(3) & !3;
+    let dir_len = if padded as usize <= tree.len() { padded } else { walk.extent };
+    confine_to_section(oh, res_rva, dir_len, "rebuilt resource directory")?;
 
     let mut icondir_count = icondir_count;
     let mut moved = 0usize;
@@ -1256,7 +1264,7 @@ fn rebuild_resources(
     let entries = le32(obuf, rva_off(rvamin, res_rva)? + 12)?;
     if entries == 0 {
         let dir = tree
-            .get(..walk.extent as usize)
+            .get(..dir_len as usize)
             .ok_or_else(|| corrupt("resource directory runs past its packed copy"))?;
         write_at(obuf, rvamin, res_rva, dir)?;
     }
@@ -1264,8 +1272,8 @@ fn rebuild_resources(
 }
 
 /// What a walk of a resource tree reached: one past the last byte any
-/// directory, entry or data entry occupies, and each data entry's offset with
-/// the top-level type it sits under, in walk order.
+/// directory, entry, name or data entry occupies, and each data entry's offset
+/// with the top-level type it sits under, in walk order.
 #[derive(Default)]
 struct ResourceWalk {
     extent: u32,
@@ -1298,9 +1306,16 @@ fn walk_resource_dir(
     walk.extent = walk.extent.max(entries.saturating_add(8 * count));
     for i in 0..count {
         let e = (entries + 8 * i) as usize;
+        let name = le32(tree, e)?;
+        if name & 0x8000_0000 != 0 {
+            let at = name & 0x7fff_ffff;
+            let chars = le16(tree, at as usize)
+                .map_err(|_| corrupt("resource name lies outside the packed directory"))?;
+            walk.extent = walk.extent.max(at.saturating_add(2 + 2 * u32::from(chars)));
+        }
         let child = le32(tree, e + 4)?;
         if child & 0x8000_0000 != 0 {
-            let ty = if depth == 0 { le32(tree, e)? & 0x7fff_ffff } else { ty };
+            let ty = if depth == 0 { name & 0x7fff_ffff } else { ty };
             walk_resource_dir(tree, child & 0x7fff_ffff, depth + 1, ty, walk)?;
         } else {
             if !walk.seen.insert(child) {
@@ -1944,6 +1959,11 @@ mod tests {
     /// `packed_rva`, is the resource directory `tree`, into a recovered image
     /// whose `.rsrc` starts at 0x1000.
     fn rebuild_tree(tree: &[u8], packed_rva: u32) -> Result<(), UpxError> {
+        rebuild_tree_into(tree, packed_rva, &mut vec![0u8; 0x20000])
+    }
+
+    /// [`rebuild_tree`] into a recovered image `obuf` that starts at 0x1000.
+    fn rebuild_tree_into(tree: &[u8], packed_rva: u32, obuf: &mut [u8]) -> Result<(), UpxError> {
         let mut bytes = tiny_pe(tree);
         put(&mut bytes, TINY_SECTION + 12, packed_rva);
         put(&mut bytes, TINY_DIRS + 8 * DIR_RESOURCE, packed_rva);
@@ -1966,9 +1986,8 @@ mod tests {
             dirs,
             table_at: 24 + 224,
         };
-        let mut obuf = vec![0u8; 0x20000];
         let mut trailer = obuf.len() - 2;
-        rebuild_resources(&img, &mut obuf, &oh, 0x1000, true, &mut trailer)
+        rebuild_resources(&img, obuf, &oh, 0x1000, true, &mut trailer)
     }
 
     /// A root directory with one entry naming the data entry at 24, which
@@ -1989,6 +2008,23 @@ mod tests {
         let err = rebuild_tree(&one_leaf_tree(0, 32), 0x1000).expect_err("a truncated entry");
         assert!(format!("{err}").contains("runs past its packed copy"), "{err}");
         rebuild_tree(&one_leaf_tree(0, 40), 0x1000).expect("the whole entry is there");
+    }
+
+    /// The packed copy keeps a named entry's string behind the data entries,
+    /// and the packer leaves the original's strings where its linker put them,
+    /// so the string and its four-byte padding are written back along with
+    /// the entry that points at them -- or the entry names whatever the
+    /// original had there.
+    #[test]
+    fn a_resource_name_comes_back_with_the_entry_that_points_at_it() {
+        let mut tree = one_leaf_tree(0, 48);
+        tree[12..16].copy_from_slice(&[1, 0, 0, 0]);
+        put(&mut tree, 16, 0x8000_0000 | 40);
+        tree[40..46].copy_from_slice(&[2, 0, b'I', 0, b'D', 0]);
+        let mut obuf = vec![0u8; 0x20000];
+        obuf[40..48].copy_from_slice(b"original");
+        rebuild_tree_into(&tree, 0x1000, &mut obuf).expect("a named leaf");
+        assert_eq!(&obuf[..48], &tree[..]);
     }
 
     /// A moved leaf's back-pointer sits four bytes before its data, so a leaf

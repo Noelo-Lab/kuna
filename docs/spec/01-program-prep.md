@@ -1154,7 +1154,11 @@ UPX moved out of the image -- a DLL's always, an EXE's with `--compress-exports=
 writes, forwarder strings included. A TLS directory needs no step: UPX's own
 `rebuildTls` is empty. The resource directory comes back with every leaf UPX moved
 repointed, unless UPX could not clear the original's (its pieces were not
-contiguous), in which case the original's is still in the image and stays.
+contiguous), in which case the original's is still in the image and stays. What
+comes back is the packed copy whole, names included: UPX's packer lays the directory
+out afresh with every name string behind the directories and data entries, and
+clears only the original's directories and data entries, so the original's names are
+still in the image at offsets the packed copy's entries do not point at.
 
 Which trailer records exist is read from the trailer's length rather than predicted
 from the data directories. The packer writes a record only when it had something to
