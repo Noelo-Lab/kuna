@@ -4602,6 +4602,10 @@ pub fn bootstrap_from_object_with_isa(
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
     sleigh.base_mut().unwrap().rustc_stable_version =
         kuna_analysis::sourcelang::stable_rustc_version(&bytes);
+    if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1))) {
+        sleigh.base_mut().unwrap().rust_display_formatters =
+            kuna_analysis::sourcelang::primitive_display_formatters(&bytes);
+    }
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
     // auto` acts only when it is.

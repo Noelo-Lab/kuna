@@ -1,0 +1,60 @@
+--- off/decimal
++++ on/decimal
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402000,&mut v2);
++  print!("{}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }
+--- off/decimal_lf
++++ on/decimal_lf
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402002,&mut v2);
++  println!("{}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }
+--- off/decimal_stderr
++++ on/decimal_stderr
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_eprint(0x402000,&mut v2);
++  eprint!("{}",&*((v2 as *const _) as *const u64));
+   return 0;
+ }
+--- off/signed_lf
++++ on/signed_lf
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_eprint(0x402002,&mut v2);
++  eprintln!("{}",&*((v2 as *const _) as *const i64));
+   return 0;
+ }
+--- off/narrow
++++ on/narrow
+@@ -8,6 +8,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x402000,&mut v2);
++  print!("{}",&*((v2 as *const _) as *const u32));
+   return 0;
+ }
+--- off/reorder
++++ on/reorder
+@@ -14,6 +14,6 @@
+   v6 = fmt;
+   v1 = a0;
+   v2 = a1;
+-  std::io::stdio::_print(0x402006,&mut v3);
++  println!("{0} {1} {0}",&*((v3 as *const _) as *const u32),&*((v5 as *const _) as *const u32));
+   return 0;
+ }

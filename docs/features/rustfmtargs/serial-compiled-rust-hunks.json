@@ -1,0 +1,26 @@
+[
+  {
+    "name": "print_one",
+    "address": "0x14b30",
+    "hunks": [
+      "@@ -8,5 +8,5 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "reorder",
+    "address": "0x14b70",
+    "hunks": [
+      "@@ -14,5 +14,5 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "signed",
+    "address": "0x14bc0",
+    "hunks": [
+      "@@ -8,5 +8,5 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  }
+]

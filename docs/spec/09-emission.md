@@ -4059,3 +4059,36 @@ Rust string escaping protects controls, quotes and backslashes; doubled braces
 preserve literal formatting semantics. No arguments or side effects are dropped.
 The option does not recover placeholder templates, `format!`, `write!` or panic
 macros. Turning it off restores both encoded runtime arguments.
+
+### Primitive Rust print arguments
+
+`rustfmtargs` (default on) uses
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtargs.rs` for the placeholder
+representation at the same verified Rust 1.93.0/1.93.1 stdout/stderr sinks.
+It requires Rust output, a 64-bit little-endian data space, exactly two runtime
+arguments, no return value and a nonnull constant template pointer. Sink identity
+may be a fully qualified call name or the exact function symbol with its
+`std::io::stdio` namespace chain; an unqualified spelling alone is insufficient. Every consumed
+template byte is mapped, readonly and nonvolatile. A bounded decoder accepts UTF-8
+literal pieces and default placeholders, including explicit argument indices.
+It limits input to 4096 bytes, 128 pieces and 16 referenced arguments. Missing
+terminators, unsupported formatting flags and gaps in the referenced indices
+preserve the runtime call.
+
+The second word must identify a naturally aligned local stack descriptor array.
+Only pre-call inputs of stack INDIRECT effects associated with this exact call
+provide descriptor cells. Overlapping, missing or duplicate cells reject the
+whole candidate. Formatter pointers must resolve through bounded pure operations
+to an unambiguous primitive integer Display identity retained from full object
+symbols, before trait qualifiers are removed for display names. A normalized
+`fmt` name cannot distinguish Display, Debug or exponent formatting and is never
+used as evidence. Conflicting symbol aliases also disqualify a callback.
+
+Each value pointer must resolve through pure operations to an aligned local stack
+address. The macro borrows a dereference cast to the formatter's integer type,
+preserving width and signedness without substituting a later memory version.
+Literal escaping doubles braces and retains all controls; exactly one final LF
+selects an `ln` macro. Explicit indices preserve repeated-argument order. All
+original setup statements and IR remain intact, and C output is unchanged.
+Generic reference formatters, other traits, width/precision, `format!`, `write!`
+and specialized sinks remain explicit.

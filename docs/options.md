@@ -507,6 +507,8 @@ Three tiers:
 | Go runtime guards remain behind unconditional jump chains | [`gojumpchain`](#gojumpchain) |
 | Rust literal printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmtliteral`](#rustfmtliteral) |
 | Rust literal output remains a runtime formatting call | [`rustfmtliteral`](#rustfmtliteral) |
+| Rust primitive decimal output exposes a runtime template pointer | [`rustfmtargs`](#rustfmtargs) |
+| Rust print calls retain stack formatter descriptor arrays | [`rustfmtargs`](#rustfmtargs) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2499,6 +2501,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on to read verified Rust literal printing as source macros. Turn off to inspect the runtime sink and encoded fmt::Arguments words. This does not recover templates containing dynamic arguments.
 - **Where / provenance:** P9/literal-format · angr · opt-in-tool · angr-rust-format-literals
 - **Example:** `option rustfmtliteral off`
+
+### `rustfmtargs` -- on | off, default `on`
+
+- **Symptoms:** Rust primitive decimal output exposes a runtime template pointer; Rust print calls retain stack formatter descriptor arrays.
+- **What it does:** Recover primitive integer Display arguments in Rust print!, println!, eprint! and eprintln! for stable Rust 1.93.0/1.93.1 little-endian 64-bit images. Decode bounded readonly UTF-8 template pieces, default placeholders and explicit indices. Require exact full formatter trait identities and unambiguous stack descriptor cells at the exact runtime call. Preserve typed value references, descriptor setup and surrounding IR. Unknown callbacks, formatting flags, incomplete arrays and other layouts remain explicit. C output is unchanged.
+- **When to flip:** Leave on to read verified primitive decimal printing as source macros. Turn off to inspect the runtime template and descriptor array. Other formatting traits, generic reference callbacks and format!/write! remain outside this feature.
+- **Where / provenance:** P9/primitive-format · angr · opt-in-tool · angr-rust-format-arguments
+- **Example:** `option rustfmtargs off`
 
 ## Analysis & loader passes
 
