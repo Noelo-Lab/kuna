@@ -663,7 +663,7 @@ pub struct ConsoleProgram {
     /// image; see [`ConsoleProgram::load_notes`].
     load_notes: Vec<String>,
     elf_functions: kuna_analysis::loadimage_object::ElfFunctionProvenance,
-    /// The ELF names the loader keeps only as aliases, keyed by normalized entry
+    /// The names the loader keeps only as aliases, keyed by normalized entry
     /// (`ObjectLoadImage::func_symbol_aliases`).
     loader_aliases: BTreeMap<u64, Vec<String>>,
 }
@@ -858,7 +858,7 @@ impl ConsoleProgram {
     ///    carries `_l0`+`first_byte` at `0x0` and `_main`+`main` at `0x40`, and a
     ///    decorated/undecorated PE pair takes the same path.  (The loader's own
     ///    funcsym stream cannot do this — it is address-deduped as it is read;
-    ///    the ELF names that dedup drops are appended as aliases only, see
+    ///    the names that dedup drops are appended as aliases only, see
     ///    `loader_aliases`, so they never change the reported name.)
     ///
     /// Producers 1 and 3 collapse by address; producer 2 needs the same Thumb-bit
@@ -986,11 +986,12 @@ impl ConsoleProgram {
     /// Append the loader's alias names at `vma` that neither `name` nor `aliases`
     /// already spells.
     fn push_loader_aliases(&self, vma: u64, name: &str, aliases: &mut Vec<String>) {
-        for alias in self.loader_aliases.get(&vma).into_iter().flatten() {
-            if alias != name && !aliases.contains(alias) {
-                aliases.push(alias.clone());
-            }
-        }
+        let Some(names) = self.loader_aliases.get(&vma) else { return };
+        let mut known: std::collections::HashSet<&str> =
+            aliases.iter().map(String::as_str).chain([name]).collect();
+        let fresh: Vec<String> =
+            names.iter().filter(|alias| known.insert(alias.as_str())).cloned().collect();
+        aliases.extend(fresh);
     }
 
     /// (kuna, `functions-json-size`) The byte extent of an arbitrary address,
@@ -1269,7 +1270,9 @@ impl ConsoleProgram {
                     // the C spelling names the same function. Only on a MISS, so an
                     // image carrying both spellings answers the one it was asked.
                     if self.symbol_underscore_prefix && !want.starts_with('_') {
-                        candidates = entries_spelled(&entries, &format!("_{want}"));
+                        let decorated = format!("_{want}");
+                        candidates = self.entries_named(entries, &decorated);
+                        self.keep_direct_candidates(&mut candidates, &decorated);
                     }
                     if candidates.is_empty() {
                         return Err(EntryLookupError::NotFound {

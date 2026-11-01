@@ -861,7 +861,7 @@ impl ObjectLoadImage {
         //      `ElfDefaultGotPltMarkup`; see [`crate::loader::elf_plt`]),
         //   3. `.dynsym` defined functions, for stripped-but-dynamic binaries
         //      whose `.symtab` is gone.
-        // An ELF name the address dedup drops is kept in `aliases` instead.
+        // A name the address dedup drops is kept in `aliases` instead.
         // (kuna `symbolnamechars`, GH-340) Read the gate ONCE for the whole walk:
         // a large image carries a few hundred thousand names and the mode is a
         // process env var.
@@ -871,6 +871,7 @@ impl ObjectLoadImage {
         let mut seen: HashSet<u64> = HashSet::new();
         let mut elf_functions = ElfFunctionProvenance::default();
         let is_elf = file.format() == object::BinaryFormat::Elf;
+        let is_macho = file.format() == object::BinaryFormat::MachO;
         // The data half of the same two symbol tables (`STT_OBJECT`), collected in
         // the same walks and deduped on its own address set.  See [`DataSym`].
         let mut datasyms: Vec<DataSym> = Vec::new();
@@ -927,7 +928,7 @@ impl ObjectLoadImage {
             let size = sym.size();
             if seen.insert(addr) || !elfv1.0.is_empty() {
                 funcsyms.push(FuncSym { addr, name, size });
-            } else if is_elf {
+            } else {
                 aliases.push(FuncSym { addr, name, size });
             }
         }
@@ -954,15 +955,27 @@ impl ObjectLoadImage {
         let ppc32_names: std::collections::HashMap<_, _> = if is_elf && file.architecture() == object::Architecture::PowerPc {
             funcsyms.iter().enumerate().map(|(i, s)| (s.addr, i)).collect()
         } else { std::collections::HashMap::new() };
+        // A Mach-O export the symbol table already named is that name in its C
+        // spelling (`audit_export_a` for `_audit_export_a`), which lookup accepts
+        // anyway; it is a second name only where this stream named the address.
+        let mut named_by_imports: HashSet<u64> = HashSet::new();
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
-            let name = demangle_funcsym_name(p.name, namechars);
             if seen.insert(p.addr) {
+                if is_macho {
+                    named_by_imports.insert(p.addr);
+                }
+                let name = demangle_funcsym_name(p.name, namechars);
                 funcsyms.push(FuncSym { addr: p.addr, name, size: 0 });
             } else if let Some(&i) = ppc32_names.get(&p.addr) {
+                let name = demangle_funcsym_name(p.name, namechars);
                 let previous = std::mem::replace(&mut funcsyms[i].name, name);
                 aliases.push(FuncSym { addr: p.addr, name: previous, size: 0 });
-            } else if is_elf {
+            } else if !is_macho
+                || p.kind != crate::loader::format::ImportSymKind::Export
+                || named_by_imports.contains(&p.addr)
+            {
+                let name = demangle_funcsym_name(p.name, namechars);
                 aliases.push(FuncSym { addr: p.addr, name, size: 0 });
             }
         }
@@ -1163,9 +1176,8 @@ impl ObjectLoadImage {
 
         // Defined functions (rebased) + extern call targets, demangled + deduped
         // by address — the same `seen`/`demangle_funcsym_name` discipline the
-        // linked path's `.symtab` loop uses, including its ELF alias list.
+        // linked path's `.symtab` loop uses, including its alias list.
         let namechars = symbolnamechars_mode();
-        let is_elf = file.format() == object::BinaryFormat::Elf;
         let mut funcsyms: Vec<FuncSym> = Vec::new();
         let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
@@ -1182,7 +1194,7 @@ impl ObjectLoadImage {
             let name = demangle_funcsym_name(name, namechars);
             if seen.insert(addr) {
                 funcsyms.push(FuncSym { addr, name, size });
-            } else if is_elf {
+            } else {
                 aliases.push(FuncSym { addr, name, size });
             }
         }
@@ -1371,10 +1383,13 @@ impl ObjectLoadImage {
         out
     }
 
-    /// The ELF function names [`Self::func_symbols`] leaves out because an
-    /// earlier name holds the same address (a local veneer ahead of its global, a
-    /// weak alias beside its strong symbol). Lookup-only aliases, never the
-    /// reported name; raw addresses, Thumb bit included.
+    /// The function names [`Self::func_symbols`] leaves out because an earlier
+    /// name holds the same address (a local veneer ahead of its global, a weak
+    /// alias beside its strong symbol, a second Mach-O `nlist` label at one entry,
+    /// a MinGW `_fpreset` beside `fpreset`). Lookup-only aliases, never the
+    /// reported name; raw addresses, Thumb bit included. A Mach-O export's C
+    /// spelling (`audit_export_a` for `_audit_export_a`) is not a second name:
+    /// lookup already accepts it.
     pub fn func_symbol_aliases(&self) -> Vec<(u64, String)> {
         self.funcsym_aliases
             .iter()
