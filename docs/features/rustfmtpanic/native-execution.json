@@ -1,6 +1,6 @@
 {
   "producer": "1.93.1",
-  "input_sha256": "46c3837473d36cbe20ccf441f673a25b8470d6e02ba2a7ba6a70a598c35440fa",
+  "input_sha256": "3d33e21f76fa09487f2211771d3414d9bf9bed52b886df60a9a5a52e0e756683",
   "functions": [
     "panic_literal",
     "panic_empty",

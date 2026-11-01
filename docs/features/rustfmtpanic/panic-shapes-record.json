@@ -143,7 +143,7 @@
       "language": "go",
       "functions": 19,
       "changed": [],
-      "parsed": 0,
+      "parsed": 19,
       "errors": 0,
       "off_equals_parent": false
     }

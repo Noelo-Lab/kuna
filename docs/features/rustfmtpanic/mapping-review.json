@@ -14,13 +14,6 @@
     "classification": "stack descriptor-array address no longer rendered as a runtime argument; IR and setup statements retained"
   },
   {
-    "fixture": "native-rust",
-    "function": "0x25dfb",
-    "address": "0x25f64",
-    "instruction": "lea    -0x38(%rbp),%rsi",
-    "classification": "stack descriptor-array address no longer rendered as a runtime argument; IR and setup statements retained"
-  },
-  {
     "fixture": "panic-native",
     "function": "0x17180",
     "address": "0x171aa",
@@ -66,6 +59,13 @@
     "fixture": "panic-native",
     "function": "0x28b7b",
     "address": "0x28ce4",
+    "instruction": "lea    -0x38(%rbp),%rsi",
+    "classification": "stack descriptor-array address no longer rendered as a runtime argument; IR and setup statements retained"
+  },
+  {
+    "fixture": "native-rust",
+    "function": "0x25dfb",
+    "address": "0x25f64",
     "instruction": "lea    -0x38(%rbp),%rsi",
     "classification": "stack descriptor-array address no longer rendered as a runtime argument; IR and setup statements retained"
   }

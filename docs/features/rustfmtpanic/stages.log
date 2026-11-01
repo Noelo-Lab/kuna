@@ -1,4 +1,4 @@
-cd /home/mahaloz/kwt/angr-rust-panic && /home/mahaloz/kwt/angr-rust-panic/decompiler/target/release/kuna test --datatests \
+cd /home/mahaloz/kwt/angr-rust-panic-main && /home/mahaloz/kwt/angr-rust-panic-main/decompiler/target/release/kuna test --datatests \
   --datatests-dir tests/stages --baseline docs/baseline-stages.json
 datatests: 3508/3508 assertions passed
 exit: 0

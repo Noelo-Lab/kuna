@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess,json,re,sys,collections
-w=Path('/tmp/kuna-rust-panic');r=Path('/home/mahaloz/kwt/angr-rust-panic')
+w=Path('/tmp/kuna-rust-panic-d850');r=Path('/home/mahaloz/kwt/angr-rust-panic-main')
 ns={};s=(w/'breadth.py').read_text();exec(s[:s.index('\ndef image_read')],ns)
 inputs={name:path for name,path,_ in ns['inputs']}
 breadth=json.loads((w/'breadth/record.json').read_text())

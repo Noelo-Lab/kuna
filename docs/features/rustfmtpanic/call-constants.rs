@@ -22,7 +22,7 @@ fn constant(fd:&Funcdata,mut id:VarnodeId)->Option<u64>{
 }
 fn main(){
     let args:Vec<_>=std::env::args().collect();
-    let mut p=bootstrap_from_object(&args[1],"",&["/home/mahaloz/kwt/angr-rust-panic/specs".into()]).unwrap();p.commit_pending_analysis().unwrap();
+    let mut p=bootstrap_from_object(&args[1],"",&["/home/mahaloz/kwt/angr-rust-panic-main/specs".into()]).unwrap();p.commit_pending_analysis().unwrap();
     let mut s=ConsoleCommands::into_status(vec!["option setlanguage rust-language".into(),format!("load addr {}",args[2]),"decompile".into()]);register_decomp_commands(&mut s);
     s.get_data_mut(DECOMPILE_MODULE).unwrap().as_any_mut().downcast_mut::<IfaceDecompData>().unwrap().conf=Some(p);
     for _ in 0..3 {execute(&mut s);assert!(!s.inerror,"{}",s.optr);}

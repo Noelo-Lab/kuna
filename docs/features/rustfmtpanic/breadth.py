@@ -2,15 +2,14 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess, os, json, hashlib, difflib, re, sys
 
-root = Path('/home/mahaloz/kwt/angr-rust-panic')
-base = Path('/home/mahaloz/kwt/angr-rust-signed-bytes')
-old = Path('/tmp/kuna-rust-signed-bytes/breadth')
-out = Path('/tmp/kuna-rust-panic/breadth')
+root = Path('/home/mahaloz/kwt/angr-rust-panic-main')
+base = Path('/home/mahaloz/kwt/angr-rust-panic-base-d850')
+old = Path('/tmp/kuna-rust-panic-d850/empty-cache')
+out = Path('/tmp/kuna-rust-panic-d850/breadth')
 out.mkdir(exist_ok=True)
 patched_sha=hashlib.sha256((root/'decompiler/target/release/kuna').read_bytes()).hexdigest()
-assert hashlib.sha256((base/'decompiler/target/release/kuna').read_bytes()).hexdigest()==json.loads((base/'docs/features/rustsigned/record.json').read_text())['kuna_sha256']
 refs = Path('/tmp/kuna-angr-reference/binaries')
-sha = '4cb0ed51b00327b20c40b279a0fa2ba31d94860f'
+sha = 'd85071a68e917d609d7252004da015da06321b02'
 assert subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], cwd=base) == subprocess.check_output(['git', 'rev-parse', sha+'^{tree}'], cwd=base)
 inputs = [
     ('hermetic', root/'tests/fixtures/go-dwarf-signatures/compressed', ['c','go']),
@@ -68,6 +67,7 @@ def run(row):
     for language,prior,path,off in captures:
         a={x['address']:x for x in json.loads(prior.read_text())['functions']}
         b={x['address']:x for x in json.loads(path.read_text())['functions']};assert a.keys()==b.keys()
+        former={x['address']:x for x in json.loads((Path('/tmp/kuna-rust-panic/breadth')/f'{name}-{language}.json').read_text())['functions']};assert b==former,('integrated output differs from previously reviewed panic output',name,language)
         if language=='rust':
             ablation={x['address']:x for x in json.loads(off.read_text())['functions']}
             assert a==ablation, ('option off differs from parent',name)
@@ -105,7 +105,7 @@ def run(row):
                 except ValueError:
                     evidence=out/f'{name}-{addr:x}-call-constants.jsonl'
                     if not evidence.exists():
-                        evidence.write_bytes(subprocess.check_output(['/tmp/kuna-rust-panic/call-constants',str(binary),hex(addr)]))
+                        evidence.write_bytes(subprocess.check_output(['/tmp/kuna-rust-panic-d850/call-constants',str(binary),hex(addr)]))
                     calls=[json.loads(line) for line in evidence.read_text().splitlines()]
                     candidates=[call for call in calls if call[2]==tag and call[3]==int(args[2],0)]
                     assert len(candidates)==1,(name,hex(addr),args,calls)
@@ -124,7 +124,7 @@ def run(row):
             changes.append({'address':hex(addr),'name':b[addr]['name'],'proof':proof,'source_mapping':{'added_instruction_addresses':[hex(x) for x in sorted(bb-aa)],'lost_instruction_addresses':[hex(x) for x in sorted(aa-bb)],'lost_addresses_belong_to_replaced_call_lines':True,'variable_mapping_changes':variable_mappings,'declarations_and_function_metadata_unchanged':True},'hunks':[{'range':line.strip(),'classification':'only verified panic runtime calls become panic macros; every other AST node and comment unchanged'} for line in diff if line.startswith('@@')]})
             patch+=diff+['\n']
         parsed=0
-        if language=='go' and cached:
+        if language=='go':
             p=subprocess.run(['/tmp/kuna-go-output/parse',str(path)],capture_output=True,text=True);assert p.returncode==0,p.stdout+p.stderr;parsed=len(b)
         (out/f'{name}-{language}.diff').write_text(''.join(patch))
         result['languages'].append({'language':language,'functions':len(b),'changed':changes,'parsed':parsed,'errors':0,'off_equals_parent':language=='rust'})

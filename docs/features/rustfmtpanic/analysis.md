@@ -39,7 +39,7 @@ layout references and a metadata-version test, not a separate native producer.
 
 Twenty images cover 25,955 distinct functions and
 52,581 language-specific records. All 42,693
-C/Go records are identical, and 16,122 Go records parse.
+C/Go records are identical, and 16,738 Go records parse.
 All 9,888 Rust records with the option off
 equal the parent, including metadata. Only 29 Rust functions change, with one
 runtime-to-macro replacement in each of 29 hunks. Parsed ASTs and comments verify
@@ -67,19 +67,28 @@ The raw diffs and per-function records retain the full review evidence.
 
 Original corpus: 675/675, unchanged baseline. Stage corpus: 3,508/3,508; new case
 0/6 on the parent and 6/6 with recovery. The parent capture omits new option
-commands that its catalog cannot recognize. Workspace: 10,072 passed,
+commands that its catalog cannot recognize. Workspace: 10,074 passed,
 zero failed, 39 ignored across 71 suites. Tooling:
 114 passed and one optional skip. Lint, spec, catalog, generated documentation
 and shared counters pass. The new live-option count is 170 (catalog total 364).
 
 Five timing cases compare the parent, the new binary with recovery off, and the
-default. Each uses 31 alternating samples after three warmups per arm on idle
-CPU 77, after compilation and corpus work finish. Maximum parent-to-default CPU
-delta is +0.797% and wall delta is +1.754%; maximum
-off-to-default CPU delta is +0.575%. Every measured CPU and wall
-comparison fits the five-percent budget. Raw samples are retained in `record.json`
-and the timing artifacts.
+default. The three smaller cases use 31 alternating samples per arm. The two
+controls use 192 balanced randomized rounds, with all six arm permutations in
+each six-round block. Every case has three warmups per arm and fixed CPU affinity.
+Maximum parent-to-default median CPU delta is +0.802%
+and wall delta is +1.292%; maximum off-to-default median CPU delta is
++0.044%. Every median comparison fits the five-percent
+budget. The controls additionally require each upper percentile-bootstrap bound
+on the ratio of mean CPU/wall times to fit the same budget. Twenty thousand
+resamples preserve complete six-round blocks; the upper quantile is 0.99375,
+using family alpha 0.05 across eight comparisons. The method was declared before
+these samples were collected. Raw samples, orders and binary hashes are retained.
 
 This implements one panic sink from angr's Rust macro-selection coverage. Other
 panic entry points, older formatting layouts, generic arguments and full Go/Rust
 parity remain separate work.
+
+The final capture includes main commit `d85071a68e917d609d7252004da015da06321b02` (UTF-8 console paths). Both baseline and patched binaries were rebuilt, all repository checks and measurements were repeated, and every patched function record equals the previously reviewed panic output.
+
+Initial control measurements were affected by external CPU contention. The first large Rust control exceeded the median CPU budget, with coefficients of variation around 33%; a subsequent monitored run passed the median budget but failed its contention limits. Both are retained. Repeated idle checks found no sustained quiet interval, so a new randomized comparison and confidence-bound acceptance rule were declared before collecting fresh samples. No earlier samples contribute to those bounds. `timing-monitor.json`, `timing-randomized-plan.json` and the attempt directories retain the decisions and observations.
