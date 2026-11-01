@@ -2159,6 +2159,9 @@ pub struct JumpBasicModel {
     path_meld: PathMeld,
     /// Any guards associated with the model (C++ `selectguards`).
     selectguards: Vec<GuardRecord>,
+    /// (kuna `switchrunon`) The sanity check cut rows that ran on into other
+    /// functions, so no cut row is dispatched.
+    run_on: bool,
     /// Position of the normalized switch Varnode within `pathMeld`.
     varnode_index: int4,
     /// Normalized switch Varnode (C++ `normalvn`).
@@ -2187,6 +2190,7 @@ impl JumpBasicModel {
         JumpBasicModel {
             label_rows: None,
             rows_rejected: false,
+            run_on: false,
             jrange: None,
             path_meld: PathMeld::new(),
             selectguards: Vec::new(),
@@ -4955,9 +4959,16 @@ impl JumpModel for JumpBasicModel {
         if addresstable.is_empty() {
             return Ok(true);
         }
-        let i = Self::reasonable_rows(fd, addresstable);
+        let mut i = Self::reasonable_rows(fd, addresstable);
         if i == 0 {
             return Ok(false);
+        }
+        self.run_on = false;
+        if fd.get_arch().switch_run_on && self.selectguards.is_empty() {
+            if let Some(own) = Self::own_rows(fd, &addresstable[..i]) {
+                i = own;
+                self.run_on = true;
+            }
         }
         if i != addresstable.len() {
             addresstable.truncate(i);
@@ -4987,6 +4998,7 @@ impl JumpModel for JumpBasicModel {
     fn clear(&mut self) {
         self.label_rows = None;
         self.rows_rejected = false;
+        self.run_on = false;
         self.jrange = None;
         self.path_meld.clear();
         self.selectguards.clear();
@@ -5024,6 +5036,20 @@ impl JumpBasicModel {
             i += 1;
         }
         i
+    }
+
+    /// (kuna `switchrunon`) How many leading rows of an unguarded table belong
+    /// to the function, when the rest run on into other functions.
+    fn own_rows(fd: &Funcdata, rows: &[Address]) -> Option<usize> {
+        let entry = fd.get_address();
+        let owner = fd.get_arch().function_owner(entry)?;
+        let space = entry.get_space()?.get_index();
+        if rows.iter().any(|row| row.get_space().is_none_or(|s| s.get_index() != space)) {
+            return None;
+        }
+        let offsets: Vec<uintb> = rows.iter().map(|row| row.get_offset()).collect();
+        let cut = crate::kuna_switchrunon::own_rows(entry.get_offset(), &offsets, owner)?;
+        fd.get_arch().in_section_of(entry, &rows[cut]).then_some(cut)
     }
 
     /// Fold a single guard CBRANCH into the switch's default destination (C++
@@ -6117,6 +6143,7 @@ impl JumpTable {
             .as_ref()
             .and_then(|m| m.as_any().downcast_ref::<JumpBasicModel>());
         match (bounded, model) {
+            (_, Some(model)) if model.run_on => Vec::new(),
             (Some(values), Some(model)) if kept < emulated => {
                 model.values_pass_guards(fd, values, kept)
             }

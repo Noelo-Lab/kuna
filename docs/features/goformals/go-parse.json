@@ -1,27 +1,27 @@
 [
   {
-    "fixture": "hermetic",
+    "fixture": "hermetic-plain",
     "godwarfsig": "off",
     "functions": 25,
     "output": "25 functions, 0 syntax failures\n",
     "errors": 0
   },
   {
-    "fixture": "hermetic",
+    "fixture": "hermetic-plain",
     "godwarfsig": "on",
     "functions": 25,
     "output": "25 functions, 0 syntax failures\n",
     "errors": 0
   },
   {
-    "fixture": "hermetic-plain",
+    "fixture": "hermetic",
     "godwarfsig": "off",
     "functions": 25,
     "output": "25 functions, 0 syntax failures\n",
     "errors": 0
   },
   {
-    "fixture": "hermetic-plain",
+    "fixture": "hermetic",
     "godwarfsig": "on",
     "functions": 25,
     "output": "25 functions, 0 syntax failures\n",

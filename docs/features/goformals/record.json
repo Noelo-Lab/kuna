@@ -1,7 +1,7 @@
 {
   "feature": "Go result formals excluded from generic prototypes",
   "state": "validated",
-  "baseline_commit": "e3feca89a14fe379e06fa8b062685c996c4de7c0",
+  "baseline_commit": "5e05cd31e733e15beb1568d8906c44ec99ca1f6f",
   "option": "existing DWARF and godwarfsig selections",
   "default": "strict correction for DW_LANG_Go compilation units",
   "breadth": {
@@ -28,13 +28,13 @@
   },
   "validation": {
     "workspace": {
-      "passed": 10007,
+      "passed": 10016,
       "failed": 0,
       "ignored": 39,
       "suites": 71
     },
     "original_assertions": 675,
-    "stage_assertions": 3471,
+    "stage_assertions": 3478,
     "tools": "114 tests, 1 optional skip",
     "lint": "passed",
     "spec": "passed",
@@ -60,143 +60,138 @@
       "scalar-c": {
         "medians": {
           "baseline": {
-            "wall_ms": 117.90803400799632,
-            "cpu_ms": 116.57700000000004
+            "wall_ms": 115.45959021896124,
+            "cpu_ms": 113.9429999999999
           },
           "patched": {
-            "wall_ms": 117.48136300593615,
-            "cpu_ms": 116.15000000000109
+            "wall_ms": 115.51365628838539,
+            "cpu_ms": 114.13600000000024
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": -0.3618676247551078,
-            "cpu_ms": -0.36628151350519556
+            "wall_ms": 0.046826832939239615,
+            "cpu_ms": 0.16938293708288477
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.13947031009362565,
-          "cpu_ms": 0.1506916577768136
+          "wall_ms": 0.14929283501710078,
+          "cpu_ms": 0.6025559162900374
         }
       },
       "go-plain-off": {
         "medians": {
           "baseline": {
-            "wall_ms": 203.66455428302288,
-            "cpu_ms": 202.26900000000114
+            "wall_ms": 204.49412474408746,
+            "cpu_ms": 203.0390000000022
           },
           "patched": {
-            "wall_ms": 204.90063214674592,
-            "cpu_ms": 204.16799999999924
+            "wall_ms": 205.49750700592995,
+            "cpu_ms": 204.11100000000104
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.6069185028658941,
-            "cpu_ms": 0.9388487608076757
+            "wall_ms": 0.490665569535631,
+            "cpu_ms": 0.5279773836547763
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.4028906009363231,
-          "cpu_ms": 0.4458657185781645
+          "wall_ms": 0.524963735590811,
+          "cpu_ms": 0.4413172506227303
         }
       },
       "go-plain-on": {
         "medians": {
           "baseline": {
-            "wall_ms": 209.06366407871246,
-            "cpu_ms": 207.6999999999991
+            "wall_ms": 204.29398864507675,
+            "cpu_ms": 202.89800000000469
           },
           "patched": {
-            "wall_ms": 211.7317388765514,
-            "cpu_ms": 210.34899999999368
+            "wall_ms": 205.78872878104448,
+            "cpu_ms": 204.42400000000305
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 1.2762020648573236,
-            "cpu_ms": 1.275397207508222
+            "wall_ms": 0.7316613405422112,
+            "cpu_ms": 0.7521020414190005
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.2847992681945799,
-          "cpu_ms": 0.2463293682980039
+          "wall_ms": 0.932330837698303,
+          "cpu_ms": 0.9490856606893638
         }
       },
       "go-compressed-on": {
         "medians": {
           "baseline": {
-            "wall_ms": 522.2383858636022,
-            "cpu_ms": 520.8589999999945
+            "wall_ms": 513.7301608920097,
+            "cpu_ms": 512.4850000000051
           },
           "patched": {
-            "wall_ms": 529.7094020061195,
-            "cpu_ms": 528.7319999999979
+            "wall_ms": 514.0000148676336,
+            "cpu_ms": 512.2770000000116
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 1.4305758337091357,
-            "cpu_ms": 1.511541511235004
+            "wall_ms": 0.05252834973816789,
+            "cpu_ms": -0.04058655375152043
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.42069543236606943,
-          "cpu_ms": 0.547757556666606
+          "wall_ms": 0.5483988422702479,
+          "cpu_ms": 0.5517791808908656
         }
       },
       "go-hermetic-off": {
         "medians": {
           "baseline": {
-            "wall_ms": 103.83824817836285,
-            "cpu_ms": 102.51399999999933
+            "wall_ms": 115.71517027914524,
+            "cpu_ms": 114.32700000000295
           },
           "patched": {
-            "wall_ms": 103.23940217494965,
-            "cpu_ms": 102.00599999998872
+            "wall_ms": 115.47760479152203,
+            "cpu_ms": 114.09299999999689
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": -0.5767104259930877,
-            "cpu_ms": -0.49554207231267133
+            "wall_ms": -0.20530193841492572,
+            "cpu_ms": -0.20467606077834155
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": -0.3127934465086968,
-          "cpu_ms": -0.13489570751483715
+          "wall_ms": 0.4622656060389252,
+          "cpu_ms": 0.4052944344793419
         }
       },
       "rust": {
         "medians": {
           "baseline": {
-            "wall_ms": 331.059985794127,
-            "cpu_ms": 329.149000000001
+            "wall_ms": 354.69621559605,
+            "cpu_ms": 353.29700000001196
           },
           "patched": {
-            "wall_ms": 331.3658297993243,
-            "cpu_ms": 329.94099999999804
+            "wall_ms": 356.1722068116069,
+            "cpu_ms": 354.857999999993
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.09238325932494629,
-            "cpu_ms": 0.24062050925173217
+            "wall_ms": 0.4161282671360178,
+            "cpu_ms": 0.44183788709810656
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.5409663618449523,
-          "cpu_ms": 0.552722810957107
+          "wall_ms": 0.39387107045376624,
+          "cpu_ms": 0.4947869651576786
         }
       }
     },
-    "max_cpu_delta_pct": 1.511541511235004,
-    "max_wall_delta_pct": 1.4305758337091357,
-    "initial_runs_retained": [
-      "timing-initial/",
-      "timing-repeat/"
-    ],
-    "repeat_reason": "Initial Go wall-time medians showed scheduling delay during external sweeps; all six rows repeated, with the initial samples retained.",
+    "max_cpu_delta_pct": 0.7521020414190005,
+    "max_wall_delta_pct": 0.7316613405422112,
     "passed": true
   }
 }

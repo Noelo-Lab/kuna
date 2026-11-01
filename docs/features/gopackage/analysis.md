@@ -5,7 +5,7 @@ its own package. `main.scale` therefore prints `func scale(p *main.point, k
 int64)`. Go cannot refer to its current package through that qualifier. The
 recovered `point` layout and the two multiplications are already correct.
 
-The baseline is `b46ca80e2d300ea6007c9c66a629e60b85101c85`. The native repro
+The baseline is `8d027afa356249d71242a9e158b7857cd74a9dce`. The native repro
 declares `type point struct { x,y int64 }`, multiplies both fields in a noinline
 function, and calls that function from main. Go 1.27.3 reproduces the invalid
 qualification with `--language go --option godwarfsig on`.
@@ -41,8 +41,8 @@ prefix removals and requires every other token, literal and comment to remain
 identical. All 16,122 Go bodies parse, with no
 decompilation errors. The raw diffs and per-hunk classification are retained.
 
-Validation: 10,010 workspace tests pass, none fail, and 39 are ignored across
-71 suites. Original datatests remain 675/675; stages are 3,472/3,472. Tooling
+Validation: 10,019 workspace tests pass, none fail, and 39 are ignored across
+71 suites. Original datatests remain 675/675; stages are 3,479/3,479. Tooling
 checks pass 114 tests with one optional skip. Lint, spec links, the catalog and
 shared counters pass. The workspace execution checks use Go 1.27.3, and the native witness also
 executes under Go 1.22.5. The original baseline is
@@ -50,7 +50,14 @@ unchanged.
 
 Speed uses 31 alternating baseline/patched pairs after three warmups per arm,
 on CPU 79 after this task's builds and sweeps complete. The maximum measured
-change is -0.66% CPU and
--1.03% wall across default C, the Go record
+change is +0.60% CPU and
++0.56% wall across default C, the Go record
 witness and a Rust control. Raw samples, ratios of medians and median paired
-changes are included in each timing artifact; all remain within 5%.
+changes are included in each timing artifact; the repeat remains within 5%.
+
+The first complete run is retained in `timing-initial`: the Go control showed
++10.52% median wall time with +1.00% CPU, while its median paired wall change
+was +1.21%. Median wall time outside CPU execution was 94.28 ms for the patched
+arm and 1.58 ms for the baseline arm. All three controls were repeated without
+source or binary changes to test scheduling interference; both runs retain all
+raw samples. The figures above describe the repeat.

@@ -1,7 +1,7 @@
 {
   "state": "validated",
   "kind": "strict Go type spelling correction",
-  "baseline_commit": "b46ca80e2d300ea6007c9c66a629e60b85101c85",
+  "baseline_commit": "8d027afa356249d71242a9e158b7857cd74a9dce",
   "selection": "Go source and outlang go; no new option",
   "breadth": {
     "inputs": 16,
@@ -16,13 +16,13 @@
   },
   "validation": {
     "workspace": {
-      "passed": 10010,
+      "passed": 10019,
       "failed": 0,
       "ignored": 39,
       "suites": 71
     },
     "original_assertions": 675,
-    "stage_assertions": 3472,
+    "stage_assertions": 3479,
     "tools": "114 tests, 1 optional skip",
     "lint": "passed",
     "spec": "passed",
@@ -55,73 +55,95 @@
       "scalar-c": {
         "medians": {
           "baseline": {
-            "wall_ms": 126.15904491394758,
-            "cpu_ms": 123.189
+            "wall_ms": 132.28365685790777,
+            "cpu_ms": 130.2470000000002
           },
           "patched": {
-            "wall_ms": 124.29953319951892,
-            "cpu_ms": 122.37900000000135
+            "wall_ms": 130.99121209234,
+            "cpu_ms": 128.965
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": -1.4739424475645246,
-            "cpu_ms": -0.6575262401664395
+            "wall_ms": -0.9770252775488819,
+            "cpu_ms": -0.9842837071105004
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": -0.5536638264962535,
-          "cpu_ms": -0.36717414312245067
+          "wall_ms": -0.9175312015094472,
+          "cpu_ms": -0.746543706526992
         }
       },
       "go-package": {
         "medians": {
           "baseline": {
-            "wall_ms": 600.6289389915764,
-            "cpu_ms": 599.0380000000073
+            "wall_ms": 749.6455321088433,
+            "cpu_ms": 726.4129999999938
           },
           "patched": {
-            "wall_ms": 594.4202081300318,
-            "cpu_ms": 591.541999999997
+            "wall_ms": 750.2221218310297,
+            "cpu_ms": 718.3300000000017
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": -1.0337049147130184,
-            "cpu_ms": -1.2513396479038486
+            "wall_ms": 0.07691498147988085,
+            "cpu_ms": -1.112727883448128
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": -1.089302115548163,
-          "cpu_ms": -1.1038064139787251
+          "wall_ms": -0.1789225854665677,
+          "cpu_ms": 0.1694288921584297
         }
       },
       "rust": {
         "medians": {
           "baseline": {
-            "wall_ms": 324.1888228803873,
-            "cpu_ms": 322.7370000000036
+            "wall_ms": 333.16146582365036,
+            "cpu_ms": 332.4649999999991
           },
           "patched": {
-            "wall_ms": 320.4562929458916,
-            "cpu_ms": 319.08099999999706
+            "wall_ms": 335.03218507394195,
+            "cpu_ms": 334.45199999999886
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": -1.1513444237011394,
-            "cpu_ms": -1.132810926545924
+            "wall_ms": 0.5615052886343674,
+            "cpu_ms": 0.5976568962145601
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": -1.0538688035340638,
-          "cpu_ms": -1.002591522817886
+          "wall_ms": 0.4821745079990336,
+          "cpu_ms": 0.5739055203999754
         }
       }
     },
     "speed_budget_pct": 5,
-    "max_cpu_delta_pct": -0.6575262401664395,
-    "max_wall_delta_pct": -1.0337049147130184,
-    "passed": true
+    "max_cpu_delta_pct": 0.5976568962145601,
+    "max_wall_delta_pct": 0.5615052886343674,
+    "passed": true,
+    "initial_run": {
+      "reason": "First complete run fails wall budget for Go control while CPU remains close; retained in full and repeat all three controls to test scheduling interference. No source or binary changes. No task-owned builds or sweeps active.",
+      "go_delta_pct": {
+        "baseline_to_patched": {
+          "wall_ms": 10.519439661160979,
+          "cpu_ms": 1.0044123383064374
+        }
+      },
+      "go_paired_median_delta_pct": {
+        "wall_ms": 1.2075132299714797,
+        "cpu_ms": 0.4182732379664378
+      },
+      "median_wall_minus_cpu_ms": {
+        "baseline": 1.5826156292320093,
+        "patched": 94.27764122024485
+      },
+      "host_load_average_observed": [
+        31.05,
+        41.33,
+        35.74
+      ]
+    }
   }
 }

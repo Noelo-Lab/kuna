@@ -9,7 +9,7 @@ input, addition and both returned words. High-level Go tuple emission remains
 separate work: the inferred two-word carrier still uses pseudo-fields.
 
 The comparison baseline is
-`e3feca89a14fe379e06fa8b062685c996c4de7c0`, including the Go string-pointer fix.
+`5e05cd31e733e15beb1568d8906c44ec99ca1f6f`, including the jump-table boundary correction.
 `repro.go` builds the example with `-ldflags=-compressdwarf=false` and does not
 depend on a prebuilt fixture or a fixed function address.
 
@@ -58,22 +58,14 @@ Their whole-image differences therefore arise during shared inference. The
 paths and raw diffs are retained in `inferred-carrier-review.*`; arbitrary
 runtime bodies are outside the standalone compilation claim.
 
-Validation: 10,007 workspace tests passed, none failed, with 39 ignored
+Validation: 10,016 workspace tests passed, none failed, with 39 ignored
 across 71 suites. Original datatests remain 675/675; stages are
-3,471/3,471. Tooling tests, lint, spec links, the catalog and shared
+3,478/3,478. Tooling tests, lint, spec links, the catalog and shared
 counters pass. The workspace suite used Go 1.27.3; the native witnesses execute
 under both supported toolchains. The original baseline is unchanged.
 
 Speed uses 31 alternating pairs after three warmups per arm on CPU 79, after
 this task's builds and sweeps completed. Across six controls, the maximum
-median change is +1.51% CPU and
-+1.43% wall. Raw samples, ratios of medians
+median change is +0.75% CPU and
++0.73% wall. Raw samples, ratios of medians
 and median paired changes are retained; the final run remains within the 5% budget.
-The initial run is also retained in `timing-initial/`: an external sweep caused
-substantial scheduling delay in two Go rows. Its plain-Go wall ratio was +12.94%
-while the median paired wall change was +0.13% and CPU change +1.74%. All six
-rows were repeated to distinguish scheduling delay from execution cost. The
-repeat passed for the Go rows; its Rust row then encountered 119–122 ms of
-median wall-minus-CPU delay, with a +7.48% ratio of wall medians but +0.85%
-paired wall and +0.68% CPU. That run is retained in `timing-repeat/`, and the
-Rust control was repeated separately.

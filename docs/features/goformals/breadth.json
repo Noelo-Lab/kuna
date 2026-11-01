@@ -1,41 +1,7 @@
 {
-  "baseline_commit": "e3feca89a14fe379e06fa8b062685c996c4de7c0",
+  "baseline_commit": "5e05cd31e733e15beb1568d8906c44ec99ca1f6f",
   "side": "patched",
   "fixtures": [
-    {
-      "fixture": "hermetic",
-      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
-      "languages": [
-        {
-          "language": "c",
-          "godwarfsig": "off",
-          "records": 25,
-          "errors": [],
-          "changed": []
-        },
-        {
-          "language": "go",
-          "godwarfsig": "off",
-          "records": 25,
-          "errors": [],
-          "changed": []
-        },
-        {
-          "language": "c",
-          "godwarfsig": "on",
-          "records": 25,
-          "errors": [],
-          "changed": []
-        },
-        {
-          "language": "go",
-          "godwarfsig": "on",
-          "records": 25,
-          "errors": [],
-          "changed": []
-        }
-      ]
-    },
     {
       "fixture": "hermetic-plain",
       "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
@@ -561,6 +527,40 @@
               "new_error": null
             }
           ]
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "languages": [
+        {
+          "language": "c",
+          "godwarfsig": "off",
+          "records": 25,
+          "errors": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "godwarfsig": "off",
+          "records": 25,
+          "errors": [],
+          "changed": []
+        },
+        {
+          "language": "c",
+          "godwarfsig": "on",
+          "records": 25,
+          "errors": [],
+          "changed": []
+        },
+        {
+          "language": "go",
+          "godwarfsig": "on",
+          "records": 25,
+          "errors": [],
+          "changed": []
         }
       ]
     },

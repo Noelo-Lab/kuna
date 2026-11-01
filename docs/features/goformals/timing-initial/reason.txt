@@ -1,1 +1,0 @@
-Two Go rows had substantial wall-minus-CPU scheduling delay during external image sweeps: plain-on ratio of median wall times +12.94%, paired median wall +0.13%, CPU +1.74%; compressed-on median wall -5.99%, paired wall -0.50%, CPU +0.03%. Preserve this first run and repeat all six rows to distinguish scheduling noise from a change in execution cost.
