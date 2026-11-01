@@ -8173,3 +8173,21 @@ The same symbol walk records integer formatting traits in
 LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.
+
+### MIPS lazy-binding flow and O32 compatibility
+
+Octeon N32/N64 target selection does not intercept ELF32 O32 images, including
+little-endian images carrying Octeon machine flags. They retain generic MIPS
+selection; the existing explicit-target override still takes precedence.
+
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsstubs.rs` validates each
+MIPS lazy-binding stub against its dynamic-symbol/GOT identity, executable
+section and complete instruction sequence. The Listing models its resolver
+transfer, including the delay slot, as an opaque computed jump. It removes the
+false successor/reference into the neighbouring stub before no-return consumers
+run. The imported target's known no-return facts remain available to callers;
+an unknown resolver destination supplies no terminal evidence. Ordinary
+functions and unrecognized instruction sequences retain their original flow.
+This applies to serial, parallel and resumed Listing construction.
+The same validated resolver sites are passed to the decompiler's flow recovery,
+so the final stub cannot fall through into section padding when decompiled alone.

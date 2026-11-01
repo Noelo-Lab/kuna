@@ -264,6 +264,9 @@ pub struct Architecture {
     /// MIPS ELF t9 seed, supplied only where the loader recognizes PIC setup.
     pub loader_mips_t9: Option<Rc<dyn Fn(&Address) -> Option<kuna_sleigh::globalcontext::TrackedContext>>>,
 
+    /// Loader-proven transfers whose call encoding does not return locally.
+    pub loader_branch_sites: Rc<std::collections::BTreeSet<Address>>,
+
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
     pub trim_recurse_max: int4,
@@ -2966,6 +2969,7 @@ impl Architecture {
             arm_inventory_modes: Vec::new(),
             loader_entry_tracks: std::collections::BTreeMap::new(),
             loader_mips_t9: None,
+            loader_branch_sites: Rc::default(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
@@ -4708,6 +4712,7 @@ impl Architecture {
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
         ctx.callee_protos = callee_protos;
+        ctx.loader_branch_sites = Rc::clone(&self.loader_branch_sites);
         // (kuna) The convention each of those callees was DECLARED under, keyed
         // the same way the pieces are (entry address).  The declaration names the
         // function, the parked pieces carry that name, and the read side

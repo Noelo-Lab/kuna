@@ -3480,3 +3480,8 @@ For `mulblob`, an isolated dynamic name without a type lock still describes a
 numeric value. Mapping that name does not disable the widened-operand guard when
 the datatype is the fallback array and every reader satisfies the existing
 arithmetic/SUBPIECE checks. Explicit locked array types keep their structuring.
+
+Structured-piece recovery keeps constant-space ABI padding as a logical constant
+input. It does not create a writable temporary for a padding leaf. Real member
+locations continue to receive their values, including zero-valued fields;
+producer effects and observable stores remain governed by ordinary liveness.

@@ -704,3 +704,6 @@ mod ppc32_imports;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;

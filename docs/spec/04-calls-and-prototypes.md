@@ -8450,14 +8450,16 @@ A call that reaches such a callee indirectly, through an import slot or a
 constant pointer, becomes direct only once `ActionDeindirect` resolves it
 through `ArchContext::query_function`, which would otherwise hand back the
 symbol's cached code-type prototype: a placeholder signature with no explicit
-storage. When the parked pieces carry explicit input or output storage (a
-qualified declaration above, or a Ghidra host's custom-storage prototype),
-`query_function` builds the callee prototype from those pieces instead, under
+storage. When the callee has parked declaration pieces, including library and
+DWARF declarations without explicit storage, `query_function` builds the
+callee prototype from those pieces instead, under
 the declared model (or the undeclared default), as `ActionDefaultParams` already
 does for a direct call. Output-only pieces leave the inputs unlocked. The
 symbol's call-fixup injection is kept, and its no-return flag is carried under
-`peimportcall`, as on the other two paths. Pieces with no explicit storage
-(library, loader and DWARF prototypes) keep the code-type lookup unchanged. The
+`peimportcall`, as on the other two paths. A resolved indirect call therefore
+retains a known library's argument list even when those registers have no local
+definitions before the call. The code-type fallback applies only when no usable
+declaration is available. The
 construction lives in
 `decompiler/crates/kuna-decomp/src/p4_calls/kuna_qualifiedcall.rs`.
 

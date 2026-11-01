@@ -1,15 +1,14 @@
-//! Resolve declared storage before an indirect call adopts a symbol prototype.
+//! Resolve declared types and storage before an indirect call adopts a symbol prototype.
 use crate::{context::ArchContext, fspec::FuncProto};
 use kuna_base::address::Address;
 
 pub fn prototype(arch: &ArchContext, entry: &Address) -> Option<FuncProto> {
     let pieces = arch.callee_proto_pieces(entry)?;
-    if pieces.input_storage.is_empty() && pieces.output_storage.is_none() {
-        return None;
-    }
     let model = arch
         .callee_proto_model(entry)
+        .or_else(|| crate::kuna_armfloatreturn::declared_helper_model(arch, &pieces.name))
         .or_else(|| crate::kuna_typedcallabi::undeclared_model(arch, &pieces))
+        .or_else(|| crate::kuna_armfloatreturn::helper_model(arch, &pieces.name))
         .or_else(|| arch.default_fp().cloned())?;
     let types = arch.types()?;
     let void = types.get_type_void().ok()?;
@@ -22,6 +21,10 @@ pub fn prototype(arch: &ArchContext, entry: &Address) -> Option<FuncProto> {
         proto
             .seed_locked_from_pieces(&pieces, model, void, types, arch.manage())
             .ok()?;
+        crate::kuna_calleeprotostack::resolve_declared_extra_pop(
+            arch.callee_proto_stack,
+            &mut proto,
+        );
     }
     Some(proto)
 }

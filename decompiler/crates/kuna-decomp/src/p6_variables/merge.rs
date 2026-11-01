@@ -283,6 +283,10 @@ pub trait MergeContext: HighContext {
     fn vn_has_no_descend(&self, vn: VarnodeId) -> bool;
     /// `vn->getSpace()->isBigEndian()`.
     fn vn_space_big_endian(&self, vn: VarnodeId) -> bool;
+    /// Whether a constant equals the ABI's logical padding at this byte offset.
+    fn vn_is_padding_piece(&self, _piece: VarnodeId, _whole: VarnodeId, _offset: int4) -> bool {
+        false
+    }
     /// `vn->getSpace()->getType() == IPTR_INTERNAL`.
     fn vn_space_internal(&self, vn: VarnodeId) -> bool;
     /// `vn->hasCover()`.
@@ -2430,31 +2434,18 @@ impl Merge {
                     let p1 = ctx.vn_high(v1).and_then(|h| ctx.high_piece(h));
                     let p2 = ctx.vn_high(v2).and_then(|h| ctx.high_piece(h));
                     let p3 = ctx.vn_high(v3).and_then(|h| ctx.high_piece(h));
-                    let (p1, p2, p3) = match (p1, p2, p3) {
-                        (Some(a), Some(b), Some(c)) => (a, b, c),
-                        _ => continue,
-                    };
+                    let Some(p1) = p1 else { continue };
                     let (g1, o1) = (ctx.piece_group(p1), ctx.piece_offset(p1));
-                    let (g2, o2) = (ctx.piece_group(p2), ctx.piece_offset(p2));
-                    let (g3, o3) = (ctx.piece_group(p3), ctx.piece_offset(p3));
-                    if g1 != g2 || g1 != g3 {
-                        continue;
-                    }
-                    if ctx.vn_space_big_endian(v1) {
-                        if o2 != o1 {
-                            continue;
-                        }
-                        if o3 != o1 + ctx.vn_size(v2) {
-                            continue;
-                        }
+                    let (off2, off3) = if ctx.vn_space_big_endian(v1) {
+                        (0, ctx.vn_size(v2))
                     } else {
-                        if o3 != o1 {
-                            continue;
-                        }
-                        if o2 != o1 + ctx.vn_size(v3) {
-                            continue;
-                        }
-                    }
+                        (ctx.vn_size(v3), 0)
+                    };
+                    let matches = |vn, piece, offset| match piece {
+                        Some(p) => ctx.piece_group(p) == g1 && ctx.piece_offset(p) == o1 + offset,
+                        None => ctx.vn_is_padding_piece(vn, v1, offset),
+                    };
+                    if !matches(v2, p2, off2) || !matches(v3, p3, off3) { continue; }
                     ctx.op_mark_non_printing(op);
                     if ctx.vn_is_implied(v2) {
                         ctx.vn_clear_implied_set_explicit(v2);

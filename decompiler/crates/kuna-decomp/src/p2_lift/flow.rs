@@ -732,7 +732,8 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // The per-function Override lives on the Funcdata (`localoverride`); the
         // env-routed `has_flow_override` is the W2-era boundary default (always false)
         // and is OR'd in only for back-compat with envs that still carry it.
-        let flowoverride_present = data.get_override().has_flow_override() || env.has_flow_override();
+        let flowoverride_present = data.get_override().has_flow_override()
+            || env.has_flow_override() || !data.get_arch().loader_branch_sites.is_empty();
         FlowInfo {
             data,
             env,
@@ -1772,7 +1773,13 @@ following this call as a branch"
 
         // (the per-function Override lives on the Funcdata; `localoverride`).
         let flowoverride: uint4 = if self.flowoverride_present {
-            self.data.get_override().get_flow_override(curaddr)
+            let explicit = self.data.get_override().get_flow_override(curaddr);
+            if explicit == crate::overrides::flow_type::NONE
+                && self.data.get_arch().loader_branch_sites.contains(curaddr) {
+                crate::overrides::flow_type::BRANCH
+            } else {
+                explicit
+            }
         } else {
             crate::overrides::flow_type::NONE
         };

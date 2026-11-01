@@ -3627,18 +3627,20 @@ fn a_float_return_beside_a_global_read_stays_an_integer() {
 /// unresolved call left, and the pass after it refused the handle; the first
 /// pass's output survived as `int sub_401020(..)` around a bare `return;`, and
 /// the function must be `void` again. No function that declares a return type
-/// prints a bare `return;`.
+/// prints a bare `return;`. Disable library signatures for the inference/restart
+/// control; with signatures enabled, the imported handle supplies a pointer type.
 #[test]
 fn a_return_refused_after_a_restart_leaves_the_function_void() {
     let fixture = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatret_restart_pe_i386.exe");
     let sp = specs();
     let decompile = |bin: &str| {
-        let (stdout, stderr, ok) = run_kuna(&["decompile-all", bin, "--sleighpath", &sp]);
+        let (stdout, stderr, ok) = run_kuna(&["decompile-all", bin, "--sleighpath", &sp,
+            "--option", "win32sigs", "off"]);
         assert!(ok, "kuna decompile-all failed: {stderr}");
         for chunk in stdout.split("// Function: ") {
             let mut lines = chunk.lines().skip(1);
             let Some(sig) = lines.next() else { continue };
-            if !sig.starts_with("void ") {
+            if !sig.starts_with("void ") || sig.starts_with("void *") {
                 assert!(!lines.any(|l| l.trim() == "return;"), "`{sig}` returns nothing:\n{stdout}");
             }
         }
@@ -3646,6 +3648,12 @@ fn a_return_refused_after_a_restart_leaves_the_function_void() {
     };
     let printed = decompile(fixture.to_str().unwrap());
     assert!(printed.contains("int sub_401020(unsigned int a0)") && printed.contains("return -1;"), "{printed}");
+
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", fixture.to_str().unwrap(), "--sleighpath", &sp]);
+    assert!(ok, "{stderr}");
+    let typed = printed_functions(&stdout, &["sub_401020 "]);
+    assert!(typed.contains("void * sub_401020(unsigned int a0)")
+        && typed.contains("return (void *)0xffffffff;") && !typed.contains("return;"), "{typed}");
 
     let mut image = std::fs::read(&fixture).unwrap();
     let at = |image: &[u8], pattern: &[u8]| image.windows(pattern.len()).position(|w| w == pattern).unwrap();

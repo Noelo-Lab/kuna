@@ -622,6 +622,7 @@ fn independent_compilers_recover_direct_nested_and_padded_float_fields() {
                 let returned = code.lines().find_map(|line|
                     line.trim().strip_prefix("return ").and_then(|line| line.strip_suffix(';')));
                 let identity = aggregate && returned == Some("x");
+                assert!(!aggregate || !code.contains("undefined4 "), "dead padding local: {code}");
                 let both_fields = !aggregate || identity || (returned.is_some_and(|value|
                     code.contains(&format!("{value}.a = ")) && code.contains(&format!("{value}.b = ")))
                     && !code.contains("0 = 0;") && !code.contains("._"));

@@ -4447,6 +4447,8 @@ pub fn bootstrap_from_object_with_isa(
             && matches!(file.architecture(), A::Mips | A::Mips64 | A::Mips64_N32))
             .then_some((file.architecture() == A::Mips64_N32, file.is_little_endian()))
     });
+    let mips_transfers = parsed.as_ref().filter(|_| mips_entry.is_some())
+        .map(kuna_analysis::loader::kuna_mipsstubs::transfers).unwrap_or_default();
     let isa = isa.or_else(|| {
         let file = parsed.as_ref()?;
         kuna_analysis::loadimage_object::arm_isa_hint(file, &bytes).map(|thumb| {
@@ -4652,6 +4654,8 @@ pub fn bootstrap_from_object_with_isa(
     let description = sleigh.base().unwrap().get_description().to_string();
 
     let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    prog.arch_mut().loader_branch_sites = Rc::new(mips_transfers.into_iter()
+        .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
     if let Some((n32, little)) = mips_entry {
         if let Ok(loc) = prog.arch().get_register_varnode(b"t9") {
             let image = prog.arch().translate().loader_rc();

@@ -39,7 +39,7 @@ pub fn language_id(file: &object::File<'_>) -> Result<Option<String>, &'static s
     if file.format() != BinaryFormat::Elf
         || !matches!(
             file.architecture(),
-            Architecture::Mips | Architecture::Mips64 | Architecture::Mips64_N32
+            Architecture::Mips64 | Architecture::Mips64_N32
         )
     {
         return Ok(None);
@@ -227,6 +227,16 @@ mod tests {
             put16(&mut bytes, if n32 { 50 } else { 62 }, 0);
         }
         bytes
+    }
+
+    #[test]
+    fn valid_o32_octeon_headers_retain_generic_selection() {
+        for endian in [Endianness::Big, Endianness::Little] {
+            for machine in [0x8b0000, 0x8d0000, 0x8e0000] {
+                let bytes = elf_endian(true, 0x80001107 | machine, &[], endian);
+                assert_eq!(select(&bytes), Ok(None));
+            }
+        }
     }
 
     #[test]

@@ -107,3 +107,5 @@ pub mod kuna_floatabi;
 pub mod kuna_returnext;
 // (kuna #1288) the x86 real-mode code segment a loader paints into the decode context.
 pub mod kuna_realmodecs;
+
+pub mod kuna_mipsstubs;
