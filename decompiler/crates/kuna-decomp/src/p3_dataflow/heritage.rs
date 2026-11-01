@@ -4579,6 +4579,7 @@ impl Heritage {
     ) {
         use kuna_num::opcodes::OpCode;
         let isbigendian = addr.is_big_endian();
+        let spc = addr.get_space().expect("split_pieces: space").clone();
         let baseoff = if isbigendian {
             addr.get_offset().wrapping_add(size as u64)
         } else {
@@ -4615,11 +4616,11 @@ impl Heritage {
             };
             let newop = fd.new_op(2, opaddress.clone());
             fd.op_set_opcode(newop, sub_typeop.clone());
-            let diff: uintb = if isbigendian {
+            let diff: uintb = spc.wrap_offset(if isbigendian {
                 baseoff.wrapping_sub(vnoff.wrapping_add(vnsize as u64))
             } else {
                 vnoff.wrapping_sub(baseoff)
-            };
+            });
             fd.op_set_input(newop, startvn, 0).expect("split_pieces: set in0");
             let cvn = fd.new_constant(4, diff);
             fd.op_set_input(newop, cvn, 1).expect("split_pieces: set in1");
@@ -4637,6 +4638,54 @@ impl Heritage {
                 }
             }
         }
+    }
+
+    /// (kuna) Split each read, write and input among `ids` that runs past the
+    /// top of `space` into the piece below the top and the piece from offset 0
+    /// ([`kuna_wrapsplit`](super::kuna_wrapsplit)). Returns whether any was split.
+    fn split_wrapped(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        space: &Rc<AddrSpace>,
+        ids: &[crate::context::VarnodeId],
+    ) -> bool {
+        let highest = space.get_highest();
+        let wrapped: Vec<_> = ids
+            .iter()
+            .filter_map(|&vn| {
+                let v = fd.vbank().get(vn)?;
+                if v.is_write_mask() || (v.is_free() && v.has_no_descend()) {
+                    return None;
+                }
+                super::kuna_wrapsplit::wrap_cut(v.get_addr().get_offset(), v.get_size(), highest)
+                    .map(|cut| (vn, cut))
+            })
+            .collect();
+        let mut pieces = Vec::new();
+        for &(vn, cut) in &wrapped {
+            let (addr, size, written, input) = {
+                let v = fd.vbank().get(vn).expect("split_wrapped: vn");
+                (v.get_addr().clone(), v.get_size(), v.is_written(), v.is_input())
+            };
+            let refine = super::kuna_wrapsplit::wrap_refinement(size, cut);
+            if written {
+                self.refine_write(fd, vn, &addr, &refine, &mut pieces);
+            } else if input {
+                self.refine_input(fd, vn, &addr, &refine, &mut pieces);
+            } else {
+                let mut reads = vec![vn];
+                for op in fd.descend_snapshot(vn).into_iter().skip(1) {
+                    let copy = fd.new_varnode(size, &addr, None);
+                    let slot = fd.obank().get(op).expect("split_wrapped: reader").get_slot(vn);
+                    fd.op_set_input(op, copy, slot).expect("split_wrapped: reader slot");
+                    reads.push(copy);
+                }
+                for read in reads {
+                    self.refine_read(fd, read, &addr, &refine, &mut pieces);
+                }
+            }
+        }
+        !wrapped.is_empty()
     }
 
     /// Build a refinement array given an address range and a Varnode list (C++
@@ -5917,7 +5966,10 @@ impl Heritage {
             let mut needwarning = false;
             let mut warnvn: Option<crate::context::VarnodeId> = None;
 
-            let ids: Vec<crate::context::VarnodeId> = fd.vbank().loc_space_ids(&space);
+            let mut ids: Vec<crate::context::VarnodeId> = fd.vbank().loc_space_ids(&space);
+            if self.split_wrapped(fd, &space, &ids) {
+                ids = fd.vbank().loc_space_ids(&space);
+            }
             for vn in ids {
                 let v = fd.vbank().get(vn).expect("heritage: stale vn");
                 if !v.is_written() && v.has_no_descend() && !v.is_unaffected() && !v.is_input() {

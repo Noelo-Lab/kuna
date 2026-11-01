@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3502,
-    3502
+    3510,
+    3510
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1985,6 +1985,14 @@
     "data:VENEERTAILCALL #9: a veneer with no output of its own keeps the body of a callee that returns a value",
     "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the shipped default keeps it, `option voidtailreturn on` elides it (2 would mean the option did nothing)",
     "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
+    "data:WRAPSPLIT #1: the wrapping read is its bytes from offset 0 over the 2 below it",
+    "data:WRAPSPLIT #2: no overlapping inputs at the bottom of the stack space",
+    "data:WRAPSPLIT #3: a ram qword at the top of the space",
+    "data:WRAPSPLIT #4: a write across the top reaches a read of the low bytes",
+    "data:WRAPSPLIT #5: every function decompiles",
+    "data:WRAPSPLIT-BE #1: a store across the top reaches the read at sp",
+    "data:WRAPSPLIT-BE #2: f returns the low half of a0",
+    "data:WRAPSPLIT-BE #3: the word at -2 is the halfword below the top over the halfword at 0",
     "data:ZEROIDIOMUSE #1: off, the watchdog call inside the loop has an empty argument list",
     "data:ZEROIDIOMUSE #2: on, both loaded registers reach the call as arguments",
     "data:ZEROIDIOMUSE #3: the zeroing idiom itself is folded to the constants reader is called with in BOTH passes, so the option moved no other call",
