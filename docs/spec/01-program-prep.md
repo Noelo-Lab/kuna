@@ -565,6 +565,40 @@ offset into the wrong name. Inside the cap the guess can still cover alignment
 padding, so an access narrower than the extent renders as a partial access of
 the named object (`(short)half`, `*(char *)&flag = 1`).
 
+The `nlist` is not where a Mach-O image keeps its exports, only where `object`'s
+`exports()` looks for them (the `LC_DYSYMTAB` external-defined range). `dyld` binds
+against the **export trie** (`LC_DYLD_EXPORTS_TRIE`, or the `export_off` range of
+`LC_DYLD_INFO`), and the two disagree on a stripped image: `strip -N` removes every
+`nlist` entry and keeps the trie, and a Swift framework can ship 17 external `nlist`
+entries beside a trie of 219 names. `macho_trie.rs (exports)` walks the trie and
+`macho_stubs.rs (named_exports)` appends, in address order, each trie name the `nlist`
+does not already hold at that address. The trie's names take the `nlist` exports'
+rule: one in a code section is a function entry, spelled as the symbol table spells
+its names (`_audit_exported_function`), so a stripped image lists what its
+unstripped original lists and the C spelling resolves the same way (at an entry
+another name already holds, it is a lookup alias of that entry); any other is a
+lookup name and, inside a non-code section, a `datasyms` entry sized like an `nlist`
+symbol. A re-export names another image's symbol and is skipped, a
+stub-and-resolver export names its stub, a thread-local export its descriptor, and
+an absolute export is a value, never an entry or a global. On 32-bit ARM the trie
+marks a Thumb function with the low address bit, which the `nlist` does not
+carry, so an odd address whose even neighbour lies in a code section names that
+even entry; an odd address in data keeps its bit, since an exported byte may sit
+there. A trie name in code is
+also a discovery seed: an `LC_UNIXTHREAD` executable with no `LC_FUNCTION_STARTS`
+exports its crt `start`, which is how its entry is found at all. An exported
+`_main` is a real symbol at the `LC_MAIN` entry, so `machomain` (§1.5) stands down
+for it as it does on an unstripped image.
+
+The trie is untrusted input, so its walk is bounded by its own size, never by what
+it claims. Each node is entered at most once (a cycle or a shared child ends there);
+a ULEB128 wider than 64 bits or an offset past the end drops the node; an empty edge
+label drops the edge and a name over 64 KiB the node's remaining edges; the bytes
+read are capped at four per trie byte and the names kept at sixteen per trie byte
+(real tries hold about three). `resolve_imports` runs about twenty times per load,
+so the export list is kept for the last two images, keyed by the bytes it is read
+from: the load commands, the `nlist` array, the string table and the trie.
+
 A **declared extent is never trusted to be representable.** `st_size` is a 64-bit
 field of the image that no header check validates, while the type factory sizes
 types in a 32-bit `int4`, so the commit clamps the declared size into `1 ..=
@@ -678,10 +712,12 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   definition in both selector resolution and canonical name lookup; both entries
   remain in the inventory. Multiple executable definitions or unclassified
   executable competitors remain ambiguous, and explicit address selection
-  remains literal. An ELF load, linked or relocatable, still reports one name
-  per address (the first in `.symtab`, import-stub, `.dynsym` order, the one the
-  symbol table installs for call sites; a PowerPC64 ELFv1 image keeps every
-  name, as before), but no longer discards the other distinct names there: they
+  remains literal. A load of any format, linked or relocatable, still reports
+  one name per address (the first in symbol-table, import-stub, `.dynsym`
+  order, the one the symbol table installs for call sites: on Mach-O the first
+  `nlist` entry, locals ahead of externals as the linker writes them, on a PE
+  the first COFF function symbol; a PowerPC64 ELFv1 image keeps every name, as
+  before), but no longer discards the other distinct names there: they
   become lookup-only aliases
   (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (ObjectLoadImage::func_symbol_aliases)`,
   raw addresses with any Thumb bit), which the console appends to the
@@ -696,7 +732,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   over another function's same-address alias `shared` and a name that selected
   one function keeps selecting it. An alias whose address no entry holds yet
   (discovery has not named it) is still a candidate there, so a lookup sees the
-  same candidates with or without discovery. Loaders that publish no section
+  same candidates with or without discovery. Mach-O and PE kept only the first
+  name until GH #1357, so a second `nlist` label at one entry (`_audit_export_b`
+  beside `_audit_export_a`, two local labels, a function `ld64` folded into an
+  identical one) or a MinGW pair (`_fpreset`/`fpreset`) did not select its own
+  function. A Mach-O export is also reported in its C spelling (`audit_export_a`)
+  by the export stream; at an entry the symbol table named, that is the same name
+  again, and lookup already retries a Mach-O name with its `_`, so it is not kept
+  as an alias (two exports at an entry only the export stream names, as in a
+  kext's `__TEXT_EXEC`, are two names and both are kept). That retry narrows
+  its candidates by the decorated spelling, so `audit_shared` selects the
+  function named `_audit_shared` over another one's `_audit_shared` alias, as
+  `_audit_shared` itself does. Loaders that publish no section
   records, including the XML corpus loader, prove a numeric VMA by probing one
   byte from the load image instead. Which sections are memory-resident
   is the one question that stays per-format — ELF's `SHF_ALLOC` bit and COFF's
@@ -1579,8 +1626,9 @@ funcsym stream:
   *directly*, so naming the entry is sufficient and arch-independent;
   `__la_symbol_ptr`/`__got` slots are named too for `-fno-plt`-style indirect
   calls. `INDIRECT_SYMBOL_LOCAL`/`ABS` entries are skipped; the C-ABI leading `_`
-  is stripped. The image's own exports join the stream only when they lie in a
-  code section (§1.2, `data_exports`).
+  is stripped. The image's own exports (its external `nlist` entries and its
+  export trie) join the stream only when they lie in a code section (§1.2,
+  `data_exports`).
 
 The import currency deliberately includes both executable linkage stubs and
 pointer slots in data sections: the latter must be function symbols so indirect
@@ -6194,8 +6242,8 @@ and x86 ELF PLT stubs from `read` to `jump`.
 
 (kuna) A call materialises its own **return address**, and the constant scan must
 not read it as a reference: it is the instruction's fall-through, which x86 pushes
-as a constant, A32 copies into `lr` and MIPS into `$ra`, so a constant equal to the
-fall-through is never filed as `Data`. AArch64 spells it differently — `bl` and
+as a constant, A32 copies into `lr` and MIPS into `$ra`, so a call's fall-through
+is never filed as `Data`. AArch64 spells it differently — `bl` and
 `blr` lift `x30 = inst_start + 4` to one `INT_ADD` of two constants — so the
 fall-through never appears as a constant and the scan filed the first addend, the
 `bl`'s own address, as a `Data` reference from every call site to itself (and,
@@ -6208,6 +6256,47 @@ constant equal to the instruction's address, a PC-relative sum that lands anywhe
 but the fall-through, and the same sum outside a call — a Thumb-2 `vldr
 s0,[pc,#8]` reads `pc` as `inst_start + 4`, which is its fall-through only by
 width — are reported as before.
+
+(kuna, GH #1360) Not every constant equal to the fall-through is a return address:
+`adr x0,.+4` forms the address of the next instruction exactly as `adr x0,.` and
+`adr x0,.+8` form theirs, and the scan dropped it along with the return
+addresses. The fall-through is now skipped only where the instruction leaves a
+return address
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (is_return_address)`).
+One that **links**
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (links)`) transfers
+control: a `CALL`, `CALLIND`, `BRANCH` to an address, `BRANCHIND` or `CALLOTHER`.
+That covers the links SLEIGH spells without a `CALL`: x86 `call $+5` is a push
+and a `BRANCH`; PowerPC `bcl 20,31,$+4`, `bl` to the next instruction, RISC-V `jal
+t0` and MIPS `bal` past its delay slot write the link register and `BRANCH`; a
+RISC-V PLT entry's `jalr t1,t3` is a `BRANCHIND`; x86-64 `syscall` saves the
+address in `rcx` beside a `CALLOTHER`. The AArch64 sum rule above applies in
+the same instructions. An instruction that does not branch can still leave a
+link value, in two shapes. A32 `mov lr,pc` lifts `lr = inst_next + 4` for the `bx` after it, so a
+fall-through combined with another constant in one op is not an address the
+instruction forms. MIPS `nal` (`bltzal $zero`) is a branch that is never taken
+and lifts to nothing but `ra = inst_next`; it is told apart by its delay slot
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (has_delay_slot)`): its
+fall-through lies past the slot, beyond its own encoding, and only a branch has
+one. The compiler spec is no help here, since MIPS64's names no
+`<returnaddress>`. A slot behind an instruction that does branch — a `RETURN`
+or a `CBRANCH` to an address (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (branches)`)
+— is an ordinary instruction, so SuperH `rts; mova` and `bt/s; mova`, which form
+the address right after the slot, file it. The slot is asked only of an
+instruction that moves the fall-through whole and does not branch, so the walk
+pays the second decode almost nowhere. Anything else that moves the fall-through whole — a copy or an extension
+of it, or a store of it — files it as `Data`: AArch64 and A32 `adr`, Thumb-2
+`adr.w`, x86-64 `lea rax,[rip]`, `mov eax,offset next`, `push offset next`, SuperH `mova`. The
+register-pair carry and the PIC base harvest below made the same assumption
+about a value they compose, and skip it only in an instruction that calls (the
+carry) or links (the harvest), so an `auipc`+`addi` pair that ends right before
+the label it forms files the label. Over 112 images (x86-64, i386 ELF and PE,
+AArch64 ELF and arm64 Mach-O, A32/Thumb, MIPS, PowerPC, RISC-V) no row changes:
+armel libc's 1,130 `mov lr,pc`, PowerPC libc's `bcl` thunks, x86-64 libc's 436
+`syscall`s, every RISC-V PLT `jalr t1,t3` and the `nal` in MIPS64 `ld.so.1`'s
+`_dl_start` still file nothing, and no image there forms an address at its own
+fall-through, so only the fixtures gain rows.
+Emitted C is unchanged; the query is not on the decompile path.
 
 (kuna) An edge also has to survive being resolved to a **node**, and the walk's
 function set is the wrong authority for this one. The walk calls nothing outside

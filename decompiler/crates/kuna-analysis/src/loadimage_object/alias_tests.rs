@@ -55,3 +55,55 @@ fn elf_alias_names_survive_both_symbol_tables_and_rebasing() {
         }
     }
 }
+
+/// (GH #1357) A Mach-O or PE name the address dedup drops is an alias, as on
+/// ELF: the second `nlist` label at an entry, local or external, and a MinGW
+/// COFF pair. The export stream's C spelling of a Mach-O name is not a second
+/// name.
+#[test]
+fn macho_and_pe_alias_names_survive() {
+    let load = |name: &str| {
+        let path = format!("{}/tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+        ObjectLoadImage::from_bytes(&path, &bytes).unwrap()
+    };
+    let macho = load("macho_alias_names_arm64");
+    let mut primary = macho.func_symbols();
+    primary.sort_unstable();
+    let named = |rows: &[(u64, &str)]| -> Vec<(u64, String)> {
+        rows.iter().map(|&(addr, name)| (addr, name.to_string())).collect()
+    };
+    assert_eq!(
+        primary,
+        named(&[
+            (0x240, "_audit_export_a"),
+            (0x248, "_audit_local_a"),
+            (0x250, "_audit_caller"),
+            (0x254, "_audit_first"),
+            (0x25c, "_audit_shared"),
+            (0x264, "_audit_second"),
+        ])
+    );
+    let mut aliases = macho.func_symbol_aliases();
+    aliases.sort_unstable();
+    assert_eq!(
+        aliases,
+        named(&[
+            (0x240, "_audit_export_b"),
+            (0x248, "_audit_local_b"),
+            (0x254, "_audit_both"),
+            (0x254, "_audit_shared"),
+            (0x264, "_audit_both"),
+        ])
+    );
+
+    let pe = load("pe_imports.exe");
+    let aliases = pe.func_symbol_aliases();
+    for want in [
+        (0x140001890, "fpreset"),
+        (0x140007850, "_get_invalid_parameter_handler"),
+        (0x140007860, "_set_invalid_parameter_handler"),
+    ] {
+        assert!(aliases.contains(&(want.0, want.1.to_string())), "{want:?}: {aliases:?}");
+    }
+}

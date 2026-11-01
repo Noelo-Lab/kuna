@@ -924,6 +924,16 @@ LLD=$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin
        -undefined dynamic_lookup -e _call_slots -o macho_import_slots m.o
 ```
 
+`macho_alias_names_arm64` (arm64, 17 KB) is GH #1357's witness: several `nlist`
+names at one entry. `_audit_export_a`/`_audit_export_b`@`0x240` (external),
+`_audit_local_a`/`_audit_local_b`@`0x248` (local), and two objects' local
+`_audit_shared`/`_audit_both` labels, one of them the only name at `0x25c`.
+Before the fix only the first name at an address selected it. Sources
+`macho_alias_names.s` and `macho_alias_names_other.s`; recipe, toolchain and
+SHA-256 in `macho_alias_names_arm64.provenance`. Pinned by
+`loadimage_object/alias_tests.rs (macho_and_pe_alias_names_survive)` and
+`kuna-cli/tests/macho_alias_names_cli.rs`.
+
 `macho_datasyms_arm64` (arm64, 33 KB) is GH #1339's witness: two external
 `__DATA,__data` globals (`_audit_global`@`0x100004000`, `_audit_message`@`0x100004008`)
 beside `_audit_read`@`0x1000003c8` and `_main`@`0x1000003d4`. An external
@@ -945,6 +955,41 @@ partial access whose left side must render as a store
 (`*(int *)&_origin += 1`). Source `macho_datawidth.c`; recipe, toolchain and
 SHA-256 in `macho_datawidth_arm64.provenance`. Pinned by
 `kuna-cli/tests/name_miss_cli.rs (a_macho_global_reads_by_name_at_its_width)`.
+
+`macho_trie_exports_arm64` and `macho_trie_exports_info_arm64` (arm64, 33 KB
+each) are GH #1349's witnesses: dylibs stripped of every `nlist` entry whose export
+trie still names `_audit_exported_function`@`0x328`, `_audit_caller`@`0x340` and
+the data export `_audit_exported_data`@`0x4000`. The first carries
+`LC_DYLD_EXPORTS_TRIE` and `LC_FUNCTION_STARTS`; the second is the classic
+`LC_DYLD_INFO_ONLY` layout with no function starts, so its trie is the only record
+of its functions. Source `macho_trie_exports.c`; recipe, toolchain and SHA-256 in
+`macho_trie_exports_arm64.provenance`. Pinned by `loadimage_object.rs
+(macho_trie_names_survive_a_stripped_symbol_table)` and
+`kuna-cli/tests/macho_trie_names_cli.rs`.
+
+`macho_trie_partial_arm64` (arm64, 17 KB) is the partly stripped shape: its
+`nlist` keeps `_audit_export_a`@`0x240` and its trie also names
+`_audit_export_b` (same entry) and `_audit_caller`@`0x248`. Linked from
+`macho_trie_partial.s`, then `macho_trie_partial_arm64.py` drops the other two
+`nlist` entries; recipe and SHA-256 in `macho_trie_partial_arm64.provenance`.
+Pinned by `loadimage_object.rs (macho_trie_names_fill_a_partial_symbol_table)`
+and `kuna-cli/tests/macho_trie_names_cli.rs`.
+
+`adrnext_{aarch64,macho_arm64,x86_64,arm,rv64,ppc32,mips,mips64,sh4}` (each under 2 KB but
+the 16 KB dylib) are GH #1360's witnesses: an instruction that forms the
+address of the instruction after it (`adr x0,.+4`, `lea rax,[rip]`, `mov
+eax,offset`, `adr.w`, an `auipc`+`addi` that ends right before its label,
+SuperH `mova` alone and in the delay slot of `rts` and `bt/s`) beside
+every spelling of a link whose return address must not be a reference (`bl`,
+`blr`, `blx`, `call`, `call $+5`, `syscall`, `mov lr,pc`, `jal t0`, `bcl 20,31`,
+a `bl` to the next instruction, MIPS `bal` and `nal`, MIPS64 `nal`, whose
+compiler spec names no return-address register, and SuperH `bsr`). Sources
+`adrnext_<arch>.S` and `adrnext_macho.s` (the issue's own assembly); the SuperH
+image is synthetic, written by `adrnext_sh4.py` (regenerate with `python3
+adrnext_sh4.py`; no SuperH toolchain here). Recipe, toolchains and SHA-256s in
+`adrnext.provenance`. Pinned by
+`kuna-cli/tests/xrefs_cli.rs (an_address_of_the_next_instruction_is_a_data_reference,
+no_link_references_the_return_address_it_leaves)`.
 
 ## Mach-O fat/universal + arm64e (PR-8)
 

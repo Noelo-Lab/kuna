@@ -1662,6 +1662,11 @@ fn propagate_one_type(data: &mut Funcdata, root: VarnodeId) {
         let op = top.op.unwrap();
         let inslot = top.inslot;
         let slot = top.slot;
+        if inslot >= 0 && slot >= 0 && joins_only_output(data, op, inslot) {
+            top.slot = data.obank().get(op).map_or(0, |o| o.num_input()) - 1;
+            step(stack.last_mut().unwrap(), data);
+            continue;
+        }
         if propagate_type_edge(data, op, inslot, slot) {
             let newvn = if slot == -1 {
                 data.obank().get(op).and_then(|o| o.get_out())
@@ -1680,6 +1685,22 @@ fn propagate_one_type(data: &mut Funcdata, root: VarnodeId) {
             step(stack.last_mut().unwrap(), data);
         }
     }
+}
+
+/// Does `op` propagate its input `inslot` only to its output? A `MULTIEQUAL` or
+/// `INDIRECT` declines every input-to-input edge in `propagate_type`, and the
+/// edge does nothing before that when the input's type needs no resolution
+/// (resolving it records the choice, so such an edge is still taken).
+fn joins_only_output(data: &Funcdata, op: OpId, inslot: int4) -> bool {
+    let Some(o) = data.obank().get(op) else {
+        return false;
+    };
+    matches!(o.code(), OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT)
+        && o
+            .get_in(inslot)
+            .and_then(|vn| data.vbank().get(vn))
+            .and_then(|v| v.get_temp_type())
+            .is_some_and(|t| !t.needs_resolution())
 }
 
 /// C++ `ActionInferTypes::propagateRef` (coreaction.cc:5464): given a likely
