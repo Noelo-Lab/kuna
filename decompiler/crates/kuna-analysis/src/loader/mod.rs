@@ -88,6 +88,7 @@ pub(crate) mod kuna_rexthunk;
 pub(crate) mod kuna_peordinal;
 pub mod macho_fat;
 pub mod macho_stubs;
+pub(crate) mod macho_trie;
 pub mod mips_markers;
 // (kuna) Go toolchain version off the build-info blob (goreg shell layouts).
 pub mod gobuildinfo;
