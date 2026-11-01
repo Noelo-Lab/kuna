@@ -1,0 +1,23 @@
+{
+  "declared_at": "2026-11-01 21:33:44.367847+00:00",
+  "reason": "Fresh matched binaries after integrating f8746b973. Same predeclared balanced protocol applied to all five cases.",
+  "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+  "cases": [
+    "scalar-c",
+    "panic-literal",
+    "panic-integers",
+    "rust-large-control",
+    "go-control"
+  ],
+  "samples_per_arm": 192,
+  "warmups_per_arm": 3,
+  "seed": 20261102,
+  "bootstrap_resamples": 20000,
+  "block_rounds": 6,
+  "family_alpha": 0.05,
+  "comparisons": 20,
+  "upper_quantile": 0.9975,
+  "budget_pct": 5,
+  "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+  "cpu_selection": "Highest minimum sibling idle percentage over five seconds among allowed physical cores; no idle threshold. No owned builds/tests/scans allowed during measurement."
+}

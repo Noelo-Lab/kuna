@@ -479,6 +479,9 @@ mod verify_rustfmtflags;
 
 #[path = "verify_rustfmtresult.rs"]
 mod verify_rustfmtresult;
+
+#[path = "verify_rustfmtpanic.rs"]
+mod verify_rustfmtpanic;
 #[path = "verify_outlang_go.rs"]
 mod verify_outlang_go;
 

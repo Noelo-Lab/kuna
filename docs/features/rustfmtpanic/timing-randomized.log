@@ -1,0 +1,208 @@
+{"15": {"idle_pct": 100.0, "deltas": [0, 0, 0, 501, 0, 0, 0, 0, 0, 0]}, "55": {"idle_pct": 99.8003992015968, "deltas": [1, 0, 0, 500, 0, 0, 0, 0, 0, 0]}}
+scalar-c completed rounds 48
+scalar-c completed rounds 96
+scalar-c completed rounds 144
+scalar-c completed rounds 192
+scalar-c medians {'baseline_to_patched': {'cpu_ms': -0.7690677966118997, 'wall_ms': -0.7357999705141838}, 'off_to_patched': {'cpu_ms': -0.5714746678788019, 'wall_ms': -0.5526254693703048}}
+rust-large-control completed rounds 48
+panic-literal completed rounds 48
+panic-integers completed rounds 48
+go-control completed rounds 48
+rust-large-control completed rounds 96
+panic-literal completed rounds 96
+panic-integers completed rounds 96
+go-control completed rounds 96
+rust-large-control completed rounds 144
+panic-literal completed rounds 144
+panic-integers completed rounds 144
+rust-large-control completed rounds 192
+rust-large-control medians {'baseline_to_patched': {'cpu_ms': -0.2000389275960468, 'wall_ms': -0.0004633651415564266}, 'off_to_patched': {'cpu_ms': 0.6498304767728058, 'wall_ms': 0.12519609626076011}}
+go-control completed rounds 144
+panic-literal completed rounds 192
+panic-literal medians {'baseline_to_patched': {'cpu_ms': -0.5649471578936249, 'wall_ms': 0.6232274407147242}, 'off_to_patched': {'cpu_ms': -0.014563964458325085, 'wall_ms': 0.1607708079780057}}
+panic-integers completed rounds 192
+panic-integers medians {'baseline_to_patched': {'cpu_ms': 0.7856422882838165, 'wall_ms': 0.8176158551074897}, 'off_to_patched': {'cpu_ms': 1.2686967616844624, 'wall_ms': 0.8354131798461006}}
+go-control completed rounds 192
+go-control medians {'baseline_to_patched': {'cpu_ms': 0.17788574261576873, 'wall_ms': 0.3411950333848113}, 'off_to_patched': {'cpu_ms': 0.6830677087693582, 'wall_ms': 0.7358450419903351}}
+scalar-c upper bounds {'baseline_to_patched': {'cpu_ms': 0.1895701387700691, 'wall_ms': 0.24130402001406187}, 'off_to_patched': {'cpu_ms': 0.42668455268622246, 'wall_ms': 0.47054208469535536}} passed True
+panic-literal upper bounds {'baseline_to_patched': {'cpu_ms': 0.49409850405903216, 'wall_ms': 2.804715475134053}, 'off_to_patched': {'cpu_ms': 0.5886832320355356, 'wall_ms': 3.517903331572618}} passed True
+panic-integers upper bounds {'baseline_to_patched': {'cpu_ms': 0.5989504179871644, 'wall_ms': 7.455698091116873}, 'off_to_patched': {'cpu_ms': 0.9986164449541692, 'wall_ms': 6.598812053485524}} passed False
+rust-large-control upper bounds {'baseline_to_patched': {'cpu_ms': 0.5477033100689647, 'wall_ms': 0.2628642513608189}, 'off_to_patched': {'cpu_ms': 0.037222822397771485, 'wall_ms': 1.0039695150691466}} passed True
+go-control upper bounds {'baseline_to_patched': {'cpu_ms': 0.8771326043687349, 'wall_ms': 3.106757637474607}, 'off_to_patched': {'cpu_ms': 0.8530320083491977, 'wall_ms': 6.492942094254313}} passed False
+{
+  "method": "balanced_randomized_block_bootstrap",
+  "execution": "parallel cases on disjoint physical CPU pairs",
+  "attempt": "/tmp/kuna-rust-panic-f874/timing-randomized-attempts/20261101-221936",
+  "cpu_assignments": {
+    "scalar-c": {
+      "target_cpu": 55,
+      "sibling_cpu": 15
+    },
+    "panic-literal": {
+      "target_cpu": 45,
+      "sibling_cpu": 5
+    },
+    "panic-integers": {
+      "target_cpu": 65,
+      "sibling_cpu": 25
+    },
+    "rust-large-control": {
+      "target_cpu": 61,
+      "sibling_cpu": 21
+    },
+    "go-control": {
+      "target_cpu": 79,
+      "sibling_cpu": 39
+    }
+  },
+  "plan": {
+    "declared_at": "2026-11-01 21:33:44.367847+00:00",
+    "reason": "Fresh matched binaries after integrating f8746b973. Same predeclared balanced protocol applied to all five cases.",
+    "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+    "cases": [
+      "scalar-c",
+      "panic-literal",
+      "panic-integers",
+      "rust-large-control",
+      "go-control"
+    ],
+    "samples_per_arm": 192,
+    "warmups_per_arm": 3,
+    "seed": 20261102,
+    "bootstrap_resamples": 20000,
+    "block_rounds": 6,
+    "family_alpha": 0.05,
+    "comparisons": 20,
+    "upper_quantile": 0.9975,
+    "budget_pct": 5,
+    "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+    "cpu_selection": "Rank allowed physical CPU pairs by minimum sibling idle percentage over five seconds; assign the highest-ranked distinct pairs to cases before collecting any timings. No absolute idle threshold. No owned builds/tests/corpus work during measurements; only these measurement workers run concurrently.",
+    "amended_at_before_sampling": "2026-11-01 22:03:06.587897+00:00",
+    "execution": "parallel cases on disjoint physical CPU pairs",
+    "execution_amendment": "All samples, randomization, block resampling, family bounds and acceptance rules are unchanged. Independent cases use separate worker processes and disjoint physical CPU pairs to reduce elapsed time. Each worker measures only its own subprocess CPU use. No samples were collected before this amendment."
+  },
+  "accepted_for_speed_review": false,
+  "results": {
+    "scalar-c": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.7690677966118997,
+          "wall_ms": -0.7357999705141838
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.5714746678788019,
+          "wall_ms": -0.5526254693703048
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.1895701387700691,
+          "wall_ms": 0.24130402001406187
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.42668455268622246,
+          "wall_ms": 0.47054208469535536
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "panic-literal": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.5649471578936249,
+          "wall_ms": 0.6232274407147242
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.014563964458325085,
+          "wall_ms": 0.1607708079780057
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.49409850405903216,
+          "wall_ms": 2.804715475134053
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.5886832320355356,
+          "wall_ms": 3.517903331572618
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "panic-integers": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7856422882838165,
+          "wall_ms": 0.8176158551074897
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.2686967616844624,
+          "wall_ms": 0.8354131798461006
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.5989504179871644,
+          "wall_ms": 7.455698091116873
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.9986164449541692,
+          "wall_ms": 6.598812053485524
+        }
+      },
+      "speed_budget_passed": false
+    },
+    "rust-large-control": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.2000389275960468,
+          "wall_ms": -0.0004633651415564266
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.6498304767728058,
+          "wall_ms": 0.12519609626076011
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.5477033100689647,
+          "wall_ms": 0.2628642513608189
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.037222822397771485,
+          "wall_ms": 1.0039695150691466
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "go-control": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.17788574261576873,
+          "wall_ms": 0.3411950333848113
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.6830677087693582,
+          "wall_ms": 0.7358450419903351
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.8771326043687349,
+          "wall_ms": 3.106757637474607
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.8530320083491977,
+          "wall_ms": 6.492942094254313
+        }
+      },
+      "speed_budget_passed": false
+    }
+  }
+}
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-panic-f874/timing-randomized.py", line 108, in <module>
+    if __name__=='__main__':main()
+  File "/tmp/kuna-rust-panic-f874/timing-randomized.py", line 103, in main
+    assert accepted,'Speed bound unresolved or failed; all samples retained without replacing canonical results.'
+AssertionError: Speed bound unresolved or failed; all samples retained without replacing canonical results.

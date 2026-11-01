@@ -1,0 +1,37 @@
+{
+  "baseline_commit": "f8746b9730b525a065c89c26e358ffd7c2328bc7",
+  "previous_reviewed_head": "78183c657",
+  "main_source_changes": [
+    "decompiler/crates/kuna-cli/src/decompile.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all/omit.rs",
+    "decompiler/crates/kuna-cli/src/main.rs",
+    "decompiler/crates/kuna-cli/tests/compact_json.rs",
+    "decompiler/crates/kuna-cli/tests/integration.rs",
+    "decompiler/crates/kuna-decomp/src/infra/action.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_renamereads.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs",
+    "decompiler/crates/kuna-decomp/src/substrate/varnode.rs",
+    "docs/cli.md",
+    "docs/spec/00-overview.md",
+    "docs/spec/03-ssa-and-simplification.md",
+    "skills/kuna/SKILL.md",
+    "tests/cli/omit-leaves-record-collections-out.json"
+  ],
+  "fresh_baseline_and_patched_captures": true,
+  "all_patched_function_records_equal_previous_reviewed_head": true,
+  "verified_function_records": 52581,
+  "verification": "breadth.py asserts complete address-indexed function records equal the previously reviewed panic capture for every image and language",
+  "breadth": {
+    "images": 20,
+    "distinct_functions": 25955,
+    "function_records": 52581,
+    "changed_functions": 29,
+    "hunks": 29,
+    "C_Go_identical": 42693,
+    "Go_parses": 16738,
+    "off_matches_parent_rust_records": 9888
+  }
+}

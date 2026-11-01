@@ -1,0 +1,123 @@
+--- before/panic_decimal
++++ after/panic_decimal
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  core::panicking::panic_fmt(0x5e32,&mut v2,0x5bc88); // no-return
++  panic!("value={}\n",&*((v2 as *const _) as *const u64)); // no-return
+ }
+--- before/panic_dynamic
++++ after/panic_dynamic
+@@ -10,7 +10,7 @@
+   v2 = &mut v1;
+   v1 = a0;
+   if 0x10000 <= a1 {
+-    core::panicking::panic_fmt(0x6980,0x41,0x5bca0); // no-return
++    panic!("Formatting argument out of range"); // no-return
+   }
+   v3 = fmt;
+   v4 = 0;
+
+--- before/panic_empty
++++ after/panic_empty
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn panic_empty()
+ {
+-  core::panicking::panic_fmt(1,1,0x5bcb8); // no-return
++  panic!(""); // no-return
+ }
+--- before/panic_escaped
++++ after/panic_escaped
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  core::panicking::panic_fmt(0x69a0,&mut v2,0x5bcd0); // no-return
++  panic!("{{|{0:\"<6}|{0:\\>6}|{0:\n^7}|{0:\0<3}|}}\n",&*((v2 as *const _) as *const u8)); // no-return
+ }
+--- before/panic_hex
++++ after/panic_hex
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  core::panicking::panic_fmt(0x69d0,&mut v2,0x5bd18); // no-return
++  panic!("hex={:#010x}",&*((v2 as *const _) as *const u32)); // no-return
+ }
+--- before/panic_literal
++++ after/panic_literal
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn panic_literal()
+ {
+-  core::panicking::panic_fmt(0x69dd,0x25,0x5bd30); // no-return
++  panic!("literal {{é🙂}}\n\n"); // no-return
+ }
+--- before/panic_narrow
++++ after/panic_narrow
+@@ -16,5 +16,5 @@
+   v1 = a0;
+   v4 = v2;
+   v6 = v2;
+-  core::panicking::panic_fmt(0x69ef,&mut v2,0x5bd48); // no-return
++  panic!("{:+} {:#x} {:08b}",&*((v2 as *const _) as *const i8),&*((v4 as *const _) as *const i8),&*((v6 as *const _) as *const i8)); // no-return
+ }
+--- before/panic_reorder
++++ after/panic_reorder
+@@ -18,5 +18,5 @@
+   v1 = a1;
+   v2 = a0;
+   v7 = v3;
+-  core::panicking::panic_fmt(0x6a05,&mut v3,0x5bd60); // no-return
++  panic!("{0:#08x} {1:+06} {2:>5o} {1:+06}",&*((v3 as *const _) as *const u16),&*((v5 as *const _) as *const u32),&*((v7 as *const _) as *const u16)); // no-return
+ }
+--- before/panic_signed
++++ after/panic_signed
+@@ -8,5 +8,5 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  core::panicking::panic_fmt(0x6a2a,&mut v2,0x5bd78); // no-return
++  panic!("signed={:+}",&*((v2 as *const _) as *const i64)); // no-return
+ }
+--- before/std::alloc::default_alloc_error_hook
++++ after/std::alloc::default_alloc_error_hook
+@@ -210,7 +210,7 @@
+   if v21 != b'\0' {
+     v53 = &mut v52;
+     v180 = fmt;
+-    core::panicking::panic_fmt(0x62fa,&mut v53,0x5c458); // no-return
++    panic!("memory allocation of {} bytes failed",&*((v53 as *const _) as *const u64)); // no-return
+   }
+   LOCK();
+   _ZN3std5alloc24default_alloc_error_hook18PREV_ALLOC_FAILURE17hbfd974c3853d70c6E = 1;
+
+--- before/core::ptr::drop_in_place
++++ after/core::ptr::drop_in_place
+@@ -5,5 +5,5 @@
+   if a0 & 1 == 0 {
+     return;
+   }
+-  core::panicking::panic_fmt(_cannot_panic_during_the_backtrace_function_,0x55,0x5ca48); // no-return
++  panic!("cannot panic during the backtrace function"); // no-return
+ }
+--- before/alloc::raw_vec::capacity_overflow
++++ after/alloc::raw_vec::capacity_overflow
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn capacity_overflow()
+ {
+-  core::panicking::panic_fmt(_capacity_overflow_,0x23,0x5d7c8); // no-return
++  panic!("capacity overflow"); // no-return
+ }
+--- before/core::slice::sort::shared::smallsort::panic_on_ord_violation
++++ after/core::slice::sort::shared::smallsort::panic_on_ord_violation
+@@ -2,5 +2,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+ unsafe fn panic_on_ord_violation()
+ {
+-  core::panicking::panic_fmt(_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option::unwrap____on_a__None__value_,0x99,0x5dd50); // no-return
++  panic!("user-provided comparison function does not correctly implement a total order"); // no-return
+ }

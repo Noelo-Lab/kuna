@@ -517,6 +517,8 @@ Three tiers:
 | Rust static format specifications remain opaque template bytes | [`rustfmtflags`](#rustfmtflags) |
 | Rust integer String construction retains format_inner with an output pointer | [`rustfmtresult`](#rustfmtresult) |
 | Rust format! results remain runtime calls despite recovered templates | [`rustfmtresult`](#rustfmtresult) |
+| Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers | [`rustfmtpanic`](#rustfmtpanic) |
+| Rust primitive panic arguments retain runtime formatter descriptors | [`rustfmtpanic`](#rustfmtpanic) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
@@ -2546,6 +2548,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on with rustfmtargs to read verified integer String construction as format!. Turn off to inspect the runtime call and hidden output buffer. This does not change function signatures, infer generic formatter types or recover write!/writeln! sinks.
 - **Where / provenance:** P9/format-result · angr · opt-in-tool · angr-rust-format-result
 - **Example:** `option rustfmtresult off`
+
+### `rustfmtpanic` -- on | off, default `on`
+
+- **Symptoms:** Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers; Rust primitive panic arguments retain runtime formatter descriptors.
+- **What it does:** Recover panic! from exact core::panicking::panic_fmt calls in stable Rust 1.93.0/1.93.1 little-endian 64-bit images. Require a non-returning direct call with a constant mapped nonvolatile caller-location address and verified literal or primitive integer formatting arguments. Preserve message bytes including trailing newlines, descriptor setup and surrounding IR. Primitive arguments require rustfmtargs and static specifications require rustfmtflags. Other versions, callbacks, dynamic locations and ambiguous call shapes remain explicit. C and Go output are unchanged.
+- **When to flip:** On by default to expose verified Rust panic messages and integer arguments. Turn off to retain the runtime panic_fmt call. Literal panic messages are independent of rustfmtliteral and rustfmtargs; integer arguments use rustfmtargs and rustfmtflags checks. Recompiled panic! uses the recovered source location, not the original binary's file and line.
+- **Where / provenance:** P9/panic-format · angr · opt-in-tool · angr-rust-panic-format
+- **Example:** `option rustfmtpanic off`
 
 ### `outlang` -- c | rust | go, default `c`
 

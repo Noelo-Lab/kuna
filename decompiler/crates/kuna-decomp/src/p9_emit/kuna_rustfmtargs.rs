@@ -29,6 +29,7 @@ pub struct Plan {
 pub(crate) enum MacroKind {
     Print(bool),
     Format,
+    Panic,
 }
 
 /// Full demangled identities, before display-name normalization. Conflicting
@@ -185,7 +186,7 @@ fn argument_cells(fd: &Funcdata, call: OpId, base: i64, count: usize) -> Option<
     cells.into_iter().collect()
 }
 
-fn constant_word(fd: &Funcdata, mut id: VarnodeId) -> Option<u64> {
+pub(crate) fn constant_word(fd: &Funcdata, mut id: VarnodeId) -> Option<u64> {
     for _ in 0..8 {
         let value = fd.vbank().get(id)?;
         if value.get_size() != 8 {
@@ -345,6 +346,7 @@ impl Template {
             (MacroKind::Print(true), false) => "eprint!",
             (MacroKind::Print(true), true) => "eprintln!",
             (MacroKind::Format, _) => "format!",
+            (MacroKind::Panic, _) => "panic!",
         };
         let mut literal = String::from("\"");
         for piece in self.pieces {

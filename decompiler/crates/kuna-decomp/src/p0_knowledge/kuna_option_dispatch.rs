@@ -857,6 +857,7 @@ kuna_options! { self, p1;
     "rustfmtargs" => on_off!(rust_fmt_args, "Rust primitive print arguments"),
     "rustfmtflags" => on_off!(rust_fmt_flags, "Rust static integer format specifications"),
     "rustfmtresult" => on_off!(rust_fmt_result, "Rust format String results"),
+    "rustfmtpanic" => on_off!(rust_fmt_panic, "Rust panic formatting"),
     "securitycheck" => {
         on_off!(strip_security_check, "Rust security-check branch stripping")
     },

@@ -1,0 +1,22 @@
+{
+  "fixture": "stripped122",
+  "sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 2017,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 2017,
+      "changed": [],
+      "parsed": 2017,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

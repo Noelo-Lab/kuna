@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3510,
-    3510
+    3516,
+    3516
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1017,7 +1017,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 363 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 364 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2476,6 +2476,7 @@
     "data:deadwaves #3: both passes leave the same live IR",
     "data:deadwaves #4: both passes create the same ops",
     "data:debug hexadecimal modes preserve traits",
+    "data:decimal panic keeps terminal LF and primitive width",
     "data:declared wide input keeps its complete value",
     "data:declorder #1: with no option line (the shipped default) v2 follows v1",
     "data:declorder #2: and v10 follows v9",
@@ -2830,6 +2831,7 @@
     "data:libcnames #7: strlen's results are len and len_2 and malloc's is p",
     "data:libcnames #8: a value used inside an expression names nothing",
     "data:libcnames #9: fopen's result is fp",
+    "data:literal panic keeps braces Unicode and both newlines",
     "data:literal print default recovers exact newline",
     "data:literal print off and rejected shapes keep runtime sink",
     "data:literal stderr retains missing newline",
@@ -2961,6 +2963,10 @@
     "data:oxidizer-SecurityCheck #1: the panic helper call is emitted only with the option off",
     "data:oxidizer-SecurityCheck #2: the bounds guard is emitted only with the option off",
     "data:oxidizer-SecurityCheck #3: the guarded load itself is untouched (emitted by both passes)",
+    "data:panic hexadecimal width and alternate flag",
+    "data:panic narrow signed arguments retain interpretation",
+    "data:panic off and dynamic caller location retain runtime sink",
+    "data:panic repeated indices retain order and formats",
     "data:paramcopyhoist #1: option off sinks the second parameter's copy-shadow below the first guard (gap reproduced)",
     "data:paramcopyhoist #2: option on anchors both copy-shadows in the entry block, ahead of every guard",
     "data:paramcopyhoist #3: both passes keep the guard writing NULL through each parameter",

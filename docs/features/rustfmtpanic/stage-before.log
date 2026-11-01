@@ -1,0 +1,9 @@
+datatests: 0/6 assertions passed
+FAILURES:
+  [data] panic off and dynamic caller location retain runtime sink
+  [data] literal panic keeps braces Unicode and both newlines
+  [data] decimal panic keeps terminal LF and primitive width
+  [data] panic hexadecimal width and alternate flag
+  [data] panic repeated indices retain order and formats
+  [data] panic narrow signed arguments retain interpretation
+exit: 6
