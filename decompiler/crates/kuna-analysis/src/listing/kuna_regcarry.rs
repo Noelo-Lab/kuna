@@ -40,7 +40,14 @@
 //!  * the address a `STORE` writes, a [`XrefKind::Write`];
 //!  * an address an `INT_ADD`/`INT_SUB` composes into a whole register —
 //!    `add x0,x0,#0x488` — a [`XrefKind::Data`]: forming an address is not
-//!    reading it.
+//!    reading it;
+//!  * the slot a `CALLIND` takes its destination from, a [`XrefKind::Call`].
+//!    A pointer-width load from a reference leaves its register holding the
+//!    word at that address, so `adrp x16,_malloc@GOTPAGE; ldr x16,[x16,..];
+//!    blr x16` and `mov rax,[rip+slot]; call rax` call through the slot, as
+//!    x86's `call [rip+slot]` does in one instruction (GH #1376). The load
+//!    stays the read it is. The word itself is unknown: nothing composes it
+//!    into an address, and only a copy of it is still the slot's word.
 //!
 //! Only a value a carried register contributed to is reported; a single
 //! instruction's own constants are [`super::xrefs`]' to report. The `Data`
@@ -136,6 +143,7 @@ struct Held {
     addr: bool,
     /// The [`Found`] `Data` row that formed it, if one did.
     formed: Option<usize>,
+    loaded: bool,
 }
 
 /// What one instruction hands its fall-through: the registers, and the
@@ -152,6 +160,7 @@ type Trail = SmallVec<[u64; MAX_HOPS]>;
 /// The fixed facts the evaluation reads.
 pub(super) struct Machine<'a> {
     reg: Rc<AddrSpace>,
+    data: Option<Rc<AddrSpace>>,
     data_index: Option<u64>,
     big_endian: bool,
     /// An `ET_DYN` image on an ISA whose PC-relative operands keep the PC
@@ -160,6 +169,8 @@ pub(super) struct Machine<'a> {
     preserved: &'a [(u64, u64)],
     mapped: &'a [(u64, u64)],
     pool: Option<&'a PoolImage<'a>>,
+    /// The width of a pointer, the only load whose result can be a callee.
+    ptr: u32,
 }
 
 impl<'a> Machine<'a> {
@@ -182,11 +193,13 @@ impl<'a> Machine<'a> {
         Some(Machine {
             big_endian: reg.is_big_endian(),
             reg,
+            data: data_space.cloned(),
             data_index: data_space.and_then(|d| u64::try_from(d.get_index()).ok()),
             pc_only,
             preserved,
             mapped,
             pool,
+            ptr: if file.is_64() { 8 } else { 4 },
         })
     }
 
@@ -198,6 +211,13 @@ impl<'a> Machine<'a> {
     /// ([`Val::addr`]) is one whatever its size.
     fn admits(&self, v: u64, addr: bool) -> bool {
         (addr || looks_like_address(v)) && in_range(self.mapped, v)
+    }
+
+    /// The slot a pointer-width direct memory operand names (x86's `mov
+    /// rax,[rip+slot]`), if `vn` is one.
+    fn slot(&self, vn: &VarnodeData) -> Option<u64> {
+        let data = matches!((&vn.space, &self.data), (Some(s), Some(d)) if Rc::ptr_eq(s, d));
+        (data && vn.size == self.ptr && self.admits(vn.offset, false)).then_some(vn.offset)
     }
 }
 
@@ -266,6 +286,16 @@ struct Val {
     formed: Option<usize>,
     /// The formed value this one was computed from.
     base: Option<usize>,
+    /// The pointer-width word stored at `v`, read through a reference: inert
+    /// to arithmetic, and a call through it is a call through `v`.
+    loaded: bool,
+}
+
+impl Val {
+    /// The word a load read from the reference `at`.
+    fn loaded(at: &Val) -> Val {
+        Val { composed: None, own: false, formed: None, base: None, loaded: true, ..*at }
+    }
 }
 
 fn mask(size: u32) -> u64 {
@@ -329,10 +359,20 @@ fn folds(code: OpCode) -> bool {
 /// Where only a PC-derived value may start a carry, some modelled op must also
 /// read a constant in the instruction's PC window, or nothing it forms is kept.
 /// And it must give some register a value: the first register an evaluation can
-/// know is written by a modelled op from constants and temporaries alone.
+/// know is written by a modelled op from constants and temporaries alone. A
+/// register copied whole from a pointer-width direct memory operand (`mov
+/// rax,[rip+slot]`) holds that slot's word, which a later call may go through.
 fn has_seed(m: &Machine, insn: &Insn) -> bool {
     if insn.calls {
         return false;
+    }
+    let slot_load = |op: &FullOp| {
+        op.opcode == OpCode::CPUI_COPY
+            && op.out.as_ref().is_some_and(|o| m.is_register(o))
+            && op.ins.first().is_some_and(|vn| m.slot(vn).is_some())
+    };
+    if insn.ops.iter().any(slot_load) {
+        return true;
     }
     let mut seed = false;
     let mut pc = !m.pc_only;
@@ -391,6 +431,7 @@ fn constant(vma: u64, formed: &Formed, vn: &VarnodeData) -> Val {
         own: is_own(vma, v),
         formed: None,
         base: None,
+        loaded: false,
     }
 }
 
@@ -432,6 +473,9 @@ impl Frame {
                     if (lo, hi) == (o, end) {
                         return Some(val);
                     }
+                    if val.loaded {
+                        return None;
+                    }
                     let shift = if m.big_endian { end - hi } else { lo - o };
                     let v = val.v.checked_shr((8 * shift) as u32).unwrap_or(0) & mask(vn.size);
                     Some(Val { v, composed: None, addr: val.addr && shift == 0 && vn.size >= ADDR_BYTES, ..val })
@@ -464,6 +508,9 @@ impl Frame {
 fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
     let out = op.out.as_ref()?;
     let a = a?;
+    if a.loaded || b.is_some_and(|b| b.loaded) {
+        return (op.opcode == OpCode::CPUI_COPY).then_some(a);
+    }
     let resized = out.size != op.ins.first()?.size;
     let unary = |v: u64| {
         Some(Val { v: v & mask(out.size), composed: if resized { None } else { a.composed }, own: false, ..a })
@@ -515,7 +562,7 @@ fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
                 _ => false,
             };
             let (age, pc) = (a.age.max(b.age), a.pc || b.pc);
-            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base })
+            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base, loaded: false })
         }
         _ => None,
     }
@@ -582,6 +629,7 @@ impl Tracker {
                 own: false,
                 formed: h.formed,
                 base: None,
+                loaded: h.loaded,
             };
             (h.off, h.size, val)
         }));
@@ -597,8 +645,9 @@ impl Tracker {
             match op.opcode {
                 OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                     let load = op.opcode == OpCode::CPUI_LOAD;
+                    let mut word = None;
                     if let Some(a) = op.ins.get(1).and_then(|vn| frame.read(m, vn)) {
-                        if a.carried && !joined && from_data() && m.admits(a.v, a.addr) {
+                        if a.carried && !a.loaded && !joined && from_data() && m.admits(a.v, a.addr) {
                             let kind = if load { XrefKind::Read } else { XrefKind::Write };
                             let base = base_of(found, &a, a.v);
                             hits.push(Hit { to: a.v, kind, age: a.age, base });
@@ -606,13 +655,20 @@ impl Tracker {
                             if let Some(t) = width.and_then(|w| m.pool?.follow(a.v, w, m.mapped)) {
                                 hits.push(Hit { to: t, kind: XrefKind::Data, age: a.age, base: None });
                             }
+                            word = (width == Some(m.ptr)).then(|| Val::loaded(&a));
                         }
                     }
                     if let Some(out) = op.out.as_ref().filter(|_| load) {
-                        frame.write(m, out, None);
+                        frame.write(m, out, word);
                     }
                 }
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => {
+                    let dest = op.ins.first().filter(|_| op.opcode == OpCode::CPUI_CALLIND);
+                    if let Some(d) = dest.and_then(|vn| frame.read(m, vn)) {
+                        if d.loaded && d.carried && !joined {
+                            hits.push(Hit { to: d.v, kind: XrefKind::Call, age: d.age, base: None });
+                        }
+                    }
                     if let Some(out) = &op.out {
                         frame.write(m, out, None);
                     }
@@ -631,7 +687,10 @@ impl Tracker {
                     let Some(out) = &op.out else { continue };
                     let a = op.ins.first().and_then(|vn| frame.read(m, vn));
                     let b = op.ins.get(1).and_then(|vn| frame.read(m, vn));
-                    let mut val = fold(op, a, b);
+                    let mut val = fold(op, a, b).or_else(|| {
+                        let v = m.slot(op.ins.first().filter(|_| op.opcode == OpCode::CPUI_COPY)?)?;
+                        Some(Val::loaded(&Val { v, pc: false, addr: false, ..constant(vma, &formed, &op.ins[0]) }))
+                    });
                     if let Some(v) = val.as_mut() {
                         if v.carried
                             && !joined
@@ -673,7 +732,7 @@ impl Tracker {
                 && !(conditional && frame.written.iter().any(|&w| overlaps(w, (off, size))));
             if keep {
                 let age = if v.carried { v.age } else { 0 };
-                held.push(Held { off, size, v: v.v, age, pc: v.pc, addr: v.addr, formed: v.formed });
+                held.push(Held { off, size, v: v.v, age, pc: v.pc, addr: v.addr, formed: v.formed, loaded: v.loaded });
             }
         }
         if held.is_empty() {
@@ -731,22 +790,26 @@ mod tests {
         c: Rc<AddrSpace>,
         r: Rc<AddrSpace>,
         u: Rc<AddrSpace>,
+        /// The data space a direct memory operand names.
+        m: Rc<AddrSpace>,
     }
 
     impl Isa {
         fn new() -> Self {
             let (c, r, u) = spaces();
-            Isa { c, r, u }
+            Isa { c, r, u, m: Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR)) }
         }
         fn machine(&self, pc_only: bool) -> Machine<'static> {
             Machine {
                 reg: Rc::clone(&self.r),
+                data: Some(Rc::clone(&self.m)),
                 data_index: Some(2),
                 big_endian: false,
                 pc_only,
                 preserved: &PRESERVED,
                 mapped: &MAPPED,
                 pool: None,
+                ptr: 8,
             }
         }
         fn k(&self, v: u64) -> VarnodeData {
@@ -786,6 +849,17 @@ mod tests {
                 op(OpCode::CPUI_INT_ADD, Some(self.x(30)), vec![self.k(at), self.k(4)]),
                 op(OpCode::CPUI_CALL, None, vec![self.k(0x30000)]),
             ]
+        }
+        /// `blr xN` at `at`.
+        fn call_reg(&self, at: u64, n: u64) -> Vec<FullOp> {
+            vec![
+                op(OpCode::CPUI_INT_ADD, Some(self.x(30)), vec![self.k(at), self.k(4)]),
+                op(OpCode::CPUI_CALLIND, None, vec![self.x(n)]),
+            ]
+        }
+        /// The `width`-byte direct memory operand at `at` (x86's `[rip+slot]`).
+        fn mem(&self, at: u64, width: u32) -> VarnodeData {
+            vn(&self.m, at, width)
         }
     }
 
@@ -992,6 +1066,58 @@ mod tests {
         far.extend((0..MAX_HOPS).map(|_| isa.set(1, 5)));
         far.push(isa.add(0, 0, 0x10));
         assert!(walk(&m, &far, &[]).is_empty());
+    }
+
+    /// GH #1376: `adrp x16,_malloc@GOTPAGE; ldr x16,[x16,..]; blr x16` reads
+    /// the slot and calls through it.
+    #[test]
+    fn a_call_through_a_register_loaded_from_a_slot_is_a_call_to_the_slot() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let got = walk(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10), isa.call_reg(0x20008, 16)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Read), (0x20008, 0x24010, XrefKind::Call)]);
+        let mv = vec![op(OpCode::CPUI_COPY, Some(isa.x(17)), vec![isa.x(16)])];
+        let copied = walk(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10), mv, isa.call_reg(0x2000c, 17)], &[]);
+        assert_eq!(copied.last(), Some(&(0x2000c, 0x24010, XrefKind::Call)), "{copied:?}");
+        let joined = walk(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10), isa.call_reg(0x20008, 16)], &[0x20008]);
+        assert_eq!(joined, vec![(0x20004, 0x24010, XrefKind::Read)], "another path into the call may hold anything");
+    }
+
+    /// The word a slot holds is unknown: an offset from it is no address, a
+    /// load through it no read, and a narrow load of the slot no callee.
+    #[test]
+    fn the_word_a_slot_holds_is_not_a_value() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let loaded = || [isa.set(16, 0x24000), isa.load(16, 16, 0x10)];
+        let add: Vec<_> = loaded().into_iter().chain([isa.add(0, 16, 0x21000)]).collect();
+        assert_eq!(walk(&m, &add, &[]), vec![(0x20004, 0x24010, XrefKind::Read)]);
+        let deref: Vec<_> = loaded().into_iter().chain([isa.load(0, 16, 0x21000)]).collect();
+        assert_eq!(walk(&m, &deref, &[]), vec![(0x20004, 0x24010, XrefKind::Read)]);
+        let narrow = vec![
+            op(OpCode::CPUI_INT_ADD, Some(isa.t(0)), vec![isa.x(16), isa.k(0x10)]),
+            op(OpCode::CPUI_LOAD, Some(vn(&isa.r, 16 * 8, 4)), vec![isa.k(2), isa.t(0)]),
+        ];
+        let got = walk(&m, &[isa.set(16, 0x24000), narrow, isa.call_reg(0x20008, 16)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Read)], "`ldr w16` loads no pointer");
+    }
+
+    /// `mov rax,[rip+slot]; call rax` calls through the slot; `call [rip+slot]`
+    /// is one instruction, which [`super::super::xrefs`] files itself.
+    #[test]
+    fn a_register_copied_from_a_direct_slot_operand_calls_through_it() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let mov = vec![op(OpCode::CPUI_COPY, Some(isa.x(0)), vec![isa.mem(0x24010, 8)])];
+        let got = walk(&m, &[mov, isa.call_reg(0x20004, 0)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Call)]);
+        let one = vec![
+            op(OpCode::CPUI_COPY, Some(isa.t(0)), vec![isa.mem(0x24010, 8)]),
+            op(OpCode::CPUI_CALLIND, None, vec![isa.t(0)]),
+        ];
+        assert!(walk(&m, &[one], &[]).is_empty());
+        let word = vec![op(OpCode::CPUI_COPY, Some(vn(&isa.r, 0, 4)), vec![isa.mem(0x24010, 4)])];
+        assert!(walk(&m, &[word, isa.call_reg(0x20004, 0)], &[]).is_empty(), "a 32-bit load is no pointer");
     }
 
     #[test]

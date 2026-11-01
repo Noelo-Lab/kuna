@@ -4230,6 +4230,22 @@ a low-based PIE live: on a control pair differing only in whether the section
 header table is present, the section-less image now answers the *same* data
 references as the sectioned one over the same functions, with none added.
 
+(kuna) A Mach-O section carries no allocation bit, and `object` derives its neutral
+kind from a dozen `(segment, section)` name pairs, so `__DATA_CONST,__got`,
+`__la_symbol_ptr`, `__DATA_CONST,__const`, `__cfstring`, the `__objc_*` and Go
+sections, `__TEXT,__stubs` and a kext's `__TEXT_EXEC,__text` all classified as
+unknown and the oracle answered "not mapped" for every one of them (GH #1376): an
+arm64 dylib's `ldr x16,[x16]` of its `_malloc` GOT slot, and an x86-64 Mach-O's
+`call qword ptr [_malloc@GOTPCREL]`, referenced nothing. dyld maps every section of
+a segment it loads, so on Mach-O every section is mapped except a debug one
+(`S_ATTR_DEBUG`, the `__DWARF` segment). That also makes an x86-64 Mach-O stub's
+`jmp qword ptr [slot]` the forwarding veneer an ELF PLT entry already was. Over 52
+real Mach-O images (arm64, x86-64, armv7, PowerPC, a kext) and the vendored Mach-O
+fixtures, 22,625 rows are added and none is lost, every one into a section of that
+kind. The `adrp` page that is itself the start of such a section keeps the `Data`
+row the constant scan gives it on ELF, whatever datum the page holds first. ELF and
+PE answers are unchanged.
+
 (kuna) **Not every `.pdata` record is a function** — the PE exception directory
 answers "where does unwinding start from here", which is a coarser question than
 "where does a function start"
@@ -7112,13 +7128,42 @@ with `addiw` and is not affected. The page or high half on its own is not a
 carried reference; an `adrp` page that is itself a mapped address keeps the `Data`
 row the constant scan always gave it.
 
+(kuna) **A call through a loaded slot** (GH #1376). x86's `call qword ptr
+[slot]` takes its destination out of a fixed slot in one instruction, and the scan
+files it as a `Call` to the slot, which is where an import's name lives. A
+fixed-width ISA spells the same call in three: `adrp x16,_malloc@GOTPAGE; ldr
+x16,[x16,…]; blr x16`, and x86-64 sometimes in two, `mov rax,[rip+slot]; call
+rax` (MSVC's i386 `mov esi,[__imp_X]; call esi`, GCC's `if (hook) hook();`). The
+carry already read the `ldr` as a `Read` of the slot; the register it fills now
+holds *the word at that slot*, and a `CALLIND` whose destination is that register,
+or a copy of it, is a `Call` to the slot, filed from the call instruction on the
+same join rule as every carried reference. Only a pointer-width load leaves such a
+word, and a direct pointer-width memory operand copied whole into a register
+starts one (`mov rax,[rip+slot]`). The word itself is unknown, so it is inert: an
+add, a mask or a partial read of it is no value, and a load through it is no
+reference. The load stays the `Read` it was, so an agent sees both observations,
+the read and the call through what was read. `call [slot]` in one instruction is
+still the scan's row alone. Over the Mach-O sweep above plus 30 x86-64 ELF images,
+4 i386 PE and 45 ELF images across eight architectures, the rule adds 981 `Call`
+rows and removes none: GOT and IAT slots (`blr x1` in `ld-linux-aarch64.so.1`,
+`call esi` after `mov esi,[GetProcessHeap]`), function-pointer globals (`tar`'s
+`error_hook`) and Go closures (`mov rax,[fv]; lea rdx,[fv]; call rax`). The
+decompile graph gains the edge to a slot the inventory names, an import; a global
+the inventory does not name gains none. An indirect *branch* through such a register (an arm64
+stub's `br x16`, a tail call) is not filed: the forwarding relation is
+the veneer walk's
+(`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (veneer_at)`), which reads
+the slot from the branch's own operand.
+
 Most instructions never reach the evaluation. One is evaluated when a carry
 reaches it, or when it could start one: it calls nothing, some modelled op yields
 an address-like constant, some register is written by a modelled op from constants
 and temporaries alone (the first register an evaluation can know is always written
 that way), and in an `ET_DYN` image some modelled op reads a constant in the
 instruction's PC window. An instruction failing any of these would leave nothing
-to carry or keep, so the gate decides what is evaluated, never what is filed.
+to carry or keep, so the gate decides what is evaluated, never what is filed. A
+register copied whole from a pointer-width direct memory operand also passes the
+gate.
 
 Measured over 86 images (AArch64 ELF and Mach-O, ARM, MIPS, PowerPC, RISC-V,
 x86-64, i386 PE and the vendored fixtures): no row is lost, and of the 14,550 rows
