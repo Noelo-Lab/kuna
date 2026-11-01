@@ -346,9 +346,10 @@ fn lane_divide_collect_lane_sizes(
 /// ops; 1: same, allowing SUBPIECE downcasts; 2: default pointer-derived size).
 /// Returns `true` if the Varnode (and its data-flow) was successfully split. A
 /// split that fails part way has already rewritten the function, so the error
-/// fails the function, as the C++ exception does. (kuna) A failure is recorded
-/// in `failed`, and a split is reported to it before it is applied
-/// ([`super::kuna_lanetrace::FailedTraces`]).
+/// fails the function, as the C++ exception does. (kuna) A trace whose
+/// transform `apply` would refuse before rewriting anything counts as a failed
+/// trace. A failure is recorded in `failed`, and a split is reported to it
+/// before it is applied ([`super::kuna_lanetrace::FailedTraces`]).
 fn lane_divide_process_varnode(
     data: &mut Funcdata,
     vn: VarnodeId,
@@ -379,7 +380,7 @@ fn lane_divide_process_varnode(
         let mut lane_divide = LaneDivide::new(data, vn, description, allow_downcast);
         let traced = lane_divide.do_trace(data);
         failed.reach(lane_divide.traced());
-        if traced {
+        if traced && lane_divide.check_free_fanout(data).is_ok() {
             failed.split(vn, start, |root, reached| {
                 let mut read = crate::kuna_fasthash::FxHashSet::default();
                 super::kuna_lanetrace::footprint(data, root, reached.iter().copied(), &mut read);

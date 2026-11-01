@@ -2341,6 +2341,23 @@ failed split had deleted (`ActionLaneDivide: stale vn`), or the pipeline ran
 on over the half-rewritten function. This is a correctness repair with no
 option.
 
+One such failure is now caught before anything is rewritten: a transform that
+would give a free varnode it creates a second reader
+(`decompiler/crates/kuna-decomp/src/substrate/transform.rs
+(check_free_fanout)`). The action runs that check once a trace succeeds and
+counts a refusal as a failed trace: it tries the next lane size, and the
+failure memo holds it like any other failure, since the check reads only what
+the trace built. Upstream throws from `placeInputs` and fails the function.
+x86 code meets this when instructions share unique-space temporaries: the
+three `IMUL`s of `sub_e87b0` in Ubuntu 26.04's bash all compute their flags
+through `u0x5a200`, one at 16 bytes, so heritage carries the 16-byte temporary
+across blocks from an input at the entry, and its lanes, being unique storage,
+become temporaries read by four MULTIEQUALs. The function used to fail with
+`laned register split failed part way: Free varnode has multiple descendants`;
+it now decompiles without that split
+(`tests/stages/kuna-lanedivide-freefanout.xml`). This is a correctness repair
+with no option.
+
 When `SplitDatatype` divides a constant, `kuna_constantbytes.rs` extracts
 byte ranges from its 64-bit payload and returns zero beyond that payload.
 For `PIECE` and `INT_ZEXT`, extraction respects the low operand's declared
