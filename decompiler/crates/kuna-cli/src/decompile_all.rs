@@ -10,6 +10,7 @@
 
 mod callee_first;
 mod omit;
+mod result_store;
 
 pub(crate) use callee_first::decompile_callee_first;
 use callee_first::decompile_entries_callee_first;
