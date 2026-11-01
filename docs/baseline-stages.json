@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3502,
-    3502
+    3508,
+    3508
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1708,6 +1708,9 @@
     "data:SPARC-REGISTER-PAIR #4: pairrefine off restores the fused 64-bit pair local",
     "data:SPARC-REGISTER-PAIR #5: and its CONCAT44 piece updates, only with the option off",
     "data:SPARC64 odd destination conversion reaches return",
+    "data:SPE integer pair: declared arguments",
+    "data:SPE integer pair: no undefined pieces",
+    "data:SPE integer pair: value survives alignment",
     "data:SPLITSTOREKEEP #1: the seven-byte cell the store at src+8 was cut down to is a variable, at the default only",
     "data:SPLITSTOREKEEP #2: and so is its destination cell at dst+8",
     "data:SPLITSTOREKEEP #3: the one byte the two middle stores overlap on is its own cell",
