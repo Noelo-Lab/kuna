@@ -313,8 +313,19 @@ impl Funcdata {
     /// entry, so [`Funcdata::set_varnode_properties`] (the merged `funcdata.rs`
     /// W4 no-op) is called instead, preserving the call cadence.
     pub fn new_varnode(&mut self, s: int4, m: &Address, ct: Option<Rc<Datatype>>) -> VarnodeId {
+        let index = self.vbank_mut().reserve_create_index(1);
+        self.new_varnode_at(s, m, ct, index)
+    }
+
+    /// [`Funcdata::new_varnode`] of the unknown type with a creation index taken
+    /// earlier by [`VarnodeBank::reserve_create_index`].
+    pub fn new_varnode_reserved(&mut self, s: int4, m: &Address, index: uint4) -> VarnodeId {
+        self.new_varnode_at(s, m, None, index)
+    }
+
+    fn new_varnode_at(&mut self, s: int4, m: &Address, ct: Option<Rc<Datatype>>, index: uint4) -> VarnodeId {
         let ct = ct.unwrap_or_else(|| Self::type_base_unknown(s));
-        let vn = self.vbank_mut().create(s, m.clone(), ct);
+        let vn = self.vbank_mut().create_reserved(s, m.clone(), ct, index);
         self.assign_high(vn);
         if s >= self.get_min_laned_size() {
             self.check_for_laned_register(s, m);
