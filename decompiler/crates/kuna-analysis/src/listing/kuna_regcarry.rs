@@ -55,7 +55,10 @@
 //!    whose register the very next instruction consumes as a base and overwrites
 //!    — is a step, not an address;
 //!  * an access that writes its own address back (`ldr pc,[ip,#0x2f0]!`, `lwzu`)
-//!    is one reference, the access.
+//!    is one reference, the access;
+//!  * a call that composes its own fall-through leaves a return address, but
+//!    any other instruction that composes the address after it (`la a0,1f`
+//!    ending just before `1:`) forms it, as [`super::xrefs`] reads `adr x0,.+4`.
 //!
 //! An ELF `ET_DYN` image is relocated as a whole, so an absolute immediate in it
 //! is a number, never an address: `lui s2,0x3; addi s2,s2,-5` in a RISC-V shared
@@ -512,7 +515,7 @@ impl Tracker {
 
     fn evaluate(&mut self, m: &Machine, insn: &Insn, carry: Carry) {
         let Tracker { pending, found, scratch: frame, hits, .. } = self;
-        let &Insn { vma, ops, fall, .. } = insn;
+        let &Insn { vma, ops, fall, calls, .. } = insn;
         frame.vma = vma;
         frame.regs.clear();
         frame.temps.clear();
@@ -582,7 +585,7 @@ impl Tracker {
                             && !joined
                             && v.composed == Some(out.size)
                             && m.is_register(out)
-                            && v.v != fall_vma
+                            && !(calls && v.v == fall_vma)
                             && m.admits(v.v)
                         {
                             let base = base_of(found, v, v.v);
@@ -757,6 +760,20 @@ mod tests {
         let m = isa.machine(false);
         let got = walk(&m, &[isa.set(0, 0x21000), isa.add(0, 0, 0x488)], &[]);
         assert_eq!(got, vec![(0x20004, 0x21488, XrefKind::Data)]);
+    }
+
+    /// A pair whose address is the instruction right after it (`la a0,1f` just
+    /// before `1:`) forms that address; in a call, the same sum is its return
+    /// address.
+    #[test]
+    fn a_pair_that_lands_on_its_own_fall_through_forms_it_unless_it_calls() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let got = walk(&m, &[isa.set(0, 0x20000), isa.add(0, 0, 8)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x20008, XrefKind::Data)]);
+        let mut call = isa.add(0, 0, 8);
+        call.push(op(OpCode::CPUI_CALL, None, vec![isa.k(0x30000)]));
+        assert!(walk(&m, &[isa.set(0, 0x20000), call], &[]).is_empty());
     }
 
     #[test]
