@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:e500mc:default">
+<!-- Synthetic fadd f1,f1,f2; blr. The e500mc model passes and returns doubles
+     in FPRs, unlike the SPE model used by e500. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">fc21102a4e800020</bytechunk>
+<symbol space="ram" offset="0x1000" name="add"/>
+</binaryimage>
+<script>
+  <com>option ctypes on</com>
+  <com>lo fu add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="e500mc ABI: double arguments and result" min="1" max="1">double add\(double a0,double a1\)</stringmatch>
+<stringmatch name="e500mc ABI: recovered floating-point addition" min="1" max="1">return a0 \+ a1;</stringmatch>
+<stringmatch name="e500mc ABI: no unassigned FPR inputs" min="0" max="0">unaff_|in_f[0-9]|halt_baddata</stringmatch>
+</decompilertest>
