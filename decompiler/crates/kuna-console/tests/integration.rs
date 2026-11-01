@@ -467,3 +467,6 @@ mod verify_rustfmtargs;
 
 #[path = "verify_rustfmtflags.rs"]
 mod verify_rustfmtflags;
+
+#[path = "verify_rustfmtresult.rs"]
+mod verify_rustfmtresult;

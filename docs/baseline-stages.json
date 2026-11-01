@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3433,
-    3433
+    3438,
+    3438
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -992,7 +992,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 359 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 360 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2523,6 +2523,11 @@
     "data:formal rename does not produce an uninitialized body shadow",
     "data:formal rename survives consecutive backing initializers",
     "data:formal rename survives consecutive rebuilds in the signature",
+    "data:format String initializes the original destination with static width",
+    "data:format String preserves hidden destination returns",
+    "data:format String retains repeated argument indices",
+    "data:format String retains terminal newline",
+    "data:format result off and incomplete local storage keep runtime calls",
     "data:fpuemu #10: on, segment bits 11 are ES",
     "data:fpuemu #11: on, INT 3Dh is FWAIT",
     "data:fpuemu #1: off, the emulated FLD, FLD1 and FWAIT are calls through swi(0x39), swi(0x35), swi(0x3d)",

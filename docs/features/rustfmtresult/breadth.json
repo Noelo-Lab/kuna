@@ -1,0 +1,77 @@
+{
+  "option": "rustfmtresult",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "jobs": 1,
+  "watchdog_seconds": 600,
+  "breadth": [
+    {
+      "fixture": "assembly-rust",
+      "sha256": "8bc852208c31c60ccedc463c2d6d53c8e87c7a2e4432d7afa74b85471a9e8c40",
+      "language": "rust",
+      "functions": 24,
+      "changed_functions": 3,
+      "errors": []
+    },
+    {
+      "fixture": "assembly-c",
+      "sha256": "8bc852208c31c60ccedc463c2d6d53c8e87c7a2e4432d7afa74b85471a9e8c40",
+      "language": "c",
+      "functions": 24,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "print-assembly-rust",
+      "sha256": "a8ebc53377642d3c4dbc9154a7af0fb4531004a3ebb8b4c466fc340e37eb2c96",
+      "language": "rust",
+      "functions": 28,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "rust-fmtdemo-1931",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "language": "rust",
+      "functions": 455,
+      "changed_functions": 1,
+      "errors": []
+    },
+    {
+      "fixture": "rust-fmt-2025-O3",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "language": "rust",
+      "functions": 7763,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "compiled-c",
+      "sha256": "10594e2db22bafb7550c2b5ed892f2ba0798ef79a569743d37050a7c649ed32b",
+      "language": "c",
+      "functions": 575,
+      "changed_functions": 0,
+      "errors": []
+    },
+    {
+      "fixture": "compiled-rust",
+      "sha256": "10594e2db22bafb7550c2b5ed892f2ba0798ef79a569743d37050a7c649ed32b",
+      "language": "rust",
+      "functions": 575,
+      "changed_functions": 3,
+      "errors": []
+    },
+    {
+      "fixture": "print-compiled-rust",
+      "sha256": "8fc4bd9225151ce8b081866e7de08593cad56795a7c684781a9e9922ad951af0",
+      "language": "rust",
+      "functions": 596,
+      "changed_functions": 0,
+      "errors": []
+    }
+  ],
+  "function_surfaces": 10040,
+  "distinct_functions": 9441,
+  "changed_functions": 7,
+  "review": "All seven changed bodies have one call-line replacement. No surrounding statement changes. All C function records match in full."
+}
