@@ -931,6 +931,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut base: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
     let mut max_fn_seconds = kuna_console::project::DEFAULT_FN_BUDGET_SECONDS;
+    let mut record_flag: Option<&str> = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -938,6 +939,17 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         match a {
             "--addr" => addr = true,
             "--json" => json = true,
+            "--no-vars" => {
+                record_flag = Some("--no-vars");
+                forwarded.push(a.into());
+            }
+            "--omit" => {
+                let value = take_value(argv, &mut i, "--omit")?;
+                decompile_all::Omit::default().add(&value)?;
+                record_flag = Some("--omit");
+                forwarded.push("--omit".into());
+                forwarded.push(value);
+            }
             "--raw" => raw = true,
             "--raw-image" => raw_image = true,
             "--base" => base = Some(parse_cli_address(&take_value(argv, &mut i, "--base")?)?),
@@ -1083,6 +1095,10 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
         }));
     }
 
+    if let Some(flag) = record_flag {
+        return Err(format!("{flag} selects --json record keys; add --json"));
+    }
+
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
     if !saw_language && crate::loadtime::explicit_output_language(&options).is_none() {
@@ -1128,6 +1144,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
 fn usage() {
     eprintln!(
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
+         \x20                     [--no-vars] [--omit line_mappings,variables,types] \\\n\
          \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
@@ -1141,7 +1158,10 @@ fn usage() {
          decompiled as asked, with a note naming that function.  --json emits the\n\
          decompile-all record for that one function\n\
          ({{binary,count,functions:[{{name,address,code,variables,..}}]}});\n\
-         without it, the C text alone.\n\
+         without it, the C text alone.  With --json, --omit KEY[,KEY].. leaves those\n\
+         record collections out (line_mappings, variables -- with stack_objects --\n\
+         and types) and lists them in a top-level `omitted` array; --no-vars skips\n\
+         the variable extraction and leaves `variables` empty, as on decompile-all.\n\
          \n\
          --option NAME VALUE (repeatable) flips one phase-model decision for this run;\n\
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
@@ -1260,6 +1280,7 @@ fn run_json(req: &JsonRequest) -> i32 {
                 Some(&message),
                 &[],
                 &Default::default(),
+                args.omit,
             ),
             Some(message),
         ),
@@ -1326,6 +1347,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
         failure.as_deref(),
         &assertions,
         &interior,
+        args.omit,
     );
     if failure.is_none() && args.assert_strict && rejected {
         failure = Some(format!("--assert directive rejected in {}", args.binary));
