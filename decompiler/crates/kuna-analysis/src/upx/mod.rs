@@ -701,7 +701,8 @@ mod tests {
         let info = detect(&image).expect("PE32+ UPX header is recognized");
         assert_eq!(info.format_name(), "win64/pe");
         assert_eq!(info.overlay_offset, 0);
-        assert!(matches!(unpack(&image), Err(UpxError::Corrupt(_))));
+        let err = unpack(&image).expect_err("a four-byte block is no stream");
+        assert!(matches!(&err, UpxError::Corrupt(m) if m.contains("compressed block at")), "{err}");
         assert_eq!(unpack(&win64_fixture()).expect("a real win64/pe unpacks").bytes.len(), 3072);
     }
 

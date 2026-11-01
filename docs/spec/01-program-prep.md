@@ -1163,7 +1163,11 @@ directories, and the two disagree on an image whose import directory names no DL
 whose relocations are all of a kind UPX drops -- `upx -d` then reads the next record
 as this one and fails. The three records are 8, 5 and 2 bytes and no two sets of them
 sum alike, so the length names exactly one set, and a length no set reaches is
-refused as a PE feature this tier does not rebuild.
+refused as a PE feature this tier does not rebuild. The resource record is the one
+the length cannot leave out: the packer writes it exactly when it gives the packed
+header a resource directory, which it does only for an original with one, so a
+trailer without it for an image whose two headers both have a resource directory is
+refused as damaged rather than unpacked with its resources left unrebuilt.
 
 The rebuilt header matches what `upx -d` writes in two ways and keeps the original's
 in two. The bound-import directory is zeroed -- its table lived in header slack the
