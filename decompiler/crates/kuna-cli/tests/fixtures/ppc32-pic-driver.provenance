@@ -1,0 +1,37 @@
+ppc32-pic-driver.so -- a PPC32 secure-PLT PIC shared object linked through the
+compiler driver, for the `ppc32picimports` proof
+(decompiler/crates/kuna-cli/tests/ppc32_imports.rs and
+tests/stages/kuna-ppc32picimports-driver.xml).
+
+What it is
+  A 5,228-byte stripped big-endian ELF32 shared object. It carries the standard
+  start files (crti, crtbeginS, crtendS, crtn) and six r30-relative PIC call
+  stubs: __stack_chk_fail, other, __cxa_finalize, another, __gmon_start__ and
+  extra. crtbeginS jumps through CTR (deregister_tm_clones) and calls
+  __cxa_finalize; `refs` calls four imports and `check` calls extra and
+  returns 7.
+
+Why it is vendored
+  Building it needs a PowerPC cross GCC and GNU binutils. Before the proof was
+  scoped, any image linked with the start files recovered no PIC names.
+
+Where it came from
+  powerpc-linux-gnu-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0 and GNU ld
+  (GNU Binutils for Ubuntu) 2.42, from this source (check.c):
+
+      extern void __stack_chk_fail(void), other(void), another(void), extra(void);
+      void refs(void) { other(); another(); extra(); __stack_chk_fail(); }
+      int check(void) { extra(); return 7; }
+
+  built with
+
+      powerpc-linux-gnu-gcc -O1 -fPIC -msecure-plt -fno-asynchronous-unwind-tables -c check.c -o check.o
+      powerpc-linux-gnu-gcc -shared -msecure-plt -Wl,--secure-plt -Wl,-z,max-page-size=0x1000 \
+          -Wl,-z,common-page-size=0x1000 -Wl,--build-id=none -Wl,--hash-style=gnu check.o -o check-full.so
+      powerpc-linux-gnu-strip --strip-all -o ppc32-pic-driver.so check-full.so
+
+  The same link with -Wl,--emit-relocs has identical allocated bytes; its call
+  relocations name the stubs at 0x580, 0x590, 0x5a0, 0x5b0, 0x5c0 and 0x5d0 as
+  above.
+
+  sha256 f8fb705d73328ed32ada3fb50f56ae9e1b501cece6f018be792ff04354754a7c
