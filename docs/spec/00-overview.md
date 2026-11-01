@@ -3095,6 +3095,18 @@ a single location-tree descent (`decompiler/crates/kuna-decomp/src/substrate/var
 (VarnodeBank::xref)`): the equivalent-node lookup and insertion share one search,
 and the subsequent `insert` flag is outside the key's input/written mask.
 
+A Varnode keeps no copy of its defining op's `SeqNum`: the definition order the
+trees sort on is already in its location snapshot, and a Varnode that becomes an
+input is free at that moment, so its input key takes the null sequence
+(`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank::set_input)`).
+Every PcodeOp owns its `TypeOp`, and the op-code name in it borrows the
+architecture's static name rather than copying it into a heap string for each op
+(`decompiler/crates/kuna-decomp/src/substrate/context.rs (TypeOp)`). A big
+function's banks hold millions of Varnodes and ops at once, retired ops included
+(heritage's placeholders and guards in serde-hkx 0.7.3's `hkxc.exe`, `0x1406198f0`,
+put 10.8 million Varnodes and 4.3 million ops in the arenas in one pass), so these
+are 32 bytes off every Varnode slot (264 to 232) and one allocation off every op.
+
 Read-only block queries walk the stored Varnode descendants without copying
 them. Common-subexpression lookup returns the first eligible equal op in that
 sequence; earliest-use lookup instead compares block-local op order. The common
