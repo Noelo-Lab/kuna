@@ -2223,9 +2223,10 @@ value lives for at most eight instructions, survives a call only in a callee-sav
 register, and is never believed past a **join** — an instruction another branch,
 switch case or function entry also reaches — so two bases meeting at a label form
 nothing. The page or high half on its own is not the reference: an AArch64 `adrp`
-page is a `data` row only when the pair uses the page itself (`ldr x16,[x16]`) or
-nothing the walk follows completes it, never when the next access names another
-address on that page.
+page is a `data` row only when the run uses the page itself (`ldr x16,[x16]`, or
+the `add x0,x0,#0` that completes a page-aligned symbol) or nothing the walk
+follows completes it, never when the run only completes it into other addresses on
+that page.
 
 Shapes that build a number rather than an address do not file `data`: a copy of the
 register, bitwise composition (`movk`, `ori`, `movt`) and a 32-bit add widened into a

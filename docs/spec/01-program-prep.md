@@ -7134,9 +7134,21 @@ x8,_hook@PAGE` in a function that only goes on to `add x8,x8,#0x8` and read
 instruction it holds across completes the page into a different address — the
 `add`, the `ldr x1,[x1,#0x5a8]` of a selector reference, the `ldr x16,[x16,#0x18]`
 of a stub — the page was a step to that address and the scan's row is withdrawn.
-A page completed at offset 0 (`ldr x16,[x16]`, `add x0,x0,#0`) is the datum
-itself, and one nothing completes, or that is completed only past a join, keeps
-its row. Only an `adrp` is a page, read off its encoding: an `adr` of a
+A page the run also uses at offset 0 is the datum itself and keeps its row,
+whatever else completes it: an access at the page (`ldr x16,[x16]`, the first
+register of `ldp x0,x1,[x8]`, a post-indexed `ldr x0,[x8],#8`), or the `add
+x0,x0,#0` that is the `:lo12:` half of a page-aligned symbol. That `add` is the
+only trace of a symbol at the page that is used by address: clang compiles
+`s.d = 5; use(&s)` for a page-aligned `s` to `adrp x0,s; add x0,x0,#0; str
+x8,[x0,#0x18]; b use`, and the `str` alone would withdraw the only row naming `s`.
+A page nothing completes, or that is completed only past a join, keeps its row
+too. What the carry cannot see is a use of the page itself on a path it does not
+follow (the far side of a conditional branch, past a join) or the page stored,
+compared or returned without that `add`; a page completed elsewhere on its run
+then loses its row. Compilers do not emit that shape — every such use in the
+sweep below is a register spill the function reloads as a base — and keeping each
+page live across a conditional branch would restore 458 false rows there to
+recover none. Only an `adrp` is a page, read off its encoding: an `adr` of a
 page-aligned label lifts to the same `COPY` and is the label's address. Over the
 Mach-O sweep above (each universal binary split into its slices) and 79 ELF and
 PE controls on eight architectures, 11,924 page rows are withdrawn: 6,627 on

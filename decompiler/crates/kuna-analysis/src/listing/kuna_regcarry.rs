@@ -53,7 +53,9 @@
 //! instruction's own constants are [`super::xrefs`]' to report. An AArch64
 //! `adrp` page is one of those, and names whatever datum the page starts with:
 //! when an instruction the carry holds across completes it into another address,
-//! the page was a step, and [`Tracker::superseded`] withdraws the scan's row.
+//! the page was a step, and [`Tracker::superseded`] withdraws the scan's row,
+//! unless the run also uses the page itself — an access at it, or the `add #0`
+//! that is the `:lo12:` of a page-aligned symbol.
 //! The `Data` shape is narrower than the other two because nothing dereferences
 //! the value to vouch for it, and the same pair builds integers:
 //!
@@ -276,6 +278,9 @@ struct Found {
     stepped: Vec<Trail>,
     /// The `adrp` page [`super::xrefs`] filed on its own, not a row of ours.
     page: bool,
+    /// The run used the page itself: an access at it, or the `add #0` that is
+    /// the `:lo12:` of a page-aligned symbol.
+    pinned: bool,
 }
 
 /// One instruction, as [`Tracker::step`] reads it.
@@ -671,6 +676,12 @@ impl Tracker {
         let base_of = |found: &[Found], val: &Val, to: u64| {
             val.formed.or(val.base).filter(|&i| i < first && found[i].to != to)
         };
+        let pin = |found: &mut [Found], val: &Val| {
+            let at_page = val.formed.filter(|&i| i < first && found[i].page && found[i].to == val.v);
+            if let Some(i) = at_page.filter(|_| val.carried && !val.loaded) {
+                found[i].pinned = true;
+            }
+        };
         let fall_vma = fall.unwrap_or(u64::MAX);
         let mut conditional = false;
         let mut joined = false;
@@ -681,6 +692,9 @@ impl Tracker {
                     let load = op.opcode == OpCode::CPUI_LOAD;
                     let mut word = None;
                     if let Some(a) = op.ins.get(1).and_then(|vn| frame.read(m, vn)) {
+                        if from_data() {
+                            pin(found, &a);
+                        }
                         if a.carried && !a.loaded && !joined && from_data() && m.admits(a.v, a.addr) {
                             let kind = if load { XrefKind::Read } else { XrefKind::Write };
                             let base = base_of(found, &a, a.v);
@@ -726,6 +740,9 @@ impl Tracker {
                         Some(Val::loaded(&Val { v, pc: false, addr: false, ..constant(vma, &formed, &op.ins[0]) }))
                     });
                     if let Some(v) = val.as_mut() {
+                        if op.opcode == OpCode::CPUI_INT_ADD {
+                            pin(found, v);
+                        }
                         if v.carried
                             && !joined
                             && v.composed == Some(out.size)
@@ -764,7 +781,8 @@ impl Tracker {
             }
             let writeback = h.kind == XrefKind::Data
                 && hits.iter().enumerate().any(|(j, o)| j != k && o.to == h.to && o.kind != XrefKind::Data);
-            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped: Vec::new(), page: h.page });
+            let stepped = Vec::new();
+            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped, page: h.page, pinned: false });
         }
 
         let Some(next) = fall else { return };
@@ -804,14 +822,14 @@ impl Tracker {
     }
 
     /// The `adrp` pages, as `(adrp, page)`, that an instruction the carry holds
-    /// across completed into another address: the page was a step to it, and
-    /// [`super::xrefs`]' own `Data` row for it names whatever datum the page
-    /// happens to start with.
+    /// across completed into another address and that the run never used at
+    /// offset 0: the page was a step to it, and [`super::xrefs`]' own `Data` row
+    /// for it names whatever datum the page happens to start with.
     pub(super) fn superseded(&self, funcs: &BTreeSet<u64>) -> Vec<(u64, u64)> {
         let holds = |trail: &[u64]| trail.iter().all(|at| !self.targets.contains(at) && !funcs.contains(at));
         self.found
             .iter()
-            .filter(|f| f.page && f.stepped.iter().any(|t| holds(t)))
+            .filter(|f| f.page && !f.pinned && f.stepped.iter().any(|t| holds(t)))
             .map(|f| (f.from, f.to))
             .collect()
     }
@@ -1176,7 +1194,7 @@ mod tests {
     }
 
     /// An `adrp` page completed into another address was a step to it; one
-    /// completed at offset 0, or never completed, is the page's own datum.
+    /// the run also uses at offset 0, or never completes, is the page's own datum.
     #[test]
     fn an_adrp_page_the_pair_completes_elsewhere_is_superseded() {
         use super::super::kuna_poolref::PoolImage;
@@ -1193,6 +1211,13 @@ mod tests {
         for at_page in [vec![isa.set(16, 0x24000), isa.load(16, 16, 0)], vec![isa.set(0, 0x24000), isa.add(0, 0, 0)]] {
             assert!(pages(&m, &at_page, &[]).0.is_empty(), "offset 0 names the page itself");
         }
+        let field = [isa.set(0, 0x24000), isa.add(0, 0, 0), isa.store(1, 0, 0x18)];
+        assert!(pages(&m, &field, &[]).0.is_empty(), "`add #0` is the `:lo12:` of the symbol at the page");
+        let both = [isa.set(8, 0x24000), isa.load(0, 8, 0x8), isa.load(1, 8, 0)];
+        assert!(pages(&m, &both, &[]).0.is_empty(), "the page's own datum is read too");
+        let copy = vec![op(OpCode::CPUI_COPY, Some(isa.x(9)), vec![isa.x(8)])];
+        let (gone, _) = pages(&m, &[isa.set(8, 0x24000), copy, isa.load(0, 9, 0x10)], &[]);
+        assert_eq!(gone, vec![(0x20000, 0x24000)], "a copy of the page uses nothing at it");
         assert!(pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[0x20004]).0.is_empty(), "past a join");
         assert!(pages(&m, &[isa.set(16, 0x24010), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "not a page");
         let mut adr = adrp;
