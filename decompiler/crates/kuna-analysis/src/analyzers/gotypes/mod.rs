@@ -77,6 +77,8 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 use crate::pclntab::{locate_header, ImageBytes};
 use crate::loader::gobuildinfo::{buildinfo_blob, version_from_blob};
 
+mod kuna_structorder;
+
 /// Go `kind` byte values (`internal/abi.Kind`), masked by [`KIND_MASK`].
 const KIND_MASK: u8 = 0x1f;
 const KIND_BOOL: u8 = 1;
@@ -561,7 +563,8 @@ fn intern_named_structs(
             }
         }
     }
-    // Pass 2: fill the layouts.
+    // Pass 2: fill value dependencies before their enclosing layouts.
+    let structs = kuna_structorder::complete_order(tf, img, meta, structs);
     for t in &structs {
         let Ok(ct) = shell(tf, &t.name) else { continue };
         if ct.get_size() != 0 {
@@ -608,6 +611,10 @@ fn intern_named_structs(
             // no bytes — drop it rather than refuse the layout (the DWARF
             // importer makes the same call).
             if fty.get_size() == 0 {
+                if word(img, typ_ptr) != Some(0) {
+                    good = false;
+                    break;
+                }
                 continue;
             }
             fields.push(TypeField {

@@ -62,6 +62,9 @@ type Envelope struct {
 	Tail uint16
 }
 
+type Z struct { X int }
+type A struct { Z; Tail int }
+
 //go:noinline
 func mk(i int) Point {
 	return Point{X: i, Y: i * 3, Tag: "t"}
@@ -71,6 +74,7 @@ func main() {
 	p := mk(len(os.Args))
 	fmt.Println(p)
 	fmt.Println(Envelope{Lead: 1, Point: &p, Tail: 2})
+	fmt.Println(A{Z{3}, 4})
 }
 "#;
 
@@ -165,6 +169,12 @@ fn check_named_struct(arch: &str) {
         let field = envelope.get_field(i as i32).unwrap();
         assert_eq!((field.name.as_str(), field.offset), (name, offset));
     }
+    let parent = tf.find_by_name("main.A").unwrap().unwrap();
+    let child = parent.get_field(0).expect("embedded value field survives");
+    assert_eq!((child.name.as_str(), child.offset), ("Z", 0));
+    assert_eq!(child.field_type.get_size(), 8);
+    assert_eq!(child.field_type.get_field(0).unwrap().name, "X");
+    assert_eq!(parent.get_field(1).unwrap().offset, 8);
 
     // The header shells carry their facets (the W3 plane fills).
     assert_eq!(tf.kuna_lang_facet("go.string"), Some(LangFacet::GoString));

@@ -165,6 +165,49 @@ fn struct_offsets_follow_the_toolchain_layout() {
 }
 
 #[test]
+fn nested_value_fields_complete_even_without_their_own_typelink() {
+    for (cyclic, bad_extent) in [(false, false), (true, false), (false, true)] {
+        let (mut spans, anchor, types, _) = synth();
+        let blob = &mut spans[0].1;
+        let child = 0xb0;
+        blob[child..child + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[child + 20] = TFLAG_NAMED;
+        blob[child + 23] = KIND_STRUCT;
+        blob[child + 40..child + 44].copy_from_slice(&0x260i32.to_le_bytes());
+        blob[child + 56..child + 64].copy_from_slice(&(types + 0x360).to_le_bytes());
+        blob[child + 64..child + 72].copy_from_slice(&1u64.to_le_bytes());
+        blob[child + 72..child + 80].copy_from_slice(&1u64.to_le_bytes());
+        blob[0x260..0x268].copy_from_slice(b"\0\x06main.Z");
+        blob[0x320..0x328].copy_from_slice(&(types + child as u64).to_le_bytes());
+        blob[0x360..0x368].copy_from_slice(&(types + 0x230).to_le_bytes());
+        let child_field = if cyclic { types + 0x60 } else { types };
+        blob[0x368..0x370].copy_from_slice(&child_field.to_le_bytes());
+        if bad_extent {
+            blob[0x370..0x378].copy_from_slice(&8u64.to_le_bytes());
+        }
+        let img = img_of(&spans);
+        let meta = locate_type_meta(&img, anchor).unwrap();
+        assert!(!meta.offsets.contains(&(child as u32)));
+        let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        tf.setup_sizes(Some(8), 8, 8);
+        tf.cache_core_types().unwrap();
+        intern_named_structs(&tf, &img, &meta, Some((1, 22)));
+        let pt = tf.find_by_name("main.Point").unwrap().unwrap();
+        if cyclic || bad_extent {
+            assert_eq!(pt.get_size(), 0, "an invalid value dependency keeps the parent opaque");
+        } else {
+            let field = pt.get_field(1).expect("the nested value field survives");
+            assert_eq!((field.name.as_str(), field.offset), ("Y", 8));
+            assert_eq!(field.field_type.get_name(), "main.Z");
+            assert_eq!(field.field_type.get_size(), 8);
+            assert_eq!(field.field_type.get_field(0).unwrap().name, "X");
+        }
+    }
+}
+
+#[test]
 fn phase1_name_vocabulary() {
     assert!(name_ok("main.Point"));
     assert!(name_ok("internal/abi.Type"));

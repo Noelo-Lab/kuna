@@ -3623,6 +3623,15 @@ every other binary's pass list is byte-identical to before the pass existed):
   interpretation; the importer never guesses from a plausible shifted layout.
   The same bounds and overlap checks apply after decoding. Stripped amd64
   and arm64 tests include an embedded pointer field at a nonzero offset.
+  Named struct fields held by value are completed before their enclosing
+  structs. The bounded iterative walk in
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_structorder.rs (complete_order)`
+  follows their descriptors even
+  when the child has no independent typelink. Pointer fields do not impose a
+  layout dependency. Cyclic value layouts and malformed descriptors stay
+  opaque. A field whose factory type is still incomplete but whose metadata
+  declares a nonzero size refuses the enclosing layout instead of disappearing
+  as a zero-size marker. True zero-size fields retain the existing treatment.
   The pass also interns the well-known header shells `go.string`/`go.slice`/
   `go.iface`/`go.eface` with their `LangFacet` records
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
