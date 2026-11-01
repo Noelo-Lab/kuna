@@ -522,8 +522,9 @@ pub struct Varnode {
     def: Option<OpId>,
     /// High-level variable of which this is an instantiation (STUB(W7))
     high: Option<HighVariableId>,
-    /// Datatype associated with this varnode (STUB(W6): minimal skeleton)
-    type_: Rc<Datatype>,
+    /// Datatype associated with this varnode (STUB(W6): minimal skeleton);
+    /// empty until first read when created as [`unknown_skeleton`].
+    type_: std::cell::OnceCell<Rc<Datatype>>,
     /// Temporary Datatype used during type propagation (C++ `union temp { Datatype
     /// *dataType; ... } temp` — the `dataType` field).  Set/read only by
     /// `ActionInferTypes`; `None` outside a propagation pass.
@@ -547,6 +548,23 @@ pub struct Varnode {
     kuna_symbol_entry: Option<crate::database::SymbolId>,
 }
 
+thread_local! {
+    static UNKNOWN_SKELETON: Rc<Datatype> = Rc::new(Datatype::new(0, type_metatype::TYPE_UNKNOWN));
+}
+
+/// The type a creator passes for the unnamed unknown base of the new Varnode's
+/// own size (`Datatype::is_unknown_placeholder`). The Varnode allocates that
+/// skeleton the first time its type is read, so a Varnode whose type is
+/// replaced or never read costs no type allocation, and each skeleton still
+/// belongs to one Varnode.
+pub(crate) fn unknown_skeleton() -> Rc<Datatype> {
+    UNKNOWN_SKELETON.with(Rc::clone)
+}
+
+fn is_unknown_skeleton(dt: &Rc<Datatype>) -> bool {
+    UNKNOWN_SKELETON.with(|s| Rc::ptr_eq(s, dt))
+}
+
 impl Varnode {
     /// Construct a \e free Varnode (C++ `Varnode(int4,const Address&,Datatype*)`).
     ///
@@ -563,7 +581,7 @@ impl Varnode {
             loc: m,
             def: None,
             high: None,
-            type_: dt,
+            type_: if is_unknown_skeleton(&dt) { std::cell::OnceCell::new() } else { dt.into() },
             temp_type: None,
             lociter: None,
             descend: SmallVec::new(),
@@ -631,7 +649,7 @@ impl Varnode {
     }
     /// Get the Datatype (C++ `getType`).
     pub fn get_type(&self) -> &Rc<Datatype> {
-        &self.type_
+        self.type_.get_or_init(|| Rc::new(Datatype::new(self.size, type_metatype::TYPE_UNKNOWN)))
     }
     /// C++ `Varnode::getTypeReadFacing(op)` (varnode.cc:658).  Generally just the
     /// Varnode's own data-type; for a \e union it would be the resolved field for
@@ -640,13 +658,13 @@ impl Varnode {
     /// exactly `getType()` — faithful for the pointer/array/struct corpus (no
     /// unions). // STUB(W8 union findResolve)
     pub fn get_type_read_facing(&self, _op: OpId) -> &Rc<Datatype> {
-        &self.type_
+        self.get_type()
     }
     /// C++ `Varnode::getTypeDefFacing()` (varnode.cc:645).  The def-facing analogue
     /// of [`get_type_read_facing`]; identical when the type does not need union
     /// resolution. // STUB(W8 union findResolve)
     pub fn get_type_def_facing(&self) -> &Rc<Datatype> {
-        &self.type_
+        self.get_type()
     }
     /// If this has a data-type built out of separate pieces, return it (C++
     /// `Varnode::getStructuredType`, `varnode.cc:1156`).
@@ -658,7 +676,7 @@ impl Varnode {
     /// the full-Varnode case (a whole struct value flowing through a CONCAT tree).
     /// // STUB(W4): `mapentry->getSymbol()->getType()` partial path.
     pub fn get_structured_type(&self) -> Option<Rc<Datatype>> {
-        let ct = &self.type_;
+        let ct = self.get_type();
         if ct.is_piece_structured() {
             return Some(Rc::clone(ct));
         }
@@ -1483,7 +1501,7 @@ impl Varnode {
             if (self.flags & (varnode_flags::input | varnode_flags::typelock))
                 == (varnode_flags::input | varnode_flags::typelock)
             {
-                return self.size == 1 && self.type_.get_metatype() == type_metatype::TYPE_BOOL;
+                return self.size == 1 && self.get_type().get_metatype() == type_metatype::TYPE_BOOL;
             }
         }
         false
@@ -1495,10 +1513,10 @@ impl Varnode {
     /// Returns true if the Datatype changed.
     pub fn update_type(&mut self, ct: Rc<Datatype>) -> bool {
         // pointer identity
-        if Rc::ptr_eq(&self.type_, &ct) || self.is_type_lock() {
+        if self.type_.get().is_some_and(|t| Rc::ptr_eq(t, &ct)) || self.is_type_lock() {
             return false;
         }
-        self.type_ = ct;
+        self.type_ = ct.into();
         // STUB(W7): high->typeDirty() reconciled at the Funcdata level
         true
     }
@@ -1512,14 +1530,14 @@ impl Varnode {
         if self.is_type_lock() && !over {
             return false;
         }
-        if Rc::ptr_eq(&self.type_, &ct) && (self.is_type_lock() == lock) {
+        if self.type_.get().is_some_and(|t| Rc::ptr_eq(t, &ct)) && (self.is_type_lock() == lock) {
             return false;
         }
         self.flags &= !varnode_flags::typelock;
         if lock {
             self.flags |= varnode_flags::typelock;
         }
-        self.type_ = ct;
+        self.type_ = ct.into();
         // STUB(W7): high->typeDirty() reconciled at the Funcdata level
         true
     }
@@ -1536,7 +1554,7 @@ impl Varnode {
     /// constant was typed `int1`/enum by inference and the fresh constant would
     /// otherwise be `TYPE_UNKNOWN`).
     pub fn copy_symbol_fields(&mut self, src_type: Rc<Datatype>, src_flags: uint4) {
-        self.type_ = src_type; // Copy any type
+        self.type_ = src_type.into(); // Copy any type
         // mapentry = vn->mapentry;  -- STUB(W4): no mapentry link in the merged tree
         self.flags &= !(varnode_flags::typelock | varnode_flags::namelock);
         self.flags |= (varnode_flags::typelock | varnode_flags::namelock) & src_flags;
