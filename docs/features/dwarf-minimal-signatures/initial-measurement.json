@@ -1,0 +1,46 @@
+{
+  "baseline_commit": "64ba7d667",
+  "breadth": [
+    {
+      "fixture": "minimal",
+      "sha256": "7de56e0ea91750021bba29f55760c545a8ba72a30677da40abc4eef76b595a53",
+      "functions": 2,
+      "changed_functions": 2,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "fixture": "full",
+      "sha256": "949f74b3a9200ca3a6b205da6e518d8f981ec01db11ce238a9238f8fc931b9aa",
+      "functions": 2,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "fixture": "rust-fmtdemo-1931",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "functions": 455,
+      "changed_functions": 368,
+      "errors": {
+        "before": 1,
+        "after": 1
+      }
+    },
+    {
+      "fixture": "rust-fmt-2025-O3",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "functions": 7763,
+      "changed_functions": 0,
+      "errors": {
+        "before": 0,
+        "after": 0
+      }
+    }
+  ],
+  "status": "superseded diagnostic before preserving qualified names"
+}

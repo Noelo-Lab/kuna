@@ -127,6 +127,7 @@ mod kuna_dwarfbyref;
 mod kuna_dwarflocation;
 pub(crate) mod kuna_dwarfcomplex;
 mod kuna_dwarflinkage;
+mod kuna_dwarfsignatures;
 
 mod kuna_typedepth;
 use kuna_typedepth::TypeWalk;
@@ -1153,6 +1154,7 @@ impl AnalysisPass for DwarfPass {
                 }
             }
 
+            let signatures = kuna_dwarfsignatures::has_signature_information(&dies);
             for snap in dies.values() {
                 match snap.tag {
                     gimli::DW_TAG_subprogram => {
@@ -1163,15 +1165,22 @@ impl AnalysisPass for DwarfPass {
                             continue;
                         }
                         if !snap.name.is_empty() {
+                            let name = if signatures {
+                                snap.name.clone()
+                            } else {
+                                kuna_cppproto::resolve_subprogram(snap, &dies)
+                                    .map(|resolved| resolved.name)
+                                    .unwrap_or_else(|| snap.name.clone())
+                            };
                             out.symbols.push(SymFact {
                                 addr: low_pc,
-                                name: snap.name.clone(),
+                                name,
                                 kind: SymKind::Function,
                             });
                             // subtask 2: typed signature. A prototype that can't be
                             // fully typed is skipped (never fails the analysis).
                             if let Some(pieces) =
-                                build_pieces(&snap.name, snap, &dies, types, word_size)
+                                signatures.then(|| build_pieces(&snap.name, snap, &dies, types, word_size)).flatten()
                             {
                                 kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.prototypes_at);
                                 out.prototypes.push(pieces);
@@ -1208,7 +1217,7 @@ impl AnalysisPass for DwarfPass {
                             });
                         }
                         if let Some(pieces) =
-                            kuna_cppproto::build_pieces(&res, &dies, types, word_size)
+                            signatures.then(|| kuna_cppproto::build_pieces(&res, &dies, types, word_size)).flatten()
                         {
                             kuna_dwarflinkage::append(snap, &dies, &pieces, &linkage_imports, &linkage_definitions, &mut out.cpp_dwarf.prototypes);
                             out.cpp_dwarf.prototypes.push((low_pc, pieces));

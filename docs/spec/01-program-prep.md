@@ -2793,6 +2793,16 @@ moves.
   and read back at *two* points: by a caller's `ActionDefaultParams` for the call
   site, and by the drive as the function's own locked prototype (04 §4.2 —
   `int main(int argc, char **argv)`, not `undefined16 main(uint4, void*)`).
+  A compilation unit with no type references and no formal or variadic parameter
+  records supplies names and ranges only. Its functions do not acquire locked
+  prototypes: rustc minimal debug information omits this signature evidence, and
+  treating the omission as `void f(void)` would erase arguments and return values.
+  The same guard covers both the direct and declaration-derived prototype paths
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfsignatures.rs`).
+  Units with signature evidence retain their typed imports, including genuinely
+  parameterless functions. Names from such minimal units retain their namespace
+  qualification, so Rust `core::fmt::write` does not become a global `write`
+  alias that could inherit the C import's incompatible signature.
   An externally visible defined DWARF function's exact `DW_AT_linkage_name` also binds its prototype
   to matching ELF PLT entry addresses
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarflinkage.rs`). The linker spelling is taken from the

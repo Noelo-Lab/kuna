@@ -1,0 +1,31 @@
+--- before/main
++++ after/main
+@@ -3,6 +3,6 @@
+ {
+   let mut v1: i32; // eax | ebx
+   
+-  call_write();
++  v1 = call_write(1,2,3,4);
+   return write(1,0x402004 as *mut (),0) as i32 + v1;
+ }
+--- before/write
++++ after/write
+@@ -1,5 +1,6 @@
++// rust_minimal_dwarf_names::rust_writer::write
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+-unsafe fn write()
++unsafe fn write(mut a0: i64, mut a1: i64, mut a2: i64, mut a3: i64) -> i64
+ {
+-  return;
++  return a2 + a3 + a1 + a0;
+ }
+--- before/call_write
++++ after/call_write
+@@ -1,5 +1,5 @@
+ #[allow(non_snake_case, unused_mut, unused_variables, unused_parens, dead_code)]
+-unsafe fn call_write()
++unsafe fn call_write(mut a0: i64, mut a1: i64, mut a2: i64, mut a3: i64)
+ {
+-  write(); // tail-call
++  rust_minimal_dwarf_names::rust_writer::write(a0 + 1,a1 + 2,a2 + 3,a3 + 4); // tail-call
+ }
