@@ -76,7 +76,7 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
     if call.code() != OpCode::CPUI_CALL || call.num_input() != 3 || call.get_out().is_some() {
         return None;
     }
-    let stderr = print_sink(fd, id)?;
+    let stderr = super::kuna_rustfmtliteral::print_sink(fd, id)?;
     let space = fd.get_arch().manage().get_default_data_space()?;
     if space.get_addr_size() != 8 || space.is_big_endian() {
         return None;
@@ -137,25 +137,6 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
         literal,
         arguments,
     })
-}
-
-fn print_sink(fd: &Funcdata, id: OpId) -> Option<bool> {
-    let call = fd.get_call_specs(fd.get_call_specs_index(id)?);
-    match call.get_name() {
-        "std::io::stdio::_print" => Some(false),
-        "std::io::stdio::_eprint" => Some(true),
-        name @ ("_print" | "_eprint") => {
-            let (leaf, offset, _, scope) =
-                fd.get_arch().global_name_scope()?.name_for_varnode_scoped(
-                    call.get_entry_address(),
-                    1,
-                    fd.obank().get(id)?.get_addr(),
-                )?;
-            (offset == 0 && leaf == name && scope == ["stdio", "io", "std"])
-                .then_some(name == "_eprint")
-        }
-        _ => None,
-    }
 }
 
 fn argument_cells(fd: &Funcdata, call: OpId, base: i64, count: usize) -> Option<Vec<VarnodeId>> {

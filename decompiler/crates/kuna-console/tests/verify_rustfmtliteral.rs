@@ -14,8 +14,14 @@ fn decompile(
     version: Option<(u16, u16, u16)>,
 ) -> String {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let binary =
-        root.join("decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_literals_x86_64");
+    let fixture = if function.starts_with("scoped_") {
+        "rust_fmt_literal_scopes_x86_64"
+    } else {
+        "rust_fmt_literals_x86_64"
+    };
+    let binary = root
+        .join("decompiler/crates/kuna-analysis/tests/fixtures")
+        .join(fixture);
     let mut program = bootstrap_from_object(
         binary.to_str().unwrap(),
         "",
@@ -118,6 +124,8 @@ fn emitted_macros_compile_and_reproduce_stdout_and_stderr() {
         "literal_empty",
         "literal_unicode",
         "literal_braces",
+        "scoped_stdout",
+        "scoped_stderr",
     ] {
         let output = decompile(function, true, true, Some((1, 93, 1)));
         source.push_str(&output[output.find("#[allow(").unwrap()..]);
@@ -144,7 +152,36 @@ fn emitted_macros_compile_and_reproduce_stdout_and_stderr() {
     assert!(result.status.success());
     assert_eq!(
         result.stdout,
-        b"just a literal\nplaincaf\xc3\xa9\n{a}\"\\\0\n\n"
+        b"just a literal\nplaincaf\xc3\xa9\n{a}\"\\\0\n\nscoped literal\n"
     );
-    assert_eq!(result.stderr, b"plainjust a literal\n");
+    assert_eq!(result.stderr, b"plainjust a literal\nscoped literal\n");
+}
+
+#[test]
+fn relocated_sinks_require_the_exact_standard_namespace() {
+    for (name, expected) in [
+        ("scoped_stdout", "println!(\"scoped literal\");"),
+        ("scoped_stderr", "eprintln!(\"scoped literal\");"),
+    ] {
+        let on = decompile(name, true, true, Some((1, 93, 1)));
+        let off = decompile(name, false, true, Some((1, 93, 1)));
+        assert!(on.contains(expected), "{name}: {on}");
+        assert!(!off.contains(expected), "{name}: {off}");
+        assert_eq!(
+            decompile(name, true, false, Some((1, 93, 1))),
+            decompile(name, false, false, Some((1, 93, 1)))
+        );
+    }
+    for name in [
+        "scoped_other",
+        "scoped_incomplete",
+        "scoped_nested",
+        "scoped_global",
+    ] {
+        assert_eq!(
+            decompile(name, true, true, Some((1, 93, 1))),
+            decompile(name, false, true, Some((1, 93, 1))),
+            "{name}"
+        );
+    }
 }

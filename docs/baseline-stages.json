@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3424,
-    3424
+    3427,
+    3427
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3053,6 +3053,9 @@
     "data:saved narrow interval keeps its zero fallback",
     "data:saved pointer reaches store",
     "data:scale survives the join",
+    "data:scoped literal stderr",
+    "data:scoped literal stdout",
+    "data:scoped off and unrelated namespaces stay calls",
     "data:second cursor snapshot is explicit",
     "data:second index uses second snapshot",
     "data:second object name selects the same physical word",

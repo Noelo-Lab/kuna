@@ -24,12 +24,7 @@ pub(crate) fn recover(
     if call.code() != OpCode::CPUI_CALL || call.num_input() != 3 || call.get_out().is_some() {
         return None;
     }
-    let name = fd.get_call_specs(fd.get_call_specs_index(op)?).get_name();
-    let stderr = match name {
-        "std::io::stdio::_print" => false,
-        "std::io::stdio::_eprint" => true,
-        _ => return None,
-    };
+    let stderr = print_sink(fd, op)?;
     let ptr = constant_word(fd, call.get_in(1)?)?;
     let tag = constant_word(fd, call.get_in(2)?)?;
     let len = tag >> 1;
@@ -55,6 +50,25 @@ pub(crate) fn recover(
     }
     let text = std::str::from_utf8(&bytes).ok()?;
     Some(render(text, stderr))
+}
+
+pub(crate) fn print_sink(fd: &Funcdata, id: OpId) -> Option<bool> {
+    let call = fd.get_call_specs(fd.get_call_specs_index(id)?);
+    match call.get_name() {
+        "std::io::stdio::_print" => Some(false),
+        "std::io::stdio::_eprint" => Some(true),
+        name @ ("_print" | "_eprint") => {
+            let (leaf, offset, _, scope) =
+                fd.get_arch().global_name_scope()?.name_for_varnode_scoped(
+                    call.get_entry_address(),
+                    1,
+                    fd.obank().get(id)?.get_addr(),
+                )?;
+            (offset == 0 && leaf == name && scope == ["stdio", "io", "std"])
+                .then_some(name == "_eprint")
+        }
+        _ => None,
+    }
 }
 
 fn constant_word(fd: &Funcdata, mut id: VarnodeId) -> Option<u64> {
