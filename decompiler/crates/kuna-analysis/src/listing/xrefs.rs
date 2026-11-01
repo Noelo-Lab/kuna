@@ -1327,6 +1327,9 @@ fn descend(
             st.file(vma, to, kind, &text);
         }
     }
+    for (vma, page) in st.carry.superseded(&st.funcs) {
+        st.unfile(vma, page, XrefKind::Data);
+    }
     // A focus address that did not decode is not a function: recording it as one
     // would answer `sub_<addr>` for a byte in the middle of a string.
     for f in focused {
@@ -1660,6 +1663,20 @@ impl State {
         let r = Xref { from, to, kind, instruction: instruction.to_string() };
         self.by_target.entry(to).or_default().push(r.clone());
         self.by_source.entry(from).or_default().push(r);
+    }
+
+    /// Withdraw every `from -> to` row of `kind`.
+    fn unfile(&mut self, from: u64, to: u64, kind: XrefKind) {
+        let withdraw = |map: &mut BTreeMap<u64, Vec<Xref>>, key: u64| {
+            if let Some(refs) = map.get_mut(&key) {
+                refs.retain(|r| (r.from, r.to, r.kind) != (from, to, kind));
+                if refs.is_empty() {
+                    map.remove(&key);
+                }
+            }
+        };
+        withdraw(&mut self.by_source, from);
+        withdraw(&mut self.by_target, to);
     }
 
     /// Use the same owners for incoming rows, outgoing buckets and computed calls.
@@ -2142,6 +2159,13 @@ pub(super) fn looks_like_address(value: u64) -> bool {
 /// does. Only the no-section-table arm takes the fallback: an image that has
 /// sections which are not the runtime layout (a relocatable object) is declined
 /// before this is ever called.
+///
+/// (kuna) A Mach-O section carries no allocation bit, and `object` classifies
+/// only a dozen `(segment, section)` name pairs, so `__DATA_CONST,__got`,
+/// `__la_symbol_ptr`, `__DATA_CONST,__const`, `__cfstring`, `__objc_selrefs` and
+/// `__TEXT,__stubs` read as unknown and every reference into them was dropped
+/// (GH #1376). dyld maps every section of a loaded segment, so on Mach-O each
+/// section is mapped except a debug one.
 fn mapped_ranges(file: &object::File) -> Vec<(u64, u64)> {
     let mut out = Vec::new();
     if file.sections().next().is_none() {
@@ -2165,6 +2189,9 @@ fn mapped_ranges(file: &object::File) -> Vec<(u64, u64)> {
         }
         let allocated = match sec.flags() {
             object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_ALLOC != 0,
+            object::SectionFlags::MachO { flags } => {
+                flags & object::macho::S_ATTR_DEBUG == 0 && sec.kind() != SectionKind::Debug
+            }
             _ => matches!(
                 sec.kind(),
                 SectionKind::Text
@@ -2820,6 +2847,18 @@ mod tests {
             assert!(sections.contains(r), "{r:x?} is not any section's span");
         }
         assert!(!in_range(&mapped, 0), "the ELF header read as mapped data");
+    }
+
+    /// GH #1376: `object` names no kind for `__DATA_CONST,__got`, and dyld maps
+    /// it like every other section of a loaded segment.
+    #[test]
+    fn every_section_of_a_macho_segment_is_mapped() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/gotcall_macho_arm64");
+        let data = std::fs::read(path).unwrap();
+        let file = object::File::parse(&*data).unwrap();
+        let got = file.section_by_name("__got").unwrap();
+        assert_eq!(got.kind(), SectionKind::Unknown, "object learned the section's kind");
+        assert!(in_range(&range_union(mapped_ranges(&file)), got.address()), "the GOT slot reads as unmapped");
     }
 
     /// `sort_dedup` collapses the `(from, to, kind)` triple: one row per site.

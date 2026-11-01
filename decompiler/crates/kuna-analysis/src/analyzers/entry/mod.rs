@@ -544,29 +544,9 @@ pub fn collect_entry_names(file: &object::File, kept: &[u64]) -> Vec<(u64, Strin
 /// or the high-level `SectionKind::Text` (`.text`/`.init`/`.fini`/`.plt`). Used
 /// both as the prologue-sweep target and the "is this VMA plausible code?" oracle.
 pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>)> {
-    // ELF section header flag: SHF_EXECINSTR (the section holds machine code).
-    const SHF_EXECINSTR: u64 = 0x4;
-    // Mach-O section attribute: S_ATTR_PURE_INSTRUCTIONS / S_ATTR_SOME_INSTRUCTIONS.
-    const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
-    const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x0000_0400;
-
     let mut out = Vec::new();
     for sec in file.sections() {
-        // Per-format executable test (PR-12/13): ELF SHF_EXECINSTR, PE COFF
-        // IMAGE_SCN_MEM_EXECUTE, Mach-O instruction attributes — each falling
-        // back to the neutral `SectionKind::Text` (`.text`/`__text`/`.plt`/…).
-        let exec = match sec.flags() {
-            object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
-            object::SectionFlags::Coff { characteristics } => {
-                characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
-            }
-            object::SectionFlags::MachO { flags } => {
-                flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
-                    || sec.kind() == SectionKind::Text
-            }
-            _ => sec.kind() == SectionKind::Text,
-        };
-        if !exec {
+        if !is_executable(&sec) {
             continue;
         }
         let addr = sec.address();
@@ -590,6 +570,26 @@ pub(crate) fn executable_sections(file: &object::File) -> Vec<(u64, u64, Vec<u8>
         }
     }
     out
+}
+
+/// Does `sec` hold machine code? Per format (PR-12/13): ELF `SHF_EXECINSTR`, PE
+/// COFF `IMAGE_SCN_MEM_EXECUTE`, Mach-O instruction attributes, each falling back
+/// to the neutral `SectionKind::Text` (`.text`/`__text`/`.plt`/…).
+pub(crate) fn is_executable(sec: &object::Section) -> bool {
+    const SHF_EXECINSTR: u64 = 0x4;
+    const S_ATTR_PURE_INSTRUCTIONS: u32 = 0x8000_0000;
+    const S_ATTR_SOME_INSTRUCTIONS: u32 = 0x0000_0400;
+    match sec.flags() {
+        object::SectionFlags::Elf { sh_flags } => sh_flags & SHF_EXECINSTR != 0,
+        object::SectionFlags::Coff { characteristics } => {
+            characteristics & object::pe::IMAGE_SCN_MEM_EXECUTE != 0
+        }
+        object::SectionFlags::MachO { flags } => {
+            flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS) != 0
+                || sec.kind() == SectionKind::Text
+        }
+        _ => sec.kind() == SectionKind::Text,
+    }
 }
 
 /// Do these load segments hold a packer stub rather than the program?

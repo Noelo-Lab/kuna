@@ -1,0 +1,44 @@
+gotcall_* -- the fixtures for `kuna xrefs` and `kuna decompile-graph` over a
+call through an import's GOT slot (GH #1376;
+decompiler/crates/kuna-cli/tests/xrefs_got_call.rs).
+
+What they are
+  gotcall_macho_arm64   arm64 Mach-O dylib from the issue's own assembly:
+                        adrp x16,_malloc@GOTPAGE; ldr x16,[x16,..]; blr x16.
+                        The __DATA_CONST,__got slot at 0x4000 is a chained-fixup
+                        bind (DYLD_CHAINED_PTR_64) to libSystem's _malloc.
+  gotcall_macho_x86_64  x86-64 Mach-O dylib: call *_malloc@GOTPCREL(%rip), and
+                        the same slot loaded into rax and called.
+  gotcall_aarch64       AArch64 ELF shared object: the issue's sequence against
+                        an R_AARCH64_GLOB_DAT slot.
+  gotcall_x86_64        x86-64 ELF shared object: the two x86-64 spellings
+                        against an R_X86_64_GLOB_DAT slot.
+  Sources: gotcall_macho.s, gotcall_macho_x86_64.s, gotcall_aarch64.S,
+  gotcall_x86_64.S; gotcall_libSystem.tbd stands in for the macOS SDK.
+
+Why they are vendored
+  CI has no Mach-O linker and no AArch64 toolchain, and the property under test
+  is the linked layout (the bound GOT slot), so the binaries are checked in.
+
+Where they came from
+  docker image mstorsjo/llvm-mingw (clang 23.1.4, LLD 23.1.4):
+
+      clang -target arm64-apple-macos11 -c gotcall_macho.s -o m.o
+      lld -flavor darwin -dylib -arch arm64 -platform_version macos 11.0 11.0 \
+          -fixup_chains -install_name @rpath/gotcall.dylib \
+          -o gotcall_macho_arm64 m.o gotcall_libSystem.tbd
+      clang -target x86_64-apple-macos11 -c gotcall_macho_x86_64.s -o mx.o
+      lld -flavor darwin -dylib -arch x86_64 -platform_version macos 11.0 11.0 \
+          -fixup_chains -install_name @rpath/gotcall.dylib \
+          -o gotcall_macho_x86_64 mx.o gotcall_libSystem.tbd
+      clang -target aarch64-linux-gnu -c gotcall_aarch64.S -o a.o
+      ld.lld -shared --build-id=none -o gotcall_aarch64 a.o
+      clang -target x86_64-linux-gnu -c gotcall_x86_64.S -o x.o
+      ld.lld -shared --build-id=none -o gotcall_x86_64 x.o
+
+  sha256:
+    29ee4b54463ab9ee84777a670f2d91d355783dd2f0513528bbe428065d1acd10  gotcall_macho_arm64
+    2ab6dbbf2319f7eaa57622f413a7d3517b90309822e8bff5352f6a488b181396  gotcall_macho_x86_64
+    5494282f8d846de00b8d8fa86eda9a03de3486709267c3577c2a87a5b02ac9a0  gotcall_aarch64
+    8a9c198142c3df9abfa55b5f4c50071f12daf65b3554879c765d788d592ad379  gotcall_x86_64
+  Never executed.

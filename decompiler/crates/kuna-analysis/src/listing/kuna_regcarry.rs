@@ -40,18 +40,33 @@
 //!  * the address a `STORE` writes, a [`XrefKind::Write`];
 //!  * an address an `INT_ADD`/`INT_SUB` composes into a whole register —
 //!    `add x0,x0,#0x488` — a [`XrefKind::Data`]: forming an address is not
-//!    reading it.
+//!    reading it;
+//!  * the slot a `CALLIND` takes its destination from, a [`XrefKind::Call`].
+//!    A pointer-width load from a reference leaves its register holding the
+//!    word at that address, so `adrp x16,_malloc@GOTPAGE; ldr x16,[x16,..];
+//!    blr x16` and `mov rax,[rip+slot]; call rax` call through the slot, as
+//!    x86's `call [rip+slot]` does in one instruction (GH #1376). The load
+//!    stays the read it is. The word itself is unknown: nothing composes it
+//!    into an address, and only a copy of it is still the slot's word.
 //!
 //! Only a value a carried register contributed to is reported; a single
-//! instruction's own constants are [`super::xrefs`]' to report. The `Data`
-//! shape is narrower than the other two because nothing dereferences the value
-//! to vouch for it, and the same pair builds integers:
+//! instruction's own constants are [`super::xrefs`]' to report. An AArch64
+//! `adrp` page is one of those, and names whatever datum the page starts with:
+//! when an instruction the carry holds across completes it into another address,
+//! the page was a step, and [`Tracker::superseded`] withdraws the scan's row,
+//! unless the run also uses the page itself — an access at it, or the `add #0`
+//! that is the `:lo12:` of a page-aligned symbol.
+//! The `Data` shape is narrower than the other two because nothing dereferences
+//! the value to vouch for it, and the same pair builds integers:
 //!
 //!  * a copy of a carried value (`mv a1,a0`, which RISC-V spells `addi a1,a0,0`)
 //!    is the reference its source already was;
 //!  * bitwise composition (`movk`, `ori`, `movt`) and an add narrower than the
 //!    register it lands in (RV64's `addiw`, a `w` register) are how a program
 //!    builds a number;
+//!  * a constant subtracted from a carried address biases it (Swift's string
+//!    object is its literal less 0x20, `sub x8,x8,#0x20`): the address it came
+//!    from stays the reference;
 //!  * a value only formed to form another — the middle `add` of an A32 PLT entry,
 //!    whose register the very next instruction consumes as a base and overwrites
 //!    — is a step, not an address;
@@ -136,6 +151,7 @@ struct Held {
     addr: bool,
     /// The [`Found`] `Data` row that formed it, if one did.
     formed: Option<usize>,
+    loaded: bool,
 }
 
 /// What one instruction hands its fall-through: the registers, and the
@@ -152,6 +168,7 @@ type Trail = SmallVec<[u64; MAX_HOPS]>;
 /// The fixed facts the evaluation reads.
 pub(super) struct Machine<'a> {
     reg: Rc<AddrSpace>,
+    data: Option<Rc<AddrSpace>>,
     data_index: Option<u64>,
     big_endian: bool,
     /// An `ET_DYN` image on an ISA whose PC-relative operands keep the PC
@@ -160,11 +177,16 @@ pub(super) struct Machine<'a> {
     preserved: &'a [(u64, u64)],
     mapped: &'a [(u64, u64)],
     pool: Option<&'a PoolImage<'a>>,
+    /// The width of a pointer, the only load whose result can be a callee.
+    ptr: u32,
+    /// AArch64's code, whose `adrp` forms a page the instruction completing
+    /// it supersedes.
+    code: Option<PoolImage<'a>>,
 }
 
 impl<'a> Machine<'a> {
     pub(super) fn new(
-        file: &object::File,
+        file: &object::File<'a>,
         reg: Option<&Rc<AddrSpace>>,
         data_space: Option<&Rc<AddrSpace>>,
         preserved: &'a [(u64, u64)],
@@ -182,12 +204,21 @@ impl<'a> Machine<'a> {
         Some(Machine {
             big_endian: reg.is_big_endian(),
             reg,
+            data: data_space.cloned(),
             data_index: data_space.and_then(|d| u64::try_from(d.get_index()).ok()),
             pc_only,
             preserved,
             mapped,
             pool,
+            ptr: if file.is_64() { 8 } else { 4 },
+            code: code(file),
         })
+    }
+
+    /// Is the instruction at `vma` an AArch64 `adrp`? Read off its encoding,
+    /// since `adr` to a page-aligned label lifts to the same `COPY`.
+    fn is_adrp(&self, vma: u64) -> bool {
+        self.code.as_ref().and_then(|c| c.bytes_at(vma, 4)).is_some_and(|b| b[3] & 0x9f == 0x90)
     }
 
     fn is_register(&self, vn: &VarnodeData) -> bool {
@@ -199,6 +230,31 @@ impl<'a> Machine<'a> {
     fn admits(&self, v: u64, addr: bool) -> bool {
         (addr || looks_like_address(v)) && in_range(self.mapped, v)
     }
+
+    /// The slot a pointer-width direct memory operand names (x86's `mov
+    /// rax,[rip+slot]`), if `vn` is one.
+    fn slot(&self, vn: &VarnodeData) -> Option<u64> {
+        let data = matches!((&vn.space, &self.data), (Some(s), Some(d)) if Rc::ptr_eq(s, d));
+        (data && vn.size == self.ptr && self.admits(vn.offset, false)).then_some(vn.offset)
+    }
+}
+
+/// An AArch64 image's executable sections, which an `adrp` is read from.
+fn code<'a>(file: &object::File<'a>) -> Option<PoolImage<'a>> {
+    use object::{Object, ObjectSection};
+    if !matches!(file.architecture(), object::Architecture::Aarch64 | object::Architecture::Aarch64_Ilp32) {
+        return None;
+    }
+    let ranges = file
+        .sections()
+        .filter(crate::entry::is_executable)
+        .filter_map(|sec| {
+            let data = sec.data().ok().filter(|d| !d.is_empty())?;
+            let lo = sec.address();
+            Some((lo, lo.saturating_add(sec.size().min(data.len() as u64)), data))
+        })
+        .collect();
+    PoolImage::from_ranges(ranges, 8, true)
 }
 
 /// The walk-wide record: what is in flight, every branch target, and the
@@ -223,6 +279,11 @@ struct Found {
     writeback: bool,
     /// The trails of later references that only used this one as a step.
     stepped: Vec<Trail>,
+    /// The `adrp` page [`super::xrefs`] filed on its own, not a row of ours.
+    page: bool,
+    /// The run used the page itself: an access at it, or the `add #0` that is
+    /// the `:lo12:` of a page-aligned symbol.
+    pinned: bool,
 }
 
 /// One instruction, as [`Tracker::step`] reads it.
@@ -266,6 +327,20 @@ struct Val {
     formed: Option<usize>,
     /// The formed value this one was computed from.
     base: Option<usize>,
+    /// The pointer-width word stored at `v`, read through a reference: inert
+    /// to arithmetic, and a call through it is a call through `v`.
+    loaded: bool,
+    /// A constant subtracted from a carried address: that address biased
+    /// backwards (Swift's string object, `sub x8,x8,#0x20` before the `orr` of
+    /// its discriminator), not one of its own.
+    bias: bool,
+}
+
+impl Val {
+    /// The word a load read from the reference `at`.
+    fn loaded(at: &Val) -> Val {
+        Val { composed: None, own: false, formed: None, base: None, loaded: true, ..*at }
+    }
 }
 
 fn mask(size: u32) -> u64 {
@@ -329,10 +404,20 @@ fn folds(code: OpCode) -> bool {
 /// Where only a PC-derived value may start a carry, some modelled op must also
 /// read a constant in the instruction's PC window, or nothing it forms is kept.
 /// And it must give some register a value: the first register an evaluation can
-/// know is written by a modelled op from constants and temporaries alone.
+/// know is written by a modelled op from constants and temporaries alone. A
+/// register copied whole from a pointer-width direct memory operand (`mov
+/// rax,[rip+slot]`) holds that slot's word, which a later call may go through.
 fn has_seed(m: &Machine, insn: &Insn) -> bool {
     if insn.calls {
         return false;
+    }
+    let slot_load = |op: &FullOp| {
+        op.opcode == OpCode::CPUI_COPY
+            && op.out.as_ref().is_some_and(|o| m.is_register(o))
+            && op.ins.first().is_some_and(|vn| m.slot(vn).is_some())
+    };
+    if insn.ops.iter().any(slot_load) {
+        return true;
     }
     let mut seed = false;
     let mut pc = !m.pc_only;
@@ -391,6 +476,8 @@ fn constant(vma: u64, formed: &Formed, vn: &VarnodeData) -> Val {
         own: is_own(vma, v),
         formed: None,
         base: None,
+        loaded: false,
+        bias: false,
     }
 }
 
@@ -432,6 +519,9 @@ impl Frame {
                     if (lo, hi) == (o, end) {
                         return Some(val);
                     }
+                    if val.loaded {
+                        return None;
+                    }
                     let shift = if m.big_endian { end - hi } else { lo - o };
                     let v = val.v.checked_shr((8 * shift) as u32).unwrap_or(0) & mask(vn.size);
                     Some(Val { v, composed: None, addr: val.addr && shift == 0 && vn.size >= ADDR_BYTES, ..val })
@@ -464,6 +554,9 @@ impl Frame {
 fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
     let out = op.out.as_ref()?;
     let a = a?;
+    if a.loaded || b.is_some_and(|b| b.loaded) {
+        return (op.opcode == OpCode::CPUI_COPY).then_some(a);
+    }
     let resized = out.size != op.ins.first()?.size;
     let unary = |v: u64| {
         Some(Val { v: v & mask(out.size), composed: if resized { None } else { a.composed }, own: false, ..a })
@@ -515,7 +608,8 @@ fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
                 _ => false,
             };
             let (age, pc) = (a.age.max(b.age), a.pc || b.pc);
-            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base })
+            let bias = op.opcode == OpCode::CPUI_INT_SUB && a.carried && !b.carried && !moved;
+            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base, loaded: false, bias })
         }
         _ => None,
     }
@@ -528,6 +622,7 @@ struct Hit {
     age: u8,
     /// The earlier `Data` row the address was computed from, when it differs.
     base: Option<usize>,
+    page: bool,
 }
 
 impl Tracker {
@@ -582,12 +677,20 @@ impl Tracker {
                 own: false,
                 formed: h.formed,
                 base: None,
+                loaded: h.loaded,
+                bias: false,
             };
             (h.off, h.size, val)
         }));
         let first = found.len();
         let base_of = |found: &[Found], val: &Val, to: u64| {
             val.formed.or(val.base).filter(|&i| i < first && found[i].to != to)
+        };
+        let pin = |found: &mut [Found], val: &Val| {
+            let at_page = val.formed.filter(|&i| i < first && found[i].page && found[i].to == val.v);
+            if let Some(i) = at_page.filter(|_| val.carried && !val.loaded) {
+                found[i].pinned = true;
+            }
         };
         let fall_vma = fall.unwrap_or(u64::MAX);
         let mut conditional = false;
@@ -597,22 +700,33 @@ impl Tracker {
             match op.opcode {
                 OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
                     let load = op.opcode == OpCode::CPUI_LOAD;
+                    let mut word = None;
                     if let Some(a) = op.ins.get(1).and_then(|vn| frame.read(m, vn)) {
-                        if a.carried && !joined && from_data() && m.admits(a.v, a.addr) {
+                        if from_data() {
+                            pin(found, &a);
+                        }
+                        if a.carried && !a.loaded && !joined && from_data() && m.admits(a.v, a.addr) {
                             let kind = if load { XrefKind::Read } else { XrefKind::Write };
                             let base = base_of(found, &a, a.v);
-                            hits.push(Hit { to: a.v, kind, age: a.age, base });
+                            hits.push(Hit { to: a.v, kind, age: a.age, base, page: false });
                             let width = op.out.as_ref().map(|o| o.size).filter(|_| load);
                             if let Some(t) = width.and_then(|w| m.pool?.follow(a.v, w, m.mapped)) {
-                                hits.push(Hit { to: t, kind: XrefKind::Data, age: a.age, base: None });
+                                hits.push(Hit { to: t, kind: XrefKind::Data, age: a.age, base: None, page: false });
                             }
+                            word = (width == Some(m.ptr)).then(|| Val::loaded(&a));
                         }
                     }
                     if let Some(out) = op.out.as_ref().filter(|_| load) {
-                        frame.write(m, out, None);
+                        frame.write(m, out, word);
                     }
                 }
                 OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER => {
+                    let dest = op.ins.first().filter(|_| op.opcode == OpCode::CPUI_CALLIND);
+                    if let Some(d) = dest.and_then(|vn| frame.read(m, vn)) {
+                        if d.loaded && d.carried && !joined {
+                            hits.push(Hit { to: d.v, kind: XrefKind::Call, age: d.age, base: None, page: false });
+                        }
+                    }
                     if let Some(out) = &op.out {
                         frame.write(m, out, None);
                     }
@@ -631,17 +745,34 @@ impl Tracker {
                     let Some(out) = &op.out else { continue };
                     let a = op.ins.first().and_then(|vn| frame.read(m, vn));
                     let b = op.ins.get(1).and_then(|vn| frame.read(m, vn));
-                    let mut val = fold(op, a, b);
+                    let mut val = fold(op, a, b).or_else(|| {
+                        let v = m.slot(op.ins.first().filter(|_| op.opcode == OpCode::CPUI_COPY)?)?;
+                        Some(Val::loaded(&Val { v, pc: false, addr: false, ..constant(vma, &formed, &op.ins[0]) }))
+                    });
                     if let Some(v) = val.as_mut() {
+                        if op.opcode == OpCode::CPUI_INT_ADD {
+                            pin(found, v);
+                        }
                         if v.carried
                             && !joined
+                            && !v.bias
                             && v.composed == Some(out.size)
                             && m.is_register(out)
                             && !(calls && v.v == fall_vma)
                             && m.admits(v.v, v.addr)
                         {
                             let base = base_of(found, v, v.v);
-                            hits.push(Hit { to: v.v, kind: XrefKind::Data, age: v.age, base });
+                            hits.push(Hit { to: v.v, kind: XrefKind::Data, age: v.age, base, page: false });
+                            v.formed = Some(first + hits.len() - 1);
+                        } else if !v.carried
+                            && op.opcode == OpCode::CPUI_COPY
+                            && op.ins.first().is_some_and(is_constant)
+                            && v.v & 0xfff == 0
+                            && m.is_register(out)
+                            && m.admits(v.v, v.addr)
+                            && m.is_adrp(vma)
+                        {
+                            hits.push(Hit { to: v.v, kind: XrefKind::Data, age: 0, base: None, page: true });
                             v.formed = Some(first + hits.len() - 1);
                         }
                     }
@@ -655,13 +786,14 @@ impl Tracker {
             let mut trail: Trail = carry.trail[carry.trail.len() - reach..].iter().copied().collect();
             trail.push(vma);
             if let Some(i) = h.base {
-                if !frame.regs.iter().any(|&(_, _, v)| v.formed == Some(i)) {
+                if found[i].page || !frame.regs.iter().any(|&(_, _, v)| v.formed == Some(i)) {
                     found[i].stepped.push(trail.clone());
                 }
             }
             let writeback = h.kind == XrefKind::Data
                 && hits.iter().enumerate().any(|(j, o)| j != k && o.to == h.to && o.kind != XrefKind::Data);
-            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped: Vec::new() });
+            let stepped = Vec::new();
+            found.push(Found { from: vma, to: h.to, kind: h.kind, trail, writeback, stepped, page: h.page, pinned: false });
         }
 
         let Some(next) = fall else { return };
@@ -673,7 +805,7 @@ impl Tracker {
                 && !(conditional && frame.written.iter().any(|&w| overlaps(w, (off, size))));
             if keep {
                 let age = if v.carried { v.age } else { 0 };
-                held.push(Held { off, size, v: v.v, age, pc: v.pc, addr: v.addr, formed: v.formed });
+                held.push(Held { off, size, v: v.v, age, pc: v.pc, addr: v.addr, formed: v.formed, loaded: v.loaded });
             }
         }
         if held.is_empty() {
@@ -695,8 +827,21 @@ impl Tracker {
         let holds = |trail: &[u64]| trail.iter().all(|at| !self.targets.contains(at) && !funcs.contains(at));
         self.found
             .iter()
-            .filter(|f| !f.writeback && holds(&f.trail) && !f.stepped.iter().any(|t| holds(t)))
+            .filter(|f| !f.page && !f.writeback && holds(&f.trail) && !f.stepped.iter().any(|t| holds(t)))
             .map(|f| (f.from, f.to, f.kind))
+            .collect()
+    }
+
+    /// The `adrp` pages, as `(adrp, page)`, that an instruction the carry holds
+    /// across completed into another address and that the run never used at
+    /// offset 0: the page was a step to it, and [`super::xrefs`]' own `Data` row
+    /// for it names whatever datum the page happens to start with.
+    pub(super) fn superseded(&self, funcs: &BTreeSet<u64>) -> Vec<(u64, u64)> {
+        let holds = |trail: &[u64]| trail.iter().all(|at| !self.targets.contains(at) && !funcs.contains(at));
+        self.found
+            .iter()
+            .filter(|f| f.page && !f.pinned && f.stepped.iter().any(|t| holds(t)))
+            .map(|f| (f.from, f.to))
             .collect()
     }
 }
@@ -731,22 +876,27 @@ mod tests {
         c: Rc<AddrSpace>,
         r: Rc<AddrSpace>,
         u: Rc<AddrSpace>,
+        /// The data space a direct memory operand names.
+        m: Rc<AddrSpace>,
     }
 
     impl Isa {
         fn new() -> Self {
             let (c, r, u) = spaces();
-            Isa { c, r, u }
+            Isa { c, r, u, m: Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_PROCESSOR)) }
         }
         fn machine(&self, pc_only: bool) -> Machine<'static> {
             Machine {
                 reg: Rc::clone(&self.r),
+                data: Some(Rc::clone(&self.m)),
                 data_index: Some(2),
                 big_endian: false,
                 pc_only,
                 preserved: &PRESERVED,
                 mapped: &MAPPED,
                 pool: None,
+                ptr: 8,
+                code: None,
             }
         }
         fn k(&self, v: u64) -> VarnodeData {
@@ -786,6 +936,17 @@ mod tests {
                 op(OpCode::CPUI_INT_ADD, Some(self.x(30)), vec![self.k(at), self.k(4)]),
                 op(OpCode::CPUI_CALL, None, vec![self.k(0x30000)]),
             ]
+        }
+        /// `blr xN` at `at`.
+        fn call_reg(&self, at: u64, n: u64) -> Vec<FullOp> {
+            vec![
+                op(OpCode::CPUI_INT_ADD, Some(self.x(30)), vec![self.k(at), self.k(4)]),
+                op(OpCode::CPUI_CALLIND, None, vec![self.x(n)]),
+            ]
+        }
+        /// The `width`-byte direct memory operand at `at` (x86's `[rip+slot]`).
+        fn mem(&self, at: u64, width: u32) -> VarnodeData {
+            vn(&self.m, at, width)
         }
     }
 
@@ -992,6 +1153,120 @@ mod tests {
         far.extend((0..MAX_HOPS).map(|_| isa.set(1, 5)));
         far.push(isa.add(0, 0, 0x10));
         assert!(walk(&m, &far, &[]).is_empty());
+    }
+
+    /// GH #1376: `adrp x16,_malloc@GOTPAGE; ldr x16,[x16,..]; blr x16` reads
+    /// the slot and calls through it.
+    #[test]
+    fn a_call_through_a_register_loaded_from_a_slot_is_a_call_to_the_slot() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let got = walk(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10), isa.call_reg(0x20008, 16)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Read), (0x20008, 0x24010, XrefKind::Call)]);
+        let mv = vec![op(OpCode::CPUI_COPY, Some(isa.x(17)), vec![isa.x(16)])];
+        let copied = walk(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10), mv, isa.call_reg(0x2000c, 17)], &[]);
+        assert_eq!(copied.last(), Some(&(0x2000c, 0x24010, XrefKind::Call)), "{copied:?}");
+        let joined = walk(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10), isa.call_reg(0x20008, 16)], &[0x20008]);
+        assert_eq!(joined, vec![(0x20004, 0x24010, XrefKind::Read)], "another path into the call may hold anything");
+    }
+
+    /// The word a slot holds is unknown: an offset from it is no address, a
+    /// load through it no read, and a narrow load of the slot no callee.
+    #[test]
+    fn the_word_a_slot_holds_is_not_a_value() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let loaded = || [isa.set(16, 0x24000), isa.load(16, 16, 0x10)];
+        let add: Vec<_> = loaded().into_iter().chain([isa.add(0, 16, 0x21000)]).collect();
+        assert_eq!(walk(&m, &add, &[]), vec![(0x20004, 0x24010, XrefKind::Read)]);
+        let deref: Vec<_> = loaded().into_iter().chain([isa.load(0, 16, 0x21000)]).collect();
+        assert_eq!(walk(&m, &deref, &[]), vec![(0x20004, 0x24010, XrefKind::Read)]);
+        let narrow = vec![
+            op(OpCode::CPUI_INT_ADD, Some(isa.t(0)), vec![isa.x(16), isa.k(0x10)]),
+            op(OpCode::CPUI_LOAD, Some(vn(&isa.r, 16 * 8, 4)), vec![isa.k(2), isa.t(0)]),
+        ];
+        let got = walk(&m, &[isa.set(16, 0x24000), narrow, isa.call_reg(0x20008, 16)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Read)], "`ldr w16` loads no pointer");
+    }
+
+    /// The `adrp` pages a straight-line run supersedes, and the rows it files.
+    fn pages(m: &Machine, insns: &[Vec<FullOp>], targets: &[u64]) -> (Vec<(u64, u64)>, Vec<(u64, u64, XrefKind)>) {
+        let mut t = Tracker::default();
+        for &at in targets {
+            t.enter(at);
+        }
+        for (i, ops) in insns.iter().enumerate() {
+            let vma = 0x20000 + 4 * i as u64;
+            let calls = ops.iter().any(|op| matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND));
+            t.step(m, Insn { vma, ops, fall: Some(vma + 4), branches: &[], calls, formed: Formed::default() });
+        }
+        let funcs = BTreeSet::from([0x20000]);
+        (t.superseded(&funcs), t.finish(&funcs))
+    }
+
+    /// An `adrp` page completed into another address was a step to it; one
+    /// the run also uses at offset 0, or never completes, is the page's own datum.
+    #[test]
+    fn an_adrp_page_the_pair_completes_elsewhere_is_superseded() {
+        use super::super::kuna_poolref::PoolImage;
+        let isa = Isa::new();
+        // `adrp x16, ..`, then three `nop`s.
+        let adrp: [u8; 16] = [0x10, 0, 0, 0x90, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5, 0x1f, 0x20, 0x03, 0xd5];
+        let img = PoolImage::from_ranges(vec![(0x20000, 0x20010, &adrp[..])], 8, true).unwrap();
+        let m = Machine { code: Some(img), ..isa.machine(false) };
+        let (gone, rows) = pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]);
+        assert_eq!(gone, vec![(0x20000, 0x24000)]);
+        assert_eq!(rows, vec![(0x20004, 0x24010, XrefKind::Read)], "the page is no row of the carry's");
+        let (gone, _) = pages(&m, &[isa.set(8, 0x24000), isa.add(9, 8, 0x10), isa.load(0, 8, 0x20)], &[]);
+        assert_eq!(gone, vec![(0x20000, 0x24000)], "the page still in x8 is still only a base");
+        for at_page in [vec![isa.set(16, 0x24000), isa.load(16, 16, 0)], vec![isa.set(0, 0x24000), isa.add(0, 0, 0)]] {
+            assert!(pages(&m, &at_page, &[]).0.is_empty(), "offset 0 names the page itself");
+        }
+        let field = [isa.set(0, 0x24000), isa.add(0, 0, 0), isa.store(1, 0, 0x18)];
+        assert!(pages(&m, &field, &[]).0.is_empty(), "`add #0` is the `:lo12:` of the symbol at the page");
+        let both = [isa.set(8, 0x24000), isa.load(0, 8, 0x8), isa.load(1, 8, 0)];
+        assert!(pages(&m, &both, &[]).0.is_empty(), "the page's own datum is read too");
+        let copy = vec![op(OpCode::CPUI_COPY, Some(isa.x(9)), vec![isa.x(8)])];
+        let (gone, _) = pages(&m, &[isa.set(8, 0x24000), copy, isa.load(0, 9, 0x10)], &[]);
+        assert_eq!(gone, vec![(0x20000, 0x24000)], "a copy of the page uses nothing at it");
+        assert!(pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[0x20004]).0.is_empty(), "past a join");
+        assert!(pages(&m, &[isa.set(16, 0x24010), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "not a page");
+        let mut adr = adrp;
+        adr[3] = 0x10;
+        let img = PoolImage::from_ranges(vec![(0x20000, 0x20010, &adr[..])], 8, true).unwrap();
+        let m = Machine { code: Some(img), ..isa.machine(false) };
+        assert!(pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "`adr` names its label");
+        let x86 = isa.machine(false);
+        assert!(pages(&x86, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "no adrp");
+    }
+
+    /// Swift's string literal: `adrp/add` forms the literal, `sub #0x20` biases
+    /// it into the string object's pointer. The literal stays the reference.
+    #[test]
+    fn a_constant_subtracted_from_an_address_is_a_bias() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let sub = vec![op(OpCode::CPUI_INT_SUB, Some(isa.x(8)), vec![isa.x(8), isa.k(0x20)])];
+        let got = walk(&m, &[isa.set(8, 0x24000), isa.add(8, 8, 0x40), sub], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24040, XrefKind::Data)]);
+    }
+
+    /// `mov rax,[rip+slot]; call rax` calls through the slot; `call [rip+slot]`
+    /// is one instruction, which [`super::super::xrefs`] files itself.
+    #[test]
+    fn a_register_copied_from_a_direct_slot_operand_calls_through_it() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let mov = vec![op(OpCode::CPUI_COPY, Some(isa.x(0)), vec![isa.mem(0x24010, 8)])];
+        let got = walk(&m, &[mov, isa.call_reg(0x20004, 0)], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24010, XrefKind::Call)]);
+        let one = vec![
+            op(OpCode::CPUI_COPY, Some(isa.t(0)), vec![isa.mem(0x24010, 8)]),
+            op(OpCode::CPUI_CALLIND, None, vec![isa.t(0)]),
+        ];
+        assert!(walk(&m, &[one], &[]).is_empty());
+        let word = vec![op(OpCode::CPUI_COPY, Some(vn(&isa.r, 0, 4)), vec![isa.mem(0x24010, 4)])];
+        assert!(walk(&m, &[word, isa.call_reg(0x20004, 0)], &[]).is_empty(), "a 32-bit load is no pointer");
     }
 
     #[test]
