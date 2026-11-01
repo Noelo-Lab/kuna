@@ -793,3 +793,184 @@ fn abi_mode_is_explicit_and_last_cli_value_wins() {
     assert_eq!(run(&["abi", "off"]), off);
     assert_eq!(run(&["off", "abi"]), abi);
 }
+
+#[test]
+fn counted_branches_select_the_actual_in_function_indirect_target() {
+    for little in [false, true] {
+        for decrements in 0..=4 {
+            let mut fixture = Fixture::new(Plt::Short);
+            fixture.little = little;
+            fixture.pic_collision = true;
+            let mut caller = vec![
+                0x7c0802a6, 0x9421fff0, 0x90010014, 0x93c10008, 0x3bc02804, 0x39801040, 0x7d8903a6,
+            ];
+            caller.extend((0..4).map(|i| {
+                if i < decrements {
+                    0x42000004
+                } else {
+                    0x60000000
+                }
+            }));
+            caller.extend([
+                0x4e800420,
+                0x60000000,
+                0x60000000,
+                0x60000000,
+                0x48000008,
+                0x3bc02800,
+                bl(0x1044, 0x1800),
+                0x83c10008,
+                0x80010014,
+                0x38210010,
+                0x7c0803a6,
+                0x38600007,
+                0x4e800020,
+            ]);
+            fixture.caller = Some(caller);
+            let expected = if decrements == 0 {
+                "__stack_chk_fail"
+            } else {
+                "extra"
+            };
+            assert_eq!(
+                pic_imports(&fixture),
+                vec![(0x1800, expected.as_bytes().to_vec())],
+                "decrements={decrements} little={little}"
+            );
+            if decrements == 4 {
+                let path = common::scratch_file("ppc32-counted-target", "so");
+                std::fs::write(&path, fixture.bytes()).unwrap();
+                let out = Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .args([
+                        "decompile",
+                        path.to_str().unwrap(),
+                        "check",
+                        "--mode",
+                        "fast",
+                        "--option",
+                        "ppc32picimports",
+                        "abi",
+                    ])
+                    .output()
+                    .unwrap();
+                let text = String::from_utf8_lossy(&out.stdout);
+                assert!(
+                    out.status.success(),
+                    "{text}\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+                assert!(text.contains("extra("), "{text}");
+                assert!(text.contains("return 7;"), "{text}");
+                assert!(!text.contains("no-return"), "{text}");
+                std::fs::remove_file(path).unwrap();
+            }
+        }
+    }
+}
+
+/// `check` sets r30 = 0x2804 (stub 0x1800 reads `extra`), `check2` follows it.
+/// Each case is code that reaches a stub with a base other than the one the
+/// walk would compute; none may name the stub.
+fn untracked_paths(caller: Vec<u32>, callee: Vec<u32>, little: bool) -> Vec<(u64, Vec<u8>)> {
+    let mut fixture = Fixture::new(Plt::Short);
+    fixture.little = little;
+    fixture.pic_collision = true;
+    fixture.second_stub = true;
+    fixture.caller = Some(caller);
+    fixture.second_caller = Some(callee);
+    pic_imports(&fixture)
+}
+
+#[test]
+fn ppc32_pic_paths_the_walk_cannot_follow_withhold_the_stub() {
+    let prologue = [0x7c0802a6, 0x9421fff0, 0x90010014, 0x3bc02804];
+    let with = |body: &[u32]| [&prologue[..], body].concat();
+    for little in [false, true] {
+        // check2 returns four bytes past its return address, so the walk's
+        // `li r30,0x2800` never runs: the stub reads `extra`, not 0x3000.
+        let skip = with(&[
+            bl(0x1010, 0x1020),
+            0x3bc02800,
+            bl(0x1018, 0x1800),
+            0x48000000,
+        ]);
+        let skipper = vec![0x7d2802a6, 0x39290004, 0x7d2803a6, 0x4e800020];
+        assert!(
+            untracked_paths(skip, skipper, little).is_empty(),
+            "skip little={little}"
+        );
+
+        // `b check2` leaves LR at the return address of `bl check2`, so check2
+        // returns into check with r30 = 0x2800 and takes the bne.
+        let stale = with(&[
+            0x3be00000,
+            bl(0x1014, 0x1034),
+            0x2c1f0000,
+            0x40820010,
+            0x3be00001,
+            0x3bdefffc,
+            0x4800000c,
+            bl(0x102c, 0x1800),
+            0x48000000,
+        ]);
+        let leaf = vec![0x2c030000, 0x41820004, 0x4e800020];
+        assert!(
+            untracked_paths(stale, leaf, little).is_empty(),
+            "stale little={little}"
+        );
+
+        // check2 saves r30 with stwcx. (no reservation, so no store) or
+        // stwbrx (reversed) and reloads the word, which then holds 0x2800 or
+        // the swapped base.
+        let call = with(&[bl(0x1010, 0x101c), bl(0x1014, 0x1800), 0x48000000]);
+        for save in [0x7fc1492d, 0x7fc14d2c] {
+            let saver = vec![
+                0x9421fff0, 0x39202800, 0x91210008, 0x39200008, save, 0x83c10008, 0x38210010,
+                0x2c030000, 0x41820004, 0x4e800020,
+            ];
+            assert!(
+                untracked_paths(call.clone(), saver, little).is_empty(),
+                "save={save:#x} little={little}"
+            );
+        }
+
+        // check2 keeps r30 below its stack pointer across a call; the callee's
+        // frame overwrites the word with 0x2800.
+        let below = vec![
+            0x9421fff0,
+            0x7c0802a6,
+            0x90010014,
+            0x93c1fffc,
+            bl(0x102c, 0x1044),
+            0x83c1fffc,
+            0x80010014,
+            0x38210010,
+            0x7c0803a6,
+            0x4e800020,
+            0x9421fff0,
+            0x39202800,
+            0x9121000c,
+            0x38210010,
+            0x2c030000,
+            0x41820004,
+            0x4e800020,
+        ];
+        assert!(
+            untracked_paths(call.clone(), below, little).is_empty(),
+            "below little={little}"
+        );
+
+        // A bounded table entry of check jumps to stub 0x1810 with r30 =
+        // 0x2804 (slot 0x3000), while check2 calls it with r30 = 0x2808.
+        let switch = vec![
+            0x7c0802a6, 0x3bc02804, 0x28030002, 0x41810030, 0x429f0005, 0x7d2802a6, 0x3929001c,
+            0x5463103a, 0x7d49182e, 0x7d4a4a14, 0x7d4903a6, 0x4e800420, 0x0000000c, 0x00000014,
+            0x000007e0, 0x7c0803a6, 0x4e800020, 0x7c0803a6, 0x480007b8,
+        ];
+        assert_eq!(
+            untracked_paths(switch, vec![0x3bc02808, 0x480007c0], little),
+            vec![(0x1800, b"extra".to_vec())],
+            "table little={little}"
+        );
+    }
+}
