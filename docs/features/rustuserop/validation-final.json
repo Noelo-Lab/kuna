@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "workspace": {
+    "passed": 10063,
+    "failed": 0,
+    "ignored": 39
+  },
+  "suites": 71,
+  "non_workspace_gates": "gates-final.log",
+  "initial_harness_correction": "Stage failure exit status is the number of failed assertions: 1/2 expects exit 1, not the preceding feature's 0/2 exit 2. Re-ran all non-workspace gates with the corrected expectation; full workspace completed successfully."
+}

@@ -1,0 +1,33 @@
+--- before/std::backtrace_rs::symbolize::gimli::Cache::with_global
++++ after/std::backtrace_rs::symbolize::gimli::Cache::with_global
+@@ -3901,7 +3901,7 @@
+       }
+       0x90 => {
+         v179 = v226;
+-        v128 = ((in(0x31) as u8) as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
++        v128 = ((r#in(0x31) as u8) as u64) as *mut *mut *mut *mut *mut *mut *mut *const ();
+         v136 = *(&mut v202[-0x240] as *mut *mut *mut *mut *mut *mut *mut *mut *const ());
+         v196 = Register00000020 as *mut u64;
+         v211 = v202;
+@@ -4159,7 +4159,7 @@
+         *(v128 as *mut u8) = *(v128 as *mut u8) + v115;
+         *(v240 as *mut u8) = *(v240 as *mut u8) + ((v226 as u64) >> 8) as u8;
+         v252 = v252 << (v129 & 7) | v252 >> 8 - (v129 & 7);
+-        in(v226 as i16);
++        r#in(v226 as i16);
+         v193 = &mut v151;
+         v207 = &mut Stackfffffffffffffff8;
+         v121 = v243;
+
+--- before/std::path::Component::eq
++++ after/std::path::Component::eq
+@@ -243,7 +243,7 @@
+         return CONCAT71(v10,0x1b) as *mut *const ();
+       }
+       v9 = &mut a0[4];
+-      *(a0 as *mut u32) = in(v14 as u16);
++      *(a0 as *mut u32) = r#in(v14 as u16);
+       a0 = v9;
+     }
+     0x6c => {
+

@@ -6800,10 +6800,15 @@ impl PrintC {
             // Functional syntax: for CALLOTHER the operator name resolves to the
             // userop's name (the base getOperatorName), or the generic
             // `CALLOTHER[index]` fallback.
-            let nm = match arch.userops.get_op(in0_off as u32) {
+            let mut nm = match arch.userops.get_op(in0_off as u32) {
                 Some(u) => String::from_utf8_lossy(u.get_name()).into_owned(),
                 None => format!("CALLOTHER[{:#x}]", in0_off),
             };
+            if self.out_lang == crate::kuna_lang::OutLang::Rust
+                && crate::kuna_rustuserop::raw_keyword(&nm)
+            {
+                nm.insert_str(0, "r#");
+            }
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,

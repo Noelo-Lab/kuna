@@ -1,0 +1,63 @@
+--- before/std::alloc::default_alloc_error_hook
++++ after/std::alloc::default_alloc_error_hook
+@@ -2026,7 +2026,7 @@
+       /* kuna: unstructured goto to label_36e02 */ panic!("kuna: unstructured goto to label_36e02");
+     }
+     0x88 => {
+-      v25 = in(v47 as i16);
++      v25 = r#in(v47 as i16);
+       v31 = CONCAT71(v34,v25) as *mut u8;
+       *v31 = v25;
+       *v31 = *v31 + v25;
+@@ -3240,7 +3240,7 @@
+       return v100;
+     }
+     0xd6 => {
+-      v40 = CONCAT71(v34,in(v47 as i16)) as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ();
++      v40 = CONCAT71(v34,r#in(v47 as i16)) as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ();
+       v117 = (v40 as i64 + -0x77) as *mut u8;
+       *v117 = *v117 - 0x14;
+       v184 = 0x6314 as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ();
+
+--- before/std::panicking::default_hook::{closure#0}
++++ after/std::panicking::default_hook::{closure#0}
+@@ -1621,7 +1621,7 @@
+     0x3b => {
+ // label_29aca:
+       v22 = 0x6324;
+-      v13 = ((in(0x31) as u8) as u64) as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ();
++      v13 = ((r#in(0x31) as u8) as u64) as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ();
+       a0 = *(&mut v66[-0x248] as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ());
+       v95 = Register00000020 as *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *mut *const ();
+       v70 = v66;
+@@ -1946,7 +1946,7 @@
+     0x5f => {
+ // label_2b8a4:
+       v20 = SUB82(v38,0);
+-      in(v20);
++      r#in(v20);
+ // label_2b89e:
+       loop {
+         a0 = &mut a0[2];
+
+--- before/std::path::Component::eq
++++ after/std::path::Component::eq
+@@ -198,7 +198,7 @@
+       return CONCAT71(((v29 as u64) >> 8) as [u8; 7],v29 != 0) as *mut u8;
+     }
+     0x37 | 0x5a => {
+-      v10 = CONCAT71(v13,in(v15)) as *mut u8;
++      v10 = CONCAT71(v13,r#in(v15)) as *mut u8;
+       v37 >>= 0x10;
+       v17 = (v17 as u64 & v39) as *mut u8;
+       /* kuna: unstructured goto to label_4066a */ panic!("kuna: unstructured goto to label_4066a");
+@@ -331,7 +331,7 @@
+     }
+     0xed | 0xf4 => {
+       if (v10 as i64) < 0 {
+-        v5 = in(v15);
++        v5 = r#in(v15);
+         v7 = (CONCAT71(v13,v5) as i16) as u32;
+         *((v7 as u64) as *mut u8) = *((v7 as u64) as *mut u8) + v5;
+         halt_baddata(); // warn: Bad instruction - Truncating control flow here
+
