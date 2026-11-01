@@ -736,9 +736,7 @@ pub struct IfcEcho;
 impl IfaceCommandAction for IfcEcho {
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         // Echo command line to fileoptr
-        while let Some(c) = s.get() {
-            status.file_out_byte(c);
-        }
+        status.file_out(&s.rest());
         status.file_out("\n");
         Ok(())
     }
@@ -953,17 +951,6 @@ impl IfaceStatus {
         match &mut self.fileoptr {
             Some(f) => f.contents.push_str(s),
             None => self.optr.push_str(s),
-        }
-    }
-
-    /// Append one raw byte to bulk output (`fileoptr->put(c)`), honoring the
-    /// redirect.  ASCII handling mirrors [`out_byte`](IfaceStatus::out_byte):
-    /// the bytes `IfcEcho` puts are the command line's own ASCII text.
-    pub fn file_out_byte(&mut self, b: u8) {
-        let ch = if b < 0x80 { b as char } else { '\u{FFFD}' };
-        match &mut self.fileoptr {
-            Some(f) => f.contents.push(ch),
-            None => self.optr.push(ch),
         }
     }
 
@@ -2045,6 +2032,14 @@ mod tests {
         assert!(st.optr.is_empty());
         let fo = st.close_file_redirect().unwrap();
         assert_eq!(fo.contents, " body\n");
+    }
+
+    #[test]
+    fn ifc_echo_preserves_utf8() {
+        let mut st = bare_status();
+        let mut s = CommandStream::new(" 한글 📁 样本");
+        assert!(IfcEcho.execute(&mut st, &mut s).is_ok());
+        assert_eq!(st.optr, " 한글 📁 样本\n");
     }
 
     /// `CommandStream::read_int` parses a signed decimal, latching eof only when
