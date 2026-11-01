@@ -20,6 +20,8 @@
 //!
 //! The ASCII argument is the control: it must render identically on both arms, so
 //! the width the pass already had is untouched.
+//! The scan controls disable Win32 declarations, which independently supply
+//! the wide parameter type; a separate test covers that declaration evidence.
 
 use std::path::PathBuf;
 
@@ -44,6 +46,10 @@ fn decompile_entry(widestrings: bool) -> String {
 /// The same, with the `operand_refs` scalar-markup pass forced on — the shape a
 /// default `kuna decompile` runs (`auto` -> `aggressive`).
 fn decompile_entry_with(widestrings: bool, operand_refs: bool) -> String {
+    decompile_entry_with_signatures(widestrings, operand_refs, false)
+}
+
+fn decompile_entry_with_signatures(widestrings: bool, operand_refs: bool, signatures: bool) -> String {
     let root = repo_root();
     let specs = root.join("specs");
     let spec_roots = vec![specs.to_str().expect("UTF-8 specs path").to_string()];
@@ -53,6 +59,7 @@ fn decompile_entry_with(widestrings: bool, operand_refs: bool) -> String {
         .expect("bootstrap fixture with built processor specs");
     prog.arch_mut().analysis_widestrings = widestrings;
     prog.arch_mut().analysis_operand_refs = operand_refs;
+    prog.arch_mut().set_kuna_option("win32sigs", if signatures { "on" } else { "off" }).unwrap();
     prog.commit_pending_analysis().expect("analysis commit succeeds");
 
     let cmds: Vec<String> =
@@ -69,6 +76,15 @@ fn decompile_entry_with(widestrings: bool, operand_refs: bool) -> String {
         execute(&mut status);
     }
     status.optr.clone()
+}
+
+#[test]
+fn a_declared_wide_parameter_supplies_width_without_scan_markup() {
+    for operand_refs in [false, true] {
+        let out = decompile_entry_with_signatures(false, operand_refs, true);
+        assert!(out.contains(r#"LoadLibraryW(L"ntdll.dll")"#), "{out}");
+        assert!(!out.contains(r#"LoadLibraryW("n")"#), "{out}");
+    }
 }
 
 #[test]

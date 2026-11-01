@@ -4263,8 +4263,23 @@ impl SplitDatatype {
             in_varnodes.push(out_vn);
             data.vbank_mut().get_mut(out_vn).expect("stale sub out").update_type(dt);
             data.op_insert_before(subpiece, follow_op);
+            // Cleanup splitting runs after the main simplification pool.
+            while crate::ruleaction_2::RuleDoubleSub.apply_op(subpiece, data) != 0 {}
         }
         Ok(())
+    }
+
+    /// Remove truncations made unused by cleanup splitting, using normal liveness checks.
+    fn discard_unused_subpieces(data: &mut Funcdata, mut value: VarnodeId) {
+        while let Some(op) = data.vbank().get(value).and_then(|vn| vn.get_def()) {
+            let Some(def) = data.obank().get(op) else { break; };
+            if def.code() != OpCode::CPUI_SUBPIECE { break; }
+            let Some(source) = def.get_in(0) else { break; };
+            if crate::ruleaction_1::RuleEarlyRemoval::new("cleanup").apply_op(op, data) == 0 {
+                break;
+            }
+            value = source;
+        }
     }
 
     /// Build output Varnodes with storage based on the given root (C++
@@ -4555,6 +4570,7 @@ impl SplitDatatype {
             // resolver.inheritResolution — no-op for non-union types.
         }
         data.op_destroy(copy_op);
+        Self::discard_unused_subpieces(data, in_vn);
         Ok(true)
     }
 
@@ -4776,6 +4792,7 @@ impl SplitDatatype {
             load_root.free_pointer_chain(data);
         }
         store_root.free_pointer_chain(data);
+        Self::discard_unused_subpieces(data, in_vn);
         Ok(true)
     }
 
@@ -7463,6 +7480,60 @@ mod tests {
         let (comp, hole) = sd.get_component(&factory, &arr, 4).unwrap();
         assert!(!hole);
         assert_eq!(comp.unwrap().get_size(), 4);
+    }
+
+    #[test]
+    fn split_datatype_extracts_fields_from_the_original_container() {
+        for big_endian in [false, true] {
+            for truncated in [false, true] {
+                let mut fd = build_fd_endian(big_endian);
+                ram(&fd).clear_flags(addrspace_flags::does_deadcode);
+                let root_block = fd.bblocks_ref().root.unwrap();
+                let block = fd.bblocks_mut().new_block_basic(root_block);
+                let whole = mk_input(&mut fd, 0x40, 16);
+                let mut source = whole;
+                if truncated {
+                    let op = mk_op(&mut fd, 0x100, 2, OpCode::CPUI_SUBPIECE);
+                    wire_in(&mut fd, op, whole, 0);
+                    let offset = fd.new_constant(4, 4);
+                    wire_in(&mut fd, op, offset, 1);
+                    let partial = mk_reg(&mut fd, 0x80, 12);
+                    source = wire_out(&mut fd, op, partial);
+                    fd.op_insert(op, block, None);
+                }
+                let copy = mk_op(&mut fd, 0x104, 1, OpCode::CPUI_COPY);
+                wire_in(&mut fd, copy, source, 0);
+                fd.op_insert(copy, block, None);
+                let mut splitter = SplitDatatype::new(3);
+                for (offset, size) in [(0, 8), (8, 4)] {
+                    splitter.data_type_pieces.push(Component {
+                        in_type: unk(size), out_type: unk(size), offset,
+                    });
+                }
+                let mut parts = Vec::new();
+                splitter.build_in_subpieces(&mut fd, source, copy, &mut parts).unwrap();
+                SplitDatatype::discard_unused_subpieces(&mut fd, source);
+                if truncated {
+                    let def = fd.vbank().get(source).unwrap().get_def().unwrap();
+                    assert!(!fd.obank().get(def).unwrap().is_dead(), "the COPY still reads this slice");
+                }
+                for (i, part) in parts.into_iter().enumerate() {
+                    let op = fd.obank().get(fd.vbank().get(part).unwrap().get_def().unwrap()).unwrap();
+                    assert_eq!(op.get_in(0), Some(whole));
+                    let offset = fd.vbank().get(op.get_in(1).unwrap()).unwrap().get_offset();
+                    let expected = if big_endian { [8, 4][i] }
+                        else { [0, 8][i] + if truncated { 4 } else { 0 } };
+                    assert_eq!(offset, expected);
+                }
+                let def = fd.vbank().get(source).unwrap().get_def();
+                fd.op_destroy(copy);
+                SplitDatatype::discard_unused_subpieces(&mut fd, source);
+                if let Some(def) = def {
+                    assert!(fd.obank().get(def).is_none_or(|op| op.is_dead()));
+                }
+                assert!(fd.vbank().get(whole).unwrap().is_input());
+            }
+        }
     }
 
     #[test]

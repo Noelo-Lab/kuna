@@ -1415,6 +1415,13 @@ impl Rule for RulePieceStructure {
             if addr.renormalize(vnsize, data.get_arch().manage()).is_err() {
                 continue;
             }
+            if addr.is_constant() && node.is_leaf() {
+                let padding = data.new_constant(vnsize, addr.get_offset());
+                if data.op_set_input(node.get_op(), padding, node.get_slot()).is_err() {
+                    continue;
+                }
+                continue;
+            }
             // C++ `if (vn->getAddr() == addr) { if (!isLeaf || !separateSymbol) {...} }`
             // — the two guards are independent and the inner block `continue`s, so
             // the falls-through-to-leaf-handling structure is preserved by `&&`.
@@ -1432,7 +1439,8 @@ impl Rule for RulePieceStructure {
                 // Insert a COPY into a Varnode at the correct storage.
                 let node_op = node.get_op();
                 let copy_op = data.new_op(1, op_addr(data, node_op));
-                let new_vn = match data.new_varnode_out(vnsize, &addr, copy_op) {
+                let allocated = data.new_varnode_out(vnsize, &addr, copy_op);
+                let new_vn = match allocated {
                     Ok(v) => v,
                     Err(_) => continue,
                 };

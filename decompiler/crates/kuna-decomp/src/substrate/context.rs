@@ -1801,6 +1801,8 @@ pub struct ArchContext {
     /// because `build_arch_handle` hands the same snapshot to every function of
     /// a run.
     pub callee_protos: Rc<Vec<(int4, kuna_base::types::uintb, crate::fspec::PrototypePieces)>>,
+    /// Loader-proven transfers; explicit per-function flow overrides take precedence.
+    pub loader_branch_sites: Rc<std::collections::BTreeSet<Address>>,
     /// The calling convention each declared callee was declared under, keyed the
     /// same way [`Self::callee_protos`] is.  Snapshotted at `build_arch_handle`
     /// from the architecture's declared-convention map and read back by
@@ -2182,6 +2184,7 @@ impl ArchContext {
             infer_ptr_spaces: Vec::new(),
             // No declared callee prototypes until build_arch_handle snapshots them.
             callee_protos: Rc::new(Vec::new()),
+            loader_branch_sites: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.
             tracked_sets: kuna_base::partmap::PartMap::default(),
         }

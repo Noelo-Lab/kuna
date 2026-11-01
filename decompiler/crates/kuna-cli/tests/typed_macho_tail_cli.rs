@@ -83,12 +83,19 @@ fn non_callable_slot_declarations_do_not_clone_the_current_function_prototype() 
         format!("data {SLOT} code printf_slot"),
         format!("data {SLOT} code *printf_slot"),
     ] {
+      for library in ["off", "on"] {
         let (stdout, stderr, ok) = run(&[
             "decompile",
             &bin,
             "printf",
             "--sleighpath",
             &sp,
+            "--option",
+            "libproto",
+            library,
+            "--option",
+            "libcsigs",
+            library,
             "--assert",
             &prototype,
             "--assert",
@@ -100,14 +107,15 @@ fn non_callable_slot_declarations_do_not_clone_the_current_function_prototype() 
             stdout.contains("int printf(char *fmt,int value)"),
             "the current prototype was not installed:\n{stdout}"
         );
-        assert!(
-            stdout.contains("printf(); // jump-as-call"),
-            "a non-callable slot declaration supplied arguments ({declaration:?}):\n{stdout}"
-        );
+        let call = if library == "off" { "printf(); // jump-as-call" }
+            else { "printf(fmt); // jump-as-call" };
+        assert!(stdout.contains(call),
+            "library={library}, {declaration:?}: independent import declarations determine the arguments:\n{stdout}");
         assert!(
             !stdout.contains("(fmt,value); // jump-as-call"),
             "the resolver cloned the current function prototype ({declaration:?}):\n{stdout}"
         );
+      }
     }
 }
 

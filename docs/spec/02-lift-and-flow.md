@@ -23,6 +23,14 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+Loader-validated MIPS lazy-binding resolver sites carry branch overrides in the
+shared architecture snapshot. Flow recovery converts their call encoding to an
+indirect transfer after lifting, preserving register writes and the delay slot.
+It does not follow a nonexistent local return into the next stub or section
+padding, and does not declare the imported function no-return. Explicit
+per-function flow overrides take precedence. Raw inputs and unvalidated stubs
+do not acquire these facts.
+
 The A32 single-register `POP {pc}` alias (`ldr pc,[sp],#4`) lifts as a return,
 including its conditional forms. Its address mode still advances SP by four
 bytes and its PC write preserves interworking. Other PC loads retain their

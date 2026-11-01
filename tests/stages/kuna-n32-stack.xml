@@ -8,6 +8,10 @@
 <symbol space="ram" offset="0x100068" name="pointer_ninth"/>
 <symbol space="ram" offset="0x100078" name="signed_ninth"/>
 <symbol space="ram" offset="0x100080" name="float_ninth"/>
+<symbol space="ram" offset="0x1000b0" name="indirect_frame"/>
+<!-- Original GCC 7.3 tail call from tests/fixtures/octeon-elf-abi/abi.c. -->
+<bytechunk space="ram" offset="0x1001c8" readonly="true">27bdfff000a010250080c82500c02825004020250320000827bd0010</bytechunk>
+<symbol space="ram" offset="0x1001c8" name="pair_indirect"/>
 </binaryimage>
 <script>
 <com>option ctypes on</com>
@@ -18,10 +22,21 @@
 <com>lo fu signed_ninth</com><com>decompile</com><com>print C</com>
 <com>parse line extern unsigned float_ninth(unsigned long long a,unsigned long long b,unsigned long long c,unsigned long long d,unsigned long long e,unsigned long long f,unsigned long long g,unsigned long long h,float value);</com>
 <com>lo fu float_ninth</com><com>decompile</com><com>print C</com>
+<com>lo fu indirect_frame</com><com>decompile</com><com>print C</com>
+<com>parse line extern unsigned long long indirect_frame(unsigned long long (*callee)(unsigned long long),unsigned long long value);</com>
+<com>lo fu indirect_frame</com><com>decompile</com><com>print C</com>
+<com>parse line struct Pair { unsigned long long a, b; };</com>
+<com>parse line extern struct Pair pair_indirect(struct Pair (*callee)(unsigned long long,unsigned long long),unsigned long long a,unsigned long long b);</com>
+<com>lo fu pair_indirect</com><com>decompile</com><com>print C</com>
+<com>option bejoin off</com>
+<com>lo fu pair_indirect</com><com>decompile</com><com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="N32 stack: inferred ten arguments reach addition" min="1" max="1">return a8 \+ a9 \+ a7 \+ a6 \+ a5 \+ a4 \+ a3 \+ a2 \+ a1 \+ a0;</stringmatch>
 <stringmatch name="N32 stack: pointer argument reaches load" min="1" max="1">return \*p;</stringmatch>
 <stringmatch name="N32 stack: integer argument keeps low slot bytes" min="1" max="1">return value;</stringmatch>
 <stringmatch name="N32 stack: float argument keeps high slot bytes" min="1" max="1">\.from = value</stringmatch>
+<stringmatch name="N32 calls: inferred result replaces pre-call target" min="1" max="1">return \(\*a0\)\(a1\) \+ a1;</stringmatch>
+<stringmatch name="N32 calls: declared full-width result reaches addition" min="1" max="1">return \(\*callee\)\(value\) \+ value;</stringmatch>
+<stringmatch name="N32 calls: declared aggregate order overrides inferred joins" min="2" max="2">return \(\*callee\)\(a,b\);</stringmatch>
 </decompilertest>

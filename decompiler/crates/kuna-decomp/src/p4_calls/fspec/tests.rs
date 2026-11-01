@@ -2044,6 +2044,33 @@ fn func_call_specs_transfer_locked_output_void_ok() {
     assert!(no.is_empty());
 }
 
+#[test]
+fn typed_call_restarts_when_its_declared_join_differs_from_recovery() {
+    for declared_offset in [0, 16] {
+        let mgr = fcs_manager();
+        let mut fd = fcs_fd();
+        let call = fcs_new_op(&mut fd, 1, 0x1010, OpCode::CPUI_CALLIND);
+        let mut fc = fcs_with_std_model(&mgr, call);
+        let join: Rc<AddrSpace> = Rc::new(kuna_base::space::JoinSpace::new(5, true));
+        let original = fcs_out(&mut fd, call, join.clone(), 0, 16);
+        let mut declared = FuncProto::new();
+        declared.copy(fc.proto());
+        let mut store = ProtoStoreInternal::new(Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)));
+        store.set_output(&ParameterPieces {
+            addr: Address::new(join, declared_offset),
+            type_: Some(Rc::new(Datatype::new(16, type_metatype::TYPE_STRUCT))),
+            flags: 0,
+        });
+        declared.set_store(Box::new(store));
+        declared.set_output_lock(true);
+        let mut log = RestartLog::new();
+        fc.force_set(&mut fd, &declared, &mut log).unwrap();
+        assert_eq!(fd.has_restart_pending(), declared_offset != 0);
+        assert_eq!(fd.obank().get(call).unwrap().get_out(), Some(original));
+        assert_eq!(fd.vbank().get(original).unwrap().get_addr().get_offset(), 0);
+    }
+}
+
 // =========================================================================
 // ModelRule wiring (float-typeclass wave): the cspec `<rule>` actions are now
 // plumbed into `ParamListStandard::assign_address` (the `goto_stack` float10

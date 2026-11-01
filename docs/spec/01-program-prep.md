@@ -209,6 +209,30 @@ section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
 (machine + endianness + class → e.g. `x86:LE:64:default:gcc`).
 
+Octeon selection reconciles the MIPS machine flags, ELF class and N32 flag,
+ISA-extension and register-width declarations, and GNU floating-point
+attributes (`decompiler/crates/kuna-analysis/src/loader/kuna_mipsocteon.rs`).
+BE N32/N64 soft-float profiles select Octeon, Plus, II or III; the qualified
+III hard-float profiles select the `hard` compiler model. Plus requires its
+distinct ISA-extension declaration: indistinguishable legacy flags retain the
+base Octeon target. Conflicting, incomplete or unsupported profiles require an
+explicit target, which always takes precedence. Legacy vendor FP header bits
+do not override standard attributes. The shared reader in
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsabi.rs` accepts matching
+section and `PT_MIPS_ABIFLAGS` records, rejects malformed or conflicting records,
+and treats FP ANY as unspecified. Call recovery uses the same evidence, including
+in images without section headers. Non-Octeon target selection is unchanged.
+Octeon III accepts the VZ capability declaration emitted by its compiler;
+this does not assert that every privileged VZ instruction is modeled.
+The real dynamic import name takes precedence over the linker-generated
+`_MIPS_STUBS_` label at the same address; the label remains an alias.
+Only nonzero resolved MIPS import-stub slots are marked constant. An unresolved
+weak function's zero GOT initializer is not its final runtime address, so its
+null check and possible call remain in the recovered control flow.
+Without a callee prototype, a preserved incoming argument register cannot
+establish import arity: calls with and without that argument can have identical
+instructions. An explicit prototype supplies that missing contract.
+
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
 option `goabi auto|off`, default auto, carried as the `KUNA_GOABI` loadtime
@@ -1897,6 +1921,18 @@ so the S3 constant-base action emits `COPY #entry -> t9` at the entry block and 
 prologue's `addu gp,gp,t9` folds to a real `$gp`. Both are doubly guarded: the pass
 gates on its architecture, and the commit swallows an unregistered-variable /
 unknown-register error, so a paint on the wrong language is a faithful no-op.
+For an ELF loaded as MIPS, the same `mips_gp` policy also seeds `t9` when a
+function is created without a symbol, including stripped and sectionless images.
+That fallback requires a complete PIC address setup prefix: LUI, an ADDU/DADDU
+using t9, and its matching ADDIU/DADDIU, optionally after stack-frame setup.
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsentry.rs` rejects unrelated
+incoming t9 uses and does not scan through control flow. A discovered interior
+block beginning with saved registers and a plain indirect call must retain the
+incoming call target instead of acquiring its own address.
+N32 sign-extends the 32-bit entry into its physical 64-bit register. Explicit
+tracked values take precedence over this entry default; raw and XML images do
+not acquire the ELF convention. N32 participates in MIPS ISA, entry, floating
+ABI and GOT dispatch despite the object reader's separate architecture tag.
 
 (kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
 (`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the
@@ -3040,7 +3076,11 @@ moves.
   hidden-return-buffer call: a *phantom* `rethidden` parameter appeared in front of
   the real ones and the body then did arithmetic on it. This arm reads
   `DW_AT_byte_size`, walks the `DW_TAG_member` children, places each at its
-  `DW_AT_data_member_location` **verbatim**, and recurses each member's
+  `DW_AT_data_member_location` **verbatim**, accepting both integer attributes
+  and DWARF 2's single `DW_OP_plus_uconst` expression. An absent or unsupported
+  struct member location does not imply offset zero. Global `DW_OP_addr`
+  locations use the DWARF reader's byte order for four- and eight-byte addresses.
+  The mapper recurses each member's
   `DW_AT_type` through the same DIE switch; bitfields come off `DW_AT_bit_size`
   with either the DWARF 4/5 `DW_AT_data_bit_offset` or the DWARF 2/3
   `byte_size` + `bit_offset` spelling, each placed in the smallest byte span that
@@ -8133,3 +8173,21 @@ The same symbol walk records integer formatting traits in
 LowerHex, UpperHex, Octal, Binary, LowerExp and UpperExp retain exact type and
 trait identity; the Display-only map is derived from these facts without another
 object parse. Unknown or conflicting aliases invalidate the shared address.
+
+### MIPS lazy-binding flow and O32 compatibility
+
+Octeon N32/N64 target selection does not intercept ELF32 O32 images, including
+little-endian images carrying Octeon machine flags. They retain generic MIPS
+selection; the existing explicit-target override still takes precedence.
+
+`decompiler/crates/kuna-analysis/src/loader/kuna_mipsstubs.rs` validates each
+MIPS lazy-binding stub against its dynamic-symbol/GOT identity, executable
+section and complete instruction sequence. The Listing models its resolver
+transfer, including the delay slot, as an opaque computed jump. It removes the
+false successor/reference into the neighbouring stub before no-return consumers
+run. The imported target's known no-return facts remain available to callers;
+an unknown resolver destination supplies no terminal evidence. Ordinary
+functions and unrecognized instruction sequences retain their original flow.
+This applies to serial, parallel and resumed Listing construction.
+The same validated resolver sites are passed to the decompiler's flow recovery,
+so the final stub cannot fall through into section padding when decompiled alone.

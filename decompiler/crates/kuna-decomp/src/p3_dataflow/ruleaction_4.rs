@@ -1255,6 +1255,12 @@ impl Rule for RuleConcatZero {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
+        if data.obank().get(op).and_then(|o| o.get_out())
+            .and_then(|out| data.vbank().get(out))
+            .is_some_and(|out| out.get_type().is_piece_structured())
+        {
+            return 0;
+        }
         let in1 = in_vn(data, op, 1);
         if !is_constant(data, in1) {
             return 0;

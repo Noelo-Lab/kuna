@@ -7865,6 +7865,15 @@ impl FuncCallSpecs {
         if param.get_type().map(|t| t.get_metatype()) == Some(type_metatype::TYPE_VOID) {
             return Ok(true);
         }
+        if let Some(out) = data.obank().get(self.op).and_then(|op| op.get_out()).and_then(|out| data.vbank().get(out)) {
+            let declared = param.get_address();
+            let recovered = out.get_addr();
+            if (declared.is_join() || recovered.is_join()) && declared != *recovered {
+                // Join addresses encode register order. Re-type only after a restart
+                // has rebuilt the call with the declared physical storage.
+                return Ok(false);
+            }
+        }
         // transferLockedOutputParam(param, newoutput): the CALL's current output
         // Varnode (op->getOut()) plus any leading INDIRECT-creation outputs that the
         // (locked) return-value param justifiably contains, or that contain the

@@ -1306,6 +1306,16 @@ impl MergeContext for Funcdata {
             }
         }));
     }
+    fn vn_is_padding_piece(&self, piece: VarnodeId, whole: VarnodeId, offset: int4) -> bool {
+        let Some(piece) = self.vbank().get(piece) else { return false; };
+        let Some(whole) = self.vbank().get(whole) else { return false; };
+        if !piece.is_constant() || whole.get_space().get_type() != spacetype::IPTR_JOIN {
+            return false;
+        }
+        let mut address = whole.get_addr() + i64::from(offset);
+        address.renormalize(piece.get_size(), self.get_arch().manage()).is_ok()
+            && address.is_constant() && address.get_offset() == piece.get_offset()
+    }
     fn gather_pieces(&self, vn: VarnodeId, base_offset: int4) -> Vec<(VarnodeId, int4)> {
         let def = match self.vbank().get(vn).and_then(|v| v.get_def()) {
             Some(d) => d,
@@ -1319,6 +1329,11 @@ impl MergeContext for Funcdata {
         // `(varnode, typeOffset)` in that exact order.
         stack
             .iter()
+            .filter(|node| {
+                !node.is_leaf() || !self.vn_is_padding_piece(
+                    node.get_varnode(self.obank()), vn, node.get_type_offset() - base_offset,
+                )
+            })
             .map(|n| (n.get_varnode(self.obank()), n.get_type_offset()))
             .collect()
     }

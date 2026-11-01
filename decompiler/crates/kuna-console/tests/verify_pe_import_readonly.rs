@@ -35,6 +35,9 @@ fn load(options: &[(&str, &str)]) -> ConsoleProgram {
                 e.explain()
             )
         });
+    // This synthetic fixture passes two arguments to its VirtualAlloc-labelled
+    // import. Test IAT identity independently of the real four-argument API.
+    prog.arch_mut().set_kuna_option("win32sigs", "off").unwrap();
     for &(option, value) in options {
         if option == "readonly" {
             prog.arch_mut().readonlypropagate = value == "on";

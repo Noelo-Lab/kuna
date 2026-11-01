@@ -1162,6 +1162,21 @@ fn concatzero_rejects_nonzero_const() {
     assert_eq!(RuleConcatZero::new().apply_op(cat, &mut fd), 0);
 }
 
+#[test]
+fn concatzero_preserves_structured_values_for_field_recovery() {
+    let mut fd = build_fd();
+    let block = mk_block(&mut fd);
+    let value = mk_vn(&mut fd, 12, 0x10);
+    let zero = fd.new_constant(4, 0);
+    let (op, output) = mk_def(&mut fd, block, OpCode::CPUI_PIECE, 16, 0x30, &[value, zero]);
+    fd.vbank_mut().get_mut(output).unwrap()
+        .update_type(Rc::new(Datatype::new(16, type_metatype::TYPE_STRUCT)));
+    assert_eq!(RuleConcatZero::new().apply_op(op, &mut fd), 0);
+    assert_eq!(fd.obank().get(op).unwrap().code(), OpCode::CPUI_PIECE);
+    assert_eq!(fd.obank().get(op).unwrap().get_in(0), Some(value));
+    assert_eq!(fd.obank().get(op).unwrap().get_in(1), Some(zero));
+}
+
 // ---------------------------------------------------------------------------
 // RuleZextCommute  (creates an earlier INT_RIGHT)
 // ---------------------------------------------------------------------------

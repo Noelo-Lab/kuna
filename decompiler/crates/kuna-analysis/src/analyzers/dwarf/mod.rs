@@ -433,13 +433,8 @@ fn snapshot_unit_with_go(
         if let Some(v) = entry.attr_value(gimli::DW_AT_byte_size) {
             snap.byte_size = v.udata_value();
         }
-        // (kuna `dwarfstructs`) The aggregate-layout attributes. gcc spells a
-        // member's offset as a plain constant; a `DW_AT_data_member_location` that
-        // is a location EXPRESSION (the C++ virtual-base form) has no udata value
-        // and reads as `None`, which skips that member rather than misplacing it.
         if let Some(v) = entry.attr_value(gimli::DW_AT_data_member_location) {
-            snap.data_member_location =
-                v.sdata_value().or_else(|| v.udata_value().map(|u| u as i64));
+            snap.data_member_location = simple_member_location(&v);
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_bit_size) {
             snap.bit_size = v.udata_value();
@@ -527,24 +522,26 @@ fn snapshot_unit_with_go(
 /// `DW_OP_fbreg` stack local is handled separately by [`simple_fbreg_location`]
 /// (subtask 3); a register/multi-op location has no static address.
 fn simple_addr_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<u64> {
-    let expr = match loc {
+    let mut expr = match loc {
         gimli::AttributeValue::Exprloc(e) => e.clone(),
         gimli::AttributeValue::Block(b) => gimli::Expression(b.clone()),
         _ => return None,
     };
-    // A DW_OP_addr expression is the opcode 0x03 followed by an address-sized
-    // operand. Parse it with a temporary 64-bit encoding (address_size only
-    // affects DW_OP_addr operand width); we only accept the single-op case.
-    let bytes = expr.0.slice();
-    if bytes.first() != Some(&0x03) {
+    let size = expr.0.slice().len().checked_sub(1)?;
+    if !matches!(size, 4 | 8) || gimli::Reader::read_u8(&mut expr.0).ok()? != gimli::DW_OP_addr.0 {
         return None;
     }
-    match bytes.len() {
-        5 => Some(u32::from_le_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]) as u64),
-        9 => Some(u64::from_le_bytes([
-            bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8],
-        ])),
-        _ => None,
+    gimli::Reader::read_address(&mut expr.0, size as u8).ok()
+}
+
+/// DWARF 2 uses a single plus-uconst expression where later versions use a
+/// constant member offset. Dynamic and malformed locations stay unknown.
+fn simple_member_location(loc: &gimli::AttributeValue<Reader<'_>>) -> Option<i64> {
+    match loc {
+        gimli::AttributeValue::Exprloc(expression) => kuna_dwarflocation::member_offset(expression.0.slice()),
+        gimli::AttributeValue::Block(block) => kuna_dwarflocation::member_offset(block.slice()),
+        gimli::AttributeValue::Sdata(value) => Some(*value),
+        _ => loc.udata_value().and_then(|u| i64::try_from(u).ok()),
     }
 }
 
@@ -1317,6 +1314,31 @@ impl AnalysisPass for DwarfPass {
 mod tests {
     use super::*;
     use kuna_decomp::dtype::TypeFactoryImpl;
+
+    #[test]
+    fn constant_locations_keep_the_dwarf_byte_order_and_member_offsets() {
+        for endian in [gimli::RunTimeEndian::Big, gimli::RunTimeEndian::Little] {
+            for size in [4, 8] {
+                let expected = if size == 4 { 0x81234567u64 } else { 0x8123456789abcdefu64 };
+                let mut bytes = vec![gimli::DW_OP_addr.0];
+                match (endian, size) {
+                    (gimli::RunTimeEndian::Big, 4) => bytes.extend((expected as u32).to_be_bytes()),
+                    (gimli::RunTimeEndian::Little, 4) => bytes.extend((expected as u32).to_le_bytes()),
+                    (gimli::RunTimeEndian::Big, _) => bytes.extend(expected.to_be_bytes()),
+                    _ => bytes.extend(expected.to_le_bytes()),
+                }
+                let data = Reader::new(&bytes, endian);
+                assert_eq!(simple_addr_location(&gimli::AttributeValue::Block(data)), Some(expected));
+                assert_eq!(simple_addr_location(&gimli::AttributeValue::Exprloc(gimli::Expression(data))), Some(expected));
+            }
+            let data = Reader::new(&[0x23, 0x08], endian);
+            assert_eq!(simple_member_location(&gimli::AttributeValue::Block(data)), Some(8));
+            assert_eq!(simple_member_location(&gimli::AttributeValue::Exprloc(gimli::Expression(data))), Some(8));
+        }
+        assert_eq!(simple_member_location(&gimli::AttributeValue::Udata(u64::MAX)), None);
+        assert_eq!(simple_member_location(&gimli::AttributeValue::Data1(128)), Some(128));
+        assert_eq!(simple_member_location(&gimli::AttributeValue::Data8(u64::MAX)), None);
+    }
 
     /// A configured [`TypeFactory`] for the mapper unit tests (the dtype-test
     /// recipe: default alignment map, max base size 8, 64-bit sizes, core-type

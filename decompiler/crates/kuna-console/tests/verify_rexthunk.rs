@@ -117,7 +117,7 @@ fn wrapper_tail_jump_still_names_the_import() {
     let _gate = lock();
     let prog = boot(None);
     let out = decompile_at(prog, WRAPPER);
-    assert!(out.contains("InitializeSListHead(0x140002100);"), "got:\n{out}");
+    assert!(out.contains("InitializeSListHead(&dat_140002100);"), "got:\n{out}");
 }
 
 /// The caller reaches the wrapper by its own entry, the import through the bare

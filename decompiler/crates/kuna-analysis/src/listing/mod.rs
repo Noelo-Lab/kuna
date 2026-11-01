@@ -424,7 +424,7 @@ impl Listing {
             .analysis_x86listingswitch
             .then(|| kuna_x86listingswitch::X86Tables::new(file, arch))
             .flatten();
-        let st = walk::walk(
+        let mut st = walk::walk(
             translate,
             arch,
             &code_space,
@@ -446,6 +446,22 @@ impl Listing {
             memo,
         );
 
+        let mut import_transfers = BTreeSet::new();
+        for (transfer, end) in crate::loader::kuna_mipsstubs::transfers(file) {
+            let Some(insn) = st.insns.get_mut(&transfer) else { continue; };
+            if insn.addr.checked_add(u64::from(insn.len)) != Some(end) { continue; }
+            insn.flow = model::FlowType {
+                kind: model::FlowKind::ComputedJump, is_jump: true,
+                is_computed: true, is_indirect: true, ..Default::default()
+            };
+            insn.fall_through = None;
+            insn.flows.clear();
+            import_transfers.insert(transfer);
+        }
+
+        if !import_transfers.is_empty() {
+            st.refs.retain(|reference| !import_transfers.contains(&reference.from));
+        }
         let refs = kuna_compactrefs::ReferenceIndex::new(st.refs);
 
         Listing {

@@ -1,6 +1,15 @@
-//! Fixed frame locations can contain unsigned constant displacements.
+//! Fixed frame and member locations can contain unsigned constant displacements.
 
 use gimli::{EndianSlice, LittleEndian, Reader};
+
+pub(super) fn member_offset(bytes: &[u8]) -> Option<i64> {
+    let mut expression = EndianSlice::new(bytes, LittleEndian);
+    if expression.read_u8().ok()? != gimli::DW_OP_plus_uconst.0 {
+        return None;
+    }
+    let offset = i64::try_from(expression.read_uleb128().ok()?).ok()?;
+    expression.is_empty().then_some(offset)
+}
 
 pub(super) fn frame_offset(bytes: &[u8]) -> Option<i64> {
     let mut expression = EndianSlice::new(bytes, LittleEndian);
@@ -21,6 +30,27 @@ pub(super) fn frame_offset(bytes: &[u8]) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn member_offsets_accept_only_a_complete_constant_displacement() {
+        for (bytes, expected) in [
+            (&[0x23, 0x00][..], Some(0)),
+            (&[0x23, 0x04][..], Some(4)),
+            (&[0x23, 0x80, 0x01][..], Some(128)),
+            (&[][..], None),
+            (&[0x23][..], None),
+            (&[0x23, 0x80][..], None),
+            (&[0x23, 0x04, 0x06][..], None),
+            (&[0x23, 0x04, 0x9f][..], None),
+            (&[0x50][..], None),
+        ] {
+            assert_eq!(member_offset(bytes), expected, "{bytes:x?}");
+        }
+        let mut overflow = vec![0x23];
+        overflow.extend([0xff; 9]);
+        overflow.push(0x01);
+        assert_eq!(member_offset(&overflow), None);
+    }
 
     #[test]
     fn frame_relative_constant_displacements_keep_the_exact_location() {

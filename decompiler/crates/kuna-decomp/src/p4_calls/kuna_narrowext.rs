@@ -115,7 +115,13 @@ pub fn rules(arch: &Architecture) -> Rules {
 fn mips_documented(id: &str) -> bool {
     let mut parts = id.split(':').skip(3);
     let variant = parts.next().unwrap_or("");
-    match parts.next().unwrap_or("") {
+    let model = parts.next().unwrap_or("");
+    if matches!(variant.strip_suffix("-32addr").unwrap_or(variant),
+                "octeon" | "octeonplus" | "octeon2" | "octeon3") {
+        return matches!(model, "default" | "hard")
+            || (variant.ends_with("-32addr") && model == "n32");
+    }
+    match model {
         "o32" | "n32" => true,
         "default" => !variant.contains("32addr") && !variant.contains("32R6addr"),
         _ => false,
