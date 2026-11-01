@@ -1,0 +1,15 @@
+{
+  "added_conversion_accepted": true,
+  "mutations_rejected": [
+    "arithmetic",
+    "precedence",
+    "comment",
+    "declaration",
+    "removed_existing_cast",
+    "changed_existing_cast",
+    "boolean_true_value",
+    "boolean_condition",
+    "boolean_false_value"
+  ],
+  "canonical_boolean_conversion_accepted": true
+}

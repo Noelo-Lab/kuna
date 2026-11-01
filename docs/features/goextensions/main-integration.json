@@ -1,0 +1,51 @@
+{
+  "from": "34bfd388764c6291089183ef7d9c305c18c68826",
+  "to": "76905a15ee74fbd97b298ee6fc0a33082156d8bd",
+  "all_changed_hashes_mtimes_and_patch_preserved": true,
+  "files": {
+    "decompiler/crates/kuna-console/tests/verify_goextensions.rs": {
+      "sha256": "332ea51da1e3565bbef07ad3c7c06f4aaea638ff4dc50d9dc86f48302e126028",
+      "mtime_ns": 1793544267322360796
+    },
+    "docs/features/goextensions/analysis.md": {
+      "sha256": "101cfae65f8dea3c218db67611380d822ea3e87dc100ef7719fff0177705afb6",
+      "mtime_ns": 1793543448124483084
+    },
+    "docs/features/goextensions/plan.md": {
+      "sha256": "8cfdd7e95e4da8d1429b7c7711130c8e7f1d21861837edffd0f377aeccea47f1",
+      "mtime_ns": 1793543448124483084
+    },
+    "docs/features/goextensions/record.json": {
+      "sha256": "e615bee5485bc140733a077f0c6cf0ea56a3d5e59cb35ce57b2caefeca8f70d3",
+      "mtime_ns": 1793543448124483084
+    },
+    "tests/fixtures/go-extensions/extensions.go": {
+      "sha256": "c1043ed22badbc53b82c904c3a275cbeea5145b760990da1c7a7654d6edcb0eb",
+      "mtime_ns": 1793544267426359316
+    },
+    "tests/stages/ghangr-go-extensions.xml": {
+      "sha256": "17b3a48a7471a9f2921c320725cbc8d3a5f45e41c29d6affca188dd1f4431d53",
+      "mtime_ns": 1793544267322360796
+    },
+    "decompiler/crates/kuna-base/src/xml.rs": {
+      "sha256": "90afe7b5112577829fb04a0d2361fd07e94d0e43bdfe0214d7d12aa276179d29",
+      "mtime_ns": 1793543448126483049
+    },
+    "decompiler/crates/kuna-console/tests/integration.rs": {
+      "sha256": "47daa3d459366c1073b05fb201a8906a33fe955564cf8f819ea6a875ac7ceb7d",
+      "mtime_ns": 1793543482972875015
+    },
+    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs": {
+      "sha256": "2c56ac3a21cb70f2313ef37731f4fc4af4ce2341c6c862b4250bd26dcec5f58c",
+      "mtime_ns": 1793543448020484898
+    },
+    "docs/baseline-stages.json": {
+      "sha256": "86dafd7faf2a66fcf4bfe4a9e2655f47f1f8d672fa6d6b71e4b0c80e7ab9abf1",
+      "mtime_ns": 1793544451430678004
+    },
+    "docs/spec/09-emission.md": {
+      "sha256": "067682b17b5bc20cbd67f867bdfbd523aa22aee347075f2754233d1b31ceff7c",
+      "mtime_ns": 1793544267329360696
+    }
+  }
+}

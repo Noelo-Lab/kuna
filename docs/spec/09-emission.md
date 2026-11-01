@@ -3252,6 +3252,14 @@ existing local, so an earlier call that produced the array is neither moved
 nor duplicated. This is Go output spelling of the recovered register carrier;
 it does not infer a source multi-result signature.
 
+Go integer extensions retain their explicit widening conversion before the
+consuming expression. C's implicit-promotion rule cannot hide a `SEXT` or
+`ZEXT` in Go. A narrow signed interpretation is kept inside the widening cast,
+so scaling a signed byte happens at the recovered wider width rather than
+overflowing the byte first.
+Widening a boolean uses the Go conversion form that evaluates its operand once
+and returns integer one or zero; a boolean is never used directly in arithmetic.
+
 The token table puts shifts and bitwise AND with multiplication, OR and XOR
 with addition, and all comparisons below those groups. Boolean XOR is `!=`.
 Equal-precedence right nesting retains parentheses unless the same associative

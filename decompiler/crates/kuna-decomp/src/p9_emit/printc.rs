@@ -7896,6 +7896,9 @@ impl PrintC {
         op: OpId,
         read_op: Option<OpId>,
     ) -> bool {
+        if self.out_lang == crate::kuna_lang::OutLang::Go {
+            return false;
+        }
         let ctx = PrintCastContext::new(fd);
         let op_ref = ctx.op_ref(op);
         let read_ref = read_op.map(|r| ctx.op_ref(r));
