@@ -1,0 +1,41 @@
+[
+  {
+    "name": "main",
+    "address": "0x401126",
+    "hunks": [
+      {
+        "header": "@@ -3,6 +3,6 @@",
+        "classification": "recover unconstrained argument/return dataflow and qualified function identity from minimal DWARF",
+        "control": "source fixture plus full-DWARF control"
+      }
+    ],
+    "before_error": null,
+    "after_error": null
+  },
+  {
+    "name": "write",
+    "address": "0x401170",
+    "hunks": [
+      {
+        "header": "@@ -1,5 +1,6 @@",
+        "classification": "recover unconstrained argument/return dataflow and qualified function identity from minimal DWARF",
+        "control": "source fixture plus full-DWARF control"
+      }
+    ],
+    "before_error": null,
+    "after_error": null
+  },
+  {
+    "name": "call_write",
+    "address": "0x401180",
+    "hunks": [
+      {
+        "header": "@@ -1,5 +1,5 @@",
+        "classification": "recover unconstrained argument/return dataflow and qualified function identity from minimal DWARF",
+        "control": "source fixture plus full-DWARF control"
+      }
+    ],
+    "before_error": null,
+    "after_error": null
+  }
+]
