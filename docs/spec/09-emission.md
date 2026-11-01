@@ -4157,6 +4157,19 @@ member type, since the declaration representative covers only the field. A
 scalar local or global keeps the type its declaration prints, which can differ
 from its Symbol's scalar type (`kuna_pointerstorecast.rs (target)`).
 
+### Rust machine-operation names
+
+A functional `CALLOTHER` names the architecture's machine operation. When Rust
+output encounters a strict or reserved keyword such as x86 `in`, AVR `break`, or
+MIPS `yield`, `kuna_rustuserop.rs` supplies the raw-identifier prefix `r#`. This
+preserves the operation's identifier and arguments while preventing Rust from
+parsing it as a control-flow construct or rejecting it as a keyword. Ordinary
+names and other output languages keep their spelling. The keyword set includes
+edition-specific reserved words; weak keywords remain ordinary identifiers.
+Rust forbids raw spellings of `_`, `crate`, `self`, `Self`, and `super`, so those
+are excluded. This correction applies only to functional machine-operation
+calls, not to unrelated type, variable, namespace, or symbol naming.
+
 ### Literal Rust print macros
 
 `rustfmtliteral` (default on) uses

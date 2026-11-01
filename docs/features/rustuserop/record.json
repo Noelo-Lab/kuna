@@ -1,0 +1,242 @@
+{
+  "state": "validated",
+  "kind": "strict Rust keyword machine-operation correction",
+  "selection": "outlang rust",
+  "baseline_commit": "1689dc9e01c23d50c96a15b4ff2d4cb4a08f895c",
+  "kuna_sha256": "434f27d4342211af65dd534e01a409ab1511354a1a3da74beea5cac5ab8d6ae6",
+  "breadth": {
+    "images": 18,
+    "distinct_functions": 25339,
+    "records": 50733,
+    "changed_rust_records": 8,
+    "hunks": 15,
+    "raw_keyword_calls": {
+      "in": 15
+    },
+    "unchanged_c_go_records": 41461,
+    "go_parsed": 16122
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10063,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "test_threads": 8,
+    "original_assertions": 675,
+    "stage_assertions": 3494,
+    "regression_before": "1/2",
+    "regression_after": "2/2",
+    "tools": "114 tests; 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "639 XML files, 363 options"
+  },
+  "execution": {
+    "scope": "Unedited emitted bodies executed against recording Rust stubs, not hardware I/O or native AVR/MIPS execution",
+    "results": [
+      {
+        "side": "before",
+        "compiler": "1.90.0",
+        "edition": "2015",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.90.0",
+        "edition": "2018",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.90.0",
+        "edition": "2021",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.90.0",
+        "edition": "2024",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.93.1",
+        "edition": "2015",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.93.1",
+        "edition": "2018",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.93.1",
+        "edition": "2021",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.93.1",
+        "edition": "2024",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.99.1",
+        "edition": "2015",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.99.1",
+        "edition": "2018",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.99.1",
+        "edition": "2021",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "before",
+        "compiler": "1.99.1",
+        "edition": "2024",
+        "compiles": false,
+        "unedited_bodies": true,
+        "calls_checked": 0
+      },
+      {
+        "side": "after",
+        "compiler": "1.90.0",
+        "edition": "2015",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.90.0",
+        "edition": "2018",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.90.0",
+        "edition": "2021",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.90.0",
+        "edition": "2024",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.93.1",
+        "edition": "2015",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.93.1",
+        "edition": "2018",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.93.1",
+        "edition": "2021",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.93.1",
+        "edition": "2024",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.99.1",
+        "edition": "2015",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.99.1",
+        "edition": "2018",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.99.1",
+        "edition": "2021",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      },
+      {
+        "side": "after",
+        "compiler": "1.99.1",
+        "edition": "2024",
+        "compiles": true,
+        "unedited_bodies": true,
+        "calls_checked": 42
+      }
+    ]
+  },
+  "timing": {
+    "pairs": 31,
+    "warmups_per_arm": 3,
+    "budget_pct": 5,
+    "max_cpu_delta_pct": 0.5609217272156686,
+    "max_wall_delta_pct": 0.5603305539554793,
+    "passed": true
+  }
+}

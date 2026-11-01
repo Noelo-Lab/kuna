@@ -1,0 +1,4 @@
+<binaryimage arch="MIPS:BE:32:default:default">
+<bytechunk space="ram" offset="0x100000" readonly="true">7c80000903e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="cooperate"/>
+</binaryimage>

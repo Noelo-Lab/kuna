@@ -1,0 +1,21 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">e4310fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="read_port"/>
+<bytechunk space="ram" offset="0x100020" readonly="true">89faec0fb6c0c3</bytechunk>
+<symbol space="ram" offset="0x100020" name="read_variable"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">89fa89f0eec3</bytechunk>
+<symbol space="ram" offset="0x100040" name="write_port"/>
+</binaryimage>
+<script>
+<com>option outlang rust</com>
+<com>parse line extern unsigned int read_port(void);</com>
+<com>parse line extern unsigned int read_variable(unsigned int port);</com>
+<com>parse line extern void write_port(unsigned int port, unsigned char data);</com>
+<com>lo fu read_port</com><com>decompile</com><com>print C</com>
+<com>lo fu read_variable</com><com>decompile</com><com>print C</com>
+<com>lo fu write_port</com><com>decompile</com><com>print C</com>
+</script>
+<stringmatch name="Rust keyword machine operations keep their callee identity" min="2" max="2">r#in\(</stringmatch>
+<stringmatch name="Ordinary machine operation names retain their spelling" min="1" max="1">  out\(port as i16,data\);</stringmatch>
+</decompilertest>

@@ -1,0 +1,197 @@
+{
+  "scope": "Unedited emitted bodies executed against recording Rust stubs, not hardware I/O or native AVR/MIPS execution",
+  "results": [
+    {
+      "side": "before",
+      "compiler": "1.90.0",
+      "edition": "2015",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.90.0",
+      "edition": "2018",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.90.0",
+      "edition": "2021",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.90.0",
+      "edition": "2024",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.93.1",
+      "edition": "2015",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.93.1",
+      "edition": "2018",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.93.1",
+      "edition": "2021",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.93.1",
+      "edition": "2024",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.99.1",
+      "edition": "2015",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.99.1",
+      "edition": "2018",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.99.1",
+      "edition": "2021",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "before",
+      "compiler": "1.99.1",
+      "edition": "2024",
+      "compiles": false,
+      "unedited_bodies": true,
+      "calls_checked": 0
+    },
+    {
+      "side": "after",
+      "compiler": "1.90.0",
+      "edition": "2015",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.90.0",
+      "edition": "2018",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.90.0",
+      "edition": "2021",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.90.0",
+      "edition": "2024",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.93.1",
+      "edition": "2015",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.93.1",
+      "edition": "2018",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.93.1",
+      "edition": "2021",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.93.1",
+      "edition": "2024",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.99.1",
+      "edition": "2015",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.99.1",
+      "edition": "2018",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.99.1",
+      "edition": "2021",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    },
+    {
+      "side": "after",
+      "compiler": "1.99.1",
+      "edition": "2024",
+      "compiles": true,
+      "unedited_bodies": true,
+      "calls_checked": 42
+    }
+  ]
+}

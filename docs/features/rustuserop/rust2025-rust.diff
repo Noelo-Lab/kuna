@@ -1,0 +1,63 @@
+--- before/sub_a4da0
++++ after/sub_a4da0
+@@ -99,7 +99,7 @@
+           return v4_1;
+         }
+         0xe => {
+-          in(0xcc);
++          r#in(0xcc);
+           v2 = swi(3) as *mut *const (); // int3-pad x14
+           return (*v2)();
+         }
+
+--- before/sub_fcc20
++++ after/sub_fcc20
+@@ -80,7 +80,7 @@
+         return (*((v1 as i64 + v9) as *mut *const ()))() as *mut u8; // jump-as-call
+       }
+       5 => {
+-        in(v8 as i16);
++        r#in(v8 as i16);
+         /* kuna: unstructured goto to label_fcde3 */ panic!("kuna: unstructured goto to label_fcde3");
+       }
+       6 | 7 => {
+
+--- before/sub_149290
++++ after/sub_149290
+@@ -1069,7 +1069,7 @@
+                       return v21;
+                     }
+ // label_14f503:
+-                    return ((in(0xff) as u32) as u64) as *mut u32;
++                    return ((r#in(0xff) as u32) as u64) as *mut u32;
+                   }
+                   0x6c => {
+                     /* kuna: unstructured goto to label_14f50f */ panic!("kuna: unstructured goto to label_14f50f");
+@@ -1968,7 +1968,7 @@
+               }
+               0x14f4f0 => {
+                 loop {
+-                  in(v32);
++                  r#in(v32);
+                   if !(!v75 && !v76) {
+                     break;
+                   }
+@@ -2620,7 +2620,7 @@
+             /* kuna: unstructured goto to label_14f4bd */ panic!("kuna: unstructured goto to label_14f4bd");
+           }
+           0x9f => {
+-            v16 = in(v32);
++            v16 = r#in(v32);
+             out(v32,v16);
+             v1 = (CONCAT71(v68,v16) + -0x73) as *mut i32;
+             *v1 = *v1 + -1;
+@@ -2845,7 +2845,7 @@
+               }
+               *(&mut v47[-0x30] as *mut *mut u8) = &mut v47[-8];
+               a2 = &mut v60[1];
+-              *v60 = in(v32);
++              *v60 = r#in(v32);
+               v28 = (v21 as i64 + -1) as *mut u32;
+               v46 = &mut v47[-0x8d7c];
+               v43 = v47;
+

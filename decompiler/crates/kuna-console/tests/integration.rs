@@ -487,3 +487,5 @@ mod verify_godwarfsig;
 
 #[path = "verify_rustextensions.rs"]
 mod verify_rustextensions;
+#[path = "verify_rustuserop.rs"]
+mod verify_rustuserop;

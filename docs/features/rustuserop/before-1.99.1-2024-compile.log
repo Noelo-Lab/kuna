@@ -1,0 +1,55 @@
+error: expected expression, found keyword `in`
+  --> /tmp/kuna-rust-userop/before-execution.rs:67:11
+   |
+67 |   return (in(0x31) as u8) as u32;
+   |           ^^ expected expression
+
+error: expected expression, found keyword `in`
+  --> /tmp/kuna-rust-userop/before-execution.rs:72:11
+   |
+72 |   return (in(port as i16) as u8) as u32;
+   |           ^^ expected expression
+
+error[E0658]: yield syntax is experimental
+  --> /tmp/kuna-rust-userop/before-execution.rs:90:3
+   |
+90 |   yield(value);
+   |   ^^^^^^^^^^^^
+   |
+   = note: see issue #43122 <https://github.com/rust-lang/rust/issues/43122> for more information
+
+error[E0658]: yield syntax is experimental
+  --> /tmp/kuna-rust-userop/before-execution.rs:90:3
+   |
+90 |   yield(value);
+   |   ^^^^^^^^^^^^
+   |
+   = note: see issue #43122 <https://github.com/rust-lang/rust/issues/43122> for more information
+
+error: `yield` can only be used in `#[coroutine]` closures, or `gen` blocks
+  --> /tmp/kuna-rust-userop/before-execution.rs:90:3
+   |
+90 |   yield(value);
+   |   ^^^^^^^^^^^^
+   |
+help: use `#[coroutine]` to make this closure a coroutine
+   |
+88 | #[coroutine] unsafe fn cooperate(mut value: u32)
+   | ++++++++++++
+
+error[E0268]: `break` outside of a loop or labeled block
+  --> /tmp/kuna-rust-userop/before-execution.rs:84:3
+   |
+84 |   break();
+   |   ^^^^^^^ cannot `break` outside of a loop or labeled block
+
+error[E0627]: yield expression outside of coroutine literal
+  --> /tmp/kuna-rust-userop/before-execution.rs:90:3
+   |
+90 |   yield(value);
+   |   ^^^^^^^^^^^^
+
+error: aborting due to 7 previous errors
+
+Some errors have detailed explanations: E0268, E0627, E0658.
+For more information about an error, try `rustc --explain E0268`.

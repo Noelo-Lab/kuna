@@ -1,0 +1,9 @@
+{
+  "previous_head": "50cd8083f9de7a78dd3224ad55408f96e0d18833",
+  "validated_main": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "new_parent": "1689dc9e01c23d50c96a15b4ff2d4cb4a08f895c",
+  "compared_files": 7712,
+  "all_files_outside_parent_evidence_byte_identical": true,
+  "feature_patch_identical": true,
+  "parent_evidence_only_new_differences": true
+}
