@@ -1,0 +1,400 @@
+{
+  "fixture": "native-rust",
+  "sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 550,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 550,
+      "changed": [
+        {
+          "address": "0x1fa40",
+          "name": "std::io::Write::write_fmt",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                },
+                "before": {
+                  "arguments": [
+                    "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                    "0xad",
+                    "0x542d8"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 12,
+                  "source_line_start": 12
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                  "address": "0x7c8f",
+                  "call_instruction": "0x1fa98",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -9,7 +9,7 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x1fb60",
+          "name": "std::io::Write::write_fmt",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                },
+                "before": {
+                  "arguments": [
+                    "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                    "0xad",
+                    "0x542d8"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 12,
+                  "source_line_start": 12
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                  "address": "0x7c8f",
+                  "call_instruction": "0x1fbb8",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -9,7 +9,7 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x1fc80",
+          "name": "std::io::Write::write_fmt",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                },
+                "before": {
+                  "arguments": [
+                    "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                    "0xad",
+                    "0x542d8"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 12,
+                  "source_line_start": 12
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                  "address": "0x7c8f",
+                  "call_instruction": "0x1fcd8",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -9,7 +9,7 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x25dfb",
+          "name": "std::alloc::default_alloc_error_hook",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    {
+                      "pointer": "v55",
+                      "primitive": "u64"
+                    }
+                  ],
+                  "kind": "macro",
+                  "literal": "memory allocation of {} bytes failed"
+                },
+                "before": {
+                  "arguments": [
+                    "0x5b41",
+                    "& mut v55",
+                    "0x54870"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 218,
+                  "source_line_start": 218
+                },
+                "message_bytes_independently_verified": false
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x25f64"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v55",
+                "added_call_addresses": [
+                  "0x25f84"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -215,7 +215,7 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x28820",
+          "name": "core::ptr::drop_in_place",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "cannot panic during the backtrace function"
+                },
+                "before": {
+                  "arguments": [
+                    "_cannot_panic_during_the_backtrace_function_",
+                    "0x55",
+                    "0x54e48"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 8,
+                  "source_line_start": 8
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_cannot_panic_during_the_backtrace_function_",
+                  "address": "0x89ab",
+                  "call_instruction": "0x2883e",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -5,5 +5,5 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x3f3e0",
+          "name": "&std::io::stdio::Stdout::write_fmt",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "a formatting trait implementation returned an error when the underlying stream did not"
+                },
+                "before": {
+                  "arguments": [
+                    "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                    "0xad",
+                    "0x542d8"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 78,
+                  "source_line_start": 78
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_a_formatting_trait_implementation_returned_an_error_when_the_underlying_stream_did_notfailed_to_write_whole_bufferinternal_error__entered_unreachable_code_",
+                  "address": "0x7c8f",
+                  "call_instruction": "0x3f58d",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -75,7 +75,7 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x4e540",
+          "name": "alloc::raw_vec::capacity_overflow",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "capacity overflow"
+                },
+                "before": {
+                  "arguments": [
+                    "_capacity_overflow_",
+                    "0x23",
+                    "0x55bc8"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 5,
+                  "source_line_start": 5
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_capacity_overflow_",
+                  "address": "0x9298",
+                  "call_instruction": "0x4e557",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -2,5 +2,5 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x51dc0",
+          "name": "core::slice::sort::shared::smallsort::panic_on_ord_violation",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "user-provided comparison function does not correctly implement a total order"
+                },
+                "before": {
+                  "arguments": [
+                    "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                    "0x99",
+                    "0x55cd0"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 5,
+                  "source_line_start": 5
+                },
+                "symbolic_template_pointer": {
+                  "spelling": "_user_provided_comparison_function_does_not_correctly_implement_a_total_ordercalled__Option :: unwrap____on_a__None__value_",
+                  "address": "0x9951",
+                  "call_instruction": "0x51dd7",
+                  "binding": "unique IR call with matching descriptor and caller-location operands"
+                },
+                "message_bytes_independently_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -2,5 +2,5 @@",
+              "classification": "only verified panic runtime calls become panic macros; every other AST node and comment unchanged"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    }
+  ]
+}

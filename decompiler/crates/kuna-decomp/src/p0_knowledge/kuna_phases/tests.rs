@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_363() {
-    assert_eq!(kuna_num_settables(), 363);
-    assert_eq!(SETTABLE_TABLE.len(), 363);
+fn settable_count_is_364() {
+    assert_eq!(kuna_num_settables(), 364);
+    assert_eq!(SETTABLE_TABLE.len(), 364);
 }
 
 #[test]
-fn tier_counts_are_127_core_143_transform_93_analysis() {
+fn tier_counts_are_127_core_144_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_143_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 143, 93));
+    assert_eq!((core, transform, analysis), (127, 144, 93));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_165() {
+fn option_values_live_value_present_for_170() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -932,7 +932,7 @@ fn option_values_live_value_present_for_165() {
     // 160 -> 161: +1 for `haltloopguard` (halt_loop_guard).
     // 161 -> 162: +1 for `truncptrflow` (trunc_ptr_flow).
     // 168 -> 169: +1 for `switchrunon` (switch_run_on).
-    assert_eq!(with_live, 169);
+    assert_eq!(with_live, 170);
 }
 
 #[test]
@@ -1156,7 +1156,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 362);
+    assert_eq!(json.matches("},\n").count(), 363);
 }
 
 #[test]

@@ -1,0 +1,28 @@
+{
+  "changed_functions": 29,
+  "recovered_calls": 29,
+  "literal_messages_verified_from_image": 19,
+  "primitive_calls": 10,
+  "execution_compilers": [
+    "1.90.0",
+    "1.93.1",
+    "1.99.1"
+  ],
+  "literal_payloads_compared_to_image_bytes": true,
+  "primitive_execution_uses_explicit_test_values": true,
+  "type_diagnostics": {
+    "before": {
+      "functions_with_diagnostics": 10,
+      "diagnostics": 335,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 10,
+      "diagnostics": 335,
+      "compiles": 14
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "new_diagnostic_multisets": []
+}

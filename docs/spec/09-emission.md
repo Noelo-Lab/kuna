@@ -4317,3 +4317,40 @@ there is no println-style newline removal. Descriptor setup, surrounding IR,
 existing returns and function signatures remain intact. The option does not
 recover generic wrappers, indirect calls, call-return values, unsupported
 formatters or other layouts, and it does not change C output.
+
+### Rust panic messages
+
+`rustfmtpanic` (default on), in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtpanic.rs`, renders verified
+`core::panicking::panic_fmt` calls as `panic!`. The source language must be Rust,
+the output must be Rust, and the compiler record must identify stable Rust 1.93.0
+or 1.93.1 on a little-endian 64-bit data space. A direct call must have exactly
+three runtime arguments and no output. The name is either fully qualified or
+resolves to the exact function entry in the complete `core::panicking` scope.
+The call prototype must be non-returning, or its basic block must end in the
+artificial no-return halt attached to the same machine instruction. This accepts
+the existing flow proof when its fact is stored separately from the call prototype.
+
+The third argument is the hidden `track_caller` location. A bounded pure
+constant-expression walk must recover a nonnull address, and all 24 bytes of the
+location record must be mapped and nonvolatile. Its contents are not interpreted:
+normal PIE images place this record in relocation-backed data, and its original
+file and line are not part of the recovered message. Dynamic caller locations
+remain explicit. The macro displays a source-level panic; recompiling it naturally
+uses the recovered source's location rather than the original binary's file and
+line. No original-location or backtrace equivalence is claimed.
+
+The first two arguments use the existing verified `fmt::Arguments` layout.
+Literal-only messages share the bounded readonly UTF-8 byte reader with
+`rustfmtliteral`, but do not depend on that option. Braces are doubled and controls
+are escaped; every terminal newline is retained. Primitive integer messages reuse
+`rustfmtargs`' same-call descriptor cells, aligned local value pointers and exact
+formatter identities. Static format specifications additionally require
+`rustfmtflags`. Disabling either prerequisite retains calls requiring it; literal
+panics still qualify when both are off. Unsupported callbacks, templates, versions,
+call shapes or location records retain the runtime call.
+
+The change is confined to rendering the call expression. All descriptor setup,
+IR, declarations, existing returns and no-return control flow remain intact.
+It does not recover generic arguments, other panic entry points, indirect calls
+or earlier formatting layouts, and it does not change C or Go output.

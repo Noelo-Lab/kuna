@@ -1,0 +1,22 @@
+{
+  "fixture": "rust2025",
+  "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 7763,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 7763,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    }
+  ]
+}

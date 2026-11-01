@@ -8788,6 +8788,28 @@ tier = "transform"
 symptoms = "Rust integer String construction retains format_inner with an output pointer|Rust format! results remain runtime calls despite recovered templates"
 
 [[settable]]
+option = "rustfmtpanic"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "panic-format"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-rust-panic-format"
+summary = "Recover panic! from exact core::panicking::panic_fmt calls in stable Rust 1.93.0/1.93.1 little-endian 64-bit images. Require a non-returning direct call with a constant mapped nonvolatile caller-location address and verified literal or primitive integer formatting arguments. Preserve message bytes including trailing newlines, descriptor setup and surrounding IR. Primitive arguments require rustfmtargs and static specifications require rustfmtflags. Other versions, callbacks, dynamic locations and ambiguous call shapes remain explicit. C and Go output are unchanged."
+use_when = "On by default to expose verified Rust panic messages and integer arguments. Turn off to retain the runtime panic_fmt call. Literal panic messages are independent of rustfmtliteral and rustfmtargs; integer arguments use rustfmtargs and rustfmtflags checks. Recompiled panic! uses the recovered source location, not the original binary's file and line."
+example = "option rustfmtpanic off"
+source_decompiler = "angr"
+inspiration = "angr test_rust_format_macro_simplifier.py::test_select_macro_chooses_panic_for_panic_fmt and Rust 1.93 panic_fmt track_caller and fmt::Arguments layout"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Rust panic messages remain core::panicking::panic_fmt calls with opaque pointers|Rust primitive panic arguments retain runtime formatter descriptors"
+live_field = "rust_fmt_panic"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "outlang"
 values = "c|rust|go"
 default = "c"

@@ -1,0 +1,45 @@
+   Compiling kuna-base v0.1.0 (/home/mahaloz/kwt/angr-rust-panic/decompiler/crates/kuna-base)
+   Compiling kuna-console v0.1.0 (/home/mahaloz/kwt/angr-rust-panic/decompiler/crates/kuna-console)
+   Compiling kuna-num v0.1.0 (/home/mahaloz/kwt/angr-rust-panic/decompiler/crates/kuna-num)
+   Compiling kuna-sleigh v0.1.0 (/home/mahaloz/kwt/angr-rust-panic/decompiler/crates/kuna-sleigh)
+warning: unused import: `kuna_base::types::Wrap`
+  --> crates/kuna-sleigh/src/kuna_sharedbytes.rs:20:5
+   |
+20 | use kuna_base::types::Wrap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+   Compiling kuna-decomp v0.1.0 (/home/mahaloz/kwt/angr-rust-panic/decompiler/crates/kuna-decomp)
+warning: `kuna-sleigh` (lib) generated 1 warning
+warning: unused import: `crate::dtype::TypeFactory`
+  --> crates/kuna-decomp/src/p5_types/kuna_fatstr.rs:56:5
+   |
+56 | use crate::dtype::TypeFactory;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+   Compiling kuna-analysis v0.1.0 (/home/mahaloz/kwt/angr-rust-panic/decompiler/crates/kuna-analysis)
+warning: unused import: `flags as tflags`
+  --> crates/kuna-analysis/src/analyzers/gotypes/mod.rs:73:26
+   |
+73 | use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
+   |                          ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-analysis` (lib) generated 1 warning (run `cargo fix --lib -p kuna-analysis` to apply 1 suggestion)
+warning: `kuna-decomp` (lib) generated 1 warning
+    Finished `test` profile [optimized] target(s) in 1m 28s
+     Running tests/integration.rs (target/debug/deps/integration-cea2f3579dcf7c98)
+
+running 5 tests
+test verify_rustfmtpanic::recovered_panics_match_native_payloads ... ok
+test verify_rustfmtpanic::panic_recovery_requires_no_return_and_exact_argument_count ... ok
+test verify_rustfmtpanic::native_panic_macros_preserve_newlines_and_integer_formats ... ok
+test verify_rustfmtpanic::language_version_and_formatting_options_bound_recovery ... ok
+test verify_rustfmtpanic::unsupported_templates_locations_and_names_remain_runtime_calls ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 708 filtered out; finished in 3.90s
+

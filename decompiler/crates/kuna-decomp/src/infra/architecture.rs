@@ -1464,6 +1464,8 @@ pub struct Architecture {
     pub rust_fmt_flags: bool,
     /// Render verified Rust format_inner initialization as a String-producing macro.
     pub rust_fmt_result: bool,
+    /// Render verified Rust panic formatting as a panic macro.
+    pub rust_fmt_panic: bool,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -3236,6 +3238,7 @@ impl Architecture {
             rust_fmt_args: true,
             rust_fmt_flags: true,
             rust_fmt_result: true,
+            rust_fmt_panic: true,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -3655,6 +3658,7 @@ impl Architecture {
         self.rust_fmt_args = true;
         self.rust_fmt_flags = true;
         self.rust_fmt_result = true;
+        self.rust_fmt_panic = true;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)

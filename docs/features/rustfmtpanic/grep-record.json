@@ -1,0 +1,22 @@
+{
+  "fixture": "grep",
+  "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 449,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 449,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    }
+  ]
+}
