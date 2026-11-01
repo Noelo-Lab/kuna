@@ -1404,6 +1404,24 @@ on stderr while the `Compiling <spec>:` line that attributes them is on stdout,
 and capturing both would print every warning of a run ahead of every progress
 line (DIV-89).
 
+(kuna) **The parity command's selection.** `kuna test` cannot learn from
+`decomp_test_dbg` which datatest *files* it ran. The harness keeps a requested
+name only when it is the file name of an `*.xml` directly in the corpus
+directory, drops every other name silently, and reports the tests *inside*
+each file by their own names. So
+`decompiler/crates/kuna-cli/src/test/selection.rs` resolves the file-level
+selection itself, by the harness's rule, before starting it: the corpus files
+matched, and the requested names that match none. Unit tests are named in the
+harness's own stream, so a requested unit test that never reported is missing
+once the run reaches its footer. A missing name, an empty corpus or an
+unreadable corpus directory is a selection error. Each error is named on
+stderr and in the `--json` `selection` object, the existing tests still run
+and are reported, the run exits 2, and `--save-baseline` refuses to record the
+partial result. Before this, each of those cases scored `0/0` or a subset and
+exited 0, a false green to anything reading only the status or `data_footer`.
+The empty unit registry stays a complete selection, because it is empty by
+design and no name was asked of it. The saved baseline record is unchanged.
+
 Script construction borrows the parsed single-function request. The subprocess
 driver supplies its resolved binary path, effective address mode, output paths
 and per-attempt defaults separately; retries and transcript diagnostics remain

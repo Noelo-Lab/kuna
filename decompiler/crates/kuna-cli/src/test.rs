@@ -5,7 +5,9 @@
 //! the baseline passing-set diff (scoped to the modes run) and computes the exit
 //! code exactly as the Python (number of failures, clamped at 255; forced
 //! non-zero on a baseline regression or a file-level datatest error;
-//! signal-killed harness -> 128+signal).
+//! signal-killed harness -> 128+signal).  A selection that cannot run as asked
+//! (a `--name` that matches nothing, an empty or unreadable datatest corpus)
+//! is reported in the `selection` object and exits 2.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -19,6 +21,7 @@ use crate::jsonfmt::{dumps_indent2_sorted, Json};
 use crate::paths;
 
 mod baseline;
+mod selection;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -57,6 +60,8 @@ struct RunResult {
     returncode: i32,
     unit: UnitResult,
     data: DataResult,
+    data_selection: Option<selection::Data>,
+    unit_selection: Option<selection::Unit>,
 }
 
 // --- parsing -----------------------------------------------------------------
@@ -265,6 +270,20 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
         "-path".into(),
         dtdir.to_string_lossy().to_string(),
     ];
+    let data_names: Vec<String> = match args.mode {
+        Mode::Datatests => args
+            .names
+            .iter()
+            .map(|n| {
+                if n.ends_with(".xml") {
+                    n.clone()
+                } else {
+                    format!("{n}.xml")
+                }
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
 
     match args.mode {
         Mode::Unittests => {
@@ -273,24 +292,17 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
         }
         Mode::Datatests => {
             argv.push("datatests".into());
-            for n in &args.names {
-                let n2 = if n.ends_with(".xml") {
-                    n.clone()
-                } else {
-                    format!("{n}.xml")
-                };
-                if !dtdir.join(&n2).exists() {
-                    // Python `%r` on a str renders single-quoted; match it byte-for-byte.
-                    eprintln!(
-                        "warning: datatest '{n2}' not found in {} (will be skipped)",
-                        dtdir.display()
-                    );
-                }
-                argv.push(n2);
-            }
+            argv.extend(data_names.iter().cloned());
         }
         Mode::All => {}
     }
+    let data_selection = (args.mode != Mode::Unittests).then(|| {
+        let sel = selection::data(&dtdir, &data_names);
+        for e in sel.errors() {
+            eprintln!("error: {e}");
+        }
+        sel
+    });
 
     let output = Command::new(&bin_path)
         .args(&argv)
@@ -315,7 +327,38 @@ fn run(args: &TestArgs) -> Result<RunResult, String> {
     let returncode = exit_code_of(&output);
     let unit = parse_unit(&stderr);
     let data = parse_data(&String::from_utf8_lossy(&output.stdout));
-    Ok(RunResult { returncode, unit, data })
+    let unit_selection = (args.mode != Mode::Datatests).then(|| {
+        let ran: Vec<String> = unit
+            .passing
+            .iter()
+            .cloned()
+            .chain(unit.failing.iter().map(|(n, _)| n.clone()))
+            .collect();
+        let requested: &[String] = match args.mode {
+            Mode::Unittests => &args.names,
+            _ => &[],
+        };
+        let sel = selection::unit(requested, &ran, unit.footer.is_some());
+        for e in sel.errors() {
+            eprintln!("error: {e}");
+        }
+        sel
+    });
+    Ok(RunResult {
+        returncode,
+        unit,
+        data,
+        data_selection,
+        unit_selection,
+    })
+}
+
+impl RunResult {
+    fn selection_errors(&self) -> Vec<String> {
+        let data = self.data_selection.iter().flat_map(selection::Data::errors);
+        let unit = self.unit_selection.iter().flat_map(selection::Unit::errors);
+        data.chain(unit).collect()
+    }
 }
 
 /// The process return code, with a signal-killed process reported as a negative
@@ -361,7 +404,7 @@ fn pass_keyset(r: &RunResult) -> BTreeSet<String> {
 
 // --- text summary ------------------------------------------------------------
 
-fn summary(r: &RunResult) -> String {
+fn summary(r: &RunResult, selection_errors: &[String]) -> String {
     let mut lines: Vec<String> = Vec::new();
     if let Some((p, t)) = r.unit.footer {
         lines.push(format!("unittests: {p}/{t} passed"));
@@ -390,6 +433,9 @@ fn summary(r: &RunResult) -> String {
     }
     for f in &r.data.errors {
         fails.push(format!("[data] ERROR in {f}"));
+    }
+    for e in selection_errors {
+        fails.push(format!("[selection] {e}"));
     }
     if !fails.is_empty() {
         lines.push("FAILURES:".into());
@@ -420,6 +466,7 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
 
     let mut passkeys: Vec<String> = pass_keyset(&result).into_iter().collect();
     passkeys.sort();
+    let selection_errors = result.selection_errors();
 
     // The baseline record (also the --save-baseline content).
     let record_json = |passkeys: &[String]| -> Json {
@@ -435,16 +482,20 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
     };
 
     if let Some(path) = &args.save_baseline {
-        let body = dumps_indent2_sorted(&record_json(&passkeys));
-        match std::fs::write(path, body) {
-            Ok(()) => eprintln!(
-                "baseline written to {} ({} passing keys)",
-                path,
-                passkeys.len()
-            ),
-            Err(e) => {
-                eprintln!("error: could not write baseline {path}: {e}");
-                return 2;
+        if !selection_errors.is_empty() {
+            eprintln!("error: not writing baseline {path}: the test selection is incomplete");
+        } else {
+            let body = dumps_indent2_sorted(&record_json(&passkeys));
+            match std::fs::write(path, body) {
+                Ok(()) => eprintln!(
+                    "baseline written to {} ({} passing keys)",
+                    path,
+                    passkeys.len()
+                ),
+                Err(e) => {
+                    eprintln!("error: could not write baseline {path}: {e}");
+                    return 2;
+                }
             }
         }
     }
@@ -519,6 +570,14 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
                 ("data_errors".into(), data_errors),
             ]),
         ));
+        obj.push((
+            "selection".into(),
+            selection::json(
+                result.data_selection.as_ref(),
+                result.unit_selection.as_ref(),
+                &selection_errors,
+            ),
+        ));
         if let Some(p) = &parity {
             obj.push((
                 "parity".into(),
@@ -539,7 +598,7 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
         }
         let _ = writeln!(text, "{}", dumps_indent2_sorted(&Json::Object(obj)));
     } else {
-        let _ = writeln!(text, "{}", summary(&result));
+        let _ = writeln!(text, "{}", summary(&result, &selection_errors));
         if let Some(p) = &parity {
             let _ = writeln!(text, "\n=== baseline parity ===");
             if !p.regressed.is_empty() {
@@ -564,7 +623,9 @@ pub fn run_cmd(args: &TestArgs) -> i32 {
     }
 
     // --- exit code (port of run_tests.main's tail) ---------------------------
-    let rc = if parity_fail {
+    let rc = if !selection_errors.is_empty() {
+        2
+    } else if parity_fail {
         1
     } else if result.returncode < 0 {
         std::cmp::min(128 - result.returncode, 255)
