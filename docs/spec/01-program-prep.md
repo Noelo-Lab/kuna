@@ -3664,6 +3664,19 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_gotypes.rs`, the
   `dwarfstructs` pattern), the walk is bounded (20,000 typelinks), and the
   pass registers before `gopclntab`, preserving its appended-last contract.
+
+  Go permits named pointer types that refer to themselves, such as
+  `type Pointer *Pointer`, and mutually recursive pointer definitions. The runtime
+  field importer in
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_fieldtypes.rs`
+  walks pointer descriptors iteratively, retaining each distinct pointer layer.
+  A repeated descriptor address, an unreadable target or the 64-pointer expansion
+  limit ends the chain with an opaque `void` pointee. This retains the field's
+  machine-word size and the following fields' offsets without recursing forever.
+  Named struct pointees still resolve through the existing struct shells; ordinary
+  scalar, string, slice and interface field mappings are unchanged. This is part of
+  `gotypes`, correcting a loader crash rather than adding a separate option.
+
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
   needs the PC→name table for stack traces, so it survives stripping; the pass
@@ -7897,3 +7910,11 @@ requires three numeric components and rejects prerelease suffixes, malformed
 Rust records and conflicting versions. Missing metadata remains unknown even
 when `sourcelang` is forced. This image fact survives option resets and lets
 versioned consumers such as P9 `rustfmtliteral` reject unsupported layouts.
+
+For verified stable Rust 1.93.0/1.93.1 images, the standalone loader also retains
+primitive integer Display callback types in `Architecture::rust_display_formatters`.
+The reader in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustformatters.rs` accepts only linked 64-bit little-endian ELF images. It reads full demangled object-function symbols and their aliases before normal
+symbol-name normalization removes trait qualifiers. Exact standard-library trait
+identities qualify; conflicting aliases invalidate the address. The P9
+`rustfmtargs` consumer independently checks language, layout and call shape.
+This evidence does not rename symbols or infer a generic formatter's pointee type.

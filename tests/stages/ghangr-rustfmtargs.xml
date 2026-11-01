@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_args_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmtargs off</com>
+  <com>load function decimal_lf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmtargs on</com>
+  <com>print C</com>
+  <com>load function reorder</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function signed_lf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function reject_trait</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function reject_clobber</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="primitive print off and unsupported descriptors keep runtime sink" min="3" max="3">std::io::stdio::_print\(</stringmatch>
+<stringmatch name="primitive decimal recovers newline" min="1" max="1">\bprintln!\("\{\}"</stringmatch>
+<stringmatch name="primitive repeated indices preserve order" min="1" max="1">\bprintln!\("\{0\} \{1\} \{0\}"</stringmatch>
+<stringmatch name="primitive signed stderr retains signed type" min="1" max="1">eprintln!\("\{\}".*\*const i64</stringmatch>
+</decompilertest>

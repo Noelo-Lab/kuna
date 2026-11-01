@@ -461,3 +461,6 @@ mod verify_go_bounds;
 
 #[path = "verify_rustfmtliteral.rs"]
 mod verify_rustfmtliteral;
+
+#[path = "verify_rustfmtargs.rs"]
+mod verify_rustfmtargs;

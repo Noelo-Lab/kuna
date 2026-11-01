@@ -1,0 +1,20 @@
+--- off/fmtdemo::reorder
++++ on/fmtdemo::reorder
+@@ -15,6 +15,6 @@
+   v4 = fmt;
+   v6 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x6dd6,&mut v3);
++  println!("{0} {1} {0}",&*((v3 as *const _) as *const u32),&*((v5 as *const _) as *const u32));
+   return;
+ }
+--- off/fmtdemo::print_one
++++ on/fmtdemo::print_one
+@@ -9,6 +9,6 @@
+   v2 = &mut v1;
+   v3 = fmt;
+   v1 = a0;
+-  std::io::stdio::_print(0x5f07,&mut v2);
++  println!("value = {}",&*((v2 as *const _) as *const u64));
+   return;
+ }

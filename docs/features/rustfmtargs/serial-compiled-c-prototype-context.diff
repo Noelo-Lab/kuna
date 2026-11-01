@@ -1,0 +1,513 @@
+--- off/std::backtrace_rs::symbolize::gimli::mmap
++++ on/std::backtrace_rs::symbolize::gimli::mmap
+@@ -1,11 +1,11 @@
+-void std::backtrace_rs::symbolize::gimli::mmap(unsigned long *a0,unsigned long a1,unsigned long a2)
++long std::backtrace_rs::symbolize::gimli::mmap(unsigned long *a0,unsigned long a1,unsigned long a2)
+ {
+-  long v1; // r14 | r15
+-  unsigned long v2; // r12 | r15
+-  unsigned long *v3; // r12 | r13
+-  unsigned int v4; // r14d | stack - 0x3c
+-  int v5; // eax
+-  unsigned long v6; // rax
++  unsigned long v1; // r12 | r15
++  unsigned long *v2; // r12 | r13
++  unsigned int v3; // r14d | stack - 0x3c
++  int v4; // eax
++  unsigned long v5; // rax
++  long v6; // r14 | r15 | rax
+   long v7; // rax | stack - 0x1e8
+   int v8 [2]; // stack - 0x68
+   int v9; // stack - 0x40
+@@ -39,7 +39,7 @@
+   v30 = 1;
+   if (0x180 <= a2) { // branch-flip
+     std::sys::pal::common::small_c_string::run_with_cstr_allocating(&v9,a1,a2,&v10);
+-    v4 = v32;
++    v3 = v32;
+   }
+   else {
+     (*dat_57978)(&v7);
+@@ -51,35 +51,35 @@
+       goto label_184ec;
+     }
+     std::sys::fs::unix::File::open_c(&v9,v29,&v10);
+-    v4 = v32;
++    v3 = v32;
+   }
+   if (v9 == 1) {
+ label_184ec:
+     if (((unsigned int)v33 & 3) == 1) {
+-      v1 = v33 + -1;
+-      v2 = *(unsigned long *)(v33 + -1);
+-      v3 = *(unsigned long **)(v33 + 7);
+-      if ((void (*)(unsigned long))*v3)
+-        (*(void (*)(unsigned long))*v3)(v2);
+-      if (v3[1])
+-        __rust_dealloc(v2,v3[1],v3[2]);
+-      __rust_dealloc(v1,0x18,8);
++      v6 = v33 + -1;
++      v1 = *(unsigned long *)(v33 + -1);
++      v2 = *(unsigned long **)(v33 + 7);
++      if ((void (*)(unsigned long))*v2)
++        (*(void (*)(unsigned long))*v2)(v1);
++      if (v2[1])
++        __rust_dealloc(v1,v2[1],v2[2]);
++      v33 = __rust_dealloc(v6,0x18,8);
+     }
+     *a0 = 0;
+-    return;
++    return v33;
+   }
+-  std::sys::fs::unix::try_statx(&v7,v4,0x7eab,0x1000);
++  std::sys::fs::unix::try_statx(&v7,v3,0x7eab,0x1000);
+   if (v7 != 3) { // branch-flip
+     if ((int)v7 == 2) {
+       if (((unsigned int)v12 & 3) == 1) {
+-        v1 = v12 + -1;
+-        v2 = *(unsigned long *)(v12 + -1);
+-        v3 = *(unsigned long **)(v12 + 7);
+-        if ((void (*)(unsigned long))*v3)
+-          (*(void (*)(unsigned long))*v3)(v2);
+-        if (v3[1])
+-          __rust_dealloc(v2,v3[1],v3[2]);
+-        __rust_dealloc(v1,0x18,8);
++        v6 = v12 + -1;
++        v1 = *(unsigned long *)(v12 + -1);
++        v2 = *(unsigned long **)(v12 + 7);
++        if ((void (*)(unsigned long))*v2)
++          (*(void (*)(unsigned long))*v2)(v1);
++        if (v2[1])
++          __rust_dealloc(v1,v2[1],v2[2]);
++        __rust_dealloc(v6,0x18,8);
+       }
+       goto label_186a1;
+     }
+@@ -104,22 +104,22 @@
+     v14 = 0;
+     v7 = 0;
+     v12 = 0;
+-    v5 = (*dat_57ad8)(v4,&v7);
+-    if (v5 == -1) {
++    v4 = (*dat_57ad8)(v3,&v7);
++    if (v4 == -1) {
+       (*dat_57988)();
+ label_186a1:
+       *a0 = 0;
+-      (*dat_57a00)(v4); // return-dupe
+-      return;
++      v6 = (*dat_57a00)(v3); // return-dupe
++      return v6;
+     }
+     v11 = v17;
+   }
+-  v6 = (*dat_57ae0)(0,v11,1,2,v4,0);
+-  if (v6 != 0xffffffffffffffff) {
+-    a0[1] = v6;
++  v5 = (*dat_57ae0)(0,v11,1,2,v3,0);
++  if (v5 != 0xffffffffffffffff) {
++    a0[1] = v5;
+     a0[2] = v11;
+   }
+-  *a0 = (unsigned long)(v6 != 0xffffffffffffffff);
+-  (*dat_57a00)(v4);
+-  return;
++  *a0 = (unsigned long)(v5 != 0xffffffffffffffff);
++  v6 = (*dat_57a00)(v3);
++  return v6;
+ }
+--- off/std::sys::fs::unix::File::open_c
++++ on/std::sys::fs::unix::File::open_c
+@@ -1,4 +1,4 @@
+-void std::sys::fs::unix::File::open_c(struct_9 *a0,unsigned long a1,struct_8 *a2)
++unsigned int std::sys::fs::unix::File::open_c(struct_9 *a0,unsigned long a1,struct_8 *a2)
+ {
+   char v1; // al
+   unsigned int v2; // tmp
+@@ -94,5 +94,5 @@
+   v9 = 1;
+ label_221fc:
+   a0->field_0x0 = v9;
+-  return;
++  return v9;
+ }
+--- off/std::sys::pal::unix::stack_overflow::imp::drop_handler
++++ on/std::sys::pal::unix::stack_overflow::imp::drop_handler
+@@ -1,203 +1,203 @@
+-void std::sys::pal::unix::stack_overflow::imp::drop_handler(long a0) // ternary
++unsigned long std::sys::pal::unix::stack_overflow::imp::drop_handler(long a0) // ternary
+ {
+   unsigned short *v1; // tmp
+   long *v2; // tmp
+   void (*v3)(void); // r15 | ram 0x57c88
+-  int v4; // eax | ram 0x59bc0
+-  unsigned long v5; // r14 | r8 | r9 | ram 0x59bc8 | rax | rdi | stack - 0x48
+-  unsigned long v6; // r14 | r8 | rax | rcx | rdi | stack - 0x90
+-  long v7; // r15 | r8 | ram 0x59bb0 | ram 0x59be0 | rax | rcx
+-  unsigned int v8; // edx
+-  unsigned char v9; // bl | stack - 0xa8
+-  long v10; // rdx | stack - 0xa0
+-  long v11; // rsi | stack - 0xd0
+-  char v12; // stack - 0x31
+-  unsigned long *v13; // ram 0x59ba8 | rsi | stack - 0x58 | stack - 0x88 | xmm0_da
+-  unsigned long *v14; // ram 0x59ba8 | rcx | rsi | stack - 0x58
+-  unsigned long v15; // rdi
++  unsigned long v4; // r14 | r8 | r9 | ram 0x59bc8 | rax | rdi | stack - 0x48
++  unsigned long v5; // r14 | r8 | rax | rcx | rdi | stack - 0x90
++  long v6; // r15 | r8 | ram 0x59bb0 | ram 0x59be0 | rax | rcx
++  unsigned int v7; // eax | edx | ram 0x59bc0
++  unsigned char v8; // bl | stack - 0xa8
++  long v9; // rdx | stack - 0xa0
++  long v10; // rsi | stack - 0xd0
++  char v11; // stack - 0x31
++  unsigned long *v12; // ram 0x59ba8 | rsi | stack - 0x58 | stack - 0x88 | xmm0_da
++  unsigned long *v13; // ram 0x59ba8 | rcx | rsi | stack - 0x58
++  unsigned long v14; // rdi
++  unsigned long v15; // r8 | stack - 0x48
+   unsigned long v16; // r8 | stack - 0x48
+-  unsigned long v17; // r8 | stack - 0x48
+-  long v18; // r10
+-  bool v19; // cf
+-  bool v20; // r11b | zf
+-  unsigned long v21; // stack - 0xc8
+-  long v22; // rax | stack - 0xc0
+-  unsigned long v23; // rcx | stack - 0xb8
+-  unsigned long *v24; // stack - 0xb0
+-  unsigned char v25; // bl | stack - 0xa8
+-  unsigned int v26; // stack - 0x98
+-  unsigned int v27; // stack - 0x94
+-  unsigned long v28; // r14 | rax | rcx | stack - 0x90
+-  unsigned long *v29; // stack - 0x58 | stack - 0x88
+-  unsigned long v30; // stack - 0x50 | stack - 0x80
+-  unsigned long v31; // rax | rsi | stack - 0x48 | stack - 0x78
+-  long *v32; // rsi | stack - 0x70
+-  unsigned long v33; // rdi | stack - 0x60
+-  unsigned long v34; // stack - 0x50 | stack - 0x80
+-  unsigned long v35; // r8 | rax | rsi | stack - 0x48 | stack - 0x78
++  long v17; // r10
++  bool v18; // cf
++  bool v19; // r11b | zf
++  unsigned long v20; // stack - 0xc8
++  long v21; // rax | stack - 0xc0
++  unsigned long v22; // rcx | stack - 0xb8
++  unsigned long *v23; // stack - 0xb0
++  unsigned char v24; // bl | stack - 0xa8
++  unsigned int v25; // stack - 0x98
++  unsigned int v26; // stack - 0x94
++  unsigned long v27; // r14 | rax | rcx | stack - 0x90
++  unsigned long *v28; // stack - 0x58 | stack - 0x88
++  unsigned long v29; // stack - 0x50 | stack - 0x80
++  unsigned long v30; // rax | rsi | stack - 0x48 | stack - 0x78
++  long *v31; // rsi | stack - 0x70
++  unsigned long v32; // rdi | stack - 0x60
++  unsigned long v33; // stack - 0x50 | stack - 0x80
++  unsigned long v34; // r8 | rax | rsi | stack - 0x48 | stack - 0x78
+   
+   if (a0) {
+-    v5 = (*dat_57d70)(0x33);
+-    v7 = _ZN3std3sys3pal4unix14stack_overflow3imp9PAGE_SIZE17h1c52bf0230f02154E.0;
+-    v6 = 0x2000;
+-    if (0x2001 <= v5)
+-      v6 = v5;
+-    v10 = 0;
+-    v26 = 2;
+-    v28 = v6;
+-    (*dat_57d78)(&v10,0);
+-    (*dat_57a98)(a0 - v7,v6 + v7);
+-  }
+-  v6 = (*dat_57988)();
++    v4 = (*dat_57d70)(0x33);
++    v6 = _ZN3std3sys3pal4unix14stack_overflow3imp9PAGE_SIZE17h1c52bf0230f02154E.0;
++    v5 = 0x2000;
++    if (0x2001 <= v4)
++      v5 = v4;
++    v9 = 0;
++    v25 = 2;
++    v27 = v5;
++    (*dat_57d78)(&v9,0);
++    (*dat_57a98)(a0 - v6,v5 + v6);
++  }
++  v5 = (*dat_57988)();
+   LOCK();
+-  v20 = (int)_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E == 0;
+-  if (v20)
+-    *(int *)&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E = 1;
++  v19 = (unsigned int)_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E == 0;
++  if (v19)
++    *(unsigned int *)&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E = 1;
+   UNLOCK();
+-  if (!v20)
++  if (!v19)
+     std::sys::sync::mutex::futex::Mutex::lock_contended(&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E);
+-  v9 = (_ZN3std9panicking11panic_count18GLOBAL_PANIC_COUNT17hf0d1741924ca7f2cE & 0x7fffffffffffffff) ? std::panicking::panic_count::is_zero_slow_path() ^ 1 : 0; // branch-flip
++  v8 = (_ZN3std9panicking11panic_count18GLOBAL_PANIC_COUNT17hf0d1741924ca7f2cE & 0x7fffffffffffffff) ? std::panicking::panic_count::is_zero_slow_path() ^ 1 : 0; // branch-flip
+   v3 = dat_57c88;
+-  v23 = ((char *)&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E)[4] != '\0';
+-  v24 = &_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E;
+-  v5 = 0;
++  v22 = ((char *)&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E)[4] != '\0';
++  v23 = &_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E;
++  v4 = 0;
+   LOCK();
+-  v20 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E == 0;
+-  if (v20)
+-    _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E = v6;
++  v19 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E == 0;
++  if (v19)
++    _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E = v5;
+   else {
+-    v5 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E;
++    v4 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E;
+   }
+   UNLOCK();
+-  v25 = v9;
+-  while (!v20) {
+-    if (v5 == v6)
++  v24 = v8;
++  while (!v19) {
++    if (v4 == v5)
+       core::panicking::panic_fmt("internal error: entered unreachable code: the thread info setup logic isn\'t recursivethere is no guard pagefatal runtime error: stack overflow, aborting\nno /proc/self/exe ",0xab,0x55d50); // no-return
+     (*v3)();
+-    v5 = 0;
++    v4 = 0;
+     LOCK();
+-    v20 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E == 0;
+-    if (v20)
+-      _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E = v6;
++    v19 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E == 0;
++    if (v19)
++      _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E = v5;
+     else {
+-      v5 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E;
++      v4 = _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E;
+     }
+     UNLOCK();
+   }
+   if (!_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0) {
+ label_23dc7:
+     _ZN3std3sys3pal4unix14stack_overflow11thread_info9SPIN_LOCK17hbac9ea0e77ec7877E = 0;
+-    if (((!v9) && (_ZN3std9panicking11panic_count18GLOBAL_PANIC_COUNT17hf0d1741924ca7f2cE & 0x7fffffffffffffff)) && (!std::panicking::panic_count::is_zero_slow_path()))
++    if (((!v8) && (_ZN3std9panicking11panic_count18GLOBAL_PANIC_COUNT17hf0d1741924ca7f2cE & 0x7fffffffffffffff)) && (!std::panicking::panic_count::is_zero_slow_path()))
+       ((char *)&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E)[4] = '\x01';
+-    v4 = (int)_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E;
++    v7 = (unsigned int)_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E;
+     LOCK();
+     *(unsigned int *)&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E = 0;
++    v5 = v7;
+     UNLOCK();
+-    if (v4 == 2)
+-      (*dat_57c08)(0xca,&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E,0x81,1);
+-    return;
+-  }
+-  v8 = (int)_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1 + 7;
+-  v15 = 0;
+-  v7 = _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1;
+-  v14 = _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0;
++    if (v7 == 2)
++      v5 = (*dat_57c08)(0xca,&_ZN3std3sys3pal4unix14stack_overflow11thread_info4LOCK17h5fd33541957d22b0E,0x81,1);
++    return v5;
++  }
++  v7 = (int)_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1 + 7;
++  v14 = 0;
++  v6 = _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1;
++  v13 = _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0;
+   while( true ) {
+-    v5 = ((unsigned short *)v14)[0x10d];
+-    v18 = (unsigned long)((unsigned short *)v14)[0x10d] << 3;
+-    v17 = 0xffffffffffffffff;
++    v4 = ((unsigned short *)v13)[0x10d];
++    v17 = (unsigned long)((unsigned short *)v13)[0x10d] << 3;
++    v16 = 0xffffffffffffffff;
+     do {
+-      v16 = v17;
+-      if (!v18) goto label_23b33;
+-      v19 = v6 < (unsigned long)v14[v16 + 2];
+-      v20 = !v19 && v6 != v14[v16 + 2];
+-      v17 = v16 + 1;
+-      v18 -= 8;
+-    } while ((char)(v20 - v19) == '\x01');
+-    v5 = v17;
+-    if (v20 == v19) {
+-      v12 = '\0';
+-      if (v7) { // branch-flip
+-        v11 = v14[v16 + 0x45];
+-        v6 = v7 - 1;
+-        if (v6) {
+-          if (v6 & 7) {
+-            v5 = 1;
++      v15 = v16;
++      if (!v17) goto label_23b33;
++      v18 = v5 < (unsigned long)v13[v15 + 2];
++      v19 = !v18 && v5 != v13[v15 + 2];
++      v16 = v15 + 1;
++      v17 -= 8;
++    } while ((char)(v19 - v18) == '\x01');
++    v4 = v16;
++    if (v19 == v18) {
++      v11 = '\0';
++      if (v6) { // branch-flip
++        v10 = v13[v15 + 0x45];
++        v5 = v6 - 1;
++        if (v5) {
++          if (v5 & 7) {
++            v4 = 1;
+             do {
+-              v11 = *(long *)(v11 + 0x220 + *(unsigned short *)(v11 + 0x21a) * 8UL);
+-              v6 = v5 + 1;
+-              v20 = v5 != (v8 & 7);
+-              v5 = v6;
+-            } while (v20);
+-            v6 = v7 - v6;
++              v10 = *(long *)(v10 + 0x220 + *(unsigned short *)(v10 + 0x21a) * 8UL);
++              v5 = v4 + 1;
++              v19 = v4 != (v7 & 7);
++              v4 = v5;
++            } while (v19);
++            v5 = v6 - v5;
+           }
+-          if (7 <= (unsigned long)((_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1 - v15) - 2U)) {
++          if (7 <= (unsigned long)((_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1 - v14) - 2U)) {
+             do {
+-              v7 = *(long *)(v11 + 0x220 + *(unsigned short *)(v11 + 0x21a) * 8UL);
+-              v7 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v7 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v7 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v7 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v7 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v7 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v11 = *(long *)(v7 + 0x220 + *(unsigned short *)(v7 + 0x21a) * 8UL);
+-              v6 -= 8;
+-            } while (v6);
++              v6 = *(long *)(v10 + 0x220 + *(unsigned short *)(v10 + 0x21a) * 8UL);
++              v6 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v6 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v6 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v6 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v6 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v6 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v10 = *(long *)(v6 + 0x220 + *(unsigned short *)(v6 + 0x21a) * 8UL);
++              v5 -= 8;
++            } while (v5);
+           }
+         }
+-        v22 = *(unsigned short *)(v11 + 0x21a) - 1UL;
+-        v21 = 0;
+-        alloc::collections::btree::remove::remove_leaf_kv(&v10,&v11,&v12);
+-        if (((unsigned short *)v32)[0x10d] <= v33) {
++        v21 = *(unsigned short *)(v10 + 0x21a) - 1UL;
++        v20 = 0;
++        alloc::collections::btree::remove::remove_leaf_kv(&v9,&v10,&v11);
++        if (((unsigned short *)v31)[0x10d] <= v32) {
+           do {
+-            v1 = (unsigned short *)&v32[0x43];
+-            v33 = *v1;
+-            v32 = (long *)*v32;
+-          } while (((unsigned short *)v32)[0x10d] <= *v1);
++            v1 = (unsigned short *)&v31[0x43];
++            v32 = *v1;
++            v31 = (long *)*v31;
++          } while (((unsigned short *)v31)[0x10d] <= *v1);
+         }
+-        v32[v33 + 1] = v10;
+-        v32[v33 * 5 + 0xc] = CONCAT44(v27,v26);
+-        v32[v33 * 5 + 0xd] = v28;
+-        *(unsigned int *)&v13 = SUB84(v29,0);
+-        ((unsigned int *)&v13)[1] = (unsigned int)((unsigned long)v29 >> 0x20);
+-        *(unsigned int *)&v34 = (unsigned int)v30;
+-        ((unsigned int *)&v34)[1] = (unsigned int)((unsigned long)v30 >> 0x20);
+-        v2 = &v32[v33 * 5 + 0xe];
+-        *(unsigned int *)v2 = (unsigned int)v13;
+-        ((unsigned int *)v2)[1] = ((unsigned int *)&v13)[1];
+-        *(unsigned int *)&v2[1] = (unsigned int)v34;
+-        ((unsigned int *)v2)[3] = ((unsigned int *)&v34)[1];
+-        v32[v33 * 5 + 0x10] = v31;
+-        v13 = v29;
++        v31[v32 + 1] = v9;
++        v31[v32 * 5 + 0xc] = CONCAT44(v26,v25);
++        v31[v32 * 5 + 0xd] = v27;
++        *(unsigned int *)&v12 = SUB84(v28,0);
++        ((unsigned int *)&v12)[1] = (unsigned int)((unsigned long)v28 >> 0x20);
++        *(unsigned int *)&v33 = (unsigned int)v29;
++        ((unsigned int *)&v33)[1] = (unsigned int)((unsigned long)v29 >> 0x20);
++        v2 = &v31[v32 * 5 + 0xe];
++        *(unsigned int *)v2 = (unsigned int)v12;
++        ((unsigned int *)v2)[1] = ((unsigned int *)&v12)[1];
++        *(unsigned int *)&v2[1] = (unsigned int)v33;
++        ((unsigned int *)v2)[3] = ((unsigned int *)&v33)[1];
++        v31[v32 * 5 + 0x10] = v30;
++        v12 = v28;
++        v33 = v29;
+         v34 = v30;
+-        v35 = v31;
+       }
+       else {
+-        v34 = 0;
+-        v13 = v14;
+-        v35 = v17;
+-        alloc::collections::btree::remove::remove_leaf_kv(&v10,&v13,&v12);
++        v33 = 0;
++        v12 = v13;
++        v34 = v16;
++        alloc::collections::btree::remove::remove_leaf_kv(&v9,&v12,&v11);
+       }
+       _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.2 -= 1;
+-      if (v12 == '\x01') {
++      if (v11 == '\x01') {
+         if (!_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0) {
+           core::option::unwrap_failed(0x56300);
+-          (*(void (*)(void))invalidInstructionException())(); // jump-as-call, return-dupe
+-          return;
++          v5 = (*(unsigned long (*)(void))invalidInstructionException())(); // jump-as-call, return-dupe
++          return v5;
+         }
+         if (!_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1)
+           core::panicking::panic("assertion failed: self.height > 0",0x21,0x56360); // no-return
+-        v14 = (unsigned long *)_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0[0x44];
+-        _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0 = v14;
++        v13 = (unsigned long *)_ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0[0x44];
++        _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.0 = v13;
+         _ZN3std3sys3pal4unix14stack_overflow11thread_info11THREAD_INFO17h13422d70135544daE.1 -= 1;
+-        *v14 = 0;
++        *v13 = 0;
+       }
+       goto label_23dc7;
+     }
+ label_23b33:
+-    if (!v7) goto label_23dc7;
+-    v14 = (unsigned long *)v14[v5 + 0x44];
+-    v7 -= 1;
+-    v15 += 1;
+-    v8 = (unsigned char)((char)v8 + 7);
++    if (!v6) goto label_23dc7;
++    v13 = (unsigned long *)v13[v4 + 0x44];
++    v6 -= 1;
++    v14 += 1;
++    v7 = (unsigned char)((char)v7 + 7);
+   }
+ }
+--- off/std::sys::backtrace::_print_fmt::{{closure}}
++++ on/std::sys::backtrace::_print_fmt::{{closure}}
+@@ -9,7 +9,7 @@
+   char *v7; // rdx | stack - 0xa0
+   long v8 [2]; // r12 | rax | stack - 0x40 | stack - 0x48 | stack - 0x78
+   unsigned long v9 [3]; // stack - 0xb8
+-  long v10; // rdi
++  void *v10; // rdi
+   char *v11; // rax | stack - 0x98
+   unsigned int v12; // stack - 0x90 | xmm0_da
+   unsigned int v13; // stack - 0x8c
+@@ -42,10 +42,10 @@
+   v19 = a1;
+   if (!v1)
+     v4 = (*dat_57b60)(v5);
+-  v10 = v4 + -1;
++  v10 = (void *)(v4 + -1);
+   if (!v4)
+-    v10 = 0;
+-  std::backtrace_rs::symbolize::gimli::Cache::with_global(v10,&v7,0x559e0);
++    v10 = NULL;
++  std::backtrace_rs::symbolize::gimli::Cache::with_global(v10,&v7,(void *)0x559e0);
+   if ((!v6) && (*v20)) {
+     v8[1] = 0;
+     v8[0] = v3;
+

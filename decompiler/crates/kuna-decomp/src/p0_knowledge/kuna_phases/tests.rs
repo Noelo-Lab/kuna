@@ -39,8 +39,8 @@ fn surface_count_is_120() {
 
 #[test]
 fn settable_count_is_357() {
-    assert_eq!(kuna_num_settables(), 357);
-    assert_eq!(SETTABLE_TABLE.len(), 357);
+    assert_eq!(kuna_num_settables(), 358);
+    assert_eq!(SETTABLE_TABLE.len(), 358);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_138_transform_92_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 138, 92));
+    assert_eq!((core, transform, analysis), (127, 139, 92));
 }
 
 #[test]
@@ -929,7 +929,7 @@ fn option_values_live_value_present_for_165() {
     // 159 -> 160: +1 for `pltlocal` (plt_local_calls).
     // 160 -> 161: +1 for `haltloopguard` (halt_loop_guard).
     // 161 -> 162: +1 for `truncptrflow` (trunc_ptr_flow).
-    assert_eq!(with_live, 165);
+    assert_eq!(with_live, 166);
 }
 
 #[test]
@@ -1152,7 +1152,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `haltloopguard`; its P3 row sits after `earlyrestart`.
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
-    assert_eq!(json.matches("},\n").count(), 356);
+    assert_eq!(json.matches("},\n").count(), 357);
 }
 
 #[test]

@@ -1,0 +1,18 @@
+[
+  {
+    "name": "fmtdemo::reorder",
+    "address": "0x110b0",
+    "hunks": [
+      "@@ -15,6 +15,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "fmtdemo::print_one",
+    "address": "0x11150",
+    "hunks": [
+      "@@ -9,6 +9,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  }
+]

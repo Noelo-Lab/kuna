@@ -1,0 +1,31 @@
+--- batch-off
++++ isolated-off
+@@ -3036,8 +3036,7 @@
+         *(v173 as *mut u32) = v173 as u32;
+         v173 = CONCAT44(((v173 as u64) >> 0x20) as i32,v45) as *mut *const ();
+         UNLOCK();
+-        v178 = (*((v148 as i64 * 4 + 0x9118) as *mut i32) as i64 + 0x9118) as *mut *const (); // return-dupe
+-        v178 = (*v178)(0x9118,v150,v173,v178) as *mut *const (); // jump-as-call
++        v178 = (*(((0x9118 as *mut i32)[v148 as i64] as i64 + 0x9118) as *mut *const ()))(0x9118,v150,v173,((0x9118 as *mut i32)[v148 as i64] as i64 + 0x9118) as *mut *const ()) as *mut *const (); // return-dupe, jump-as-call
+         return v178;
+       }
+       0xdd => {
+@@ -4145,8 +4144,7 @@
+     v138 = v137;
+ // label_2a053:
+     if (v148 as u32) <= 0xb {
+-      v178 = (*((v148 as i64 * 4 + 0x9118) as *mut i32) as i64 + 0x9118) as *mut *const ();
+-      v178 = (*v178)(0x9118,v150,v173,v178) as *mut *const ();
++      v178 = (*(((0x9118 as *mut i32)[v148 as i64] as i64 + 0x9118) as *mut *const ()))(0x9118,v150,v173,((0x9118 as *mut i32)[v148 as i64] as i64 + 0x9118) as *mut *const ()) as *mut *const ();
+       return v178;
+     }
+     v30 = (v165 as i32 - 1 & 0xff) as u64;
+@@ -4596,7 +4594,7 @@
+   *(&mut v139[-0x70] as *mut u64) = *(&mut v139[-0x2d0] as *mut u64);
+   *(&mut v139[-0x68] as *mut u64) = *(&mut v139[-0x2c8] as *mut u64);
+   if v34 as u8 != b'\0' {
+-    v178 = (*((*((&mut v175[-0x2e] as i64 * 4 + 0x9178) as *mut i32) as i64 + 0x9178) as *mut *const ()))() as *mut *const (); // jump-as-call
++    v178 = (*(((0x9178 as *mut i32)[&mut v175[-0x2e] as i64] as i64 + 0x9178) as *mut *const ()))() as *mut *const (); // jump-as-call
+     return v178;
+   }
+   v180 = *(&mut v139[-0x160] as *mut *mut *const ());

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3420,
-    3420
+    3424,
+    3424
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -992,7 +992,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 357 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 358 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2924,6 +2924,10 @@
     "data:preloaded x86 stack read: capture stays before branch",
     "data:preloaded x86 stack read: guarded consumer retains saved value",
     "data:preloaded x86 stack read: volatile slot retained",
+    "data:primitive decimal recovers newline",
+    "data:primitive print off and unsupported descriptors keep runtime sink",
+    "data:primitive repeated indices preserve order",
+    "data:primitive signed stderr retains signed type",
     "data:protected-rel16 #1: CALL rel16 wraps its offset inside selector 1 (0x16ff3)",
     "data:protected-rel16 #2: the branch does not leave its selector for 0x6ff3",
     "data:prunedssa #10: the default builds the fewest ops for churn",

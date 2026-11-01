@@ -1,0 +1,50 @@
+[
+  {
+    "name": "decimal",
+    "address": "0x401000",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "decimal_lf",
+    "address": "0x401035",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "decimal_stderr",
+    "address": "0x40106a",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "signed_lf",
+    "address": "0x40109f",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "narrow",
+    "address": "0x4010d4",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  },
+  {
+    "name": "reorder",
+    "address": "0x4013c5",
+    "hunks": [
+      "@@ -14,6 +14,6 @@"
+    ],
+    "classification": "one runtime print call replaced by a primitive macro; every other line unchanged"
+  }
+]

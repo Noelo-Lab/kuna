@@ -5257,7 +5257,7 @@ impl RuleDumptyHumpLate {
                 TypeOp::new(
                     OpCode::CPUI_COPY,
                     pcodeop_flags::unary | pcodeop_flags::nocollapse,
-                    "copy".to_string(),
+                    "copy",
                 ),
             );
             data.op_set_input(op, vn, 0)?;
