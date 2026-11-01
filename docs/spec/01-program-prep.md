@@ -3664,6 +3664,19 @@ every other binary's pass list is byte-identical to before the pass existed):
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_gotypes.rs`, the
   `dwarfstructs` pattern), the walk is bounded (20,000 typelinks), and the
   pass registers before `gopclntab`, preserving its appended-last contract.
+
+  Go permits named pointer types that refer to themselves, such as
+  `type Pointer *Pointer`, and mutually recursive pointer definitions. The runtime
+  field importer in
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_fieldtypes.rs`
+  walks pointer descriptors iteratively, retaining each distinct pointer layer.
+  A repeated descriptor address, an unreadable target or the 64-pointer expansion
+  limit ends the chain with an opaque `void` pointee. This retains the field's
+  machine-word size and the following fields' offsets without recursing forever.
+  Named struct pointees still resolve through the existing struct shells; ordinary
+  scalar, string, slice and interface field mappings are unchanged. This is part of
+  `gotypes`, correcting a loader crash rather than adding a separate option.
+
 - **Go pclntab** (`gopclntab`, Go-detected binaries only, default-on;
   `decompiler/crates/kuna-analysis/src/analyzers/pclntab/mod.rs`): the runtime
   needs the PC→name table for stack traces, so it survives stripping; the pass

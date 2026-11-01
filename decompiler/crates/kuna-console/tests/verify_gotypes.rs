@@ -64,6 +64,11 @@ type Envelope struct {
 
 type Z struct { X int }
 type A struct { Z; Tail int }
+type Pointer *Pointer
+type Left *Right
+type Right *Left
+type Recursive struct { Direct Pointer; Mutual Left; Tail int }
+type Node struct { Next *Node; Value int }
 
 //go:noinline
 func mk(i int) Point {
@@ -76,6 +81,8 @@ func main() {
 	fmt.Println(Envelope{Lead: 1, Point: &p, Tail: 2})
 	fmt.Println(A{Z{3}, 4})
 	fmt.Println(syscall.Iovec{})
+	fmt.Println(Recursive{Tail: 7})
+	fmt.Println(Node{Value: 9})
 }
 "#;
 
@@ -193,6 +200,24 @@ fn check_named_struct(arch: &str) {
     assert_eq!(iovec.get_field(0).unwrap().name, "Base");
     assert_eq!(iovec.get_field(1).unwrap().name, "Len");
     assert_eq!(iovec.get_field(1).unwrap().offset, width);
+
+    let recursive = tf.find_by_name("main.Recursive").unwrap().unwrap();
+    assert_eq!(recursive.get_size(), 3 * width);
+    for (i, expected_depth) in [(0, 1), (1, 2)] {
+        let field = recursive.get_field(i).unwrap();
+        assert_eq!(field.offset, i * width);
+        let mut ty = field.field_type.clone();
+        for _ in 0..expected_depth {
+            assert_eq!(ty.get_size(), width);
+            ty = ty.get_ptr_to().expect("recursive alias retains a pointer");
+        }
+        assert_eq!(ty.get_metatype(), type_metatype::TYPE_VOID);
+    }
+    assert_eq!(recursive.get_field(2).unwrap().offset, 2 * width);
+    let node = tf.find_by_name("main.Node").unwrap().unwrap();
+    let next = node.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    assert_eq!(next.get_name(), "main.Node");
+    assert_eq!(node.get_size(), 2 * width);
 
     // The header shells carry their facets (the W3 plane fills).
     assert_eq!(tf.kuna_lang_facet("go.string"), Some(LangFacet::GoString));
