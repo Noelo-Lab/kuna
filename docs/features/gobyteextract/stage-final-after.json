@@ -1,0 +1,35 @@
+{
+  "data_footer": [
+    5,
+    5
+  ],
+  "failures": {
+    "data": [],
+    "data_errors": [],
+    "unit": []
+  },
+  "passing": [
+    "data:Go array extraction evaluates the producer once",
+    "data:Go array extraction has no opaque subpiece helper",
+    "data:Go array extraction matches inferred unsigned store pointees",
+    "data:Go array extraction reads both signed result words",
+    "data:Go array extraction retains the complete call result"
+  ],
+  "returncode": 0,
+  "selection": {
+    "complete": true,
+    "data": {
+      "corpus": "/home/mahaloz/kwt/angr-go-byte-extract/tests/stages",
+      "matched": [
+        "ghangr-go-byte-extract.xml"
+      ],
+      "missing": [],
+      "requested": [
+        "ghangr-go-byte-extract.xml"
+      ]
+    },
+    "errors": [],
+    "unit": null
+  },
+  "unit_footer": null
+}

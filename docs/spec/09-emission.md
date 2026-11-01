@@ -3233,6 +3233,25 @@ carrying floating-point data also declines the integer view. This changes only
 Go spelling; it neither changes the ABI nor infers source tuples. In particular,
 an inferred two-word result remains `[16]byte`, with both words preserved.
 
+`p9_emit/kuna_gobyteextract.rs` prints a scalar `SUBPIECE` of a whole named
+local byte array as a bounded typed read. The local's actual declaration and
+the Go value type must both identify the complete byte array. The source must
+be explicit, nonvolatile and addressable; implied expressions, globals,
+annotations and constants keep the existing handling. Integer results of one,
+two, four or eight bytes use their read-facing type, or the defining type when
+there is no reading operation. A result consumed directly by a store instead
+uses the rendered destination pointer's integer pointee type; both that type
+and the facing result type must qualify. This preserves the store's signedness
+even when inference gives the local pointer and the access different types.
+Pointer, boolean and floating results decline,
+as do unknown results consumed as floating-point storage. A constant low-end
+byte offset must fit completely inside the input. For big-endian storage its
+memory offset is `input size - result size - low-end offset`; little-endian
+storage uses the low-end offset directly. The read takes the address of the
+existing local, so an earlier call that produced the array is neither moved
+nor duplicated. This is Go output spelling of the recovered register carrier;
+it does not infer a source multi-result signature.
+
 The token table puts shifts and bitwise AND with multiplication, OR and XOR
 with addition, and all comparisons below those groups. Boolean XOR is `!=`.
 Equal-precedence right nesting retains parentheses unless the same associative

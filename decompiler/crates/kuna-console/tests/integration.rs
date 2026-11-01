@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "verify_gobyteextract.rs"]
+mod verify_gobyteextract;
+
 #[path = "verify_gobyteview.rs"]
 mod verify_gobyteview;
 

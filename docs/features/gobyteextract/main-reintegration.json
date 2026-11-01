@@ -1,0 +1,14 @@
+[
+  {
+    "side": "baseline-breadth",
+    "function_records": 34107,
+    "outputs": 33,
+    "matches_pre_main_integration": true
+  },
+  {
+    "side": "breadth",
+    "function_records": 34107,
+    "outputs": 33,
+    "matches_pre_main_integration": true
+  }
+]

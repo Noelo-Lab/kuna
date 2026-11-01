@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3483,
-    3483
+    3488,
+    3488
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -902,6 +902,11 @@
     "data:GUARDARM #2: ON keeps the guard flat with the fatal call as its clause (pass 2 only)",
     "data:GUARDARM #3: the no-return clause call is emitted in BOTH passes",
     "data:Global aggregate fields do not become locals",
+    "data:Go array extraction evaluates the producer once",
+    "data:Go array extraction has no opaque subpiece helper",
+    "data:Go array extraction matches inferred unsigned store pointees",
+    "data:Go array extraction reads both signed result words",
+    "data:Go array extraction retains the complete call result",
     "data:Go bottom-tested loop skips only its first condition",
     "data:Go byte string pointers retain a terminating zero",
     "data:Go byte-array results have no artificial fields",
