@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3408,
-    3408
+    3417,
+    3417
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -992,7 +992,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 355 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 356 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1556,6 +1556,15 @@
     "data:RETCALLHALF #5: no caller prints as void",
     "data:RETCALLHALF #6: a dead smull word, a hardening zero, a dummy pop and an svc argument stay void",
     "data:RETCALLHALF #7: a caller that changes only the low word keeps its int",
+    "data:RETCOPYCLONE #1: returndup clones the return block",
+    "data:RETCOPYCLONE #2: earlyreturn clones it with returndup off",
+    "data:RETCOPYCLONE #3: audit_select writes the global once in each",
+    "data:RETCOPYCLONE #4: the write precedes the choice",
+    "data:RETCOPYCLONE #5: both results are returned",
+    "data:RETCOPYCLONE #6: audit_retry writes the global once in each",
+    "data:RETCOPYCLONE #7: the b path returns without a second write",
+    "data:RETCOPYCLONE #8: by default audit_pair's stores print in address order, as the binary makes them",
+    "data:RETCOPYCLONE #9: with clonephiorder off they print in heritage's order, reversed",
     "data:RETINPUTHALF #1: by default the returned RDX half that is a passthrough argument is kept, and the argument stays in the signature",
     "data:RETINPUTHALF #2: the passthrough half is written from the second argument",
     "data:RETINPUTHALF #3: with the option off the bug returns: the half is dropped AND the argument vanishes (a one-argument wide)",

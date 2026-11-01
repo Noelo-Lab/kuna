@@ -764,6 +764,62 @@ the schedule (`decompiler/crates/kuna-decomp/src/infra/universalaction.rs
   cloned, SSA/def-use is untouched, and the printer re-emits the same ops in
   the new layout.
 
+A CFG split must leave every path performing the same writes, the same number
+of times. The p-code half of `node_split`,
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_block.rs (CloneBlockOps)`,
+copies two kinds of op that write nothing but name a global as their output.
+Upstream's clone let copy propagation turn both into stores (kuna #1355):
+
+- *The return guard.* A RETURN block carries one `Heritage::guardReturns`
+  `glob = glob` COPY per persistent global (§3.1). It is flagged `return_copy`,
+  and that flag is what keeps `RulePropagateCopy` off it. Upstream's
+  `buildOpClone` mask (`funcdata_block.cc:982`) drops the flag, so the clone's
+  guard took the value the function last stored and printed a second
+  `glob = <value>;` on the cloned path, after the real store had already run.
+  `CloneBlockOps::build_op_clone` keeps the flag.
+- *The phi.* A return block reached on paths that leave a global with different
+  values starts with a MULTIEQUAL for it. Upstream's `patchInputs` turns the
+  clone's copy of that phi, and the original once one edge is left, into
+  `glob = COPY glob` from the incoming value. Propagation then turns that into a
+  second store of what the predecessor stored. When the predecessor's own store
+  had no other reader, the store was dropped and the copy printed it at the
+  return instead, which reorders the function's stores.
+  `CloneBlockOps::settle_one_input_phi` settles every phi the split leaves with
+  one input. A phi from a global to the same global writes nothing: its readers
+  take the incoming Varnode and the COPY is destroyed, in the clone and in the
+  original block alike. A copy left in the original is no safer than one in the
+  clone: the next split of that block clones it as a plain COPY, and
+  `ActionVarnodeProps` replaces a known-zero COPY output with the constant 0, so
+  the guard that read it printed `glob = 0;` a second time (bash `sh_getopt`,
+  scp `getopt_internal`). A guard that reads a one-input phi through a temporary
+  (`ConditionalExecution` builds those) takes the incoming Varnode when that is
+  its own global.
+
+What the split cannot recover is where a store sat once copy propagation folded
+its value into the phi (`RulePropagateCopy` lets a non-constant value into a
+MULTIEQUAL, and the store then dies). The clone's copy of that phi is the store,
+at the start of the clone, after every store the predecessor kept; several such
+stores print in the order the phis are cloned. That order is the
+`clonephiorder` decision point,
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_clonephiorder.rs (order_global_phis)`:
+on (the default) clones the phis on globals after the others and in address
+order, which is how kuna printed most of these stores before the clone kept its
+guards' flag; off clones them in block order, the reverse of heritage's
+placement (heritage inserts each phi at the block start in ascending address
+order, so one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
+which merging also reads (reordering its phis too printed bash
+`get_urandom32`'s seed store inside the loop it leaves). Neither order comes
+from the binary. Over 140 corpus binaries the two
+orders differ in 119 store runs; of the 34 the disassembly decides, on matches
+the binary in 21 and off in 9.
+
+A `store; cmp; cmov; ret` function (clang and gcc, -O1 and -O2) hit the first
+through `returndup`, `earlyreturn` and `switchreturn` alike, because SLEIGH lifts
+the CMOV as a branch around one move, which leaves the RET with two in-edges. A
+`-O0` function whose paths all jump to one `leave; ret` hit the second.
+`ActionReturnSplit` clones through the same helper. Keeping the flag and
+settling the phis is a strict fix with no option.
+
 Two more run inside §8.1's machinery: `branchflip` (described there) and
 `loopbreak_recovery` (inside `ActionFinalStructure`, below). All of them
 share the safety stance: exact structural preconditions, hard caps, and

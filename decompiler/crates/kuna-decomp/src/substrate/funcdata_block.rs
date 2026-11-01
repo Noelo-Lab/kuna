@@ -4207,7 +4207,11 @@ impl CloneBlockOps {
                 // behaviour faithfully (matches the upstream byte output).
                 | opf::fallthru_true
                 | opf::calculated_bool
-                | opf::ptrflow);
+                | opf::ptrflow
+                // (kuna) not in the upstream mask: a cloned `guardReturns` liveness
+                // COPY that loses the flag gets a value propagated into it and
+                // prints as a second store to the global on the split path.
+                | opf::return_copy);
         // The addl-flag subset (funcdata_block.cc:987-988), plus the kuna_zextreturn and
         // kuna_exactfloat records.
         use crate::op::pcodeop_addlflags as opaf;
@@ -4275,6 +4279,9 @@ impl CloneBlockOps {
             ops.push(o);
             cur = data.obank().get(o).expect("cloneBlock: stale op").basic_neighbours().1;
         }
+        if data.get_arch().clone_phi_order {
+            crate::p8_structure::kuna_clonephiorder::order_global_phis(data, &mut ops);
+        }
         for orig_op in ops {
             let clone_op = match self.build_op_clone(data, orig_op)? {
                 Some(c) => c,
@@ -4319,6 +4326,7 @@ impl CloneBlockOps {
     /// Map original-op input Varnodes to the input slots of the cloned ops
     /// (C++ `CloneBlockOps::patchInputs`, `funcdata_block.cc:1066`).
     fn patch_inputs(&self, data: &mut Funcdata, inedge: int4) -> KunaResult<()> {
+        let mut one_input_phis: Vec<OpId> = Vec::new();
         for pos in 0..self.clone_list.len() {
             let (orig_op, clone_op) = self.clone_list[pos];
             let orig_code = data.obank().get(orig_op).expect("patchInputs: stale orig").code();
@@ -4329,10 +4337,12 @@ impl CloneBlockOps {
                 let in_vn =
                     data.obank().get(orig_op).expect("patchInputs").get_in(inedge).expect("MULTIEQUAL in");
                 data.op_set_input(clone_op, in_vn, 0)?;
+                one_input_phis.push(clone_op);
                 // One edge is removed from the original block.
                 data.op_remove_input(orig_op, inedge);
                 if data.obank().get(orig_op).expect("patchInputs").num_input() == 1 {
                     data.op_set_opcode_code(orig_op, OpCode::CPUI_COPY);
+                    one_input_phis.push(orig_op);
                 }
             } else if orig_code == OpCode::CPUI_INDIRECT {
                 return Err(KunaError::lowlevel("Can't clone INDIRECTs"));
@@ -4381,7 +4391,62 @@ impl CloneBlockOps {
                 }
             }
         }
+        for op in one_input_phis {
+            Self::settle_one_input_phi(data, op)?;
+        }
         Ok(())
+    }
+
+    /// (kuna) A phi the split leaves with one input is `x = COPY v`, and the return
+    /// guards (`return_copy`, kept by [`Self::build_op_clone`]) read `x`.  Copy
+    /// propagation and `ActionVarnodeProps`' known-zero replacement must not turn
+    /// either into a store the binary does not make.  When `x` and `v` are one global
+    /// nothing is written, so every reader takes `v` and the COPY is destroyed, in
+    /// the clone and in the original block alike: a copy left in the original is
+    /// cloned as a plain COPY by the next split of that block.  A guard reading `x`
+    /// through a temporary takes `v` when `v` is the guard's own global.
+    fn settle_one_input_phi(data: &mut Funcdata, op: OpId) -> KunaResult<()> {
+        let (Some(out), Some(input)) = (
+            data.obank().get(op).and_then(|o| o.get_out()),
+            data.obank().get(op).and_then(|o| o.get_in(0)),
+        ) else {
+            return Ok(());
+        };
+        if Self::same_global(data, out, input) {
+            data.total_replace(out, input)?;
+            data.op_destroy(op);
+            return Ok(());
+        }
+        if data.vbank().get(out).is_some_and(|v| v.is_persist()) {
+            return Ok(());
+        }
+        let readers: Vec<OpId> = data.vbank().get(out).map(|v| v.descend_iter().collect()).unwrap_or_default();
+        let guard_of = |data: &Funcdata, reader: OpId| {
+            data.obank()
+                .get(reader)
+                .filter(|r| r.is_return_copy() && r.code() == OpCode::CPUI_COPY)
+                .and_then(|r| r.get_out())
+        };
+        for reader in readers {
+            if guard_of(data, reader).is_some_and(|g| Self::same_global(data, g, input)) {
+                data.op_set_input(reader, input, 0)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `a` and `b` name the same persistent (global) storage.
+    fn same_global(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
+        match (data.vbank().get(a), data.vbank().get(b)) {
+            (Some(x), Some(y)) => {
+                x.is_persist()
+                    && x.is_addr_tied()
+                    && !y.is_constant()
+                    && x.get_size() == y.get_size()
+                    && x.get_addr() == y.get_addr()
+            }
+            _ => false,
+        }
     }
 }
 

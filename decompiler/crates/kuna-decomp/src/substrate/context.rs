@@ -1504,6 +1504,10 @@ pub struct ArchContext {
     /// one-block `if` -- see `Architecture::returndup_triangle`.  Read by
     /// `Funcdata::returndup_apply`.
     pub returndup_triangle: bool,
+    /// (kuna) `clonephiorder`: clone a return block's phis on globals last and in
+    /// address order -- see `Architecture::clone_phi_order`.  Read by
+    /// `CloneBlockOps::clone_block`.
+    pub clone_phi_order: bool,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -2073,6 +2077,7 @@ impl ArchContext {
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_orchain: false,     // orchain (short-circuit chain protection, default-off)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
+            clone_phi_order: false,       // clonephiorder (Architecture::reset_defaults sets the shipped default: on)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
