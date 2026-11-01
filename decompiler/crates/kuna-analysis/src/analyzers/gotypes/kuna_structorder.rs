@@ -16,17 +16,17 @@ enum Frame {
     Leave(GoType, Vec<u64>),
 }
 
-fn dependencies(img: &ImageBytes, meta: &TypeMeta, t: &GoType) -> Option<Vec<GoType>> {
-    let fields = plausible_slice(img, t.vma + TYPE_BASE + 8, 4096);
+fn dependencies(img: &GoImage, meta: &TypeMeta, t: &GoType) -> Option<Vec<GoType>> {
+    let fields = plausible_slice(img, t.vma + img.type_base() + img.word_size, 4096);
     let Some((ptr, len)) = fields else {
-        return (word(img, t.vma + TYPE_BASE + 16) == Some(0)
-            && word(img, t.vma + TYPE_BASE + 24) == Some(0))
+        return (word(img, t.vma + img.type_base() + 2 * img.word_size) == Some(0)
+            && word(img, t.vma + img.type_base() + 3 * img.word_size) == Some(0))
             .then(Vec::new);
     };
     let mut result = Vec::new();
     for i in 0..len {
-        let vma = word(img, ptr + i * 24 + 8)?;
-        if vma < meta.types || vma.checked_add(TYPE_BASE)? > meta.etypes {
+        let vma = word(img, ptr + i * 3 * img.word_size + img.word_size)?;
+        if vma < meta.types || vma.checked_add(img.type_base())? > meta.etypes {
             return None;
         }
         let child = read_type(img, meta.types, meta.etypes, (vma - meta.types) as u32)?;
@@ -46,7 +46,7 @@ fn dependencies(img: &ImageBytes, meta: &TypeMeta, t: &GoType) -> Option<Vec<GoT
 
 pub(super) fn complete_order(
     tf: &dyn TypeFactory,
-    img: &ImageBytes,
+    img: &GoImage,
     meta: &TypeMeta,
     roots: Vec<GoType>,
 ) -> Vec<GoType> {

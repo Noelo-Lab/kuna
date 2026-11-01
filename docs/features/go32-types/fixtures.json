@@ -1,0 +1,26 @@
+[
+  {
+    "file": "go118-386",
+    "version": "go version go1.18.1 linux/amd64",
+    "arch": "386",
+    "sha256": "f556b5b9a3466ae738dcc4ad6bdb4b8aaad65f113c3cae9f44e5b6907cb7819f"
+  },
+  {
+    "file": "go118-arm",
+    "version": "go version go1.18.1 linux/amd64",
+    "arch": "arm",
+    "sha256": "dd6a913900092896f6fc595955dd05705e07793f8ad8e15e4a4a3f04105fb4ea"
+  },
+  {
+    "file": "go122-386",
+    "version": "go version go1.22.5 linux/amd64",
+    "arch": "386",
+    "sha256": "d4e7be2cd8ded5c65eebf6d143dbfc7d1b793b60e58d824f10be9a10a94a6169"
+  },
+  {
+    "file": "go122-arm",
+    "version": "go version go1.22.5 linux/amd64",
+    "arch": "arm",
+    "sha256": "0011af116f75443e68678c4fc5be317a5cab6fe3a3d4c5bacce74113486621d8"
+  }
+]
