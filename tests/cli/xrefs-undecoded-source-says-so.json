@@ -1,0 +1,57 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/unflagged_macho_arm64",
+    "binary_sha256": "37343a81fe2471b9ba2ca2d6beadef04337cb43815e7d4de10247abad7c66be1",
+    "binary_size": 33648,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/unflagged_macho_arm64"
+  },
+  "timeout_s": 60,
+  "cmd": [
+    "{{KUNA}}",
+    "xrefs",
+    "{{BIN}}",
+    "--from",
+    "_greeting",
+    "--json"
+  ],
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "0x100000414 is in __TEXT,__cstring, whose section type holds only data"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 0
+      },
+      {
+        "path": "coverage.decoded",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "path": "coverage.section",
+        "op": "eq",
+        "value": "__TEXT,__cstring"
+      },
+      {
+        "path": "coverage.code_section",
+        "op": "eq",
+        "value": false
+      },
+      {
+        "path": "coverage.executable",
+        "op": "eq",
+        "value": true
+      }
+    ]
+  },
+  "notes": "GH-1406: a string in the executable __TEXT segment is not decoded as code, because its section type (S_CSTRING_LITERALS) holds only data; the empty answer says the address was not decoded and why, which tells it apart from a decoded function with no references."
+}

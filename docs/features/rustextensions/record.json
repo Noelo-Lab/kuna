@@ -2,9 +2,9 @@
   "state": "validated",
   "kind": "strict Rust integer-extension correction",
   "selection": "outlang rust; existing C and Go behavior preserved",
-  "baseline_commit": "889c21ea00223ba720ccc93a555d146a9bed98a2",
-  "actual_main_merge": "889c21ea00223ba720ccc93a555d146a9bed98a2",
-  "kuna_sha256": "12eee03ac6975f7d52226a0ca5337384e3601e03fb77ce16e1cbf82eb3f2d0d4",
+  "baseline_commit": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "actual_main_merge": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "kuna_sha256": "29270f9e6c85786a398482beed0f01b16050f651993bc605bc976c16c17f3050",
   "breadth": {
     "images": 18,
     "distinct_functions": 25339,
@@ -30,7 +30,7 @@
   },
   "validation": {
     "workspace": {
-      "passed": 10050,
+      "passed": 10061,
       "failed": 0,
       "ignored": 39,
       "suites": 71
@@ -236,7 +236,9 @@
         ]
       }
     ],
-    "limitations": "No newly diagnosed function and no previously compiling body regresses. This does not claim whole-program compilation or absence of every new diagnostic in already-invalid runtime bodies."
+    "limitations": "No newly diagnosed function and no previously compiling body regresses. This does not claim whole-program compilation or absence of every new diagnostic in already-invalid runtime bodies.",
+    "validation_base": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+    "fresh_diagnostics_match_previous_classification": true
   },
   "source_mapping": {
     "newly_exposed_addresses": 71,
@@ -247,100 +249,100 @@
   "timing": {
     "pairs": 31,
     "warmups_per_arm": 3,
-    "max_cpu_delta_pct": 1.0154234494825332,
-    "max_wall_delta_pct": 1.0404486311410999,
+    "max_cpu_delta_pct": -0.3291034155601391,
+    "max_wall_delta_pct": -0.23282108136765123,
     "budget_pct": 5,
     "passed": true,
     "measurements": {
       "scalar-c": {
         "medians": {
           "baseline": {
-            "wall_ms": 101.23245604336262,
-            "cpu_ms": 99.92099999999971
+            "wall_ms": 102.41446876898408,
+            "cpu_ms": 101.18399999999994
           },
           "patched": {
-            "wall_ms": 101.19683993980289,
-            "cpu_ms": 99.88999999999936
+            "wall_ms": 102.09130123257637,
+            "cpu_ms": 100.85099999999957
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": -0.03518249477665325,
-            "cpu_ms": -0.03102450936274259
+            "wall_ms": -0.3155487113219113,
+            "cpu_ms": -0.3291034155601391
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.26976321185401275,
-          "cpu_ms": 0.2607939727611308
+          "wall_ms": -0.2611167981618534,
+          "cpu_ms": -0.2681969670077611
         },
         "affinity_cpu": 77
       },
       "rust-sign8": {
         "medians": {
           "baseline": {
-            "wall_ms": 214.45059403777122,
-            "cpu_ms": 213.02699999999675
+            "wall_ms": 213.72027695178986,
+            "cpu_ms": 212.47199999999998
           },
           "patched": {
-            "wall_ms": 214.50948528945446,
-            "cpu_ms": 213.1930000000004
+            "wall_ms": 209.70159163698554,
+            "cpu_ms": 208.44100000000054
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.027461454209287695,
-            "cpu_ms": 0.07792439456204558
+            "wall_ms": -1.8803481691682555,
+            "cpu_ms": -1.8971911593054336
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.14214933702403343,
-          "cpu_ms": 0.14002838159015152
+          "wall_ms": -1.56299769953967,
+          "cpu_ms": -1.5288254310332428
         },
         "affinity_cpu": 77
       },
       "rust-many-extensions": {
         "medians": {
           "baseline": {
-            "wall_ms": 576.5054547227919,
-            "cpu_ms": 575.2280000000028
+            "wall_ms": 679.9689261242747,
+            "cpu_ms": 653.1400000000006
           },
           "patched": {
-            "wall_ms": 582.503697834909,
-            "cpu_ms": 581.0689999999922
+            "wall_ms": 678.3858151175082,
+            "cpu_ms": 625.5690000000059
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 1.0404486311410999,
-            "cpu_ms": 1.0154234494825332
+            "wall_ms": -0.23282108136765123,
+            "cpu_ms": -4.221300180664889
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.9848788858885626,
-          "cpu_ms": 1.0003229088176857
+          "wall_ms": -0.48002196525620544,
+          "cpu_ms": -0.44864524695238384
         },
         "affinity_cpu": 77
       },
       "go-control": {
         "medians": {
           "baseline": {
-            "wall_ms": 591.428313869983,
-            "cpu_ms": 589.9400000000128
+            "wall_ms": 599.0318767726421,
+            "cpu_ms": 597.6150000000047
           },
           "patched": {
-            "wall_ms": 596.4027750305831,
-            "cpu_ms": 594.9149999999861
+            "wall_ms": 594.7515987791121,
+            "cpu_ms": 593.3199999999914
           }
         },
         "delta_pct": {
           "baseline_to_patched": {
-            "wall_ms": 0.8410928330519152,
-            "cpu_ms": 0.8433060989207819
+            "wall_ms": -0.7145325915860368,
+            "cpu_ms": -0.718690126588728
           }
         },
         "paired_median_delta_pct": {
-          "wall_ms": 0.9442593166745006,
-          "cpu_ms": 0.9439244724670504
+          "wall_ms": -0.5066114995201709,
+          "cpu_ms": -0.5163208622761317
         },
         "affinity_cpu": 77
       }

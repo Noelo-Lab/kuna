@@ -140,6 +140,27 @@ block and the walk stops at the first op that is not one), so it collects the ru
 off the block's intrusive op list rather than materializing every op of every
 successor once per CFG edge per pass.
 
+**Heritage's own reads.** Upstream gives each input slot of a new MULTIEQUAL,
+the input of each call or store guard INDIRECT, and the input of each persist
+RETURN COPY a free placeholder Varnode at the op's own storage, which renaming
+replaces with the top of that storage's stack and deletes. kuna builds none of
+them (`kuna_renamereads.rs`): the slot is left empty and the op marked, and
+renaming reads the marked op's output storage where upstream reads the
+placeholder's, which is the same address and size, so the slot is linked to the
+Varnode upstream links (`heritage.rs (Heritage::rename_recurse)`). Each empty
+slot still takes the creation index its placeholder would have taken
+(`varnode.rs (VarnodeBank::reserve_create_index)`), so every later Varnode is
+numbered as upstream numbers it: creation indices reach the output through the
+CSE hash (`op.rs (get_cse_hash)`) and the location order of free Varnodes. A slot
+renaming does not reach (an edge from a block the dominator walk never enters,
+or a pass stopped by its deadline) gets the placeholder upstream would have left
+there, with its reserved index, when the pass finishes
+(`kuna_renamereads.rs (finish)`). Every placeholder of a pass is alive between
+placement and renaming, so they set the Varnode arena's high-water mark, which
+the arena keeps for the rest of the function: 5.4 million of the 10.8 million
+Varnodes of serde-hkx hkxc.exe 0x1406198f0's first full pass, 11.2 million of
+the 26.5 million of libpython3.11 0x3b72c0's.
+
 **Pruned joins.** Under `option prunedssa` (default on) phi placement is
 pruned by liveness for a range that is neither persistent nor address-tied,
 in the unique and stack spaces (`kuna_prunedssa.rs (prune_merges)`). After

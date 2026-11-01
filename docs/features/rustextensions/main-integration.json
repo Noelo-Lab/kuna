@@ -1,48 +1,231 @@
 {
-  "old_head": "b0b9289a732abab2fffb412f48f3eac6a84f16d3",
-  "new_main": "889c21ea00223ba720ccc93a555d146a9bed98a2",
-  "our_changes_byte_and_mtime_identical": {
-    "decompiler/crates/kuna-console/tests/verify_rustextensions.rs": {
-      "sha256": "b7a67b6f259b45fd59eee93838bbe9497354a86bff0c9fb80ceec858b4e8e5f4",
-      "mtime_ns": 1793546446114565872
+  "parent_head": "50cd8083f9de7a78dd3224ad55408f96e0d18833",
+  "main": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "all_feature_files_identical_after_merge": true,
+  "files": [
+    {
+      "path": "decompiler/crates/kuna-base/src/xml.rs",
+      "sha256": "f141f1e6dfaf0fcec93c76116c994ce68cadb813a52b34e460a6374ac4f03470"
     },
-    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustextend.rs": {
-      "sha256": "b7a09b63023edbac616598e1f8168f8600738a1795eea3d0cd6fc1a3478b0eb1",
-      "mtime_ns": 1793546287985395978
+    {
+      "path": "decompiler/crates/kuna-console/tests/integration.rs",
+      "sha256": "8d750ad5d233178e3ca3d03fbc7a7313537cd9cf9367d6eec012389406438450"
     },
-    "tests/fixtures/rust-extensions/extensions.rs": {
-      "sha256": "e059c455e5d6d2a742c74d7ac960ef103cf97e45bfb4ffd7a3569c0b19e1c8b3",
-      "mtime_ns": 1793546446114565872
+    {
+      "path": "decompiler/crates/kuna-console/tests/verify_rustextensions.rs",
+      "sha256": "b7a67b6f259b45fd59eee93838bbe9497354a86bff0c9fb80ceec858b4e8e5f4"
     },
-    "tests/stages/ghangr-rust-extensions.xml": {
-      "sha256": "5ab0c74f056cacb17a667d9179accad41d2c76aae6209d43b8cf12c6d073327f",
-      "mtime_ns": 1793546407601251556
+    {
+      "path": "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustextend.rs",
+      "sha256": "b7a09b63023edbac616598e1f8168f8600738a1795eea3d0cd6fc1a3478b0eb1"
     },
-    "decompiler/crates/kuna-base/src/xml.rs": {
-      "sha256": "f141f1e6dfaf0fcec93c76116c994ce68cadb813a52b34e460a6374ac4f03470",
-      "mtime_ns": 1793546645502045510
+    {
+      "path": "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs",
+      "sha256": "ed65b0018b530930c8f8828197297d6cf9b4fdd990de7fc76ec15482fba5c9a1"
     },
-    "decompiler/crates/kuna-console/tests/integration.rs": {
-      "sha256": "8d750ad5d233178e3ca3d03fbc7a7313537cd9cf9367d6eec012389406438450",
-      "mtime_ns": 1793546446114565872
+    {
+      "path": "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs",
+      "sha256": "cbc9b36e87b29de7b7fcfb098e3114faba97be94a658415e583057b89f7e1db3"
     },
-    "decompiler/crates/kuna-decomp/src/p9_emit/mod.rs": {
-      "sha256": "ed65b0018b530930c8f8828197297d6cf9b4fdd990de7fc76ec15482fba5c9a1",
-      "mtime_ns": 1793546298563205351
+    {
+      "path": "docs/baseline-stages.json",
+      "sha256": "1b42ebbce983e275691d647c80ba48eef9e9133aa5a106591f131457bbe5d1fd"
     },
-    "decompiler/crates/kuna-decomp/src/p9_emit/printc.rs": {
-      "sha256": "cbc9b36e87b29de7b7fcfb098e3114faba97be94a658415e583057b89f7e1db3",
-      "mtime_ns": 1793546298570205225
+    {
+      "path": "docs/features/rustextensions/1.90.0-after-execution.rs",
+      "sha256": "968f7c73befbfa6752f1f9a18d0826188c8244bf26cc86c7b6aeaaf405a4e7a1"
     },
-    "docs/baseline-stages.json": {
-      "sha256": "1b42ebbce983e275691d647c80ba48eef9e9133aa5a106591f131457bbe5d1fd",
-      "mtime_ns": 1793546733431505766
+    {
+      "path": "docs/features/rustextensions/1.90.0-after.rs",
+      "sha256": "14bd58f2d9f9f5e0f749954a6a7542259e7ccb5abfd2fb3039e9edfc26a44b2e"
     },
-    "docs/spec/09-emission.md": {
-      "sha256": "54b192bc9c923ccff89128ce9dd10bc246a999d3799fecd418357a5d5338dded",
-      "mtime_ns": 1793546407603251520
+    {
+      "path": "docs/features/rustextensions/1.90.0-before-compile.log",
+      "sha256": "d57d78f2d6d0c581a1a5afc53aa55c32a0a91643c399689286b2d0ccb873deb7"
+    },
+    {
+      "path": "docs/features/rustextensions/1.90.0-before-execution.rs",
+      "sha256": "948ac2b96eaa61044fecf37fd1ce0706b539ba90ad9a029d9d46cd8ed290ab63"
+    },
+    {
+      "path": "docs/features/rustextensions/1.90.0-before-sign8-execution.rs",
+      "sha256": "e1beab85aaf226b9ecb45560d42da65e383f7ee5fdc9a2f70cf663096896e6a8"
+    },
+    {
+      "path": "docs/features/rustextensions/1.90.0-before.rs",
+      "sha256": "7bc256e108f5be39bb78ff59a95914a2b09daca9e9f078bd00d0210f15bd75f3"
+    },
+    {
+      "path": "docs/features/rustextensions/1.93.1-after-execution.rs",
+      "sha256": "968f7c73befbfa6752f1f9a18d0826188c8244bf26cc86c7b6aeaaf405a4e7a1"
+    },
+    {
+      "path": "docs/features/rustextensions/1.93.1-after.rs",
+      "sha256": "14bd58f2d9f9f5e0f749954a6a7542259e7ccb5abfd2fb3039e9edfc26a44b2e"
+    },
+    {
+      "path": "docs/features/rustextensions/1.93.1-before-compile.log",
+      "sha256": "81833d36808e0d9889cae2fffc988f7a561819486cc4fc6d673fd90c07d1b24f"
+    },
+    {
+      "path": "docs/features/rustextensions/1.93.1-before-execution.rs",
+      "sha256": "948ac2b96eaa61044fecf37fd1ce0706b539ba90ad9a029d9d46cd8ed290ab63"
+    },
+    {
+      "path": "docs/features/rustextensions/1.93.1-before-sign8-execution.rs",
+      "sha256": "e1beab85aaf226b9ecb45560d42da65e383f7ee5fdc9a2f70cf663096896e6a8"
+    },
+    {
+      "path": "docs/features/rustextensions/1.93.1-before.rs",
+      "sha256": "7bc256e108f5be39bb78ff59a95914a2b09daca9e9f078bd00d0210f15bd75f3"
+    },
+    {
+      "path": "docs/features/rustextensions/1.99.1-after-execution.rs",
+      "sha256": "968f7c73befbfa6752f1f9a18d0826188c8244bf26cc86c7b6aeaaf405a4e7a1"
+    },
+    {
+      "path": "docs/features/rustextensions/1.99.1-after.rs",
+      "sha256": "14bd58f2d9f9f5e0f749954a6a7542259e7ccb5abfd2fb3039e9edfc26a44b2e"
+    },
+    {
+      "path": "docs/features/rustextensions/1.99.1-before-compile.log",
+      "sha256": "94b09b18e44fec51781dba67fbb707522d1ba170abc9195d832dad784fc2be69"
+    },
+    {
+      "path": "docs/features/rustextensions/1.99.1-before-execution.rs",
+      "sha256": "948ac2b96eaa61044fecf37fd1ce0706b539ba90ad9a029d9d46cd8ed290ab63"
+    },
+    {
+      "path": "docs/features/rustextensions/1.99.1-before-sign8-execution.rs",
+      "sha256": "e1beab85aaf226b9ecb45560d42da65e383f7ee5fdc9a2f70cf663096896e6a8"
+    },
+    {
+      "path": "docs/features/rustextensions/1.99.1-before.rs",
+      "sha256": "7bc256e108f5be39bb78ff59a95914a2b09daca9e9f078bd00d0210f15bd75f3"
+    },
+    {
+      "path": "docs/features/rustextensions/analysis.md",
+      "sha256": "ce95a4f2a74c7e68349efb632304da9a42f3c0e283c325625f447148b385d240"
+    },
+    {
+      "path": "docs/features/rustextensions/breadth.json",
+      "sha256": "289731d8473277b1e32ac68d8b964ad734c965a4631043e3f674d0c962bb7f62"
+    },
+    {
+      "path": "docs/features/rustextensions/cpu-audit.json",
+      "sha256": "11a33376bd37ad1e5cf07413c143285d2878f195a4e41f8f1b4214dbbd344d4e"
+    },
+    {
+      "path": "docs/features/rustextensions/grep-rust.diff",
+      "sha256": "101b95700ece5d8062048558a3e80df41155deda814117a446bafff83fdc9a25"
+    },
+    {
+      "path": "docs/features/rustextensions/instruction-review.json",
+      "sha256": "3978afb0cb8ac80173ea18bb9c2c89cc8a7f86f3604ae93a89d1edfb8d049708"
+    },
+    {
+      "path": "docs/features/rustextensions/main-effects-proof.json",
+      "sha256": "a7b06fe54ea0aedef208b7477ee6e3792e8de9046037732ecd1753b2fc6725fc"
+    },
+    {
+      "path": "docs/features/rustextensions/main-effects.json",
+      "sha256": "42598f5622ec328161a65865597ee156371d4f44715d1d280ea78e258bf34f39"
+    },
+    {
+      "path": "docs/features/rustextensions/main-integration.json",
+      "sha256": "af7b91de08c831f5620332d339745ffbdb630e5267228b94e00858e7376adade"
+    },
+    {
+      "path": "docs/features/rustextensions/manual-review.md",
+      "sha256": "866693adb7d39d4c12c8d17e27d169469783d6589b3350b50a91a966114cb106"
+    },
+    {
+      "path": "docs/features/rustextensions/native-execution.json",
+      "sha256": "254f4b6511e9cbf90204387750bb61fe7e3ad75ed373d23ff507835a51d715ab"
+    },
+    {
+      "path": "docs/features/rustextensions/native-rust-rust.diff",
+      "sha256": "17e7fc1cbf133b959b8721b2894c3fa36ff8c0a8281087e2de1ddfbc96a0b426"
+    },
+    {
+      "path": "docs/features/rustextensions/owned-process-audit.json",
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+    },
+    {
+      "path": "docs/features/rustextensions/record.json",
+      "sha256": "4dcccbc40f475ca2f09efd428b362c7269995c42f2b1bd4dae8e1d5125ebf102"
+    },
+    {
+      "path": "docs/features/rustextensions/review-correction.json",
+      "sha256": "b348319ff13d909de9b1da0951f1ea663119f03efb8d9d882908745f8f81ae95"
+    },
+    {
+      "path": "docs/features/rustextensions/rust-rust.diff",
+      "sha256": "577dc1ba7279e69f21e1270375db621a746ac338f696912d48e5c92511bb4340"
+    },
+    {
+      "path": "docs/features/rustextensions/rust2025-rust.diff",
+      "sha256": "b818035ed83943478e9df7038518d13b2942aa67453bbbd54a6e2ece94fd9861"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-go-control.json",
+      "sha256": "976d115badda776731ed1b7e92316cb345c9c84a3d4d8dd2841885d88cd68b04"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-rust-many-extensions.json",
+      "sha256": "efef166c86fe756e729a152db814a9d77167c74d0aa07f6717b770a7fd8ee74e"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-rust-sign8.json",
+      "sha256": "c0c4dc98b05de27f4ebdbcca8ae3de9d25af3c1c5865628e9b36e56feb562d4d"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-scalar-c.json",
+      "sha256": "837d850560f706ae61fe765841abaaed7059210172f041faefd3b170cba493bd"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-witness-after.json",
+      "sha256": "af84f58147ad453ca6322134968766fce3d501598a20af1b4843ab83196844b4"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-witness-before.json",
+      "sha256": "4c9f53b323df0f4b09cb852a706fe45241a2a9661ce0fab95a84e67c30522f0c"
+    },
+    {
+      "path": "docs/features/rustextensions/timing-witness-proof.json",
+      "sha256": "b521a51b25992a4b4aef351caa511f5580e8d24144d115957d9d32b97be6d4c7"
+    },
+    {
+      "path": "docs/features/rustextensions/type-review.json",
+      "sha256": "c5147653059ef4f7c6b825a1bd7917bd5481f77bf7dc32c9385f7ba13494a89a"
+    },
+    {
+      "path": "docs/features/rustextensions/verifier-selfcheck.json",
+      "sha256": "0a98f5da4f1ca949197a5f164df1c011bf83f96a1044eb621397ba3eb6e273b7"
+    },
+    {
+      "path": "docs/features/rustextensions/verify-Cargo.lock",
+      "sha256": "615181ecaa9182a68633d24631977ad6b819640c3b080f4785e6235b3711ce2d"
+    },
+    {
+      "path": "docs/features/rustextensions/verify-Cargo.toml",
+      "sha256": "7d830d9e27f3e5751b20ceb4b13489a984b3b604c60e5e431d6849d85fdb0250"
+    },
+    {
+      "path": "docs/features/rustextensions/verify.rs",
+      "sha256": "c335a12c91db428ed530c8332ce6ca8da4524ac985e1199da6b90aa3b6d4c69f"
+    },
+    {
+      "path": "docs/spec/09-emission.md",
+      "sha256": "54b192bc9c923ccff89128ce9dd10bc246a999d3799fecd418357a5d5338dded"
+    },
+    {
+      "path": "tests/fixtures/rust-extensions/extensions.rs",
+      "sha256": "e059c455e5d6d2a742c74d7ac960ef103cf97e45bfb4ffd7a3569c0b19e1c8b3"
+    },
+    {
+      "path": "tests/stages/ghangr-rust-extensions.xml",
+      "sha256": "5ab0c74f056cacb17a667d9179accad41d2c76aae6209d43b8cf12c6d073327f"
     }
-  },
-  "tracked_patch_identical": true,
-  "main_changes": "PR1407 deterministic creation-order decisions in P2/P5/P6; requires fresh combined validation"
+  ]
 }

@@ -1,11 +1,11 @@
 error[E0308]: mismatched types
-  --> /tmp/kuna-rust-extensions-889c-review/1.99.1-before-execution.rs:23:34
+  --> /tmp/kuna-rust-extensions-c281-review/1.99.1-before-execution.rs:23:34
    |
 23 |   return (b as u8 + 0xb) as u8 + a;
    |                                  ^ expected `u8`, found `i64`
 
 error[E0308]: mismatched types
-  --> /tmp/kuna-rust-extensions-889c-review/1.99.1-before-execution.rs:23:10
+  --> /tmp/kuna-rust-extensions-c281-review/1.99.1-before-execution.rs:23:10
    |
 21 | unsafe fn narrow_sum(mut a: i64, mut b: u64) -> i64
    |                                                 --- expected `i64` because of return type
@@ -19,7 +19,7 @@ help: you can convert a `u8` to an `i64`
    |          +                         ++++++++
 
 error[E0277]: cannot add `i64` to `u8`
-  --> /tmp/kuna-rust-extensions-889c-review/1.99.1-before-execution.rs:23:32
+  --> /tmp/kuna-rust-extensions-c281-review/1.99.1-before-execution.rs:23:32
    |
 23 |   return (b as u8 + 0xb) as u8 + a;
    |                                ^ no implementation for `u8 + i64`

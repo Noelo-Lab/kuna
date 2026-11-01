@@ -8,7 +8,7 @@ shortcut also omits widening needed after narrow arithmetic.
 Rust now keeps explicit extensions and reinterprets signed core text storage
 through its signed width before sign extension. Text declarations and pointer
 pointees retain their storage types. This corrects existing Rust output; no new
-option is added. C and Go retain their previous behavior. Baseline: `889c21ea00223ba720ccc93a555d146a9bed98a2`.
+option is added. C and Go retain their previous behavior. Baseline: `c28134ce02f52cc26a70e0ba71be210f3dd60d8d`.
 
 Six native functions cover signed 8-/16-/32-bit extension, narrow addition and
 multiplication, and unsigned control. Each runs all 256 byte values and seven
@@ -37,7 +37,7 @@ matches an original machine instruction, no address is lost, and variable and
 function metadata outside source positions is unchanged. Partial standalone
 Rust type checking and its limitations are recorded in `type-review.json`.
 
-All 10,050 workspace tests pass, with 39 ignored across 71 suites.
+All 10,061 workspace tests pass, with 39 ignored across 71 suites.
 Original assertions remain 675/675; stages pass 3,492/3,492. The new regression
 improves from 0/2 to 2/2. Tooling passes 114 tests with one optional skip; lint,
 spec, catalog and counter checks pass. The original baseline is unchanged.
@@ -45,5 +45,5 @@ spec, catalog and counter checks pass. The original baseline is unchanged.
 Timing uses 31 alternating pairs after three warmups per arm, after this task's
 builds and scans finish. Cases cover default C, native Rust byte extension, a
 Rust function with 34 added conversions, and Go output. Maximum measured changes
-are +1.02% CPU and +1.04% wall, within 5%.
+are -0.33% CPU and -0.23% wall, within 5%.
 Raw paired samples are retained.

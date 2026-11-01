@@ -39,13 +39,12 @@ Overflow checks are disabled explicitly, matching the original wrapping code.
 The before signed-byte body alone compiles but disagrees on 798 of 1,578 rows
 for every producer; the before six-body program also fails type checking.
 
-Both comparison arms and all gates were rerun against main889c. The intervening
-main change affects the same 42 function records on each arm; an independent
-comparison proves that all 84 records differ only by consistent bijective
-renaming of generated structs, with all other fields preserved. The Rust
-extension comparison remains against the fresh main baseline.
+Both comparison arms and all gates were rerun against main c28134ce, including
+its xrefs and heritage changes. All 101,466 fresh function records across both
+arms are identical to the preceding main889c review. Native execution and the
+partial type audit were repeated; their results preserve the prior classification.
 
-All required gates pass, including 10,050 workspace tests. Four 31-pair CPU77
+All required gates pass, including 10,061 workspace tests. Four 31-pair CPU77
 timing cases run after this task's builds, full-image scans and compiler audits
 finish; no own build/scan remains. The direct heavy-function witness has 34 added
 casts in both the full scan and exact single-function timing command. Maximum

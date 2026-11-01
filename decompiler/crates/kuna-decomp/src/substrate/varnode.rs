@@ -1659,15 +1659,30 @@ impl VarnodeBank {
 
     /// Create a \e free Varnode in the location tree (C++ `create`).
     pub fn create(&mut self, s: int4, m: Address, ct: Rc<Datatype>) -> VarnodeId {
+        let index = self.reserve_create_index(1);
+        self.create_reserved(s, m, ct, index)
+    }
+
+    /// Take `n` creation indices for Varnodes that are not built now, so the
+    /// Varnodes created after keep the indices they would otherwise have.
+    /// Returns the first.
+    pub fn reserve_create_index(&mut self, n: uint4) -> uint4 {
+        let first = self.create_index;
+        self.create_index = self.create_index.wadd(n);
+        first
+    }
+
+    /// Create a free Varnode with a creation index taken by
+    /// [`Self::reserve_create_index`].
+    pub fn create_reserved(&mut self, s: int4, m: Address, ct: Rc<Datatype>, index: uint4) -> VarnodeId {
         let lk = LocKey::new(
             AddrKey::of(&m),
             s,
             flag_class_of(0),
-            SeqKey { uniq: self.create_index, ..SeqKey::default() },
+            SeqKey { uniq: index, ..SeqKey::default() },
         );
         let mut vn = Varnode::new(s, m, ct);
-        vn.create_index = self.create_index;
-        self.create_index = self.create_index.wadd(1);
+        vn.create_index = index;
         let id = self.arena.insert(vn);
         // Frees can always be inserted without duplication.
         self.arena[id].lociter = Some(lk);

@@ -1,12 +1,12 @@
 {
-  "baseline_commit": "889c21ea00223ba720ccc93a555d146a9bed98a2",
+  "baseline_commit": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
   "options": {
     "godwarfsig": "on"
   },
   "fixtures": [
     {
-      "fixture": "hermetic-plain",
-      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
       "languages": [
         {
           "language": "c",
@@ -25,8 +25,8 @@
       ]
     },
     {
-      "fixture": "hermetic",
-      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
       "languages": [
         {
           "language": "c",

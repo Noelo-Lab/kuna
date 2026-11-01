@@ -177,6 +177,9 @@ pub struct XrefIndex {
     flow: Option<FlowGraph>,
     /// Every jump table the walk read, in walk order.
     switches: Vec<SwitchTable>,
+    /// The targets of decoded direct calls and branches that lie outside the
+    /// sections the walk decodes.
+    stopped: BTreeSet<u64>,
 }
 
 /// Every decoded instruction and its intra-function successors, so each entry's
@@ -448,6 +451,24 @@ impl XrefIndex {
         self.funcs.contains(&vma)
     }
 
+    /// Did the walk decode an instruction at `vma`?
+    pub fn is_decoded(&self, vma: u64) -> bool {
+        self.decoded.contains(&vma)
+    }
+
+    /// Does a decoded direct call or branch target `vma` outside the sections the
+    /// walk decodes? A call through a slot does not count: its target is the slot.
+    pub fn is_stopped_flow_target(&self, vma: u64) -> bool {
+        self.stopped.contains(&vma)
+    }
+
+    /// The [`is_stopped_flow_target`](Self::is_stopped_flow_target) addresses
+    /// the walk decoded no instruction at, in address order: code the descent was
+    /// pointed at and stopped short of.
+    pub fn undecoded_flow_targets(&self) -> impl Iterator<Item = u64> + '_ {
+        self.stopped.iter().copied().filter(|to| !self.decoded.contains(to))
+    }
+
     /// How many distinct instructions the walk decoded.
     pub fn instruction_count(&self) -> usize {
         self.insns
@@ -615,7 +636,7 @@ pub fn build(
     translate: &dyn Translate,
     seeds: &[u64],
 ) -> XrefIndex {
-    descend(file, arch, translate, seeds, &[], false)
+    descend(file, arch, translate, seeds, &[], (&[], &[]), false)
 }
 
 /// [`build`], also keeping the successor graph
@@ -628,7 +649,7 @@ pub fn build_measured(
     translate: &dyn Translate,
     seeds: &[u64],
 ) -> XrefIndex {
-    descend(file, arch, translate, seeds, &[], true)
+    descend(file, arch, translate, seeds, &[], (&[], &[]), true)
 }
 
 /// [`build`], plus the addresses the CALLER named.
@@ -650,7 +671,27 @@ pub fn build_with_focus(
     seeds: &[u64],
     focus: &[u64],
 ) -> XrefIndex {
-    descend(file, arch, translate, seeds, focus, false)
+    descend(file, arch, translate, seeds, focus, (&[], &[]), false)
+}
+
+/// [`build_with_focus`], where a focus address may also lie in one of
+/// `unflagged`: executable memory in a section not marked as code
+/// ([`super::kuna_unflaggedcode`]). The caller naming such an address is not
+/// enough to read its bytes as instructions; it is decoded when the image says
+/// it is code, because a direct call or branch the seeded walk decoded targets
+/// it, or because it is one of `declared` (an ELF `STT_FUNC`). Only its own body
+/// is decoded: its branches are followed while they stay inside the range it
+/// starts in, and a call out of it is filed and walked under the ordinary rules.
+pub fn build_with_unflagged_focus(
+    file: &object::File,
+    arch: &Architecture,
+    translate: &dyn Translate,
+    seeds: &[u64],
+    focus: &[u64],
+    unflagged: &[(u64, u64)],
+    declared: &[u64],
+) -> XrefIndex {
+    descend(file, arch, translate, seeds, focus, (unflagged, declared), false)
 }
 
 fn descend(
@@ -659,6 +700,7 @@ fn descend(
     translate: &dyn Translate,
     seeds: &[u64],
     focus: &[u64],
+    (unflagged, declared): (&[(u64, u64)], &[u64]),
     measure: bool,
 ) -> XrefIndex {
     let Some(code_space) = arch.manage().get_default_code_space().map(Rc::clone) else {
@@ -811,6 +853,18 @@ fn descend(
     pending_focus.dedup();
     pending_focus.reverse();
     let mut focused: Vec<u64> = Vec::new();
+    let unflagged = range_union(unflagged.to_vec());
+    let forced: HashSet<u64> = if sections_are_runtime {
+        focus.iter().copied()
+            .filter(|&f| !in_range(&exec_set, f) && in_range(&unflagged, f))
+            .collect()
+    } else {
+        HashSet::new()
+    };
+    // Only the focus pass decodes a forced address; the descent that reaches one
+    // as a callee first stops at it, as it always has.
+    let mut admitted: HashSet<u64> = HashSet::new();
+    let mut stopped: BTreeSet<u64> = BTreeSet::new();
 
     loop {
         // Drain known entries first, then merge recovered roots and focus addresses
@@ -859,10 +913,15 @@ fn descend(
             }
             None => match pending_focus.pop() {
                 Some(f) => {
+                    let admit = forced.contains(&f) && (declared.contains(&f) || stopped.contains(&f));
                     if st.decoded.contains(&f) || partition_covers(&recovered_spans, f)
-                        || (sections_are_runtime && !in_range(&exec_set, f))
+                        || (sections_are_runtime && !in_range(&exec_set, f) && !admit)
                     {
                         continue;
+                    }
+                    if admit {
+                        walked.remove(&f);
+                        admitted.insert(f);
                     }
                     st.funcs.insert(f);
                     focused.push(f);
@@ -956,6 +1015,8 @@ fn descend(
                         pending_focus.dedup();
                         pending_focus.reverse();
                         focused.clear();
+                        admitted.clear();
+                        stopped.clear();
                         walked.clear();
                         if let Some(context) = &mut walk_context { context.reset(); }
                         partition.clear();
@@ -998,6 +1059,8 @@ fn descend(
         }
         let entry_mode = walk_context.as_ref().and_then(|context| context.entry(entry));
         let mut insn_queue = VecDeque::from([(entry, entry_mode)]);
+        let body_range = admitted.contains(&entry)
+            .then(|| unflagged[unflagged.partition_point(|&(lo, _)| lo <= entry) - 1]);
         // (kuna) `switchtable`: the dispatches this body's decoding filled the gap
         // above, to read again once it drains.
         let mut woken: Vec<(u64, _, VarnodeData)> = Vec::new();
@@ -1068,7 +1131,9 @@ fn descend(
                 st.refused.insert(vma);
                 continue;
             }
-            if sections_are_runtime && !in_range(&exec_set, vma) {
+            if sections_are_runtime && !in_range(&exec_set, vma)
+                && !body_range.is_some_and(|(lo, hi)| vma >= lo && vma < hi)
+            {
                 continue; // out of bounds (the `flow.rs` gate)
             }
             let selection = super::kuna_walkcontext::InstructionMode::select(arch, translate, &code_space, vma, mode);
@@ -1165,6 +1230,9 @@ fn descend(
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
                 st.file(vma, target, kind, &text);
+                if sections_are_runtime && !in_range(&exec_set, target) {
+                    stopped.insert(target);
+                }
                 if c.flow.is_call {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
@@ -1370,6 +1438,7 @@ fn descend(
     if !measure {
         index.flow = None;
     }
+    index.stopped = stopped;
     index
 }
 
@@ -1732,6 +1801,7 @@ impl State {
             insns,
             flow: self.flow,
             switches: self.switches,
+            stopped: BTreeSet::new(),
         }
     }
 }
@@ -1801,6 +1871,7 @@ fn empty() -> XrefIndex {
         insns: 0,
         flow: None,
         switches: Vec::new(),
+        stopped: BTreeSet::new(),
     }
 }
 

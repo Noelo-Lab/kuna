@@ -99,5 +99,7 @@
       ]
     }
   ],
-  "limitations": "No newly diagnosed function and no previously compiling body regresses. This does not claim whole-program compilation or absence of every new diagnostic in already-invalid runtime bodies."
+  "limitations": "No newly diagnosed function and no previously compiling body regresses. This does not claim whole-program compilation or absence of every new diagnostic in already-invalid runtime bodies.",
+  "validation_base": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "fresh_diagnostics_match_previous_classification": true
 }
