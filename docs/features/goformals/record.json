@@ -1,0 +1,202 @@
+{
+  "feature": "Go result formals excluded from generic prototypes",
+  "state": "validated",
+  "baseline_commit": "e3feca89a14fe379e06fa8b062685c996c4de7c0",
+  "option": "existing DWARF and godwarfsig selections",
+  "default": "strict correction for DW_LANG_Go compilation units",
+  "breadth": {
+    "inputs": 16,
+    "distinct_functions": 17026,
+    "records": 68214,
+    "changed_records": 17320,
+    "hunks": 19384,
+    "go_parsed_bodies": 32244,
+    "decompilation_errors": 0,
+    "go_parse_errors": 0
+  },
+  "contracts": {
+    "off": {
+      "before": 4705,
+      "after": 0,
+      "removed": 4705
+    },
+    "on": {
+      "before": 4715,
+      "after": 854,
+      "removed": 3861
+    }
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10007,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3471,
+    "tools": "114 tests, 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "stage_before": "11/15; four failures",
+    "stage_after": "15/15",
+    "native_emitted_functions_per_input": 14,
+    "native_uncompressed_inputs": 2,
+    "execution_toolchains": [
+      "go1.22.5",
+      "go1.27.3"
+    ],
+    "inferred_carrier_surfaces_isolated": 34
+  },
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_order": true,
+    "speed_budget_pct": 5,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 117.90803400799632,
+            "cpu_ms": 116.57700000000004
+          },
+          "patched": {
+            "wall_ms": 117.48136300593615,
+            "cpu_ms": 116.15000000000109
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.3618676247551078,
+            "cpu_ms": -0.36628151350519556
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.13947031009362565,
+          "cpu_ms": 0.1506916577768136
+        }
+      },
+      "go-plain-off": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 203.66455428302288,
+            "cpu_ms": 202.26900000000114
+          },
+          "patched": {
+            "wall_ms": 204.90063214674592,
+            "cpu_ms": 204.16799999999924
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 0.6069185028658941,
+            "cpu_ms": 0.9388487608076757
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.4028906009363231,
+          "cpu_ms": 0.4458657185781645
+        }
+      },
+      "go-plain-on": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 209.06366407871246,
+            "cpu_ms": 207.6999999999991
+          },
+          "patched": {
+            "wall_ms": 211.7317388765514,
+            "cpu_ms": 210.34899999999368
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 1.2762020648573236,
+            "cpu_ms": 1.275397207508222
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.2847992681945799,
+          "cpu_ms": 0.2463293682980039
+        }
+      },
+      "go-compressed-on": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 522.2383858636022,
+            "cpu_ms": 520.8589999999945
+          },
+          "patched": {
+            "wall_ms": 529.7094020061195,
+            "cpu_ms": 528.7319999999979
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 1.4305758337091357,
+            "cpu_ms": 1.511541511235004
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.42069543236606943,
+          "cpu_ms": 0.547757556666606
+        }
+      },
+      "go-hermetic-off": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 103.83824817836285,
+            "cpu_ms": 102.51399999999933
+          },
+          "patched": {
+            "wall_ms": 103.23940217494965,
+            "cpu_ms": 102.00599999998872
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.5767104259930877,
+            "cpu_ms": -0.49554207231267133
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.3127934465086968,
+          "cpu_ms": -0.13489570751483715
+        }
+      },
+      "rust": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 331.059985794127,
+            "cpu_ms": 329.149000000001
+          },
+          "patched": {
+            "wall_ms": 331.3658297993243,
+            "cpu_ms": 329.94099999999804
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 0.09238325932494629,
+            "cpu_ms": 0.24062050925173217
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": 0.5409663618449523,
+          "cpu_ms": 0.552722810957107
+        }
+      }
+    },
+    "max_cpu_delta_pct": 1.511541511235004,
+    "max_wall_delta_pct": 1.4305758337091357,
+    "initial_runs_retained": [
+      "timing-initial/",
+      "timing-repeat/"
+    ],
+    "repeat_reason": "Initial Go wall-time medians showed scheduling delay during external sweeps; all six rows repeated, with the initial samples retained.",
+    "passed": true
+  }
+}

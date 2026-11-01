@@ -1,0 +1,1 @@
+The repeated Go rows had less than 2 ms typical wall-minus-CPU delay and passed the 5% budget. The Rust row encountered 119-122 ms median wall-minus-CPU delay during external sweeps. Its ratio of wall medians was +7.48%, paired median wall +0.85%, CPU +0.68%. Preserve the repeated run and repeat only the unresolved Rust control.

@@ -1,0 +1,198 @@
+[
+  {
+    "fixture": "hermetic",
+    "godwarfsig": "off",
+    "functions": 25,
+    "output": "25 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "hermetic",
+    "godwarfsig": "on",
+    "functions": 25,
+    "output": "25 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "hermetic-plain",
+    "godwarfsig": "off",
+    "functions": 25,
+    "output": "25 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "hermetic-plain",
+    "godwarfsig": "on",
+    "functions": 25,
+    "output": "25 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native",
+    "godwarfsig": "off",
+    "functions": 1156,
+    "output": "1156 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native",
+    "godwarfsig": "on",
+    "functions": 1156,
+    "output": "1156 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "basics122",
+    "godwarfsig": "off",
+    "functions": 2018,
+    "output": "2018 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "basics122",
+    "godwarfsig": "on",
+    "functions": 2018,
+    "output": "2018 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "basics127",
+    "godwarfsig": "off",
+    "functions": 2552,
+    "output": "2552 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "basics127",
+    "godwarfsig": "on",
+    "functions": 2552,
+    "output": "2552 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "langdetect",
+    "godwarfsig": "off",
+    "functions": 1558,
+    "output": "1558 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "langdetect",
+    "godwarfsig": "on",
+    "functions": 1558,
+    "output": "1558 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native-c",
+    "godwarfsig": "off",
+    "functions": 55,
+    "output": "55 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native-c",
+    "godwarfsig": "on",
+    "functions": 55,
+    "output": "55 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "stripped122",
+    "godwarfsig": "off",
+    "functions": 2017,
+    "output": "2017 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "stripped122",
+    "godwarfsig": "on",
+    "functions": 2017,
+    "output": "2017 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "entry-ranges",
+    "godwarfsig": "off",
+    "functions": 9,
+    "output": "9 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "entry-ranges",
+    "godwarfsig": "on",
+    "functions": 9,
+    "output": "9 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native1273",
+    "godwarfsig": "off",
+    "functions": 1495,
+    "output": "1495 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native1273",
+    "godwarfsig": "on",
+    "functions": 1495,
+    "output": "1495 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "entry-plain",
+    "godwarfsig": "off",
+    "functions": 9,
+    "output": "9 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "entry-plain",
+    "godwarfsig": "on",
+    "functions": 9,
+    "output": "9 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "off",
+    "functions": 1156,
+    "output": "1156 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native-plain",
+    "godwarfsig": "on",
+    "functions": 1156,
+    "output": "1156 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "off",
+    "functions": 1495,
+    "output": "1495 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "native1273-plain",
+    "godwarfsig": "on",
+    "functions": 1495,
+    "output": "1495 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "off",
+    "functions": 2552,
+    "output": "2552 functions, 0 syntax failures\n",
+    "errors": 0
+  },
+  {
+    "fixture": "basics127-plain",
+    "godwarfsig": "on",
+    "functions": 2552,
+    "output": "2552 functions, 0 syntax failures\n",
+    "errors": 0
+  }
+]

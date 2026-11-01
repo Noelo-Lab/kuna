@@ -2834,6 +2834,15 @@ moves.
   ABI0 wrappers, unsupported composites by value and multiple results are
   refused as a whole, retaining existing inference.
 
+  Go compilation units never supply prototypes through the generic C or C++
+  DWARF importer (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_goformals.rs`).
+  Go encodes results as formal-parameter children, so those importers would
+  otherwise install extra inputs and a void return for uncompressed units.
+  This exclusion follows each unit's `DW_AT_language`, independently of target
+  architecture and option settings. Names and other metadata remain available;
+  only the Go-specific importer may install a source signature. Unsupported
+  Go contracts therefore retain inference in compressed and uncompressed files.
+
   Accepted inputs occupy the verified Go integer or float register sequence;
   an explicit empty location is permitted for an optimized-away input. A
   nonempty location must identify its expected entry register. Go DWARF 5 may

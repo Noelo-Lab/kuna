@@ -3,6 +3,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import shutil
 
 root = Path(__file__).resolve().parent
 cases = [
@@ -63,4 +64,5 @@ with tempfile.TemporaryDirectory(prefix='kuna-go-entry-') as directory:
     subprocess.run(['as','--64',str(source),'-o',str(obj)],check=True)
     subprocess.run(['ld','-m','elf_x86_64','-e','_start','-Ttext=0x401000','--build-id=none',
                     '-o',str(directory/'plain'),str(obj)],check=True)
+    shutil.copyfile(directory/'plain', root/'entry-ranges-plain')
     subprocess.run(['objcopy','--compress-debug-sections=zlib',str(directory/'plain'),str(root/'entry-ranges')],check=True)

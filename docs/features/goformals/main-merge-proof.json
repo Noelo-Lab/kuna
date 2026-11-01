@@ -1,0 +1,13 @@
+{
+  "old_head": "e3feca89a14fe379e06fa8b062685c996c4de7c0",
+  "new_head": "41cbf5cbae4635ea44dcfce5eb6c5b14723b6e8b",
+  "identical_base_tree": true,
+  "tracked_patch_sha256": "fba3775076e050b1791454ab9b778ba82f1a420856ea9d5af3f4ba29de9d97e7",
+  "untracked_hashes": {
+    "decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_goformals.rs": "48197b17766f1a3862dd706f34992f615c2f592de74f6b744811e24a8b592e85",
+    "docs/features/goformals/analysis.md": "e308cd7da652be8a326bf073fd9311eaf53926b28e1368f015228292f3bec52d",
+    "docs/features/goformals/record.json": "3bee0d884321e919bb583044c9d7d0e0d3f8e2ad5cae2e6d7bd7914dea3a72de",
+    "docs/features/goformals/repro.go": "01adc4bd1b1e04a5cbadd884fa5cf401119a72b96505d9a9bbd9465a7d3b8883",
+    "tests/fixtures/go-dwarf-entry-ranges/entry-ranges-plain": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179"
+  }
+}
