@@ -4644,7 +4644,7 @@ impl Funcdata {
     /// Cover stores for a def/ref).
     fn op_cover_point(&self, op: OpId) -> CoverPoint {
         let (uindex, code) = self.op_uindex_code(op);
-        CoverPoint::Op { id: op, uindex, code }
+        CoverPoint::Op { uindex, multiequal: code == OpCode::CPUI_MULTIEQUAL }
     }
 
     // -----------------------------------------------------------------------
@@ -5352,9 +5352,7 @@ impl Funcdata {
                 a_cover.add_def_point(def, is_input);
                 let descend: Vec<OpId> =
                     self.vbank.get(out_vn).map(|v| v.descend_iter().collect()).unwrap_or_default();
-                for refop in descend {
-                    a_cover.add_ref_point_for(&ctx, refop, out_vn);
-                }
+                a_cover.add_ref_points_for(&ctx, &descend, out_vn);
             }
             if b_cover.intersect(&a_cover) > 1 {
                 count -= 1;
