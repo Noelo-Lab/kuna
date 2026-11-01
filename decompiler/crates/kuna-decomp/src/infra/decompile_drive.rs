@@ -848,19 +848,30 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     flow.set_maximum_instructions(arch.max_instructions);
     // C++ followFlow: generateOps() then generateBlocks().  The jump-table
     // recovery loop runs inside generateOps (via the action sub-pipeline).
+    // A panic in one recovery is the function's error, as it is in the main
+    // drive; the tables after it are not attempted.
     {
         let arch_ptr: *mut Architecture = arch;
+        let mut panicked: Option<String> = None;
         let mut run_jt_pipeline = |partial: &mut Funcdata,
                                    visited: &crate::flow::VisitedMap|
          -> KunaResult<()> {
+            if panicked.is_some() {
+                return Err(KunaError::lowlevel("jump-table recovery stopped by an earlier panic"));
+            }
             // SAFETY: `arch_ptr` aliases the live `&mut Architecture`; the env's
             // reads (`translate`/`inst`/`symboltab`) are disjoint from the
             // `allacts` mutation here, and the `flow` borrow of `env`/`arch` does
             // not overlap this closure's run (it is only active between calls).
             let arch_mut: &mut Architecture = unsafe { &mut *arch_ptr };
-            run_jumptable_pipeline(arch_mut, partial, visited)
+            run_jumptable_pipeline(arch_mut, partial, visited, &mut panicked)
         };
-        flow.generate_ops_with_jumptables(&mut run_jt_pipeline)?;
+        let generated = flow.generate_ops_with_jumptables(&mut run_jt_pipeline);
+        drop(run_jt_pipeline);
+        if let Some(message) = panicked {
+            return Err(budget_error(arch).unwrap_or_else(|| KunaError::lowlevel(message)));
+        }
+        generated?;
     }
     flow.generate_blocks()?;
     // C++ followFlow: switchOverJumpTables(flow) — map each recovered table's
@@ -911,12 +922,14 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
 /// blocks (seeded with the source flow's `visited`), runs `structureReset` +
 /// `sortCallSpecs` (the `startProcessing` prerequisites), then drives the
 /// "jumptable" action set to simplify it so the BRANCHIND's switch calculation
-/// becomes a straight-line index expression the recovery can emulate.
+/// becomes a straight-line index expression the recovery can emulate.  A panic
+/// in the pipeline is also left in `panicked`, as the function's error.
 #[allow(clippy::mutable_key_type)]
 fn run_jumptable_pipeline(
     arch: &mut Architecture,
     partial: &mut Funcdata,
     visited: &crate::flow::VisitedMap,
+    panicked: &mut Option<String>,
 ) -> KunaResult<()> {
     // Build the partial's basic blocks (partialflow.generateBlocks).
     let env = ArchFlowEnv {
@@ -943,10 +956,10 @@ fn run_jumptable_pipeline(
             .get_current_mut()
             .ok_or_else(|| KunaError::lowlevel("no current jumptable action"))?;
         root.reset(partial);
-        // catch_unwind so an un-ported pass stub in the sub-pipeline degrades to a
-        // recoverable error (the recovery falls back to truncating the BRANCHIND),
-        // never an abort — same policy as the main `decompile_func_full` drive.
+        // catch_unwind so a panic in the sub-pipeline fails this function, never
+        // the whole batch — same policy as the main `decompile_func_full` drive.
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            crate::kuna_jumptablefault::check(partial.get_address().get_offset());
             root.perform(partial, &mut ctx)
         }))
     };
@@ -962,10 +975,15 @@ fn run_jumptable_pipeline(
             }
             Ok(())
         }
-        Err(payload) => Err(KunaError::lowlevel(format!(
-            "jumptable pipeline reached an un-ported seam: {}",
-            panic_message(payload)
-        ))),
+        Err(payload) => {
+            let at = FN_TABLE_AT.with(std::cell::Cell::get).map(|at| format!(" at {at:#x}")).unwrap_or_default();
+            let message = format!(
+                "decompile pipeline reached an un-ported seam (LOSS-131) in jump-table recovery{at}: {}",
+                panic_message(payload)
+            );
+            *panicked = Some(message.clone());
+            Err(KunaError::lowlevel(message))
+        }
     }
 }
 
