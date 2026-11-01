@@ -7274,6 +7274,9 @@ mod tests {
         fd.op_destroy(g1);
         assert_eq!(fd.obank().get(g2).unwrap().get_in(1), Some(iop));
         assert_eq!(fd.vbank().get(iop).unwrap().descend_iter().collect::<Vec<_>>(), vec![g2]);
+        let mut wave = Default::default();
+        crate::action::add_wave_ops(&fd, &mut wave, &[g1], &[iop]);
+        assert!(!wave.contains(&g2), "a removed guard's siblings are not its wave neighbours");
     }
 
     // ---- w10-proto-cluster verifier: processJoins join-space splitting ----

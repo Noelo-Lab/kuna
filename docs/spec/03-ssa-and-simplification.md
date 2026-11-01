@@ -168,7 +168,10 @@ heritage pass kuna's guards of one call or store share one
 (`kuna_renamereads.rs (new_indirect)`): readers only decode the guarded op from
 the annotation's offset, and annotations get no cover or HighVariable. An iop
 annotation is the one free Varnode that may have several descendants
-(`varnode.rs (Varnode::add_descend)`). A guard that reuses the annotation still
+(`varnode.rs (Varnode::add_descend)`). A `deadwaves` wave does not count the
+other readers of a removed guard's annotation as its neighbours
+(`action.rs (add_wave_ops)`), so it offers the rules the ops it offered when
+every guard had its own. A guard that reuses the annotation still
 takes the creation index its own would have taken, so later Varnodes are
 numbered as before. libpython3.11 0x3b72c0 guards 1,725 writable globals at each
 of 4,060 calls, and its 7 million annotations were 7 million of the 15.3 million
