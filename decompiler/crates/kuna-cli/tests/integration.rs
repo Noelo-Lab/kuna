@@ -787,3 +787,6 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "powerpc_apu_selection.rs"]
+mod powerpc_apu_selection;

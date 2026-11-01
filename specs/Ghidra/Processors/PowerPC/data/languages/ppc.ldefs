@@ -232,7 +232,7 @@
             manualindexfile="../manuals/PowerPC.idx"
             id="PowerPC:BE:32:e500mc">
     <description>PowerQUICC-III e500mc 32-bit big-endian family</description>
-    <compiler name="default" spec="ppc_32_e500mc_be.cspec" id="default"/>
+    <compiler name="default" spec="ppc_32.cspec" id="default"/>
     <external_name tool="gnu" name="powerpc:e500mc"/>
     <external_name tool="IDA-PRO" name="ppc"/>
     <external_name tool="DWARF.register.mapping.file" name="ppc.dwarf"/>
@@ -249,7 +249,7 @@
             manualindexfile="../manuals/PowerPC.idx"
             id="PowerPC:LE:32:e500mc">
     <description>PowerQUICC-III e500mc 32-bit little-endian family</description>
-    <compiler name="default" spec="ppc_32_e500mc_le.cspec" id="default"/>
+    <compiler name="default" spec="ppc_32.cspec" id="default"/>
     <external_name tool="gnu" name="powerpc:e500mc"/>
     <external_name tool="IDA-PRO" name="ppc"/>
     <external_name tool="DWARF.register.mapping.file" name="ppc.dwarf"/>
