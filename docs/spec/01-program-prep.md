@@ -1419,7 +1419,13 @@ funcsym stream:
   nonvolatile register, the return address or a back chain, and loads from
   words whose runtime value the image fixes (code, read-only data and
   relocated GOT entries). `bcl 20,31` reads the program counter; it is not a
-  call. Joins keep equal values only.
+  call. Joins keep equal values only. A stack word below `r1` holds nothing
+  the walk knows: a signal frame or a callee's frame can overwrite it at any
+  time, and a callee also writes its return address to `4(r1)`. `stwcx.` may
+  store nothing and `stwbrx` stores reversed bytes, so neither saves a
+  register. The return address stays in registers and the frame's save
+  words: a walk that stores it anywhere else, moves it to a special register
+  other than LR and CTR, or calls through it forgets everything (below).
   A call to an import, or through a register, continues at the next
   instruction with `r1`, `r2` and `r13`-`r31` kept, as the SysV calling
   convention guarantees. A call to local code uses that function's summary:
@@ -1427,15 +1433,21 @@ funcsym stream:
   all. Summaries come from the callee's own walk. They start from the
   strongest claim and weaken until no caller's view changes. This greatest
   fixed point is sound for recursion by induction on the depth of a call that
-  returns. A straight-line helper ending in `blr`, such as libgcc's
-  `_savegpr_N`/`_restgpr_N`, runs in the caller's state instead. A tail
-  branch into another function returns through LR: to the walk's caller for
-  the entry return address, and to a known address of the same code
-  otherwise. The walk does not continue past a call to an import that its own
+  returns. A callee whose walk forgets everything may return anywhere in the
+  code that called it, so each caller's walk forgets everything as well. A
+  straight-line helper ending in `blr`, such as libgcc's
+  `_savegpr_N`/`_restgpr_N`, runs in the caller's state instead, unless it
+  reads LR. A tail branch into another function returns through LR: to the
+  walk's caller for the entry return address, and to a known address of the
+  same code for a constant LR. Any other LR, such as the return address a
+  call left behind, makes the branch an unresolved jump. A branch or table
+  jump to an entry strictly inside its own function (a label whose address a
+  computed goto takes) continues the walk there instead. The walk does not continue past a call to an import that its own
   proven slot names as an ABI no-return function (`abort`, `exit`,
   `__stack_chk_fail`, `__cxa_throw`, `_Unwind_Resume`, `std::__throw_*` and the
   like). It also stops after a call that is the last instruction of its FDE
-  range or sized symbol, after `sc` with `r0` = 1 or 234 (`exit`,
+  range or sized symbol (a stub that call would run into if it returned is
+  never named), after `sc` with `r0` = 1 or 234 (`exit`,
   `exit_group`), and after an unconditional trap.
   Each landing pad in an LSDA call-site table is entered from the calls in
   its range, with their nonvolatile registers. A jump table is followed when
@@ -1443,7 +1455,8 @@ funcsym stream:
   The index is shifted by two. An unsigned `cmplwi` the branch has passed, or
   the shift's mask, bounds it, and every bounded entry inside the jump's
   function is a target. An unbounded table is read until its first target
-  outside the function. A target inside the dispatch sequence itself is never
+  outside the function. An entry outside the function is no case label, but
+  a stub it runs into is never named. A target inside the dispatch sequence itself is never
   a case label. Any other indirect jump might reach any instruction of its
   function, including the GOT-pointer setup, so that walk forgets everything.
   It then floods what it reaches: a stub entered from there gets no evidence,
@@ -1471,9 +1484,13 @@ funcsym stream:
   (4) Exceptions are raised by calls, as in C and C++ without
   `-fnon-call-exceptions`. The unwinder enters a landing pad with the throwing
   call's nonvolatile registers. (5) Only a frame's own function writes its
-  register save words. A pointer from elsewhere addresses a program object, so
-  a callee given a local's address cannot overwrite the saved `r30` or LR.
-  Only the dynamic linker writes GOT words, with their relocated values.
+  register save words, at fixed offsets from `r1` or its frame pointer. A
+  pointer from elsewhere, or one the walk cannot compute, addresses a program
+  object, so a callee given a local's address cannot overwrite the saved `r30`
+  or LR. Only the dynamic linker writes GOT words, with their relocated
+  values. No code rewrites a saved context (a `jmp_buf` or a signal's
+  `ucontext`), and no function keeps a return address it received in a
+  register other than LR for other code to jump to.
   (6) Compiled code does not run past the end of its FDE range or sized
   symbol, and the listed no-return functions do not return. (7) A function's
   address is taken through a relocated data word or a symbol, so the seeded
@@ -1490,7 +1507,7 @@ funcsym stream:
   incomplete stubs provide no import identity. A `.gcc_except_table` without a
   readable `.eh_frame` rejects the image, and an FDE whose LSDA cannot be read
   makes its function's walk forget everything. The walk is bounded by 64 visits
-  per code word; an image that exhausts it gets no PIC names. Both byte orders
+  and table reads per code word; an image that exhausts it gets no PIC names. Both byte orders
   are supported. Off keeps PIC stubs unresolved; BSS-PLT and absolute stubs
   are unaffected. In the console, set the option before `load file`; CLI
   options are bridged before either loader runs. The option is opt-in because

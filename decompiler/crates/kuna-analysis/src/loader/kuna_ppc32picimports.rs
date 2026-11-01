@@ -183,8 +183,13 @@ impl State {
         }
     }
 
+    /// A word below r1 can change at any time (a signal frame), so it holds
+    /// nothing the walk knows.
     fn load(&self, image: &Image<'_>, address: Value) -> Value {
         match address {
+            Value::Stack(at) if matches!(self.regs[1], Value::Stack(sp) if (at as i32) < sp as i32) => {
+                Value::Unknown
+            }
             Value::Stack(at) => {
                 if let Some(r) = self.saved.iter().position(|&offset| offset == at) {
                     return Value::Entry(r as u8);
@@ -235,7 +240,23 @@ impl State {
         }
     }
 
+    /// The state after a callee ran. Besides the registers outside `mask`, the
+    /// callee may have written its own frame below r1 and the return-address
+    /// word the ABI gives it at 4(r1).
     fn keep(mut self, mask: u32) -> Self {
+        if let Value::Stack(sp) = self.regs[1] {
+            for offset in self.saved.iter_mut() {
+                if *offset != UNSAVED && (*offset as i32) < sp as i32 {
+                    *offset = UNSAVED;
+                }
+            }
+            for slot in self.slots.iter_mut() {
+                if slot.is_some_and(|(offset, _)| (offset as i32) < sp as i32) {
+                    *slot = None;
+                }
+            }
+            self.store(Value::Stack(sp.wrapping_add(4)), 4, Value::Unknown);
+        }
         for (r, value) in self.regs.iter_mut().enumerate() {
             if mask & (1 << r) == 0 {
                 *value = Value::Unknown;
@@ -455,12 +476,33 @@ impl<'a> Image<'a> {
             .map(|(&start, _)| start)
     }
 
+    /// The stub a call returning past the end of its scope at `pc` would run
+    /// into, across padding.
+    fn stub_after(&self, mut pc: u32) -> Option<u32> {
+        for _ in 0..16 {
+            if self.word_at(pc)? != 0x6000_0000 {
+                break;
+            }
+            pc = pc.wrapping_add(4);
+        }
+        self.stub_at(pc)
+    }
+
+    /// The code words of `scope`.
+    fn words_in(&self, (start, end): (u32, u32)) -> impl Iterator<Item = u32> + '_ {
+        self.code.iter().flat_map(move |(base, words)| {
+            let top = base.wrapping_add(words.len() as u32 * 4);
+            let from = (*base).max(start.wrapping_add(3) & !3);
+            (from..top.min(end)).step_by(4)
+        })
+    }
+
     fn import_exit(&self, pc: u32) -> bool {
         self.absolute.contains(&pc) || self.resolvers.iter().any(|&(s, e)| (s..e).contains(&pc))
     }
 
     /// Code from `pc` to its first `blr` with no other control transfer; a
-    /// called helper must also leave LR alone.
+    /// called helper must also leave LR alone and not read it.
     fn straight(&self, pc: u32, tail: bool) -> bool {
         (0..32).find_map(|i| {
             let word = self.word_at(pc.wrapping_add(4 * i))?;
@@ -472,7 +514,7 @@ impl<'a> Image<'a> {
             let spr = ((word >> 16) & 31) | ((word >> 6) & 0x3e0);
             if matches!(op, 16..=18)
                 || op == 19 && matches!(xo, 16 | 18 | 50 | 528)
-                || !tail && op == 31 && xo == 467 && spr == 8
+                || !tail && op == 31 && matches!(xo, 339 | 467) && spr == 8
             {
                 return Some(false);
             }
@@ -502,6 +544,13 @@ impl<'a> Image<'a> {
         (start, end)
     }
 
+    /// `target` lies strictly inside the function of the jump at `pc`: a label
+    /// whose address is also taken (a computed goto), not another function.
+    fn label(&self, pc: u32, target: u32) -> bool {
+        let (start, end) = self.scope(pc);
+        start < target && target < end
+    }
+
     fn pad(&self, pc: u32) -> Option<u32> {
         let i = self.pads.partition_point(|&(start, _, _)| start <= pc);
         self.pads[..i]
@@ -525,8 +574,9 @@ impl<'a> Image<'a> {
     /// `pc`: relative entries add the base. Real targets are labels of the
     /// jump's scope that start a block, never the dispatch sequence itself.
     /// A bounded index reads its entries and keeps those; otherwise the table
-    /// is read until its first target outside the scope.
-    fn table(&self, pc: u32, base: u32, relative: bool, bound: u16) -> Vec<u32> {
+    /// is read until its first target outside the scope. Every stub an entry
+    /// outside the scope runs into is returned as well.
+    fn table(&self, pc: u32, base: u32, relative: bool, bound: u16) -> (Vec<u32>, Vec<u32>) {
         let scope = self.scope(pc);
         let mut dispatch = pc;
         while dispatch > scope.0 && !self.targets.contains(&dispatch) {
@@ -541,9 +591,13 @@ impl<'a> Image<'a> {
         } else {
             u32::from(bound) + 1
         };
+        let mut stubs = Vec::new();
         for i in 0..count {
             let Value::Constant(word) = self.read_word(base.wrapping_add(4 * i)) else {
-                return if bound == UNBOUNDED { out } else { Vec::new() };
+                if bound != UNBOUNDED {
+                    out.clear();
+                }
+                break;
             };
             let target = if relative {
                 base.wrapping_add(word)
@@ -551,6 +605,7 @@ impl<'a> Image<'a> {
                 word
             };
             if !(scope.0..scope.1).contains(&target) || !self.is_code(target) {
+                stubs.extend(self.stub_after(target));
                 if bound == UNBOUNDED {
                     break;
                 }
@@ -560,7 +615,7 @@ impl<'a> Image<'a> {
                 out.push(target);
             }
         }
-        out
+        (out, stubs)
     }
 }
 
@@ -569,6 +624,7 @@ struct Evidence {
     events: Vec<(u32, Option<u32>)>,
     reached: Vec<u32>,
     blocked: Vec<u32>,
+    leaked: bool,
 }
 
 impl Evidence {
@@ -582,29 +638,51 @@ impl Evidence {
             self.blocked.push(stub);
         }
     }
+
+    /// A store of `value` to `address`: the return address may only go to the
+    /// frame, where the walk tracks it.
+    fn stored(&mut self, image: &Image<'_>, address: Value, value: Value, width: u32) {
+        if width == 4 {
+            self.escape(image, value);
+        }
+        if value == Value::Return && !matches!(address, Value::Stack(_)) {
+            self.leaked = true;
+        }
+    }
 }
 
 /// What a call to a local function keeps: the nonvolatile registers every
-/// return restores, and whether any path returns at all.
+/// return restores, whether any path returns at all, and whether its walk
+/// flooded, so that it may return somewhere other than its return address.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Summary {
     kept: u32,
     returns: bool,
+    flooded: bool,
 }
 
 const STRONGEST: Summary = Summary {
     kept: NONVOLATILE,
     returns: false,
+    flooded: false,
 };
 
 /// An ABI callee: returns with every nonvolatile register restored.
 const CALLEE: Summary = Summary {
     kept: NONVOLATILE,
     returns: true,
+    flooded: false,
+};
+
+const FLOODED: Summary = Summary {
+    kept: 0,
+    returns: true,
+    flooded: true,
 };
 
 struct Walk {
     seed: u32,
+    pc: u32,
     states: FxHashMap<u32, State>,
     queue: VecDeque<u32>,
     flooded: bool,
@@ -726,6 +804,7 @@ impl Analysis<'_, '_> {
     fn explore(&mut self, seed: u32) -> Walk {
         let mut walk = Walk {
             seed,
+            pc: seed,
             states: FxHashMap::default(),
             queue: VecDeque::new(),
             flooded: false,
@@ -740,6 +819,9 @@ impl Analysis<'_, '_> {
             self.budget -= 1;
             let state = walk.states[&pc];
             self.visit(&mut walk, pc, state);
+            if walk.evidence.leaked && !walk.flooded {
+                self.unresolved(&mut walk, pc);
+            }
         }
         walk
     }
@@ -764,7 +846,11 @@ impl Analysis<'_, '_> {
         if !image.is_code(target) {
             return;
         }
-        if target != walk.seed && image.seeds.contains(&target) && !image.straight(target, true) {
+        if target != walk.seed
+            && image.seeds.contains(&target)
+            && !image.straight(target, true)
+            && !image.label(walk.pc, target)
+        {
             let after = self.summary(walk.seed, target);
             self.leave(walk, state, after);
             return;
@@ -793,29 +879,33 @@ impl Analysis<'_, '_> {
     }
 
     /// A transfer to another function, which returns through LR: to this
-    /// walk's caller for the entry return address, else to a known address
-    /// of this code.
+    /// walk's caller for the entry return address, to a known address of this
+    /// code, and otherwise to wherever LR points, which the walk cannot follow.
     fn leave(&mut self, walk: &mut Walk, state: State, after: Summary) {
+        if after.flooded {
+            self.unresolved(walk, walk.pc);
+            return;
+        }
         match state.lr {
             Value::Constant(back) => {
                 if after.returns {
                     self.flow(walk, back, state.keep(after.kept));
                 }
             }
-            _ => walk.exit(&state, after),
+            Value::Return => walk.exit(&state, after),
+            _ if after.returns => self.unresolved(walk, walk.pc),
+            _ => {}
         }
     }
 
     /// An indirect jump the walk cannot resolve: it may return, tail-call, or
     /// reach any instruction of its function. Its state would reach all of
     /// them, including the GOT-pointer setup, so the walk forgets everything:
-    /// every stub entered from what it reaches gets no evidence, and nothing is
-    /// kept for callers.
+    /// every stub entered from what it reaches gets no evidence, nothing is kept
+    /// for callers, and each caller floods in turn: a return the walk did not
+    /// follow may land anywhere in the code that called it.
     fn unresolved(&mut self, walk: &mut Walk, pc: u32) {
-        walk.exits = Summary {
-            kept: 0,
-            returns: true,
-        };
+        walk.exits = FLOODED;
         if walk.flooded {
             return;
         }
@@ -830,7 +920,7 @@ impl Analysis<'_, '_> {
         walk.evidence
             .blocked
             .extend(image.stubs.range(scope.0..scope.1).map(|(&s, _)| s));
-        work.extend((scope.0..scope.1).step_by(4));
+        work.extend(image.words_in(scope));
         work.push(pc);
         while let Some(pc) = work.pop() {
             if self.budget == 0 {
@@ -863,7 +953,9 @@ impl Analysis<'_, '_> {
                 if let Some(stub) = branch(pc, word).and_then(|b| image.stub_at(b.target)) {
                     work.push(stub);
                 }
-                if !image.ends.contains(&next) {
+                if image.ends.contains(&next) {
+                    work.extend(image.stub_after(next));
+                } else {
                     work.push(next);
                 }
                 continue;
@@ -882,7 +974,7 @@ impl Analysis<'_, '_> {
                     walk.evidence
                         .blocked
                         .extend(image.stubs.range(scope.0..scope.1).map(|(&s, _)| s));
-                    work.extend((scope.0..scope.1).step_by(4));
+                    work.extend(image.words_in(scope));
                 }
                 if (word >> 21) & 20 != 20 {
                     work.push(next);
@@ -897,6 +989,7 @@ impl Analysis<'_, '_> {
 
     fn visit(&mut self, walk: &mut Walk, pc: u32, state: State) {
         let image = self.image;
+        walk.pc = pc;
         let Some(word) = image.word_at(pc) else {
             return;
         };
@@ -921,9 +1014,7 @@ impl Analysis<'_, '_> {
                     self.flow(walk, next, linked);
                 }
                 let after = self.call(walk, b.target, state);
-                if let Some(after) = after.filter(|_| !image.ends.contains(&next)) {
-                    self.flow(walk, next, after);
-                }
+                self.resume(walk, next, after);
             } else if b.conditional && word >> 26 == 16 {
                 self.flow(walk, b.target, state.refine(word, true));
                 self.flow(walk, next, state.refine(word, false));
@@ -949,6 +1040,17 @@ impl Analysis<'_, '_> {
         }
         let after = step(image, &mut walk.evidence, pc, word, state);
         self.flow(walk, next, after);
+    }
+
+    /// Continue at a call's return address, unless that is the end of its
+    /// scope. A stub such a return would run into is never named.
+    fn resume(&mut self, walk: &mut Walk, next: u32, after: Option<State>) {
+        let Some(after) = after else { return };
+        if self.image.ends.contains(&next) {
+            walk.evidence.blocked.extend(self.image.stub_after(next));
+        } else {
+            self.flow(walk, next, after);
+        }
     }
 
     /// The state at the return address, or `None` when the callee never returns.
@@ -983,6 +1085,10 @@ impl Analysis<'_, '_> {
             return Some(inline);
         }
         let summary = self.summary(walk.seed, target);
+        if summary.flooded {
+            self.unresolved(walk, walk.pc);
+            return None;
+        }
         summary.returns.then(|| state.keep(summary.kept))
     }
 
@@ -1004,18 +1110,27 @@ impl Analysis<'_, '_> {
         if link {
             let after = match target {
                 Value::Constant(callee) => self.call(walk, callee, state),
+                Value::Return => {
+                    self.unresolved(walk, pc);
+                    None
+                }
                 _ => Some(state.keep(NONVOLATILE)),
             };
-            if let Some(after) = after.filter(|_| !self.image.ends.contains(&next)) {
-                self.flow(walk, next, after);
-            }
+            self.resume(walk, next, after);
             return;
         }
         match target {
             Value::Constant(to) => self.flow(walk, to, state),
             Value::Case(base, bound) | Value::Table(base, bound) => {
                 let relative = matches!(target, Value::Case(..));
-                let targets = self.image.table(pc, base, relative, bound);
+                let (targets, stubs) = self.image.table(pc, base, relative, bound);
+                let read = if bound == UNBOUNDED {
+                    targets.len() + 1
+                } else {
+                    usize::from(bound) + 1
+                };
+                self.budget = self.budget.saturating_sub(read as u64);
+                walk.evidence.blocked.extend(stubs);
                 if targets.is_empty() {
                     self.unresolved(walk, pc);
                 }
@@ -1117,12 +1232,12 @@ fn step(image: &Image<'_>, evidence: &mut Evidence, pc: u32, word: u32, mut s: S
                 38 | 39 => 1,
                 _ => 2,
             };
+            evidence.stored(image, ea, s.regs[rt], width);
             let value = if width == 4 {
                 s.regs[rt]
             } else {
                 Value::Unknown
             };
-            evidence.escape(image, value);
             s.store(ea, width, value);
             if op & 1 == 1 {
                 s.regs[ra] = ea;
@@ -1139,9 +1254,9 @@ fn step(image: &Image<'_>, evidence: &mut Evidence, pc: u32, word: u32, mut s: S
         }
         47 => {
             for r in rt..32 {
-                evidence.escape(image, s.regs[r]);
-                let value = s.regs[r];
-                s.store(ea.add(4 * (r - rt) as u32), 4, value);
+                let (at, value) = (ea.add(4 * (r - rt) as u32), s.regs[r]);
+                evidence.stored(image, at, value, 4);
+                s.store(at, 4, value);
             }
         }
         48..=51 => {
@@ -1178,12 +1293,14 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
     let spr = ((word >> 16) & 31) | ((word >> 6) & 0x3e0);
     let ea = s.base(ra).sum(s.regs[rb]);
     let store = |s: &mut State, evidence: &mut Evidence, width: u32, gpr: bool| {
+        if gpr {
+            evidence.stored(image, ea, s.regs[rt], width);
+        }
         let value = if gpr && width == 4 {
             s.regs[rt]
         } else {
             Value::Unknown
         };
-        evidence.escape(image, value);
         let at = match ea {
             Value::Stack(at) if !gpr => Value::Stack(at & !(width - 1)),
             other => other,
@@ -1198,7 +1315,7 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
             match spr {
                 8 => s.lr = s.regs[rt],
                 9 => s.ctr = s.regs[rt],
-                _ => {}
+                _ => evidence.stored(image, Value::Unknown, s.regs[rt], 0),
             }
         }
         339 => {
@@ -1220,7 +1337,14 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
         }
         535 | 599 => {}
         567 | 631 => s.regs[ra] = ea,
-        150 | 151 | 662 => store(&mut s, evidence, 4, true),
+        151 => store(&mut s, evidence, 4, true),
+        150 | 662 => {
+            evidence.stored(image, ea, s.regs[rt], 4);
+            if let Value::Constant(v) = s.regs[rt] {
+                evidence.escape(image, Value::Constant(v.swap_bytes()));
+            }
+            store(&mut s, evidence, 4, false);
+        }
         215 => store(&mut s, evidence, 1, true),
         407 | 918 => store(&mut s, evidence, 2, true),
         663 | 983 | 199 => store(&mut s, evidence, 4, false),
@@ -1242,6 +1366,9 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
         758 | 1014 => s.store(ea.add(0u32.wrapping_sub(128)), 256, Value::Unknown),
         725 | 661 => {
             let at = if xo == 725 { s.base(ra) } else { ea };
+            for value in s.regs {
+                evidence.stored(image, at, value, 4);
+            }
             s.store(at, 128, Value::Unknown);
         }
         533 | 597 => s.regs = [Value::Unknown; 32],
@@ -1806,6 +1933,7 @@ fn prove(
             }
         }
     }
+    let pad_targets: FxHashSet<u32> = pads.iter().map(|&(_, _, pad)| pad).collect();
     for &stub in image.stubs.keys() {
         let mut pc = stub.wrapping_sub(4);
         for _ in 0..16 {
@@ -1815,7 +1943,7 @@ fn prove(
             if targets.contains(&pc)
                 || pointers.contains(&pc)
                 || entries.contains(&pc)
-                || pads.iter().any(|&(_, _, pad)| pad == pc)
+                || pad_targets.contains(&pc)
             {
                 blocked.insert(stub);
             }
@@ -2028,13 +2156,37 @@ mod tests {
             scopes: vec![(0x1000, 0x1018)],
             ..Image::default()
         };
-        assert_eq!(image.table(0x1004, 0x1008, true, 1), vec![0x1010, 0x1014]);
+        assert_eq!(image.table(0x1004, 0x1008, true, 1).0, vec![0x1010, 0x1014]);
         // A bounded entry outside the scope is not a target; unbounded reads
         // stop at the first one.
-        assert_eq!(image.table(0x1004, 0x1008, true, 3), vec![0x1010, 0x1014]);
+        assert_eq!(image.table(0x1004, 0x1008, true, 3).0, vec![0x1010, 0x1014]);
         assert_eq!(
-            image.table(0x1004, 0x1008, true, UNBOUNDED),
+            image.table(0x1004, 0x1008, true, UNBOUNDED).0,
             vec![0x1010, 0x1014]
+        );
+    }
+
+    #[test]
+    fn a_table_entry_outside_its_scope_withholds_the_stub_it_reaches() {
+        // Entries: the in-scope label, a nop before the stub, the stub itself.
+        let image = Image {
+            code: vec![(
+                0x1000,
+                vec![
+                    0x4e800420, 0x1010, 0x1014, 0x1018, 0x60000000, 0x60000000, 0x817e8000,
+                    0x7d6903a6, 0x4e800420, 0x60000000,
+                ],
+            )],
+            stubs: [(0x1018, 0x8000)].into_iter().collect(),
+            scopes: vec![(0x1000, 0x1014)],
+            ..Image::default()
+        };
+        let (targets, stubs) = image.table(0x1000, 0x1004, false, 2);
+        assert_eq!(targets, vec![0x1010]);
+        assert_eq!(stubs, vec![0x1018, 0x1018]);
+        assert_eq!(
+            image.table(0x1000, 0x1004, false, UNBOUNDED).1,
+            vec![0x1018]
         );
     }
 
