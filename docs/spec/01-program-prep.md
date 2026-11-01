@@ -1495,9 +1495,10 @@ funcsym stream:
   are unaffected. In the console, set the option before `load file`; CLI
   options are bridged before either loader runs. The option is opt-in because
   the proof walks every function:
-  with it on, loading a PPC32 PIC image costs about 10-80% more (Lua 1.1x,
-  libstdc++ 1.3x, libc 1.8x). The default path and other formats pay nothing,
-  and the proof runs once per image content. Resolved PPC32 import names take
+  about 0.3-0.4 s for libstdc++ or libc, which makes listing a PPC32 PIC
+  image's functions 1.1-1.8x slower and a single-function decompile up to 3x.
+  The default path and other formats pay nothing, and the proof runs once per
+  image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
   prototypes, no-return facts and name-based xrefs therefore see the same
   imported identity, including when a terminal call has no mapped fall-through
