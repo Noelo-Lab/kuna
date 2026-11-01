@@ -2831,7 +2831,9 @@ with kuna's own address column, so the two are diffable. `--json` replaces
  "rows": [{"address","address_hex","size","bytes","ascii"}],
  "fixups_coverage": "chained-fixups",
  "fixups": [{"address","address_hex","size","kind","symbol","addend",
-             "target","target_hex","file_bytes","image_bytes","returned"}]}
+             "target","target_hex","file_bytes","image_bytes","returned"}],
+ "provenance": [{"start","start_hex","end","end_hex","size","source",
+                 "file_offset","file_offset_hex","segment"}]}
 ```
 
 `hex` is the whole span in one piece and `rows[].bytes` is that same string cut
@@ -2860,9 +2862,10 @@ at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
 (Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF's
 dynamic relocation tables, `SHT_RELR` included), or `none`, where `fixups` is
 empty. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
-words are already the unslid pointers and whose bytes are the file's, and a
-relocatable object (`.o`, `.obj`), whose bytes are kuna's own layout of it with
-the relocations it supports applied, which this list does not cover.
+words are already the unslid pointers and whose bytes are the file's wherever
+`provenance` below says `file`, and a relocatable object (`.o`, `.obj`), whose
+bytes are kuna's own layout of it with the relocations it supports applied,
+which this list does not cover.
 `--option dynrelocs off` leaves every slot as the file holds it, and `returned`
 then says `file`. A span gets one note, naming up to three slots, when it
 overlaps anything but a rebase whose bytes already are its target: a bind, an
@@ -2876,6 +2879,52 @@ placeholder for an address the loader looks up at run time; the file holds
 0000000000000080) -- `--json` lists each in `fixups`
 # 8 bytes at malloc @ 0x4000 (0x4000..0x4008)
 0x4000        00 00 00 00 00 00 00 00                          |........|
+```
+
+Where the bytes come from is the other half. The load image answers for a
+segment's whole memory size, and the file need not back all of it: a `.bss`
+(an ELF `p_memsz` past its `p_filesz`), a Mach-O segment whose `vmsize` runs past
+its `filesize` (`__PAGEZERO`, which holds nothing in the file, or the page
+Apple's ld64 rounds `__LINKEDIT` up to), a PE section whose `VirtualSize` runs
+past its raw data. kuna reads that memory as zeroes, as the decompiler always
+has. `provenance` cuts the span wherever the source changes, so a zero the file
+holds and a zero kuna filled in no longer look alike. The ranges tile
+`[start, end)` exactly:
+
+| Field | What it is |
+|---|---|
+| `source` | `file` (the file's bytes from `file_offset` on, which are the listed bytes except at a slot `fixups` lists), `zero-fill` (memory the segment declares past the bytes the file holds for it), or `unknown` (an image no segment of the file describes: a relocatable object, whose layout is kuna's own, or a TE or MZ image). |
+| `file_offset` | Where the range starts in the file, counted from the file's first byte, so a fat Mach-O's slice offset is included. `null` unless `source` is `file`. |
+| `segment` | The segment holding the range, as the image declares it: `name` (the Mach-O segment or PE section; `null` for an ELF `PT_LOAD` and for the PE header page), `start`/`start_hex` and `size` (`vmaddr` and `vmsize`, `p_vaddr` and `p_memsz`, a section's address and `VirtualSize`), `file_offset` and `file_size` (the bytes the file holds for it), and `permissions`. `null` where `source` is `unknown`. |
+
+`permissions` is `r`, `w` and `x`, each or `-`, from Mach-O `initprot`, ELF
+`p_flags` or a section's `IMAGE_SCN_MEM_READ`/`WRITE`/`EXECUTE` bits; the PE
+header page is `r--`, as Windows maps it. A segment that declares no read
+access (`__PAGEZERO`'s `---`, a `PT_LOAD` without `PF_R`, a section without
+`IMAGE_SCN_MEM_READ`) is listed all the same. Both facts are also notes, on
+stderr and in `notes`, and the text view's rows do not change:
+
+```
+$ kuna read ./fixture 0x0 --addr --bytes 16
+note: zero fill, not file bytes: 0x0..0x10 in __PAGEZERO (0x0 bytes in the file,
+0x100000000 in memory) -- kuna reads a segment's memory past what the file holds
+for it as zeroes; `--json` lists each range's source in `provenance`
+note: no read access: 0x0..0x10 in __PAGEZERO (permissions ---) -- the image
+declares the segment unreadable; kuna lists its bytes anyway
+# 16 bytes at Reset @ 0x0 (0x0..0x10)
+0x0           00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  |................|
+```
+
+A read across the end of `__LINKEDIT`'s file content comes back in two ranges:
+
+```json
+"provenance": [
+  {"start_hex": "0x1000102d8", "end_hex": "0x1000102e0", "source": "file",
+   "file_offset": 33496, "file_offset_hex": "0x82d8",
+   "segment": {"name": "__LINKEDIT", "start_hex": "0x100010000", "size": 16384,
+               "file_offset": 32768, "file_size": 736, "permissions": "r--"}},
+  {"start_hex": "0x1000102e0", "end_hex": "0x1000102e8", "source": "zero-fill",
+   "file_offset": null, "file_offset_hex": null, "segment": {"name": "__LINKEDIT", ...}}]
 ```
 
 A listing stops at the end of **mapped memory**, whatever length was asked for.

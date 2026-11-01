@@ -16,6 +16,22 @@ pub(crate) fn image_bytes(binary: &str, pref: SlicePref) -> Result<Vec<u8>, Stri
     Ok(bytes)
 }
 
+/// Where [`image_bytes`]'s slice starts in `binary`: the selected arch's offset
+/// in a fat Mach-O, and `0` for every thin input. Only a file that opens with a
+/// fat magic is read whole a second time.
+pub(crate) fn slice_offset(binary: &str, pref: SlicePref) -> u64 {
+    use std::io::Read;
+    let mut head = [0u8; 16];
+    let opened = std::fs::File::open(binary).and_then(|mut f| f.read_exact(&mut head));
+    if opened.is_err() || !kuna_analysis::loader::macho_fat::is_fat(&head) {
+        return 0;
+    }
+    std::fs::read(binary)
+        .ok()
+        .and_then(|bytes| kuna_analysis::loader::macho_fat::fat_slice_offset(&bytes, pref))
+        .unwrap_or(0)
+}
+
 /// The same capability error for an MS-DOS `MZ` executable, which loads as
 /// one relocated real-mode image with no sections or symbols.
 fn mz_object_view_error(binary: &str) -> String {
