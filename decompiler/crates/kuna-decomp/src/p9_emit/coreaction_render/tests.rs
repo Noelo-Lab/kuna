@@ -385,3 +385,55 @@ fn lane_divide_fails_the_function_when_a_split_fails_part_way() {
     let error = ctx.error.expect("the failed split fails the function").to_string();
     assert!(error.contains("Overlapping input varnodes"), "{error}");
 }
+
+/// A lane trace whose transform `apply` would refuse is a failed trace, not a
+/// failed function. A 16-byte unique-space input, read by two `SUBPIECE`s of
+/// its low lane, splits into lanes that are temporaries (unique storage is not
+/// preserved), so both `SUBPIECE`s would read the one free lane temporary; the
+/// split is refused before anything is rewritten and the function is left as
+/// it was.
+#[test]
+fn lane_divide_counts_a_refused_split_as_a_failed_trace() {
+    let types = crate::dtype::TypeFactoryImpl::new();
+    types.setup_sizes(Some(8), 8, 8);
+    let mut arch = ArchContext::new(build_manager());
+    arch.lanerecords = vec![LanedRegister::with_mask(16, (1 << 4) | (1 << 8))];
+    arch.types = Some(Rc::new(types));
+    let glb = Rc::new(arch);
+    let ram = Rc::clone(glb.manage().get_space_by_name("ram").unwrap());
+    let unique = Rc::clone(glb.manage().get_space_by_name("unique").unwrap());
+    let mut fd = Funcdata::new("func", "func", glb, Address::new(Rc::clone(&ram), 0x1000), 0x10000000, 0x40)
+        .unwrap();
+    let root = fd.bblocks_ref().root.expect("bblocks root");
+    let bl = fd.bblocks_mut().new_block_basic(root);
+    let whole_at = Address::new(Rc::clone(&unique), 0x100);
+    let whole = fd.vbank_mut().create(16, whole_at.clone(), Rc::new(Datatype::new(16, type_metatype::TYPE_UNKNOWN)));
+    let whole = fd.vbank_mut().set_input(whole, &mut |_, _, _| Ok(())).unwrap();
+    let mut subs = Vec::new();
+    for _ in 0..2 {
+        let sub = fd.new_op(2, Address::new(Rc::clone(&ram), 0x2000));
+        fd.op_set_opcode_code(sub, OpCode::CPUI_SUBPIECE);
+        let offset = fd.new_constant(4, 0);
+        fd.op_set_input(sub, whole, 0).unwrap();
+        fd.op_set_input(sub, offset, 1).unwrap();
+        fd.op_insert(sub, bl, None);
+        fd.new_unique_out(4, sub).unwrap();
+        subs.push(sub);
+    }
+    fd.laned_map_insert(
+        crate::funcdata::LanedKey::new(&whole_at, 16),
+        whole_at,
+        16,
+        LanedRegister::with_mask(16, (1 << 4) | (1 << 8)),
+    );
+    let mut ctx = ActionContext::new();
+    let r = ActionLaneDivide::boxed("g").apply(&mut fd, &mut ctx);
+    assert!(ctx.error.is_none(), "{:?}", ctx.error.map(|e| e.to_string()));
+    assert_eq!(r, 0, "no split");
+    for sub in subs {
+        let op = fd.obank().get(sub).expect("SUBPIECE kept");
+        assert_eq!(op.code(), OpCode::CPUI_SUBPIECE);
+        assert_eq!(op.get_in(0), Some(whole));
+    }
+    assert!(fd.vbank().get(whole).unwrap().is_input());
+}
