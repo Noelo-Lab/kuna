@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3852,
-    3852
+    3856,
+    3856
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2711,6 +2711,10 @@
     "data:dynamic interior entries and escaped saved LR retain returning transfers",
     "data:dynamic later store shares the backing",
     "data:dynamic observers never address the narrow input",
+    "data:e500 slots #1: off loses the constant argument",
+    "data:e500 slots #2: auto keeps the constant argument",
+    "data:e500 slots #3: auto keeps an arithmetic argument",
+    "data:e500 slots #4: auto defines the call result",
     "data:each pass jumps into the true arm",
     "data:each pass prints that label",
     "data:earlyrestart #1: both passes print main",

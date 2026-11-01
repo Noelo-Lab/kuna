@@ -1800,7 +1800,7 @@ impl Heritage {
         self.persist_skips = None;
         let readonly = self.readonly_unguarded && (fl & varnode_flags::readonly) != 0 && write.is_empty();
         let mut pruned = false;
-        // (kuna) `option calloverlap off|in|full` — the two upstream partial-range
+        // (kuna) `option calloverlap off|auto|in|full` — the two upstream partial-range
         // overlap guards.  See [`crate::p3_dataflow::kuna_calloverlap`].
         let overlap_level = fd.get_arch().call_overlap;
         // Lift the call specs out so each trial-registering mutation can also take
@@ -2023,8 +2023,10 @@ impl Heritage {
                         // tryOutputOverlapGuard (heritage.cc:1249/1293): the heritaged
                         // range properly contains the return storage, so the return
                         // entry becomes an INDIRECT creation and the bytes around it
-                        // are PIECEd back on.  Gated by `option calloverlap full`.
-                        if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                        // are PIECEd back on.  Gated by `option calloverlap full`, or `auto` for a narrow scalar slot.
+                        if (overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
+                            || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
+                                && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)))
                             && self
                                 .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write)
                         {
@@ -2244,7 +2246,10 @@ impl Heritage {
                     return;
                 }
             }
-            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN {
+            if overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_IN
+                || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
+                    && super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), trans_addr, size, false))
+            {
                 Self::guard_call_overlapping_input(fd, fc, addr, trans_addr, size);
             }
         }
@@ -2352,7 +2357,7 @@ impl Heritage {
     ///
     /// An associated function rather than a method so the caller can keep its
     /// `&mut Funcdata` and `&mut FuncCallSpecs` borrows alive across the call.
-    /// Gated by `option calloverlap in|full`.
+    /// Gated by `option calloverlap in|full`, or `auto` for a narrow scalar slot.
     fn guard_call_overlapping_input(
         fd: &mut crate::funcdata::Funcdata,
         fc: &mut crate::fspec::FuncCallSpecs,
@@ -2431,7 +2436,7 @@ impl Heritage {
     ///
     /// Returns `true` when the INDIRECTs were created, in which case the caller
     /// downgrades the range's effect to `unaffected`.  Gated by
-    /// `option calloverlap full`.
+    /// `option calloverlap full`, or `auto` for a narrow scalar slot.
     fn try_output_overlap_guard(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,

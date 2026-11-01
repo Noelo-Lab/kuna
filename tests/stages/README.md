@@ -18,6 +18,10 @@ and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
+`kuna-e500-call-slots.xml` compares disabled and automatic call-overlap guards
+for scalar arguments and results inside e500's wide registers. The CLI tests
+cover both byte orders and execute a recovered callback-result wrapper.
+
 `kuna-callwide.xml` loads the committed sealed MIPS32-BE ELF and checks the
 four-byte OFF result against the proved eight-byte result and high-piece callers.
 Its CLI companion executes the original bytes and untouched emitted C/header

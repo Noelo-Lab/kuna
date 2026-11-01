@@ -787,3 +787,6 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "e500_arguments.rs"]
+mod e500_arguments;

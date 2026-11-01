@@ -1121,8 +1121,9 @@ pub struct Architecture {
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
     /// `Heritage::tryOutputOverlapGuard`, which kuna shipped as comment-only stubs
-    /// (option `calloverlap`).  `0` = off, `1` = input guard only, `2` = both
-    /// (upstream Ghidra's behavior).  See [`crate::p3_dataflow::kuna_calloverlap`].
+    /// (option `calloverlap`): off, auto (the default; narrow scalar slots in
+    /// wide registers only), in, or full (upstream Ghidra's behavior).  The
+    /// ordered levels are in [`crate::p3_dataflow::kuna_calloverlap`].
     pub call_overlap: int4,
     /// (kuna) Predicate strength for tolerating the caller's own caller-save
     /// spill among a trial Varnode's descendants in `Funcdata::onlyOpUse`
@@ -3236,7 +3237,7 @@ impl Architecture {
             callee_arity_body: true,
             callee_arity_cut: true,
             callee_arity_scratch: true,
-            call_overlap: 0,
+            call_overlap: crate::kuna_calloverlap::LEVEL_OFF, // (kuna) option calloverlap; reset_defaults sets the shipped default
             spill_arg_trial: 0,
             cond_exe_ret: false, // (kuna) option condexeret; reset_defaults sets the shipped default
             cond_exe_ret_use: false, // (kuna) option condexeretuse; reset_defaults sets the shipped default
@@ -3680,7 +3681,7 @@ impl Architecture {
         self.callee_arity_body = true; // (kuna) DIV-PENDING default-on: a call with no sibling recovers its argument list from the callee's own body (0/675 ablation)
         self.callee_arity_cut = true; // (kuna) DIV-PENDING default-on: a callee-body argument run that stops short of the last argument register is bounded by that register, so a body whose decode is cut at a nested call still speaks (0/675 ablation)
         self.callee_arity_scratch = true; // (kuna) DIV-PENDING default-on: a boundary register the caller's own trial scoring marked inactive is scratch, not a further argument, so a run that stops at one is still bounded (0/675 ablation)
-        self.call_overlap = 0; // (kuna) calloverlap: PLACEHOLDER default (set from measurement)
+        self.call_overlap = crate::kuna_calloverlap::LEVEL_AUTO;
         self.cond_exe_ret = true; // (kuna) option condexeret default-on: a return trial that failed only at the function's input through a merge block ActionConditionalExe can thread is re-checked once that block is gone; 0/675 datatest and 0 stage assertions moved, decompile-all unchanged on 5,422 fixture and 36,464 decbench functions, speed within noise
         self.cond_exe_ret_use = true; // (kuna) option condexeretuse default-on: a use of a returned value on the branch a merge block's re-test of the same condition rules out no longer rejects the output trial; 0/675 datatest assertions moved
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)

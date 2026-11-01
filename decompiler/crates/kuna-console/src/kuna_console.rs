@@ -258,10 +258,11 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "switchsharedcase" => on_off(conf.switch_shared_case),
         "realtypes" => on_off(conf.realtypes),
         "litpoolconst" => on_off(conf.litpoolconst),
-        // (kuna `calloverlap`) Three-valued, so it reports its own token.
+        // (kuna `calloverlap`) Report the selected overlap policy.
         "calloverlap" => match conf.call_overlap {
-            0 => "off",
-            1 => "in",
+            kuna_decomp::kuna_calloverlap::LEVEL_OFF => "off",
+            kuna_decomp::kuna_calloverlap::LEVEL_AUTO => "auto",
+            kuna_decomp::kuna_calloverlap::LEVEL_IN => "in",
             _ => "full",
         },
         "entryretdispatch" => on_off(conf.entry_ret_dispatch),
