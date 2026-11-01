@@ -91,6 +91,7 @@
 //! them.
 
 mod fixups;
+mod provenance;
 pub(crate) mod raw_pcode;
 
 use kuna_console::disasm::{
@@ -391,13 +392,18 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
                 notes.push(image_bound_note(prog, &region));
             }
             let pref = kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref());
-            let fixups = fixups::overlapping(&args.binary, pref, prog, region.start, end);
+            let (image, repairs) = crate::image::image_bytes_and_repairs(&args.binary, pref)
+                .map_or((None, Vec::new()), |(bytes, repairs)| (Some(bytes), repairs));
+            let file = image.as_deref().and_then(|b| kuna_analysis::loadimage_object::parse_object(b).ok());
+            let view = image.as_deref().zip(file.as_ref());
+            let fixups = fixups::overlapping(view, prog, region.start, end);
             notes.extend(fixups.note());
+            let slice = if view.is_some() { crate::image::slice_offset(&args.binary, pref) } else { 0 };
+            let provenance = provenance::of(view, slice, &repairs, prog, region.start, end);
+            notes.extend(provenance.notes());
             if args.json {
-                format!(
-                    "{}\n",
-                    dumps_indent2(&data_result_json(args, &region, &rows, truncated, &notes, &fixups))
-                )
+                let doc = data_result_json(args, &region, &rows, truncated, &notes, &fixups, &provenance);
+                format!("{}\n", dumps_indent2(&doc))
             } else {
                 render_data_text(&region, &rows, truncated)
             }
@@ -809,6 +815,7 @@ fn data_result_json(
     truncated: bool,
     notes: &[String],
     fixups: &fixups::Fixups,
+    provenance: &provenance::Provenance,
 ) -> Json {
     let end = rows.last().map_or(region.start, |r| r.addr + r.bytes.len() as u64);
     let mut hex = String::new();
@@ -832,6 +839,7 @@ fn data_result_json(
     doc.push(("hex".into(), Json::Str(hex)));
     doc.push(("rows".into(), listed));
     doc.extend(fixups.json_fields());
+    doc.extend(provenance.json_fields());
     Json::Object(doc)
 }
 
@@ -1229,7 +1237,12 @@ fn usage() {
          The data view lists the load image's bytes. Each load-time fixup slot they\n\
          overlap is in fixups:[{{address,size,kind,symbol,target,file_bytes,image_bytes,\n\
          returned}}]: returned is `file`, `applied` (the loader's value) or `placeholder`\n\
-         (a bind's zero), and fixups_coverage names the metadata it came from."
+         (a bind's zero), and fixups_coverage names the metadata it came from.\n\
+         provenance:[{{start,end,size,source,file_offset,segment}}] cuts the span where\n\
+         its bytes' source changes: `file`, `zero-fill` (memory the segment declares\n\
+         past its file content), `repaired` (a header field kuna rewrote so the\n\
+         image parses) or `unknown`; segment carries the segment's name,\n\
+         extent, file extent and declared permissions (`r-x`, `---`)."
     );
 }
 

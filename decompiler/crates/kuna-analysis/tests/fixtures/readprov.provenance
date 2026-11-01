@@ -1,0 +1,45 @@
+readprov_* -- images whose segments declare memory the file does not hold, or
+no access at all, for `kuna read --json`'s `provenance` (GH #1401;
+decompiler/crates/kuna-cli/tests/read_provenance_cli.rs).
+
+What they are
+  readprov_macho_arm64    arm64 Mach-O executable from readprov_macho.s (the
+                          issue's fixture plus a __DATA segment):
+                            __PAGEZERO 0x0, vmsize 0x100000000, filesize 0, initprot ---
+                            __TEXT     0x100000000, 0x4000 of 0x4000 in the file, r-x
+                            __DATA     0x100004000, vmsize 0xc000, filesize 0x4000, rw-
+                                       (a 0x8000-byte zerofill __bss)
+                            __LINKEDIT 0x100010000, vmsize 0x4000, fileoff 0x8000,
+                                       filesize 0x2e0, r--
+  readprov_elf_x86_64     x86-64 ELF from readprov_elf.S + readprov_elf.ld:
+                            PT_LOAD 0x400000, 0xef bytes, R E
+                            PT_LOAD 0x401000, 8 bytes at offset 0x1000, no flags
+                            PT_LOAD 0x402000, filesz 8, memsz 0x48 (.bss), RW
+  readprov_pe_x86_64.exe  x86-64 PE from readprov_pe.S, ImageBase 0x140000000:
+                            .data   0x140003000, VirtualSize 0x2008, 0x200 raw at 0x800
+                            .sealed 0x140006000, 8 bytes at 0xa00, characteristics
+                                    0x08000040 (no MEM_READ, MEM_WRITE or MEM_EXECUTE)
+
+How they were built (no macOS SDK or MSVC; host clang + the rustup-bundled LLD)
+  GL=$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/gcc-ld
+  clang -target arm64-apple-macos11 -c readprov_macho.s -o macho.o
+  $GL/ld64.lld -arch arm64 -platform_version macos 11.0 11.0 -e _main \
+      -o readprov_macho_arm64 macho.o
+  python3 readprov_macho_arm64.py readprov_macho_arm64 readprov_macho_arm64
+  clang -target x86_64-linux-gnu -c readprov_elf.S -o elf.o
+  $GL/ld.lld -static -nostdlib --build-id=none -T readprov_elf.ld \
+      -o readprov_elf_x86_64 elf.o
+  clang -target x86_64-pc-windows-msvc -c readprov_pe.S -o pe.obj
+  $GL/lld-link /brepro /entry:main /subsystem:console /nodefaultlib \
+      /dynamicbase:no /fixed /section:.sealed,P /out:readprov_pe_x86_64.exe pe.obj
+  Ubuntu clang 14.0.0-1ubuntu1.1, LLD 20.1.8 (rustc 1.90.0). ld64.lld sizes
+  __LINKEDIT's memory to its file content; readprov_macho_arm64.py rounds its
+  vmsize up to the 16 KiB page the way Apple's ld64 does, which is the layout
+  the issue reports (its stale code signature is never read). The output names
+  matter: ld64.lld signs with the output file's name.
+
+  sha256:
+    df44937763178358cb8f5648b662c06a9c65e0cf9df5843a527d5f3eb5ad9ba9  readprov_macho_arm64
+    6d4424266a1fac102b9a216e8b0668775496f8d2cbc5fca32f4b2212904e917f  readprov_elf_x86_64
+    a37724af1af1a180c37211e93bb3b5bd9300ff132b3a8af7605f0b32d92e4200  readprov_pe_x86_64.exe
+  Never executed. Prebuilt because CI has no Mach-O or PE linker.

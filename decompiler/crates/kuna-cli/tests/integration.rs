@@ -331,6 +331,9 @@ mod pushed_stack_bytes;
 #[path = "read_fixups_cli.rs"]
 mod read_fixups_cli;
 
+#[path = "read_provenance_cli.rs"]
+mod read_provenance_cli;
+
 #[path = "recursive_records_cli.rs"]
 mod recursive_records_cli;
 
