@@ -154,12 +154,14 @@ impl LineSource for IfaceTerm {
     ///
     /// The character switch is transcribed verbatim; on a piped stream the
     /// editing keys rarely appear, but the default-case insert + echo path —
-    /// what produces `decomp_dbg`'s echoed stdout — is exact.
+    /// what produces `decomp_dbg`'s echoed stdout — is exact.  As in C++, the
+    /// line is raw bytes until it is complete, so UTF-8 input is never split.
     fn read_line(&mut self, status: &mut IfaceStatus) -> String {
-        let mut line = String::new();
+        let mut line = Vec::new();
         let mut cursor: int4 = 0;
         let mut hist: int4 = 0;
-        let mut saveline = String::new();
+        let mut saveline = Vec::new();
+        let mut echo = Vec::new();
         let mut val: u8;
 
         loop {
@@ -206,7 +208,9 @@ impl LineSource for IfaceTerm {
                 }
                 0x09 => {
                     // TAB
-                    cursor = self.do_completion(status, &mut line, cursor);
+                    let mut text = String::from_utf8_lossy(&line).into_owned();
+                    cursor = self.do_completion(status, &mut text, cursor);
+                    line = text.into_bytes();
                 }
                 0x0a | 0x0d => {
                     // Newline / carriage return
@@ -225,7 +229,9 @@ impl LineSource for IfaceTerm {
                     if hist > 0 {
                         hist -= 1;
                         if hist > 0 {
-                            status.get_history(&mut line, hist - 1);
+                            let mut text = String::new();
+                            status.get_history(&mut text, hist - 1);
+                            line = text.into_bytes();
                         } else {
                             line = saveline.clone();
                         }
@@ -239,7 +245,9 @@ impl LineSource for IfaceTerm {
                         if hist == 1 {
                             saveline = line.clone();
                         }
-                        status.get_history(&mut line, hist - 1);
+                        let mut text = String::new();
+                        status.get_history(&mut text, hist - 1);
+                        line = text.into_bytes();
                         cursor = line.len() as int4;
                     }
                 }
@@ -290,11 +298,12 @@ impl LineSource for IfaceTerm {
             }
 
             if onecharecho {
-                status.out_byte(val); // Echo most characters
+                echo_byte(status, val, &mut echo); // Echo most characters
             } else {
+                echo.clear();
                 status.out_byte(b'\r'); // Ontop of old line
                 status.write_prompt();
-                status.out(&line); // print new line
+                status.out(&String::from_utf8_lossy(&line)); // print new line
                 let mut i = line.len();
                 while i < lastlen {
                     status.out_byte(b' '); // erase old characters
@@ -311,7 +320,7 @@ impl LineSource for IfaceTerm {
                 break;
             }
         }
-        line
+        String::from_utf8_lossy(&line).into_owned()
     }
 
     fn push_input(&mut self, lines: Vec<String>) {
@@ -344,6 +353,18 @@ fn join_lines(lines: &[String]) -> Vec<u8> {
     out.into_bytes()
 }
 
+/// Echo `b`, holding back a partial UTF-8 character in `pending` until it is
+/// complete (C++ `optr->put(c)` writes the raw byte; `optr` here is a `String`).
+fn echo_byte(status: &mut IfaceStatus, b: u8, pending: &mut Vec<u8>) {
+    pending.push(b);
+    match std::str::from_utf8(pending) {
+        Ok(s) => status.out(s),
+        Err(e) if e.error_len().is_some() => status.out(&String::from_utf8_lossy(pending)),
+        Err(_) => return,
+    }
+    pending.clear();
+}
+
 // ---- byte-indexed string edits mirroring std::string member ops ----------
 //
 // C++ operates on `std::string` (a byte sequence) with byte indices.  These
@@ -351,36 +372,23 @@ fn join_lines(lines: &[String]) -> Vec<u8> {
 // `string::erase(pos)` over the UTF-8 byte buffer so command-line editing
 // matches byte-for-byte.
 
-fn insert_at(line: &mut String, pos: usize, b: u8) {
-    let mut bytes = std::mem::take(line).into_bytes();
-    let pos = pos.min(bytes.len());
-    bytes.insert(pos, b);
-    *line = String::from_utf8_lossy(&bytes).into_owned();
+fn insert_at(line: &mut Vec<u8>, pos: usize, b: u8) {
+    line.insert(pos.min(line.len()), b);
 }
 
-fn erase_at(line: &mut String, pos: usize, n: usize) {
-    let mut bytes = std::mem::take(line).into_bytes();
-    if pos < bytes.len() {
-        let end = (pos + n).min(bytes.len());
-        bytes.drain(pos..end);
+fn erase_at(line: &mut Vec<u8>, pos: usize, n: usize) {
+    if pos < line.len() {
+        line.drain(pos..(pos + n).min(line.len()));
     }
-    *line = String::from_utf8_lossy(&bytes).into_owned();
 }
 
-fn erase_from(line: &mut String, pos: usize) {
-    let mut bytes = std::mem::take(line).into_bytes();
-    if pos < bytes.len() {
-        bytes.truncate(pos);
-    }
-    *line = String::from_utf8_lossy(&bytes).into_owned();
+fn erase_from(line: &mut Vec<u8>, pos: usize) {
+    line.truncate(pos);
 }
 
-fn erase_range(line: &mut String, start: usize, len: usize) {
-    let mut bytes = std::mem::take(line).into_bytes();
-    let start = start.min(bytes.len());
-    let end = (start + len).min(bytes.len());
-    bytes.drain(start..end);
-    *line = String::from_utf8_lossy(&bytes).into_owned();
+fn erase_range(line: &mut Vec<u8>, start: usize, len: usize) {
+    let start = start.min(line.len());
+    line.drain(start..(start + len).min(line.len()));
 }
 
 // ---------------------------------------------------------------------------
@@ -529,6 +537,17 @@ mod tests {
         assert!(st.is_stream_finished());
     }
 
+    #[test]
+    fn term_reads_unicode_path_as_utf8() {
+        for path in ["/tmp/한글/샘플.exe", r"C:\Users\홍길동\📁 样本\sample.exe"] {
+            let command = format!("load file \"{path}\"");
+            let mut source = IfaceTerm::new(format!("{command}\n").as_bytes());
+            let mut st = term_status("");
+            assert_eq!(source.read_line(&mut st), command);
+            assert_eq!(st.optr, format!("{command}\n"));
+        }
+    }
+
     // ---- doCompletion --------------------------------------------------
 
     #[test]
@@ -603,16 +622,16 @@ mod tests {
 
     #[test]
     fn string_edits() {
-        let mut s = "abc".to_string();
+        let mut s = b"abc".to_vec();
         insert_at(&mut s, 1, b'X');
-        assert_eq!(s, "aXbc");
+        assert_eq!(s, b"aXbc");
         erase_at(&mut s, 1, 1);
-        assert_eq!(s, "abc");
+        assert_eq!(s, b"abc");
         erase_from(&mut s, 1);
-        assert_eq!(s, "a");
-        let mut s = "hello".to_string();
+        assert_eq!(s, b"a");
+        let mut s = b"hello".to_vec();
         erase_range(&mut s, 0, 2);
-        assert_eq!(s, "llo");
+        assert_eq!(s, b"llo");
     }
 
     // ---- VERIFIER adversarial tests (w9-con-interface) -----------------
