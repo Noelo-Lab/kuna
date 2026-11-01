@@ -2482,14 +2482,14 @@ Apple toolchain links a function placed in `__TEXT,__const` with no instruction
 attribute although `__TEXT` is `r-x`, a firmware link script leaves `.ramfunc` `WA`
 in an `RWE` `PT_LOAD`, and GNU ld puts AArch64 `.rodata` in the `R E` segment. The
 walk does not decode that memory by itself (it is mostly strings and tables, and
-`kuna functions` does not list its symbols), but **an explicit `--from` source there
-is decoded as code when the image says it is code**: an instruction the walk
-decoded calls or jumps to it, or the ELF symbol table declares a function
-(`STT_FUNC`) at it.
+`kuna functions` leaves Mach-O symbols there out), but **an explicit `--from` source there
+is decoded as code when the image says it is code**: a direct call or branch the
+walk decoded targets it, or the ELF symbol table declares a function (`STT_FUNC`)
+at it. A call through a slot is not evidence; its target is the slot.
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --from _middle
-note: 0x1000003fc is in __TEXT,__const, which the image maps executable but does not mark as code: it was decoded as code because it was asked about and decoded code calls or jumps to it (other queries do not walk it)
+note: 0x1000003fc is in __TEXT,__const, which the image maps executable but does not mark as code: it was decoded as code because it was asked about and a decoded direct call or branch targets it (other queries do not walk it)
 # 1 reference from _middle @ 0x1000003fc
 0x1000003e4	call	_goal	@0x1000003fc	bl 0x1000003e4
 ```
@@ -2501,9 +2501,9 @@ symbol or relocation table. An address the ELF symbol table declares a data obje
 (`STT_OBJECT`) is never decoded, and neither is one nothing calls and no function
 symbol names: an x86-64 image from GNU ld before binutils 2.31, and an AArch64 one
 from any GNU ld, has `.rodata` in the `R E` segment, and a string there decodes to
-plausible jumps. A Mach-O symbol has
-no type, so a symbol alone is not evidence; such an address answers `count: 0`
-with `coverage.decoded: false`, and `kuna disassemble --as code` reads its bytes.
+plausible jumps. A Mach-O symbol has no type, so a symbol alone is not evidence;
+such an address answers `count: 0` with `coverage.decoded: false`, and
+`kuna disassemble --as code` reads its bytes.
 Only the source's own body is read: a call out of it is a row, and its callee is
 walked under the ordinary rules. `--to` decodes nothing new, so `--to _goal` still
 misses `_middle`'s call; `coverage` names the code it skipped instead. A PE section
@@ -2518,12 +2518,12 @@ no such gap.
 | `section` | The section the address is in (`__TEXT,__const`, `.rodata`); `null` in none. |
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
-| `unwalked` | Call and jump targets in executable memory not marked as code that decoded code transfers control to but the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
+| `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, which the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
 
 ```
 $ kuna xrefs unflagged_macho_arm64 --to _goal
-note: 2 call or jump targets were not walked, because their sections are mapped executable but not marked as code: 0x1000003fc (_middle, in __TEXT,__const), 0x100000404 (_quiet, in __TEXT,__const). References made from them are not in this answer; `kuna xrefs --from <address>` decodes one
+note: 2 targets of decoded calls or branches were not walked, because their sections are mapped executable but not marked as code: 0x1000003fc (_middle, in __TEXT,__const), 0x100000404 (_quiet, in __TEXT,__const). References made from them are not in this answer; `kuna xrefs --from <address>` decodes one
 # 1 reference to _goal @ 0x1000003e4
 0x1000003ec	call	_direct_goal	bl 0x1000003e4
 ```

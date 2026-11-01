@@ -23,7 +23,7 @@
     },
     "stdout_is_json": true,
     "stderr_matches": [
-      "2 call or jump targets were not walked",
+      "2 targets of decoded calls or branches were not walked",
       "0x1000003fc \\(_middle, in __TEXT,__const\\)"
     ],
     "json": [

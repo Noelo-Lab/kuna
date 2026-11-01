@@ -419,10 +419,10 @@ fn source_note(
     placement: &Placement,
 ) -> Option<String> {
     let at = format!("0x{addr:x}");
-    let called = index.refs_to(addr).iter().any(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump));
+    let called = index.is_stopped_flow_target(addr);
     let evidence = match declared_function(file, addr) {
         Some(name) => format!("the symbol table declares the function {name} there"),
-        None => "decoded code calls or jumps to it".to_string(),
+        None => "a decoded direct call or branch targets it".to_string(),
     };
     Some(match (placement, decoded) {
         (Placement::Code { .. }, true) => return None,
@@ -445,7 +445,7 @@ fn source_note(
             ),
             None => format!(
                 "{at} is in {}, which the image maps executable but does not mark as code, and \
-                 nothing says {at} is code (no decoded instruction calls or jumps to it, and no \
+                 nothing says {at} is code (no decoded direct call or branch targets it, and no \
                  symbol declares a function there): it was not decoded, so no instruction \
                  references are listed; `kuna disassemble --as code` reads its bytes as \
                  instructions",
@@ -492,16 +492,16 @@ fn unwalked_note(
     }
     Some(if unwalked.len() == 1 {
         format!(
-            "{} is called but was not walked: its section is mapped executable but not marked as \
-             code. References made from it are not in this answer; `kuna xrefs --from 0x{first:x}` \
-             decodes it",
+            "{} is the target of a decoded call or branch but was not walked: its section is \
+             mapped executable but not marked as code. References made from it are not in this \
+             answer; `kuna xrefs --from 0x{first:x}` decodes it",
             listed[0]
         )
     } else {
         format!(
-            "{} call or jump targets were not walked, because their sections are mapped \
-             executable but not marked as code: {}. References made from them are not in this \
-             answer; `kuna xrefs --from <address>` decodes one",
+            "{} targets of decoded calls or branches were not walked, because their sections are \
+             mapped executable but not marked as code: {}. References made from them are not in \
+             this answer; `kuna xrefs --from <address>` decodes one",
             unwalked.len(),
             listed.join(", ")
         )

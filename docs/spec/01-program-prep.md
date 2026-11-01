@@ -6940,8 +6940,8 @@ bare-metal link script leaves `.ramfunc` flagged `WA` in an `RWE` `PT_LOAD`, and
 ld links AArch64 `.rodata` into the `R E` segment. `kuna xrefs --from` such an
 address answered `count: 0`, the same document a function with no references gets.
 The walk still does not decode that memory on its own account: most of it is
-strings and tables, and the inventory keeps its symbols out of `kuna functions`
-(GH #1339). An explicit `--from` source there is decoded as code when the image
+strings and tables, and the Mach-O inventory keeps its symbols out of
+`kuna functions` (GH #1339). An explicit `--from` source there is decoded as code when the image
 says it is code
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (build_with_unflagged_focus)`).
 The section holding it must lie wholly inside a segment the image maps executable
@@ -6950,9 +6950,9 @@ The section holding it must lie wholly inside a segment the image maps executabl
 `S_REGULAR`, `S_SYMBOL_STUBS` or `S_COALESCED`)
 (`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (placement)`).
 An ELF symbol table must not declare a data object at the address, and something
-must say the address is code: an instruction the seeded walk decoded calls or jumps
-to it (checked when the focus pass reaches it, after that walk has drained), or an
-ELF symbol table declares a function there
+must say the address is code: a direct call or branch the seeded walk decoded
+targets it (checked when the focus pass reaches it, after that walk has drained), or
+an ELF symbol table declares a function there
 (`decompiler/crates/kuna-analysis/src/listing/kuna_unflaggedcode.rs (declared_function)`).
 Selection alone is not enough, because the same memory is mostly data: GNU ld put
 x86-64 `.rodata` in the `R E` segment until `-z separate-code` became its default
@@ -6972,7 +6972,10 @@ the queried address, the section it is in, whether that section is marked as cod
 and whether its memory is executable, and the call and jump targets in executable
 memory not marked as code that the walk filed but did not decode
 (`decompiler/crates/kuna-analysis/src/listing/xrefs.rs (undecoded_flow_targets)`).
-The references those targets make are missing from every answer. A `--from` answer
+The references those targets make are missing from every answer. Only a direct
+call or branch counts, never a call through a slot: Go's closure call `MOV
+RAX,[funcval]; CALL RAX` is a `call` row to the funcval word in `__rodata`, which
+holds a code address and is not code. A `--from` answer
 about anything other than code decoded in a code section, and a `--to` answer while
 such targets exist, say so in a note.
 

@@ -52,7 +52,8 @@ pub enum Placement {
 }
 
 /// Every [`UnflaggedSection`] of the image, in address order. Empty for a PE,
-/// a relocatable object, and almost every ELF and Mach-O image.
+/// a relocatable object and a separate-code ELF; a Mach-O has at least its
+/// `__TEXT` unwind tables here.
 pub fn unflagged_sections(file: &object::File) -> Vec<UnflaggedSection> {
     if file.kind() == object::ObjectKind::Relocatable {
         return Vec::new();

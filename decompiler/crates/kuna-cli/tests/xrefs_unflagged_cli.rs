@@ -88,7 +88,7 @@ fn an_explicit_source_that_decoded_code_calls_is_decoded() {
         assert!(decoded_unflagged(&doc), "{target}: {}", doc["coverage"]);
         let notes = doc["coverage"]["notes"].as_array().unwrap();
         assert_eq!(notes.len(), 1, "{target}: {notes:?}");
-        assert!(notes[0].as_str().unwrap().contains("decoded code calls or jumps to it"), "{notes:?}");
+        assert!(notes[0].as_str().unwrap().contains("a decoded direct call or branch targets it"), "{notes:?}");
         assert!(stderr.contains("note: 0x1000003fc is in __TEXT,__const"), "{target}: {stderr}");
     }
 }
@@ -127,7 +127,7 @@ fn to_lists_the_called_code_it_did_not_walk() {
             (0x100000404, "_quiet".to_owned(), "__TEXT,__const".to_owned()),
         ]
     );
-    assert!(stderr.contains("2 call or jump targets were not walked"), "{stderr}");
+    assert!(stderr.contains("2 targets of decoded calls or branches were not walked"), "{stderr}");
     let (main, stderr) = xrefs(MACHO, "--from", "_main");
     assert_eq!(rows(&main), [call(0x1000003d8, 0x1000003fc, "-"), call(0x1000003dc, 0x100000404, "-")]);
     assert_eq!(coverage(&main), (true, Some("__TEXT,__text"), Some(true), Some(true)));

@@ -177,6 +177,9 @@ pub struct XrefIndex {
     flow: Option<FlowGraph>,
     /// Every jump table the walk read, in walk order.
     switches: Vec<SwitchTable>,
+    /// The targets of decoded direct calls and branches that lie outside the
+    /// sections the walk decodes.
+    stopped: BTreeSet<u64>,
 }
 
 /// Every decoded instruction and its intra-function successors, so each entry's
@@ -453,16 +456,17 @@ impl XrefIndex {
         self.decoded.contains(&vma)
     }
 
-    /// The call and jump targets the walk filed but decoded no instruction at,
-    /// in address order: code the descent was pointed at and stopped short of.
+    /// Does a decoded direct call or branch target `vma` outside the sections the
+    /// walk decodes? A call through a slot does not count: its target is the slot.
+    pub fn is_stopped_flow_target(&self, vma: u64) -> bool {
+        self.stopped.contains(&vma)
+    }
+
+    /// The [`is_stopped_flow_target`](Self::is_stopped_flow_target) addresses
+    /// the walk decoded no instruction at, in address order: code the descent was
+    /// pointed at and stopped short of.
     pub fn undecoded_flow_targets(&self) -> impl Iterator<Item = u64> + '_ {
-        self.by_target
-            .iter()
-            .filter(|(to, refs)| {
-                !self.decoded.contains(to)
-                    && refs.iter().any(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
-            })
-            .map(|(&to, _)| to)
+        self.stopped.iter().copied().filter(|to| !self.decoded.contains(to))
     }
 
     /// How many distinct instructions the walk decoded.
@@ -674,7 +678,7 @@ pub fn build_with_focus(
 /// `unflagged`: executable memory in a section not marked as code
 /// ([`super::kuna_unflaggedcode`]). The caller naming such an address is not
 /// enough to read its bytes as instructions; it is decoded when the image says
-/// it is code, because an instruction the seeded walk decoded calls or jumps to
+/// it is code, because a direct call or branch the seeded walk decoded targets
 /// it, or because it is one of `declared` (an ELF `STT_FUNC`). Only its own body
 /// is decoded: its branches are followed while they stay inside the range it
 /// starts in, and a call out of it is filed and walked under the ordinary rules.
@@ -860,6 +864,7 @@ fn descend(
     // Only the focus pass decodes a forced address; the descent that reaches one
     // as a callee first stops at it, as it always has.
     let mut admitted: HashSet<u64> = HashSet::new();
+    let mut stopped: BTreeSet<u64> = BTreeSet::new();
 
     loop {
         // Drain known entries first, then merge recovered roots and focus addresses
@@ -908,11 +913,7 @@ fn descend(
             }
             None => match pending_focus.pop() {
                 Some(f) => {
-                    let admit = forced.contains(&f)
-                        && (declared.contains(&f)
-                            || st.by_target.get(&f).is_some_and(|refs| {
-                                refs.iter().any(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
-                            }));
+                    let admit = forced.contains(&f) && (declared.contains(&f) || stopped.contains(&f));
                     if st.decoded.contains(&f) || partition_covers(&recovered_spans, f)
                         || (sections_are_runtime && !in_range(&exec_set, f) && !admit)
                     {
@@ -1015,6 +1016,7 @@ fn descend(
                         pending_focus.reverse();
                         focused.clear();
                         admitted.clear();
+                        stopped.clear();
                         walked.clear();
                         if let Some(context) = &mut walk_context { context.reset(); }
                         partition.clear();
@@ -1228,6 +1230,9 @@ fn descend(
             for &target in &c.flows {
                 let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
                 st.file(vma, target, kind, &text);
+                if sections_are_runtime && !in_range(&exec_set, target) {
+                    stopped.insert(target);
+                }
                 if c.flow.is_call {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
@@ -1433,6 +1438,7 @@ fn descend(
     if !measure {
         index.flow = None;
     }
+    index.stopped = stopped;
     index
 }
 
@@ -1795,6 +1801,7 @@ impl State {
             insns,
             flow: self.flow,
             switches: self.switches,
+            stopped: BTreeSet::new(),
         }
     }
 }
@@ -1864,6 +1871,7 @@ fn empty() -> XrefIndex {
         insns: 0,
         flow: None,
         switches: Vec::new(),
+        stopped: BTreeSet::new(),
     }
 }
 
