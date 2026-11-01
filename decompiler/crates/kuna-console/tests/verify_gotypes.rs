@@ -69,6 +69,8 @@ type Left *Right
 type Right *Left
 type Recursive struct { Direct Pointer; Mutual Left; Tail int }
 type Node struct { Next *Node; Value int }
+type PairA struct { Next *PairB; First int }
+type PairB struct { Prev *PairA; Second int }
 
 //go:noinline
 func mk(i int) Point {
@@ -83,6 +85,7 @@ func main() {
 	fmt.Println(syscall.Iovec{})
 	fmt.Println(Recursive{Tail: 7})
 	fmt.Println(Node{Value: 9})
+	fmt.Println(PairA{}, PairB{})
 }
 "#;
 
@@ -215,9 +218,24 @@ fn check_named_struct(arch: &str) {
     }
     assert_eq!(recursive.get_field(2).unwrap().offset, 2 * width);
     let node = tf.find_by_name("main.Node").unwrap().unwrap();
-    let next = node.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    let mut next = node.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
     assert_eq!(next.get_name(), "main.Node");
     assert_eq!(node.get_size(), 2 * width);
+    for _ in 0..3 {
+        assert_eq!(next.get_size(), 2 * width);
+        assert_eq!(next.get_field(1).unwrap().name, "Value");
+        assert!(std::rc::Rc::ptr_eq(&next, &node));
+        next = next.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    }
+    let a = tf.find_by_name("main.PairA").unwrap().unwrap();
+    let b = a.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    assert_eq!(b.get_size(), 2 * width);
+    assert_eq!(b.get_field(1).unwrap().name, "Second");
+    let back = b.get_field(0).unwrap().field_type.get_ptr_to().unwrap();
+    assert_eq!(back.get_size(), 2 * width);
+    assert_eq!(back.get_field(1).unwrap().name, "First");
+    assert!(std::rc::Rc::ptr_eq(&a, &back));
+
 
     // The header shells carry their facets (the W3 plane fills).
     assert_eq!(tf.kuna_lang_facet("go.string"), Some(LangFacet::GoString));

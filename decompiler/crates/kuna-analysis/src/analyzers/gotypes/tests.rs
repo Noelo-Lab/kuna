@@ -393,3 +393,41 @@ fn pointer_chains_stop_at_cycles_missing_records_and_depth_limit() {
         }
     }
 }
+
+#[test]
+fn forward_struct_pointers_observe_only_valid_completed_layouts() {
+    for bad_extent in [false, true] {
+        let (mut spans, anchor, types, _) = synth();
+        let blob = &mut spans[0].1;
+        let pointer = 0xb0;
+        blob[pointer..pointer + 8].copy_from_slice(&8u64.to_le_bytes());
+        blob[pointer + 23] = KIND_POINTER;
+        blob[pointer + 40..pointer + 44].copy_from_slice(&0x250i32.to_le_bytes());
+        blob[pointer + 48..pointer + 56].copy_from_slice(&(types + 0x60).to_le_bytes());
+        blob[0x250..0x25d].copy_from_slice(b"\0\x0b*main.Point");
+        blob[0x320..0x328].copy_from_slice(&(types + pointer as u64).to_le_bytes());
+        if bad_extent {
+            blob[0x328..0x330].copy_from_slice(&16u64.to_le_bytes());
+        }
+        let img = img_of(&spans);
+        let meta = locate_type_meta(&img, anchor).unwrap();
+        let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        tf.setup_sizes(Some(8), 8, 8);
+        tf.cache_core_types().unwrap();
+        let forward = field_type(&tf, &img, &meta, types + pointer as u64).unwrap();
+        assert_eq!(forward.get_ptr_to().unwrap().get_size(), 0);
+        intern_named_structs(&tf, &img, &meta, Some((1, 22)));
+        let pointee = forward.get_ptr_to().unwrap();
+        if bad_extent {
+            assert!(pointee.is_incomplete());
+            assert_eq!(pointee.get_size(), 0);
+        } else {
+            assert_eq!(pointee.get_size(), 16);
+            assert_eq!(pointee.get_field(0).unwrap().name, "X");
+            let next = pointee.get_field(1).unwrap().field_type.get_ptr_to().unwrap();
+            assert!(Rc::ptr_eq(&pointee, &next));
+        }
+    }
+}
