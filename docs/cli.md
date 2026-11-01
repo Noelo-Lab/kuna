@@ -2403,6 +2403,10 @@ kuna xrefs fixture --to _audit_target
 {"binary": "...", "direction": "to", "count": N,
  "target": {"name","address","address_hex",
             "aliases": [{"name","address","address_hex"}]},
+ "coverage": {"decoded": true, "section": "__TEXT,__text",
+              "code_section": true, "executable": true,
+              "unwalked": [{"name","address","address_hex","section"}],
+              "notes": ["..."]},
  "xrefs": [{"address","address_hex","kind",
             "from_address","from_address_hex","to_address","to_address_hex",
             "from_function": {"name","address","address_hex"},
@@ -2416,6 +2420,7 @@ kuna xrefs fixture --to _audit_target
 
 `count` and `xrefs` are the instruction rows alone; `data_refs` carries the stored
 pointers, `from_address` being the word and `from_name` the data object holding it.
+`coverage` says what the walk examined; see below.
 
 Both ends of every edge are always spelled out, so a consumer never has to infer
 which one `address` meant; `address` itself is the end the query did not already
@@ -2467,6 +2472,64 @@ that plainly has references. It is now walked last, after the seeded descent has
 drained, so it can only add coverage — an address the walk already decoded is
 attributed exactly as before, and an address that does not decode is not recorded as
 a function at all.
+
+### Code outside the code sections
+
+The walk decodes the sections the linker marked as code: ELF `SHF_EXECINSTR`, Mach-O
+`S_ATTR_PURE_INSTRUCTIONS`/`S_ATTR_SOME_INSTRUCTIONS`, PE `IMAGE_SCN_MEM_EXECUTE`.
+The loader obeys the segment, so memory can be executable without being marked: an
+Apple toolchain links a function placed in `__TEXT,__const` with no instruction
+attribute although `__TEXT` is `r-x`, a firmware link script leaves `.ramfunc` `WA`
+in an `RWE` `PT_LOAD`, and GNU ld puts AArch64 `.rodata` in the `R E` segment. The
+walk does not decode that memory by itself (it is mostly strings and tables, and
+`kuna functions` leaves Mach-O symbols there out), but **an explicit `--from` source there
+is decoded as code when the image says it is code**: a direct call or branch the
+walk decoded targets a symbol there, or the ELF symbol table declares a function
+(`STT_FUNC`, its Thumb bit ignored) at it. A call through a slot is not evidence;
+its target is the slot. Nor is a call alone: on an ARM image an instruction decoded
+in the wrong mode reads as a `bleq` into the strings beside the code, so an address
+no symbol names is not decoded however it is reached.
+
+```
+$ kuna xrefs unflagged_macho_arm64 --from _middle
+note: 0x1000003fc is in __TEXT,__const, which the image maps executable but does not mark as code: it was decoded as code because it was asked about and a decoded direct call or branch targets the symbol _middle there (other queries do not walk it)
+# 1 reference from _middle @ 0x1000003fc
+0x1000003e4	call	_goal	@0x1000003fc	bl 0x1000003e4
+```
+
+The section must lie in a segment the image maps executable (ELF `PF_X`, Mach-O
+`initprot` execute) and have a type that can hold code: not a Mach-O literal,
+pointer or zero-fill section (`__TEXT,__cstring` stays data), not an ELF string,
+symbol or relocation table. An address the ELF symbol table declares a data object
+(`STT_OBJECT`) is never decoded, and neither is one nothing calls and no function
+symbol names: an x86-64 image from GNU ld before binutils 2.31, and an AArch64 one
+from any GNU ld, has `.rodata` in the `R E` segment, and a string there decodes to
+plausible jumps. A Mach-O symbol has no type, so a symbol alone is not evidence;
+such an address answers `count: 0` with `coverage.decoded: false`, and
+`kuna disassemble --as code` reads its bytes.
+Only the source's own body is read: a call out of it is a row, and its callee is
+walked under the ordinary rules. `--to` decodes nothing new, so `--to _goal` still
+misses `_middle`'s call; `coverage` names the code it skipped instead. A PE section
+is its own mapping unit, executable and walked or not executable at all, so PE has
+no such gap.
+
+`coverage` is in every `--json` answer:
+
+| Field | Meaning |
+|---|---|
+| `decoded` | The walk decoded an instruction at `target.address`. `false` with `count: 0` means nothing was examined there, not that the code references nothing. |
+| `section` | The section the address is in (`__TEXT,__const`, `.rodata`); `null` in none. |
+| `code_section` | That section is marked as code, so every walk decodes it. |
+| `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
+| `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty. |
+
+```
+$ kuna xrefs unflagged_macho_arm64 --to _goal
+note: 2 targets of decoded calls or branches were not walked, because their sections are mapped executable but not marked as code: 0x1000003fc (_middle, in __TEXT,__const), 0x100000404 (_quiet, in __TEXT,__const). References made from them are not in this answer; `kuna xrefs --from <address>` decodes one
+# 1 reference to _goal @ 0x1000003e4
+0x1000003ec	call	_direct_goal	bl 0x1000003e4
+```
 
 The descent also follows a **jump table**. A computed jump has no static successor,
 so the walk used to stop dead at every switch dispatch and the case bodies — with
