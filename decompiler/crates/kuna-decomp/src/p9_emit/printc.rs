@@ -6851,30 +6851,29 @@ impl PrintC {
             }
         } else if display == userop_flags::DISPLAY_STRING {
             let outvn = fd.obank().get(op).and_then(|o| o.get_out());
+            let pointer = outvn.and_then(|v| fd.vbank().get(v))
+                .map(|v| std::rc::Rc::clone(v.get_type()));
             let mut s = String::new();
             let mut ok = false;
-            if let Some(ovn) = outvn {
-                let ct = fd.vbank().get(ovn).map(|v| std::rc::Rc::clone(v.get_type()));
-                if let Some(ct) = ct {
-                    if ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
-                        if let Some(subct) = ct.get_ptr_to() {
-                            // printCharacterConstant(str, op->getIn(1)->getAddr(), subct)
-                            let in1addr = fd
-                                .obank()
-                                .get(op)
-                                .and_then(|o| o.get_in(1))
-                                .and_then(|v| fd.vbank().get(v).map(|vn| vn.get_addr().clone()));
-                            if let Some(addr) = in1addr {
-                                let mut chars_emitted: int4 = 0;
-                                if self.print_character_constant(
-                                    arch,
-                                    &mut s,
-                                    &addr,
-                                    &subct,
-                                    &mut chars_emitted,
-                                ) {
-                                    ok = true;
-                                }
+            if let Some(ct) = pointer.as_ref() {
+                if ct.get_metatype() == crate::dtype::type_metatype::TYPE_PTR {
+                    if let Some(subct) = ct.get_ptr_to() {
+                        // printCharacterConstant(str, op->getIn(1)->getAddr(), subct)
+                        let in1addr = fd
+                            .obank()
+                            .get(op)
+                            .and_then(|o| o.get_in(1))
+                            .and_then(|v| fd.vbank().get(v).map(|vn| vn.get_addr().clone()));
+                        if let Some(addr) = in1addr {
+                            let mut chars_emitted: int4 = 0;
+                            if self.print_character_constant(
+                                arch,
+                                &mut s,
+                                &addr,
+                                &subct,
+                                &mut chars_emitted,
+                            ) {
+                                ok = true;
                             }
                         }
                     }
@@ -6882,6 +6881,10 @@ impl PrintC {
             }
             if !ok {
                 s.push_str("\"badstring\"");
+            } else if self.out_lang == crate::kuna_lang::OutLang::Go {
+                if let Some(pointer) = pointer.as_ref() {
+                    self.push_go_string_pointer(&mut s, pointer, op);
+                }
             }
             if let Some(ovn) = outvn {
                 self.push_atom(&Atom::with_op_vn(
@@ -11789,12 +11792,8 @@ impl PrintC {
             }
         }
         if self.out_lang == crate::kuna_lang::OutLang::Go {
-            if !s.ends_with('"') { return false; }
-            if !subct.is_opaque_string() { s.insert_str(s.len() - 1, "\\x00"); }
-            if let Ok(pointer) = arch.types().get_type_pointer(ptr_size, subct.clone(), 1) {
-                self.push_go_pointer_conversion(&pointer, true, op);
-                self.push_go_call("unsafe.StringData", op);
-            }
+            let Ok(pointer) = arch.types().get_type_pointer(ptr_size, subct.clone(), 1) else { return false };
+            if !self.push_go_string_pointer(&mut s, &pointer, op) { return false; }
         }
         self.push_atom(&Atom::with_op_vn(
             s,

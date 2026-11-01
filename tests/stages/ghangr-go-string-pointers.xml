@@ -1,0 +1,47 @@
+<decompilertest>
+<!-- Length-bounded internal strings remain pointers in Go expressions. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">488d3df91f0000be0b000000e8ef0f000031c0c3</bytechunk>
+<bytechunk space="ram" offset="0x102000" readonly="true">706c61696e206279746573</bytechunk>
+<symbol space="ram" offset="0x100000" name="plain"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">488d3df91f0000be1b000000e8ef0e000031c0c3</bytechunk>
+<bytechunk space="ram" offset="0x102100" readonly="true">71756f74652220736c6173685c2074616209206e65776c696e650a</bytechunk>
+<symbol space="ram" offset="0x100100" name="escaped"/>
+<bytechunk space="ram" offset="0x100200" readonly="true">488d3df91f0000be05000000e8ef0d000031c0c3</bytechunk>
+<bytechunk space="ram" offset="0x102200" readonly="true">636166c3a9</bytechunk>
+<symbol space="ram" offset="0x100200" name="unicode"/>
+<symbol space="ram" offset="0x101000" name="sink"/>
+</binaryimage>
+<script>
+  <com>map prototype sink void sink(void *p, unsigned long n);</com>
+  <com>map prototype plain void plain(void);</com>
+  <com>map prototype escaped void escaped(void);</com>
+  <com>map prototype unicode void unicode(void);</com>
+  <com>option fatstr always</com>
+  <com>option outlang c</com>
+  <com>load function plain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unicode</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option outlang go</com>
+  <com>load function plain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function escaped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function unicode</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="C keeps ordinary byte string syntax" min="1" max="1">sink\("plain bytes",0xb\);</stringmatch>
+<stringmatch name="Go internal strings use data pointers" min="3" max="3">unsafe.StringData\(</stringmatch>
+<stringmatch name="Go byte string pointers retain a terminating zero" min="3" max="3">\\x00"</stringmatch>
+<stringmatch name="Go keeps the pointer conversion to the formal type" min="3" max="3">sink\(unsafe.Pointer\(</stringmatch>
+<stringmatch name="Go never converts a string directly to a pointer" min="0" max="0">unsafe.Pointer\("</stringmatch>
+</decompilertest>

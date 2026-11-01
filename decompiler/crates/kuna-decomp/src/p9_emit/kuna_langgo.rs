@@ -801,6 +801,24 @@ impl PrintC {
         }
     }
 
+    pub(crate) fn push_go_string_pointer(
+        &mut self,
+        literal: &mut String,
+        pointer: &Rc<Datatype>,
+        op: OpId,
+    ) -> bool {
+        let Some(character) = pointer.get_ptr_to() else { return false };
+        if character.get_size() != 1 || !literal.ends_with('"') {
+            return false;
+        }
+        if !character.is_opaque_string() {
+            literal.insert_str(literal.len() - 1, "\\x00");
+        }
+        self.push_go_pointer_conversion(pointer, true, op);
+        self.push_go_call("unsafe.StringData", op);
+        true
+    }
+
     pub(crate) fn push_go_conversion(
         &mut self,
         target: &Rc<Datatype>,

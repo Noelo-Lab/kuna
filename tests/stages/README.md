@@ -328,3 +328,7 @@ the Linux native/recompiled functions at O0/O2. Source: `src/pointer_storage_lit
 `ghangr-godwarfsig.xml` checks opt-in Go DWARF scalar/pointer signatures,
 compressed cross-unit references, result roles, caller propagation and a wrong-register
 control. Its console companion executes hermetic and native recovered Go bodies.
+
+`ghangr-go-string-pointers.xml` exercises internal byte-string arguments in C and
+Go output, including escapes, UTF-8 and the data-pointer conversion. Its emitted
+Go bodies also compile and execute against a byte-checking sink.

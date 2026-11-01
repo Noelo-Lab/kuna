@@ -1,0 +1,115 @@
+{
+  "state": "validated",
+  "kind": "strict Go emission correction",
+  "baseline_commit": "f26e71b4e867e9d142203e2d4f9fa6ae3d04a4ae",
+  "selection": "outlang go; no new option",
+  "breadth": {
+    "inputs": 10,
+    "distinct_functions": 10310,
+    "records": 20675,
+    "changed_records": 1919,
+    "hunks": 2796,
+    "pointer_literals": 5789,
+    "go_parsed_functions": 9406,
+    "unchanged_c_rust_records": 11269,
+    "errors": 0
+  },
+  "validation": {
+    "workspace": {
+      "passed": 9998,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3460,
+    "tools": "114 tests, 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "regression_before": "3 of 5 assertions fail",
+    "regression_after": "5 of 5 pass",
+    "compiled_hermetic_functions": 3,
+    "compiled_native_runtime_functions": 1
+  },
+  "fixture_xml_sha256": "ccdbcdef8740f5290241cffd6c42ce1af811382adfeb53fd67420845868fd1ad",
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_order": true,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 105.77592393383384,
+            "cpu_ms": 104.25899999999987
+          },
+          "patched": {
+            "wall_ms": 103.53889735415578,
+            "cpu_ms": 102.23699999999968
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -2.1148731171352297,
+            "cpu_ms": -1.9394009150290992
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -1.0164423939122647,
+          "cpu_ms": -1.119796964149844
+        }
+      },
+      "go-string": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 509.6668489277363,
+            "cpu_ms": 506.7019999999971
+          },
+          "patched": {
+            "wall_ms": 512.5242439098656,
+            "cpu_ms": 511.690999999999
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 0.5606397567628596,
+            "cpu_ms": 0.984602389570588
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.6746932610100065,
+          "cpu_ms": -0.1913968660578469
+        }
+      },
+      "rust": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 345.91697063297033,
+            "cpu_ms": 344.5090000000022
+          },
+          "patched": {
+            "wall_ms": 350.4189429804683,
+            "cpu_ms": 349.6929999999949
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": 1.3014603878092723,
+            "cpu_ms": 1.5047502387434575
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.29852931108808045,
+          "cpu_ms": -0.33151730434454185
+        }
+      }
+    },
+    "max_cpu_delta_pct": 1.5047502387434575,
+    "max_wall_delta_pct": 1.3014603878092723,
+    "speed_budget_pct": 5,
+    "passed": true
+  }
+}

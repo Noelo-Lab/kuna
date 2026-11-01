@@ -3226,6 +3226,11 @@ from numeric conversion. Non-finite and negative-zero literals retain their bits
 Rune and string escaping uses Go syntax; invalid rune values stay numeric. A
 resolved one-byte C string pointer uses `unsafe.StringData` and includes its
 terminating zero. Wide or truncated pointer strings retain their address.
+Internal one-byte `DISPLAY_STRING` values use the same data-pointer conversion
+and retain their recovered pointer type before any caller conversion. This
+also covers length-bounded Go string arguments rewritten by `fatstr`; their
+separate length operand is unchanged. A Go string value cannot be converted
+directly to `unsafe.Pointer`.
 
 Go has neither ternary nor comma expressions. Recovered if diamonds remain
 statements. A short-circuit operand with leading statements evaluates those
