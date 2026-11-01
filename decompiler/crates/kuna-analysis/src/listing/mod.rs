@@ -61,6 +61,7 @@ mod kuna_a32switch;
 mod kuna_x86listingswitch;
 pub(crate) mod kuna_decodememo;
 mod kuna_unmappedentry;
+pub mod kuna_unflaggedcode;
 pub mod model;
 pub mod walk;
 // (kuna) The read-only cross-reference query behind `kuna xrefs` -- a consumer of

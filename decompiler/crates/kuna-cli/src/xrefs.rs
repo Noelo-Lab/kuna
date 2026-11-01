@@ -31,10 +31,21 @@
 //! rebase/relocation metadata, never merged into the instruction rows, and
 //! reported with the metadata that listed them (`data_refs_coverage`, `none`
 //! for an image that lists no pointer relocations).
+//!
+//! `coverage` says what the walk examined: whether it decoded the queried
+//! address, the section that address is in, and the called code it did not
+//! decode because its section is not marked as code
+//! ([`kuna_analysis::listing::kuna_unflaggedcode`]). An explicit `--from` source
+//! in such memory is decoded when the image says it is code (decoded code calls
+//! it, or an ELF symbol declares a function there), so an empty answer about
+//! code there is an answer, and one about bytes nobody decoded says so.
 
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use kuna_analysis::listing::kuna_unflaggedcode::{
+    declared_data, declared_function, named_at, placement, Placement, UnflaggedSection,
+};
 use kuna_analysis::listing::xrefs::{Xref, XrefIndex, XrefKind};
 use kuna_console::engine::{ConsoleProgram, EntryLookupError, EntrySelector};
 
@@ -95,11 +106,17 @@ struct Target {
 struct EntryNames {
     entries: BTreeMap<u64, String>,
     arm: bool,
+    /// The `[start, end)` of every [`UnflaggedSection`].
+    unflagged: Vec<(u64, u64)>,
 }
 impl EntryNames {
     fn at(&self, address: u64) -> Option<(u64, &str)> {
         let address = if self.arm { address & !1 } else { address };
         self.entries.get(&address).map(|name| (address, name.as_str()))
+    }
+
+    fn in_unflagged(&self, address: u64) -> bool {
+        self.unflagged.iter().any(|&(lo, hi)| address >= lo && address < hi)
     }
 }
 
@@ -246,9 +263,11 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let prog = load_program(&load, DriverDefaults::Query)?;
 
     let entries = prog.function_entries_canonical();
+    let unflagged = kuna_analysis::listing::kuna_unflaggedcode::unflagged_sections(&file);
     let names = EntryNames {
         entries: entries.iter().map(|entry| (entry.addr.get_offset(), entry.name.clone())).collect(),
         arm: prog.description().starts_with("ARM"),
+        unflagged: unflagged.iter().map(|s| (s.start, s.end)).collect(),
     };
     let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
     let seeds = kuna_analysis::listing::xrefs::discovery_seeds(
@@ -263,16 +282,30 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // entries carry points the walk at all of them and is settled afterwards,
     // because whether they are one callable is the walk's own finding.
     let resolution = target_address(&prog, &args.spec)?;
-    let index = kuna_analysis::listing::xrefs::build_with_focus(
+    let source = unflagged_source(&file, &unflagged, args.direction, &resolution);
+    let declared: Vec<u64> = match &resolution {
+        Resolution::Settled(spec) if !source.is_empty() && declared_function(&file, spec.addr).is_some() => {
+            vec![spec.addr]
+        }
+        _ => Vec::new(),
+    };
+    let index = kuna_analysis::listing::xrefs::build_with_unflagged_focus(
         &file,
         prog.arch(),
         prog.arch().translate(),
         &seeds,
         &resolution.focus(),
+        &source,
+        &declared,
     );
 
     let target = resolve_target(&prog, &file, &index, &names, resolution.settle(&index)?);
     warn_other_entries(&index, &names, &target);
+    let unwalked = unwalked_code(&file, &index, &unflagged);
+    let coverage = coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked);
+    for note in &coverage.notes {
+        eprintln!("note: {note}");
+    }
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
@@ -304,10 +337,239 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let data = DataRefs { coverage: data.coverage, rows: pointers };
 
     Ok(if args.json {
-        format!("{}\n", dumps_indent2(&result_json(args, &prog, &index, &names, &target, &rows, &data)))
+        let doc = result_json(args, &prog, &index, &names, &target, &rows, &data, &coverage);
+        format!("{}\n", dumps_indent2(&doc))
     } else {
         render_text(args, &prog, &index, &names, &target, &rows, &data)
     })
+}
+
+// --- coverage ----------------------------------------------------------------
+
+/// Whether the walk examined the address the query is about, and the code it
+/// was pointed at but did not decode: what tells an empty answer about code
+/// apart from an answer about bytes nobody decoded.
+struct Coverage {
+    decoded: bool,
+    placement: Placement,
+    /// [`unwalked_code`].
+    unwalked: Vec<(u64, String)>,
+    notes: Vec<String>,
+}
+
+/// The `[start, end)` an explicit `--from` source may be decoded in although
+/// its section is not marked as code: the section holding it, when the image
+/// maps that memory executable, declares no data object at the address and has
+/// a symbol there ([`named_at`]). Empty for `--to`, whose answer is about other
+/// code. The walk still decodes the source only if the image says it is code
+/// ([`kuna_analysis::listing::xrefs::build_with_unflagged_focus`]): a decoded
+/// direct call or branch targets it, or it is an ELF `STT_FUNC`. The symbol is
+/// required because a call alone is not evidence there: an instruction decoded
+/// in the wrong mode reads as a call into the strings beside the code.
+fn unflagged_source(
+    file: &object::File,
+    unflagged: &[UnflaggedSection],
+    direction: Direction,
+    resolution: &Resolution,
+) -> Vec<(u64, u64)> {
+    let Resolution::Settled(spec) = resolution else { return Vec::new() };
+    if direction != Direction::From {
+        return Vec::new();
+    }
+    let ranges: Vec<(u64, u64)> = unflagged
+        .iter()
+        .filter(|s| spec.addr >= s.start && spec.addr < s.end)
+        .map(|s| (s.start, s.end))
+        .collect();
+    if ranges.is_empty() || declared_data(file, spec.addr).is_some() || named_at(file, spec.addr).is_none() {
+        return Vec::new();
+    }
+    ranges
+}
+
+fn coverage_of(
+    prog: &ConsoleProgram,
+    file: &object::File,
+    index: &XrefIndex,
+    names: &EntryNames,
+    target: &Target,
+    direction: Direction,
+    unwalked: Vec<(u64, String)>,
+) -> Coverage {
+    let addr = target.addr;
+    let decoded = index.is_decoded(if names.arm { addr & !1 } else { addr });
+    let placement = placement(file, addr);
+    let mut notes = Vec::new();
+    match direction {
+        Direction::From => notes.extend(source_note(file, index, addr, decoded, &placement)),
+        Direction::To => notes.extend(unwalked_note(prog, index, names, &unwalked)),
+    }
+    Coverage { decoded, placement, unwalked, notes }
+}
+
+/// The call and jump targets in [`unflagged_sections`] the walk did not decode
+/// and a symbol names, as `(address, section)`: code a decoded instruction
+/// transfers control to, whose own references no answer of this walk contains,
+/// and which `--from` it decodes. An unnamed target is left out, as `--from`
+/// leaves it undecoded ([`unflagged_source`]).
+fn unwalked_code(file: &object::File, index: &XrefIndex, unflagged: &[UnflaggedSection]) -> Vec<(u64, String)> {
+    if unflagged.is_empty() {
+        return Vec::new();
+    }
+    index
+        .undecoded_flow_targets()
+        .filter_map(|at| {
+            unflagged.iter().find(|s| at >= s.start && at < s.end).map(|s| (at, s.name.clone()))
+        })
+        .filter(|&(at, _)| named_at(file, at).is_some())
+        .collect()
+}
+
+/// Why `--from` lists what it lists: nothing to say about code decoded in a
+/// section marked as code, otherwise where the address is and whether anything
+/// was decoded there.
+fn source_note(
+    file: &object::File,
+    index: &XrefIndex,
+    addr: u64,
+    decoded: bool,
+    placement: &Placement,
+) -> Option<String> {
+    let at = format!("0x{addr:x}");
+    let evidence = || match (declared_function(file, addr), named_at(file, addr)) {
+        (Some(name), _) => format!("the symbol table declares the function {name} there"),
+        (None, Some(name)) => format!("a decoded direct call or branch targets the symbol {name} there"),
+        (None, None) => "a decoded direct call or branch targets it".to_string(),
+    };
+    Some(match (placement, decoded) {
+        (Placement::Code { .. }, true) => return None,
+        (Placement::Unflagged(s), true) => format!(
+            "{at} is in {}, which the image maps executable but does not mark as code: it was \
+             decoded as code because it was asked about and {} (other queries do not walk it)",
+            s.name,
+            evidence()
+        ),
+        (Placement::Unflagged(s), false) => match declared_data(file, addr) {
+            Some(name) => format!(
+                "{at} is the data object {name} (the symbol table types it as data) in {}, which \
+                 is not marked as code: it was not decoded, so no instruction references are listed",
+                s.name
+            ),
+            None if declared_function(file, addr).is_some()
+                || (index.is_stopped_flow_target(addr) && named_at(file, addr).is_some()) =>
+            {
+                format!(
+                    "{at} is in {}, which the image maps executable but does not mark as code, \
+                     and does not decode as an instruction there: no instruction references are \
+                     listed",
+                    s.name
+                )
+            }
+            None if index.is_stopped_flow_target(addr) => format!(
+                "{at} is in {}, which the image maps executable but does not mark as code: a decoded \
+                 direct call or branch targets it, but no symbol names it, so it was not decoded (a \
+                 call there is as often an instruction decoded in the wrong mode pointing into \
+                 data); `kuna disassemble --as code` reads its bytes as instructions",
+                s.name
+            ),
+            None => format!(
+                "{at} is in {}, which the image maps executable but does not mark as code, and \
+                 nothing says {at} is code (no decoded direct call or branch targets it, and no \
+                 symbol declares a function there): it was not decoded, so no instruction \
+                 references are listed; `kuna disassemble --as code` reads its bytes as \
+                 instructions",
+                s.name
+            ),
+        },
+        (Placement::Code { .. }, false) | (Placement::Unknown, false) => format!(
+            "{at} does not start an instruction the walk decodes (it does not decode, or lies \
+             inside another instruction): no instruction references are listed"
+        ),
+        (Placement::Data { section, executable: true }, _) => format!(
+            "{at} is in {section}, whose section type holds only data: it was not decoded as code, \
+             so no instruction references are listed"
+        ),
+        (Placement::Data { section, executable: false }, _) => format!(
+            "{at} is in {section}, which the image does not map executable: there is no code there, \
+             so no instruction references are listed (data_refs lists the pointers the image's \
+             relocations store in it)"
+        ),
+        (Placement::NoSection, _) => format!(
+            "{at} is in no section of the image: nothing was decoded there, so no instruction \
+             references are listed"
+        ),
+        (Placement::Unknown, true) => return None,
+    })
+}
+
+/// What `--to` cannot see: the code [`unwalked_code`] lists.
+fn unwalked_note(
+    prog: &ConsoleProgram,
+    index: &XrefIndex,
+    names: &EntryNames,
+    unwalked: &[(u64, String)],
+) -> Option<String> {
+    const LISTED: usize = 3;
+    let (&(first, _), _) = unwalked.split_first()?;
+    let spell = |&(at, ref section): &(u64, String)| match name_at(prog, index, names, at) {
+        Some(name) => format!("0x{at:x} ({name}, in {section})"),
+        None => format!("0x{at:x} (in {section})"),
+    };
+    let mut listed: Vec<String> = unwalked.iter().take(LISTED).map(spell).collect();
+    if unwalked.len() > LISTED {
+        listed.push(format!("{} more", unwalked.len() - LISTED));
+    }
+    Some(if unwalked.len() == 1 {
+        format!(
+            "{} is the target of a decoded call or branch but was not walked: its section is \
+             mapped executable but not marked as code. References made from it are not in this \
+             answer; `kuna xrefs --from 0x{first:x}` decodes it",
+            listed[0]
+        )
+    } else {
+        format!(
+            "{} targets of decoded calls or branches were not walked, because their sections are \
+             mapped executable but not marked as code: {}. References made from them are not in \
+             this answer; `kuna xrefs --from <address>` decodes one",
+            unwalked.len(),
+            listed.join(", ")
+        )
+    })
+}
+
+fn coverage_json(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, c: &Coverage) -> Json {
+    let (section, code, executable) = match &c.placement {
+        Placement::Code { section } => (section.clone(), Some(true), Some(true)),
+        Placement::Unflagged(s) => (Some(s.name.clone()), Some(false), Some(true)),
+        Placement::Data { section, executable } => (Some(section.clone()), Some(false), Some(*executable)),
+        Placement::NoSection => (None, Some(false), None),
+        Placement::Unknown => (None, None, None),
+    };
+    let flag = |b: Option<bool>| b.map_or(Json::Null, Json::Bool);
+    Json::Object(vec![
+        ("decoded".into(), Json::Bool(c.decoded)),
+        ("section".into(), section.map_or(Json::Null, Json::Str)),
+        ("code_section".into(), flag(code)),
+        ("executable".into(), flag(executable)),
+        (
+            "unwalked".into(),
+            Json::Array(
+                c.unwalked
+                    .iter()
+                    .map(|(at, section)| {
+                        let name = name_at(prog, index, names, *at).unwrap_or_else(|| format!("0x{at:x}"));
+                        Json::Object(vec![
+                            ("name".into(), Json::Str(name)),
+                            ("address".into(), Json::Number(at.to_string())),
+                            ("address_hex".into(), Json::Str(format!("0x{at:x}"))),
+                            ("section".into(), Json::Str(section.clone())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("notes".into(), Json::Array(c.notes.iter().cloned().map(Json::Str).collect())),
+    ])
 }
 
 // --- data-held pointers -----------------------------------------------------
@@ -511,23 +773,30 @@ fn warn_other_entries(index: &XrefIndex, names: &EntryNames, target: &Target) {
 }
 
 /// The program's best name for `vma`: the canonical function entry there, then a
-/// function symbol, then a named global data object. `None` when nothing names it.
+/// function symbol, then the placeholder of a function only the walk knows, then
+/// a named global data object. In executable memory not marked as code the data
+/// symbol comes before the placeholder: the image's own name for code linked
+/// there (`_middle` in `__TEXT,__const`) is the better one. `None` when nothing
+/// names it.
 fn name_at(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> Option<String> {
+    let data_symbol = || {
+        prog.global_data_symbols()
+            .into_iter()
+            .find(|(_, addr, _)| *addr == vma)
+            .map(|(name, _, _)| name)
+    };
+    let unflagged = names.in_unflagged(vma);
     names.at(vma)
         .map(|(_, name)| name.to_string())
         .or_else(|| prog.function_named_at(vma))
+        .or_else(|| unflagged.then(data_symbol).flatten())
         // The walk discovers functions the engine's inventory does not carry (it
         // follows the call graph out of its seeds), and a row that names one must
         // still name it rather than answer `null`.
         .or_else(|| {
             index.is_function_entry(vma).then(|| default_function_name(prog, vma))
         })
-        .or_else(|| {
-            prog.global_data_symbols()
-                .into_iter()
-                .find(|(_, addr, _)| *addr == vma)
-                .map(|(name, _, _)| name)
-        })
+        .or_else(|| (!unflagged).then(data_symbol).flatten())
 }
 
 /// The function `vma` lies in, as `(entry, name)`: the walk's own attribution
@@ -560,6 +829,7 @@ fn optional_function_json(f: Option<(u64, String)>) -> Json {
 /// did not already name: the referencing site for `--to`, the referenced
 /// location for `--from`. A consumer can read either shape without knowing the
 /// direction it asked for.
+#[allow(clippy::too_many_arguments)]
 fn result_json(
     args: &XrefArgs,
     prog: &ConsoleProgram,
@@ -568,6 +838,7 @@ fn result_json(
     target: &Target,
     rows: &[&Xref],
     data: &DataRefs,
+    coverage: &Coverage,
 ) -> Json {
     let xrefs = Json::Array(
         rows.iter()
@@ -626,6 +897,7 @@ fn result_json(
         ),
         ("direction".into(), Json::Str(args.direction.as_str().to_string())),
         ("count".into(), Json::Number(rows.len().to_string())),
+        ("coverage".into(), coverage_json(prog, index, names, coverage)),
         ("xrefs".into(), xrefs),
         ("data_refs_coverage".into(), Json::Str(data.coverage.as_str().to_string())),
         ("data_refs_count".into(), Json::Number(data.rows.len().to_string())),
@@ -884,7 +1156,14 @@ fn usage() {
          metadata lists them; data_refs_coverage names that metadata, `none` when the\n\
          image lists no pointer relocations (a non-PIE ELF).\n\
          \n\
+         An explicit --from source in memory the image maps executable is decoded even\n\
+         when its section is not marked as code (a function in __TEXT,__const), if\n\
+         decoded code calls it or an ELF symbol declares a function there; coverage\n\
+         says whether the target was decoded, its section, and the called code the\n\
+         walk did not decode (unwalked), with notes also printed on stderr.\n\
+         \n\
          --json emits {{binary,target:{{name,address,address_hex,aliases}},direction,count,\n\
+         coverage:{{decoded,section,code_section,executable,unwalked,notes}},\n\
          xrefs:[{{address,address_hex,kind,from_function,to_function,instruction,..}}],\n\
          data_refs_coverage,data_refs_count,data_refs:[{{kind,from_address,from_name,\n\
          to_address,to_name,width,source,..}}]}};\n\
