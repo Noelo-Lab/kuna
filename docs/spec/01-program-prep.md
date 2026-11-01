@@ -3640,7 +3640,16 @@ every other binary's pass list is byte-identical to before the pass existed):
   off — the knowledge is for the type surfaces and the consumers that follow
   (typed globals, interface dispatch, signature recovery). Deliberately out of
   phase 1: itab/method resolution, generic instantiations, map/chan internals,
-  named non-struct aliases, 32-bit and big-endian images. Interning happens at
+  named non-struct aliases and big-endian images. Little-endian 32-bit images
+  use pointer-width reads through
+  `decompiler/crates/kuna-analysis/src/analyzers/gotypes/kuna_layout.rs (GoImage)`.
+  Their base type record is 32 bytes, moduledata and slice words are four bytes,
+  and each struct field occupies three words. Header shells and pointer types
+  use four-byte words as well. A build-info version identifying Go 1.18 through
+  1.25 is required for 32-bit import; unknown versions and the newer 32-bit
+  descriptor-region layout are refused until qualified.
+  Stripped i386 and ARM tests cover integer, string, embedded-pointer and nested
+  value fields, with the existing amd64 and arm64 tests as controls. Interning happens at
   `load file`, so the gate is the `KUNA_GOTYPES` env bridge
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_gotypes.rs`, the
   `dwarfstructs` pattern), the walk is bounded (20,000 typelinks), and the

@@ -81,8 +81,27 @@ fn synth() -> (Vec<(u64, Vec<u8>)>, u64, u64, u64) {
     (spans, M, T, T + 0x400)
 }
 
-fn img_of(spans: &[(u64, Vec<u8>)]) -> ImageBytes<'_> {
-    ImageBytes::from_spans(spans.iter().map(|(a, b)| (*a, b.as_slice())).collect())
+fn img_of(spans: &[(u64, Vec<u8>)]) -> GoImage<'_> {
+    GoImage::from_spans(spans.iter().map(|(a, b)| (*a, b.as_slice())).collect())
+}
+
+#[test]
+fn type_headers_and_slices_use_32_bit_words() {
+    let mut bytes = vec![0; 128];
+    bytes[0..4].copy_from_slice(&4u32.to_le_bytes());
+    bytes[15] = KIND_INT;
+    bytes[24..28].copy_from_slice(&64i32.to_le_bytes());
+    bytes[64..69].copy_from_slice(b"\0\x03int");
+    bytes[80..84].copy_from_slice(&0x1000u32.to_le_bytes());
+    bytes[84..88].copy_from_slice(&2u32.to_le_bytes());
+    bytes[88..92].copy_from_slice(&2u32.to_le_bytes());
+    let mut img = GoImage::from_spans(vec![(0x1000, &bytes)]);
+    img.word_size = 4;
+    let t = read_type(&img, 0x1000, 0x1080, 0).unwrap();
+    assert_eq!((t.kind, t.size, t.name.as_str()), (KIND_INT, 4, "int"));
+    assert_eq!(plausible_slice(&img, 0x1050, 2), Some((0x1000, 2)));
+    assert!(read_type(&img, 0x1000, 0x101f, 0).is_none());
+    assert!(descriptor_stride(&img, &t).is_none(), "newer 32-bit descriptor regions are not guessed");
 }
 
 #[test]
