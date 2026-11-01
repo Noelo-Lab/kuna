@@ -2140,8 +2140,9 @@ mod tests {
         // and kuna-octeon-core / explicit Octeon integer variants
         // and kuna-truncptrflow / pointer flow on a truncated address space (option truncptrflow)
         // and kuna-retcopyclone / a cloned return block does not store a global a second time
+        // and kuna-switchrunon / an unguarded jump table stops where its rows leave the function (option switchrunon)
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
-        assert_eq!(count, 633, "corpus file count drifted");
+        assert_eq!(count, 634, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

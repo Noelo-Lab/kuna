@@ -352,6 +352,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
+    "switchrunon" => on_off!(switch_run_on, "Jump-table run-on cut"),
     "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),

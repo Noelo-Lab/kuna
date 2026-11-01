@@ -1735,6 +1735,42 @@ the case targets.
    `jumptable.rs (JumpTable::recover_multistage)` (re-recover, restoring the
    saved model and addresses on failure).
 
+   **Run-on rows (`option switchrunon`, default on).** A table whose model
+   found no guard at all (`selectguards` empty) has as many rows as its
+   selector's bits allow: 256 for a byte. That is how a compiler that knows
+   the selector is in range lowers a switch, Rust matching on a `u8` enum
+   parameter or C with an unreachable default, so the real table is the first
+   few rows, and the rest are the next functions' tables, which the linker
+   put right after it, read as offsets from this table's base. Flow would
+   decode each of those destinations, then the tables of the functions it
+   reached, and so on: serde-hkx's 1,312-byte 0x14000a040 matches on a
+   4-variant enum and decoded 4,791 blocks of 64 other functions, 4.2 GB and
+   no C in 300 s. With the option on, the model's sanity check
+   (`jumptable.rs (JumpBasicModel::own_rows)` over
+   `decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrunon.rs (own_rows)`)
+   reads each row's owner from the global symbol snapshot (the last known
+   function entry at or before it, `context.rs
+   (GlobalQuery::function_entry_at_or_before)`, together with the entries
+   `lazyfuncs` left as names, so that option does not change the cut) and
+   keeps only the leading rows the function owns when every later row is
+   owned by another function or by none, those rows reach at least two
+   different owners, and the first of them lands past the function's entry
+   and inside the load-image section that holds the entry (`context.rs
+   (ArchContext::in_section_of)`). The run-on rows are the next functions'
+   tables, which lie after this one, so they run forward into neighbouring
+   code. A case the compiler split off does not: gcc places a function's
+   `.cold` block below every hot body, and BOLT moves cold and warm blocks
+   to their own `.text.cold` and `.text.warm` sections, so a table whose
+   first row out lands below the entry or in another section is a real
+   case, not a run-on. That table is kept whole, and so is one that returns
+   into its own function after leaving it, one whose outside rows all land
+   in one place (a function start discovery put inside a body), a guarded
+   table, and one whose first row is already outside. The rows cut are not dispatched
+   (`jumptable.rs (JumpTable::cut_rows_dispatched)`), so the late label pass
+   does not read them back. The function then decodes its own body only:
+   0x14000a040 prints its four cases in 0.7 s. Off keeps the whole-width
+   table.
+
 **Model 2 — the default-path variant** (`jumptable.rs
 (JumpBasicModel::recover_model2)`, C++ `JumpBasic2`). Some compilers merge the
 out-of-range path back into the switch by loading a constant "default" target

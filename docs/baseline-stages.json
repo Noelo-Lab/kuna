@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3469,
-    3469
+    3476,
+    3476
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1004,7 +1004,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 362 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 363 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -1775,6 +1775,13 @@
     "data:SWITCHGUARDRELOAD #3: no row past the guard sends flow into an instruction interior",
     "data:SWITCHGUARDRELOAD #4: the dispatch is a switch, not a computed call",
     "data:SWITCHGUARDRELOAD #5: the neighbouring table keeps its own eight rows",
+    "data:SWITCHRUNON #1: both passes print pick",
+    "data:SWITCHRUNON #2: both passes keep pick's own four cases",
+    "data:SWITCHRUNON #3: only the whole-width table reads row 0xff, so the default pass prints no case past 3",
+    "data:SWITCHRUNON #4: with the option off, left's body is decoded into pick",
+    "data:SWITCHRUNON #5: with the option off, right's body is decoded into pick",
+    "data:SWITCHRUNON #6: the default pass prints pick2",
+    "data:SWITCHRUNON #7: a table whose first row out lands below its entry keeps that cold case",
     "data:SWITCHSELECTOR #1: the re-rolled switch dispatches on the message parameter, and only the off pass re-rolls",
     "data:SWITCHSELECTOR #2: the case labels exist only in the pass that re-rolled",
     "data:SWITCHSELECTOR #3: with the option on the cascade survives as the compiler lowered it, over the same parameter",

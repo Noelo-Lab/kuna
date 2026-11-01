@@ -786,6 +786,10 @@ pub struct Architecture {
     /// (kuna GH-9191) Bound a modulo/and-mask LOAD-table jumptable index
     /// (C++ `switch_modulo_bound`).
     pub switch_modulo_bound: bool,
+    /// (kuna) Cut a jump table the basic model found no guard for at the first
+    /// row of a run that leaves the function for good (option `switchrunon`).
+    /// See [`crate::kuna_switchrunon`].
+    pub switch_run_on: bool,
     /// (kuna) Recover a `BRANCHIND` whose destination is a select over constant
     /// addresses (`p2_lift/kuna_constselectjump.rs`).
     pub const_select_jump: bool,
@@ -2382,7 +2386,7 @@ pub struct Architecture {
     pub analysis_lazyfuncs: bool,
     /// (kuna `lazyfuncs`) Entry starts the commit installed as NAMES only, sorted, so
     /// flow reads a branch to one as a transfer, not code to follow into.
-    pub lazy_entry_starts: Vec<u64>,
+    pub lazy_entry_starts: Rc<Vec<u64>>,
     /// (kuna) Gate recursive-descent function discovery on a headerless
     /// `--raw-image` load (`rawdiscover`); default **on**. A raw image has no
     /// `object::File`, so the whole object-backed discovery tier declines and the
@@ -3095,6 +3099,7 @@ impl Architecture {
             model_stack_probe_loop: false,
             fold_flag_compare: false,
             switch_modulo_bound: false,
+            switch_run_on: false, // (kuna) option switchrunon; reset_defaults sets the shipped default
             const_select_jump: false,
             switch_guard_bound: false,
             switch_shared_case: false,
@@ -3372,7 +3377,7 @@ impl Architecture {
             analysis_listing: false,
             analysis_fast_funcdisc: false,
             analysis_lazyfuncs: false,
-            lazy_entry_starts: Vec::new(),
+            lazy_entry_starts: Rc::default(),
             analysis_rawdiscover: false,
             analysis_mzsweep: false,
             analysis_noreturn_disc: false,
@@ -3533,6 +3538,7 @@ impl Architecture {
         self.dynamic_hash_maxdup_high = true; // (kuna) DIV-3 default-on (GH-8467)
         self.fold_flag_compare = true; // (kuna) DIV-3 default-on (GH-1276/8777)
         self.switch_modulo_bound = false; // (kuna) default: upstream byte-identical (GH-9191)
+        self.switch_run_on = true; // (kuna) GH-1034 default-on: an unguarded table keeps only its leading rows inside the function when every later row runs on into two or more other functions; 0/675 datatest
         self.const_select_jump = false; // (kuna) default: upstream byte-identical (constant-select indirect branch)
         self.switch_guard_bound = false; // (kuna) default: upstream byte-identical (angr opt-in)
         self.switch_shared_case = true; // (kuna) DIV-14 default-on (angr loop-carried-guard PIC switch recovery; slower on the functions it recovers, kept on for quality; 0/675 byte-identical)
@@ -3839,7 +3845,7 @@ impl Architecture {
         self.analysis_listing = false; // Listing/xref tier default-off
         self.analysis_fast_funcdisc = false; // bounded whole-project discovery default-off
         self.analysis_lazyfuncs = false;
-        self.lazy_entry_starts.clear();
+        self.lazy_entry_starts = Rc::default();
         self.analysis_rawdiscover = true; // (kuna) default-on: a raw image's only discovery. ADDS FUNCTIONS (direct-call targets reached from the --entry seeds). Raw-container only, so every parity gate is byte-identical; restore the seeds-only inventory with `option rawdiscover off`
         self.analysis_mzsweep = true; // (kuna #1288) default-on: REMOVES FUNCTIONS (an MS-DOS executable's sweep drops calls decoded from data: unrelocated far calls, calls after zero fill, targets that do not open with code). MZ loads only, so every parity gate is byte-identical; restore the whole-module sweep with `option mzsweep off`
         self.analysis_noreturn_disc = true; // (kuna) DIV-22 default-on: Ghidra's FindNoReturnFunctionsAnalyzer ≥3-evidence discovered-no-return (default-on in Ghidra). REMOVES CODE (marks a callee no-return from ≥3 dead-fall-through sites → drops post-call dead code at callers). Gated on the Listing (default-off), so every parity gate is byte-identical (real-ELF Listing path only); restore with `option noreturn_disc off`
@@ -3923,7 +3929,7 @@ impl Architecture {
     pub fn set_lazy_entry_starts(&mut self, mut starts: Vec<u64>) {
         starts.sort_unstable();
         starts.dedup();
-        self.lazy_entry_starts = starts;
+        self.lazy_entry_starts = Rc::new(starts);
     }
 
     pub fn reset_defaults(&mut self) {
@@ -4645,6 +4651,8 @@ impl Architecture {
         // (kuna) GH-9191: carry the modulo/and-mask jump-table index-bound gate
         // (`option switchmodbound`) so `JumpBasic::recoverModel` reaches it.
         ctx.switch_modulo_bound = self.switch_modulo_bound;
+        ctx.switch_run_on = self.switch_run_on; // switchrunon
+        ctx.lazy_entry_starts = Rc::clone(&self.lazy_entry_starts);
         // (kuna) carry the constant-select indirect-branch gate
         // (`option constselectjump`) so `JumpTable::recoverModel` reaches it.
         ctx.const_select_jump = self.const_select_jump;
