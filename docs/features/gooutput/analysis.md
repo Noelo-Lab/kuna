@@ -49,7 +49,7 @@ fallthrough only when the current block graph proves a unique adjacent target;
 stale chain metadata is insufficient after return duplication.
 
 Names are escaped injectively, including keywords, predeclared names and the
-helper package names math/unsafe. Source constants retain their spelling. A
+helper package names math/unsafe. Integer constants retain their represented bits at the destination width. A
 readonly C string pointer retains its zero byte through unsafe.StringData.
 Unknown helpers, incomplete source types and missing ABI facts remain visible.
 
@@ -79,12 +79,26 @@ values; emitted function bodies are inserted without editing. Both the default
 structure settings and disabled taildup/crossjumprevert/gotoreduce settings run
 the same 41-function checks. A separate asserted variadic signature uses a real
 `_args` parameter and verifies that the synthetic tail cannot redeclare it. The native Go test builds fourteen named functions,
-parses all fourteen and executes four recovered scalar functions. The unit suite
+parses all fourteen and executes four recovered scalar functions without supplied
+contracts. With explicit prototypes it compiles and executes all fourteen,
+including the identity and narrowing functions whose signatures Go DWARF import
+currently loses. The unit suite
 covers the reference's twenty precedence cases plus boolean XOR and complement;
 redundant parentheses on left-nested operands are accepted.
 
 Whole-image diffs and per-function classifications are adjacent to this document.
 They describe the newly selectable Go presentation of the same recovered IR.
+Go operand conversions consult the final local declaration, including signedness
+selection and declaration collapse. A typed native loop exposed that consulting
+the earlier SSA member type could mix signed and unsigned operands; the complete
+14-function execution check covers that case. Constant copies use the destination
+width and signedness, including implied copy chains reaching returns. Revision
+AST checks remove numeric conversions and normalize equivalent literal bases;
+three separately inspected functions also correct all-ones literals to their
+exact-width signed or unsigned spelling. Operations and control flow remain
+identical. A Go constant evaluator checks numeric conversions across all six
+Go-output images, including byte and rune aliases.
+
 Switch fallthrough bodies were inspected separately: grep's recursive option
 case and binary-files option retain their following case bodies; its error chain
 and quoting switch retain their represented flow. The source fixture executes
@@ -105,11 +119,14 @@ Go output remains opt-in. Raw samples and exact deltas are in `timing-*.json`.
 The final run covers seven inputs and 11,965 distinct image/function pairs.
 All 23,930 C/Rust function records match baseline in full. The six Go-output
 inputs contain 4,202 functions; all parse with Go's parser, with no decompilation
-errors. The compiled checks pass in both structure configurations and for the
-variadic-name collision. All 9,986 workspace tests pass (39 ignored); original
+errors. The compiled checks pass in both structure configurations, for the
+variadic-name collision, and for all fourteen native Go functions with explicit
+contracts. All constant numeric conversions in the 4,202 Go bodies evaluate
+without range errors; the 152 revised bodies preserve the operations and control
+flow after the recorded conversion and constant-spelling checks. All 9,986 workspace tests pass (39 ignored); original
 parity is 675/675 and stage parity is 3,445/3,445. The original baseline is
 unchanged. Spec, catalog, counters, lint and Python tooling checks pass.
 
-The maximum measured baseline-to-current slowdown is below 2% across the four
+The maximum measured baseline-to-current slowdown is below 0.55% across the four
 31-sample timing cases, within the 5% budget. Exact wall/CPU deltas and samples
 are retained without rounding in the adjacent JSON records.

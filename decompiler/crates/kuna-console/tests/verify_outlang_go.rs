@@ -229,6 +229,14 @@ fn go_syntax_survives_brace_preferences() {
             &["option outlang go", "option maxlinewidth 24"],
         ));
     }
+    let constants = decompile(
+        &root().join("tests/bug-repro/grep"),
+        &["sub_7110"],
+        &["option outlang go"],
+    );
+    assert!(!constants[0].contains("int64(0xffffffffffffffff)"), "{}", constants[0]);
+    assert!(constants[0].matches("return -1").count() >= 3, "{}", constants[0]);
+    bodies.extend(constants);
     parse(&directory, &bodies);
 }
 
@@ -265,6 +273,50 @@ fn native_go_uses_the_same_output_plane() {
     let source = format!("package main\n{}\nfunc main() {{ if add(2,3)!=5 || choose(11,2)!=3 || extend(-7)!=-7 || number(7)!=7 {{ panic(\"native Go scalars\") }} }}\n", [bodies[0].as_str(), bodies[1].as_str(), bodies[12].as_str(), bodies[13].as_str()].join("\n"));
     let file = &directory.join("recovered.go");
     std::fs::write(&file, source).unwrap();
+    run(Command::new("go").arg("run").arg(file));
+
+    for body in decompile(&binary, &[
+        "runtime.(*pallocData).findScavengeCandidate",
+        "runtime.(*pallocBits).findSmallN",
+    ], &["option outlang go"]) {
+        assert!(!body.contains("uint64(-1)"), "{body}");
+        assert!(body.contains("0xffffffffffffffff"), "{body}");
+    }
+
+    let declarations = [
+        "int8 add(int8 a,int8 b)",
+        "int8 choose(int8 a,int8 b)",
+        "int8 sumFor(int8 n)",
+        "int8 shortCalls(int8 a,int8 b)",
+        "int8 loopCalls(int8 a,int8 b)",
+        "int8 dispatch(int8 n,int8 a)",
+        "int4 readAt(int4 *p,int8 i)",
+        "void writeAt(int4 *p,int8 i,int4 v)",
+        "int4 *fromWord(uint8 p)",
+        "uint8 toWord(int4 *p)",
+        "int4 *retype(double *p)",
+        "uint4 narrow(uint8 a)",
+        "int8 extend(int1 a)",
+        "double number(int8 a)",
+    ];
+    let mut options = vec!["option outlang go".to_string()];
+    options.extend(names.iter().zip(declarations).map(|(name, declaration)| {
+        format!("map prototype {name} {declaration};")
+    }));
+    let options = options.iter().map(String::as_str).collect::<Vec<_>>();
+    let bodies = decompile(&binary, &names, &options);
+    let check = r#"
+func main() {
+  xs := [4]int32{1,2,3,4}
+  writeAt(&xs[0],2,17)
+  if add(2,3)!=5 || choose(11,2)!=3 || choose(-1,2)!=1 || choose(2,3)!=6 { panic("arithmetic") }
+  if sumFor(9)!=16 || shortCalls(2,3)!=7 || shortCalls(0,7)!=2 || loopCalls(9,-1)!=30 { panic("loops") }
+  if dispatch(0,2)!=10 || dispatch(1,2)!=4 || dispatch(2,9)!=5 || dispatch(8,2)!=-2 { panic("switch") }
+  if readAt(&xs[0],2)!=17 || fromWord(toWord(&xs[0]))!=&xs[0] || retype(nil)!=nil { panic("pointers") }
+  if narrow(0x123456789)!=0x23456789 || extend(-3)!=-3 || number(7)!=7 { panic("conversions") }
+}
+"#;
+    std::fs::write(&file, format!("package main\nimport \"unsafe\"\n{}\n{check}", bodies.join("\n"))).unwrap();
     run(Command::new("go").arg("run").arg(file));
 }
 

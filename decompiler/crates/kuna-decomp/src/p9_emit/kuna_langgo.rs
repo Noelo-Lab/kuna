@@ -864,6 +864,13 @@ impl PrintC {
     ) -> Rc<Datatype> {
         let value = fd.vbank().get(vn).unwrap();
         if !value.is_implied() && !value.is_constant() {
+            if let Some(ty) = value.get_high()
+                .and_then(|high| self.declared_local(high))
+                .and_then(|local| local.ty.as_ref())
+                .filter(|ty| ty.get_size() == value.get_size())
+            {
+                return Rc::clone(ty);
+            }
             if let Some(ty) = crate::printc::declared_variable_type(fd, arch.decl_high_type, vn) {
                 return ty;
             }
@@ -965,6 +972,29 @@ impl PrintC {
 mod tests;
 
 impl PrintC {
+    pub(crate) fn push_go_constant_copy(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        target: &Rc<Datatype>,
+    ) -> bool {
+        let Some(input) = fd.obank().get(op)
+            .filter(|operation| operation.code() == kuna_num::opcodes::OpCode::CPUI_COPY)
+            .and_then(|operation| operation.get_in(0))
+        else {
+            return false;
+        };
+        if !fd.vbank().get(input).is_some_and(|value| value.is_constant())
+            || !integer_type(target)
+            || !integer_type(&self.go_value_type(fd, arch, input, op))
+        {
+            return false;
+        }
+        self.push_go_value_as(fd, arch, input, op, target);
+        true
+    }
+
     pub(crate) fn push_go_value_as(
         &mut self,
         fd: &Funcdata,
@@ -974,16 +1004,11 @@ impl PrintC {
         target: &Rc<Datatype>,
     ) {
         let source = self.go_value_type(fd, arch, value, op);
-        let vn = fd.vbank().get(value).unwrap();
-        let integer = |t: &Datatype| {
-            matches!(
-                t.get_metatype(),
-                type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
-            ) && matches!(t.get_size(), 1 | 2 | 4 | 8)
-        };
-        if vn.is_constant() && integer(&source) && integer(target) {
+        if let Some(raw) = integer_constant(fd, value)
+            .filter(|_| integer_type(&source) && integer_type(target))
+        {
             let bits = (target.get_size() * 8) as u32;
-            let raw = vn.get_offset() & kuna_base::address::calc_mask(target.get_size());
+            let raw = raw & kuna_base::address::calc_mask(target.get_size());
             let literal = if target.get_metatype() == type_metatype::TYPE_INT {
                 (((raw << (64 - bits)) as i64) >> (64 - bits)).to_string()
             } else {
@@ -1185,4 +1210,37 @@ fn ordered_cases(
         }
     }
     (result, labels)
+}
+
+fn integer_type(ty: &Datatype) -> bool {
+    matches!(
+        ty.get_metatype(),
+        type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+    ) && matches!(ty.get_size(), 1 | 2 | 4 | 8)
+}
+
+fn integer_constant(fd: &Funcdata, mut value: VarnodeId) -> Option<u64> {
+    use kuna_num::opcodes::OpCode::{CPUI_CAST, CPUI_COPY};
+    for _ in 0..8 {
+        let vn = fd.vbank().get(value)?;
+        if vn.is_constant() {
+            return Some(vn.get_offset());
+        }
+        if !vn.is_implied() {
+            return None;
+        }
+        let op = vn.get_def()?;
+        let operation = fd.obank().get(op)?;
+        if !matches!(operation.code(), CPUI_COPY | CPUI_CAST) {
+            return None;
+        }
+        let input = operation.get_in(0)?;
+        if fd.vbank().get(input)?.get_size() != vn.get_size()
+            || !integer_type(&fd.vn_type_read_facing(input, op))
+        {
+            return None;
+        }
+        value = input;
+    }
+    None
 }

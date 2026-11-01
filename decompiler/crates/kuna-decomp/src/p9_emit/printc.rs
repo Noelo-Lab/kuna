@@ -6114,6 +6114,9 @@ impl PrintC {
         if self.out_lang == crate::kuna_lang::OutLang::Go {
             if let Some(out) = outvn {
                 let declared = self.go_value_type(fd, arch, out, op);
+                if self.push_go_constant_copy(fd, arch, op, &declared) {
+                    return;
+                }
                 let actual = fd.vn_type_def_facing(out);
                 if declarator_parts(&declared, self.rt_ctx).0 != declarator_parts(&actual, self.rt_ctx).0 {
                     self.push_go_conversion(&declared, &actual, op);

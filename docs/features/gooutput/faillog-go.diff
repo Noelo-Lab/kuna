@@ -1287,7 +1287,7 @@
 +      __cxa_finalize(dat_6008)
 +    }
 +    sub_2f90()
-+    dat_61a8 = int8(0x1)
++    dat_61a8 = 1
 +    return
    }
  }
@@ -1369,9 +1369,9 @@
 -      v1 = dat_61c0; // return-dupe
 -      __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
 -      return 1;
-+  off = int64(uint64(a0)) * 32
-+  if uint64(off) + 0x20 <= dat_6210 { // branch-flip
-+    if uint32(fseeko(dat_6298,off,0)) != 0x0 {
++  off = uint64(int64(uint64(a0)) * 32)
++  if off + 0x20 <= dat_6210 { // branch-flip
++    if uint32(fseeko(dat_6298,int64(off),0)) != 0x0 {
 +      __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0x1b3,(*int8)(unsafe.Pointer(unsafe.StringData("set_locktime_one\x00")))) // no-return
      }
 +    if fread(unsafe.Pointer(v2),0x20,0x1,dat_6298) != 0x1 {
@@ -1395,7 +1395,7 @@
 -    fflush(dat_6298);
 -    return 0;
 +  v5 = a1
-+  if (uint32(fseeko(dat_6298,off,0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
++  if (uint32(fseeko(dat_6298,int64(off),0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
 +    fflush(dat_6298)
 +    return 0x0
    }
@@ -1434,9 +1434,9 @@
 -      v1 = dat_61c0; // return-dupe
 -      __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
 -      return 1;
-+  off = int64(uint64(a0)) * 32
-+  if uint64(off) + 0x20 <= dat_6210 { // branch-flip
-+    if uint32(fseeko(dat_6298,off,0)) != 0x0 {
++  off = uint64(int64(uint64(a0)) * 32)
++  if off + 0x20 <= dat_6210 { // branch-flip
++    if uint32(fseeko(dat_6298,int64(off),0)) != 0x0 {
 +      __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0x13e,(*int8)(unsafe.Pointer(unsafe.StringData("setmax_one\x00")))) // no-return
      }
 +    if fread(unsafe.Pointer(v2),0x20,0x1,dat_6298) != 0x1 {
@@ -1460,7 +1460,7 @@
 -    fflush(dat_6298);
 -    return 0;
 +  v5 = a1
-+  if (uint32(fseeko(dat_6298,off,0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
++  if (uint32(fseeko(dat_6298,int64(off),0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
 +    fflush(dat_6298)
 +    return 0x0
    }
@@ -1497,9 +1497,9 @@
 -      v1 = dat_61c0; // return-dupe
 -      __fprintf_chk(stderr,1,dcgettext(NULL,msgid,5),v1,(unsigned long)a0);
 -      return 1;
-+  off = int64(uint64(a0)) * 32
-+  if uint64(off) + 0x20 <= dat_6210 { // branch-flip
-+    if uint32(fseeko(dat_6298,off,0)) != 0x0 {
++  off = uint64(int64(uint64(a0)) * 32)
++  if off + 0x20 <= dat_6210 { // branch-flip
++    if uint32(fseeko(dat_6298,int64(off),0)) != 0x0 {
 +      __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0xcc,(*int8)(unsafe.Pointer(unsafe.StringData("reset_one\x00")))) // no-return
      }
 +    if fread(unsafe.Pointer(v2),0x20,0x1,dat_6298) != 0x1 {
@@ -1523,7 +1523,7 @@
 -    fflush(dat_6298);
 -    return 0;
 +  v2[0] = 0
-+  if (uint32(fseeko(dat_6298,off,0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
++  if (uint32(fseeko(dat_6298,int64(off),0)) == 0x0 && (fwrite(unsafe.Pointer(v2),0x20,0x1,dat_6298) == 0x1)) {
 +    fflush(dat_6298)
 +    return 0x0
    }
@@ -1571,9 +1571,9 @@
 -        __fprintf_chk(stderr,1,dcgettext(NULL,"%s: Failed to get the entry for UID %lu\n",5),v8,(unsigned long)v1);
 -        return;
 +  if uint64(uintptr(unsafe.Pointer(a0))) != uint64(uintptr(unsafe.Pointer(nil))) {
-+    v7 = int64(uint64((*a0).field_0x10)) * 32
-+    if uint64(v7) + 0x20 <= dat_6210 { // branch-flip
-+      if uint32(fseeko(dat_6298,v7,0)) != 0x0 {
++    v7 = uint64(int64(uint64((*a0).field_0x10)) * 32)
++    if v7 + 0x20 <= dat_6210 { // branch-flip
++      if uint32(fseeko(dat_6298,int64(v7),0)) != 0x0 {
 +        __assert_fail((*int8)(unsafe.Pointer(unsafe.StringData("0 == err\x00"))),(*int8)(unsafe.Pointer(unsafe.StringData("faillog.c\x00"))),0x66,(*int8)(unsafe.Pointer(unsafe.StringData("print_one\x00")))) // no-return
        }
 +      n = fread(unsafe.Pointer(&v4),0x20,0x1,dat_6298)
@@ -1618,9 +1618,9 @@
 +        if uint64(v4.field_0x18) != 0x0 {
 +          if (v4.field_0x10 + v4.field_0x18 <= v5 || (uint16(v4.field_0x0) == 0x0)) {
 +            v8 = (*int8)(unsafe.Pointer(unsafe.StringData(" [%lds lock]\x00")))
-+            v7 = v4.field_0x18
++            v7 = uint64(v4.field_0x18)
 +          } else {
-+            v7 = (v4.field_0x10 + v4.field_0x18) - v5
++            v7 = uint64((v4.field_0x10 + v4.field_0x18) - v5)
 +            v8 = (*int8)(unsafe.Pointer(unsafe.StringData(" [%lus left]\x00")))
            }
 -          else {

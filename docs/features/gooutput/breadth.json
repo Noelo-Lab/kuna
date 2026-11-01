@@ -5054,5 +5054,5 @@
   "control_records": 23930,
   "distinct_functions": 11965,
   "go_functions": 4202,
-  "baseline_cache": "Immutable e4fd472ae runs reused only after input SHA256 verification; every current run rebuilt after the variadic-name fix."
+  "baseline_cache": "Immutable e4fd472ae runs reused only after input SHA256 verification; every current run rebuilt after the emitted-declaration and constant-copy and implied-copy-chain fixes."
 }

@@ -757,7 +757,7 @@
 +      v9 = indexByte(a0,v8,0x3d)
 +      v7 = options._8_8_
 +      if 0 <= v9 { // branch-flip
-+        v1 = uint64(v9) - 0x4
++        v1 = int64(uint64(v9) - 0x4)
 +        v2 = (*[32]byte)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + uint64(uint32(int64(-v1) >> 0x3f) & 0x4))))
 +        v8 = v8 - v9
 +        v12 = (uint64(v9) + 0x1) & uint64(-(v8 + -1) >> 0x3f)
@@ -799,7 +799,7 @@
 +          for v9 = 0; v9 < v7; v9 = v9 + 1 {
 +            v12 = *(*uint64)(unsafe.Add(unsafe.Pointer(options._0_8_),(v9 * 4 + 1) * 8))
 +            v6 = (*[32]byte)(unsafe.Pointer(uintptr(*(*uint64)(unsafe.Add(unsafe.Pointer(options._0_8_),v9 * 4 * 8)))))
-+            if (v12 == v1 && (runtime.memequal(v6,v2,v12) != 0x0)) {
++            if (v12 == uint64(v1) && (runtime.memequal(v6,v2,v12) != 0x0)) {
 +              *(*byte)(unsafe.Pointer((*uint64)(unsafe.Add(unsafe.Pointer(options._0_8_),(v9 * 4 + 3) * 8)))) = 1
 +              *(*bool)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(options._0_8_))) + v9 * 32 + 25))) = uint64(v8) == 0x3
 +              goto label_401ba2
@@ -1246,7 +1246,7 @@
 +  if isSet(v21,0x1000) != 0x0 { // branch-flip
 +    X86[0x4a] = byte(int8(X86[0x4b]))
 +  } else {
-+    X86[0x4a] = byte(0)
++    X86[0x4a] = 0x0
 +  }
 +  if X86[0x4b] != 0x0 { // branch-flip
 +    xgetbv.abi0()
@@ -2246,8 +2246,8 @@
 +  v1 = (v1 >> 2) & 0x3333333333333333 + v1 & 0x3333333333333333
 +  v1 = (v1 >> 4 + v1) & 0xf0f0f0f0f0f0f0f
 +  v1 = v1 + v1 >> 8
-+  v2 = int64(v1 >> 0x10) + int64(v1)
-+  return uint64(uint32(int32(uint64(v2) >> 0x20) + int32(v2)) & 0x7f)
++  v2 = uint64(int64(v1 >> 0x10) + int64(v1))
++  return uint64(uint32(int32(v2 >> 0x20) + int32(v2)) & 0x7f)
  }
 --- c/runtime/internal/sys.LeadingZeros64
 +++ go/runtime/internal/sys.LeadingZeros64
@@ -9463,7 +9463,7 @@
 +  if byte(exitHooks[0x18]) != 0x0 {
 +    throw("internal error: exit hook invoked exit",0x26) // no-return
 +  }
-+  exitHooks[0x18] = int8(0x1)
++  exitHooks[0x18] = 1
 +  v8 = a0
 +  finishPageTrace()
 +  v1 = exitHooks._8_8_
@@ -9473,8 +9473,8 @@
 +    if v1 <= v4 {
 +      exitHooks._8_8_ = int64(v6)
 +      exitHooks._16_8_ = v7
-+      exitHooks._0_8_ = int64(0x0)
-+      exitHooks[0x18] = int8(0x0)
++      exitHooks._0_8_ = 0
++      exitHooks[0x18] = 0
 +      return
      }
 -    v5 = ((*(int *)&runtime.exitHooks[8] - v4) + -1) * 0x10;
@@ -9553,9 +9553,9 @@
 +  if (byte(islibrary) != 0x0 || (byte(isarchive) != 0x0)) {
 +    return
 +  }
-+  v1 = 0x0
++  v1 = 0
 +  for {
-+    if 3 <= int64(v1) {
++    if 3 <= v1 {
 +      return
 +    }
 +    if int32(fcntl(v1,1,0)) < 0 {
@@ -9613,7 +9613,7 @@
        }
      }
 -    v1 += 1;
-+    v1 = v1 + 0x1
++    v1 = int64(uint64(v1) + 0x1)
    }
  }
 --- c/runtime.isNaN
@@ -13421,9 +13421,9 @@
 +    if uint64(uintptr(unsafe.Pointer(v1))) == uint64(uintptr(unsafe.Pointer(nil))) {
 +      v1 = g
 +    }
-+    v2 = (*(*runtime.g)(unsafe.Add(unsafe.Pointer(v1),2 * 0xa0))).sched.lr - uint64(a0)
++    v2 = int64((*(*runtime.g)(unsafe.Add(unsafe.Pointer(v1),2 * 0xa0))).sched.lr - uint64(a0))
 +    (*(*runtime.g)(unsafe.Add(unsafe.Pointer(v1),2 * 0xa0))).sched.lr = v2
-+    if int64(v2) <= -1 {
++    if v2 <= -1 {
 +      gcAssistAlloc(v1)
 +    }
 +  } else {
@@ -17475,9 +17475,9 @@
 +    runtime.throw("s.freeindex > s.nelems",0x16) // no-return
 +  }
 +  v2 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 56)))
-+  v5 = 0
++  v5 = 0x0
 +  if v2 != 0x0 {
-+    for ; (v2 >> v5) & 0x1 == 0x0; v5 = v5 + 1 {
++    for ; (v2 >> v5) & 0x1 == 0x0; v5 = uint64(int64(v5) + 1) {
      }
    }
 -  v7 = a0;
@@ -17491,10 +17491,10 @@
 -        return v1;
 +  v7 = a0
 +  if v2 == 0x0 {
-+    v5 = 64
++    v5 = 0x40
 +  }
 +  for {
-+    if uint64(v5) != 0x40 {
++    if v5 != 0x40 {
 +      v6 = v3 + uint32(int32(v5))
 +      if v1 <= uint16(v6) {
 +        *(*uint16)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 48))) = v1
@@ -17508,7 +17508,7 @@
 -        v6 &= 0xffff;
 -        a0 = v7;
 +      v3 = v3 + uint32(int32(v5)) + 0x1
-+      *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 56))) = (*(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 56))) >> (byte(uint64(v5) + 0x1) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(uint64(v5) + 0x1 < 0x40)
++      *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 56))) = (*(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 56))) >> (byte(v5 + 0x1) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v5 + 0x1 < 0x40)
 +      v4 = uint16(v3)
 +      if (v3 & 0x3f == 0x0 && (v1 != v4)) {
 +        refillAllocCache(a0,v4 >> 3)
@@ -17533,9 +17533,9 @@
 +    }
 +    refillAllocCache(a0,v4 >> 3)
 +    v2 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 56)))
-+    v5 = 0
++    v5 = 0x0
 +    if v2 != 0x0 {
-+      for ; (v2 >> v5) & 0x1 == 0x0; v5 = v5 + 1 {
++      for ; (v2 >> v5) & 0x1 == 0x0; v5 = uint64(int64(v5) + 1) {
        }
      }
 -    if (!v2)
@@ -17543,7 +17543,7 @@
 -    v3 = v4;
 -    a0 = v7;
 +    if v2 == 0x0 {
-+      v5 = 64
++      v5 = 0x40
 +    }
 +    v3 = uint32(v4)
 +    a0 = v7
@@ -19515,10 +19515,10 @@
 +  v11 = a0
 +  v12 = a1
 +  v6 = int64(v7 * 0x2000 + base(a0)) + int64((v7 & 0x7ffffffffffff) * 0xffffffffffffff80)
-+  v1 = base(v11)
-+  v2 = base(v11)
-+  v7 = uint64(int64(uintptr(unsafe.Pointer(v12))) - v1) >> 9
-+  v8 = uint64(int64(uintptr(unsafe.Pointer(v12))) - v2) >> 3
++  v1 = uint64(base(v11))
++  v2 = uint64(base(v11))
++  v7 = uint64(int64(uintptr(unsafe.Pointer(v12))) - int64(v1)) >> 9
++  v8 = uint64(int64(uintptr(unsafe.Pointer(v12))) - int64(v2)) >> 3
 +  v9 = uint64(uint32(v8) & 0x3f)
 +  v10 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v11))) + 104))) >> 3
 +  v3 = (*uint64)(unsafe.Pointer(uintptr(runtime.addb(v6,v7 << 3))))
@@ -24554,7 +24554,7 @@
 -  *(unsigned long *)&runtime.sched[0xd8] = 0;
 -  runtime.unlock(0x4f0f70);
 -  return;
-+  sched._200_8_ = int64(0x0)
++  sched._200_8_ = 0
 +  unlock(0x4f0f60)
 +  lock(0x4f0f70)
 +  v3 = sched._216_8_
@@ -24563,7 +24563,7 @@
 +    *(*uint64)(unsafe.Pointer(uintptr(v3 + 32))) = 0
 +    v3 = v1
 +  }
-+  sched._216_8_ = int64(0x0)
++  sched._216_8_ = 0
 +  unlock(0x4f0f70)
 +  return
  }
@@ -24594,10 +24594,10 @@
 -    if (v1 == v3) {
 -      a0[v5 - 1] = '.';
 -      v1 = v5 - 2;
-+  v3 = uint64(a1 - a4) - 0x1
++  v3 = int64(uint64(a1 - a4) - 0x1)
 +  v5 = uint64(a1 - 1)
 +  for {
-+    if !((0xa <= a3 || (int64(v3) <= int64(v5)))) {
++    if !((0xa <= a3 || (v3 <= int64(v5)))) {
 +      break
      }
 -    v5 = v1;
@@ -24605,7 +24605,7 @@
 +    v4 = a3 / 0xa
 +    *(*int8)(unsafe.Add(unsafe.Pointer(a0),v5 * 1)) = int8(a3 % 0xa) + 48
 +    v1 = v5 - 0x1
-+    if v1 == v3 {
++    if v1 == uint64(v3) {
 +      *(*int8)(unsafe.Add(unsafe.Pointer(a0),(v5 - 0x1) * 1)) = '.'
 +      v1 = v5 - 0x2
 +    }
@@ -24885,12 +24885,12 @@
 -          if (v5 != 4)
 -            runtime.throw("invalid limiter event type found",0x20); // no-return
 +  v12 = a0
-+  v13 = a1
++  v13 = int64(a1)
 +  v6 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 64))))
-+  if int64(v13) < v6 {
++  if v13 < v6 {
 +    return
 +  }
-+  v6 = int64(v13) - v6
++  v6 = v13 - v6
 +  v2 = *(*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v12))) + 76)))
 +  _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Store((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 64))))
 +  v1 = (*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v12))) + 40)))
@@ -25121,11 +25121,11 @@
 -  if ((int)a1 < v1)
 -    return 0;
 -  return a1 - v1;
-+  v1 = a1 & 0xe000000000000000 | a0 & 0x1fffffffffffffff
-+  if int64(a1) < int64(v1) {
++  v1 = int64(a1 & 0xe000000000000000 | a0 & 0x1fffffffffffffff)
++  if int64(a1) < v1 {
 +    return 0
 +  }
-+  return int64(a1 - v1)
++  return int64(a1 - uint64(v1))
  }
 --- c/runtime.limiterEventStamp.typ
 +++ go/runtime.limiterEventStamp.typ
@@ -28065,8 +28065,8 @@
 +      v19 = v47
 +      for {
 +        v19 = v19 + 0x20000
-+        v11 = _kuna_ident_282a6d7370616e29.base(v3)
-+        if uint64(v11 + *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 104)))) <= v19 {
++        v11 = uint64(_kuna_ident_282a6d7370616e29.base(v3))
++        if uint64(int64(v11) + *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 104)))) <= v19 {
 +          break
 +        }
 +        v2 = _kuna_ident_282a6763576f726b29.putFast(v48,v19)
@@ -28090,9 +28090,9 @@
 -    v42 = v43;
 -    v45 = v46;
 +    v8 = _kuna_ident_282a6d7370616e29.base(v3)
-+    v11 = *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 104)))
++    v11 = uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v3))) + 104))))
 +    _kuna_ident_282a6d7370616e29.typePointersOfUnchecked(v3,(*int64)(unsafe.Pointer(uintptr(_kuna_ident_282a6d7370616e29.base(v3)))))
-+    v19 = uint64(v8 + v11) - v47
++    v19 = uint64(v8 + int64(v11)) - v47
 +    if 0x20001 <= v19 {
 +      v19 = 0x20000
 +    }
@@ -28141,7 +28141,7 @@
 -        v48[2] = v48[2] + v19;
 -        v48[3] = v48[3] + v11;
 -        return;
-+  v11 = 0
++  v11 = 0x0
 +  for {
 +    typePointers.nextFast(v5,v22,v13,v31,v11,v36,v42,v45)
 +    v13 = v14
@@ -28156,7 +28156,7 @@
 +      v42 = v39
 +      if uint64(uintptr(unsafe.Pointer(v28))) == uint64(uintptr(unsafe.Pointer(nil))) {
 +        *(*int64)(unsafe.Add(unsafe.Pointer(v48),2 * 8)) = uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v48),2 * 8))) + v19
-+        *(*int64)(unsafe.Add(unsafe.Pointer(v48),3 * 8)) = *(*int64)(unsafe.Add(unsafe.Pointer(v48),3 * 8)) + v11
++        *(*int64)(unsafe.Add(unsafe.Pointer(v48),3 * 8)) = *(*int64)(unsafe.Add(unsafe.Pointer(v48),3 * 8)) + int64(v11)
 +        return
        }
      }
@@ -28187,7 +28187,7 @@
      }
 -    v11 = v20 + 8;
 -    v45 = v19;
-+    v11 = int64(v20) + 8
++    v11 = uint64(int64(v20) + 8)
 +    v45 = v19
    }
  }
@@ -28892,7 +28892,7 @@
 -    ((double *)v15)[0x21] = (v11 - (double)v8) / (double)v17;
 +  v15 = a0
 +  v16 = a1
-+  v17 = a2
++  v17 = int64(a2)
 +  _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Store((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 160))),0)
 +  _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Store((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 168))),0)
 +  _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Store((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 176))),0)
@@ -28904,15 +28904,15 @@
 +  *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 224))) = v16
 +  v4 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 104))))
 +  *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 88))) = v4
-+  v11 = _kuna_ident_24663634._kuna_ident_33666430303030303030303030303030 * float64(int64(v17))
-+  v8 = uint64(int64(_kuna_ident_24663634._kuna_ident_33666530303030303030303030303030 + v11))
-+  v12 = float64(int64(v8)) / v11 - _kuna_ident_24663634._kuna_ident_33666630303030303030303030303030
++  v11 = _kuna_ident_24663634._kuna_ident_33666430303030303030303030303030 * float64(v17)
++  v8 = int64(uint64(int64(_kuna_ident_24663634._kuna_ident_33666530303030303030303030303030 + v11)))
++  v12 = float64(v8) / v11 - _kuna_ident_24663634._kuna_ident_33666630303030303030303030303030
 +  if (v12 < _kuna_ident_24663634.bfd3333333333333 || (_kuna_ident_24663634._kuna_ident_33666433333333333333333333333333 < v12)) {
-+    v5 = v8 - 0x1
-+    if v11 < float64(int64(v8)) {
-+      v8 = v5
++    v5 = uint64(v8) - 0x1
++    if v11 < float64(v8) {
++      v8 = int64(v5)
 +    }
-+    *(*float64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 264))) = (v11 - float64(int64(v8))) / float64(int64(v17))
++    *(*float64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 264))) = (v11 - float64(v8)) / float64(v17)
 +  } else {
 +    *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 264))) = 0
    }
@@ -28920,7 +28920,7 @@
 -    ((unsigned long *)v15)[0x21] = 0;
 +  if runtime.debug._32_4_ > 0 {
 +    *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v15))) + 264))) = 0
-+    v8 = v17
++    v8 = int64(uint64(v17))
    }
 -  if (*(int4 *)&runtime.debug[0x20] > 0) {
 -    ((unsigned long *)v15)[0x21] = 0;
@@ -28940,7 +28940,7 @@
 -    *(unsigned long *)(v1 + 0x1240) = v14;
 +  if uint64(a3) != 0x1 { // branch-flip
 +    setMaxIdleMarkWorkers(v15,int32(v17) - int32(v8))
-+  } else if 1 <= int64(v8) { // branch-flip
++  } else if 1 <= v8 { // branch-flip
 +    setMaxIdleMarkWorkers(v15,0)
 +  } else {
 +    setMaxIdleMarkWorkers(v15,1)
@@ -29208,8 +29208,8 @@
 +  v8 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Load(v3)
 +  v4 = (*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 176)))
 +  v9 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74363429.Load(v4)
-+  v10 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v1)
-+  v15 = ((v15 + v14) * float64(uint64(v10 - *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 88)))))) / ((_kuna_ident_24663634._kuna_ident_33666630303030303030303030303030 - v14) * float64(v13 + v8 + v9))
++  v10 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v1))
++  v15 = ((v15 + v14) * float64(uint64(int64(v10) - *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 88)))))) / ((_kuna_ident_24663634._kuna_ident_33666630303030303030303030303030 - v14) * float64(v13 + v8 + v9))
 +  v5 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 32)))
 +  *(*float64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v16))) + 32))) = v15
 +  for v13 = 0; v13 <= 3; v13 = v13 + 1 {
@@ -29755,10 +29755,10 @@
 -  runtime/internal/atomic.(*Uint64).Add((int *)(a0 + 0x88),v1);
 -  *(unsigned long *)(v3 + 0x22d0) = 0;
 -  return;
-+  v2 = *(*int64)(unsafe.Pointer(uintptr(a1 + 8912)))
-+  v1 = v2 + a2
++  v2 = uint64(*(*int64)(unsafe.Pointer(uintptr(a1 + 8912))))
++  v1 = int64(v2) + a2
 +  *(*int64)(unsafe.Pointer(uintptr(a1 + 8912))) = v1
-+  if uint64(v2 + a2) + 0x1fff <= 0x3ffe {
++  if uint64(int64(v2) + a2) + 0x1fff <= 0x3ffe {
 +    return
 +  }
 +  v3 = a1
@@ -29875,12 +29875,12 @@
 -    a0 = v7;
 +  v7 = a0
 +  for {
-+    v2 = runtime._kuna_ident_282a7379734d656d5374617429.load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 288))))
-+    v3 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 296))))
++    v2 = uint64(runtime._kuna_ident_282a7379734d656d5374617429.load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 288)))))
++    v3 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 296)))))
 +    v1 = (*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 304)))
-+    v3 = v3 - int64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v1))
++    v3 = uint64(int64(v3) - int64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v1)))
 +    v4 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v7))) + 312))))
-+    if uint64(v3 + v2) <= v4 {
++    if uint64(int64(v3) + int64(v2)) <= v4 {
 +      break
 +    }
 +    a0 = v7
@@ -29906,7 +29906,7 @@
 +    v6 = int64(v4 - v5)
    }
 -  return ((unsigned int *)v7)[0x13];
-+  v4 = ((v4 - uint64(v2)) - uint64(v3)) + uint64(v6)
++  v4 = ((v4 - v2) - v3) + uint64(v6)
 +  if v4 < v5 {
 +    v5 = v5 - v4
 +    v4 = (v5 / 0x64) * 0x3
@@ -30105,9 +30105,9 @@
 -    v6 = (unsigned int)((v4 + *(int *)&v8[0x26] + v5) * (int)v3) / 100 + *(int *)&v8[0x26];
 +  v3 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a496e74333229.Load(v8)
 +  if 0 <= v3 { // branch-flip
-+    v4 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x20 * 4)))
-+    v5 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x24 * 4)))
-+    v6 = uint64((v4 + *(*int64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x26 * 4)))) + v5) * int64(v3)) / 0x64 + uint64(*(*int64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x26 * 4)))))
++    v4 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x20 * 4))))
++    v5 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x24 * 4))))
++    v6 = uint64((int64(v4) + *(*int64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x26 * 4)))) + int64(v5)) * int64(v3)) / 0x64 + uint64(*(*int64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x26 * 4)))))
 +  } else {
 +    v6 = 0xffffffffffffffff
    }
@@ -30131,9 +30131,9 @@
 -  else {
 -    v6 = (int)(v7 - $f64.43e0000000000000) | 0x8000000000000000;
 +  _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Store((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x12 * 4)),v6)
-+  v4 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v1)
-+  v5 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v2)
-+  v7 = float64(uint64(v4 + *(*int64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x1e * 4)))) + v5)) * (_kuna_ident_24663634._kuna_ident_33666538303030303030303030303030 * *(*float64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),8 * 4)))) * _kuna_ident_24663634._kuna_ident_34303130303030303030303030303030)
++  v4 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v1))
++  v5 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load(v2))
++  v7 = float64(uint64(int64(v4) + *(*int64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),0x1e * 4)))) + int64(v5))) * (_kuna_ident_24663634._kuna_ident_33666538303030303030303030303030 * *(*float64)(unsafe.Pointer((*uint32)(unsafe.Add(unsafe.Pointer(v8),8 * 4)))) * _kuna_ident_24663634._kuna_ident_34303130303030303030303030303030)
 +  if v7 < _kuna_ident_24663634._kuna_ident_34336530303030303030303030303030 {
 +    v6 = uint64(int64(v7))
 +  } else {
@@ -30333,9 +30333,9 @@
 -    a0 = v4;
 +  v4 = a0
 +  for {
-+    v2 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*int64)(unsafe.Pointer(uintptr(a0 + 240))))
++    v2 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*int64)(unsafe.Pointer(uintptr(a0 + 240)))))
 +    v3 = int32(v2)
-+    v1 = int32(uint64(v2) >> 0x20)
++    v1 = int32(v2 >> 0x20)
 +    if v1 <= v3 {
 +      return 0x0
 +    }
@@ -30411,9 +30411,9 @@
 -      runtime.throw("negative idle mark workers",0x1a); // no-return
 +  v4 = a0
 +  for { // no-return
-+    v2 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*int64)(unsafe.Pointer(uintptr(a0 + 240))))
++    v2 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.Load((*int64)(unsafe.Pointer(uintptr(a0 + 240)))))
 +    v3 = int32(v2) + -1
-+    v1 = int32(uint64(v2) >> 0x20)
++    v1 = int32(v2 >> 0x20)
 +    if v3 < 0 {
 +      runtime.printlock()
 +      runtime.printstring("n=",2)
@@ -30480,8 +30480,8 @@
 -    v2 = v4;
 -    if (runtime/internal/atomic.(*Uint64).CompareAndSwap(&((int *)a0)[0x1e],v1,v1 & 0xffffffff | v2 << 0x20)) break;
 -    a0 = v3;
-+    v2 = int64(v4)
-+    if _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.CompareAndSwap((*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 240))),v1,v1 & 0xffffffff | uint64(int64(uint64(v2) << 0x20))) != 0x0 {
++    v2 = uint64(int64(v4))
++    if _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74363429.CompareAndSwap((*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 240))),v1,v1 & 0xffffffff | uint64(int64(v2 << 0x20))) != 0x0 {
 +      break
 +    }
 +    a0 = v3
@@ -31227,7 +31227,7 @@
 +  assertLockHeld(scavenger)
 +  printlock()
 +  v1 = _kuna_ident_282a7379734d656d5374617429.load((*byte)(unsafe.Add(unsafe.Pointer(gcController),0x118 * 1)))
-+  v2 = _kuna_ident_282a7379734d656d5374617429.load((*byte)(unsafe.Add(unsafe.Pointer(gcController),0x110 * 1)))
++  v2 = uint64(_kuna_ident_282a7379734d656d5374617429.load((*byte)(unsafe.Add(unsafe.Pointer(gcController),0x110 * 1))))
 +  v3 = heapRetained()
 +  printlock()
 +  printstring("scav ",5)
@@ -31237,7 +31237,7 @@
 +  printstring(" KiB work (eager), ",0x13)
 +  printuint(v1 >> 10)
 +  printstring(" KiB now, ",10)
-+  printuint(uint64(v2 * 100) / v3)
++  printuint(uint64(int64(v2) * 100) / v3)
 +  printstring("% util",6)
 +  printunlock()
 +  if byte(v6) != 0x0 { // branch-flip
@@ -31617,7 +31617,7 @@
 -      a1 = v3;
 +  v2 = runtime.fillAligned(*(*uint64)(unsafe.Add(unsafe.Pointer(a0),a1 * 8)) | *(*uint64)(unsafe.Add(unsafe.Pointer(a0),(a1 + 0x8) * 8)),a2)
 +  v3 = _kuna_ident_72756e74696d652f696e7465726e616c2f737973.LeadingZeros64(^v2)
-+  v7 = int64(a1 * 0x40) - int64(v3)
++  v7 = uint64(int64(a1 * 0x40) - int64(v3))
 +  v2 = (v2 << (byte(v3) & 0x3f)) & -func(value bool) uint64 { if value { return 1 }; return 0 }(v3 < 0x40)
 +  if v2 != 0x0 { // branch-flip
 +    v2 = _kuna_ident_72756e74696d652f696e7465726e616c2f737973.LeadingZeros64(v2)
@@ -31652,13 +31652,13 @@
 +  if v1 < v2 {
 +    v3 = v1
 +  }
-+  v5 = uint64(v7) - v3
++  v5 = v7 - v3
 +  v1 = v5 + 0x40
 +  if (0x2001 <= runtime.physHugePageSize && (runtime.physPageSize < runtime.physHugePageSize)) {
 +    v8 = runtime.physHugePageSize >> 0xd
-+    if runtime.alignUp(v1,v8) <= uint64(v7) + 0x40 { // branch-flip
++    if runtime.alignUp(v1,v8) <= v7 + 0x40 { // branch-flip
 +      v8 = runtime.alignDown(v1,v8)
-+      if v8 >= (uint64(v7) - v2) + 0x40 {
++      if v8 >= (v7 - v2) + 0x40 {
 +        v3 = v3 + (v5 - v8) + 0x40
 +        v1 = v8
        }
@@ -35602,12 +35602,12 @@
 +    v1 = *(*int64)(unsafe.Pointer(uintptr(v8 + 65872)))
 +    v7 = v8
 +    if uint64(v1) != 0x0 {
-+      v6 = v5
++      v6 = uint64(v5)
 +      if v1 < v5 {
-+        v6 = v1
++        v6 = uint64(v1)
 +      }
 +      if uint64(uintptr(unsafe.Pointer(v4))) != uint64(uintptr(unsafe.Pointer(*(**uint64)(unsafe.Pointer(uintptr(v8 + 65864)))))) {
-+        memmove(v4,*(**uint64)(unsafe.Pointer(uintptr(v8 + 65864))),int64(uint64(v6) << 3))
++        memmove(v4,*(**uint64)(unsafe.Pointer(uintptr(v8 + 65864))),int64(v6 << 3))
 +        v7 = v8
        }
      }
@@ -35622,11 +35622,11 @@
 -      v7 = v8;
 +    v2 = *(*uint64)(unsafe.Pointer(uintptr(v7 + 65864)))
 +    v1 = *(*int64)(unsafe.Pointer(uintptr(v7 + 65880)))
-+    v6 = *(*int64)(unsafe.Pointer(uintptr(v7 + 65872)))
++    v6 = uint64(*(*int64)(unsafe.Pointer(uintptr(v7 + 65872))))
 +    *(**uint64)(unsafe.Pointer(uintptr(v7 + 65864))) = v4
 +    *(*int64)(unsafe.Pointer(uintptr(v7 + 65872))) = v5
 +    *(*int64)(unsafe.Pointer(uintptr(v7 + 65880))) = v3
-+    if uint64(v6) != 0x0 {
++    if v6 != 0x0 {
 +      sysFree(v2,int64(uint64(v1) << 3),(*byte)(unsafe.Add(unsafe.Pointer(memstats),0xe00 * 1)))
 +      v7 = v8
      }
@@ -38752,11 +38752,11 @@
 -    return 0;
 +  if (uint64(uintptr(unsafe.Pointer(a0))) != uint64(uintptr(unsafe.Pointer(nil))) && (uint64(*a0 + a1) <= 0xfff0)) {
 +    LOCK()
-+    v1 = *a0
++    v1 = uint64(*a0)
 +    *a0 = *a0 + a1
 +    UNLOCK()
-+    if uint64(v1 + a1) <= 0xfff0 {
-+      return int64(uintptr(unsafe.Pointer(a0))) + ((v1 + a1) - a1) + 16
++    if uint64(int64(v1) + a1) <= 0xfff0 {
++      return int64(uintptr(unsafe.Pointer(a0))) + ((int64(v1) + a1) - a1) + 16
 +    }
 +    return 0
    }
@@ -40768,15 +40768,15 @@
 +  for v8 < a1 {
 +    pallocSum.unpack(*(*int64)(unsafe.Add(unsafe.Pointer(a0),v8 * 8)))
 +    v12 = uint64(v8) << (byte(a3) & 0x3f)
-+    v1 = v4 + uint64(v3)
++    v1 = v4 + v3
 +    v8 = v8 + 1
 +    v14 = uint64(int64(0x1 << (byte(a3) & 0x3f))) & -func(value bool) uint64 { if value { return 1 }; return 0 }(a3 < 0x40)
 +    v13 = v7 + v14
 +    if v4 == v12 & -func(value bool) uint64 { if value { return 1 }; return 0 }(a3 < 0x40) {
 +      v4 = v1
 +    }
-+    if v11 < v7 + uint64(v3) {
-+      v11 = v7 + uint64(v3)
++    if v11 < v7 + v3 {
++      v11 = v7 + v3
 +    }
 +    if v11 < v10 {
 +      v11 = v10
@@ -42163,7 +42163,7 @@
 -      return *(unsigned __int128 *)v5;
 +  a2 = a2 >> 6
 +  v7 = -1
-+  v2 = 0
++  v2 = 0x0
 +  for {
 +    if 0x8 <= a2 {
 +      v5._8_8_ = uint64(v7)
@@ -42192,9 +42192,9 @@
 -      v6 = 0;
 -      if (v1) {
 -        for (; !(v1 >> v6 & 1); v6 = v6 + 1) {
-+      v6 = 0
++      v6 = 0x0
 +      if v1 != 0x0 {
-+        for ; (v1 >> v6) & 0x1 == 0x0; v6 = v6 + 1 {
++        for ; (v1 >> v6) & 0x1 == 0x0; v6 = uint64(int64(v6) + 1) {
          }
        }
 -      if (!v1)
@@ -42204,16 +42204,16 @@
 -        *(unsigned long *)v4 = a2 * 0x40 - v2;
 -        return *(unsigned __int128 *)v4;
 +      if v1 == 0x0 {
-+        v6 = 64
++        v6 = 0x40
        }
 -      v8 = runtime.findBitRange64(v8,a1);
 -      if (v8 < 0x40) {
 -        *(int *)v3 = v8 + a2 * 0x40;
 -        *(unsigned long *)&v3[8] = v7;
 -        return *(unsigned __int128 *)v3;
-+      if a1 <= uint64(v6 + v2) {
++      if a1 <= uint64(int64(v6) + int64(v2)) {
 +        v4._8_8_ = uint64(v7)
-+        v4._0_8_ = a2 * 0x40 - uint64(v2)
++        v4._0_8_ = a2 * 0x40 - v2
 +        return v4._0_16_
        }
 -      v2 = runtime/internal/sys.LeadingZeros64(v1);
@@ -42223,9 +42223,9 @@
 +        v3._8_8_ = uint64(v7)
 +        return v3._0_16_
 +      }
-+      v2 = _kuna_ident_72756e74696d652f696e7465726e616c2f737973.LeadingZeros64(v1)
++      v2 = uint64(_kuna_ident_72756e74696d652f696e7465726e616c2f737973.LeadingZeros64(v1))
 +    } else {
-+      v2 = 0
++      v2 = 0x0
      }
 -    else {
 -      v2 = 0;
@@ -43444,12 +43444,12 @@
 -    v4 = -v3;
 -    v6 = 0;
 +  v8 = a0
-+  v3 = runtime.cheaprand()
++  v3 = int64(runtime.cheaprand())
 +  v6 = *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v8))) + 8)))
-+  v3 = v3 & 0xffffffff
++  v3 = int64(uint64(v3) & 0xffffffff)
 +  if uint64(v6) != 0xffffffffffffffff { // branch-flip
-+    v4 = int64(v3) / v6
-+    v6 = int64(v3) % v6
++    v4 = v3 / v6
++    v6 = v3 % v6
 +  } else {
 +    v4 = -v3
 +    v6 = 0
@@ -44863,7 +44863,7 @@
 +  v11 = a0
 +  if uint64(runtime.addrRange.size(a1,a2)) == 0x0 {
 +    v4 = runtime.offAddr.addr(a1)
-+    v6 = runtime.offAddr.addr(a2)
++    v6 = int64(runtime.offAddr.addr(a2))
 +    runtime.printlock()
 +    runtime.printstring("runtime: range = {",0x12)
 +    runtime.printhex(v4)
@@ -44950,10 +44950,10 @@
 +    *(*int64)(unsafe.Pointer(uintptr(uint64(*v11) + v4 * 0x10))) = a1
 +  } else {
 +    v10 = *(*int64)(unsafe.Add(unsafe.Pointer(v11),1 * 8))
-+    v6 = uint64(v10) + 0x1
++    v6 = int64(uint64(v10) + 0x1)
 +    v1 = *(*int64)(unsafe.Add(unsafe.Pointer(v11),2 * 8))
 +    v7 = (*uint64)(unsafe.Pointer(uintptr(*v11)))
-+    if int64(v6) <= int64(v1) { // branch-flip
++    if v6 <= int64(v1) { // branch-flip
 +      *(*int64)(unsafe.Add(unsafe.Pointer(v11),1 * 8)) = v6
 +      v10 = v10 - int64(v4)
 +      v7 = (*uint64)(unsafe.Pointer(uintptr(uint64(*v11) + uint64(int64(-((uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v11),2 * 8))) - v4) + 0xffffffffffffffff)) >> 0x3f) & ((v4 + 0x1) * 0x10))))
@@ -45203,11 +45203,11 @@
 +      v3 = runtime._kuna_ident_282a61746f6d69635370616e5365745370696e65506f696e74657229.Load(v6)
 +      v4 = v3
 +      if v2 == *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 24))) {
-+        v9 = int64(*(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 24))) << 1)
-+        if uint64(v9) == 0x0 {
-+          v9 = 256
++        v9 = uint64(int64(*(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 24))) << 1))
++        if v9 == 0x0 {
++          v9 = 0x100
 +        }
-+        v4 = runtime.persistentalloc(int64(uint64(v9) << 3),_kuna_ident_696e7465726e616c2f637075.CacheLineSize,0x551f18)
++        v4 = runtime.persistentalloc(int64(v9 << 3),_kuna_ident_696e7465726e616c2f637075.CacheLineSize,0x551f18)
 +        if uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 24)))) != 0x0 {
 +          runtime.memmove(v4,v3,int64(uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v10))) + 24)))) << 3))
 +        }
@@ -45698,8 +45698,8 @@
 +  v2 = *a0
 +  *a0 = uint64(*a0) + a1
 +  UNLOCK()
-+  v1 = a1 + uint64(v2)
-+  if ((int64(a1) <= 0 || (int64(a1) <= int64(v1))) && (func() bool {
++  v1 = int64(a1 + uint64(v2))
++  if ((int64(a1) <= 0 || (int64(a1) <= v1)) && (func() bool {
 +    return (0 <= int64(a1) || (int64(a1) <= int64(uint64(v2) + a1 * 0x2)))
 +  }())) {
 +    return
@@ -47641,12 +47641,12 @@
 +  closefd.abi0()
 +  g = *(**runtime.g)(unsafe.Pointer(uintptr(v4 + -8)))
 +  if 1 <= v7 {
-+    v1 = atoi(v8,int64(v7 + -1))
-+    if (byte(v2) == 0x0 || (int64(v1) <= -1)) {
-+      v1 = 0x0
++    v1 = int64(atoi(v8,int64(v7 + -1)))
++    if (byte(v2) == 0x0 || (v1 <= -1)) {
++      v1 = 0
 +    }
-+    if v1 & (v1 - 0x1) == 0x0 {
-+      return v1
++    if uint64(v1) & (uint64(v1) - 0x1) == 0x0 {
++      return uint64(v1)
 +    }
 +    return 0x0
 +  }
@@ -51793,13 +51793,13 @@
 +    v4 = v10
 +    v5 = v11
 +    v6 = v9
-+    for v3 = 0x0; int64(v3) < v4; v3 = v7 + v3 {
++    for v3 = 0x0; int64(v3) < v4; v3 = uint64(v7) + v3 {
 +      v1 = int64(printBacklogIndex) - 512
-+      v8 = uint64(v4) - v3
++      v8 = int64(uint64(v4) - v3)
 +      v2 = (*uint64)(unsafe.Pointer(uintptr(uint64(int64(v3 - uint64(v5)) >> 0x3f) & v3 + uint64(v6))))
-+      v7 = uint64(-v1)
-+      if -v8 != uint64(v1) && int64(v8) <= -v1 {
-+        v7 = v8
++      v7 = int64(uint64(-v1))
++      if -v8 != uint64(v1) && v8 <= -v1 {
++        v7 = int64(uint64(v8))
        }
 -      runtime.printBacklogIndex = (int)(runtime.printBacklogIndex + v7) % 0x200;
 +      if uint64(uintptr(unsafe.Pointer(v2))) != uint64(uintptr(unsafe.Pointer((*uint64)(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(printBacklog),(uint64(v1 >> 0x3f) & printBacklogIndex) * 1))))))) {
@@ -51808,7 +51808,7 @@
 +        v5 = v11
 +        v6 = v9
 +      }
-+      printBacklogIndex = uint64(int64(printBacklogIndex + v7)) % 0x200
++      printBacklogIndex = uint64(int64(printBacklogIndex + uint64(v7))) % 0x200
      }
    }
 -  runtime.printunlock();
@@ -51914,7 +51914,7 @@
 -  runtime.writeErr(v5,v6,v7);
 -  return;
 +  v5 = a0
-+  v6 = a1
++  v6 = int64(a1)
 +  v7 = a2
 +  recordForPanic(a0,a1,a2)
 +  if ((uint64(uintptr(unsafe.Pointer(g))) != uint64(uintptr(unsafe.Pointer(nil))) && (func() bool {
@@ -51922,15 +51922,15 @@
 +    return v2 != 0x0
 +  }())) && (int32((*(*g).m).dying) <= 0)) {
 +    v3 = (*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.g
-+    v4 = uint64(int64(uintptr(unsafe.Pointer((*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.ctxt)))) - v3
++    v4 = int64(uint64(int64(uintptr(unsafe.Pointer((*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.ctxt)))) - v3)
 +    v1 = (*uint64)(unsafe.Pointer(uintptr(v2 + v3 & uint64(int64(-v4) >> 0x3f))))
-+    if int64(v6) < int64(v4) {
-+      v4 = v6
++    if v6 < v4 {
++      v4 = int64(uint64(v6))
 +    }
 +    if uint64(uintptr(unsafe.Pointer(v5))) != uint64(uintptr(unsafe.Pointer(v1))) {
 +      memmove(v1,v5,v4)
 +    }
-+    (*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.g = v4 + (*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.g
++    (*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.g = uint64(v4) + (*(*runtime.g)(unsafe.Add(unsafe.Pointer(g),1 * 0xa0))).sched.g
 +    return
 +  }
 +  writeErr(v5,v6,v7)
@@ -53931,7 +53931,7 @@
 +  if uint64(modinfo._8_8_) != 0x1 {
 +    return
 +  }
-+  modinfo._8_8_ = int64(0x0)
++  modinfo._8_8_ = 0
 +  modinfo._0_8_ = 0x0
 +  return
  }
@@ -54541,7 +54541,7 @@
 +  acquireLockRank(0x27)
 +  releaseLockRank(0x27)
 +  v3 = 0
-+  v10 = 0x0
++  v10 = 0
 +  for {
 +    v1 = (*int32)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(v24))) + 144)))
 +    v23 = _kuna_ident_72756e74696d652f696e7465726e616c2f61746f6d6963._kuna_ident_282a55696e74333229.CompareAndSwap(v1,v25,v26)
@@ -54592,12 +54592,12 @@
 +      v8 = SUB168(v23,8)
 +      v9 = SUB168(v23,0)
 +      v11 = uint64(v9) + 0x1388
-+      v10 = v11
++      v10 = int64(v11)
 +    }
-+    if int64(v10) <= int64(nanotime(v9,v8,v11)) { // branch-flip
++    if v10 <= int64(nanotime(v9,v8,v11)) { // branch-flip
 +      osyield.abi0()
 +      g = *(**runtime.g)(unsafe.Pointer(uintptr(v21 + -8)))
-+      v10 = nanotime(v4,v17,v12) + 0x9c4
++      v10 = int64(nanotime(v4,v17,v12) + 0x9c4)
 +    } else {
 +      v9 = 0
 +      for { // branch-flip
@@ -59445,11 +59445,11 @@
 +  if uint64(v6) == 0x0 {
 +    return ZEXT824(v12)
 +  }
-+  v7 = v12
++  v7 = int64(v12)
 +  if v12 == 0x0 {
-+    v7 = nanotime()
++    v7 = int64(nanotime())
 +  }
-+  if int64(v7) >= v6 {
++  if v7 >= v6 {
  label_4407af:
 -    v6 = v11 + 0x22a0;
 -    runtime.lock(v6);
@@ -59509,7 +59509,7 @@
 +    }
 +    unlock(v6)
 +    v10._8_8_ = uint64(v5)
-+    v10._0_8_ = v7
++    v10._0_8_ = uint64(v7)
 +    v10[0x10] = v3
 +    v10._17_7_ = 0
 +    return v10._0_24_
@@ -59532,7 +59532,7 @@
 -  *(unsigned long *)&v8[0x10] = 0;
 -  return v8._0_24_;
 +  v8._8_8_ = uint64(v6)
-+  v8._0_8_ = v7
++  v8._0_8_ = uint64(v7)
 +  v8._16_8_ = 0
 +  return v8._0_24_
  }
@@ -64574,7 +64574,7 @@
 -        v2 = 0;
 +  sched[0x80] = v3 ^ 0x1
 +  if v3 != 0x0 {
-+    sched._152_4_ = int32(0x0)
++    sched._152_4_ = 0
 +    globrunqputbatch((*byte)(unsafe.Add(unsafe.Pointer(sched),0x88 * 1)),v1)
 +    unlock(0x4f0eb8)
 +    for { // branch-flip
@@ -67054,7 +67054,7 @@
 -    runtime.unlock(runtime.globalRand);
 -    return;
 +    _kuna_ident_696e7465726e616c2f6368616368613872616e64._kuna_ident_282a537461746529.Init((*byte)(unsafe.Add(unsafe.Pointer(globalRand),0x28 * 1)))
-+    globalRand[0x158] = int8(0x1)
++    globalRand[0x158] = 1
 +    globalRand._8_8_ = uint64(v5)
 +    globalRand._16_8_ = v6
 +    globalRand._24_8_ = uint64(v5)
@@ -67097,13 +67097,13 @@
 -    for (v3 = 0; v3 < (int)v2; v3 = v3 + 1) {
 -      v4[v3] = v4[v3] ^ (unsigned char)(v1 >> ((unsigned char)(v3 << 3) & 0x3f)) & -((unsigned int)(v3 << 3) < 0x40);
 +  v4 = a0
-+  v5 = a1
++  v5 = int64(a1)
 +  v6 = a2
 +  v1 = nanotime()
-+  for ; v5 != 0x0; v5 = v5 - v2 {
++  for ; uint64(v5) != 0x0; v5 = int64(uint64(v5) - v2) {
 +    v1 = (v1 ^ 0xa0761d6478bd642f) * 0xe7037ed1a0b428db
-+    v2 = v5
-+    if 8 <= int64(v5) {
++    v2 = uint64(v5)
++    if 8 <= v5 {
 +      v2 = 0x8
      }
 -    v6 -= v2;
@@ -75054,7 +75054,7 @@
    }
 -  else {
 -    v2 = -1;
-+  v7 = *a0
++  v7 = uint64(*a0)
 +  v1 = (*struct_3)(unsafe.Pointer(uintptr(*(*int64)(unsafe.Add(unsafe.Pointer(a0),1 * 8)))))
 +  v13 = a0
 +  if runtime.funcInfo.entry(v7,v1) != v11 { // branch-flip
@@ -75089,12 +75089,12 @@
 +    v5 = (*int32)(unsafe.Pointer(uintptr(runtime.funcdata(v7,v1,1))))
 +    if (uint64(uintptr(unsafe.Pointer(v5))) == uint64(uintptr(unsafe.Pointer(nil))) || (*v5 <= 0)) {
 +      v12 = runtime.funcname(v7,v1)
-+      v7 = *(*int64)(unsafe.Add(unsafe.Pointer(v13),7 * 8))
++      v7 = uint64(*(*int64)(unsafe.Add(unsafe.Pointer(v13),7 * 8)))
 +      runtime.printlock()
 +      runtime.printstring("runtime: frame ",0xf)
 +      runtime.printstring(SUB168(v12,0),SUB168(v12,8))
 +      runtime.printstring(" untyped locals ",0x10)
-+      runtime.printhex(uint64(v7) - v10)
++      runtime.printhex(v7 - v10)
 +      runtime.printstring(0x48581b,1)
 +      runtime.printhex(v10)
 +      runtime.printnl()
@@ -75234,9 +75234,9 @@
 +  }())) {
 +    v11 = *v6
 +    runtime.add(v6,8)
-+    v7 = runtime.noescape()
++    v7 = uint64(runtime.noescape())
 +    if (uint64(SUB168(ZEXT816(0x10) * ZEXT816(v11),8)) != 0x0 || (uint64(-v7) < SUB168(ZEXT816(0x10) * ZEXT816(v11),0))) {
-+      if uint64(v7) != 0x0 {
++      if v7 != 0x0 {
 +        runtime.panicunsafeslicelen() // no-return
 +      }
 +      runtime.panicunsafeslicenilptr() // no-return
@@ -75380,7 +75380,7 @@
 +  v12 = 0
 +  v7 = 0
 +  v5 = a1
-+  v13 = 0x0
++  v13 = int64(0x0)
 +  for {
 +    v15 = a1
 +    if !(v7 < a2) {
@@ -75389,21 +75389,21 @@
 -    else {
 -      v11 = v13;
 +    if *(*uint64)(unsafe.Add(unsafe.Pointer(v5),1 * 8)) != 0x0 { // branch-flip
-+      v11 = v13 + *(*uint64)(unsafe.Add(unsafe.Pointer(v5),1 * 8))
-+      if int64(v11) < int64(v13) {
++      v11 = uint64(v13) + *(*uint64)(unsafe.Add(unsafe.Pointer(v5),1 * 8))
++      if int64(v11) < v13 {
 +        throw("string concatenation too long",0x1d) // no-return
 +      }
 +      v8 = v8 + 1
 +      v12 = v7
 +    } else {
-+      v11 = v13
++      v11 = uint64(v13)
      }
 -    v5 = &v5[2];
 -    v7 += 1;
 -    v13 = v11;
 +    v5 = (*uint64)(unsafe.Add(unsafe.Pointer(v5),2 * 8))
 +    v7 = v7 + 1
-+    v13 = v11
++    v13 = int64(v11)
    }
 -  if (v8) {
 -    v16 = a2;
@@ -75454,11 +75454,11 @@
 +    v3 = v2
 +    v5 = v4
 +    v7 = v6
-+    v13 = v9
++    v13 = int64(v9)
 +    for v12 = v16; 1 <= v12; v12 = v12 + -1 {
 +      v11 = *(*uint64)(unsafe.Add(unsafe.Pointer(a1),1 * 8))
-+      v10 = v13
-+      if int64(v11) < int64(v13) {
++      v10 = uint64(v13)
++      if int64(v11) < v13 {
 +        v10 = v11
        }
 -      v7 -= v11;
@@ -75471,7 +75471,7 @@
 +      }
 +      v7 = v7 - int64(v11)
 +      a1 = (*uint64)(unsafe.Add(unsafe.Pointer(a1),2 * 8))
-+      v13 = v13 - v11
++      v13 = int64(uint64(v13) - v11)
 +      v5 = (*uint64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(v5)))) + uint64(-v7 >> 0x3f) & v11)))
      }
 -    return v3;
@@ -75865,11 +75865,11 @@
 -    runtime.panicunsafestringnilptr(); // no-return
 -  runtime.panicunsafestringlen(); // no-return
 +  v2 = a0
-+  v1 = int64(uintptr(unsafe.Pointer(mallocgc(a0,nil,0))))
++  v1 = uint64(int64(uintptr(unsafe.Pointer(mallocgc(a0,nil,0)))))
 +  if v2 <= uint64(-v1) {
-+    return v1
++    return int64(v1)
 +  }
-+  if uint64(v1) == 0x0 {
++  if v1 == 0x0 {
 +    panicunsafestringnilptr() // no-return
 +  }
 +  panicunsafestringlen() // no-return
@@ -77901,12 +77901,12 @@
 +  v14 = a3
 +  v11 = a0
 +  if 0 <= int8(v1) { // branch-flip
-+    v10 = 0x1
++    v10 = 1
 +  } else {
 +    v12 = a1
 +    v13 = a2
 +    v15 = a4
-+    v10 = uint64(readvarint(a0))
++    v10 = int64(uint64(readvarint(a0)))
 +    a0 = v11
 +    a2 = v13
 +    a1 = v12
@@ -77918,13 +77918,13 @@
 -    v2 = runtime.readvarint(&a0[v7],a1 - v10);
 -    v6 = v9;
 +  *a4 = uint32(*a4) + (-(v6 & 0x1) ^ v6 >> 1)
-+  v7 = v10 & uint64(int64(-(uint64(a2) - v10)) >> 0x3f)
++  v7 = uint64(v10) & uint64(int64(-(uint64(a2) - uint64(v10))) >> 0x3f)
 +  v6 = uint32(*(*byte)(unsafe.Add(unsafe.Pointer(a0),v7 * 1)))
 +  if 0 <= int8(*(*byte)(unsafe.Add(unsafe.Pointer(a0),v7 * 1))) { // branch-flip
 +    v2 = 0x1
 +    v14 = a3
 +  } else {
-+    v2 = readvarint((*byte)(unsafe.Add(unsafe.Pointer(a0),v7 * 1)),uint64(a1) - v10)
++    v2 = readvarint((*byte)(unsafe.Add(unsafe.Pointer(a0),v7 * 1)),uint64(a1) - uint64(v10))
 +    v6 = v9
    }
 -  v3 = v2;
@@ -77936,10 +77936,10 @@
 -  *(unsigned long *)&v4[0x18] = 1;
 -  return v4._0_32_;
 +  v3 = uint64(v2)
-+  v5 = int64(uint64(a2) - v10) - int64(v3)
++  v5 = int64(uint64(a2) - uint64(v10)) - int64(v3)
 +  v4._0_8_ = (*byte)(unsafe.Add(unsafe.Pointer((*byte)(unsafe.Add(unsafe.Pointer(a0),v7 * 1))),(v3 & uint64(-v5 >> 0x3f)) * 1))
 +  *v14 = uint64(*v14) + uint64(v6)
-+  v4._8_8_ = (uint64(a1) - v10) - v3
++  v4._8_8_ = (uint64(a1) - uint64(v10)) - v3
 +  v4._16_8_ = uint64(v5)
 +  v4._24_8_ = 1
 +  return v4._0_32_
@@ -80578,8 +80578,8 @@
 -  v3 = 0;
 -  while( true ) {
 -    if (10 <= v3) {
-+  v2 = *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16)))
-+  v1 = int64(uint64(int64(v2 - 0xffe0) >> 0x3f) & v2) + 32
++  v2 = int64(*(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16))))
++  v1 = int64(uint64(int64(uint64(v2) - 0xffe0) >> 0x3f) & uint64(v2)) + 32
 +  v3 = 0
 +  for {
 +    if 10 <= v3 {
@@ -80595,7 +80595,7 @@
 -      goto label_457ac3;
 +    if a1 <= 0x7f {
 +      *(*byte)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + v3 + v1))) = byte(a1)
-+      v2 = uint64(v3) + v2 + 0x1
++      v2 = int64(uint64(v3) + uint64(v2) + 0x1)
 +      goto label_457ac3
      }
 -    ((unsigned char *)a0)[v3 + v1] = (unsigned char)a1 | 0x80;
@@ -80652,10 +80652,10 @@
 -    runtime.memmove(v1,a1,v3);
 -    a0 = v4;
 +  v2 = int64(*(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16)))) - 65504
-+  v3 = -v2
++  v3 = int64(-v2)
 +  v1 = (*uint64)(unsafe.Pointer(uintptr(uint64(int64(uintptr(unsafe.Pointer(a0)))) + *(*uint64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16))) & uint64(v2 >> 0x3f) + 0x20)))
-+  if int64(a2) < int64(v3) {
-+    v3 = a2
++  if int64(a2) < v3 {
++    v3 = int64(a2)
    }
 -  *(int *)((int)a0 + 0x10) = *(int *)((int)a0 + 0x10) + v3;
 -  return;
@@ -80665,7 +80665,7 @@
 +    runtime.memmove(v1,a1,v3)
 +    a0 = v4
 +  }
-+  *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16))) = uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16)))) + v3
++  *(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16))) = uint64(*(*int64)(unsafe.Pointer(uintptr(int64(uintptr(unsafe.Pointer(a0))) + 16)))) + uint64(v3)
 +  return
  }
 --- c/runtime.(*traceBuf).available
@@ -83206,9 +83206,9 @@
 +  }
 +  v3 = a0
 +  v4 = a1
-+  v5 = a2
++  v5 = uint64(a2)
 +  v1 = (*[32]byte)(unsafe.Pointer(uintptr(runtime.noescape(a1))))
-+  v2 = uint64(v5) << 3
++  v2 = v5 << 3
 +  return runtime._kuna_ident_282a74726163654d617029.put(v3,v1,v2)
  }
 --- c/runtime.tracefpunwindoff
@@ -84495,7 +84495,7 @@
 +  v21 = a0
 +  v22 = a2
 +  v23 = a3
-+  v24 = a4
++  v24 = int64(a4)
 +  sub_466ef4()
 +  v6 = 0
 +  for v6 < a3 {
@@ -84513,7 +84513,7 @@
 +    v31 = v5
 +    v30 = v10
 +    v3 = v14
-+    v7 = v17
++    v7 = uint64(v17)
 +    for { // branch-flip
 +      if v1 {
 +        v1 = false
@@ -84523,7 +84523,7 @@
 +      } else {
 +        v20 = _kuna_ident_282a696e6c696e65556e77696e64657229.next(&v13,v7,v3 & 0xffffffff)
 +        v9 = SUB168(v20,8)
-+        v7 = SUB168(v20,0)
++        v7 = uint64(SUB168(v20,0))
 +        v3 = uint64(uintptr(unsafe.Pointer(v9))) & 0xffffffff
 +        v8 = v23
 +        v19 = v29
@@ -84580,7 +84580,7 @@
 +        if 1 <= v29 { // branch-flip
 +          v29 = v29 + -1
 +        } else {
-+          *(*int64)(unsafe.Pointer(uintptr(v22 + v6 * 8))) = v7 + 1
++          *(*int64)(unsafe.Pointer(uintptr(v22 + v6 * 8))) = int64(v7) + 1
 +          v6 = v6 + 1
          }
        }
@@ -84605,10 +84605,10 @@
 +    if uint64(v19) != 0x0 { // branch-flip
 +      v8 = v6
 +    } else {
-+      v9 = (*uint64)(unsafe.Pointer(uintptr(v22 + int64(uint64(v6) << 3) & (int64(uint64(v6) - v24) >> 0x3f))))
-+      v7 = v8 - v6
++      v9 = (*uint64)(unsafe.Pointer(uintptr(v22 + int64(uint64(v6) << 3) & (int64(uint64(v6) - uint64(v24)) >> 0x3f))))
++      v7 = uint64(v8 - v6)
 +      if v25 < v8 - v6 {
-+        v7 = v25
++        v7 = uint64(v25)
        }
 -      v9 = v12;
 -      v6 = v7 + v6;
@@ -84616,16 +84616,16 @@
 -      v7 = v25;
 -      v8 = v22;
 +      if uint64(uintptr(unsafe.Pointer(v12))) != uint64(uintptr(unsafe.Pointer(v9))) {
-+        v26 = v7
-+        memmove(v9,v12,int64(uint64(v7) << 3))
-+        v7 = v26
++        v26 = int64(v7)
++        memmove(v9,v12,int64(v7 << 3))
++        v7 = uint64(v26)
 +        v25 = v18
 +        v19 = v29
 +      }
 +      v9 = v12
-+      v6 = v7 + v6
-+      v15 = v24
-+      v7 = v25
++      v6 = int64(v7) + v6
++      v15 = uint64(v24)
++      v7 = uint64(v25)
 +      v8 = v22
      }
 -    runtime.(*unwinder).next(v21,v9,v6,v7,v15,v19,v8);
@@ -84639,7 +84639,7 @@
 +    a2 = v22
 +    a3 = v23
 +    a1 = v29
-+    a4 = v24
++    a4 = uint64(v24)
    }
 -  return v6;
 +  return v6
@@ -86777,15 +86777,15 @@
 +  if (v9 || (v4 == 0x3)) {
 +    if uint64(*(*int64)(unsafe.Pointer(uintptr(v6 + 168)))) != 0x0 { // branch-flip
 +      v6 = nanotime()
-+      v5 = uint64(v6 - *(*int64)(unsafe.Pointer(uintptr(v11 + 168)))) / 0xdf8475800
++      v5 = int64(uint64(v6 - *(*int64)(unsafe.Pointer(uintptr(v11 + 168)))) / 0xdf8475800)
 +      v6 = v11
 +    } else {
-+      v5 = 0x0
++      v5 = 0
      }
 -    else {
 -      v5 = 0;
 +  } else {
-+    v5 = 0x0
++    v5 = 0
 +  }
 +  v1 = *(*uint64)(unsafe.Pointer(uintptr(v6 + 152)))
 +  printlock()
@@ -86850,7 +86850,7 @@
 -      runtime.printstring(" m=nil",6);
 -      runtime.printunlock();
 -    }
-+  if 1 <= int64(v5) {
++  if 1 <= v5 {
 +    printlock()
 +    printstring(0x48582c,2)
 +    printint(v5)
@@ -102307,27 +102307,27 @@
 +      if v11 == 0x0 {
 +        return v6
 +      }
-+      v7 = v12
++      v7 = int64(v12)
 +      if v12 == 0x0 {
-+        v7 = sync.runtime_nanotime(v6)
++        v7 = int64(sync.runtime_nanotime(v6))
 +        a0 = v14
 +      }
 +      v8 = sync.runtime_SemacquireMutex((*uint32)(unsafe.Add(unsafe.Pointer(a0),1 * 4)),v12 != 0x0,1)
 +      if v2 {
 +        v2 = true
 +      } else {
-+        v2 = 1000000 < int64(sync.runtime_nanotime(v8) - v7)
++        v2 = 1000000 < int64(sync.runtime_nanotime(v8) - uint64(v7))
 +      }
 +      v10 = *v14
 +      if (v10 >> 2) & 0x1 == 0x0 {
 +        v9 = 0
 +        v3 = true
-+        v12 = v7
++        v12 = uint64(v7)
 +        a0 = v14
 +        continue
 +      }
 +      if v10 & 0x3 == 0x0 {
-+        v7 = uint64(v10)
++        v7 = int64(uint64(v10))
 +        if uint32(int32(v10) >> 3) != 0x0 {
 +          if (!v2 || (uint32(int32(v10) >> 3) == 0x1)) {
 +            v5 = -11
@@ -102901,7 +102901,7 @@
 +  oldPools._0_8_ = allPools._0_8_
 +  allPools._8_8_ = int64(v7)
 +  allPools._16_8_ = v8
-+  allPools._0_8_ = int64(0x0)
++  allPools._0_8_ = 0
 +  return
  }
 --- c/sync.init.0
@@ -103136,9 +103136,9 @@
 +  v2 = *(*int64)(unsafe.Add(unsafe.Pointer(v1),2 * 8))
 +  v12 = runtime.newobject((*uint64)(unsafe.Pointer(uintptr(0x47f220))))
 +  v3 = SUB168(v12,0)
-+  v5 = uint64(v2) * 0x2
-+  if 1073741824 <= int64(v5) {
-+    v5 = 0x40000000
++  v5 = int64(uint64(v2) * 0x2)
++  if 1073741824 <= v5 {
++    v5 = 1073741824
    }
 -  v8[1] = v2;
 -  *v13 = (int)v8;
@@ -103148,7 +103148,7 @@
 +  if uint32(runtime.writeBarrier._0_4_) != 0x0 {
 +    v3 = (*int64)(unsafe.Pointer(uintptr(runtime.gcWriteBarrier1(v3,SUB168(v12,8),v5))))
 +    *v10 = uint64(uintptr(unsafe.Pointer(v1)))
-+    v5 = v6
++    v5 = int64(v6)
 +  }
 +  *(*int64)(unsafe.Add(unsafe.Pointer(v3),5 * 8)) = int64(uintptr(unsafe.Pointer(v1)))
 +  v2 = runtime.makeslice((*uint64)(unsafe.Pointer(uintptr(0x47ce60))),v5,v5)
@@ -106202,7 +106202,7 @@
 -      *(unsigned long *)&v6[0x10] = strconv.baseError("ParseUint",9,a0,a1,a2);
 -      return v6._0_24_;
 +  v12 = a0 // branch-flip
-+  v15 = a1
++  v15 = int64(a1)
 +  v22 = a1
 +  v23 = a2
 +  if 0x23 <= a2 - 0x2 {
@@ -106243,7 +106243,7 @@
 +      if v20 {
 +        v14 = 0x2
 +        v12 = (*byte)(unsafe.Add(unsafe.Pointer(a0),(uint32(int64(-(a1 - 0x2)) >> 0x3f) & 0x2) * 1))
-+        v15 = a1 - 0x2
++        v15 = int64(a1 - 0x2)
 +      } else {
 +        if 3 <= int64(a1) { // branch-flip
 +          v1 = *(*byte)(unsafe.Add(unsafe.Pointer(a0),1 * 1))
@@ -106266,7 +106266,7 @@
 +        if v20 {
 +          v14 = 0x8
 +          v12 = (*byte)(unsafe.Add(unsafe.Pointer(a0),(uint32(int64(-(a1 - 0x2)) >> 0x3f) & 0x2) * 1))
-+          v15 = a1 - 0x2
++          v15 = int64(a1 - 0x2)
 +        } else {
 +          if 3 <= int64(a1) { // branch-flip
 +            v1 = *(*byte)(unsafe.Add(unsafe.Pointer(a0),1 * 1))
@@ -106289,11 +106289,11 @@
 +          if v20 {
 +            v14 = 0x10
 +            v12 = (*byte)(unsafe.Add(unsafe.Pointer(a0),(uint32(int64(-(a1 - 0x2)) >> 0x3f) & 0x2) * 1))
-+            v15 = a1 - 0x2
++            v15 = int64(a1 - 0x2)
 +          } else {
 +            v14 = 0x8
 +            v12 = (*byte)(unsafe.Add(unsafe.Pointer(a0),(uint32(int64(-(a1 - 0x1)) >> 0x3f) & 0x1) * 1))
-+            v15 = a1 - 0x1
++            v15 = int64(a1 - 0x1)
            }
          }
        }
@@ -106341,7 +106341,7 @@
 +  v20 = false
 +  v18 = 0x0
 +  for {
-+    if int64(v15) <= v11 {
++    if v15 <= v11 {
 +      if (v20 && (underscoreOK(a0,a1) == 0x0)) {
 +        v10._0_16_ = ZEXT816(0x490e18) << 0x40
 +        v10._16_8_ = syntaxError("ParseUint",9,v21,v22)
@@ -106672,10 +106672,10 @@
 +    v2 = *a0
 +    if (v2 != 0x2d && (v2 != 0x2b)) {
 +      v11 = a0
-+      v12 = a1
++      v12 = int64(a1)
 +    } else {
 +      v11 = (*byte)(unsafe.Add(unsafe.Pointer(a0),(uint32(int64(-(a1 - 0x1)) >> 0x3f) & 0x1) * 1))
-+      v12 = a1 - 0x1
++      v12 = int64(a1 - 0x1)
 +      if a1 == 0x1 {
 +        v6._0_16_ = ZEXT816(0x490e18) << 0x40
 +        v6._16_8_ = syntaxError("Atoi",4,a0,1)
@@ -106692,7 +106692,7 @@
 +    v9 = 0
 +    v5 = 0x0
 +    for {
-+      if int64(v12) <= v9 {
++      if v12 <= v9 {
 +        if v2 == 0x2d {
 +          v5 = -v5
 +        }
@@ -107203,7 +107203,7 @@
 -  v2 = strconv.appendQuotedWith(runtime.makeslice(&dat_476d00,0,v1),0,v1,v3,v4,(unsigned char)v5,(unsigned char)v6,(unsigned char)v7);
 -  runtime.slicebytetostring(0,SUB168(v2,0),SUB168(v2,8));
 -  return;
-+  v1 = uint64(a1 * 3) / 0x2
++  v1 = int64(uint64(a1 * 3) / 0x2)
 +  v3 = a0
 +  v4 = a1
 +  v5 = a2
