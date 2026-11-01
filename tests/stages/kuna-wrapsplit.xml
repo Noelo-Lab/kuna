@@ -1,0 +1,82 @@
+<decompilertest>
+<!--
+    kuna-wrapsplit: accesses that run past the top of their address space.
+
+    Issue #1034: decompile-all of a large MSVC DLL panicked in
+    Heritage::build_refinement ("index out of bounds: the len is 7 but the
+    index is 7") and failed other functions with "Overlapping input varnodes"
+    (one naming ram[0xfffffffffffffffb,+0x8)).
+
+    Stage / sub-stage: P3 heritage, the disjoint cover of a heritaged space
+    (strict bug fix, no option).
+
+    Address arithmetic wraps, so rsp-2 with 8 bytes is stack bytes -2..-1 and
+    0..5, and the qword at 0xfffffffffffffffb is ram bytes 0xff..fb..0xff..ff
+    and 0..2. Heritage's range maps are linear: the wrapping range never merged
+    with the ranges at offset 0, so the cover overlapped itself.
+
+    The .text bytes below, assembled with nasm (BITS 64):
+
+        f:  mov rax,[rsp-2]             ; stack -2..+6, wraps
+            movzx ecx,word [rsp-2]
+            mov edx,[rsp+3]
+            add rax,rcx
+            add rax,rdx
+            ret
+        g:  mov eax,[rsp+1]
+            mov ecx,[rsp-4]
+            movups xmm0,[rsp-0xc]       ; its high half wraps
+            movups [rsp-0x30],xmm0
+            add eax,ecx
+            add eax,[rsp-0x30]
+            ret
+        h:  mov ecx,[qword 0]
+            mov rax,[qword 0xfffffffffffffffb]
+            add eax,ecx
+            ret
+        k:  movups [rsp-0xc],xmm0       ; writes stack -0xc..+4
+            mov rax,[rsp]
+            add eax,[rsp-8]
+            ret
+
+    #1 f: the refinement of the wrapping range cut a 6-byte partition at
+    offset 0 that also collected the dword at rsp+3; refining it indexed past
+    its array (the panic). The read is now the 6 bytes from offset 0 over the
+    2 below it, and the bytes from rsp+3 are the dword's low 3 bytes.
+    #2 g: renaming asked for an input at [0,4) over the input at [1,5) and
+    failed with "Overlapping input varnodes".
+    #3 h: the same failure in ram ("requested range ... overflows").
+    #4 k: no error, but the return read stack+0 as an uninitialized value: the
+    write across the top never reached it. It is now bytes 12..15 of xmm0.
+-->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x401000" readonly="true">488b4424fe0fb74c24fe8b5424034801c84801d0c3</bytechunk>
+<symbol space="ram" offset="0x401000" name="f"/>
+<bytechunk space="ram" offset="0x401020" readonly="true">8b4424018b4c24fc0f104424f40f114424d001c8034424d0c3</bytechunk>
+<symbol space="ram" offset="0x401020" name="g"/>
+<bytechunk space="ram" offset="0x401040" readonly="true">8b0c250000000048a1fbffffffffffffff01c8c3</bytechunk>
+<symbol space="ram" offset="0x401040" name="h"/>
+<bytechunk space="ram" offset="0x401060" readonly="true">0f114424f4488b0424034424f8c3</bytechunk>
+<symbol space="ram" offset="0x401060" name="k"/>
+</binaryimage>
+<script>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu k</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="WRAPSPLIT #1: the wrapping read is its bytes from offset 0 over the 2 below it" min="1" max="1">return CONCAT62\(CONCAT33\(\(undefined3\)v2,v1\),v3\) \+ \(uint8\)v3 \+ \(uint8\)v2;</stringmatch>
+<stringmatch name="WRAPSPLIT #2: no overlapping inputs at the bottom of the stack space" min="1" max="1">return CONCAT13\(v2,\(undefined3\)\(\(uint4\)v1 &gt;&gt; 8\)\) \+ v4 \+ v3;</stringmatch>
+<stringmatch name="WRAPSPLIT #3: a ram qword at the top of the space" min="1" max="1">return \(int4\)dat_fffffffffffffffb \+ dat_0;</stringmatch>
+<stringmatch name="WRAPSPLIT #4: a write across the top reaches a read of the low bytes" min="1" max="1">return \(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\) \+ v2;</stringmatch>
+<stringmatch name="WRAPSPLIT #5: every function decompiles" min="0" max="0">decompilation failed</stringmatch>
+</decompilertest>

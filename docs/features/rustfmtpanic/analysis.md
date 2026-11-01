@@ -63,7 +63,7 @@ Variable-use address changes are confined to those reads at the replaced call.
 No new global instruction mapping appears; every setup statement and all IR remain.
 The raw diffs and per-function records retain the full review evidence.
 
-## Checks and speed
+## Full feature checks and speed at f874
 
 Original corpus: 675/675, unchanged baseline. Stage corpus: 3,508/3,508; new case
 0/6 on the parent and 6/6 with recovery. The parent capture omits new option
@@ -91,10 +91,14 @@ This implements one panic sink from angr's Rust macro-selection coverage. Other
 panic entry points, older formatting layouts, generic arguments and full Go/Rust
 parity remain separate work.
 
-The final capture includes main commit `f8746b9730b525a065c89c26e358ffd7c2328bc7` (shared effect annotations, lazy unknown types and JSON field omission). Both baseline and patched binaries were rebuilt, all repository checks and measurements were repeated, and every patched function record equals the previously reviewed panic output.
+The full feature capture includes main commit `f8746b9730b525a065c89c26e358ffd7c2328bc7` (shared effect annotations, lazy unknown types and JSON field omission). Both baseline and patched binaries were rebuilt, all repository checks and measurements were repeated, and every patched function record equals the previously reviewed panic output.
 
 Initial control measurements were affected by external CPU contention. The first large Rust control exceeded the median CPU budget, with coefficients of variation around 33%; a subsequent monitored run passed the median budget but failed its contention limits. Both are retained. Repeated idle checks found no sustained quiet interval, so a new randomized comparison and confidence-bound acceptance rule were declared before collecting fresh samples. No earlier samples contribute to those bounds. After the later main integration, the same randomized acceptance rule was declared for all five cases before fresh sampling; every case in the current record uses the rebuilt f874 baseline and patched binary. `timing-monitor.json`, `timing-randomized-plan.json` and the attempt directories retain the decisions and observations.
 
 The first f874 randomized run passed every median comparison but left three wall-time upper bounds above five percent. Those observations remain in the combined record. A single fixed-size confirmation adds 576 rounds to the two affected cases, using stricter two-look family allocation; it does not discard or replace any initial samples. Other feature measurements share disjoint physical CPU pairs under a plan declared before their first samples.
 
 The shared coordinator exits nonzero because the other two features have unresolved first-look bounds. All five parent cases pass their final criteria; the parent-specific monitor is the acceptance record. `batch-result.json` distinguishes these outcomes.
+
+## Later main integration
+
+The subsequent merge includes `69fad3ce4cbdbb3232680938252bd75c2bec5a68`, which splits memory accesses that cross the end of their address space before heritage. The shared stage-file count is reconciled to 643 and the stage baseline is regenerated from execution. All four repository checks pass: 675 original assertions, 3,516 stage assertions, and 10,089 workspace tests with 39 ignored across 71 suites. Tooling, lint, spec, catalog and counters also pass. The complete-output, native-execution and performance studies above remain identified with f874; this integration adds repository-check evidence, without claiming fresh timings. `main-69fa/record.json` records the source and binary identities.
