@@ -458,3 +458,6 @@ mod verify_clear_architecture;
 
 #[path = "verify_go_bounds.rs"]
 mod verify_go_bounds;
+
+#[path = "verify_rustfmtliteral.rs"]
+mod verify_rustfmtliteral;

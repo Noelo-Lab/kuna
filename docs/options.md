@@ -505,6 +505,8 @@ Three tiers:
 | Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds) |
 | Unoptimized Go functions retain runtime.gcWriteBarrier calls | [`gojumpchain`](#gojumpchain) |
 | Go runtime guards remain behind unconditional jump chains | [`gojumpchain`](#gojumpchain) |
+| Rust literal printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmtliteral`](#rustfmtliteral) |
+| Rust literal output remains a runtime formatting call | [`rustfmtliteral`](#rustfmtliteral) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2489,6 +2491,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default for Go images while gowritebarrier is enabled. Turn off to inspect barriers hidden behind jump-only forwarding blocks. The gowritebarrier option still independently controls removal of the runtime bookkeeping.
 - **Where / provenance:** P2/flow-classification · angr · opt-in-tool · angr-go-unoptimized-write-barriers
 - **Example:** `option gojumpchain off`
+
+### `rustfmtliteral` -- on | off, default `on`
+
+- **Symptoms:** Rust literal printing exposes std::io::stdio::_print with a pointer and odd integer; Rust literal output remains a runtime formatting call.
+- **What it does:** Recover print!, println!, eprint! and eprintln! from literal-only standard-library formatting calls in Rust output. Require an unambiguous stable Rust 1.93.0 or 1.93.1 compiler record, a little-endian 64-bit image, exact std::io::stdio sink identity, two constant arguments and readonly UTF-8 bytes. Decode the odd tagged length, escape format braces, and remove exactly one final newline for the ln macro. Calls with placeholders, unknown versions, mutable text, unreadable bytes or return values stay explicit. C output is unchanged.
+- **When to flip:** Leave on to read verified Rust literal printing as source macros. Turn off to inspect the runtime sink and encoded fmt::Arguments words. This does not recover templates containing dynamic arguments.
+- **Where / provenance:** P9/literal-format · angr · opt-in-tool · angr-rust-format-literals
+- **Example:** `option rustfmtliteral off`
 
 ## Analysis & loader passes
 

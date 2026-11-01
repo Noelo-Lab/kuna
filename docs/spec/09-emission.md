@@ -4032,3 +4032,30 @@ variable's Symbol is a structure, array or union, that whole Symbol supplies the
 member type, since the declaration representative covers only the field. A
 scalar local or global keeps the type its declaration prints, which can differ
 from its Symbol's scalar type (`kuna_pointerstorecast.rs (target)`).
+
+### Literal Rust print macros
+
+`rustfmtliteral` (default on) uses
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtliteral.rs` to render
+literal-only `std::io::stdio::_print` and `_eprint` calls as Rust print macros.
+It changes only Rust output and requires the detected Rust language, an
+unambiguous stable 1.93.0 or 1.93.1 compiler version, and a 64-bit little-endian data space.
+The loader obtains the version from ELF `.comment` records through
+`decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustversion.rs`.
+Absent, malformed, prerelease or conflicting Rust records provide no version;
+a forced source-language option cannot manufacture version evidence.
+
+The call must have exactly two constant machine-word arguments and no result.
+In this compiler layout the second word's low bit distinguishes a literal from
+a formatting template: odd means `(byte_length << 1) | 1`. The first word must
+be nonnull, and every byte of the bounded (at most 4096-byte) string must be
+readonly, nonvolatile, mapped and valid UTF-8. An empty string needs no read.
+Even tags, nonconstant arguments and mismatched sink names keep the runtime call.
+This checks the IR and loader bytes; it does not rewrite output text.
+
+A final LF selects `println!` or `eprintln!` and removes exactly that one byte
+from the argument. All other bytes, including a preceding CR, are retained.
+Rust string escaping protects controls, quotes and backslashes; doubled braces
+preserve literal formatting semantics. No arguments or side effects are dropped.
+The option does not recover placeholder templates, `format!`, `write!` or panic
+macros. Turning it off restores both encoded runtime arguments.

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3417,
-    3417
+    3420,
+    3420
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -992,7 +992,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 356 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 357 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2757,6 +2757,9 @@
     "data:libcnames #7: strlen's results are len and len_2 and malloc's is p",
     "data:libcnames #8: a value used inside an expression names nothing",
     "data:libcnames #9: fopen's result is fp",
+    "data:literal print default recovers exact newline",
+    "data:literal print off and rejected shapes keep runtime sink",
+    "data:literal stderr retains missing newline",
     "data:load retains declared array",
     "data:loadguardreads #1: both passes print gather",
     "data:loadguardreads #2: both passes keep the 65 calls to reg",

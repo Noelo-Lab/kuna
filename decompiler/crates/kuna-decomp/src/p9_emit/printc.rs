@@ -7984,6 +7984,16 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_literal {
+            if let Some((name, literal)) = super::kuna_rustfmtliteral::recover(fd, arch, op) {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::with_op(name, TagType::OpToken,
+                    crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
+                self.push_atom(&Atom::syntax(literal, TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::const_color));
+                return;
+            }
+        }
         let opc = fd.obank().get(op).expect("op_call_ir: stale op").code();
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let proto = fd.get_call_specs_index(op).map(|index| fd.get_call_specs(index).proto());

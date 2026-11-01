@@ -1,0 +1,12 @@
+[
+  {
+    "name": "fmtdemo::print_const",
+    "address": "0x10520",
+    "hunks": [
+      "@@ -2,6 +2,6 @@"
+    ],
+    "before_error": null,
+    "after_error": null,
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
+  }
+]

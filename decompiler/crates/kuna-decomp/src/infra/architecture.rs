@@ -747,6 +747,8 @@ pub struct Architecture {
     /// `option reloadarg` stands down on.  The XML `<binaryimage>` bootstrap
     /// never runs the analyzer tier, so it stays `Unknown` there.
     pub source_lang_detected: crate::kuna_sourcelang::SourceLang,
+    /// Unambiguous stable rustc version from ELF compiler metadata.
+    pub rustc_stable_version: Option<(u16, u16, u16)>,
     /// (kuna) The per-run `option sourcelang` override (`None` = auto).  Kept
     /// apart from the fact so `option sourcelang auto` restores the detected
     /// verdict and the catalog `current` reports the option, not the image.
@@ -1446,6 +1448,8 @@ pub struct Architecture {
     pub go_bounds: bool,
     /// Normalize Go branch-only blocks before runtime idiom matching.
     pub go_jump_chain: bool,
+    /// Render verified Rust literal formatting calls as print macros.
+    pub rust_fmt_literal: bool,
     /// (kuna) Flip negated-guard if/else branches for linearity: when an
     /// `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped
     /// in place, rewrite it to the positive `if (x) {B} else {A}` so the common
@@ -3065,6 +3069,7 @@ impl Architecture {
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             call_wide: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
+            rustc_stable_version: None,
             source_lang_detected: Default::default(), // (kuna) a load-time fact; set by the console's `load file`
             source_lang_forced: None, // (kuna) option sourcelang; reset_defaults restores auto
             fat_str: 0, // (kuna) option fatstr; reset_defaults sets the shipped default (auto)
@@ -3208,6 +3213,7 @@ impl Architecture {
             strip_msvc_stack_guard: false,
             go_bounds: true,
             go_jump_chain: true,
+            rust_fmt_literal: true,
             strip_security_check: false,
             branch_flip: false,
             name_style_angr: false,
@@ -3621,6 +3627,7 @@ impl Architecture {
         self.fold_call_ret_phi = true; // (kuna) default-on: a call result foldcallret already proved order-safe folds even when the call reads a global it may also write (0/675 ablation, stages PARITY OK); `option foldcallretphi off` restores the spill
         self.go_bounds = true;
         self.go_jump_chain = true;
+        self.rust_fmt_literal = true;
         self.strip_security_check = true; // (kuna) DIV-82 default-on: REMOVES CODE (strips rustc's bounds/slice/divide-by-zero panic branches, the SEFCOM Oxidizer SecurityCheckRemover port). Name-triggered on seven Rust-only `core::panicking`/`core::slice::index`/`core::str` helpers, so it is structurally inert on a C binary: 0/675 datatests and 0 changed lines over the C fixtures
         self.strip_stack_guard = true; // (kuna) DIV-14 default-on: REMOVES CODE (strips the -fstack-protector canary epilogue). Per-test opt-out (`option stackguard off`) on the 2 Partial-splitting datatests keeps the corpus byte-identical
         self.branch_flip = true; // (kuna) DIV-13 default-on (angr negated-guard branch flipping; per-test opt-out on the datatests it changes)

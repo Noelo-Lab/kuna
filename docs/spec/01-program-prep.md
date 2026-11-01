@@ -7887,3 +7887,13 @@ Xref result formatting reuses the query's canonical inventory for names
 and fallback ownership. ARM address normalization and discovered-entry naming
 retain their existing precedence; formatting does not rebuild the inventory
 for each endpoint of every result row.
+
+### Stable Rust compiler-version evidence
+
+The standalone loader also records an optional stable Rust compiler version from
+ELF `.comment` in `Architecture::rustc_stable_version`. The record parser
+in `decompiler/crates/kuna-analysis/src/analyzers/sourcelang/kuna_rustversion.rs`
+requires three numeric components and rejects prerelease suffixes, malformed
+Rust records and conflicting versions. Missing metadata remains unknown even
+when `sourcelang` is forced. This image fact survives option resets and lets
+versioned consumers such as P9 `rustfmtliteral` reject unsupported layouts.
