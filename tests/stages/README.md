@@ -325,14 +325,6 @@ and checks that its compound initializer converts the integer carrier back to a
 pointer. The CLI companion compiles fresh PE32/ELF64 examples with Clang and runs
 the Linux native/recompiled functions at O0/O2. Source: `src/pointer_storage_literal.c`.
 
-`ghangr-godwarfsig.xml` checks opt-in Go DWARF scalar/pointer signatures,
-compressed cross-unit references, result roles, caller propagation and a wrong-register
-control. Its console companion executes hermetic and native recovered Go bodies.
-
-`ghangr-go-string-pointers.xml` exercises internal byte-string arguments in C and
-Go output, including escapes, UTF-8 and the data-pointer conversion. Its emitted
-Go bodies also compile and execute against a byte-checking sink.
-
 `kuna-ppc32picimports.xml` changes the live option off/on/off after loading one
 PPC32 ELF. Only the enabled pass names its proved terminal call and removes the
 unreachable continuation. The shared stub remains anonymous. The CLI companion
@@ -351,3 +343,15 @@ byte-for-byte by the CLI integration suite.
 
 `kuna-ppc32picimports-slot-clobber.xml` retains a return after an imported copy
 overwrites a writable relocation slot, across off/on/off option toggles.
+
+- `kuna-ppc32picimports-abi.xml`, `kuna-ppc32picimports-abi-indirect.xml`, and
+  `kuna-ppc32picimports-driver.xml` exercise explicit `ppc32picimports abi`
+  recovery, including ordinary returning callers and compiler start files.
+
+`ghangr-godwarfsig.xml` checks opt-in Go DWARF scalar/pointer signatures,
+compressed cross-unit references, result roles, caller propagation and a wrong-register
+control. Its console companion executes hermetic and native recovered Go bodies.
+
+`ghangr-go-string-pointers.xml` exercises internal byte-string arguments in C and
+Go output, including escapes, UTF-8 and the data-pointer conversion. Its emitted
+Go bodies also compile and execute against a byte-checking sink.

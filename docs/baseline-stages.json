@@ -1532,8 +1532,15 @@
     "data:PIC conflicting indirect caller acquires no global contract",
     "data:PIC indirect caller is decompiled",
     "data:PIC indirect returning call retains return 7",
+<<<<<<< HEAD
     "data:PIC off and restored off keep the unnamed stub",
     "data:PIC on names the proved terminal call",
+=======
+    "data:PIC off keeps the unnamed stub",
+    "data:PIC off leaves every driver-linked stub unnamed",
+    "data:PIC on names every stub despite the start files' jump through CTR",
+    "data:PIC on names the actual returning import",
+>>>>>>> refs/rewritten/AUTOMATED-feat-analysis-integrate-ABI-scoped-PPC32-import-recovery
     "data:PLTLOCAL #1: built at the stub, the forwarded registers are lost",
     "data:PLTLOCAL #2: built at the definition, its declared parameters arrive",
     "data:PLTLOCAL #3: the wrapper gains the parameters it forwards",
@@ -2199,8 +2206,13 @@
     "data:boolbyte #9: and so is a byte parameter copied into a slot the callee is handed the address of",
     "data:boolean result preserves logical negation",
     "data:both interior formals initialize the shared extent",
+    "data:both passes keep check's return",
     "data:both passes retain the indirect write",
+<<<<<<< HEAD
     "data:both returning images retain their return",
+=======
+    "data:both passes retain the reachable return",
+>>>>>>> refs/rewritten/AUTOMATED-feat-analysis-integrate-ABI-scoped-PPC32-import-recovery
     "data:both uses of unchanged contents retained",
     "data:branch alternatives are defined",
     "data:by-value callee reads parameter fields",
@@ -3392,7 +3404,9 @@
     "data:the loaded pair reaches the first call as two slots",
     "data:the mixed record keeps its double field",
     "data:the mixed record keeps its short field",
+    "data:the no-return import ends refs only with the option on",
     "data:the non-dominated value reaches the split callee",
+    "data:the other valid relocation never supplies a contract",
     "data:the split register delivers a scalar double parameter",
     "data:the whole-register object is gone",
     "data:truncarg #10: a sum that provably fits its byte gets no cast",

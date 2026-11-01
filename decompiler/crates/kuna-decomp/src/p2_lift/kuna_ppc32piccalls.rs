@@ -157,7 +157,7 @@ pub(crate) fn prove(data: &Funcdata, engine: &Architecture) -> BTreeMap<u64, Cal
     prove_inner(data, engine).unwrap_or_default()
 }
 fn prove_inner(data: &Funcdata, engine: &Architecture) -> Option<BTreeMap<u64, CallBinding>> {
-    if !engine.analysis_ppc32picimports || engine.ppc32_pic_imports.is_empty()
+    if !engine.analysis_ppc32picimports.scoped() || engine.ppc32_pic_imports.is_empty()
         || !engine.archid.starts_with("PowerPC:") || !engine.archid.contains(":32:") { return None; }
     let n = data.bblocks_get_size() as usize;
     if n == 0 || n > 4096 { return None; }

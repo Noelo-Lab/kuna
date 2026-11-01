@@ -1100,9 +1100,11 @@ kuna_options! { self, p1;
     },
     "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
     "ppc32picimports" => {
-        let val = on_or_off(p1)?;
-        self.analysis_ppc32picimports = val;
-        Ok(format!("PPC32 PIC import proof {}", if val { "on" } else { "off" }))
+        let mode = crate::kuna_ppc32picimports::Mode::parse(p1)
+            .ok_or_else(|| KunaError::parse("Expected ppc32picimports off|on|abi"))?;
+        self.analysis_ppc32picimports = mode;
+        mode.set_env();
+        Ok(format!("PPC32 PIC import recovery {}", mode.as_str()))
     },
     "i386_pie_plt" => {
         let val = on_or_off(p1)?;

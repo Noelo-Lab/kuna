@@ -2110,7 +2110,7 @@ pub struct Architecture {
     /// and the `phase catalog` live `current` field.
     pub analysis_i386_pie_plt: bool,
     /// Caller-local PPC32 PIC import proof, applied during flow following.
-    pub analysis_ppc32picimports: bool,
+    pub analysis_ppc32picimports: crate::kuna_ppc32picimports::Mode,
     /// Validated import slots. Never registered as executable FunctionSymbols.
     pub ppc32_pic_imports: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::ImportSlot>,
     /// (kuna) Gate the x86-64 IFUNC (`R_X86_64_IRELATIVE`) `.plt.sec`/`.iplt`
@@ -3343,7 +3343,7 @@ impl Architecture {
             analysis_entrythumbflow: false,
             analysis_mips_gp: false,
             analysis_i386_pie_plt: false,
-            analysis_ppc32picimports: false,
+            analysis_ppc32picimports: Default::default(),
             ppc32_pic_imports: Default::default(),
             analysis_ifuncfpret: false, // (kuna) option ifuncfpret, default off (opt-in)
             analysis_relocrebase: false,
@@ -3815,7 +3815,7 @@ impl Architecture {
         self.analysis_armwalkmode = true; // (kuna) ARM walk decodes in the mode its control flow carries
         self.analysis_entrythumbflow = true; // (kuna) entry-reachable Thumb context default-on; inert without a Thumb-bit entry
         self.analysis_mips_gp = true;
-        self.analysis_ppc32picimports = false;
+        self.analysis_ppc32picimports = Default::default();
         self.analysis_i386_pie_plt = true; // (kuna) i386-PIE PLT decode default-on (angr)
         self.analysis_relocrebase = true; // (kuna) DIV-79 relocatable-object analysis rebase default-ON (GH-289)
         self.analysis_dynrelocs = true; // (kuna) DIV-84 linked-image dynamic relocations default-ON

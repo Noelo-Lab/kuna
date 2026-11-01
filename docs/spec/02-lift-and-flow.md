@@ -2387,7 +2387,8 @@ after a returning callee that happens to share a listed name.
 ### Caller-local PPC32 PIC imports
 
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32piccalls.rs (prove)` implements
-`ppc32picimports` (default off). After ordinary flow builds raw P-code blocks,
+`ppc32picimports on` (default off). The separate `abi` mode uses the loader
+analysis and assumptions in `docs/spec/01-program-prep.md`. After ordinary flow builds raw P-code blocks,
 constant propagation follows every reachable CFG successor. It recognizes a
 complete short or long r30-relative stub at a direct call, or a four-byte load
 from a validated JMP_SLOT at an indirect transfer. Equal facts survive joins;
