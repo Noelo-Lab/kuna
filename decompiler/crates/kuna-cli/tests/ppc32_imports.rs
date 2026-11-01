@@ -987,7 +987,10 @@ fn ppc32_pic_unresolved_jump_withdraws_only_the_stubs_its_walk_reaches() {
         fixture.second_caller = Some(check2(&[0x4e800020]));
         assert_eq!(
             pic_imports(&fixture),
-            vec![(0x1800, b"__stack_chk_fail".to_vec()), (0x1810, b"extra".to_vec())],
+            vec![
+                (0x1800, b"__stack_chk_fail".to_vec()),
+                (0x1810, b"extra".to_vec())
+            ],
             "little={little}"
         );
     }
@@ -1038,7 +1041,11 @@ fn ppc32_pic_local_calls_keep_r30_only_when_the_callee_restores_it() {
             } else {
                 vec![]
             };
-            assert_eq!(pic_imports(&fixture), expected, "restores={restores} little={little}");
+            assert_eq!(
+                pic_imports(&fixture),
+                expected,
+                "restores={restores} little={little}"
+            );
         }
         // A straight-line helper runs in the caller's state: its r30 reaches
         // the stub, which then reads the other slot.
@@ -1110,7 +1117,10 @@ fn ppc32_pic_jump_table_cases_carry_the_callers_base() {
 
 #[test]
 fn ppc32_pic_driver_linked_library_names_every_stub() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ppc32-pic-driver.so");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/ppc32-pic-driver.so"
+    );
     let bytes = std::fs::read(path).unwrap();
     let file = object::File::parse(&*bytes).unwrap();
     let mut imports: Vec<_> = kuna_analysis::loader::kuna_ppc32_imports::resolve_with_pic(&file)

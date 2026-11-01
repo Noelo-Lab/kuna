@@ -380,7 +380,10 @@ struct Image<'a> {
 
 impl<'a> Image<'a> {
     fn word_at(&self, pc: u32) -> Option<u32> {
-        let i = self.code.partition_point(|(start, _)| *start <= pc).checked_sub(1)?;
+        let i = self
+            .code
+            .partition_point(|(start, _)| *start <= pc)
+            .checked_sub(1)?;
         let (start, words) = &self.code[i];
         let offset = pc.wrapping_sub(*start);
         if offset & 3 != 0 {
@@ -440,8 +443,7 @@ impl<'a> Image<'a> {
         self.slot(stub, state)
             .and_then(|slot| std::str::from_utf8(&self.slots[&u64::from(slot)]).ok())
             .is_some_and(|name| {
-                NORETURN.contains(&name)
-                    || name.starts_with("_ZSt") && name.contains("__throw_")
+                NORETURN.contains(&name) || name.starts_with("_ZSt") && name.contains("__throw_")
             })
     }
 
@@ -482,13 +484,21 @@ impl<'a> Image<'a> {
     /// sized symbol, else the code between neighbouring entries and stubs.
     fn scope(&self, pc: u32) -> (u32, u32) {
         let i = self.scopes.partition_point(|&(start, _)| start <= pc);
-        if let Some(&(start, end)) =
-            self.scopes[..i].iter().rev().take(8).find(|&&(_, end)| pc < end)
+        if let Some(&(start, end)) = self.scopes[..i]
+            .iter()
+            .rev()
+            .take(8)
+            .find(|&&(_, end)| pc < end)
         {
             return (start, end);
         }
         let start = self.bounds.range(..=pc).next_back().copied().unwrap_or(0);
-        let end = self.bounds.range(pc + 1..).next().copied().unwrap_or(u32::MAX);
+        let end = self
+            .bounds
+            .range(pc + 1..)
+            .next()
+            .copied()
+            .unwrap_or(u32::MAX);
         (start, end)
     }
 
@@ -504,7 +514,11 @@ impl<'a> Image<'a> {
 
     fn opaque(&self, pc: u32) -> bool {
         let i = self.opaque.partition_point(|&(start, _)| start <= pc);
-        self.opaque[..i].iter().rev().take(8).any(|&(_, end)| pc < end)
+        self.opaque[..i]
+            .iter()
+            .rev()
+            .take(8)
+            .any(|&(_, end)| pc < end)
     }
 
     /// Targets of the jump table at `base` dispatched by the indirect jump at
@@ -531,7 +545,11 @@ impl<'a> Image<'a> {
             let Value::Constant(word) = self.read_word(base.wrapping_add(4 * i)) else {
                 return if bound == UNBOUNDED { out } else { Vec::new() };
             };
-            let target = if relative { base.wrapping_add(word) } else { word };
+            let target = if relative {
+                base.wrapping_add(word)
+            } else {
+                word
+            };
             if !(scope.0..scope.1).contains(&target) || !self.is_code(target) {
                 if bound == UNBOUNDED {
                     break;
@@ -652,7 +670,10 @@ impl Analysis<'_, '_> {
         self.active.insert(entry);
         let walk = self.explore(entry);
         self.active.remove(&entry);
-        let old = self.summaries.insert(entry, walk.exits).unwrap_or(STRONGEST);
+        let old = self
+            .summaries
+            .insert(entry, walk.exits)
+            .unwrap_or(STRONGEST);
         self.evidence.insert(entry, walk.evidence);
         if self.stale.remove(&entry) {
             self.mark(entry);
@@ -827,7 +848,9 @@ impl Analysis<'_, '_> {
                 }
                 continue;
             }
-            let Some(word) = image.word_at(pc) else { continue };
+            let Some(word) = image.word_at(pc) else {
+                continue;
+            };
             if image.import_exit(pc) || pc != walk.seed && image.seeds.contains(&pc) {
                 continue;
             }
@@ -874,7 +897,9 @@ impl Analysis<'_, '_> {
 
     fn visit(&mut self, walk: &mut Walk, pc: u32, state: State) {
         let image = self.image;
-        let Some(word) = image.word_at(pc) else { return };
+        let Some(word) = image.word_at(pc) else {
+            return;
+        };
         if image.sites.contains(&pc) {
             walk.evidence.reached.push(pc);
         }
@@ -1023,7 +1048,12 @@ fn step(image: &Image<'_>, evidence: &mut Evidence, pc: u32, word: u32, mut s: S
         7 | 8 => s.regs[rt] = Value::Unknown,
         10 if word & 0x0060_0000 == 0 && ra != 0 => {
             let bound = (word & 0xffff) as u16;
-            if bound != UNBOUNDED && matches!(s.regs[ra], Value::Unknown | Value::Bounded(_) | Value::Mark(_)) {
+            if bound != UNBOUNDED
+                && matches!(
+                    s.regs[ra],
+                    Value::Unknown | Value::Bounded(_) | Value::Mark(_)
+                )
+            {
                 s.regs[ra] = Value::Mark(pc);
                 s.compare = Some(((word >> 23) as u8 & 7, ra as u8, bound, Value::Mark(pc)));
             } else {
@@ -1038,7 +1068,7 @@ fn step(image: &Image<'_>, evidence: &mut Evidence, pc: u32, word: u32, mut s: S
                 word & 0xffff
             };
             s.regs[ra] = match (op, s.regs[rt]) {
-                (24 | 25 | 26 | 27, v) if k == 0 => v,
+                (24..=27, v) if k == 0 => v,
                 (24 | 25, Value::Constant(v)) => Value::Constant(v | k),
                 (26 | 27, Value::Constant(v)) => Value::Constant(v ^ k),
                 (28 | 29, Value::Constant(v)) => Value::Constant(v & k),
@@ -1049,13 +1079,19 @@ fn step(image: &Image<'_>, evidence: &mut Evidence, pc: u32, word: u32, mut s: S
             let (sh, mb, me) = ((word >> 11) & 31, (word >> 6) & 31, (word >> 1) & 31);
             s.regs[ra] = match (op, s.regs[rt]) {
                 (21, v) if sh == 2 && me == 29 && mb <= 29 => {
-                    let masked = if mb > 15 { (1u16 << (30 - mb)) - 1 } else { UNBOUNDED };
+                    let masked = if mb > 15 {
+                        (1u16 << (30 - mb)) - 1
+                    } else {
+                        UNBOUNDED
+                    };
                     match v {
                         Value::Bounded(n) => Value::Index(n.min(masked)),
                         _ => Value::Index(masked),
                     }
                 }
-                (21, Value::Constant(v)) => Value::Constant(v.rotate_left(sh) & rotate_mask(mb, me)),
+                (21, Value::Constant(v)) => {
+                    Value::Constant(v.rotate_left(sh) & rotate_mask(mb, me))
+                }
                 _ => Value::Unknown,
             };
         }
@@ -1173,9 +1209,7 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
             }
         }
         23 => s.regs[rt] = s.load(image, ea),
-        19 | 20 | 83 | 87 | 279 | 343 | 371 | 534 | 595 | 659 | 790 => {
-            s.regs[rt] = Value::Unknown
-        }
+        19 | 20 | 83 | 87 | 279 | 343 | 371 | 534 | 595 | 659 | 790 => s.regs[rt] = Value::Unknown,
         55 | 119 | 311 | 375 => {
             if ra == 0 || ra == rt {
                 s.regs[ra] = Value::Unknown;
@@ -1437,7 +1471,9 @@ fn frames(
         let gimli::CieOrFde::Fde(partial) = entry else {
             continue;
         };
-        let fde = partial.parse(|_, bases, o| eh.cie_from_offset(bases, o)).ok()?;
+        let fde = partial
+            .parse(|_, bases, o| eh.cie_from_offset(bases, o))
+            .ok()?;
         let start = u32::try_from(fde.initial_address()).ok()?;
         let end = start.checked_add(u32::try_from(fde.len()).ok()?)?;
         if end > start {
@@ -1446,7 +1482,10 @@ fn frames(
         match fde.lsda() {
             None => {}
             Some(gimli::Pointer::Direct(lsda)) => {
-                match u32::try_from(lsda).ok().and_then(|at| call_sites(file, image, at, start)) {
+                match u32::try_from(lsda)
+                    .ok()
+                    .and_then(|at| call_sites(file, image, at, start))
+                {
                     Some(sites) => pads.extend(sites),
                     None => opaque.push((start, end)),
                 }
@@ -1466,9 +1505,9 @@ fn call_sites(
     at: u32,
     function: u32,
 ) -> Option<Vec<(u32, u32, u32)>> {
-    let section = file.sections().find(|s| {
-        (s.address()..s.address().saturating_add(s.size())).contains(&u64::from(at))
-    })?;
+    let section = file
+        .sections()
+        .find(|s| (s.address()..s.address().saturating_add(s.size())).contains(&u64::from(at)))?;
     let bytes = section.data().ok()?;
     let mut p = (u64::from(at) - section.address()) as usize;
     let byte = |p: &mut usize| -> Option<u8> {
@@ -1593,9 +1632,16 @@ fn prove(
                 image.stubs.insert(start + i as u32 * 4, delta);
             }
         }
-        code.extend(words.iter().enumerate().map(|(i, &w)| (start + i as u32 * 4, w)));
+        code.extend(
+            words
+                .iter()
+                .enumerate()
+                .map(|(i, &w)| (start + i as u32 * 4, w)),
+        );
         image.bounds.insert(start);
-        image.bounds.insert(start.wrapping_add(words.len() as u32 * 4));
+        image
+            .bounds
+            .insert(start.wrapping_add(words.len() as u32 * 4));
         image.code.push((start, words));
     }
     if image.stubs.is_empty() {
@@ -1689,7 +1735,7 @@ fn prove(
             exported.insert(addr);
         }
         if symbol.kind() == SymbolKind::Text && symbol.size() != 0 {
-            if let Some(end) = u32::try_from(symbol.address() + symbol.size()).ok() {
+            if let Ok(end) = u32::try_from(symbol.address() + symbol.size()) {
                 functions.push((addr, end));
             }
         }
@@ -1727,7 +1773,10 @@ fn prove(
         pointers.range((exit - 52 + 1)..=exit).next().is_none()
             && entries.range((exit - 52 + 1)..=exit).next().is_none()
     });
-    image.resolvers = resolvers.iter().map(|&exit| (exit - 52, exit + 4)).collect();
+    image.resolvers = resolvers
+        .iter()
+        .map(|&exit| (exit - 52, exit + 4))
+        .collect();
     image.absolute = absolute;
     let mut calls = BTreeSet::new();
     let mut targets = BTreeSet::new();
@@ -1772,7 +1821,9 @@ fn prove(
             }
             pc = pc.wrapping_sub(4);
         }
-        let Some(word) = image.word_at(pc) else { continue };
+        let Some(word) = image.word_at(pc) else {
+            continue;
+        };
         let terminal = branch(pc, word).is_some_and(|b| !b.link && !b.conditional)
             || matches!(word, 0x4e80_0020 | 0x4e80_0420);
         if !terminal && image.stub_at(pc).is_none() {
@@ -1783,13 +1834,21 @@ fn prove(
     // is entered with their state, not as a function of its own.
     let part = |s: &u32| outside.contains(s) && !calls.contains(s) && !pointers.contains(s);
     let mut seeds: FxHashSet<u32> = calls.iter().chain(&pointers).copied().collect();
-    seeds.extend(entries.iter().copied().filter(|s| exported.contains(s) || !part(s)));
+    seeds.extend(
+        entries
+            .iter()
+            .copied()
+            .filter(|s| exported.contains(s) || !part(s)),
+    );
     seeds.extend(ranges.iter().map(|&(s, _)| s).filter(|s| !part(s)));
     seeds.retain(|&s| image.is_code(s) && image.stub_at(s).is_none() && !image.import_exit(s));
     let mut scopes: Vec<(u32, u32)> = ranges.clone();
-    scopes.extend(functions.iter().copied().filter(|&(s, e)| {
-        e > s && !ranges.iter().any(|&(rs, re)| rs < e && s < re)
-    }));
+    scopes.extend(
+        functions
+            .iter()
+            .copied()
+            .filter(|&(s, e)| e > s && !ranges.iter().any(|&(rs, re)| rs < e && s < re)),
+    );
     scopes.sort_unstable();
     image.bounds.extend(seeds.iter().copied());
     for &(s, e) in scopes.iter() {
@@ -1856,7 +1915,9 @@ mod tests {
     fn run(words: &[u32], state: State) -> State {
         let image = Image::default();
         let mut evidence = Evidence::default();
-        words.iter().fold(state, |s, &w| step(&image, &mut evidence, 0x1000, w, s))
+        words
+            .iter()
+            .fold(state, |s, &w| step(&image, &mut evidence, 0x1000, w, s))
     }
 
     #[test]
@@ -1864,11 +1925,20 @@ mod tests {
         // stwu r1,-16(r1); stw r30,8(r1); stw r3,8(r9); then a call.
         let saved = run(&[0x9421fff0, 0x93c10008, 0x90690008], State::entry()).keep(NONVOLATILE);
         // li r30,0; lwz r30,8(r1) restores the caller's value.
-        assert_eq!(run(&[0x3bc00000, 0x83c10008], saved).regs[30], Value::Entry(30));
+        assert_eq!(
+            run(&[0x3bc00000, 0x83c10008], saved).regs[30],
+            Value::Entry(30)
+        );
         // stw r4,8(r1) overwrites the save word.
-        assert_eq!(run(&[0x90810008, 0x83c10008], saved).regs[30], Value::Unknown);
+        assert_eq!(
+            run(&[0x90810008, 0x83c10008], saved).regs[30],
+            Value::Unknown
+        );
         // A byte store into the save word also clears it.
-        assert_eq!(run(&[0x9881000b, 0x83c10008], saved).regs[30], Value::Unknown);
+        assert_eq!(
+            run(&[0x9881000b, 0x83c10008], saved).regs[30],
+            Value::Unknown
+        );
         // lwz r1,0(r1) follows the back chain; addi r1,r1,16 too.
         assert_eq!(run(&[0x80210000], saved).regs[1], Value::Stack(0));
         assert_eq!(run(&[0x38210010], saved).preserved() & 2, 2);
@@ -1881,18 +1951,36 @@ mod tests {
         let compared = run(&[0x28090005], State::top());
         assert_eq!(bgt_not_taken(compared), Value::Bounded(5));
         // The taken edge (r9 > 5) learns nothing.
-        assert_eq!(compared.refine(0x41810010, true).regs[9], Value::Mark(0x1000));
+        assert_eq!(
+            compared.refine(0x41810010, true).regs[9],
+            Value::Mark(0x1000)
+        );
         // ble's taken edge is the bounded one.
         assert_eq!(compared.refine(0x40810010, true).regs[9], Value::Bounded(5));
         // lwz r9,0(r3) between compare and branch: a new value, unbounded.
-        assert_ne!(bgt_not_taken(run(&[0x28090005, 0x81230000], State::top())), Value::Bounded(5));
+        assert_ne!(
+            bgt_not_taken(run(&[0x28090005, 0x81230000], State::top())),
+            Value::Bounded(5)
+        );
         // cmpwi r10,0 rewrites cr0 before the branch.
-        assert_ne!(bgt_not_taken(run(&[0x28090005, 0x2c0a0000], State::top())), Value::Bounded(5));
+        assert_ne!(
+            bgt_not_taken(run(&[0x28090005, 0x2c0a0000], State::top())),
+            Value::Bounded(5)
+        );
         // add. r3,r3,r4 writes cr0; add r3,r3,r4 does not.
-        assert_ne!(bgt_not_taken(run(&[0x28090005, 0x7c632215], State::top())), Value::Bounded(5));
-        assert_eq!(bgt_not_taken(run(&[0x28090005, 0x7c632214], State::top())), Value::Bounded(5));
+        assert_ne!(
+            bgt_not_taken(run(&[0x28090005, 0x7c632215], State::top())),
+            Value::Bounded(5)
+        );
+        assert_eq!(
+            bgt_not_taken(run(&[0x28090005, 0x7c632214], State::top())),
+            Value::Bounded(5)
+        );
         // A different field is a different test.
-        assert_ne!(compared.refine(0x41850010, false).regs[9], Value::Bounded(5));
+        assert_ne!(
+            compared.refine(0x41850010, false).regs[9],
+            Value::Bounded(5)
+        );
     }
 
     #[test]
@@ -1907,14 +1995,20 @@ mod tests {
         s.regs[9] = Value::Bounded(100);
         assert_eq!(run(&[0x552a16fa], s).regs[10], Value::Index(7));
         // slwi of an unknown index is unbounded; any other shift is no index.
-        assert_eq!(run(&[0x552a103a], State::top()).regs[10], Value::Index(UNBOUNDED));
+        assert_eq!(
+            run(&[0x552a103a], State::top()).regs[10],
+            Value::Index(UNBOUNDED)
+        );
         assert_eq!(run(&[0x552a183a], State::top()).regs[10], Value::Unknown);
     }
 
     #[test]
     fn floating_and_vector_stores_never_track_a_gpr() {
         // stw r30 then stfs f30 over it: the slot now holds a float.
-        let s = run(&[0x9421fff0, 0x93c10008, 0xd3c10008, 0x83c10008], State::entry());
+        let s = run(
+            &[0x9421fff0, 0x93c10008, 0xd3c10008, 0x83c10008],
+            State::entry(),
+        );
         assert_eq!(s.regs[30], Value::Unknown);
         // stfsx f30,r1,r9 with r9 = 8 (li r9,8).
         let s = run(
@@ -1927,7 +2021,10 @@ mod tests {
     #[test]
     fn tables_read_their_bounded_entries_inside_the_scope() {
         let image = Image {
-            code: vec![(0x1000, vec![0x60000000, 0x4e800420, 8, 0xc, 0x10, 0x7fff0000])],
+            code: vec![(
+                0x1000,
+                vec![0x60000000, 0x4e800420, 8, 0xc, 0x10, 0x7fff0000],
+            )],
             scopes: vec![(0x1000, 0x1018)],
             ..Image::default()
         };
@@ -1935,7 +2032,10 @@ mod tests {
         // A bounded entry outside the scope is not a target; unbounded reads
         // stop at the first one.
         assert_eq!(image.table(0x1004, 0x1008, true, 3), vec![0x1010, 0x1014]);
-        assert_eq!(image.table(0x1004, 0x1008, true, UNBOUNDED), vec![0x1010, 0x1014]);
+        assert_eq!(
+            image.table(0x1004, 0x1008, true, UNBOUNDED),
+            vec![0x1010, 0x1014]
+        );
     }
 
     #[test]
