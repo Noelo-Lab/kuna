@@ -12,7 +12,8 @@
 //! phis on globals after the others and in address order, which is how kuna
 //! printed most of these stores before the clone kept its return guards'
 //! `return_copy` flag.  Off clones the phis in block order, the reverse of the
-//! order heritage placed them in.  Only the clone is reordered; the edge the
+//! order heritage placed them in, which is descending address order for phis one
+//! heritage pass placed.  Only the clone is reordered; the edge the
 //! original block keeps prints its absorbed stores in block order either way.
 //! Neither order is read from the binary: a source that stores globals in
 //! descending address order prints them reversed with the option on.

@@ -805,7 +805,8 @@ stores print in the order the phis are cloned. That order is the
 on (the default) clones the phis on globals after the others and in address
 order, which is how kuna printed most of these stores before the clone kept its
 guards' flag; off clones them in block order, the reverse of heritage's
-placement. Only the clone is reordered: the original block keeps its op order,
+placement (heritage inserts each phi at the block start in ascending address
+order, so one pass's phis end up in descending address order). Only the clone is reordered: the original block keeps its op order,
 which merging also reads (reordering its phis too printed bash
 `get_urandom32`'s seed store inside the loop it leaves). Neither order comes
 from the binary. Over 140 corpus binaries the two
