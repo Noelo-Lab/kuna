@@ -84,6 +84,9 @@ mod asserted_enum_layout;
 #[path = "baseline_cli.rs"]
 mod baseline_cli;
 
+#[path = "test_selection_cli.rs"]
+mod test_selection_cli;
+
 #[path = "broken_pipe.rs"]
 mod broken_pipe;
 
