@@ -33,7 +33,8 @@
     "spec": "passed",
     "catalog": "passed",
     "tools": "114 tests, one skipped",
-    "lint": "passed"
+    "lint": "passed",
+    "shared_counters": "passed"
   },
   "timing": {
     "baseline_to_on": {

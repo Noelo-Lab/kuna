@@ -66,6 +66,6 @@ confirming that the four caller differences came from the asymmetric timeout.
 See `breadth-serial600.json` and the aggregate code hash in `record.json`.
 
 Validation passes 9,935 workspace tests (39 ignored), all 675 original corpus
-assertions, all 3,424 stage assertions, specification/catalog checks, tooling tests
+assertions, all 3,424 stage assertions, specification/catalog/shared-counter checks, tooling tests
 and lint. The original baseline is unchanged. The stage baseline adds four
 format-argument assertions and updates the option count.
