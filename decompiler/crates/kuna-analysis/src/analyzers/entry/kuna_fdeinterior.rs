@@ -37,7 +37,8 @@
 //!    strictly inside it,
 //! 2. no other FDE's `pcBegin` lies strictly inside it, and
 //! 3. it does not overlap a stub section (`.plt`, `.plt.sec`, `.plt.got`,
-//!    `.iplt`, `.MIPS.stubs`).
+//!    `.iplt`, `.MIPS.stubs`, `.glink`) or a complete PPC32 PIC stub. GNU can
+//!    merge `.glink` into `.text`, where section names alone do not identify it.
 //!
 //! Guard 1 alone rejects the PLT on every binary measured; 2 and 3 are the cheap
 //! belt-and-suspenders for a stripped image whose stubs carry no name.
@@ -56,12 +57,12 @@ use object::read::{Object, ObjectSection};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
 use super::{
-    decode_eh_pointer, encoded_size, existing_function_addrs, parse_cie_fde_encoding, read_u32,
-    read_u64, DW_EH_PE_ABSPTR,
+    decode_eh_pointer_ordered, encoded_size, existing_function_addrs, parse_cie_fde_encoding,
+    read_u32, read_u64, DW_EH_PE_ABSPTR,
 };
 
 /// Section names whose contents are linker-generated stubs sharing one FDE.
-const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs"];
+const STUB_SECTIONS: &[&str] = &[".plt", ".plt.sec", ".plt.got", ".iplt", ".MIPS.stubs", ".glink"];
 
 /// (kuna) The FDE-interior entry-suppression pass (`fdeinterior`).
 ///
@@ -131,16 +132,37 @@ pub fn eligible_fde_bodies(file: &object::File, bytes: &[u8]) -> Vec<(u64, u64)>
     }
     let named = existing_function_addrs(file, bytes);
     let starts: Vec<u64> = all.iter().map(|&(start, _)| start).collect();
-    let stubs = stub_ranges(file);
+    let mut stubs = stub_ranges(file);
+    stubs.extend(crate::loader::kuna_ppc32_imports::pic_stub_ranges(file));
+    let stubs = merge_stub_ranges(stubs);
     all.iter()
         .copied()
         .filter(|&(start, end)| {
             let contains_named = contains_strictly(&named, start, end);
             let contains_start = contains_strictly(&starts, start, end);
-            let overlaps_stub = stubs.iter().any(|&(lo, hi)| start < hi && lo < end);
+            let overlaps_stub = overlaps_stub(&stubs, start, end);
             !contains_named && !contains_start && !overlaps_stub
         })
         .collect()
+}
+
+/// Merge nested and overlapping stub ranges so one predecessor answers overlap.
+fn merge_stub_ranges(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+    ranges.sort_unstable();
+    let mut merged: Vec<(u64, u64)> = Vec::new();
+    for (lo, hi) in ranges {
+        if let Some(last) = merged.last_mut().filter(|last| lo <= last.1) {
+            last.1 = last.1.max(hi);
+        } else {
+            merged.push((lo, hi));
+        }
+    }
+    merged
+}
+
+fn overlaps_stub(stubs: &[(u64, u64)], start: u64, end: u64) -> bool {
+    let next = stubs.partition_point(|&(lo, _)| lo < end);
+    next > 0 && start < stubs[next - 1].1
 }
 
 /// Does the sorted `addrs` hold any value strictly between `start` and `end`?
@@ -151,7 +173,11 @@ fn contains_strictly(addrs: &[u64], start: u64, end: u64) -> bool {
 /// `[address, address + size)` of every linker-stub section.
 fn stub_ranges(file: &object::File) -> Vec<(u64, u64)> {
     file.sections()
-        .filter(|s| s.name().map(|n| STUB_SECTIONS.contains(&n)).unwrap_or(false))
+        .filter(|s| {
+            s.name()
+                .map(|n| STUB_SECTIONS.contains(&n))
+                .unwrap_or(false)
+        })
         .map(|s| (s.address(), s.address() + s.size()))
         .filter(|&(lo, hi)| hi > lo)
         .collect()
@@ -167,7 +193,7 @@ pub fn scan_fde_bodies(file: &object::File) -> Vec<(u64, u64)> {
     scan_fde_bodies_sized(file, 8)
 }
 
-fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)> {
+pub(crate) fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)> {
     let mut out: Vec<(u64, u64)> = Vec::new();
     if !matches!(file.format(), object::BinaryFormat::Elf) {
         return out;
@@ -203,7 +229,7 @@ fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)
             continue;
         }
         let next = o + 4 + length;
-        if next > data.len() || o + 8 > data.len() {
+        if next > data.len() || length < 4 {
             break;
         }
         let cie_id = read_u32(&data[o + 4..], le);
@@ -214,19 +240,39 @@ fn scan_fde_bodies_sized(file: &object::File, ptr_size: usize) -> Vec<(u64, u64)
             let cie_ptr_field = o + 4;
             if (cie_id as usize) <= cie_ptr_field {
                 let cie_off = cie_ptr_field - cie_id as usize;
-                if let Some(enc) = cie_enc.iter().find(|&&(co, _)| co == cie_off).map(|&(_, e)| e) {
+                if let Some(enc) = cie_enc
+                    .iter()
+                    .find(|&&(co, _)| co == cie_off)
+                    .map(|&(_, e)| e)
+                {
                     let pc_begin_off = o + 8;
                     let field_vma = sec_vma + pc_begin_off as u64;
-                    let pc_begin =
-                        decode_eh_pointer(enc, field_vma, sec_vma, data, pc_begin_off, ptr_size);
+                    let pc_begin = decode_eh_pointer_ordered(
+                        enc,
+                        field_vma,
+                        sec_vma,
+                        &data[..next],
+                        pc_begin_off,
+                        ptr_size,
+                        le,
+                    );
                     let range_off =
-                        pc_begin_off + encoded_size(enc, ptr_size, &data[pc_begin_off..]);
+                        pc_begin_off + encoded_size(enc, ptr_size, &data[pc_begin_off..next]);
                     // Length field: the CIE's format, absolute application.
-                    let pc_range =
-                        decode_eh_pointer(enc & 0x0f, 0, 0, data, range_off, ptr_size);
+                    let pc_range = decode_eh_pointer_ordered(
+                        enc & 0x0f,
+                        0,
+                        0,
+                        &data[..next],
+                        range_off,
+                        ptr_size,
+                        le,
+                    );
                     if let (Some(begin), Some(range)) = (pc_begin, pc_range) {
                         if range > 0 {
-                            out.push((begin, begin.wrapping_add(range)));
+                            if let Some(end) = begin.checked_add(range) {
+                                out.push((begin, end));
+                            }
                         }
                     }
                 }
@@ -250,11 +296,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn stub_overlap_handles_nested_ranges_and_open_endpoints() {
+        let stubs = merge_stub_ranges(vec![(40, 48), (16, 64), (80, 96), (0, 8), (64, 72)]);
+        for (start, end, expected) in [
+            (0, 4, true), (8, 16, false), (8, 17, true), (32, 40, true),
+            (48, 64, true), (71, 72, true), (72, 80, false), (95, 99, true),
+            (96, 100, false), (0, 100, true),
+        ] {
+            assert_eq!(overlaps_stub(&stubs, start, end), expected, "{start}..{end}");
+        }
+        assert!(!overlaps_stub(&[], 0, 100));
+    }
+
+    #[test]
+    fn fixed_width_eh_pointers_follow_byte_order() {
+        for little in [false, true] {
+            for (format, width, signed) in [
+                (2, 2, false),
+                (3, 4, false),
+                (4, 8, false),
+                (10, 2, true),
+                (11, 4, true),
+                (12, 8, true),
+                (0, 4, false),
+                (0, 8, false),
+            ] {
+                let value = if signed { u64::MAX - 3 } else { 0x1234 };
+                let bytes = if little {
+                    value.to_le_bytes()[..width].to_vec()
+                } else {
+                    value.to_be_bytes()[8 - width..].to_vec()
+                };
+                let expected = 0x1000u64.wrapping_add(value);
+                assert_eq!(
+                    decode_eh_pointer_ordered(format | 0x10, 0x1000, 0, &bytes, 0, width, little),
+                    Some(expected)
+                );
+                assert_eq!(
+                    decode_eh_pointer_ordered(format, 0, 0, &bytes[..width - 1], 0, width, little),
+                    None
+                );
+            }
+            assert_eq!(
+                decode_eh_pointer_ordered(1, 0, 0, &[0x81, 1], 0, 4, little),
+                Some(129)
+            );
+            assert_eq!(
+                decode_eh_pointer_ordered(9, 0, 0, &[0x7c], 0, 4, little),
+                Some(u64::MAX - 3)
+            );
+        }
+    }
+
+    #[test]
     fn interior_is_strict() {
         let bodies = vec![(0x1000, 0x1100), (0x2000, 0x2010)];
-        assert!(!is_interior(&bodies, 0x1000), "an FDE start is a function, not an interior");
+        assert!(
+            !is_interior(&bodies, 0x1000),
+            "an FDE start is a function, not an interior"
+        );
         assert!(is_interior(&bodies, 0x1080));
-        assert!(!is_interior(&bodies, 0x1100), "the open end belongs to the next function");
+        assert!(
+            !is_interior(&bodies, 0x1100),
+            "the open end belongs to the next function"
+        );
         assert!(!is_interior(&bodies, 0x1200));
         assert!(is_interior(&bodies, 0x2008));
     }

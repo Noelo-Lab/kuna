@@ -702,5 +702,11 @@ mod storage_load_transfers;
 #[path = "ppc32_imports.rs"]
 mod ppc32_imports;
 
+#[path = "ppc32_pic_calls.rs"]
+mod ppc32_pic_calls;
+
+#[path = "ppc32_pic_abi.rs"]
+mod ppc32_pic_abi;
+
 #[path = "compact_json.rs"]
 mod compact_json;

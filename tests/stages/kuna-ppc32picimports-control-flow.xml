@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-indirect-branch.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-local-fallthrough.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-unwind.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="computed branches and callee fallthrough retain their return" min="3" max="3">return 7;</stringmatch>
+<stringmatch name="returning unwind caller remains unnamed" min="0" max="0">extra\(</stringmatch>
+<stringmatch name="ambiguous control flow acquires no terminal contract" min="0" max="0">__stack_chk_fail|no-return</stringmatch>
+</decompilertest>

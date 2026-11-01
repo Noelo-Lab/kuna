@@ -260,7 +260,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     )?;
     let file = kuna_analysis::loadimage_object::parse_object(&bytes)
         .map_err(|e| format!("could not parse {}: {e}", args.binary))?;
-    let prog = load_program(&load, DriverDefaults::Query)?;
+    let mut prog = load_program(&load, DriverDefaults::Query)?;
 
     let entries = prog.function_entries_canonical();
     let unflagged = kuna_analysis::listing::kuna_unflaggedcode::unflagged_sections(&file);
@@ -289,7 +289,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         }
         _ => Vec::new(),
     };
-    let index = kuna_analysis::listing::xrefs::build_with_unflagged_focus(
+    let mut index = kuna_analysis::listing::xrefs::build_with_unflagged_focus(
         &file,
         prog.arch(),
         prog.arch().translate(),
@@ -299,6 +299,18 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         &declared,
     );
 
+    if prog.arch().analysis_ppc32picimports.scoped() && !prog.arch().ppc32_pic_imports.is_empty() {
+        for entry in &entries {
+            let size = prog.declared_extent(entry.addr.get_offset());
+            if let Ok(fd) = kuna_decomp::decompile_drive::build_and_follow_flow(
+                prog.arch_mut(), &entry.name, entry.addr.clone(), size,
+            ) {
+                for call in fd.ppc32_import_calls() {
+                    index.add_scoped_call(prog.arch(), entry.addr.get_offset(), call.site, call.import.address);
+                }
+            }
+        }
+    }
     let target = resolve_target(&prog, &file, &index, &names, resolution.settle(&index)?);
     warn_other_entries(&index, &names, &target);
     let unwalked = unwalked_code(&file, &index, &unflagged);
@@ -723,6 +735,11 @@ fn target_address(prog: &ConsoleProgram, spec: &str) -> Result<Resolution, Strin
     if let Some(addr) = prog.lookup_data_alias(spec) {
         return Ok(Resolution::Settled(TargetSpec { addr, name: Some(spec.to_string()), fallback: None }));
     }
+    if prog.arch().analysis_ppc32picimports.scoped() {
+        if let Some(slot) = prog.arch().ppc32_pic_imports.values().find(|s| s.name == spec) {
+            return Ok(Resolution::Settled(TargetSpec { addr: slot.address, name: Some(spec.to_string()), fallback: None }));
+        }
+    }
     if let Ok(addr) = u64::from_str_radix(spec, 16) {
         return Ok(Resolution::Settled(TargetSpec { addr, name: None, fallback: None }));
     }
@@ -746,9 +763,13 @@ fn resolve_target(
 ) -> Target {
     let TargetSpec { addr, name, fallback } = spec;
     let by_name = name.is_some() || fallback.is_some();
-    let class =
+    let mut class =
         if by_name { index.export_alias_class(file, addr) } else { index.alias_class(addr) };
     let name = name.or_else(|| name_at(prog, index, names, addr)).or(fallback);
+    if by_name && prog.arch().analysis_ppc32picimports.scoped() {
+        class.extend(prog.arch().ppc32_pic_imports.values()
+            .filter(|s| Some(&s.name) == name.as_ref()).map(|s| s.address));
+    }
     Target { addr, name, class, by_name }
 }
 
@@ -789,6 +810,8 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u6
     names.at(vma)
         .map(|(_, name)| name.to_string())
         .or_else(|| prog.function_named_at(vma))
+        .or_else(|| prog.arch().analysis_ppc32picimports.scoped().then(||
+            prog.arch().ppc32_pic_imports.get(&vma).map(|s| s.name.clone())).flatten())
         .or_else(|| unflagged.then(data_symbol).flatten())
         // The walk discovers functions the engine's inventory does not carry (it
         // follows the call graph out of its seeds), and a row that names one must
@@ -805,6 +828,22 @@ fn name_at(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u6
 fn owning_function(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> Option<(u64, String)> {
     let entry = index.function_containing(vma).or_else(|| names.at(vma).map(|(address, _)| address))?;
     Some((entry, function_name(prog, index, names, entry)))
+}
+
+/// A scoped edge belongs to the entry that proved it, not the nearest symbol.
+/// An incoming query has no unique owner when multiple entries prove the edge.
+fn source_function(
+    prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames,
+    edge: &Xref, context: Option<u64>,
+) -> Option<(u64, String)> {
+    if edge.kind == XrefKind::Call {
+        if let Some(callers) = index.scoped_callers(edge.from, edge.to) {
+            let entry = context.filter(|entry| callers.contains(entry))
+                .or_else(|| if callers.len() == 1 { callers.first().copied() } else { None })?;
+            return Some((entry, function_name(prog, index, names, entry)));
+        }
+    }
+    owning_function(prog, index, names, edge.from)
 }
 
 /// The display name for a function entry, falling back to the engine's own
@@ -857,7 +896,10 @@ fn result_json(
                     ("to_address_hex".into(), Json::Str(format!("0x{:x}", r.to))),
                     (
                         "from_function".into(),
-                        optional_function_json(owning_function(prog, index, names, r.from)),
+                        optional_function_json(source_function(
+                            prog, index, names, r,
+                            (args.direction == Direction::From).then_some(target.addr),
+                        )),
                     ),
                     (
                         "to_function".into(),
@@ -981,7 +1023,7 @@ fn render_text(
                     "0x{:x}\t{}\t{}\t{}",
                     r.from,
                     r.kind.as_str(),
-                    site_label(prog, index, names, r.from),
+                    site_label(prog, index, names, r),
                     r.instruction
                 );
             }
@@ -1037,8 +1079,9 @@ fn aliases(target: &Target) -> Vec<u64> {
 
 /// `name+0xoff` for an address inside a known function; the bare address when
 /// nothing owns it.
-fn site_label(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, vma: u64) -> String {
-    match owning_function(prog, index, names, vma) {
+fn site_label(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, edge: &Xref) -> String {
+    let vma = edge.from;
+    match source_function(prog, index, names, edge, None) {
         Some((entry, name)) if entry == vma => name,
         Some((entry, name)) if entry < vma => format!("{name}+0x{:x}", vma - entry),
         Some((entry, name)) => format!("{name}-0x{:x}", entry - vma),

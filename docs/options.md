@@ -509,6 +509,10 @@ Three tiers:
 | Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds) |
 | Unoptimized Go functions retain runtime.gcWriteBarrier calls | [`gojumpchain`](#gojumpchain) |
 | Go runtime guards remain behind unconditional jump chains | [`gojumpchain`](#gojumpchain) |
+| PPC32 PIC calls retain local linker stub names | [`ppc32picimports`](#ppc32picimports) |
+| a PPC32 PIC no-return call flows into padding | [`ppc32picimports`](#ppc32picimports) |
+| PPC32 PIC imports are missing from named cross-reference queries | [`ppc32picimports`](#ppc32picimports) |
+| every import call in a PPC32 shared library linked with the start files prints as sub_ | [`ppc32picimports`](#ppc32picimports) |
 | Rust literal printing exposes std::io::stdio::_print with a pointer and odd integer | [`rustfmtliteral`](#rustfmtliteral) |
 | Rust literal output remains a runtime formatting call | [`rustfmtliteral`](#rustfmtliteral) |
 | Rust primitive decimal output exposes a runtime template pointer | [`rustfmtargs`](#rustfmtargs) |
@@ -2514,6 +2518,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default for Go images while gowritebarrier is enabled. Turn off to inspect barriers hidden behind jump-only forwarding blocks. The gowritebarrier option still independently controls removal of the runtime bookkeeping.
 - **Where / provenance:** P2/flow-classification · angr · opt-in-tool · angr-go-unoptimized-write-barriers
 - **Example:** `option gojumpchain off`
+
+### `ppc32picimports` -- off | on | abi, default `off`
+
+- **Symptoms:** PPC32 PIC calls retain local linker stub names; a PPC32 PIC no-return call flows into padding; PPC32 PIC imports are missing from named cross-reference queries; every import call in a PPC32 shared library linked with the start files prints as sub_.
+- **What it does:** Recover PPC32 secure-PLT imports. on proves terminal calls in the selected caller without global stub names; abi additionally names stubs across compiled functions under explicit compiler and ABI assumptions.
+- **When to flip:** Use on for terminal PPC32 helpers: returning paths, unknown calls and unproved writes withhold recovery. Use abi for ordinary compiler-linked libraries or PIEs only when imports preserve SysV nonvolatiles, callbacks target function entries, computed gotos stay within their function, and application code does not overwrite GOT entries or saved registers. abi walks every function and can cost 1.1-1.8x a function listing and up to 3x a single-function decompile. Entering or leaving abi requires reloading the image; the CLI loads with the selected mode. on and off can be toggled live on an image loaded without abi. Default off leaves PIC calls unresolved. BSS-PLT and absolute imports are unchanged.
+- **Where / provenance:** P1/external-refinement · kuna · correctness-fix · PPC32 secure-PLT caller bases
+- **Example:** `option ppc32picimports on`
 
 ### `rustfmtliteral` -- on | off, default `on`
 

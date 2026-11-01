@@ -1099,6 +1099,13 @@ kuna_options! { self, p1;
         on_off!(analysis_entrythumbflow, "Entry-reachable Thumb context walk")
     },
     "mips_gp" => on_off!(analysis_mips_gp, "MIPS $gp-recovery (t9 tracking) pass"),
+    "ppc32picimports" => {
+        let mode = crate::kuna_ppc32picimports::Mode::parse(p1)
+            .ok_or_else(|| KunaError::parse("Expected ppc32picimports off|on|abi"))?;
+        self.analysis_ppc32picimports = mode;
+        mode.set_env();
+        Ok(format!("PPC32 PIC import recovery {}", mode.as_str()))
+    },
     "i386_pie_plt" => {
         let val = on_or_off(p1)?;
         self.analysis_i386_pie_plt = val;

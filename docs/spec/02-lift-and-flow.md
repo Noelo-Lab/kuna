@@ -2384,6 +2384,55 @@ the match surface is kept deliberately narrow (exact names, closed lists, no
 class methods): the failure mode of a false positive is truncating live code
 after a returning callee that happens to share a listed name.
 
+### Caller-local PPC32 PIC imports
+
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32piccalls.rs (prove)` implements
+`ppc32picimports on` (default off). The separate `abi` mode uses the loader
+analysis and assumptions in `docs/spec/01-program-prep.md`. After ordinary flow builds raw P-code blocks,
+constant propagation follows every reachable CFG successor. It recognizes a
+complete short or long r30-relative stub at a direct call, or a four-byte load
+from a validated JMP_SLOT at an indirect transfer. Equal facts survive joins;
+conflicting slots or unknown bases refuse the entire caller. Only ABI-preserved
+registers survive a proved import call. Every returning import also invalidates
+further slot reads, including the implicit load in a direct stub: its global
+and pointer-mediated writes are unproved. This memory-clobber fact survives
+joins even when register values agree. A target already loaded into an
+ABI-preserved register remains a value and can still prove a subsequent indirect
+call; a reload cannot. Loads from stack or ordinary data never
+supply constants, and non-stack stores require an alias proof not provided here.
+Unknown local calls, CALLOTHER operations, unresolved transfers and unexplained
+exits refuse recovery. Block count, operations, facts and worklist iterations
+have fixed limits; reaching a limit also refuses recovery.
+
+Every reachable exit must be a proved no-return import. Returning callers remain
+unchanged: a PPC RETURN may implement computed-LR dispatch, which ordinary flow
+does not fully represent. The pass does not infer preservation through local
+callees or solve that separate flow problem. A closed loop is allowed only if
+propagation converges without an unproved exit. No-return names come from the
+existing ELF list and require `noreturn_known` to remain enabled.
+
+An accepted proof rebuilds the same entry's flow, installing call-specific
+names and contracts before following the call continuation. Proved terminal
+indirect jumps become calls in that second flow. Slot and stub addresses never
+become global FunctionSymbols or externref properties. A refused proof leaves
+the original raw flow intact. Clearing or restarting Funcdata discards the
+bindings and proves them again; no image cache or process environment switch
+participates. Explicit call overrides take precedence and withhold inference.
+
+Native CLI, console and WASM loading share the metadata and flow path. Embedders
+can supply `ImportSlot` records through `Architecture::ppc32_pic_imports` and
+read `Funcdata::ppc32_import_calls`; a host without validated slot metadata,
+including the Ghidra bridge, leaves this option inert. Xrefs add proved call
+edges to their relocation slots without aliasing a shared executable stub to
+one import. Recovered edges decode their instruction text when the original
+walk had no resolved reference at that address. They use the same declared analysis bounds as decompilation, with
+unbounded flow when no extent was declared; an inventory estimate clipped at
+another entry must not hide a shared suffix. Scoped edges retain the entry
+contexts that proved them for caller labels. An incoming query reports no
+single owner when multiple entries prove the same edge; an outgoing query uses
+its selected entry. Function inventories and unrelated caller contexts remain
+unchanged.
+
 ## 2.5 Arch quirks
 
 **(kuna) SPARC struct return — `option sparcstructret`, default off,

@@ -1402,20 +1402,141 @@ funcsym stream:
   header. Secure-PLT entries are pointer slots instead: complete `r11` load,
   `mtctr r11`, `bctr` stubs in executable sections are named only when their
   decoded address matches such a relocation in the non-executable `.plt`.
-  Only absolute stubs carry enough evidence to establish that address here.
-  Both short and long `r30`-relative stubs remain unresolved until the caller's
-  register value is proven. `DT_PPC_GOT`, a valid GOT header and a retained
-  `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but do not establish `r30`.
-  In particular, GNU ld can discard an empty `.got2` while callers still use
-  its per-object base; assuming the GOT then names a different relocation and
-  can incorrectly remove reachable flow via a no-return contract. The presence,
-  size or absence of `.got2` provides no register-value proof. Duplicate relocation
-  slots, nonzero addends, data symbols and incomplete stubs provide no import
-  identity. Both ELF byte orders are supported. Resolved PPC32 import names
-  take precedence over local stub labels, which remain aliases. Existing
-  library prototypes, no-return facts and name-based xrefs therefore see the
-  same imported identity, including when a terminal call has no mapped
-  fall-through bytes. This does not add a sectionless PPC32 resolver.
+  Absolute stubs encode the address directly. For PIC stubs, the loader instead
+  exposes validated relocation-slot metadata through
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_slots)`.
+  Duplicate relocations, nonzero addends, data-symbol relocations and slots
+  outside the allocated writable non-executable `.plt` are rejected. This
+  metadata neither names executable stubs nor adds global no-return contracts.
+  The `ppc32picimports on` mode consumes it during P2 flow, in the
+  selected caller's register context. Metadata is available after loading even
+  when the option is off, so `on`/`off` changes require no reload for an image
+  loaded without `abi`. Entering or leaving `abi` requires reloading the image
+  because its loader identities persist for that image. The default is `off`.
+  `DT_PPC_GOT`, GOT headers and `.got2` locate tables, not the value of r30.
+  Both ELF byte orders are supported. BSS-PLT and absolute-stub naming remains
+  independent of this option. This does not add a sectionless PPC32 resolver.
+  The `ppc32picimports abi` mode additionally resolves short and long PIC stubs through
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32picimports.rs (resolve)`.
+  A PIC stub loads its target from `r30` plus a displacement, so its import is
+  whatever `r30` its callers hold. The stub is named only when every transfer
+  into it is reached by the proof and all of them select the same `JMP_SLOT`.
+  The proof walks the image once from every entry: exported and local symbols,
+  call targets, relocated code pointers, the ELF entry, `DT_INIT`/`DT_FINI` and
+  `.eh_frame` function starts. A local symbol or FDE start that only other
+  functions branch to (a `.cold` part) is not an entry; their walks continue
+  into it. Each walk starts from symbolic registers: the caller's values of
+  the nonvolatile registers, the entry stack pointer and return address. It
+  tracks constants, stack offsets, the stack words that hold a saved
+  nonvolatile register, the return address or a back chain, and loads from
+  words whose runtime value the image fixes (code, read-only data and
+  relocated GOT entries). `bcl 20,31` reads the program counter; it is not a
+  call. Counted conditional branches decrement CTR on both successors, and
+  indirect LR/CTR targets discard their low two bits. Joins keep equal values
+  only. A stack word below `r1` holds nothing
+  the walk knows: a signal frame or a callee's frame can overwrite it at any
+  time, and a callee also writes its return address to `4(r1)`. `stwcx.` may
+  store nothing and `stwbrx` stores reversed bytes, so neither saves a
+  register. Scalar stores invalidate every saved word overlapping their actual
+  effective-address range, including unaligned reversed and indexed floating-point
+  stores. Only vector stores apply their instruction-defined alignment mask.
+  The return address stays in registers and the frame's save
+  words: a walk that stores it anywhere else, moves it to a special register
+  other than LR and CTR, or calls through it forgets everything (below).
+  A call to an import, or through a register, continues at the next
+  instruction with `r1`, `r2` and `r13`-`r31` kept, as the SysV calling
+  convention guarantees. A call to local code uses that function's summary:
+  the nonvolatile registers every return restores, and whether it returns at
+  all. Summaries come from the callee's own walk. They start from the
+  strongest claim and weaken until no caller's view changes. This greatest
+  fixed point is sound for recursion by induction on the depth of a call that
+  returns. A callee whose walk forgets everything may return anywhere in the
+  code that called it, so each caller's walk forgets everything as well. A
+  straight-line helper ending in `blr`, such as libgcc's
+  `_savegpr_N`/`_restgpr_N`, runs in the caller's state instead, unless it
+  reads LR. A tail branch into another function returns through LR: to the
+  walk's caller for the entry return address, and to a known address of the
+  same code for a constant LR. Any other LR, such as the return address a
+  call left behind, makes the branch an unresolved jump. A branch or table
+  jump to an entry strictly inside its own function (a label whose address a
+  computed goto takes) continues the walk there instead. The walk does not continue past a call to an import that its own
+  proven slot names as an ABI no-return function (`abort`, `exit`,
+  `__stack_chk_fail`, `__cxa_throw`, `_Unwind_Resume`, `std::__throw_*` and the
+  like). It also stops after a call that is the last instruction of its FDE
+  range or sized symbol (a stub that call would run into if it returned is
+  never named), after `sc` with `r0` = 1 or 234 (`exit`,
+  `exit_group`), and after an unconditional trap.
+  Each landing pad in an LSDA call-site table is entered from the calls in
+  its range, with their nonvolatile registers. A jump table is followed when
+  the target is the table base plus a table word (PIC) or a table word itself.
+  The index is shifted by two. An unsigned `cmplwi` the branch has passed, or
+  the shift's mask, bounds it, and every bounded entry inside the jump's
+  function is a target. An unbounded table is read until its first target
+  outside the function. An entry outside the function is no case label, but
+  a stub it runs into is never named. A target inside the dispatch sequence itself is never
+  a case label. Any other indirect jump might reach any instruction of its
+  function, including the GOT-pointer setup, so that walk forgets everything.
+  It then floods what it reaches: a stub entered from there gets no evidence,
+  and its summary keeps nothing. The failure stays scoped to what that
+  function's walk reaches.
+  The soundness argument rests on the toolchain and ABI, stated as
+  assumptions. (1) Stub provenance: the linker writes a PIC stub's address
+  only into branch fields (`R_PPC_REL24`, `R_PPC_PLTREL24`, `R_PPC_LOCAL24PC`).
+  No relocation yields it for data or address arithmetic, and the stub has no
+  symbol an input object could name. So no code pointer (a return address,
+  function pointer, jump-table or landing-pad target) holds a stub address.
+  The one exception, a call immediately before a stub, is a fallthrough site.
+  An uncertified transfer elsewhere therefore cannot enter a stub; that is
+  why one failing caller withdraws only the stubs its own walk reaches. The
+  proof checks the observable part. A stub is never named when a data word,
+  relocation, symbol (other than a local label at its start), the image entry,
+  `DT_INIT`/`DT_FINI`, a landing pad or a branch points into it or into its
+  padding. The same holds when a computed constant equal to its address is
+  stored or passed, or when an unresolved jump's function contains it.
+  Dynamic relocations in code reject the image. (2) Calling convention:
+  imports and functions called through registers restore `r1`, `r2` and
+  `r13`-`r31`. Local code is not trusted; its summary is proven. (3) A
+  function's switch tables and computed gotos target its own code: its FDE
+  range or sized symbol, else the code between neighbouring entries and stubs.
+  (4) Exceptions are raised by calls, as in C and C++ without
+  `-fnon-call-exceptions`. The unwinder enters a landing pad with the throwing
+  call's nonvolatile registers. (5) Only a frame's own function writes its
+  register save words, at fixed offsets from `r1` or its frame pointer. A
+  pointer from elsewhere, or one the walk cannot compute, addresses a program
+  object, so a callee given a local's address cannot overwrite the saved `r30`
+  or LR. Only the dynamic linker writes GOT words, with their relocated
+  values. No code rewrites a saved context (a `jmp_buf` or a signal's
+  `ucontext`), and no function keeps a return address it received in a
+  register other than LR for other code to jump to.
+  (6) Compiled code does not run past the end of its FDE range or sized
+  symbol, and the listed no-return functions do not return. (7) A function's
+  address is taken through a relocated data word or a symbol, so the seeded
+  entries are the only ones. Under these assumptions every runtime path to a
+  stub starts at a seeded entry and follows modeled edges. The walk's state
+  over-approximates every runtime state, so a constant `r30` at every
+  transfer into a stub is the runtime `r30`. A stub's name is the slot its
+  callers really load: code that moves `r30` between the linker's base and a
+  call (as hand-written assembly can) is named after the slot it reaches, not
+  after the linker's label. `DT_PPC_GOT`, a valid GOT header and a retained
+  `_GLOBAL_OFFSET_TABLE_` symbol locate the GOT but never establish `r30`;
+  GNU ld can discard an empty `.got2` while callers still use its per-object
+  base. Duplicate relocation slots, nonzero addends, data symbols and
+  incomplete stubs provide no import identity. A `.gcc_except_table` without a
+  readable `.eh_frame` rejects the image, and an FDE whose LSDA cannot be read
+  makes its function's walk forget everything. The walk is bounded by 64 visits
+  and table reads per code word; an image that exhausts it gets no PIC names. Both byte orders
+  are supported. Off keeps PIC stubs unresolved; BSS-PLT and absolute stubs
+  are unaffected. In the console, set the option before `load file`; CLI
+  options are bridged before either loader runs. The `abi` mode is opt-in because
+  the proof walks every function:
+  about 0.3-0.4 s for libstdc++ or libc, which makes listing a PPC32 PIC
+  image's functions 1.1-1.8x slower and a single-function decompile up to 3x.
+  The default path and other formats pay nothing, and the proof runs once per
+  image content. Resolved PPC32 import names take
+  precedence over local stub labels, which remain aliases. Existing library
+  prototypes, no-return facts and name-based xrefs therefore see the same
+  imported identity, including when a terminal call has no mapped fall-through
+  bytes. This does not add a sectionless PPC32 resolver.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
@@ -4542,11 +4663,17 @@ entry set against them (after the deferred Listing consumers, so the gap walk is
 covered too). Not every FDE describes one function — the linker gives the whole
 PLT a single FDE, and every stub inside it is real — so a range is used only when
 it holds no other named function start, no other FDE `pcBegin`, and no linker-stub
-section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`). An entry *at* an FDE
-start is always kept, so oracle 3's own product survives. ELF-only and inert
+section (`.plt`/`.plt.sec`/`.plt.got`/`.iplt`/`.MIPS.stubs`/`.glink`). Complete
+PPC32 short and long PIC stub sequences also exclude an overlapping FDE: GNU
+can merge these stubs into `.text` under one shared unwind range. This exclusion
+does not assign an import name or require `ppc32picimports` to be enabled.
+An entry *at* an FDE start is always kept, so oracle 3's own product survives. ELF-only and inert
 without `.eh_frame` FDEs, which covers essentially the whole bare-metal ARM
 population (they unwind through `.ARM.exidx`), so the ARM entry-recall options
 compose with it unchanged.
+Stub intervals are sorted and merged once; each FDE uses a binary-search overlap
+query. Large PIC stub inventories therefore add no FDE-by-stub product scan,
+including when PIC call recovery is disabled.
 
 **(kuna) Except where a `.cold` fragment is entered more than once**
 (`coldentry`, default-**on**;

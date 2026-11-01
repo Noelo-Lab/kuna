@@ -3103,6 +3103,8 @@ fn analysis_pass_enabled(arch: &Architecture, pass_id: &str) -> bool {
         // (kuna) PE/Mach-O import-slot call binding — typed-slot `externref`
         // paint plus PE-only Win32 no-return names, committed only when enabled.
         "peimportcall" => arch.analysis_peimportcall,
+        // Metadata alone has no output effect; the live flow option gates its use.
+        "ppc32_pic_slots" => true,
         "libproto" => arch.analysis_libproto,
         // (kuna) The measured libc signature extension — the ~200 prototypes the
         // 27-entry base table does not carry, seeded onto IMPORTED names only. The
@@ -4742,6 +4744,9 @@ fn commit_analysis_output(
     //    off, they are dropped and the DWARF recovery is the name-only walk,
     //    byte-identical to before this arm existed.
     let mut out = out;
+    for slot in std::mem::take(&mut out.ppc32_pic_slots) {
+        prog.arch_mut().ppc32_pic_imports.insert(slot.address, slot);
+    }
     if prog.arch().analysis_cppproto {
         let cpp = std::mem::take(&mut out.cpp_dwarf);
         out.symbols.extend(cpp.symbols);
