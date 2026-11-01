@@ -363,14 +363,18 @@ fn unflagged_source(
     resolution: &Resolution,
 ) -> Vec<(u64, u64)> {
     let Resolution::Settled(spec) = resolution else { return Vec::new() };
-    if direction != Direction::From || declared_data(file, spec.addr).is_some() {
+    if direction != Direction::From {
         return Vec::new();
     }
-    unflagged
+    let ranges: Vec<(u64, u64)> = unflagged
         .iter()
         .filter(|s| spec.addr >= s.start && spec.addr < s.end)
         .map(|s| (s.start, s.end))
-        .collect()
+        .collect();
+    if ranges.is_empty() || declared_data(file, spec.addr).is_some() {
+        return Vec::new();
+    }
+    ranges
 }
 
 fn coverage_of(
@@ -419,8 +423,7 @@ fn source_note(
     placement: &Placement,
 ) -> Option<String> {
     let at = format!("0x{addr:x}");
-    let called = index.is_stopped_flow_target(addr);
-    let evidence = match declared_function(file, addr) {
+    let evidence = || match declared_function(file, addr) {
         Some(name) => format!("the symbol table declares the function {name} there"),
         None => "a decoded direct call or branch targets it".to_string(),
     };
@@ -428,9 +431,9 @@ fn source_note(
         (Placement::Code { .. }, true) => return None,
         (Placement::Unflagged(s), true) => format!(
             "{at} is in {}, which the image maps executable but does not mark as code: it was \
-             decoded as code because it was asked about and {evidence} (other queries do not \
-             walk it)",
-            s.name
+             decoded as code because it was asked about and {} (other queries do not walk it)",
+            s.name,
+            evidence()
         ),
         (Placement::Unflagged(s), false) => match declared_data(file, addr) {
             Some(name) => format!(
@@ -438,11 +441,14 @@ fn source_note(
                  is not marked as code: it was not decoded, so no instruction references are listed",
                 s.name
             ),
-            None if called || declared_function(file, addr).is_some() => format!(
-                "{at} is in {}, which the image maps executable but does not mark as code, and \
-                 does not decode as an instruction there: no instruction references are listed",
-                s.name
-            ),
+            None if index.is_stopped_flow_target(addr) || declared_function(file, addr).is_some() => {
+                format!(
+                    "{at} is in {}, which the image maps executable but does not mark as code, \
+                     and does not decode as an instruction there: no instruction references are \
+                     listed",
+                    s.name
+                )
+            }
             None => format!(
                 "{at} is in {}, which the image maps executable but does not mark as code, and \
                  nothing says {at} is code (no decoded direct call or branch targets it, and no \
