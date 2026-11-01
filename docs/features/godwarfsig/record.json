@@ -1,0 +1,31 @@
+{
+  "state": "proposal",
+  "option": "godwarfsig",
+  "baseline_commit": "1c6766e546660653435623c4f3577813c800bec8",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "scope": "Go amd64 register-ABI scalar and pointer DWARF signatures",
+  "reference_dwarf_tests": {
+    "passed": 7,
+    "failed": 0,
+    "versions": [
+      "go1.22.5",
+      "go1.27.1"
+    ],
+    "includes_cases_outside_feature_scope": true
+  },
+  "proposal_validation": {
+    "workspace": {
+      "passed": 9986,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3445,
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "tools": "114 tests, 1 skipped"
+  }
+}
