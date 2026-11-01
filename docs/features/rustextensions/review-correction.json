@@ -1,0 +1,7 @@
+{
+  "final_comparison": "Both arms were freshly decompiled from main c28134ce; no earlier output or timing was reused.",
+  "parser_only_policy": "Original Rust runtime bodies contain invalid in(...) calls and _:: namespace prefixes. The independent parser makes identical counted repairs on both sides; original emitted text is untouched. All remaining AST fields, comments and original casts must match.",
+  "comment_positions": "Unicode character columns are translated to byte offsets before comparing comments; a Unicode self-check exercises this.",
+  "source_mapping_policy": "All old addresses are retained, and newly exposed addresses are within the pre-existing recovered extent and decode as original machine instructions. Three old recovered bodies extend outside their symbols, so symbol size alone is not a valid bound.",
+  "main_integration": "The new xrefs and heritage changes preserve all 101,466 function records across the two fresh arms relative to the preceding main889c review."
+}

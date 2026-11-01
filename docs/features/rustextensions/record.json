@@ -1,0 +1,351 @@
+{
+  "state": "validated",
+  "kind": "strict Rust integer-extension correction",
+  "selection": "outlang rust; existing C and Go behavior preserved",
+  "baseline_commit": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "actual_main_merge": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+  "kuna_sha256": "29270f9e6c85786a398482beed0f01b16050f651993bc605bc976c16c17f3050",
+  "breadth": {
+    "images": 18,
+    "distinct_functions": 25339,
+    "records": 50733,
+    "changed_rust_records": 481,
+    "hunks": 1192,
+    "new_casts": 2003,
+    "cast_types": {
+      "i64": 36,
+      "i8": 56,
+      "u64": 886,
+      "u32": 1008,
+      "u16": 15,
+      "i32": 2
+    },
+    "unchanged_c_go_records": 41461,
+    "go_parsed": 16122,
+    "parser_only_repairs": {
+      "reserved_in_call": 13,
+      "placeholder_namespace": 10
+    },
+    "lost_instruction_addresses": 0
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10061,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "test_threads": 8,
+    "original_assertions": 675,
+    "stage_assertions": 3492,
+    "regression_before": "0/2",
+    "regression_after": "2/2",
+    "tools": "114 tests; 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "638 XML files, 363 options"
+  },
+  "native_execution": [
+    {
+      "producer": "1.90.0",
+      "sha256": "493574146b6d3e632be2e71562569f38f396c6bddc37c392393dfd6b22573372",
+      "functions": [
+        "sign8",
+        "sign16",
+        "sign32",
+        "narrow_sum",
+        "narrow_product",
+        "zero8"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.90.0",
+        "1.93.1",
+        "1.99.1"
+      ],
+      "input_rows": 1578,
+      "results_per_execution": 9468,
+      "overflow_checks": false,
+      "native_oracle": "original Rust wrapping operations executed with rustc",
+      "before_compile": "mixed narrow/wide arithmetic rejected",
+      "before_sign8_mismatches": 798,
+      "first_before_sign8_mismatch": {
+        "row": 128,
+        "native": "9223372036854774848",
+        "before": "-9223372036854774720"
+      }
+    },
+    {
+      "producer": "1.93.1",
+      "sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+      "functions": [
+        "sign8",
+        "sign16",
+        "sign32",
+        "narrow_sum",
+        "narrow_product",
+        "zero8"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.90.0",
+        "1.93.1",
+        "1.99.1"
+      ],
+      "input_rows": 1578,
+      "results_per_execution": 9468,
+      "overflow_checks": false,
+      "native_oracle": "original Rust wrapping operations executed with rustc",
+      "before_compile": "mixed narrow/wide arithmetic rejected",
+      "before_sign8_mismatches": 798,
+      "first_before_sign8_mismatch": {
+        "row": 128,
+        "native": "9223372036854774848",
+        "before": "-9223372036854774720"
+      }
+    },
+    {
+      "producer": "1.99.1",
+      "sha256": "97bf05ccdf439e6e76e4525ed0cb00d92dda9b7b4e7ec0e77a414590f3783f50",
+      "functions": [
+        "sign8",
+        "sign16",
+        "sign32",
+        "narrow_sum",
+        "narrow_product",
+        "zero8"
+      ],
+      "body_is_untouched": true,
+      "execution_compilers": [
+        "1.90.0",
+        "1.93.1",
+        "1.99.1"
+      ],
+      "input_rows": 1578,
+      "results_per_execution": 9468,
+      "overflow_checks": false,
+      "native_oracle": "original Rust wrapping operations executed with rustc",
+      "before_compile": "mixed narrow/wide arithmetic rejected",
+      "before_sign8_mismatches": 798,
+      "first_before_sign8_mismatch": {
+        "row": 128,
+        "native": "9223372036854774848",
+        "before": "-9223372036854774720"
+      }
+    }
+  ],
+  "partial_type_review": {
+    "review_complete": true,
+    "scope": "Standalone rustc 1.90 compilation of all 481 changed bodies; selected type diagnostics only. Unresolved external names and pre-existing syntax defects prevent whole-program type checking.",
+    "diagnostic_codes": [
+      "E0308",
+      "E0277",
+      "E0605",
+      "E0606",
+      "E0369",
+      "E0600"
+    ],
+    "summary": {
+      "before": {
+        "functions_with_diagnostics": 425,
+        "diagnostics": 15133,
+        "compiles": 1
+      },
+      "after": {
+        "functions_with_diagnostics": 384,
+        "diagnostics": 14002,
+        "compiles": 2
+      },
+      "newly_diagnosed_functions": [],
+      "previously_compiling_now_failing": []
+    },
+    "increased_message_review": [
+      {
+        "fixture": "rust2025",
+        "address": "0x12e160",
+        "name": "sub_12e160",
+        "before_messages": 105,
+        "after_messages": 106,
+        "classification": "Required boolean-to-u64 widening exposes the existing mixed signed/unsigned arithmetic gap; the original expression already rejects i64 + bool at the same location. No other expression or declaration changed.",
+        "witnesses": [
+          {
+            "before_expression": "v34 = a1 as i64 + v35 + v28;",
+            "after_expression": "v34 = a1 as i64 + v35 as u64 + v28;",
+            "unchanged_declaration": "let mut v35: bool; // cf | r10b | r8b | r9b | stack - 0x50",
+            "before_diagnostics": [
+              {
+                "code": "E0277",
+                "message": "cannot add `bool` to `i64`",
+                "spans": [
+                  {
+                    "line_start": 126,
+                    "line_end": 126,
+                    "column_start": 29,
+                    "column_end": 30,
+                    "label": "no implementation for `i64 + bool`",
+                    "text": [
+                      {
+                        "text": "            v34 = a1 as i64 + v35 + v28;",
+                        "highlight_start": 29,
+                        "highlight_end": 30
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "fixture": "native-rust",
+        "address": "0x318f0",
+        "name": "core::slice::sort::stable::quicksort::quicksort",
+        "before_messages": 104,
+        "after_messages": 106,
+        "classification": "Required boolean-to-u64 widening exposes the existing mixed signed/unsigned arithmetic gap; the original expression already rejects i64 + bool at the same location. No other expression or declaration changed.",
+        "witnesses": [
+          {
+            "before_expression": "v35 = a1 as i64 + v36 + v29;",
+            "after_expression": "v35 = a1 as i64 + v36 as u64 + v29;",
+            "unchanged_declaration": "let mut v36: bool; // cf | cl | r10b | r8b | r9b | stack - 0x50",
+            "before_diagnostics": [
+              {
+                "code": "E0277",
+                "message": "cannot add `bool` to `i64`",
+                "spans": [
+                  {
+                    "line_start": 276,
+                    "line_end": 276,
+                    "column_start": 27,
+                    "column_end": 28,
+                    "label": "no implementation for `i64 + bool`",
+                    "text": [
+                      {
+                        "text": "          v35 = a1 as i64 + v36 + v29;",
+                        "highlight_start": 27,
+                        "highlight_end": 28
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "limitations": "No newly diagnosed function and no previously compiling body regresses. This does not claim whole-program compilation or absence of every new diagnostic in already-invalid runtime bodies.",
+    "validation_base": "c28134ce02f52cc26a70e0ba71be210f3dd60d8d",
+    "fresh_diagnostics_match_previous_classification": true
+  },
+  "source_mapping": {
+    "newly_exposed_addresses": 71,
+    "all_match_original_instructions": true,
+    "declarations_unchanged": true,
+    "no_addresses_lost": true
+  },
+  "timing": {
+    "pairs": 31,
+    "warmups_per_arm": 3,
+    "max_cpu_delta_pct": -0.3291034155601391,
+    "max_wall_delta_pct": -0.23282108136765123,
+    "budget_pct": 5,
+    "passed": true,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 102.41446876898408,
+            "cpu_ms": 101.18399999999994
+          },
+          "patched": {
+            "wall_ms": 102.09130123257637,
+            "cpu_ms": 100.85099999999957
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.3155487113219113,
+            "cpu_ms": -0.3291034155601391
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.2611167981618534,
+          "cpu_ms": -0.2681969670077611
+        },
+        "affinity_cpu": 77
+      },
+      "rust-sign8": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 213.72027695178986,
+            "cpu_ms": 212.47199999999998
+          },
+          "patched": {
+            "wall_ms": 209.70159163698554,
+            "cpu_ms": 208.44100000000054
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.8803481691682555,
+            "cpu_ms": -1.8971911593054336
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -1.56299769953967,
+          "cpu_ms": -1.5288254310332428
+        },
+        "affinity_cpu": 77
+      },
+      "rust-many-extensions": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 679.9689261242747,
+            "cpu_ms": 653.1400000000006
+          },
+          "patched": {
+            "wall_ms": 678.3858151175082,
+            "cpu_ms": 625.5690000000059
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.23282108136765123,
+            "cpu_ms": -4.221300180664889
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.48002196525620544,
+          "cpu_ms": -0.44864524695238384
+        },
+        "affinity_cpu": 77
+      },
+      "go-control": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 599.0318767726421,
+            "cpu_ms": 597.6150000000047
+          },
+          "patched": {
+            "wall_ms": 594.7515987791121,
+            "cpu_ms": 593.3199999999914
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -0.7145325915860368,
+            "cpu_ms": -0.718690126588728
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.5066114995201709,
+          "cpu_ms": -0.5163208622761317
+        },
+        "affinity_cpu": 77
+      }
+    }
+  }
+}

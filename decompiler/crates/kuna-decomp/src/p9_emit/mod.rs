@@ -77,6 +77,7 @@ pub mod kuna_gopackage;
 pub(crate) mod kuna_gobyteview;
 pub(crate) mod kuna_gobyteextract;
 pub mod kuna_rusttypes; // (kuna) the rust-language type speller
+pub(crate) mod kuna_rustextend;
 pub mod kuna_ctypes; // (kuna) valid per-architecture C spelling of the core types
 pub mod coreaction_render;
 pub mod kuna_srcmap; // (kuna) the token-level source map of a rendered function
