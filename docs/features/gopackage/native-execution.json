@@ -1,0 +1,13 @@
+{
+  "input_sha256": "ce1ef6ec1c755b5235e20aa6942c36c1aba8a888410ab8daa83170ae10481e3a",
+  "baseline_commit": "b46ca80e2d300ea6007c9c66a629e60b85101c85",
+  "body_is_untouched": true,
+  "expected": {
+    "x": 12,
+    "y": -28
+  },
+  "toolchains": [
+    "1.22.5",
+    "1.27.3"
+  ]
+}

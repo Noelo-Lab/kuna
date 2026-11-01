@@ -2580,7 +2580,7 @@ impl PrintC {
         self.emit.set_output_stream();
         // Same per-function realtypes context resolution as
         // `emit_function_document` — the type-name chokepoints read `rt_ctx`.
-        self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
+        self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         let markup = MarkupRef::none();
         self.emit_prototype_declaration(fd, arch, &markup);
         self.emit.print(";", SyntaxHighlight::NoColor);
@@ -2683,7 +2683,7 @@ impl PrintC {
         // (kuna) Resolve the `realtypes` rendering context once per function from
         // the live architecture (the gate + the `long`-is-8 data-model fact); every
         // type-name chokepoint below reads `self.rt_ctx`.
-        self.rt_ctx = RealTypeCtx::from_arch(arch, self.out_lang);
+        self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         self.named_globals = crate::kuna_namedglobals::References::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
@@ -2965,7 +2965,7 @@ impl PrintC {
             return;
         }
         let types = crate::kuna_calltargettype::with_declared_fields(types, fd);
-        let text = render_type_definitions(&types, self.rt_ctx);
+        let text = render_type_definitions(&types, self.rt_ctx.clone());
         for line in text.trim_end_matches('\n').split('\n') {
             self.emit.tag_line();
             if !line.is_empty() {
@@ -3018,11 +3018,11 @@ impl PrintC {
         // lands the recovered output type is the size-correct but un-inferred
         // base (metatype UNKNOWN), rendered as `undefined<N>` — the documented
         // residual vs. the oracle's inferred `uint1`.
-        let rt = self.rt_ctx;
+        let rt = self.rt_ctx.clone();
         let (ret_type, ret_back) = if fd.get_func_proto().has_store() {
             fd.get_func_proto()
                 .get_output_type()
-                .map(|t| type_name_for_decl(t, rt))
+                .map(|t| type_name_for_decl(t, rt.clone()))
                 .unwrap_or_else(|| ("void".to_string(), String::new()))
         } else {
             ("void".to_string(), String::new())
@@ -3199,7 +3199,7 @@ impl PrintC {
                 } else { param.get_type().cloned() };
                 match ty {
                     Some(ty) => {
-                        let (front, back) = declarator_parts(&ty, self.rt_ctx);
+                        let (front, back) = declarator_parts(&ty, self.rt_ctx.clone());
                         self.cast_implied.record_param(name, format!("{front}{back}"));
                         self.pointer_decls.record(name, &front, &back, false);
                         if !self.emit.emits_markup() && self.emit_fd.is_some() && !proto.is_dotdotdot()
@@ -3761,7 +3761,7 @@ impl PrintC {
             // declaration line - not when a Symbol/array/collapse override took
             // it back.
             if let Some(rounded) = self.sign_plan.decl_type(*high).cloned() {
-                let want = type_name_for_decl(&rounded, self.rt_ctx);
+                let want = type_name_for_decl(&rounded, self.rt_ctx.clone());
                 if decl_type == want.0 && decl_back == want.1 && array_count.is_none() {
                     self.sign_plan.record_applied(*high, rounded);
                 }
@@ -3960,14 +3960,14 @@ impl PrintC {
         // Type: the high's recovered type name (W8-unknown -> `undefined<N>`).
         let ((mut type_name, comment), mut declared) =
             self.local_decl_type_and_comment(fd, arch, high);
-        let rt = self.rt_ctx; // (kuna) realtypes ctx for the composite/array relabel
+        let rt = self.rt_ctx.clone(); // (kuna) realtypes ctx for the composite/array relabel
         if let Some(object) = crate::kuna_addressdecl::object_type(fd, high) {
-            type_name = type_name_for_decl(&object, rt);
+            type_name = type_name_for_decl(&object, rt.clone());
             declared = Some(object);
         }
 
         if let Some(locked) = locked_scalar_local_type(fd, high) {
-            type_name = type_name_for_decl(&locked, rt);
+            type_name = type_name_for_decl(&locked, rt.clone());
             declared = Some(locked);
         }
 
@@ -3991,7 +3991,7 @@ impl PrintC {
             if mt == crate::dtype::type_metatype::TYPE_STRUCT
                 || mt == crate::dtype::type_metatype::TYPE_UNION
             {
-                type_name = type_name_for_decl(st, rt);
+                type_name = type_name_for_decl(st, rt.clone());
                 declared = Some(std::rc::Rc::clone(st));
             }
         }
@@ -4003,7 +4003,7 @@ impl PrintC {
             .get(high)
             .and_then(|h| {
                 let st = h.kuna_symbol_type()?;
-                array_decl_parts(st, rt).map(|parts| (parts, std::rc::Rc::clone(st)))
+                array_decl_parts(st, rt.clone()).map(|parts| (parts, std::rc::Rc::clone(st)))
             })
             // No mapped-Symbol array: fall back to the declaration representative's
             // own data-type.  An anonymous `undefined1 [N]` array (an oversize
@@ -4022,7 +4022,7 @@ impl PrintC {
                     return None;
                 }
                 let v = decl_rep_varnode(fd, high).and_then(|vn| fd.vbank().get(vn))?;
-                array_decl_parts(v.get_type(), rt).map(|parts| (parts, std::rc::Rc::clone(v.get_type())))
+                array_decl_parts(v.get_type(), rt.clone()).map(|parts| (parts, std::rc::Rc::clone(v.get_type())))
             });
         let ((decl_type, decl_back), array_count) = match array_decl {
             Some((((front, back), count), array)) => {
@@ -4154,7 +4154,7 @@ impl PrintC {
             });
             match symbol_type {
                 Some(st) => {
-                    let (front, back) = type_name_for_decl(st, self.rt_ctx);
+                    let (front, back) = type_name_for_decl(st, self.rt_ctx.clone());
                     overrides.insert(decls[keep].0, (front, back, None, Some(std::rc::Rc::clone(st))));
                 }
                 // No usable Symbol type: declare the widest member's own rendering.
@@ -4214,7 +4214,7 @@ impl PrintC {
                 // (kuna `signedness`) The rounded declaration, when the operation
                 // set decided one for this high.
                 let decl_ty = self.sign_plan.decl_type(high).unwrap_or(decl_ty);
-                let tn = type_name_for_decl(decl_ty, self.rt_ctx);
+                let tn = type_name_for_decl(decl_ty, self.rt_ctx.clone());
                 let comment = crate::kuna_varsources::representative_comment(fd, arch, high, v);
                 ((tn, comment), Some(std::rc::Rc::clone(decl_ty)))
             }
@@ -6118,7 +6118,7 @@ impl PrintC {
                     return;
                 }
                 let actual = fd.vn_type_def_facing(out);
-                if declarator_parts(&declared, self.rt_ctx).0 != declarator_parts(&actual, self.rt_ctx).0 {
+                if declarator_parts(&declared, self.rt_ctx.clone()).0 != declarator_parts(&actual, self.rt_ctx.clone()).0 {
                     self.push_go_conversion(&declared, &actual, op);
                 }
             }
@@ -7006,8 +7006,8 @@ impl PrintC {
     ) {
         use crate::printlanguage::SyntaxHighlight;
         static BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
-        let from = type_name_for_decl(&transfer.source, self.rt_ctx).0;
-        let to = type_name_for_decl(&transfer.target, self.rt_ctx).0;
+        let from = type_name_for_decl(&transfer.source, self.rt_ctx.clone()).0;
+        let to = type_name_for_decl(&transfer.target, self.rt_ctx.clone()).0;
         self.push_op(&BITS, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("((union {{ {from} from; {to} to; }}){{ .from = "),
             TagType::TypeToken, SyntaxHighlight::type_color));
@@ -7023,7 +7023,7 @@ impl PrintC {
         let Some(ty) = crate::kuna_bitcast::word_result(fd, arch.decl_high_type, op) else { return };
         static WORD_BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
         let float = if ty.get_size() == 4 { "float" } else { "double" };
-        let word = type_name_for_decl(&ty, self.rt_ctx).0;
+        let word = type_name_for_decl(&ty, self.rt_ctx.clone()).0;
         self.push_op(&WORD_BITS, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("((union {{ {float} from; {word} to; }}){{ .from = "),
             TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
@@ -7056,7 +7056,7 @@ impl PrintC {
                 if transfer.size == 4 { "f32::from_bits" } else { "f64::from_bits" },
                 TagType::FuncToken, SyntaxHighlight::funcname_color));
             let word = declared_variable_type(fd, arch.decl_high_type, transfer.input)
-                .is_some_and(|t| type_name_for_decl(&t, self.rt_ctx).0 == bits);
+                .is_some_and(|t| type_name_for_decl(&t, self.rt_ctx.clone()).0 == bits);
             if input.is_constant() {
                 self.push_atom(&literal(input));
             } else if word {
@@ -7210,7 +7210,7 @@ impl PrintC {
         }
         let size = fd.vbank().get(output).unwrap().get_size();
         let Ok(ty) = arch.types().get_base(size, type_metatype::TYPE_FLOAT) else { return false };
-        let name = type_name_for_decl(&ty, self.rt_ctx).0;
+        let name = type_name_for_decl(&ty, self.rt_ctx.clone()).0;
         static MATERIALIZE: OpToken = op_token("", " })", 2, 66, false, TokenType::Postsurround, 0, 0);
         self.push_op(&MATERIALIZE, Some(op_key(op)));
         self.push_atom(&Atom::syntax(format!("(*&(volatile {name}){{ "),
@@ -8041,7 +8041,7 @@ impl PrintC {
     }
 
     fn push_cast_type(&mut self, ct: &std::rc::Rc<crate::dtype::Datatype>) {
-        let (front, back) = declarator_parts(ct, self.rt_ctx);
+        let (front, back) = declarator_parts(ct, self.rt_ctx.clone());
         let mut name = front;
         name.push_str(&back);
         if self.out_lang == crate::kuna_lang::OutLang::Go && (name.starts_with('*') || name.starts_with("func(")) {
@@ -8176,7 +8176,7 @@ impl PrintC {
             let go_function = self.out_lang == crate::kuna_lang::OutLang::Go
                 && fd.obank().get(op).and_then(|o| o.get_in(0)).is_some_and(|callee| {
                     let ty = self.go_value_type(fd, arch, callee, op);
-                    declarator_parts(&ty, self.rt_ctx).0.starts_with("func(")
+                    declarator_parts(&ty, self.rt_ctx.clone()).0.starts_with("func(")
                 });
             if !go_function { self.push_op(&tokens::DEREFERENCE, Some(op_key(op))); }
             let count = nin - 1;
@@ -8291,7 +8291,7 @@ impl PrintC {
                 self.local_name_overrides.insert(high, name.clone());
                 self.indirect_input_aliases.insert(high);
             }
-            let (front, back) = declarator_parts(&input.pointer_type, self.rt_ctx);
+            let (front, back) = declarator_parts(&input.pointer_type, self.rt_ctx.clone());
             self.cast_implied.record_param(&name, format!("{front}{back}"));
             self.pointer_decls.record(&name, &front, &back, false);
             self.emit.tag_line();
@@ -8699,7 +8699,7 @@ impl PrintC {
     fn op_storage_copy_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, access: crate::kuna_stackmem::Access) {
         use crate::printlanguage::SyntaxHighlight;
         static COMPOUND: OpToken = op_token("", " }", 2, 66, false, TokenType::Postsurround, 0, 0);
-        let (front, back) = declarator_parts(&access.datatype, self.rt_ctx);
+        let (front, back) = declarator_parts(&access.datatype, self.rt_ctx.clone());
         let ty = format!("{front}{back}");
         if access.value.is_none() {
             let pointer_size = fd.vbank().get(access.pointer).unwrap().get_size();
@@ -8748,9 +8748,9 @@ impl PrintC {
             if let Some(float) = float {
                 // Byte projections consume the representation of the replayed LOAD.
                 static BITS: OpToken = op_token("", " }).to", 2, 66, false, TokenType::Postsurround, 0, 0);
-                let (front, back) = declarator_parts(&float, self.rt_ctx);
+                let (front, back) = declarator_parts(&float, self.rt_ctx.clone());
                 let word = arch.types().get_base(float.get_size(), crate::dtype::type_metatype::TYPE_UINT).unwrap();
-                let (word_front, word_back) = declarator_parts(&word, self.rt_ctx);
+                let (word_front, word_back) = declarator_parts(&word, self.rt_ctx.clone());
                 self.push_op(&BITS, Some(op_key(op)));
                 self.push_atom(&Atom::syntax(
                     format!("((union {{ {front}{back} from; {word_front}{word_back} to; }}){{ .from = "),
@@ -8838,9 +8838,9 @@ impl PrintC {
             let (front, back) = if let Some((source, _)) = scalar_source {
                 let source_size = fd.vbank().get(source).unwrap().get_size();
                 let datatype = factory.get_base(source_size, type_metatype::TYPE_UINT).unwrap();
-                declarator_parts(&datatype, self.rt_ctx)
+                declarator_parts(&datatype, self.rt_ctx.clone())
             } else {
-                declarator_parts(&datatype, self.rt_ctx)
+                declarator_parts(&datatype, self.rt_ctx.clone())
             };
             let access = crate::kuna_stackmem::Access {
                 pointer: assignment.output,
@@ -8990,7 +8990,7 @@ impl PrintC {
             .then(|| assignment.operand.and_then(|input| crate::p9_emit::kuna_stackassign::loaded_bytes(fd, input))
                 .or_else(|| crate::p9_emit::kuna_stackassign::load_pointer(fd, op)))
             .flatten();
-        let (front, back) = declarator_parts(&assignment.datatype, self.rt_ctx);
+        let (front, back) = declarator_parts(&assignment.datatype, self.rt_ctx.clone());
         let access = crate::kuna_stackmem::Access {
             pointer: assignment.output,
             value: assignment.operand,
@@ -12140,7 +12140,7 @@ fn array_decl_parts(
     let base = ct.get_array_base()?;
     let elsize = base.get_size().max(1);
     let count = ct.get_size() / elsize;
-    Some((type_name_for_decl(&base, rt), count))
+    Some((type_name_for_decl(&base, rt.clone()), count))
 }
 
 /// Build the declarator front/back text bracketing an identifier for `ct`.
@@ -12262,7 +12262,7 @@ fn comment_safe(raw: &str) -> std::borrow::Cow<'_, str> {
 /// (kuna `globalref`) `T name` for a global of type `ct`, via the same
 /// declarator builder a structure member uses.
 pub fn declaration_text(ct: &std::rc::Rc<crate::dtype::Datatype>, name: &str, rt: RealTypeCtx) -> String {
-    field_decl_text(ct, name, rt)
+    field_decl_text(ct, name, rt.clone())
 }
 
 /// (kuna `globalref`) The name the printer gives the unnamed global at `addr`.
@@ -12278,7 +12278,7 @@ fn field_decl_text(
     name: &str,
     rt: RealTypeCtx,
 ) -> String {
-    let (front, back) = declarator_parts(ct, rt);
+    let (front, back) = declarator_parts(ct, rt.clone());
     let sep = if front.ends_with('*') || name.is_empty() { "" } else { " " };
     format!("{front}{sep}{name}{back}")
 }
@@ -12325,7 +12325,7 @@ pub(crate) fn compose_type_body(
                 let fname = sanitize_type_name(&f.name);
                 out.push_str(&format!(
                     "    {};\n",
-                    field_decl_text(&f.field_type, &fname, rt)
+                    field_decl_text(&f.field_type, &fname, rt.clone())
                 ));
                 cur = cur.max(f.offset + f.field_type.get_size());
             }
@@ -12337,7 +12337,7 @@ pub(crate) fn compose_type_body(
                     let bname = sanitize_type_name(&bf.name);
                     out.push_str(&format!(
                         "    {} : {};\n",
-                        field_decl_text(&bf.field_type, &bname, rt),
+                        field_decl_text(&bf.field_type, &bname, rt.clone()),
                         bf.num_bits
                     ));
                 }
@@ -12356,7 +12356,7 @@ pub(crate) fn compose_type_body(
                 let fname = sanitize_type_name(&f.name);
                 out.push_str(&format!(
                     "    {};\n",
-                    field_decl_text(&f.field_type, &fname, rt)
+                    field_decl_text(&f.field_type, &fname, rt.clone())
                 ));
             }
             out.push_str(&format!("}}{};\n", crate::kuna_stacklayout::suffix(ct)));
@@ -12409,7 +12409,7 @@ pub(crate) fn compose_typedef_line(
     name: &str,
     rt: RealTypeCtx,
 ) -> String {
-    format!("typedef {};\n", field_decl_text(base, name, rt))
+    format!("typedef {};\n", field_decl_text(base, name, rt.clone()))
 }
 
 /// (kuna) The full `docTypeDefinitions` walk over an already
@@ -12495,7 +12495,7 @@ pub(crate) fn render_type_definitions(
             if name != raw {
                 out.push_str(&format!("/* renamed from \"{}\" */\n", comment_safe(raw)));
             }
-            out.push_str(&compose_typedef_line(base, &name, rt));
+            out.push_str(&compose_typedef_line(base, &name, rt.clone()));
             out.push('\n');
         } else if is_composite(ct) {
             if ct.is_incomplete() {
@@ -12508,7 +12508,7 @@ pub(crate) fn render_type_definitions(
             if name != raw {
                 out.push_str(&format!("/* renamed from \"{}\" */\n", comment_safe(raw)));
             }
-            out.push_str(&compose_type_body(ct, &name, rt));
+            out.push_str(&compose_type_body(ct, &name, rt.clone()));
             out.push('\n');
         } else if ct.is_enum_type() {
             if fwd.contains(name.as_ref()) || !defined.insert(name.to_string()) {
@@ -12544,6 +12544,14 @@ fn type_name_for_decl(
 pub(crate) type RealTypeCtx = crate::kuna_langtypes::SpellCtx;
 
 impl RealTypeCtx {
+    fn for_function(fd: &Funcdata, arch: &Architecture, lang: crate::kuna_lang::OutLang) -> Self {
+        let mut context = Self::from_arch(arch, lang);
+        if lang == crate::kuna_lang::OutLang::Go && arch.source_lang().is_go() {
+            context.go_package = crate::kuna_gopackage::function_package(fd.get_name()).map(std::rc::Rc::from);
+        }
+        context
+    }
+
     /// Resolve the context from the live architecture: the `realtypes`/`ctypes`
     /// gates and the target's decoded data organization.
     ///
@@ -12559,6 +12567,7 @@ impl RealTypeCtx {
             ctypes: arch.ctypes,
             model: crate::kuna_ctypes::CDataModel::from_types(&*arch.types()),
             indirect_args: arch.indirect_args,
+            go_package: None,
         }
     }
 }
@@ -12911,7 +12920,7 @@ struct PointerView<'a> {
 
 impl crate::kuna_pointerargs::PrintedPointers for PointerView<'_> {
     fn spell(&self, ty: &std::rc::Rc<crate::dtype::Datatype>) -> String {
-        let (front, back) = declarator_parts(ty, self.pc.rt_ctx);
+        let (front, back) = declarator_parts(ty, self.pc.rt_ctx.clone());
         front + &back
     }
 
@@ -12943,7 +12952,7 @@ struct ImpliedView<'a> {
 
 impl crate::kuna_castimplied::PrintedForms for ImpliedView<'_> {
     fn spell(&self, ty: &std::rc::Rc<crate::dtype::Datatype>) -> String {
-        let (front, back) = declarator_parts(ty, self.pc.rt_ctx);
+        let (front, back) = declarator_parts(ty, self.pc.rt_ctx.clone());
         front + &back
     }
 

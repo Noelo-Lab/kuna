@@ -2436,7 +2436,7 @@ pub fn extract_type_definitions(arch: &Architecture, fd: &Funcdata) -> Vec<TypeI
         .iter()
         .map(|ct| TypeInfo {
             name: ct.get_name().to_string(),
-            definition: crate::kuna_structdefs::definition_text(ct, rt),
+            definition: crate::kuna_structdefs::definition_text(ct, rt.clone()),
             size: ct.get_size() as i64,
         })
         .collect()
@@ -2498,7 +2498,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
         let declarator = if array { format!("{name}[]") } else { name.clone() };
         GlobalInfo {
             address,
-            declaration: crate::printc::declaration_text(ty, &declarator, rt),
+            declaration: crate::printc::declaration_text(ty, &declarator, rt.clone()),
             size: i64::from(ty.get_size()),
             name,
             unknown,
@@ -2523,7 +2523,7 @@ pub fn extract_global_objects(arch: &Architecture) -> Vec<GlobalInfo> {
             let g = GlobalInfo {
                 address,
                 name: name.to_string(),
-                declaration: crate::printc::declaration_text(decl_type, name, rt),
+                declaration: crate::printc::declaration_text(decl_type, name, rt.clone()),
                 size: i64::from(ty.get_size()),
                 unknown,
                 // Whole named objects must retain the independent-storage overlap guard.

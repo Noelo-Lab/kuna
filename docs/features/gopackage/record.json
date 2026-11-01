@@ -1,0 +1,127 @@
+{
+  "state": "validated",
+  "kind": "strict Go type spelling correction",
+  "baseline_commit": "b46ca80e2d300ea6007c9c66a629e60b85101c85",
+  "selection": "Go source and outlang go; no new option",
+  "breadth": {
+    "inputs": 16,
+    "distinct_functions": 17026,
+    "records": 34107,
+    "changed_records": 3562,
+    "hunks": 5986,
+    "removed_package_qualifiers": 8839,
+    "go_parsed_functions": 16122,
+    "unchanged_c_rust_records": 17985,
+    "errors": 0
+  },
+  "validation": {
+    "workspace": {
+      "passed": 10010,
+      "failed": 0,
+      "ignored": 39,
+      "suites": 71
+    },
+    "original_assertions": 675,
+    "stage_assertions": 3472,
+    "tools": "114 tests, 1 optional skip",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "counters": "passed",
+    "regression_before": "15 of 16 assertions pass; package type assertion fails",
+    "regression_after": "16 of 16 pass",
+    "new_unit_tests": 3,
+    "hermetic_compiled_functions_per_image": 12,
+    "hermetic_images": 2,
+    "native_compiled_functions": 1,
+    "go_toolchain": "go1.27.3",
+    "native_execution_toolchains": [
+      "go1.22.5",
+      "go1.27.3"
+    ]
+  },
+  "native_fixture": {
+    "compiler": "go1.27.3",
+    "sha256": "ce1ef6ec1c755b5235e20aa6942c36c1aba8a888410ab8daa83170ae10481e3a",
+    "source": "repro.go",
+    "emitted_execution": "native.go"
+  },
+  "timeit": {
+    "samples_per_arm": 31,
+    "warmups_per_arm": 3,
+    "affinity_cpu": 79,
+    "alternating_order": true,
+    "measurements": {
+      "scalar-c": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 126.15904491394758,
+            "cpu_ms": 123.189
+          },
+          "patched": {
+            "wall_ms": 124.29953319951892,
+            "cpu_ms": 122.37900000000135
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.4739424475645246,
+            "cpu_ms": -0.6575262401664395
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -0.5536638264962535,
+          "cpu_ms": -0.36717414312245067
+        }
+      },
+      "go-package": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 600.6289389915764,
+            "cpu_ms": 599.0380000000073
+          },
+          "patched": {
+            "wall_ms": 594.4202081300318,
+            "cpu_ms": 591.541999999997
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.0337049147130184,
+            "cpu_ms": -1.2513396479038486
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -1.089302115548163,
+          "cpu_ms": -1.1038064139787251
+        }
+      },
+      "rust": {
+        "medians": {
+          "baseline": {
+            "wall_ms": 324.1888228803873,
+            "cpu_ms": 322.7370000000036
+          },
+          "patched": {
+            "wall_ms": 320.4562929458916,
+            "cpu_ms": 319.08099999999706
+          }
+        },
+        "delta_pct": {
+          "baseline_to_patched": {
+            "wall_ms": -1.1513444237011394,
+            "cpu_ms": -1.132810926545924
+          }
+        },
+        "paired_median_delta_pct": {
+          "wall_ms": -1.0538688035340638,
+          "cpu_ms": -1.002591522817886
+        }
+      }
+    },
+    "speed_budget_pct": 5,
+    "max_cpu_delta_pct": -0.6575262401664395,
+    "max_wall_delta_pct": -1.0337049147130184,
+    "passed": true
+  }
+}

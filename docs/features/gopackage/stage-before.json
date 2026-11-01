@@ -1,0 +1,47 @@
+{
+  "data_footer": [
+    16,
+    15
+  ],
+  "failures": {
+    "data": [
+      "Go record type in its own package is unqualified"
+    ],
+    "data_errors": [],
+    "unit": []
+  },
+  "passing": [
+    "data:Go result formals never become generic inputs",
+    "data:boolean result preserves logical negation",
+    "data:callers receive the imported contract",
+    "data:concrete origin keeps input and result roles",
+    "data:empty entry range off retains inference",
+    "data:empty entry range on recovers a proven RET identity",
+    "data:empty entry range wrong register stays uninferred",
+    "data:flat record pointee recovers field names",
+    "data:float and integer register banks stay independent",
+    "data:off loses a narrowing result",
+    "data:off loses an untouched pointer result",
+    "data:on recovers exact-width result",
+    "data:on recovers input name and pointer result",
+    "data:uncompressed invalid result stays uninferred",
+    "data:wrong entry register remains uninferred"
+  ],
+  "returncode": 1,
+  "selection": {
+    "complete": true,
+    "data": {
+      "corpus": "/home/mahaloz/kwt/angr-go-package-types/tests/stages",
+      "matched": [
+        "ghangr-godwarfsig.xml"
+      ],
+      "missing": [],
+      "requested": [
+        "ghangr-godwarfsig.xml"
+      ]
+    },
+    "errors": [],
+    "unit": null
+  },
+  "unit_footer": null
+}

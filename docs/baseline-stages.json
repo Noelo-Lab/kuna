@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3471,
-    3471
+    3472,
+    3472
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -910,6 +910,7 @@
     "data:Go keeps the pointer conversion to the formal type",
     "data:Go never converts a string directly to a pointer",
     "data:Go pointer indexing retains byte scaling",
+    "data:Go record type in its own package is unqualified",
     "data:Go result formals never become generic inputs",
     "data:Go selection emits exact-width function parameters",
     "data:Go switch renders actual shared-case fallthrough",
