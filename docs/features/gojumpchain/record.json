@@ -1,0 +1,146 @@
+{
+  "opportunity": "TestBuiltinsGo122Unoptimized::main.push",
+  "test_name": "tests/analyses/decompiler/test_go_builtins.py::TestBuiltinsGo122Unoptimized::test_checks_and_helpers_are_removed",
+  "option": "gojumpchain",
+  "flag": "go_jump_chain",
+  "binary": "/tmp/kuna-angr-reference/binaries/go122-builtins-N",
+  "selector": "main.push",
+  "func_addr": "0x46fa60",
+  "angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "default_on": true,
+  "status": "validated after Octeon upstream integration",
+  "source_decompiler": "angr",
+  "change_kind": "opt-in-tool",
+  "inspiration": "Go unoptimized write-barrier tests",
+  "speed_off_ms": 1056.31,
+  "speed_on_ms": 1081.49,
+  "speed_delta_pct": 2.38,
+  "speed_samples": 21,
+  "speed_budget_pct": 5,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "speed_raw_ms": {
+    "off": [
+      750.5825608968735,
+      5509.3395370058715,
+      3184.2374550178647,
+      1995.634038001299,
+      1643.9762096852064,
+      1088.811076246202,
+      1465.509204659611,
+      1057.499428279698,
+      970.7759260199964,
+      702.4526717141271,
+      697.542087174952,
+      853.8461183197796,
+      1093.8274459913373,
+      1461.6403188556433,
+      1048.7546930089593,
+      808.6981391534209,
+      2100.840887054801,
+      1056.3059276901186,
+      687.2956771403551,
+      604.2847218923271,
+      605.3590471856296
+    ],
+    "on": [
+      2064.6116407588124,
+      3188.474121969193,
+      1352.9569520615041,
+      1667.9514879360795,
+      2008.9824669994414,
+      1796.2548406794667,
+      1256.8395077250898,
+      978.5606353543699,
+      905.4679679684341,
+      738.1171812303364,
+      615.3437159955502,
+      607.745110988617,
+      1040.9210030920804,
+      1009.1195437125862,
+      1235.584604088217,
+      1511.417096015066,
+      1112.0299599133432,
+      1081.4929259940982,
+      610.2742268703878,
+      847.807455342263,
+      604.487537406385
+    ]
+  },
+  "speed_method": "CLI including load;21 alternating off/on and on/off pairs after two warmups per mode",
+  "barrier_calls_removed": 77,
+  "breadth": [
+    {
+      "binary": "go122-builtins-N",
+      "functions": 1998,
+      "changed_functions": 25,
+      "hunks": 25,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "non_runtime_call_changes": []
+    },
+    {
+      "binary": "builtins-go122",
+      "functions": 1996,
+      "changed_functions": 0,
+      "hunks": 0,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "non_runtime_call_changes": []
+    },
+    {
+      "binary": "builtins-go127",
+      "functions": 2539,
+      "changed_functions": 0,
+      "hunks": 0,
+      "errors": {
+        "off": 0,
+        "on": 0
+      },
+      "non_runtime_call_changes": []
+    }
+  ],
+  "stage": "tests/stages/kuna-gojumpchain.xml",
+  "validation": {
+    "focused": "4/4 assertions passed",
+    "workspace": "make rust-test passed with Go 1.22.5: 9869 passed, 0 failed, 39 ignored",
+    "datatests": "675/675 PARITY OK",
+    "stages": "3408/3408 PARITY OK",
+    "lint": "passed",
+    "spec": "passed",
+    "catalog": "passed",
+    "tools": "114 passed with one optional skip"
+  },
+  "reference_limitation": "Reference test assertions read at pinned angr commit; no local angr runtime result claimed.",
+  "fixtures": [
+    {
+      "file": "go122-builtins-N",
+      "path": "tests/x86_64/go/go1.22.5/builtins_N",
+      "url": "https://raw.githubusercontent.com/angr/binaries/76ad9e296dde8f82b8ede93ce06a578cd1933639/tests/x86_64/go/go1.22.5/builtins_N",
+      "bytes": 1454216,
+      "sha256": "47f9be4973a912c525fb0d7753884babb945e23fe72e1f32c5a5484a4d9ed2c0"
+    },
+    {
+      "file": "builtins-go122",
+      "path": "tests/x86_64/go/go1.22.5/builtins",
+      "url": "https://raw.githubusercontent.com/angr/binaries/76ad9e296dde8f82b8ede93ce06a578cd1933639/tests/x86_64/go/go1.22.5/builtins",
+      "bytes": 1446092,
+      "sha256": "4f1919d28fbddf0f2b37ba7228b2761527431f276ba6a52e9fa405f8423332d3"
+    },
+    {
+      "file": "builtins-go127",
+      "path": "tests/x86_64/go/go1.27.1/builtins",
+      "url": "https://raw.githubusercontent.com/angr/binaries/76ad9e296dde8f82b8ede93ce06a578cd1933639/tests/x86_64/go/go1.27.1/builtins",
+      "bytes": 1898294,
+      "sha256": "50277a8be3b4b7913015956aed583b5c890062ab400a668fa9ccae04b1ee0543"
+    }
+  ],
+  "ablation_changed": 0,
+  "parity": "OK",
+  "validated_base": "e27d885452316848c5a8ad17ba25169c5caa3d2a"
+}

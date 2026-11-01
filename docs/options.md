@@ -500,6 +500,8 @@ Three tiers:
 | one floating register carries both integers and genuine floating values | [`fputruncviews`](#fputruncviews) |
 | Go array accesses surrounded by runtime.panicIndex or runtime.panicBounds calls | [`gobounds`](#gobounds) |
 | Go division retains compiler-generated runtime.panicdivide branches | [`gobounds`](#gobounds) |
+| Unoptimized Go functions retain runtime.gcWriteBarrier calls | [`gojumpchain`](#gojumpchain) |
+| Go runtime guards remain behind unconditional jump chains | [`gojumpchain`](#gojumpchain) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2468,6 +2470,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on for source-oriented Go decompilation; turn off to audit the actual checks and panic paths. Non-Go images are unchanged. Use sourcelang go for a bytechunk or image whose language metadata was removed.
 - **Where / provenance:** P7/edge-virtualization · angr · opt-in-tool · angr-go-check-remover
 - **Example:** `option gobounds off`
+
+### `gojumpchain` -- on | off, default `on`
+
+- **Symptoms:** Unoptimized Go functions retain runtime.gcWriteBarrier calls; Go runtime guards remain behind unconditional jump chains.
+- **What it does:** Normalize single-entry, single-exit jump-only blocks around recognized Go write-barrier diamonds before SSA. Match one barrier call and a common join through forwarding paths; leave unrelated control flow alone. This exposes runtime bookkeeping obscured by unoptimized compiler jumps. Retain entry blocks, cycles, duplicate-edge cases and every block containing a computation, memory access or call.
+- **When to flip:** On by default for Go images while gowritebarrier is enabled. Turn off to inspect barriers hidden behind jump-only forwarding blocks. The gowritebarrier option still independently controls removal of the runtime bookkeeping.
+- **Where / provenance:** P2/flow-classification · angr · opt-in-tool · angr-go-unoptimized-write-barriers
+- **Example:** `option gojumpchain off`
 
 ## Analysis & loader passes
 

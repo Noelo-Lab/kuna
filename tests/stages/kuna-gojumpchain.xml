@@ -1,0 +1,35 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">4885ff7402eb02eb0ae8f20f0000498933eb00488937c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="forwarded"/>
+<bytechunk space="ram" offset="0x100040" readonly="true">4885ff740dc70425000030002a000000eb02eb0ae8a70f0000498933eb00488937c3</bytechunk>
+<symbol space="ram" offset="0x100040" name="write_forwarder"/>
+<bytechunk space="ram" offset="0x100080" readonly="true">e87c0f0000eb00ebfc</bytechunk>
+<symbol space="ram" offset="0x100080" name="cycle"/>
+<symbol space="ram" offset="0x101000" name="runtime.gcWriteBarrier2"/>
+<symbol space="ram" offset="0x101001" name="runtime.helper"/>
+<bytechunk space="ram" offset="0x300000" readonly="false">00000000</bytechunk>
+<symbol space="ram" offset="0x300000" name="marker"/>
+</binaryimage>
+<script>
+<com>option sourcelang go</com>
+<com>option gowritebarrier auto</com>
+<com>option gojumpchain off</com>
+<com>lo fu forwarded</com><com>decompile</com><com>print C</com>
+<com>option gojumpchain on</com>
+<com>decompile</com><com>print C</com>
+<com>option sourcelang c</com>
+<com>option gowritebarrier always</com>
+<com>decompile</com><com>print C</com>
+<com>option sourcelang go</com>
+<com>option gowritebarrier auto</com>
+<com>lo fu write_forwarder</com><com>decompile</com><com>print C</com>
+<com>lo fu cycle</com><com>decompile</com><com>print C</com>
+<com>option sourcelang auto</com>
+<com>quit</com>
+</script>
+<stringmatch name="gojumpchain: forwarded barriers fold only with Go and on" min="3" max="3">runtime.gcWriteBarrier2\(</stringmatch>
+<stringmatch name="gojumpchain: real stores survive every pass" min="4" max="4">\*a0 = a1;</stringmatch>
+<stringmatch name="gojumpchain: a forwarding block with a store is retained" min="1" max="1">dat_300000 = 0x2a;</stringmatch>
+<stringmatch name="gojumpchain: a jump cycle stays an infinite loop" min="1" max="1">while\( true \)</stringmatch>
+</decompilertest>

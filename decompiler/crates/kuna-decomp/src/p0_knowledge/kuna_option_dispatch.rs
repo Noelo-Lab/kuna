@@ -842,6 +842,7 @@ kuna_options! { self, p1;
         on_off!(strip_msvc_stack_guard, "MSVC /GS frame-cookie stripping")
     },
     "gobounds" => on_off!(go_bounds, "Go compiler-check folding"),
+    "gojumpchain" => on_off!(go_jump_chain, "Early Go jump-chain normalization"),
     "securitycheck" => {
         on_off!(strip_security_check, "Rust security-check branch stripping")
     },
