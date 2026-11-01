@@ -22,10 +22,6 @@
     "exit_code": {
       "eq": 0
     },
-    "stdout_matches": [
-      "ReadFile\\([^;]*,&(v\\d+),4,&v\\d+,0\\);",
-      "wsprintfA\\([^;]*\\(v\\d+ >> 8 & 0xff\\)"
-    ],
     "stdout_absent": [
       "&Stack[fF0-9a-f]+"
     ],
@@ -34,7 +30,13 @@
         "path": "assertions[0].status",
         "op": "eq",
         "value": "applied"
+      },
+      {
+        "path": "functions[0].code",
+        "op": "matches",
+        "value": "(?s)ReadFile\\([^;]*,&(v\\d+),4,&v\\d+,(?:NULL|0)\\);.*wsprintfA\\([^;]*\\(\\1 >> 8 & 0xff\\) \\+ \\(\\1 >> 0x10 & 0xff\\) \\+ \\(\\1 & 0xff\\)\\);"
       }
     ]
-  }
+  },
+  "notes": "The ReadFile output buffer must be the same recovered local used for all three checksum bytes. Pointer zero may print as NULL when a Win32 declaration is applied. Matching the decoded function body lets the backreference bind the writer and reader across lines."
 }

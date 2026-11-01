@@ -14,7 +14,10 @@
     "decompile-all",
     "{{BIN}}",
     "--json",
-    "--no-vars"
+    "--no-vars",
+    "--option",
+    "win32sigs",
+    "off"
   ],
   "expect": {
     "exit_code": {
@@ -33,5 +36,5 @@
       }
     ]
   },
-  "notes": "Pairing clause for bulk-decompilation-decodes-pe: suppressing an IAT slot's BODY must not cost the import's NAME. Keeping the slots as data leaves one real function, whose two calls still render VirtualAlloc( and GetModuleHandleA( through those same slots. Without this a fix that stopped registering PE imports at all would pass the count==0 acceptance."
+  "notes": "Pairing clause for bulk-decompilation-decodes-pe: suppressing an IAT slot's BODY must not cost the import's NAME. This synthetic fixture passes only two arguments to its VirtualAlloc-labelled import, so disable the real four-argument Win32 declaration when checking its inferred argument flow. The companion pe-iat-in-code-keeps-declared-call-names probe checks the default declaration-enabled path."
 }
