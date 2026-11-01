@@ -2822,6 +2822,47 @@ moves.
   parameterless functions. Names from such minimal units retain their namespace
   qualification, so Rust `core::fmt::write` does not become a global `write`
   alias that could inherit the C import's incompatible signature.
+  The opt-in `godwarfsig` arm
+  (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_godwarfsig.rs`)
+  recovers complete scalar/pointer contracts from Go compiler units on
+  little-endian amd64 under `abi-internal`. It requires the producer's `regabi`
+  marker and `DW_AT_variable_parameter` to distinguish every input from every
+  result. Unit-relative and absolute type/origin references share a bounded
+  cross-unit graph. Concrete one-hop abstract origins must account for every
+  inherited formal exactly once and in order; additional concrete formals may
+  only be results. Malformed references, missing roles, closures, trampolines,
+  ABI0 wrappers, unsupported composites by value and multiple results are
+  refused as a whole, retaining existing inference.
+
+  Accepted inputs occupy the verified Go integer or float register sequence;
+  an explicit empty location is permitted for an optimized-away input. A
+  nonempty location must identify its expected entry register. Go DWARF 5 may
+  give a RET-only input a zero-length entry range. That case requires exactly
+  one raw range, a base equal to function entry, offsets `[0,0)`, and a single
+  register expression matching the input's ABI slot. The function must declare
+  a one-byte extent and the image must contain `RET` (`0xc3`) there. Additional
+  ranges, a wrong register/base, longer bodies and result-range substitutions
+  are refused. General DWARF location-list handling is unchanged. The existing
+  calling-convention model must assign every recovered slot to that same
+  register with its exact width and no hidden parameter. Stack arguments and
+  float arguments beyond the model's eight-register bank are therefore refused.
+  A result uses RAX or XMM0. Scalar aliases are checked against width and Go
+  kind; pointers retain grounded scalar pointees, unsafe.Pointer, or named flat
+  records with nonoverlapping scalar/pointer fields. Cycles, unresolved fields,
+  bitfields and invalid extents are refused. Materialized pointees and fields
+  must still match the validated graph; a generic void-pointer fallback cannot
+  silently satisfy a typed contract.
+
+  Native Go zlib debug sections are retained compressed at load time. Their
+  combined stored/declared extents are bounded to 64 MiB and are inflated only
+  when `godwarfsig` is enabled. Each stream must end exactly, pass its checksum
+  and produce precisely its declared size. Ordinary non-Go DWARF decompression
+  behavior is unchanged. Uncompressed Go units reuse the ordinary snapshots;
+  neither path interns new types while the option is off. Enabled contracts
+  bind by entry address before function analysis and reach both definitions and
+  callers. Later explicit user prototype assertions retain precedence. Source
+  aliases, aggregate register decomposition and high-level receiver syntax are
+  separate from this import contract.
   An externally visible defined DWARF function's exact `DW_AT_linkage_name` also binds its prototype
   to matching ELF PLT entry addresses
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarflinkage.rs`). The linker spelling is taken from the

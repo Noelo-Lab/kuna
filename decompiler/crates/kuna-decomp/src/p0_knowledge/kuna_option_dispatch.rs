@@ -1212,6 +1212,7 @@ kuna_options! { self, p1;
     "cppproto" => {
         on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
     },
+    "godwarfsig" => on_off!(analysis_godwarfsig, "Go DWARF scalar and pointer signatures"),
     "cppsig" => {
         let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
         self.analysis_cppsig = mode;

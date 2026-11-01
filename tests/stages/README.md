@@ -324,3 +324,7 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 and checks that its compound initializer converts the integer carrier back to a
 pointer. The CLI companion compiles fresh PE32/ELF64 examples with Clang and runs
 the Linux native/recompiled functions at O0/O2. Source: `src/pointer_storage_literal.c`.
+
+`ghangr-godwarfsig.xml` checks opt-in Go DWARF scalar/pointer signatures,
+compressed cross-unit references, result roles, caller propagation and a wrong-register
+control. Its console companion executes hermetic and native recovered Go bodies.

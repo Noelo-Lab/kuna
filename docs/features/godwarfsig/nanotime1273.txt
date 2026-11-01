@@ -1,0 +1,42 @@
+TEXT runtime.nanotime1.abi0(SB) runtime/sys_linux_amd64.s
+  sys_linux_amd64.s:223	0x47c560		55			PUSHQ BP
+  sys_linux_amd64.s:223	0x47c561		4889e5			MOVQ SP, BP
+  sys_linux_amd64.s:223	0x47c564		4883ec10		SUBQ $0x10, SP
+  sys_linux_amd64.s:243	0x47c568		4989e4			MOVQ SP, R12
+  sys_linux_amd64.s:245	0x47c56b		498b5e30		MOVQ 0x30(R14), BX
+  sys_linux_amd64.s:250	0x47c56f		488b8b88030000		MOVQ 0x388(BX), CX
+  sys_linux_amd64.s:251	0x47c576		488b9380030000		MOVQ 0x380(BX), DX
+  sys_linux_amd64.s:252	0x47c57d		48890c24		MOVQ CX, 0(SP)
+  sys_linux_amd64.s:253	0x47c581		4889542408		MOVQ DX, 0x8(SP)
+  sys_linux_amd64.s:255	0x47c586		488d542420		LEAQ 0x20(SP), DX
+  sys_linux_amd64.s:256	0x47c58b		488b4af8		MOVQ -0x8(DX), CX
+  sys_linux_amd64.s:257	0x47c58f		48898b88030000		MOVQ CX, 0x388(BX)
+  sys_linux_amd64.s:258	0x47c596		48899380030000		MOVQ DX, 0x380(BX)
+  sys_linux_amd64.s:260	0x47c59d		4c3bb3b8000000		CMPQ R14, 0xb8(BX)
+  sys_linux_amd64.s:261	0x47c5a4		7507			JNE 0x47c5ad
+  sys_linux_amd64.s:263	0x47c5a6		488b13			MOVQ 0(BX), DX
+  sys_linux_amd64.s:264	0x47c5a9		488b6238		MOVQ 0x38(DX), SP
+  sys_linux_amd64.s:267	0x47c5ad		4883ec10		SUBQ $0x10, SP
+  sys_linux_amd64.s:268	0x47c5b1		4883e4f0		ANDQ $-0x10, SP
+  sys_linux_amd64.s:270	0x47c5b5		bf01000000		MOVL $0x1, DI
+  sys_linux_amd64.s:271	0x47c5ba		488d3424		LEAQ 0(SP), SI
+  sys_linux_amd64.s:272	0x47c5be		488b05e3c10c00		MOVQ runtime.vdsoClockgettimeSym(SB), AX
+  sys_linux_amd64.s:273	0x47c5c5		4883f800		CMPQ AX, $0x0
+  sys_linux_amd64.s:274	0x47c5c9		743a			JE 0x47c605
+  sys_linux_amd64.s:275	0x47c5cb		ffd0			CALL AX
+  sys_linux_amd64.s:277	0x47c5cd		488b0424		MOVQ 0(SP), AX
+  sys_linux_amd64.s:278	0x47c5d1		488b542408		MOVQ 0x8(SP), DX
+  sys_linux_amd64.s:279	0x47c5d6		4c89e4			MOVQ R12, SP
+  sys_linux_amd64.s:285	0x47c5d9		488b4c2408		MOVQ 0x8(SP), CX
+  sys_linux_amd64.s:286	0x47c5de		48898b80030000		MOVQ CX, 0x380(BX)
+  sys_linux_amd64.s:287	0x47c5e5		488b0c24		MOVQ 0(SP), CX
+  sys_linux_amd64.s:288	0x47c5e9		48898b88030000		MOVQ CX, 0x388(BX)
+  sys_linux_amd64.s:291	0x47c5f0		4869c000ca9a3b		IMULQ $0x3b9aca00, AX, AX
+  sys_linux_amd64.s:292	0x47c5f7		4801d0			ADDQ DX, AX
+  sys_linux_amd64.s:293	0x47c5fa		4889442420		MOVQ AX, 0x20(SP)
+  sys_linux_amd64.s:294	0x47c5ff		4883c410		ADDQ $0x10, SP
+  sys_linux_amd64.s:294	0x47c603		5d			POPQ BP
+  sys_linux_amd64.s:294	0x47c604		c3			RET
+  sys_linux_amd64.s:296	0x47c605		b8e4000000		MOVL $0xe4, AX
+  sys_linux_amd64.s:297	0x47c60a		0f05			SYSCALL
+  sys_linux_amd64.s:298	0x47c60c		ebbf			JMP 0x47c5cd

@@ -270,6 +270,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // with no program loaded these never reach (kuna_live_value's caller passes
         // None), so the no-program catalog byte-compat fixture is untouched.
         "noreturn_known" => on_off(conf.analysis_noreturn_known),
+        "godwarfsig" => on_off(conf.analysis_godwarfsig),
         "libproto" => on_off(conf.analysis_libproto),
         "libcsigs" => on_off(conf.analysis_libcsigs),
         "libgccsigs" => on_off(conf.analysis_libgccsigs),

@@ -1,0 +1,257 @@
+--- f26/runtime.gclinkptr.ptr
++++ current/runtime.gclinkptr.ptr
+@@ -1,4 +1,4 @@
+-void runtime.gclinkptr.ptr(void)
++runtime.gclink * runtime.gclinkptr.ptr(unsigned int p)
+ {
+-  return;
++  return (runtime.gclink *)p;
+ }
+--- f26/runtime.stackpoolalloc
++++ current/runtime.stackpoolalloc
+@@ -3,7 +3,7 @@
+   unsigned int *v1; // rax | rbx | rcx | rdx | stack - 0x30
+   unsigned int v2; // rax | rcx | rdx | stack - 0x20 | stack - 0x38
+   unsigned int v3; // rax | rcx | stack - 0x18
+-  unsigned int *v4; // rax
++  runtime.gclink *v4; // rax
+   unsigned char v5; // al | cl | stack + 0x8
+   
+   v1 = *(unsigned int **)&runtime.stackpool[(unsigned int)order * 0x40 + 8];
+@@ -22,8 +22,8 @@
+     v1[0xd] = 0x800 << (v5 & 0x3f);
+     for (v2 = 0; v2 < 0x8000; v2 = v1[0xd] + v2) {
+       v3 = runtime.(*mspan).base(v1) + v2;
+-      v4 = (unsigned int *)runtime.gclinkptr.ptr(v3);
+-      *v4 = v1[5];
++      v4 = runtime.gclinkptr.ptr(v3);
++      v4->next = v1[5];
+       v1[5] = v3;
+     }
+     runtime.(*mSpanList).insert((struct_31 *)&runtime.stackpool[(unsigned int)order * 0x40 + 8],v1);
+@@ -31,7 +31,7 @@
+   v2 = v1[5];
+   if (!runtime.gclinkptr.ptr(v2))
+     runtime.throw("span has no free stacks",0x17); // no-return
+-  v3 = *(unsigned int *)runtime.gclinkptr.ptr(v2);
++  v3 = runtime.gclinkptr.ptr(v2)->next;
+   v1[5] = v3;
+   *(short *)&v1[0xc] = *(short *)&v1[0xc] + 1;
+   if (!runtime.gclinkptr.ptr(v3))
+
+--- f26/runtime.stackpoolfree
++++ current/runtime.stackpoolfree
+@@ -1,29 +1,29 @@
+ void runtime.stackpoolfree(unsigned int x,unsigned char order)
+ {
++  unsigned int p; // rax
+   short v1; // cx
+-  unsigned int v2; // rax
+-  unsigned int *v3; // rax | rbx | rcx | stack - 0x10
+-  unsigned int *v4; // rax
+-  unsigned int v5; // rax | rcx | stack + 0x8
+-  unsigned char v6; // bl | cl | dl | stack + 0x10
++  unsigned int *v2; // rax | rbx | rcx | stack - 0x10
++  runtime.gclink *v3; // rax
++  unsigned int v4; // rax | rcx | stack + 0x8
++  unsigned char v5; // bl | cl | dl | stack + 0x10
+   
+-  v5 = x;
+-  v6 = order;
+-  v3 = (unsigned int *)runtime.spanOfUnchecked(x);
+-  if (runtime.(*mSpanStateBox).get((int)v3 + 99) == '\x02') {
+-    v2 = v3[5];
+-    if (!runtime.gclinkptr.ptr(v2))
+-      runtime.(*mSpanList).insert((struct_31 *)&runtime.stackpool[(unsigned int)v6 * 0x40 + 8],v3);
+-    v4 = (unsigned int *)runtime.gclinkptr.ptr(v5);
+-    *v4 = v3[5];
+-    v3[5] = v5;
+-    v1 = *(short *)&v3[0xc];
+-    *(short *)&v3[0xc] = v1 + -1;
++  v4 = x;
++  v5 = order;
++  v2 = (unsigned int *)runtime.spanOfUnchecked(x);
++  if (runtime.(*mSpanStateBox).get((int)v2 + 99) == '\x02') {
++    p = v2[5];
++    if (!runtime.gclinkptr.ptr(p))
++      runtime.(*mSpanList).insert((struct_31 *)&runtime.stackpool[(unsigned int)v5 * 0x40 + 8],v2);
++    v3 = runtime.gclinkptr.ptr(v4);
++    v3->next = v2[5];
++    v2[5] = v4;
++    v1 = *(short *)&v2[0xc];
++    *(short *)&v2[0xc] = v1 + -1;
+     if ((!runtime.gcphase) && (!(short)(v1 + -1))) {
+-      runtime.(*mSpanList).remove(&runtime.stackpool[(unsigned int)v6 * 0x40 + 8],v3);
+-      v3[5] = 0;
++      runtime.(*mSpanList).remove(&runtime.stackpool[(unsigned int)v5 * 0x40 + 8],v2);
++      v2[5] = 0;
+       runtime.osStackFree();
+-      runtime.(*mheap).freeManual(runtime.mheap_,v3,1);
++      runtime.(*mheap).freeManual(runtime.mheap_,v2,1);
+     }
+     return;
+   }
+
+--- f26/runtime.stackcacherefill
++++ current/runtime.stackcacherefill
+@@ -1,30 +1,30 @@
+ void runtime.stackcacherefill(int a0,unsigned char a1)
+ {
++  unsigned int p; // rax | rbx | stack - 0x20
+   unsigned char v1; // tmp
+   unsigned int v2; // rax | rbx | rcx | stack - 0x38
+-  unsigned int v3; // rax | rbx | stack - 0x20
+-  int v4; // rdx
+-  unsigned int v5; // rax | rbx | rcx | stack - 0x20 | stack - 0x30
+-  int v6; // rax | rcx | stack + 0x8
+-  unsigned char v7; // al | bl | cl | stack + 0x10
++  int v3; // rdx
++  unsigned int v4; // rax | rbx | rcx | stack - 0x20 | stack - 0x30
++  int v5; // rax | rcx | stack + 0x8
++  unsigned char v6; // al | bl | cl | stack + 0x10
+   
+-  v6 = a0;
+-  v7 = a1;
++  v5 = a0;
++  v6 = a1;
+   if ((char *)g->stackguard1 < &Stack0000000000000000) {
+     runtime.lock(&runtime.stackpool[(unsigned int)a1 * 0x40]);
+-    v1 = v7 & 0x3f;
++    v1 = v6 & 0x3f;
+     v2 = 0;
+-    v5 = 0;
++    v4 = 0;
+     while (v2 <= 0x3fff) {
+-      v3 = runtime.stackpoolalloc(v7);
+-      *(unsigned int *)runtime.gclinkptr.ptr() = v5;
++      p = runtime.stackpoolalloc(v6);
++      runtime.gclinkptr.ptr(p)->next = v4;
+       v2 += 0x800 << v1;
+-      v5 = v3;
++      v4 = p;
+     }
+     runtime.unlock(&runtime.stackpool[(unsigned int)a1 * 0x40]);
+-    v4 = (unsigned int)a1 * 0x10;
+-    *(unsigned int *)(v6 + 0x8b0 + v4) = v5;
+-    *(unsigned int *)(v6 + 0x8b8 + v4) = v2;
++    v3 = (unsigned int)a1 * 0x10;
++    *(unsigned int *)(v5 + 0x8b0 + v3) = v4;
++    *(unsigned int *)(v5 + 0x8b8 + v3) = v2;
+     return;
+   }
+   runtime.morestackc.abi0(); // no-return
+
+--- f26/runtime.stackcacherelease
++++ current/runtime.stackcacherelease
+@@ -1,29 +1,29 @@
+ void runtime.stackcacherelease(int a0,unsigned char a1)
+ {
++  unsigned int p; // rax | rbx | rcx | rdx | stack - 0x20 | stack - 0x38
+   unsigned int v1; // rbx | rcx | stack - 0x20
+   unsigned char v2; // tmp
+   unsigned int v3; // rax | rcx | rdx | stack - 0x30
+   int v4; // rcx | stack - 0x28
+   int v5; // rax | rbx | stack + 0x8
+   unsigned char v6; // bl | cl | stack + 0x10
+-  unsigned int x; // rax | rbx | rcx | rdx | stack - 0x20 | stack - 0x38
+   
+   v5 = a0;
+   v6 = a1;
+   if ((char *)g->stackguard1 < &Stack0000000000000000) {
+     v4 = (unsigned int)a1 * 0x10;
+-    x = *(unsigned int *)(a0 + 0x8b0 + v4);
++    p = *(unsigned int *)(a0 + 0x8b0 + v4);
+     v3 = *(unsigned int *)(a0 + 0x8b8 + v4);
+     runtime.lock(&runtime.stackpool[(unsigned int)a1 * 0x40]);
+     v2 = v6 & 0x3f;
+     while (0x4001 <= v3) {
+-      v1 = *(unsigned int *)runtime.gclinkptr.ptr(x,x,v6);
+-      runtime.stackpoolfree(x,v6);
++      v1 = runtime.gclinkptr.ptr(p)->next;
++      runtime.stackpoolfree(p,v6);
+       v3 -= 0x800 << v2;
+-      x = v1;
++      p = v1;
+     }
+-    runtime.unlock(&runtime.stackpool[(unsigned int)a1 * 0x40]);
+-    *(unsigned int *)(v5 + 0x8b0 + v4) = x;
++    runtime.unlock(&runtime.stackpool[(unsigned int)a1 * 0x40],p,v6);
++    *(unsigned int *)(v5 + 0x8b0 + v4) = p;
+     *(unsigned int *)(v5 + 0x8b8 + v4) = v3;
+     return;
+   }
+
+--- f26/runtime.stackcache_clear
++++ current/runtime.stackcache_clear
+@@ -1,24 +1,24 @@
+ int runtime.stackcache_clear(int a0)
+ {
+   unsigned char order; // bl | cl | dl | stack - 0x20 | stack - 0x29
++  unsigned int p; // rax | rcx | stack - 0x18 | stack - 0x28
+   int v1; // rcx
+   unsigned int v2; // rax | rcx | stack - 0x18
+   unsigned long v3; // xmm15_qa
+   unsigned long v4; // xmm15_qb
+   int v5; // rax | rcx | rdx | stack + 0x8
+-  unsigned int x; // rax | rcx | stack - 0x18 | stack - 0x28
+   
+   v5 = a0;
+   if ((char *)g->stackguard1 < &Stack0000000000000000) {
+     order = 0;
+     while (order <= 3) {
+       runtime.lock(&runtime.stackpool[(unsigned int)order * 0x40]);
+-      x = *(unsigned int *)(v5 + 0x8b0 + (unsigned int)order * 0x10);
++      p = *(unsigned int *)(v5 + 0x8b0 + (unsigned int)order * 0x10);
+       while( true ) {
+-        if (!runtime.gclinkptr.ptr(x)) break;
+-        v2 = *(unsigned int *)runtime.gclinkptr.ptr(x);
+-        runtime.stackpoolfree(x,order);
+-        x = v2;
++        if (!runtime.gclinkptr.ptr(p)) break;
++        v2 = runtime.gclinkptr.ptr(p)->next;
++        runtime.stackpoolfree(p,order);
++        p = v2;
+       }
+       v1 = v5 + (unsigned int)order * 0x10;
+       *(unsigned long *)(v1 + 0x8b0) = v3;
+
+--- f26/runtime.stackalloc
++++ current/runtime.stackalloc
+@@ -56,11 +56,11 @@
+         v2 = *(int *)(runtime.puintptr.ptr(v8,v9) + 0x38);
+         v10 = (unsigned int)order * 0x10;
+         v9 = *(unsigned int *)(v2 + 0x8b0 + v10);
+-        if (!runtime.gclinkptr.ptr()) {
++        if (!runtime.gclinkptr.ptr(v9)) {
+           runtime.stackcacherefill(v2,order);
+           v9 = *(unsigned int *)(v2 + 0x8b0 + v10);
+         }
+-        *(unsigned long *)(v2 + 0x8b0 + v10) = *(unsigned long *)runtime.gclinkptr.ptr();
++        *(unsigned int *)(v2 + 0x8b0 + v10) = runtime.gclinkptr.ptr(v9)->next;
+         v1 = (int *)(v2 + 0x8b8 + v10);
+         *v1 = *v1 - (unsigned int)v11;
+       }
+
+--- f26/runtime.stackfree
++++ current/runtime.stackfree
+@@ -6,7 +6,7 @@
+   runtime.m *v3; // rcx
+   unsigned long v4; // rax | stack - 0x10
+   unsigned int *v5; // rax | rbx | rcx | stack - 0x58
+-  unsigned long *v6; // rax
++  runtime.gclink *v6; // rax
+   unsigned int v7; // rbx | rcx | stack - 0x30 | stack - 0x50
+   int v8; // rcx | stack - 0x38
+   unsigned int v9; // rax | rbx | rcx | stack - 0x30 | stack - 0x50
+@@ -47,8 +47,8 @@
+       v8 = (unsigned int)order * 0x10;
+       if (0x8000 <= *(unsigned int *)(v2 + 0x8b8 + v8))
+         runtime.stackcacherelease(v2,order);
+-      v6 = (unsigned long *)runtime.gclinkptr.ptr(a0);
+-      *v6 = *(unsigned long *)(v2 + 0x8b0 + v8);
++      v6 = runtime.gclinkptr.ptr((unsigned int)a0);
++      v6->next = *(unsigned int *)(v2 + 0x8b0 + v8);
+       *(void **)(v2 + 0x8b0 + v8) = a0;
+       v1 = (int *)(v2 + 0x8b8 + v8);
+       *v1 = *v1 + v9;
+
