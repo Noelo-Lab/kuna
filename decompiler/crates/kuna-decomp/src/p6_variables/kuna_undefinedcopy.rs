@@ -54,8 +54,12 @@ pub(crate) fn mark(data: &mut Funcdata) {
             copies.entry(input).or_default().push(id);
         }
     }
+    // The budget is shared, so the roots go in creation order: a Varnode's id
+    // is only the arena slot it reused.
+    let mut roots: Vec<(VarnodeId, Vec<OpId>)> = copies.into_iter().collect();
+    roots.sort_by_key(|(root, _)| data.vbank().get(*root).map(|v| v.get_create_index()));
     let mut budget = 16384usize;
-    for (root, ops) in copies {
+    for (root, ops) in roots {
         if unobserved(data, root, &mut budget) {
             for op in ops {
                 data.op_mark_non_printing_pub(op);

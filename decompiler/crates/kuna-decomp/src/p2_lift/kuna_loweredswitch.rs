@@ -1212,17 +1212,20 @@ impl ActionLowerSwitchDetect {
             *var_count.entry(var).or_insert(0) += 1;
         }
 
-        // Pick the switch variable: the Varnode with the most cascade nodes.
-        let mut swvar: Option<VarnodeId> = None;
-        let mut best_count: int4 = 1;
+        // Pick the switch variable: the Varnode with the most cascade nodes, the
+        // first created on a tie. A Varnode's id is only the arena slot it reused.
+        let mut swvar: Option<(VarnodeId, int4, kuna_base::types::uint4)> = None;
         for (var, count) in var_count.iter() {
-            if *count > best_count {
-                best_count = *count;
-                swvar = Some(*var);
+            if *count < 2 {
+                continue;
+            }
+            let created = data.vbank().get(*var).map_or(u32::MAX, |v| v.get_create_index());
+            if swvar.is_none_or(|(_, best, first)| *count > best || (*count == best && created < first)) {
+                swvar = Some((*var, *count, created));
             }
         }
         let swvar = match swvar {
-            Some(v) => v,
+            Some((v, _, _)) => v,
             None => return 0,
         };
 

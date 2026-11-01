@@ -694,7 +694,9 @@ address-tied or persistent destination. Only when no such use is reachable is
 the temporary COPY marked non-printing. The SSA graph, guarded definitions,
 memory operations and genuine undefined paths remain intact. Unsupported
 control flow, 1,024 distinct states or exhaustion of a shared 16,384-step budget
-retain the original copies. The authored conditional-register regression checks
+retain the original copies; the creations are walked in the order their Varnodes
+were created, so which of them the budget reaches does not depend on the arena
+slots the Varnodes happened to reuse. The authored conditional-register regression checks
 unchanged C at O0/O2 with uninitialized diagnostics, 32-bit runtime model checks,
 and controls whose undefined values really reach their returns.
 

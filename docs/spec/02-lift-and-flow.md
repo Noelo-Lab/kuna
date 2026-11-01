@@ -2010,7 +2010,9 @@ strand phi state:
 - **Detect** (`kuna_loweredswitch.rs (ActionLowerSwitchDetect)`) runs late —
   scheduled directly after `ActionSwitchNorm` — on the fully simplified CFG,
   and only reads: it collects the pure-compare blocks, canonicalizes each
-  compared variable, groups by variable and takes the most-compared one, finds
+  compared variable, groups by variable and takes the most-compared one (on a
+  tie, the one created first; a Varnode's id is only the arena slot it reused,
+  so it cannot break the tie), finds
   the cascade head (skipping a leading getopt-style `V == -1` sentinel guard),
   and walks the compare tree carrying angr's binary-search interval
   (`kuna_loweredswitch.rs (recover_cascade)`) to collect case→target pairs and
