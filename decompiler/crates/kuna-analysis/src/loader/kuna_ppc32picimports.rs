@@ -1310,11 +1310,7 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
         } else {
             Value::Unknown
         };
-        let at = match ea {
-            Value::Stack(at) if !gpr => Value::Stack(at & !(width - 1)),
-            other => other,
-        };
-        s.store(at, width, value);
+        s.store(ea, width, value);
     };
     match xo {
         0 | 4 | 6 | 7 | 32 | 38 | 39 | 54 | 71 | 86 | 103 | 131 | 144 | 146 | 163 | 246 | 278
@@ -1352,15 +1348,25 @@ fn indexed(image: &Image<'_>, evidence: &mut Evidence, word: u32, mut s: State) 
             if let Value::Constant(v) = s.regs[rt] {
                 evidence.escape(image, Value::Constant(v.swap_bytes()));
             }
-            store(&mut s, evidence, 4, false);
+            s.store(ea, 4, Value::Unknown);
         }
         215 => store(&mut s, evidence, 1, true),
         407 | 918 => store(&mut s, evidence, 2, true),
-        663 | 983 | 199 => store(&mut s, evidence, 4, false),
-        135 => store(&mut s, evidence, 1, false),
-        167 => store(&mut s, evidence, 2, false),
+        663 | 983 => store(&mut s, evidence, 4, false),
         727 => store(&mut s, evidence, 8, false),
-        231 | 487 => store(&mut s, evidence, 16, false),
+        135 | 167 | 199 | 231 | 487 => {
+            let width = match xo {
+                135 => 1,
+                167 => 2,
+                199 => 4,
+                _ => 16,
+            };
+            let at = match ea {
+                Value::Stack(at) => Value::Stack(at & !(width - 1)),
+                other => other,
+            };
+            s.store(at, width, Value::Unknown);
+        }
         183 | 247 | 439 | 695 | 759 => {
             let (width, gpr) = match xo {
                 183 => (4, true),
@@ -2154,6 +2160,71 @@ mod tests {
             State::entry(),
         );
         assert_eq!(s.regs[30], Value::Unknown);
+    }
+
+    /// Model the written bytes independently of the proof's saved-word ranges.
+    fn check_indexed_store_ranges(cases: &[(u32, u32, bool)]) {
+        let mut saved = run(
+            &[0x9421ffe0, 0x93c10008, 0x93a1000c, 0x7c0802a6, 0x90010010],
+            State::entry(),
+        );
+        saved.regs[0] = Value::Unknown;
+        for &(xo, width, aligned) in cases {
+            for offset in 0..=24u32 {
+                let mut before = saved;
+                before.regs[9] = Value::Constant(offset);
+                let word = (31 << 26) | (1 << 16) | (9 << 11) | (xo << 1) | u32::from(xo == 150);
+                let after = run(&[word], before);
+                let start = if aligned {
+                    offset & !(width - 1)
+                } else {
+                    offset
+                };
+                let touched =
+                    |at: u32| (start..start + width).any(|byte| (at..at + 4).contains(&byte));
+                for (reg, at) in [(30, 8), (29, 12)] {
+                    assert_eq!(
+                        after.saved[reg] == UNSAVED,
+                        touched(at),
+                        "xo={xo} offset={offset} r{reg}"
+                    );
+                }
+                for (at, value) in [(0u32, Value::Stack(0)), (16, Value::Return)] {
+                    assert_eq!(
+                        after.slots.contains(&Some((at.wrapping_sub(32), value))),
+                        !touched(at),
+                        "xo={xo} offset={offset} slot={at}"
+                    );
+                }
+                if matches!(xo, 695 | 759) {
+                    assert_eq!(after.regs[1], Value::Stack(offset.wrapping_sub(32)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn indexed_scalar_stores_invalidate_their_actual_byte_range() {
+        check_indexed_store_ranges(&[
+            (662, 4, false),
+            (150, 4, false),
+            (663, 4, false),
+            (983, 4, false),
+            (727, 8, false),
+            (695, 4, false),
+            (759, 8, false),
+        ]);
+    }
+
+    #[test]
+    fn indexed_vector_stores_retain_architectural_alignment() {
+        check_indexed_store_ranges(&[
+            (135, 1, true),
+            (167, 2, true),
+            (199, 4, true),
+            (231, 16, true),
+            (487, 16, true),
+        ]);
     }
 
     #[test]

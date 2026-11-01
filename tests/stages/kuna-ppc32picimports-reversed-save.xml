@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="PowerPC:LE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">2000804e</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option ppc32picimports off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-reversed-save.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ppc32picimports abi</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-reversed-save.elf</com>
+  <com>read symbols</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="reversed save overlap retains both caller returns" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="reversed save overlap keeps the stub unnamed" min="2" max="2">sub_1800\(</stringmatch>
+<stringmatch name="reversed save overlap grants no terminal contract" min="0" max="0">__stack_chk_fail\(|no-return</stringmatch>
+</decompilertest>

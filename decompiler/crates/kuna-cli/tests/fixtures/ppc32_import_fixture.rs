@@ -1543,3 +1543,37 @@ pub fn slot_write(little: bool) -> Vec<u8> {
     bytes[offset..offset + 6].copy_from_slice(b"abort\0");
     bytes
 }
+
+/// A reversed store changes a saved r30 from 0x2800 to 0x2804; a neighboring
+/// word provides the control that leaves the original terminal slot selected.
+pub fn reversed_save(little: bool, overlap: bool) -> Fixture {
+    let mut f = Fixture::new(Plt::Short);
+    f.little = little;
+    f.pic_collision = true;
+    f.caller = Some(vec![
+        0x7c0802a6, 0x9421fff0, 0x90010014, 0x93c10008, 0x3bc02800, 0x48000021, 0x480007e9,
+        0x83c10008, 0x80010014, 0x38210010, 0x7c0803a6, 0x38600007, 0x4e800020,
+    ]);
+    let offset = if overlap {
+        if little {
+            5
+        } else {
+            11
+        }
+    } else {
+        12
+    };
+    f.second_caller = Some(vec![
+        0x9421fff0,
+        0x93c10008,
+        0x39200004,
+        0x39400000 | offset,
+        (31 << 26) | (9 << 21) | (1 << 16) | (10 << 11) | (662 << 1),
+        0x83c10008,
+        0x38210010,
+        0x2c030000,
+        0x41820004,
+        0x4e800020,
+    ]);
+    f
+}
