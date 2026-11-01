@@ -1985,8 +1985,9 @@ Behaviors specific to `decompile-all`:
   at most a thirty-second of the run's time. A one-worker run in the
   callee-first order (option `protoorder`, the whole-binary default) keeps
   each finished result in an anonymous temporary file until its last round,
-  as a `--jobs` worker hands its results over, so the results of the
-  functions before one are not charged to it either.
+  as a `--jobs` worker hands its results over, and lets the call graph it
+  planned that order with go before the first function, so neither the
+  results of the functions before one nor the graph is charged to it.
 
   An explicit limit is per process: the serial run, each `--jobs N` worker,
   and the `decomp_dbg` child of `kuna decompile` each get the value given.

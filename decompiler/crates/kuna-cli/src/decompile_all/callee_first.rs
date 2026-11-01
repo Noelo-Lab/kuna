@@ -43,7 +43,8 @@ pub(super) fn decompile_entries_callee_first(
 /// beside the program (hundreds of MiB on a large PE), and only the planning
 /// before the first decompile and the callback park after the last read it:
 /// the park's answers about the targets are taken up front
-/// ([`CallGraph::callback_refs`]) and the graph is dropped before the loop.
+/// ([`CallGraph::callback_refs`]) and the graph is dropped, its free pages
+/// returned, before the loop.
 pub(crate) fn decompile_callee_first(
     prog: &mut ConsoleProgram,
     args: &Args,
@@ -97,6 +98,7 @@ pub(crate) fn decompile_callee_first(
         _ => None,
     };
     drop(graph);
+    crate::kuna_allocrelease::after_analysis();
     {
         let ledger = &mut prog.arch_mut().kuna_callerargs;
         *ledger = Default::default();
