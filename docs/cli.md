@@ -2230,7 +2230,9 @@ that page.
 
 Shapes that build a number rather than an address do not file `data`: a copy of the
 register, bitwise composition (`movk`, `ori`, `movt`) and a 32-bit add widened into a
-64-bit register (RV64 `addiw`). In an ELF shared object or PIE an absolute immediate
+64-bit register (RV64 `addiw`). Nor does a constant subtracted from a carried
+address, which biases it: Swift's `sub x8,x8,#0x20` turns a string literal's address
+into its string object, and the literal stays the reference. In an ELF shared object or PIE an absolute immediate
 cannot be an address, so there only a value computed from the instruction's own
 address (`auipc`, A32 `add rX,pc`) is carried; on x86-64 and AArch64 the PC-relative
 form (`lea [rip+…]`, `adrp`) is already a decode-time constant and is carried as

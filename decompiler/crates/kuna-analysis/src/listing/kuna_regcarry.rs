@@ -64,6 +64,9 @@
 //!  * bitwise composition (`movk`, `ori`, `movt`) and an add narrower than the
 //!    register it lands in (RV64's `addiw`, a `w` register) are how a program
 //!    builds a number;
+//!  * a constant subtracted from a carried address biases it (Swift's string
+//!    object is its literal less 0x20, `sub x8,x8,#0x20`): the address it came
+//!    from stays the reference;
 //!  * a value only formed to form another — the middle `add` of an A32 PLT entry,
 //!    whose register the very next instruction consumes as a base and overwrites
 //!    — is a step, not an address;
@@ -327,6 +330,10 @@ struct Val {
     /// The pointer-width word stored at `v`, read through a reference: inert
     /// to arithmetic, and a call through it is a call through `v`.
     loaded: bool,
+    /// A constant subtracted from a carried address: that address biased
+    /// backwards (Swift's string object, `sub x8,x8,#0x20` before the `orr` of
+    /// its discriminator), not one of its own.
+    bias: bool,
 }
 
 impl Val {
@@ -470,6 +477,7 @@ fn constant(vma: u64, formed: &Formed, vn: &VarnodeData) -> Val {
         formed: None,
         base: None,
         loaded: false,
+        bias: false,
     }
 }
 
@@ -600,7 +608,8 @@ fn fold(op: &FullOp, a: Option<Val>, b: Option<Val>) -> Option<Val> {
                 _ => false,
             };
             let (age, pc) = (a.age.max(b.age), a.pc || b.pc);
-            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base, loaded: false })
+            let bias = op.opcode == OpCode::CPUI_INT_SUB && a.carried && !b.carried && !moved;
+            Some(Val { v, carried, composed, age, pc, addr, own: false, formed, base, loaded: false, bias })
         }
         _ => None,
     }
@@ -669,6 +678,7 @@ impl Tracker {
                 formed: h.formed,
                 base: None,
                 loaded: h.loaded,
+                bias: false,
             };
             (h.off, h.size, val)
         }));
@@ -745,6 +755,7 @@ impl Tracker {
                         }
                         if v.carried
                             && !joined
+                            && !v.bias
                             && v.composed == Some(out.size)
                             && m.is_register(out)
                             && !(calls && v.v == fall_vma)
@@ -1227,6 +1238,17 @@ mod tests {
         assert!(pages(&m, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "`adr` names its label");
         let x86 = isa.machine(false);
         assert!(pages(&x86, &[isa.set(16, 0x24000), isa.load(16, 16, 0x10)], &[]).0.is_empty(), "no adrp");
+    }
+
+    /// Swift's string literal: `adrp/add` forms the literal, `sub #0x20` biases
+    /// it into the string object's pointer. The literal stays the reference.
+    #[test]
+    fn a_constant_subtracted_from_an_address_is_a_bias() {
+        let isa = Isa::new();
+        let m = isa.machine(false);
+        let sub = vec![op(OpCode::CPUI_INT_SUB, Some(isa.x(8)), vec![isa.x(8), isa.k(0x20)])];
+        let got = walk(&m, &[isa.set(8, 0x24000), isa.add(8, 8, 0x40), sub], &[]);
+        assert_eq!(got, vec![(0x20004, 0x24040, XrefKind::Data)]);
     }
 
     /// `mov rax,[rip+slot]; call rax` calls through the slot; `call [rip+slot]`
