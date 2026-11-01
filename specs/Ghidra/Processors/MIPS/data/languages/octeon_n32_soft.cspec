@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Derived from the shared MIPS ABI with soft-float GPR argument/return storage. -->
+<compiler_spec>
+  <data_organization>
+    <absolute_max_alignment value="0" />
+    <machine_alignment value="2" />
+    <default_alignment value="1" />
+    <default_pointer_alignment value="4" />
+    <pointer_size value="4" />
+    <wchar_size value="4" />
+    <short_size value="2" />
+    <integer_size value="4" />
+    <long_size value="4" />
+    <long_long_size value="8" />
+    <float_size value="4" />
+    <double_size value="8" />
+    <long_double_size value="16" />
+    <size_alignment_map>
+      <entry size="1" alignment="1" />
+      <entry size="2" alignment="2" />
+      <entry size="4" alignment="4" />
+      <entry size="8" alignment="8" />
+      <entry size="16" alignment="16" />
+    </size_alignment_map>
+  </data_organization>
+  <stackpointer register="sp" space="ram" />
+  <funcptr align="2" />
+  <global>
+    <range space="ram" />
+    <range space="register" first="0x2000" last="0x2fff" />
+  </global>
+  <aggressivetrim signext="true" />
+  <default_proto>
+    <prototype name="__stdcall" extrapop="0" stackshift="0">
+      <input killedbycall="true">
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="a0" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="a1" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="a2" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="a3" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="t0" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="t1" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="t2" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="t3" />
+        </pentry>
+        <pentry minsize="1" maxsize="500" align="8">
+          <addr offset="0" space="stack" />
+        </pentry>
+        <rule>
+          <datatype name="float" />
+          <join align="true" stackspill="false" />
+        </rule>
+        <rule>
+          <datatype name="float" />
+          <join align="true" reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="struct" />
+          <join align="true" reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="union" />
+          <join align="true" reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="any" />
+          <join align="true" />
+        </rule>
+      </input>
+      <output>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="v0" />
+        </pentry>
+        <pentry minsize="1" maxsize="8" extension="sign">
+          <register name="v1" />
+        </pentry>
+        <pentry minsize="16" maxsize="16" metatype="float">
+          <addr space="join" piece1="v0" piece2="a0" />
+        </pentry>
+        <rule>
+          <datatype name="float" minsize="16" maxsize="16" />
+          <consume storage="float" />
+        </rule>
+        <rule>
+          <datatype name="struct" />
+          <join reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="union" />
+          <join reversejustify="true" />
+        </rule>
+        <rule>
+          <datatype name="any" />
+          <join />
+        </rule>
+      </output>
+      <unaffected>
+        <register name="s0" />
+        <register name="s1" />
+        <register name="s2" />
+        <register name="s3" />
+        <register name="s4" />
+        <register name="s5" />
+        <register name="s6" />
+        <register name="s7" />
+        <register name="s8" />
+        <register name="sp" />
+        <register name="gp" />
+      </unaffected>
+    </prototype>
+  </default_proto>
+  <callotherfixup targetop="setISAMode">
+    <pcode incidentalcopy="true">
+      <input name="newMode" />
+      <body>
+        v0 = v0;
+      </body>
+    </pcode>
+  </callotherfixup>
+</compiler_spec>
