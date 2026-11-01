@@ -36,6 +36,12 @@
     local and assigned nowhere, and the forwarded one disappears from the call
     site. Both arms are asserted so the class is visible in the corpus rather
     than only described.
+    #2 accepts the call on the integer element in either of two forms:
+    `v1 = sub_1357(a1[1]); return v1;`, or the `-O0` local the binary stores
+    the element in first, `v1 = a1[1]; return sub_1357(v1);`. Which one the
+    off pass prints depends on whether the call folds into the return once the
+    shared `leave; ret` is split (kuna #1355), not on the element type the
+    assertion is about.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -73,7 +79,8 @@ c3
   <com>quit</com>
 </script>
 <stringmatch name="ELFMAIN #1: off, the entry is an anonymous sub with a body-driven signature" min="1" max="1">unsigned long sub_1405\(int4 a0,unsigned long \*a1\)</stringmatch>
-<stringmatch name="ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer" min="1" max="1">sub_1357\(a1\[1\]\)</stringmatch>
+<stringmatch name="ELFMAIN #2: off, the argument vector has no element type, so the string it holds is an integer" min="1" max="1">sub_1357\(a1\[1\]\)|v\d+ = a1\[1\];
+return v\d+;|return sub_1357\(v\d+\);</stringmatch>
 <stringmatch name="ELFMAIN #3: default, the libc-start argument is named and declared, in both images" min="2" max="2">int4 main\(int4 argc,char \*\*argv,char \*\*envp\)</stringmatch>
 <stringmatch name="ELFMAIN #4: default, the declared element type reaches the call site" min="1" max="1">sub_1357\(argv\[1\]\)</stringmatch>
 <stringmatch name="ELFMAIN #5: off, an argument register past the third is recovered as a parameter" min="1" max="1">unsigned long sub_1026\(unsigned int a0,unsigned long a1,unsigned long a2,unsigned long a3,unsigned long a4,unsigned long a5\)</stringmatch>

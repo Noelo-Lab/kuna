@@ -245,6 +245,9 @@ mod libgcc_divdi3;
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 
+#[path = "return_copy_clone.rs"]
+mod return_copy_clone;
+
 #[path = "stable_local_names.rs"]
 mod stable_local_names;
 

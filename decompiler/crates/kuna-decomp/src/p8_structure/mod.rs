@@ -5,6 +5,7 @@
 
 pub mod blockaction;
 mod kuna_domindex;
+pub mod kuna_clonephiorder;
 pub mod kuna_condfold;
 pub mod kuna_condstmts;
 pub mod kuna_crossjumpreverter;
