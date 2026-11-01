@@ -209,6 +209,50 @@ section list. Where upstream returns a BFD target string for the Java side to
 re-map, kuna resolves the SLEIGH language id directly off the object header
 (machine + endianness + class → e.g. `x86:LE:64:default:gcc`).
 
+(kuna) ELF target selection also reads declared instruction and ABI requirements
+(`decompiler/crates/kuna-analysis/src/loader/kuna_mipstarget.rs`). MIPS ELF32 can
+carry 64-bit instructions with 32-bit pointers: the ISA flags select the register
+width and release, while ABI2, O32, O64 and EABI32 select the compiler model.
+The wide-register O32 model retains four-byte integer argument and return
+slots, even-register alignment for pairs, and stack arguments after the
+16-byte register save area. A scalar result uses the low word of `v0`; a
+declared 64-bit result joins the low words of `v0` and `v1` in ABI order.
+Each returned word also defines the sign-extended value of its full register.
+Callers can test that full register without losing the call result or widening
+the logical return slots.
+Incoming integer words are sign-extended into the full general registers;
+full-register reads retain the same four-byte argument slots. Struct and union
+results, including four-byte aggregates, use a hidden result pointer in `a0`,
+with subsequent arguments assigned after it using the usual pair alignment.
+ELF32 wide-register languages retain full-width decoder addresses and use the
+existing truncated-space pointer flow to recover their four-byte stack base.
+The physical stack register remains eight bytes wide.
+
+MIPS FPR width is selected independently from `.MIPS.abiflags` CPR1 size, its
+FP ABI, GNU FP attributes and the legacy FP64 header flag. The shared ABI reader
+(`decompiler/crates/kuna-analysis/src/loader/kuna_mipsabi.rs`) accepts records
+from sections or `PT_MIPS_ABIFLAGS` segments and rejects conflicting records. O32 defaults to
+paired 32-bit FPRs, except on Release 6; declared FP64 uses whole 64-bit FPRs.
+FP ABI `ANY` (zero) supplies no evidence: it can accompany a concrete ABI in
+either metadata source, including repeated GNU tags or sections. The shared
+reader applies this rule before merging declarations, for both target selection
+and hard/soft-float argument evidence. Explicit CPR1 width remains independent,
+and two different concrete declarations still conflict.
+Release 6 retains its R6 decoder when the ELF also declares microMIPS; the
+per-function ISA markers choose ordinary or microMIPS decoding. MIPS16 plus
+microMIPS, and MIPS16 plus Release 6, still require an explicit target.
+The FP32 wide-register languages preserve 64-bit integer instructions and
+use paired storage for double-precision operations. Conflicting declarations,
+malformed metadata and combinations without a bundled model require an explicit
+target rather than silently changing FPR width.
+ELF64 without ABI bits uses the 64-bit-address default model. Contradictory or
+unsupported declarations require an explicit target. An ELF32 wide-register
+image with no ABI declaration uses the existing O64 default with a diagnostic;
+Processor-specific machine or ABI-extension declarations are left to their
+processor-specific selector. This generic path does not infer those targets.
+Explicit `--target` always wins. An automatically selected MIPS language never
+retries with a different ISA or ABI when its specification is unavailable.
+
 (kuna) **A Go image composes the `:golang` compiler field instead**
 (`decompiler/crates/kuna-analysis/src/loadimage_object.rs (language_id_for)`,
 option `goabi auto|off`, default auto, carried as the `KUNA_GOABI` loadtime
@@ -1897,6 +1941,13 @@ so the S3 constant-base action emits `COPY #entry -> t9` at the entry block and 
 prologue's `addu gp,gp,t9` folds to a real `$gp`. Both are doubly guarded: the pass
 gates on its architecture, and the commit swallows an unregistered-variable /
 unknown-register error, so a paint on the wrong language is a faithful no-op.
+For ELF32, the marker pass sign-extends the pointer value when the selected
+language's `t9` register is wider than 32 bits. It queries that register directly,
+so explicit target overrides follow the same rule as automatic selection.
+Function addresses remain in the ELF address space; only the seeded register
+value changes. Native ELF64 values and 32-bit register seeds stay intact. Thus
+an ELF32 entry at `0x80001000` supplies `0xffffffff80001000` to a 64-bit `t9`,
+and a full-register signed comparison sees a negative pointer.
 
 (kuna) **A PowerPC64 ELFv1 function symbol names a descriptor, not code**
 (`decompiler/crates/kuna-analysis/src/loader/elfv1.rs (Descriptors::read)`, the

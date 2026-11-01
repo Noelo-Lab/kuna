@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:64:64-32addr:o32">
+<!-- Synthetic slt v0,a0,zero; jr ra; nop. O32 sign-extends its four-byte
+     argument slot into the physical eight-byte register read by slt. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">0080102a03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x1000" name="negative"/>
+</binaryimage>
+<script>
+  <com>option ctypes on</com>
+  <com>lo fu negative</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="O32 slot: inferred input remains a four-byte int" min="1" max="1">negative\(int a0\)</stringmatch>
+<stringmatch name="O32 slot: full-register test uses the argument" min="1" max="1">return a0 &lt; 0;</stringmatch>
+<stringmatch name="O32 slot: no undefined upper half" min="0" max="0">CONCAT|unaff_|in_a0|halt_baddata</stringmatch>
+</decompilertest>

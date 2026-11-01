@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- O32 with 64-bit general registers and 32-bit floating-point registers.
+     Integer arguments and returns retain four-byte slots. -->
+<compiler_spec>
+  <data_organization>
+        <pointer_size value="4"/>
+        <integer_size value="4"/>
+        <long_size value="4"/>
+        <long_long_size value="8"/>
+        <float_size value="4" />
+        <double_size value="8" />
+        <long_double_size value="8" />
+        <size_alignment_map>
+			<entry size="1" alignment="1" />
+			<entry size="2" alignment="2" />
+			<entry size="4" alignment="4" />
+			<entry size="8" alignment="8" />
+		</size_alignment_map>
+  </data_organization>
+  <stackpointer register="sp_lo" space="ram"/>
+  <funcptr align="2"/>
+  <global>
+    <range space="ram"/>
+    <range space="register" first="0x2000" last="0x2fff"/>
+  </global>
+  <returnaddress>
+    <register name="ra"/>
+  </returnaddress>
+  <aggressivetrim signext="true"/>  <!-- Aggressively try to eliminate sign extensions -->
+  <default_proto>
+    <prototype name="__stdcall" extrapop="0" stackshift="0">
+      <input killedbycall="true">
+        <pentry minsize="1" maxsize="8" metatype="float">
+          <register name="f12_13"/>
+        </pentry>
+        <pentry minsize="1" maxsize="8" metatype="float">
+          <register name="f14_15"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" extension="sign">
+          <register name="a0"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" extension="sign">
+          <register name="a1"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" extension="sign">
+          <register name="a2"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" extension="sign">
+          <register name="a3"/>
+        </pentry>
+        <pentry minsize="1" maxsize="500" align="4">
+          <addr offset="16" space="stack"/>
+        </pentry>
+        <!-- Parameters within the ellipses only use integer registers -->
+        <rule>
+          <datatype name="float"/>
+          <varargs first="0"/>
+          <consume storage="general"/>
+        </rule>
+        <!-- special case: first two args are float,double, which produces a 'hole' in the
+             second word of the argument space, which must be explicitly consumed -->
+        <rule>
+          <datatype name="float" minsize="1" maxsize="4"/>
+          <position index="0"/>
+          <datatype_at index="1">
+            <datatype name="float" minsize="5" maxsize="8"/>
+          </datatype_at>
+          <consume storage="float"/>
+          <consume_extra storage="general"/>
+          <consume_extra storage="general"/>
+        </rule>
+        <!-- Only leading floating-point parameters can use float registers -->
+        <rule>
+          <datatype name="float" minsize="1" maxsize="8"/>  <!-- float parameter -->
+          <position index="0"/>                             <!-- as first input parameter -->
+          <consume storage="float"/>                       <!-- use f12_f13 -->
+          <consume_extra storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="float" minsize="1" maxsize="8"/>  <!-- float parameter -->
+          <position index="1"/>                             <!-- as second input parameter -->
+          <datatype_at index="0">							<!-- if the first input -->
+            <datatype name="float" minsize="1" maxsize="8"/> <!-- is a float parameter -->
+          </datatype_at>
+          <consume storage="float"/>	                    <!-- use f14_f15 -->
+          <consume_extra storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="any"/>  <!-- otherwise any parameter -->
+          <join align="true"/>    <!-- should split across general purpose registers -->
+        </rule>
+      </input>
+      <output>
+        <pentry minsize="1" maxsize="8" metatype="float">
+          <register name="f0_1"/>
+        </pentry>
+        <!-- O32 returns use 32-bit pieces even with 64-bit general registers. -->
+        <pentry minsize="1" maxsize="4" registerextension="sign">
+          <register name="v0"/>
+        </pentry>
+        <pentry minsize="1" maxsize="4" registerextension="sign">
+          <register name="v1"/>
+        </pentry>
+        <rule>
+          <datatype name="float"/>
+          <consume storage="float"/>
+        </rule>
+        <rule>
+          <datatype name="struct"/>
+          <hidden_return/>
+        </rule>
+        <rule>
+          <datatype name="union"/>
+          <hidden_return/>
+        </rule>
+        <rule>
+          <datatype name="any"/>
+          <join/>
+        </rule>
+      </output>
+      <unaffected>
+        <register name="s0"/>
+        <register name="s1"/>
+        <register name="s2"/>
+        <register name="s3"/>
+        <register name="s4"/>
+        <register name="s5"/>
+        <register name="s6"/>
+        <register name="s7"/>
+        <register name="s8"/>
+        <register name="sp"/>
+        <register name="gp"/>
+        <register name="f20_21"/>
+        <register name="f22_23"/>
+        <register name="f24_25"/>
+        <register name="f26_27"/>
+        <register name="f28_29"/>
+        <register name="f30_31"/>
+      </unaffected>
+      <localrange>
+        <range space="stack" first="0xfff0bdc0" last="0xffffffff"/>
+        <range space="stack" first="0" last="15"/>  <!-- This is backup storage space for register params, but we treat as locals -->
+      </localrange>
+    </prototype>
+  </default_proto>
+
+  <callotherfixup targetop="setISAMode">
+    <pcode incidentalcopy="true">
+      <input name="newMode"/>
+      <!-- NOP -->
+      <body><![CDATA[
+        v0 = v0;
+      ]]></body>
+    </pcode>
+  </callotherfixup>
+
+</compiler_spec>

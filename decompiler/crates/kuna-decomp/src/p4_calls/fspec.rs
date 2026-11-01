@@ -201,6 +201,8 @@ pub enum Containment {
 /// is non-null when this entry is a logical variable built from joined pieces.
 #[derive(Debug, Clone)]
 pub struct ParamEntry {
+    /// A declared extension beyond the logical parameter slot.
+    pub(crate) register_extension: Option<crate::p4_calls::kuna_registerslots::Extension>,
     /// Boolean properties of the parameter (C++ `flags`).
     flags: uint4,
     /// Data-type storage class that this entry must match (C++ `type`).
@@ -232,6 +234,7 @@ impl ParamEntry {
     /// in by `decode`.
     pub fn new(grp: int4) -> ParamEntry {
         ParamEntry {
+            register_extension: None,
             flags: 0,
             type_: type_class::TYPECLASS_GENERAL,
             group_set: vec![grp],
@@ -2488,6 +2491,9 @@ impl ParamListStandard {
     /// Get the type of extension and containing parameter for the given storage
     /// (C++ `assumedExtension`).
     pub fn assumed_extension(&self, addr: &Address, size: int4, res: &mut VarnodeData) -> OpCode {
+        if let Some(opcode) = super::kuna_registerslots::assumed(&self.entry, addr, size, res) {
+            return opcode;
+        }
         for e in self.entry.iter() {
             if e.get_min_size() > size {
                 continue;
