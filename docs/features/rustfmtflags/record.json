@@ -1,0 +1,21 @@
+{
+  "option": "rustfmtflags",
+  "state": "proposal",
+  "default": "off",
+  "baseline_commit": "afe19872beb3b91aff7cb14e32e8c0f3b474a23c",
+  "reference_angr_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
+  "reference_binaries_commit": "76ad9e296dde8f82b8ede93ce06a578cd1933639",
+  "scope": "Verified integer traits and static specifications at existing print sinks; format! result recovery and generic callbacks remain separate",
+  "proposal_validation": {
+    "workspace_passed": 9936,
+    "workspace_failed": 0,
+    "workspace_ignored": 39,
+    "original_assertions": 675,
+    "stage_assertions": 3427,
+    "spec": "passed",
+    "catalog": "passed",
+    "shared_counters": "passed",
+    "tools": "114 tests, one skipped",
+    "lint": "passed"
+  }
+}
