@@ -3173,25 +3173,31 @@ header magic exits `1` naming it rather than rebuilding a layout nothing has bee
 checked against. The original imports come back but the packed image's own
 `.NEOpack`/`.NEOdata` sections are kept, so the stub is still there to read.
 
-**Coverage, and the failure contract.** Implemented: the ELF formats and 32-bit
-`win32/pe`, methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16` and `_8` bit
-layouts) and 14 (LZMA — what `upx --lzma` and `upx --best` write, and what most
-recent packed binaries carry), and the x86 `cto`/`ctoj`/`ctok` and ARM/AArch64 branch
-filters. A PE keeps
-its `PackHeader` in the header padding rather than the tail, and its payload in one
-block followed by a trailer the unpacker replays: the original PE header and section
-table, the import descriptors and names UPX stripped out of the image, and the
-resources it moved out of it all come back, so the recovered file has a working
-import table and not just working code. Everything else — the remaining methods
-(CL1B, DEFLATE, ZSTD, BZIP2), the 64-bit and ARM PE targets, the remaining non-ELF
-targets, a packed shared library, a
-PE whose original image had base relocations, TLS or delay-loaded imports, the
-pre-12 loader block layout, the `ctojr`/PowerPC/RISC-V/delta filters — exits `1`
-with the thing it cannot do **named**, and writes no file:
+**Coverage, and the failure contract.** Implemented: the ELF formats, `win32/pe` and
+`win64/pe` (amd64 PE32+), methods 2–10 (NRV2B/NRV2D/NRV2E in their `_LE32`, `_LE16`
+and `_8` bit layouts) and 14 (LZMA — what `upx --lzma` and `upx --best` write, and
+what most recent packed binaries carry), and the x86 `cto`/`ctoj`/`ctok`/`ct32` and
+ARM/AArch64 branch filters. A PE keeps its `PackHeader` in the header padding rather
+than the tail, and its payload in one block followed by a trailer the unpacker
+replays: the original PE header and section table, the import descriptors and names
+UPX stripped out of the image, the base relocations it rebased and delta-coded, the
+export directory it moved (every DLL's), and the resources it moved out of it all
+come back, so the recovered file has a working import table, relocations and exports
+and not just working code; an overlay (a signature, a MinGW COFF symbol table) is
+appended at its original offset. The result is the file `upx -d` writes, except that
+the import-address-table directory, `SizeOfHeaders` and each import descriptor's
+`OriginalFirstThunk` keep real values where `upx -d` zeroes or recomputes them.
+Everything else — the remaining methods (CL1B, DEFLATE, ZSTD, BZIP2), the
+`win64/arm64` and `wince/arm` PE targets, UPX's exact-layout PE mode (PackHeader
+version 14) and PE PackHeaders older than version 12, the remaining non-ELF targets,
+a packed ELF shared library, the pre-12 ELF loader block layout, the
+`ctojr`/PowerPC/RISC-V/delta filters — exits `1` with the thing it cannot do
+**named**, and writes no file:
 
 ```text
 error: ./x: unsupported UPX image: compression method 15 (DEFLATE)
 error: ./x: unsupported UPX image: unimplemented UPX filter 0x80 (ctojr32: …)
+error: ./x: unsupported UPX image: target format 43 (win64/arm64) -- only win32/pe and win64/pe (amd64) are implemented
 error: ./x: no UPX PackHeader found
 ```
 

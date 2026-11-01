@@ -1,24 +1,30 @@
-//! The PE arm of the static UPX unpacker: rebuild a `win32/pe` image from the
-//! single compressed block UPX leaves in the packed file.
+//! The PE arm of the static UPX unpacker: rebuild a `win32/pe` or `win64/pe`
+//! image from the single compressed block UPX leaves in the packed file.
 //!
-//! Modelled on `PeFile::unpack0` + `PeFile::rebuild{Imports,Resources}` in
-//! UPX's `src/pefile.cpp` (GPL-2.0-or-later). The layout is nothing like the
-//! ELF one, which is why it needs its own walk:
+//! Modelled on `PeFile::unpack0` + `PeFile::rebuild{Imports,Relocs,Exports,
+//! Resources}` in UPX's `src/pefile.cpp` and `Packer::unoptimizeReloc` in
+//! `src/packer_r.cpp` (GPL-2.0-or-later). The layout is nothing like the ELF
+//! one, which is why it needs its own walk:
 //!
 //! ```text
 //!   [DOS hdr+stub][PE hdr][sections][PackHeader][ compressed block ][loader]
 //!                                                        |
-//!   obuf = [ image content from rvamin ][import block][original PE hdr +
-//!            section table][extra info][le32 -> the original PE hdr]
+//!   obuf = [ image content from rvamin ][import block][reloc stream]
+//!          [original PE hdr + section table][extra info][le32 -> the PE hdr]
 //! ```
 //!
 //! Two things follow from that shape. The `PackHeader` is *not* in the tail --
 //! it sits in the header padding immediately before the compressed data, so the
 //! ELF tail scan never sees it. And the decompressed buffer is not the original
 //! file: it is the original *memory image* with the import descriptors, the
-//! import name strings and the resource directory stripped out, plus a trailer
-//! that says how to put them back. Recovering the file means replaying those
-//! rebuilds and then laying the sections out at their file offsets.
+//! import name strings, the base relocations and the resource directory
+//! stripped out, plus a trailer that says how to put them back. Recovering the
+//! file means replaying those rebuilds and then laying the sections out at their
+//! file offsets.
+//!
+//! The two targets differ only in word size. `win64/pe` is the same walk over a
+//! PE32+ header: eight-byte import thunks whose ordinal flag is bit 63, `DIR64`
+//! relocations instead of `HIGHLOW`, and UPX's one amd64 filter (`0x49`).
 //!
 //! # What is refused, and why
 //!
@@ -27,15 +33,13 @@
 //! data directories the *original* image had. A directory this module does not
 //! rebuild would silently desynchronize every later read, so the walk tallies
 //! its own consumption against the trailer's real length and refuses a
-//! mismatch. Base relocations are named up front as well, but only the ones the
-//! packer kept: UPX strips an EXE's relocations by default and marks the header
-//! `RELOCS_STRIPPED`, which costs no trailer bytes and no rebuild, while the
-//! relocations it keeps -- every DLL's, every ASLR image's -- travel as an
-//! optimized stream plus a trailer record this module does not replay. A TLS
-//! directory needs nothing; UPX's own `rebuildTls` is empty. Everything else is
-//! checked the way the ELF arm checks its stream: both Adler-32s, the rebuilt
-//! directories confined to the sections that own them, and a reconstructed file
-//! whose length must equal the original's to the byte.
+//! mismatch. Everything else is checked the way the ELF arm checks its stream:
+//! both Adler-32s, the rebuilt directories confined to the sections that own
+//! them, and a reconstructed file whose length is the original's -- short of it
+//! only by the trailing relocation section UPX drops when an image keeps no
+//! relocations. The targets and layouts UPX writes but this module does not
+//! rebuild -- `arm/wince-pe`, `win64/pe-arm64`, the exact-layout PackHeader
+//! version 14, and PackHeaders older than UPX's own unpacker reads -- are named.
 
 use std::collections::BTreeSet;
 
@@ -48,17 +52,30 @@ const SECTION_HEADER_SIZE: usize = 40;
 const IMPORT_DESC_SIZE: usize = 20;
 /// `IMAGE_RESOURCE_DATA_ENTRY`: offset, size, codepage, reserved.
 const RESOURCE_DATA_ENTRY_SIZE: u32 = 16;
+/// `IMAGE_EXPORT_DIRECTORY`.
+const EXPORT_DIR_SIZE: usize = 40;
 
+const DIR_EXPORT: usize = 0;
 const DIR_IMPORT: usize = 1;
 const DIR_RESOURCE: usize = 2;
 const DIR_BASERELOC: usize = 5;
+const DIR_DEBUG: usize = 6;
 const DIR_BOUND_IMPORT: usize = 11;
-const DIR_DELAY_IMPORT: usize = 13;
 
 const RT_GROUP_ICON: u32 = 14;
 
 /// `IMAGE_FILE_RELOCS_STRIPPED` in the COFF characteristics.
 const IMAGE_FILE_RELOCS_STRIPPED: u16 = 0x0001;
+
+/// `IMAGE_REL_BASED_*`.
+const REL_HIGH: u16 = 1;
+const REL_LOW: u16 = 2;
+const REL_HIGHLOW: u16 = 3;
+const REL_DIR64: u16 = 10;
+
+/// `UPX_F_WIN32_PE` / `UPX_F_WIN64_PE`.
+const FORMAT_WIN32_PE: u8 = 9;
+const FORMAT_WIN64_PE: u8 = 36;
 
 /// Upper bound on descriptors in a candidate loader import table, so a table
 /// that repeats a wanted name forever cannot walk the whole image.
@@ -80,6 +97,51 @@ fn le16(b: &[u8], off: usize) -> Result<u16, UpxError> {
 fn le32(b: &[u8], off: usize) -> Result<u32, UpxError> {
     let s = b.get(off..off + 4).ok_or_else(|| corrupt(format!("read past end at {off:#x}")))?;
     Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+}
+
+fn le64(b: &[u8], off: usize) -> Result<u64, UpxError> {
+    let s = b.get(off..off + 8).ok_or_else(|| corrupt(format!("read past end at {off:#x}")))?;
+    Ok(u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+}
+
+/// PE32 or PE32+: everything the two rebuilds disagree on is the word size.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Width {
+    Pe32,
+    Pe32Plus,
+}
+
+impl Width {
+    /// Bytes in an import thunk or a relocated pointer.
+    fn word(self) -> usize {
+        match self {
+            Width::Pe32 => 4,
+            Width::Pe32Plus => 8,
+        }
+    }
+
+    /// `IMAGE_ORDINAL_FLAG32` / `IMAGE_ORDINAL_FLAG64`.
+    fn ordinal_flag(self) -> u64 {
+        match self {
+            Width::Pe32 => 1 << 31,
+            Width::Pe32Plus => 1 << 63,
+        }
+    }
+
+    /// Offset of the data directory table inside the optional header.
+    fn dirs_at(self) -> usize {
+        match self {
+            Width::Pe32 => 96,
+            Width::Pe32Plus => 112,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Width::Pe32 => "PE32",
+            Width::Pe32Plus => "PE32+",
+        }
+    }
 }
 
 /// One entry of the section table, in either the packed or the recovered header.
@@ -111,85 +173,104 @@ impl Section {
     }
 }
 
+/// Where a header's section table sits. A file's is wherever its COFF header
+/// says the optional header ends, which is where a loader looks. The copy UPX
+/// stores in the trailer is `sizeof_ih` bytes -- the optional header only up to
+/// the data directories in use -- with the section table right behind it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Layout {
+    File,
+    Trailer,
+}
+
 /// A parsed PE header -- used both for the packed image and for the original
-/// one recovered out of the compressed block, which have identical layout.
+/// one recovered out of the compressed block.
 pub(super) struct PeHeader {
     /// Offset of the `PE\0\0` signature within its own buffer.
     pub at: usize,
+    pub width: Width,
     pub opt_size: usize,
-    pub optional_magic: u16,
+    /// Signature + COFF header + optional header through the last data
+    /// directory in use: UPX's `sizeof_ih`.
+    pub hdr_len: usize,
     /// COFF characteristics.
     pub flags: u16,
     pub code_size: u32,
     pub code_base: u32,
+    pub image_base: u64,
+    pub file_align: u32,
     pub sections: Vec<Section>,
     pub dirs: Vec<(u32, u32)>,
+    table_at: usize,
 }
 
 impl PeHeader {
-    /// Total size of the signature + COFF header + optional header.
-    fn header_size(&self) -> usize {
-        24 + self.opt_size
-    }
-
-    fn section_table_at(&self) -> usize {
-        self.at + self.header_size()
-    }
-
     fn dir(&self, i: usize) -> (u32, u32) {
         self.dirs.get(i).copied().unwrap_or((0, 0))
     }
 
+    /// Offset of data directory `i` in the header's own buffer, if it has one.
+    fn dir_at(&self, i: usize) -> Option<usize> {
+        (i < self.dirs.len()).then(|| self.at + 24 + self.width.dirs_at() + 8 * i)
+    }
+
     /// Parse the headers whose `PE\0\0` signature sits at `at`.
-    fn parse(b: &[u8], at: usize) -> Result<Self, UpxError> {
+    fn parse(b: &[u8], at: usize, layout: Layout) -> Result<Self, UpxError> {
         if b.get(at..at + 4) != Some(b"PE\0\0") {
             return Err(corrupt("no PE signature where the header should be"));
         }
         let nsec = le16(b, at + 6)? as usize;
         let opt_size = le16(b, at + 20)? as usize;
         let opt = at + 24;
-        let optional_magic = le16(b, opt)?;
-        let (ndirs_offset, dirs_offset) = match optional_magic {
-            0x10b => (92, 96),
-            0x20b => (108, 112),
+        let width = match le16(b, opt)? {
+            0x10b => Width::Pe32,
+            0x20b => Width::Pe32Plus,
             magic => return Err(unsupported(format!("PE optional header magic {magic:#x}"))),
         };
         if nsec == 0 || nsec > 96 {
             return Err(corrupt(format!("PE header declares {nsec} sections")));
         }
-        if opt_size < dirs_offset {
+        let dirs_at = width.dirs_at();
+        if opt_size < dirs_at {
             return Err(corrupt(format!("optional header is {opt_size} bytes")));
         }
-        let ndirs = le32(b, opt + ndirs_offset)? as usize;
-        if ndirs > 16 || opt_size < dirs_offset + 8 * ndirs {
+        // UPX reads at most sixteen directories and ignores a larger count.
+        let ndirs = (le32(b, opt + dirs_at - 4)? as usize).min(16);
+        if opt_size < dirs_at + 8 * ndirs {
             return Err(corrupt(format!("optional header declares {ndirs} data directories")));
         }
         let mut dirs = Vec::with_capacity(ndirs);
         for i in 0..ndirs {
-            dirs.push((le32(b, opt + dirs_offset + 8 * i)?, le32(b, opt + dirs_offset + 4 + 8 * i)?));
+            let d = opt + dirs_at + 8 * i;
+            dirs.push((le32(b, d)?, le32(b, d + 4)?));
         }
-        let table = at + 24 + opt_size;
+        let hdr_len = 24 + dirs_at + 8 * ndirs;
+        let table_at = match layout {
+            Layout::File => at + 24 + opt_size,
+            Layout::Trailer => at + hdr_len,
+        };
         let mut sections = Vec::with_capacity(nsec);
         for i in 0..nsec {
-            sections.push(Section::parse(b, table + i * SECTION_HEADER_SIZE)?);
+            sections.push(Section::parse(b, table_at + i * SECTION_HEADER_SIZE)?);
         }
+        let image_base = match width {
+            Width::Pe32 => u64::from(le32(b, opt + 28)?),
+            Width::Pe32Plus => le64(b, opt + 24)?,
+        };
         Ok(PeHeader {
             at,
+            width,
             opt_size,
-            optional_magic,
+            hdr_len,
             flags: le16(b, at + 22)?,
             code_size: le32(b, opt + 4)?,
             code_base: le32(b, opt + 20)?,
+            image_base,
+            file_align: le32(b, opt + 36)?,
             sections,
             dirs,
+            table_at,
         })
-    }
-
-    fn require_pe32(&self) -> Result<(), UpxError> {
-        if self.optional_magic != 0x10b {
-            return Err(unsupported("PE32+ image -- only 32-bit win32/pe is implemented"));
-        }
-        Ok(())
     }
 }
 
@@ -206,7 +287,7 @@ impl<'a> Image<'a> {
             return Err(corrupt("packed image is not a PE file"));
         }
         let pe_off = le32(bytes, 0x3c)? as usize;
-        let hdr = PeHeader::parse(bytes, pe_off)?;
+        let hdr = PeHeader::parse(bytes, pe_off, Layout::File)?;
         Ok(Image { bytes, pe_off, hdr })
     }
 
@@ -281,28 +362,69 @@ pub(super) fn find_pack_header(bytes: &[u8]) -> Option<usize> {
 }
 
 pub(super) fn is_pe_format(format: u8) -> bool {
-    matches!(format, 9 | 21 | 36 | 43)
+    matches!(format, 9 | 21 | 36 | 43 | 44)
+}
+
+/// The word size a PackHeader's target format implies, checked against the
+/// packed image it was found in.
+fn target_width(img: &Image<'_>, info: &PackInfo) -> Result<Width, UpxError> {
+    let width = match info.format {
+        FORMAT_WIN32_PE => Width::Pe32,
+        FORMAT_WIN64_PE => Width::Pe32Plus,
+        f => {
+            return Err(unsupported(format!(
+                "target format {f} ({}) -- only win32/pe and win64/pe (amd64) are implemented",
+                super::format_name(f)
+            )))
+        }
+    };
+    if img.hdr.width != width {
+        return Err(unsupported(format!(
+            "PackHeader names {} but the packed image is {}",
+            super::format_name(info.format),
+            img.hdr.width.name()
+        )));
+    }
+    Ok(width)
+}
+
+/// UPX's own PE unpacker reads PackHeader versions 12 through 14. Version 14 is
+/// its exact-layout mode, which stores the original headers and the gaps
+/// between sections verbatim instead of the rebuild trailer this module replays.
+fn check_version(version: u8) -> Result<(), UpxError> {
+    match version {
+        12 | 13 => Ok(()),
+        14 => Err(unsupported(
+            "PackHeader version 14 is UPX's exact-layout PE mode, which this build does not rebuild",
+        )),
+        v if v < 12 => Err(unsupported(format!(
+            "PackHeader version {v} predates every PE layout UPX itself can still unpack"
+        ))),
+        v => Err(unsupported(format!(
+            "PackHeader version {v} is newer than any PE layout this build knows"
+        ))),
+    }
+}
+
+fn align_up(v: usize, align: u32) -> usize {
+    let a = (align as usize).max(1);
+    v.div_ceil(a) * a
 }
 
 /// Rebuild the original file. `info` is the `PackHeader` [`find_pack_header`]
 /// located.
 pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<Block>), UpxError> {
-    if info.format != 9 {
-        return Err(unsupported(format!(
-            "target format {} ({}) -- only win32/pe is implemented",
-            info.format,
-            super::format_name(info.format)
-        )));
-    }
-    img.hdr.require_pe32()?;
+    let width = target_width(img, info)?;
+    check_version(info.version)?;
+
+    // Data past the last packed section is the original's overlay, which UPX
+    // carries through verbatim and its unpacker appends again.
     let last = img.hdr.sections.last().expect("parse rejects an empty section table");
     let packed_end = last.rawptr as usize + last.rawsize as usize;
-    if packed_end < img.bytes.len() {
-        return Err(unsupported(format!(
-            "packed file carries a {}-byte overlay past its last section",
-            img.bytes.len() - packed_end
-        )));
+    if packed_end > img.bytes.len() {
+        return Err(corrupt("packed file is shorter than its last section"));
     }
+    let tail = img.bytes.get(align_up(packed_end, img.hdr.file_align)..).unwrap_or(&[]);
 
     // The one compressed block, immediately after the PackHeader.
     let data = info.pack_header_offset + super::PACK_HEADER_SIZE;
@@ -324,56 +446,53 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
         .checked_sub(4)
         .ok_or_else(|| corrupt("block is too short to carry a trailer"))?;
     let skip = le32(&obuf, trailer_end)? as usize;
-    let mut oh = PeHeader::parse(&obuf, skip)?;
-    oh.require_pe32()?;
+    let mut oh = PeHeader::parse(&obuf, skip, Layout::Trailer)?;
+    if oh.width != width {
+        return Err(unsupported(format!(
+            "PackHeader names {} but the recovered header is {}",
+            info.format_name(),
+            oh.width.name()
+        )));
+    }
     let rvamin = oh.sections[0].vaddr;
-    let extra = oh.section_table_at() + oh.sections.len() * SECTION_HEADER_SIZE;
+    let extra = oh.table_at + oh.sections.len() * SECTION_HEADER_SIZE;
     if extra > trailer_end {
         return Err(corrupt("recovered section table overruns the compressed block"));
     }
 
-    // UPX filters only the code, and initializes the filter with
-    // `codebase - rvamin` as its addend; this unfilter folds that term out, so
-    // an image whose code does not start at `rvamin` has to be refused rather
-    // than unfiltered with the wrong bias.
-    if oh.code_base != rvamin {
-        return Err(unsupported(format!(
-            "code base {:#x} is not the image's first section {rvamin:#x}",
-            oh.code_base
-        )));
-    }
+    // UPX filters only the code, and biases every rewritten target by the
+    // code's distance from the image's first section.
     if info.filter != 0 {
-        let end = (oh.code_size as usize).min(obuf.len());
-        filter::unfilter(info.filter, info.filter_cto, &mut obuf[..end])
+        let start =
+            oh.code_base.checked_sub(rvamin).ok_or_else(|| {
+                corrupt(format!("code base {:#x} lies below the image", oh.code_base))
+            })? as usize;
+        let end = start
+            .checked_add(oh.code_size as usize)
+            .filter(|e| *e <= obuf.len())
+            .ok_or_else(|| corrupt("filtered code runs past the recovered image"))?;
+        filter::unfilter_at(info.filter, info.filter_cto, start as u32, &mut obuf[start..end])
             .map_err(|e| UpxError::Unsupported(e.to_string()))?;
     }
 
-    for (dir, what) in [
-        (DIR_BOUND_IMPORT, "bound imports"),
-        (DIR_DELAY_IMPORT, "delay-loaded imports"),
-    ] {
-        if oh.dir(dir).0 != 0 && oh.dir(dir).1 != 0 {
-            return Err(unsupported(format!("original image has {what}, which UPX packs into the trailer and this build does not rebuild")));
-        }
-    }
-
+    let records = trailer_records(trailer_end - extra).ok_or_else(|| {
+        unsupported(format!(
+            "trailer has {} bytes, which no set of UPX's import, relocation and resource records adds up to -- the image uses a PE feature UPX rebuilds and kuna does not",
+            trailer_end - extra
+        ))
+    })?;
     let mut trailer = extra;
-    rebuild_imports(img, &mut obuf, &oh, rvamin, &mut trailer)?;
-    rebuild_relocs(&mut obuf, &mut oh, img.hdr.flags, skip, rvamin)?;
-    rebuild_resources(img, &mut obuf, &oh, rvamin, &mut trailer)?;
-    // Every rebuild consumes a fixed number of trailer bytes, so a leftover is
-    // proof that the original image needed a step this build did not run -- and
-    // that whatever was rebuilt after it read the wrong bytes.
+    rebuild_imports(img, &mut obuf, &oh, rvamin, records.imports, &mut trailer)?;
+    rebuild_relocs(&mut obuf, &mut oh, img.hdr.flags, rvamin, records.relocs, &mut trailer)?;
+    rebuild_exports(img, &mut obuf, &oh, rvamin)?;
+    rebuild_resources(img, &mut obuf, &oh, rvamin, records.resources, &mut trailer)?;
     if trailer != trailer_end {
-        let left = trailer_end
-            .checked_sub(trailer)
-            .ok_or_else(|| corrupt("trailer records run past the end of the trailer"))?;
-        return Err(unsupported(format!(
-            "trailer has {left} bytes this build cannot account for -- the image uses a PE feature UPX rebuilds and kuna does not"
-        )));
+        return Err(corrupt("rebuild records do not end where the trailer does"));
     }
+    finish_header(&mut obuf, &mut oh);
 
-    let bytes = assemble(img, &obuf, &oh, rvamin, skip, info.u_file_size as usize)?;
+    let bytes = assemble(img, &obuf, &oh, rvamin, skip, tail, info.u_file_size as usize)?;
+    check_length(&bytes, &oh, info)?;
     let block = Block {
         offset: data,
         u_len: info.u_len,
@@ -383,6 +502,60 @@ pub(super) fn unpack(img: &Image<'_>, info: &PackInfo) -> Result<(Vec<u8>, Vec<B
         stored: false,
     };
     Ok((bytes, vec![block]))
+}
+
+/// Which of the trailer's optional records the packer wrote: imports (8 bytes),
+/// relocations (5) and resources (2), in that order.
+struct Records {
+    imports: bool,
+    relocs: bool,
+    resources: bool,
+}
+
+/// The packer writes a record only when it had something to put in it, while
+/// UPX's own unpacker predicts each one from the original's data directories --
+/// and the two disagree on an image whose import directory names no DLL, or
+/// whose relocations are all of a kind UPX drops, which `upx -d` then fails on.
+/// No two sets of the three record lengths sum alike, so the trailer's length
+/// alone says which records are there.
+fn trailer_records(len: usize) -> Option<Records> {
+    (0u8..8)
+        .map(|m| Records { imports: m & 1 != 0, relocs: m & 2 != 0, resources: m & 4 != 0 })
+        .find(|r| {
+            8 * usize::from(r.imports) + 5 * usize::from(r.relocs) + 2 * usize::from(r.resources)
+                == len
+        })
+}
+
+/// The header fields `upx -d` rewrites once the rebuilds are done. The bound
+/// import table lived in the original header's slack, which the packed file's
+/// own headers took over, so it is gone rather than restorable; and the
+/// checksum covers bytes the rebuilds re-laid out, so the stored one is stale.
+fn finish_header(obuf: &mut [u8], oh: &mut PeHeader) {
+    if let Some(at) = oh.dir_at(DIR_BOUND_IMPORT) {
+        obuf[at..at + 8].fill(0);
+        oh.dirs[DIR_BOUND_IMPORT] = (0, 0);
+    }
+    let checksum = oh.at + 24 + 64;
+    obuf[checksum..checksum + 4].fill(0);
+}
+
+/// The rebuilt file must be exactly the original's length, or short of it by
+/// what UPX itself drops: an image packed without relocations loses its
+/// trailing `.reloc` section along with the directory naming it, and debug data
+/// sitting where the overlay starts is stripped with the debug directory left
+/// in place. `upx -d` writes the shorter file too.
+fn check_length(bytes: &[u8], oh: &PeHeader, info: &PackInfo) -> Result<(), UpxError> {
+    let want = info.u_file_size as usize;
+    let dropped = oh.dir(DIR_BASERELOC) == (0, 0) || oh.dir(DIR_DEBUG) != (0, 0);
+    if bytes.len() == want || (bytes.len() < want && dropped) {
+        return Ok(());
+    }
+    Err(corrupt(format!(
+        "rebuilt {} bytes, PackHeader declares an original of {}",
+        bytes.len(),
+        info.u_file_size
+    )))
 }
 
 /// One DLL's entry in the trailer's import block.
@@ -398,38 +571,77 @@ struct ImportDll {
 
 enum Thunk {
     Name(Vec<u8>),
-    Ordinal(u32),
+    Ordinal(u16),
+    /// A `KERNEL32` ordinal, which UPX imports through its own loader table:
+    /// the record is the offset of that loader thunk, whose stored value is the
+    /// ordinal thunk itself.
+    LoaderSlot(u32),
+}
+
+fn write_word(
+    obuf: &mut [u8],
+    rvamin: u32,
+    rva: u32,
+    value: u64,
+    width: Width,
+) -> Result<(), UpxError> {
+    match width {
+        Width::Pe32 => write_at(obuf, rvamin, rva, &(value as u32).to_le_bytes()),
+        Width::Pe32Plus => write_at(obuf, rvamin, rva, &value.to_le_bytes()),
+    }
+}
+
+fn read_word(b: &[u8], off: usize, width: Width) -> Result<u64, UpxError> {
+    match width {
+        Width::Pe32 => le32(b, off).map(u64::from),
+        Width::Pe32Plus => le64(b, off),
+    }
 }
 
 /// `PeFile::rebuildImports`: UPX strips the import descriptors, the thunk
 /// arrays and the hint/name entries out of the image and replaces them with a
 /// compact list in the trailer; the DLL *names* it keeps in the packed file, in
 /// the loader's own import table. Put all three back.
+///
+/// Where the original's names were one contiguous run, UPX records where it
+/// started and the names are written back there in order. Where they were
+/// scattered -- every MinGW image -- it records zero, keeps each descriptor's
+/// name address and each thunk's hint/name address in place, and only the
+/// strings themselves have to be put back where those already point.
 fn rebuild_imports(
     img: &Image<'_>,
     obuf: &mut [u8],
     oh: &PeHeader,
     rvamin: u32,
+    present: bool,
     trailer: &mut usize,
 ) -> Result<(), UpxError> {
     let (imp_rva, imp_size) = oh.dir(DIR_IMPORT);
-    if imp_rva == 0 || imp_size as usize <= IMPORT_DESC_SIZE {
+    let expected = imp_rva != 0 && imp_size as usize > IMPORT_DESC_SIZE;
+    if present && !expected {
+        return Err(corrupt("trailer carries imports for an image with no import directory"));
+    }
+    // A directory naming no DLL gives the packer nothing to record, and the
+    // original's empty table is still in the image.
+    if !present {
         return Ok(());
     }
     let idata = le32(obuf, *trailer)? as usize;
     let inamespos = le32(obuf, *trailer + 4)?;
     *trailer += 8;
-    if inamespos == 0 {
-        return Err(unsupported(
-            "import names were left in place rather than relocated -- not implemented",
-        ));
-    }
 
     let dlls = parse_import_block(obuf, idata, rvamin)?;
     if dlls.is_empty() {
         return Ok(());
     }
+    if dlls.len() * IMPORT_DESC_SIZE > imp_size as usize {
+        return Err(corrupt(format!(
+            "{} rebuilt import descriptors do not fit the original {imp_size}-byte directory",
+            dlls.len()
+        )));
+    }
     let desc_base = loader_import_table(img, &dlls)?;
+    let width = oh.width;
 
     let mut names = Vec::with_capacity(dlls.len());
     for d in &dlls {
@@ -444,16 +656,41 @@ fn rebuild_imports(
     let mut imported = imported_start;
 
     let mut descs: Vec<u8> = Vec::with_capacity((dlls.len() + 1) * IMPORT_DESC_SIZE);
-    for (d, name) in dlls.iter().zip(&names) {
-        write_at(obuf, rvamin, dll_name_rva, name)?;
-        write_at(obuf, rvamin, dll_name_rva.saturating_add(name.len() as u32), &[0])?;
-        let this_name = dll_name_rva;
-        dll_name_rva = dll_name_rva.saturating_add(name.len() as u32 + 1);
+    for (k, (d, name)) in dlls.iter().zip(&names).enumerate() {
+        let this_name = if inamespos != 0 {
+            let at = dll_name_rva;
+            dll_name_rva = dll_name_rva.saturating_add(name.len() as u32 + 1);
+            at
+        } else {
+            le32(obuf, rva_off(rvamin, imp_rva)? + k * IMPORT_DESC_SIZE + 12)?
+        };
+        write_at(obuf, rvamin, this_name, name)?;
+        write_at(obuf, rvamin, this_name.saturating_add(name.len() as u32), &[0])?;
 
         let mut thunk = d.iat;
         for t in &d.thunks {
             let value = match t {
-                Thunk::Ordinal(ord) => ord | 0x8000_0000,
+                Thunk::Ordinal(ord) => u64::from(*ord) | width.ordinal_flag(),
+                Thunk::LoaderSlot(off) => {
+                    let slot =
+                        img.at_rva(desc_base.saturating_add(*off), width.word()).ok_or_else(
+                            || corrupt("KERNEL32 ordinal slot is outside the loader table"),
+                        )?;
+                    let v = read_word(slot, 0, width)?;
+                    if v & width.ordinal_flag() == 0 {
+                        return Err(corrupt("KERNEL32 ordinal slot does not hold an ordinal"));
+                    }
+                    v
+                }
+                Thunk::Name(n) if inamespos == 0 => {
+                    let at = read_word(obuf, rva_off(rvamin, thunk)?, width)?;
+                    let at = u32::try_from(at).map_err(|_| {
+                        corrupt(format!("import thunk at {thunk:#x} is not a name"))
+                    })?;
+                    write_at(obuf, rvamin, at.saturating_add(2), n)?;
+                    write_at(obuf, rvamin, at.saturating_add(2 + n.len() as u32), &[0])?;
+                    u64::from(at)
+                }
                 Thunk::Name(n) => {
                     // The hint word in front of each name is aligned even, the
                     // way UPX writes it back.
@@ -465,13 +702,13 @@ fn rebuild_imports(
                     write_at(obuf, rvamin, imported.saturating_add(2 + n.len() as u32), &[0])?;
                     let at = imported;
                     imported = imported.saturating_add(2 + n.len() as u32 + 1);
-                    at
+                    u64::from(at)
                 }
             };
-            write_at(obuf, rvamin, thunk, &value.to_le_bytes())?;
-            thunk = thunk.saturating_add(4);
+            write_word(obuf, rvamin, thunk, value, width)?;
+            thunk = thunk.saturating_add(width.word() as u32);
         }
-        write_at(obuf, rvamin, thunk, &0u32.to_le_bytes())?;
+        write_word(obuf, rvamin, thunk, 0, width)?;
 
         // `OriginalFirstThunk` is set to the same array as `FirstThunk`: the
         // original's value is not recorded anywhere, and an unbound image where
@@ -483,20 +720,24 @@ fn rebuild_imports(
         descs.extend_from_slice(&d.iat.to_le_bytes());
     }
     descs.extend_from_slice(&[0u8; IMPORT_DESC_SIZE]);
-    if descs.len() > imp_size as usize {
-        return Err(corrupt(format!(
-            "{} rebuilt import descriptors do not fit the original {imp_size}-byte directory",
-            dlls.len()
-        )));
-    }
     write_at(obuf, rvamin, imp_rva, &descs)?;
-    confine_to_section(oh, inamespos, imported - inamespos, "rebuilt import names")?;
+    if inamespos != 0 {
+        confine_to_section(oh, inamespos, imported - inamespos, "rebuilt import names")?;
+    }
     Ok(())
 }
 
+/// Offset in the recovered image of address `rva`.
+fn rva_off(rvamin: u32, rva: u32) -> Result<usize, UpxError> {
+    rva.checked_sub(rvamin)
+        .map(|o| o as usize)
+        .ok_or_else(|| corrupt(format!("rebuild targets {rva:#x}, below the image base")))
+}
+
 /// Walk the trailer's import list: per DLL a name offset and a thunk-array
-/// address, then its imports as `01 name 00` or a 2- or 4-byte ordinal, then a
-/// `00`; a zero name offset ends the list.
+/// address, then its imports as `01 name 00`, `ff` and a 2-byte ordinal, or any
+/// other tag and a 4-byte loader-thunk offset, then a `00`; a zero name offset
+/// ends the list.
 fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<ImportDll>, UpxError> {
     let mut dlls = Vec::new();
     loop {
@@ -524,11 +765,11 @@ fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<Imp
                     at = start + end + 1;
                 }
                 0xff => {
-                    thunks.push(Thunk::Ordinal(u32::from(le16(obuf, at + 1)?)));
+                    thunks.push(Thunk::Ordinal(le16(obuf, at + 1)?));
                     at += 3;
                 }
                 _ => {
-                    thunks.push(Thunk::Ordinal(le32(obuf, at + 1)?));
+                    thunks.push(Thunk::LoaderSlot(le32(obuf, at + 1)?));
                     at += 5;
                 }
             }
@@ -541,7 +782,8 @@ fn parse_import_block(obuf: &[u8], mut at: usize, rvamin: u32) -> Result<Vec<Imp
 ///
 /// A set comparison. The loader table holds one descriptor per distinct DLL,
 /// while the original image may import one DLL across several descriptors, so
-/// the two lists differ in length whenever a binary does that.
+/// the two lists differ in length whenever a binary does that. The packer's own
+/// `KERNEL32.DLL` descriptor is not part of `table`; see [`loader_import_table`].
 fn table_names_dlls(table: &[u32], base: u32, wanted: &BTreeSet<u32>) -> bool {
     !table.is_empty()
         && table.iter().map(|n| n.checked_sub(base)).collect::<Option<BTreeSet<u32>>>().as_ref()
@@ -560,7 +802,10 @@ fn table_names_dlls(table: &[u32], base: u32, wanted: &BTreeSet<u32>) -> bool {
 /// Matched as a SET, not position-by-position. The loader table holds one
 /// descriptor per distinct DLL, while the original image may import the same
 /// DLL from several descriptors, so the two lists differ in length whenever a
-/// binary does that and a positional walk can never agree.
+/// binary does that and a positional walk can never agree. It also holds the
+/// stub's own `KERNEL32.DLL` descriptor (`LoadLibraryA`, `GetProcAddress`, ...)
+/// even when the original imports nothing from it, so one descriptor naming
+/// that DLL is allowed beyond the set the trailer asks for.
 ///
 /// The scan reads only section bytes the file holds, and gives up after two
 /// descriptor reads per four file bytes. An honest image, whose sections do not
@@ -578,6 +823,7 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
     let mut reads = img.bytes.len() / 2 + img.hdr.sections.len() + 2 * (MAX_LOADER_DLLS + 1);
     let mut agrees = |base: u32| -> Result<bool, UpxError> {
         let mut names = Vec::new();
+        let mut stub_kernel32 = false;
         for k in 0..=MAX_LOADER_DLLS {
             reads = reads
                 .checked_sub(1)
@@ -595,7 +841,13 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
             // Nearly every position a scan tries fails on its first descriptor;
             // the set comparison alone would walk each one on to a terminator.
             if !name.checked_sub(base).is_some_and(|o| wanted.contains(&o)) {
-                return Ok(false);
+                let kernel32 =
+                    img.cstr_at_rva(name).is_ok_and(|n| n.eq_ignore_ascii_case(b"KERNEL32.DLL"));
+                if stub_kernel32 || !kernel32 {
+                    return Ok(false);
+                }
+                stub_kernel32 = true;
+                continue;
             }
             names.push(name);
         }
@@ -624,58 +876,344 @@ fn loader_import_table(img: &Image<'_>, dlls: &[ImportDll]) -> Result<u32, UpxEr
     found.ok_or_else(|| corrupt("cannot find the loader import table the DLL names live in"))
 }
 
-/// `PeFile::rebuildRelocs`, reduced to the two branches that consume no trailer
-/// bytes. UPX strips an EXE's relocations by default and marks both headers
-/// `RELOCS_STRIPPED`; its unpacker then zeroes the recovered header's relocation
-/// directory instead of rebuilding anything, and so does this. An eight-byte
-/// directory is an empty block, written back in place of the zeros UPX packed.
-/// Relocations the packer kept -- every DLL's, every ASLR image's -- travel as
-/// an optimized stream plus a five-byte trailer record this build does not
-/// replay; they are refused here, before the resource rebuild would read that
-/// record as its icon count.
+/// `PeFile::rebuildRelocs`. UPX strips an EXE's relocations by default and
+/// marks both headers `RELOCS_STRIPPED`; its unpacker then zeroes the recovered
+/// header's relocation directory instead of rebuilding anything, and so does
+/// this. An eight-byte directory is an empty block, written back in place of
+/// the zeros UPX packed. Every other image -- every DLL's, every ASLR image's --
+/// had its relocations rebased to zero, byte-swapped in place, and recorded as
+/// a delta-coded position stream; the trailer names where that stream starts.
+/// Undo both and lay the positions out as a fresh `.reloc` table, the way
+/// `PeFile::Reloc::finish` does. Entries of a kind UPX does not keep -- anything
+/// but `DIR64` in a PE32+, anything but `HIGHLOW`/`HIGH`/`LOW` in a PE32 -- were
+/// dropped when it packed, so `upx -d` does not have them either.
 fn rebuild_relocs(
     obuf: &mut [u8],
     oh: &mut PeHeader,
     packed_flags: u16,
-    skip: usize,
     rvamin: u32,
+    present: bool,
+    trailer: &mut usize,
 ) -> Result<(), UpxError> {
     if packed_flags & IMAGE_FILE_RELOCS_STRIPPED != 0 {
         oh.flags |= IMAGE_FILE_RELOCS_STRIPPED;
-        obuf[skip + 22..skip + 24].copy_from_slice(&oh.flags.to_le_bytes());
-        if let Some(dir) = oh.dirs.get_mut(DIR_BASERELOC) {
-            *dir = (0, 0);
-            let at = skip + 24 + 96 + 8 * DIR_BASERELOC;
+        obuf[oh.at + 22..oh.at + 24].copy_from_slice(&oh.flags.to_le_bytes());
+        if let Some(at) = oh.dir_at(DIR_BASERELOC) {
+            oh.dirs[DIR_BASERELOC] = (0, 0);
             obuf[at..at + 8].fill(0);
         }
     }
     let (rva, size) = oh.dir(DIR_BASERELOC);
+    let expected = rva != 0 && size != 0 && size != 8 && oh.flags & IMAGE_FILE_RELOCS_STRIPPED == 0;
+    if present && !expected {
+        return Err(corrupt("trailer carries relocations for an image that keeps none"));
+    }
     if rva == 0 || size == 0 || oh.flags & IMAGE_FILE_RELOCS_STRIPPED != 0 {
         return Ok(());
     }
     if size == 8 {
         return write_at(obuf, rvamin, rva, &[0, 0, 0, 0, 8, 0, 0, 0]);
     }
-    Err(unsupported(
-        "original image keeps its base relocations, which UPX packs as an optimized stream this build does not rebuild",
-    ))
+    if !present {
+        // The packer kept none of them -- a PE32+ image's `HIGHLOW` entries are
+        // dropped, not rebased -- and cleared the table: an empty rebuild.
+        oh.dirs[DIR_BASERELOC].1 = 0;
+        if let Some(d) = oh.dir_at(DIR_BASERELOC) {
+            obuf[d + 4..d + 8].fill(0);
+        }
+        return Ok(());
+    }
+    let crelocs = le32(obuf, *trailer)? as usize;
+    let big = *obuf
+        .get(*trailer + 4)
+        .ok_or_else(|| corrupt("trailer ends inside its relocation record"))?;
+    *trailer += 5;
+
+    let width = oh.width;
+    let (mut relocs, mut at) = unoptimize_relocs(obuf, crelocs, width, oh.image_base, rvamin)?;
+    // 16-bit relocations (PE32 only) follow the stream as zero-terminated
+    // position lists: `LOW` first when the record says so, then `HIGH`.
+    if big & 6 != 0 {
+        let first = if big & 4 != 0 { REL_LOW } else { REL_HIGH };
+        let lists: &[u16] = if big & 6 == 6 { &[first, REL_HIGH] } else { &[first] };
+        for &ty in lists {
+            loop {
+                let pos = le32(obuf, at)?;
+                at += 4;
+                if pos == 0 {
+                    break;
+                }
+                relocs.push((pos.wrapping_add(rvamin), ty));
+            }
+        }
+    }
+    let table = build_reloc_table(relocs)?;
+    write_at(obuf, rvamin, rva, &table)?;
+    confine_to_section(oh, rva, table.len() as u32, "rebuilt relocations")?;
+    let len = table.len() as u32;
+    oh.dirs[DIR_BASERELOC].1 = len;
+    if let Some(d) = oh.dir_at(DIR_BASERELOC) {
+        obuf[d + 4..d + 8].copy_from_slice(&len.to_le_bytes());
+    }
+    Ok(())
+}
+
+/// `Packer::unoptimizeReloc` plus the rebase `rebuildRelocs` applies: decode the
+/// delta stream at `crelocs`, and at each position it names turn the
+/// big-endian, zero-based pointer the packer left back into the original
+/// little-endian one. Returns the relocations and the offset past the stream.
+fn unoptimize_relocs(
+    obuf: &mut [u8],
+    crelocs: usize,
+    width: Width,
+    image_base: u64,
+    rvamin: u32,
+) -> Result<(Vec<(u32, u16)>, usize), UpxError> {
+    let ty = match width {
+        Width::Pe32 => REL_HIGHLOW,
+        Width::Pe32Plus => REL_DIR64,
+    };
+    let word = width.word();
+    let mut relocs = Vec::new();
+    let mut at = crelocs;
+    let mut pc = u32::MAX - 3;
+    loop {
+        let b = *obuf.get(at).ok_or_else(|| corrupt("relocation stream runs past the block"))?;
+        if b == 0 {
+            return Ok((relocs, at + 1));
+        }
+        let delta = if b < 0xf0 {
+            at += 1;
+            u32::from(b)
+        } else {
+            let d = u32::from(b & 0x0f) * 0x10000 + u32::from(le16(obuf, at + 1)?);
+            at += 3;
+            if d == 0 {
+                let d = le32(obuf, at)?;
+                at += 4;
+                d
+            } else {
+                d
+            }
+        };
+        if (delta as i32) < 4 {
+            return Err(corrupt("relocation stream has overlapping fixups"));
+        }
+        pc = pc.wrapping_add(delta);
+        let p = pc as usize;
+        if p.checked_add(word).is_none_or(|e| e > crelocs) {
+            return Err(corrupt(format!("relocation at {pc:#x} lies outside the image")));
+        }
+        let slot = &mut obuf[p..p + word];
+        slot.reverse();
+        match width {
+            Width::Pe32 => {
+                let v = u32::from_le_bytes([slot[0], slot[1], slot[2], slot[3]])
+                    .wrapping_add(image_base as u32)
+                    .wrapping_add(rvamin);
+                slot.copy_from_slice(&v.to_le_bytes());
+            }
+            Width::Pe32Plus => {
+                let mut w = [0u8; 8];
+                w.copy_from_slice(slot);
+                let v =
+                    u64::from_le_bytes(w).wrapping_add(image_base).wrapping_add(u64::from(rvamin));
+                slot.copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        relocs.push((rvamin.wrapping_add(pc), ty));
+    }
+}
+
+/// `PeFile::Reloc::finish`: one `IMAGE_BASE_RELOCATION` block per 4 KiB page,
+/// entries sorted, each block padded to four bytes with `ABSOLUTE` entries.
+fn build_reloc_table(mut relocs: Vec<(u32, u16)>) -> Result<Vec<u8>, UpxError> {
+    relocs.sort_unstable();
+    if relocs.windows(2).any(|w| w[0].0 == w[1].0) {
+        return Err(corrupt("relocation stream names one address twice"));
+    }
+    fn finish(table: &mut Vec<u8>, start: usize) {
+        while (table.len() - start) & 3 != 0 {
+            table.push(0);
+        }
+        let sob = (table.len() - start) as u32;
+        table[start + 4..start + 8].copy_from_slice(&sob.to_le_bytes());
+    }
+    let mut table = Vec::with_capacity(relocs.len() * 2 + 64);
+    let mut block: Option<(usize, u32)> = None;
+    for (pos, ty) in relocs {
+        if block.is_none_or(|(_, page)| pos - page >= 0x1000) {
+            if let Some((start, _)) = block {
+                finish(&mut table, start);
+            }
+            let page = pos & !0xfff;
+            block = Some((table.len(), page));
+            table.extend_from_slice(&page.to_le_bytes());
+            table.extend_from_slice(&8u32.to_le_bytes());
+        }
+        table.extend_from_slice(&((ty << 12) | (pos & 0xfff) as u16).to_le_bytes());
+    }
+    if let Some((start, _)) = block {
+        finish(&mut table, start);
+    }
+    Ok(table)
+}
+
+/// `PeFile::rebuildExports`. A DLL's export directory -- or an EXE's, packed
+/// with `--compress-exports=0` -- is moved out of the compressed image into the
+/// packed file, re-laid out compactly by `PeFile::Export::build`. Rebuild that
+/// same compact layout at the original directory's address. An export
+/// directory left in place needs nothing.
+fn rebuild_exports(
+    img: &Image<'_>,
+    obuf: &mut [u8],
+    oh: &PeHeader,
+    rvamin: u32,
+) -> Result<(), UpxError> {
+    let (orva, osize) = oh.dir(DIR_EXPORT);
+    let (irva, isize) = img.hdr.dir(DIR_EXPORT);
+    if osize == 0 || orva == irva || isize == 0 {
+        return Ok(());
+    }
+    let moved = img
+        .at_rva(irva, isize as usize)
+        .ok_or_else(|| corrupt("packed export directory is outside the image"))?;
+    let room = obuf.len().saturating_sub(rva_off(rvamin, orva)?);
+    let built = rebuild_export_dir(moved, irva, orva, room)?;
+    write_at(obuf, rvamin, orva, &built)?;
+    confine_to_section(oh, orva, built.len() as u32, "rebuilt export directory")
+}
+
+/// `Export::convert` over the directory at `base` (whose bytes are `dir`), then
+/// `Export::build` at `newbase`: header, address table, name pointers,
+/// ordinals, the DLL name, the export names, then the forwarder strings. Every
+/// name pointer may name the same long string, so the layout is sized as the
+/// strings are read and refused once it outgrows the `room` left in the image.
+fn rebuild_export_dir(
+    dir: &[u8],
+    base: u32,
+    newbase: u32,
+    room: usize,
+) -> Result<Vec<u8>, UpxError> {
+    let local = |rva: u32, len: usize| -> Result<usize, UpxError> {
+        let off = rva.checked_sub(base).map(|o| o as usize);
+        off.filter(|o| o.checked_add(len).is_some_and(|e| e <= dir.len()))
+            .ok_or_else(|| corrupt(format!("export table at {rva:#x} runs outside its directory")))
+    };
+    let cstr = |rva: u32| -> Result<&[u8], UpxError> {
+        let off = local(rva, 1)?;
+        let n = dir[off..]
+            .iter()
+            .position(|&c| c == 0)
+            .ok_or_else(|| corrupt(format!("unterminated export string at {rva:#x}")))?;
+        Ok(&dir[off..off + n])
+    };
+    if dir.len() < EXPORT_DIR_SIZE {
+        return Err(corrupt("packed export directory is shorter than its header"));
+    }
+    let mut edir = dir[..EXPORT_DIR_SIZE].to_vec();
+    let ename = cstr(le32(&edir, 12)?)?;
+    let nfuncs = le32(&edir, 20)? as usize;
+    let nnames = le32(&edir, 24)? as usize;
+    let funcs_at = local(le32(&edir, 28)?, nfuncs.saturating_mul(4))?;
+    let names_at = local(le32(&edir, 32)?, nnames.saturating_mul(4))?;
+    let ords_at = local(le32(&edir, 36)?, nnames.saturating_mul(2))?;
+    let mut size = EXPORT_DIR_SIZE + 4 * nfuncs + 6 * nnames;
+    let mut grow = |s: &[u8]| -> Result<(), UpxError> {
+        size += s.len() + 1;
+        if size > room {
+            return Err(corrupt("rebuilt export directory outgrows the image"));
+        }
+        Ok(())
+    };
+    grow(ename)?;
+    let mut funcs: Vec<u32> =
+        (0..nfuncs).map(|i| le32(dir, funcs_at + 4 * i)).collect::<Result<_, _>>()?;
+    let mut names = Vec::with_capacity(nnames);
+    for i in 0..nnames {
+        let n = cstr(le32(dir, names_at + 4 * i)?)?;
+        grow(n)?;
+        names.push(n);
+    }
+    let end = base.saturating_add(dir.len() as u32);
+    let mut forwarders: Vec<Option<&[u8]>> = Vec::with_capacity(nfuncs);
+    for &f in &funcs {
+        let fw = if f >= base && f < end { Some(cstr(f)?) } else { None };
+        if let Some(s) = fw {
+            grow(s)?;
+        }
+        forwarders.push(fw);
+    }
+
+    let functionp = EXPORT_DIR_SIZE;
+    let namep = functionp + 4 * nfuncs;
+    let ordinalp = namep + 4 * nnames;
+    let enamep = ordinalp + 2 * nnames;
+    let mut out = edir.clone();
+    out.resize(enamep, 0);
+    out[ordinalp..enamep].copy_from_slice(&dir[ords_at..ords_at + 2 * nnames]);
+    out.extend_from_slice(ename);
+    out.push(0);
+    let rva_of = |off: usize| newbase.wrapping_add(off as u32);
+    for (i, n) in names.iter().enumerate() {
+        let at = rva_of(out.len());
+        out[namep + 4 * i..namep + 4 * i + 4].copy_from_slice(&at.to_le_bytes());
+        out.extend_from_slice(n);
+        out.push(0);
+    }
+    for (f, fw) in funcs.iter_mut().zip(&forwarders) {
+        if let Some(s) = fw {
+            *f = rva_of(out.len());
+            out.extend_from_slice(s);
+            out.push(0);
+        }
+    }
+    for (i, f) in funcs.iter().enumerate() {
+        out[functionp + 4 * i..functionp + 4 * i + 4].copy_from_slice(&f.to_le_bytes());
+    }
+    edir[12..16].copy_from_slice(&rva_of(enamep).to_le_bytes());
+    edir[28..32].copy_from_slice(&rva_of(functionp).to_le_bytes());
+    edir[32..36].copy_from_slice(&rva_of(namep).to_le_bytes());
+    edir[36..40].copy_from_slice(&rva_of(ordinalp).to_le_bytes());
+    out[..EXPORT_DIR_SIZE].copy_from_slice(&edir);
+    out.resize(align_up(out.len(), 4), 0);
+    Ok(out)
 }
 
 /// `PeFile::rebuildResources`: UPX keeps the resource *directory* uncompressed
 /// in the packed file and moves the leaves it compressed into the image. Copy
 /// the directory back to where the original had it, repointing every leaf UPX
-/// moved at the address recorded in front of its data.
+/// moved at the address recorded in front of its data. A directory UPX could
+/// not clear -- one whose pieces were not contiguous -- is still in the image,
+/// and is left there the way UPX's unpacker leaves it. Unlike the import and
+/// relocation records, the packer writes this one exactly when it gives the
+/// packed header a resource directory, so a trailer without it for an image
+/// whose headers both have one is damaged, not a variant.
+///
+/// The directory written back is the packed copy as `Resource::build` laid it
+/// out: every directory and data entry, then the names they point at, padded
+/// with zeros to four bytes. The packer clears only the original's directories
+/// and data entries, so its names are still in the image at the offsets the
+/// original used, which are not the ones the packed copy points at.
 fn rebuild_resources(
     img: &Image<'_>,
     obuf: &mut [u8],
     oh: &PeHeader,
     rvamin: u32,
+    present: bool,
     trailer: &mut usize,
 ) -> Result<(), UpxError> {
-    let (res_rva, res_size) = oh.dir(DIR_RESOURCE);
-    if res_rva == 0 || res_size == 0 {
+    let expected = oh.dir(DIR_RESOURCE).1 != 0 && img.hdr.dir(DIR_RESOURCE).1 != 0;
+    if present && !expected {
+        return Err(corrupt("trailer carries resources for an image with no resource directory"));
+    }
+    if !present && expected {
+        return Err(corrupt("trailer has no resource record for an image with resources"));
+    }
+    if !present {
         return Ok(());
     }
+    let res_rva = oh.dir(DIR_RESOURCE).0;
     let icondir_count = le16(obuf, *trailer)?;
     *trailer += 2;
 
@@ -688,7 +1226,9 @@ fn rebuild_resources(
 
     let mut walk = ResourceWalk::default();
     walk_resource_dir(&tree, 0, 0, 0, &mut walk)?;
-    confine_to_section(oh, res_rva, walk.extent, "rebuilt resource directory")?;
+    let padded = walk.extent.saturating_add(3) & !3;
+    let dir_len = if padded as usize <= tree.len() { padded } else { walk.extent };
+    confine_to_section(oh, res_rva, dir_len, "rebuilt resource directory")?;
 
     let mut icondir_count = icondir_count;
     let mut moved = 0usize;
@@ -721,16 +1261,19 @@ fn rebuild_resources(
             icondir_count = 0;
         }
     }
-    let dir = tree
-        .get(..walk.extent as usize)
-        .ok_or_else(|| corrupt("resource directory runs past its packed copy"))?;
-    write_at(obuf, rvamin, res_rva, dir)?;
+    let entries = le32(obuf, rva_off(rvamin, res_rva)? + 12)?;
+    if entries == 0 {
+        let dir = tree
+            .get(..dir_len as usize)
+            .ok_or_else(|| corrupt("resource directory runs past its packed copy"))?;
+        write_at(obuf, rvamin, res_rva, dir)?;
+    }
     Ok(())
 }
 
 /// What a walk of a resource tree reached: one past the last byte any
-/// directory, entry or data entry occupies, and each data entry's offset with
-/// the top-level type it sits under, in walk order.
+/// directory, entry, name or data entry occupies, and each data entry's offset
+/// with the top-level type it sits under, in walk order.
 #[derive(Default)]
 struct ResourceWalk {
     extent: u32,
@@ -741,10 +1284,8 @@ struct ResourceWalk {
 /// Depth-first walk of an `IMAGE_RESOURCE_DIRECTORY` tree. The depth cap is
 /// UPX's own three levels (type / name / language) plus slack; the tree is
 /// attacker-controlled, so a cycle must terminate the walk, and a directory or
-/// data entry reached twice is refused. UPX never writes one: its packer lays
-/// the directory out afresh with every node once, even when the original shared
-/// a subtree, and following one would let a small tree fan out into an
-/// exponential walk.
+/// data entry reached twice -- which no linker writes, and which would let a
+/// small tree fan out into an exponential walk -- is refused.
 fn walk_resource_dir(
     tree: &[u8],
     at: u32,
@@ -765,9 +1306,16 @@ fn walk_resource_dir(
     walk.extent = walk.extent.max(entries.saturating_add(8 * count));
     for i in 0..count {
         let e = (entries + 8 * i) as usize;
+        let name = le32(tree, e)?;
+        if name & 0x8000_0000 != 0 {
+            let at = name & 0x7fff_ffff;
+            let chars = le16(tree, at as usize)
+                .map_err(|_| corrupt("resource name lies outside the packed directory"))?;
+            walk.extent = walk.extent.max(at.saturating_add(2 + 2 * u32::from(chars)));
+        }
         let child = le32(tree, e + 4)?;
         if child & 0x8000_0000 != 0 {
-            let ty = if depth == 0 { le32(tree, e)? & 0x7fff_ffff } else { ty };
+            let ty = if depth == 0 { name & 0x7fff_ffff } else { ty };
             walk_resource_dir(tree, child & 0x7fff_ffff, depth + 1, ty, walk)?;
         } else {
             if !walk.seen.insert(child) {
@@ -811,24 +1359,57 @@ fn confine_to_section(oh: &PeHeader, rva: u32, len: u32, what: &str) -> Result<(
     }
 }
 
+/// The original's overlay, out of the bytes the packed file carries past its
+/// last section -- normally all of them. With nothing dropped from the image,
+/// the original's length says how long the overlay was, and two things can
+/// stand beside it. UPX 3.9x writes its stub's relocation block twice; the
+/// second copy spills past the last section's declared end, and that spill,
+/// padded with zeros to the packed file's alignment, is the first `spill` bytes
+/// of the tail. Bytes appended to the packed file afterwards (a signature, a
+/// payload) come after the overlay. So the overlay starts past the spill and
+/// stops at its own length. When the rebuilt sections fall short of the
+/// original (see [`check_length`]) the whole tail is the overlay.
+fn overlay_of(tail: &[u8], sections_end: usize, original_len: usize, spill: usize) -> &[u8] {
+    match original_len.checked_sub(sections_end) {
+        Some(want) if want <= tail.len() => {
+            let lead = if tail.len() - want >= spill { spill } else { 0 };
+            &tail[lead..lead + want]
+        }
+        _ => tail,
+    }
+}
+
+/// Is `front` the end of the packed stub's relocation table followed by zeros?
+/// The stub's table is a few fixups and the padding is under one file-alignment
+/// unit, so anything larger is not that spill.
+fn is_stub_reloc_spill(front: &[u8], relocs: &[u8]) -> bool {
+    if front.len() > 0x1_0000 || relocs.len() > 0x1000 {
+        return false;
+    }
+    let nonzero = front.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
+    (nonzero..=relocs.len().min(front.len())).any(|k| front[..k] == relocs[relocs.len() - k..])
+}
+
 /// Lay the recovered image back out as a file: the packed file's own DOS header
 /// and stub (UPX preserves it), the recovered PE header and section table, then
-/// each section's raw data read out of the image at its own address.
+/// each section's raw data read out of the image at its own address, then the
+/// overlay the packed file carried.
 ///
 /// The DOS header is the one part of the original file UPX keeps rather than
 /// packs, so a packed image that shrank it below the 64 bytes a DOS header needs
 /// has thrown the original's away: `e_lfanew` no longer exists to be rewritten,
 /// and the recovered PE header would sit at an offset nothing points at. That is
 /// refused here rather than written out, and the assembled file is re-read at the
-/// end to prove it is a PE a loader can follow. The layout is sized, and checked
-/// against the `original_len` the PackHeader declares, before anything is
-/// allocated for it.
+/// end to prove it is a PE a loader can follow. The layout is sized before
+/// anything is written, so no header field can make it longer than the original
+/// the PackHeader declares.
 fn assemble(
     img: &Image<'_>,
     obuf: &[u8],
     oh: &PeHeader,
     rvamin: u32,
     skip: usize,
+    tail: &[u8],
     original_len: usize,
 ) -> Result<Vec<u8>, UpxError> {
     if img.pe_off < 0x40 {
@@ -837,11 +1418,17 @@ fn assemble(
             img.pe_off
         )));
     }
-    let table = oh.sections.len() * SECTION_HEADER_SIZE;
     let header = obuf
-        .get(skip..skip + oh.header_size() + table)
+        .get(skip..skip + oh.hdr_len)
         .ok_or_else(|| corrupt("recovered PE header runs past the block"))?;
-    let mut end = img.pe_off + header.len();
+    let table = oh.sections.len() * SECTION_HEADER_SIZE;
+    let section_table = obuf
+        .get(oh.table_at..oh.table_at + table)
+        .ok_or_else(|| corrupt("recovered section table runs past the block"))?;
+    // The section table goes where the COFF header says the optional header
+    // ends, which is where a loader will look for it.
+    let table_at = img.pe_off + 24 + oh.opt_size;
+    let mut end = table_at + table;
     let mut raw = Vec::with_capacity(oh.sections.len());
     for s in &oh.sections {
         if s.rawsize == 0 {
@@ -865,25 +1452,39 @@ fn assemble(
         end = end.max(ptr + size);
         raw.push((ptr, &obuf[src..src + size]));
     }
-    if end != original_len {
+    let (overlay_at, overlay) = if tail.is_empty() {
+        (end, &[][..])
+    } else {
+        let at = align_up(end, oh.file_align);
+        let (rva, size) = img.hdr.dir(DIR_BASERELOC);
+        let stub_relocs = img.at_rva(rva, size as usize).unwrap_or(&[]);
+        let spill = tail
+            .get(..img.hdr.file_align as usize)
+            .filter(|front| is_stub_reloc_spill(front, stub_relocs))
+            .map_or(0, <[u8]>::len);
+        (at, overlay_of(tail, at, original_len, spill))
+    };
+    let total = overlay_at + overlay.len();
+    if total > original_len {
         return Err(corrupt(format!(
-            "rebuilt {end} bytes, PackHeader declares an original of {original_len}"
+            "rebuilt {total} bytes, PackHeader declares an original of {original_len}"
         )));
     }
-    let mut out = vec![0u8; end];
+    let mut out = vec![0u8; total];
     out[..img.pe_off].copy_from_slice(&img.bytes[..img.pe_off]);
     out[img.pe_off..img.pe_off + header.len()].copy_from_slice(header);
+    out[table_at..table_at + table].copy_from_slice(section_table);
     for (ptr, data) in raw {
         out[ptr..ptr + data.len()].copy_from_slice(data);
     }
+    out[overlay_at..].copy_from_slice(overlay);
     // A section whose raw data starts inside the headers would have overwritten
     // what was just written there, so read the result back the way a loader
     // would rather than trusting the layout that produced it.
-    if le32(&out, 0x3c)? as usize != img.pe_off || out.get(img.pe_off..img.pe_off + 4) != Some(b"PE\0\0")
+    if le32(&out, 0x3c)? as usize != img.pe_off
+        || out.get(img.pe_off..img.pe_off + 4) != Some(b"PE\0\0")
     {
-        return Err(corrupt(
-            "rebuilt file's headers were overwritten by a section's raw data",
-        ));
+        return Err(corrupt("rebuilt file's headers were overwritten by a section's raw data"));
     }
     Ok(out)
 }
@@ -899,8 +1500,8 @@ mod tests {
             .collect()
     }
 
-    fn offsets(name_offs: &[u32]) -> BTreeSet<u32> {
-        name_offs.iter().copied().collect()
+    fn offsets(dlls: &[ImportDll]) -> BTreeSet<u32> {
+        dlls.iter().map(|d| d.name_off).collect()
     }
 
     /// The regression: a 32-bit MSVC crackme importing seven DLLs across
@@ -911,11 +1512,9 @@ mod tests {
     #[test]
     fn a_dll_imported_by_several_descriptors_still_matches_its_loader_table() {
         let base = 0x73a0c;
-        let table: Vec<u32> = [224, 237, 250, 263, 273, 286, 297]
-            .iter()
-            .map(|o| base + o)
-            .collect();
-        let repeated = [224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297];
+        let table: Vec<u32> =
+            [224, 237, 250, 263, 273, 286, 297].iter().map(|o| base + o).collect();
+        let repeated = dlls(&[224, 224, 224, 224, 237, 237, 250, 263, 273, 273, 286, 286, 297]);
         assert!(table_names_dlls(&table, base, &offsets(&repeated)));
     }
 
@@ -923,7 +1522,7 @@ mod tests {
     fn one_descriptor_per_dll_still_matches() {
         let base = 0x1000;
         let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
-        assert!(table_names_dlls(&table, base, &offsets(&[16, 32, 48])));
+        assert!(table_names_dlls(&table, base, &offsets(&dlls(&[16, 32, 48]))));
     }
 
     /// Set equality both ways: a table naming a DLL the trailer never asks for
@@ -932,25 +1531,40 @@ mod tests {
     fn a_table_whose_names_differ_is_rejected() {
         let base = 0x1000;
         let table: Vec<u32> = [16, 32, 48].iter().map(|o| base + o).collect();
-        assert!(!table_names_dlls(&table, base, &offsets(&[16, 32])));
-        assert!(!table_names_dlls(&table, base, &offsets(&[16, 32, 48, 64])));
-        assert!(!table_names_dlls(&[], base, &offsets(&[16])));
+        assert!(!table_names_dlls(&table, base, &offsets(&dlls(&[16, 32]))));
+        assert!(!table_names_dlls(&table, base, &offsets(&dlls(&[16, 32, 48, 64]))));
+        assert!(!table_names_dlls(&[], base, &offsets(&dlls(&[16]))));
     }
 
-    /// A minimal PE header at `skip` inside a block: one section, sixteen data
-    /// directories, `flags` as the COFF characteristics and `reloc` in entry 5.
-    fn block_with_header(skip: usize, flags: u16, reloc: (u32, u32)) -> Vec<u8> {
-        let mut b = vec![0u8; skip + 24 + 224 + SECTION_HEADER_SIZE];
+    /// A minimal PE header at `skip` inside a block, laid out the way UPX stores
+    /// it in the trailer: one section, sixteen data directories, `flags` as the
+    /// COFF characteristics and `reloc` in entry 5.
+    fn block_with_header(skip: usize, flags: u16, reloc: (u32, u32), width: Width) -> Vec<u8> {
+        let opt_size = width.dirs_at() + 128;
+        let mut b = vec![0u8; skip + 24 + opt_size + SECTION_HEADER_SIZE + 16];
         b[skip..skip + 4].copy_from_slice(b"PE\0\0");
         b[skip + 6..skip + 8].copy_from_slice(&1u16.to_le_bytes());
-        b[skip + 20..skip + 22].copy_from_slice(&224u16.to_le_bytes());
+        b[skip + 20..skip + 22].copy_from_slice(&(opt_size as u16).to_le_bytes());
         b[skip + 22..skip + 24].copy_from_slice(&flags.to_le_bytes());
         let opt = skip + 24;
-        b[opt..opt + 2].copy_from_slice(&0x10bu16.to_le_bytes());
-        b[opt + 92..opt + 96].copy_from_slice(&16u32.to_le_bytes());
-        let d = opt + 96 + 8 * DIR_BASERELOC;
+        let magic: u16 = if width == Width::Pe32 { 0x10b } else { 0x20b };
+        b[opt..opt + 2].copy_from_slice(&magic.to_le_bytes());
+        let base = 0x1_4000_0000u64;
+        if width == Width::Pe32 {
+            b[opt + 28..opt + 32].copy_from_slice(&0x40_0000u32.to_le_bytes());
+        } else {
+            b[opt + 24..opt + 32].copy_from_slice(&base.to_le_bytes());
+        }
+        let dirs = opt + width.dirs_at();
+        b[dirs - 4..dirs].copy_from_slice(&16u32.to_le_bytes());
+        let d = dirs + 8 * DIR_BASERELOC;
         b[d..d + 4].copy_from_slice(&reloc.0.to_le_bytes());
         b[d + 4..d + 8].copy_from_slice(&reloc.1.to_le_bytes());
+        // One section covering the first 0x4000 bytes of the image.
+        let t = opt + opt_size;
+        b[t + 8..t + 12].copy_from_slice(&0x4000u32.to_le_bytes());
+        b[t + 12..t + 16].copy_from_slice(&0x1000u32.to_le_bytes());
+        b[t + 16..t + 20].copy_from_slice(&0x4000u32.to_le_bytes());
         b
     }
 
@@ -960,9 +1574,10 @@ mod tests {
         reloc: (u32, u32),
     ) -> (Result<(), UpxError>, PeHeader, Vec<u8>) {
         let skip = 0x100;
-        let mut b = block_with_header(skip, flags, reloc);
-        let mut oh = PeHeader::parse(&b, skip).unwrap();
-        let r = rebuild_relocs(&mut b, &mut oh, packed_flags, skip, 0x1000);
+        let mut b = block_with_header(skip, flags, reloc, Width::Pe32);
+        let mut oh = PeHeader::parse(&b, skip, Layout::Trailer).unwrap();
+        let mut trailer = oh.table_at + SECTION_HEADER_SIZE;
+        let r = rebuild_relocs(&mut b, &mut oh, packed_flags, 0x1000, false, &mut trailer);
         (r, oh, b)
     }
 
@@ -976,22 +1591,84 @@ mod tests {
         r.expect("a stripped image unpacks");
         assert_eq!(oh.dir(DIR_BASERELOC), (0, 0));
         assert_ne!(oh.flags & IMAGE_FILE_RELOCS_STRIPPED, 0);
-        let written = PeHeader::parse(&b, 0x100).unwrap();
+        let written = PeHeader::parse(&b, 0x100, Layout::Trailer).unwrap();
         assert_eq!(written.dir(DIR_BASERELOC), (0, 0));
         assert_ne!(written.flags & IMAGE_FILE_RELOCS_STRIPPED, 0);
     }
 
-    /// Relocations the packer kept travel as an optimized stream plus a trailer
-    /// record this build does not replay: with neither header flagged, the image
-    /// is refused by name rather than walked into a desynchronized trailer.
+    /// Relocations the packer kept are rebased to zero, byte-swapped in place
+    /// and recorded as a delta stream. Rebuilding them restores both pointers
+    /// and lays the positions out one block per page, the way `upx -d` does --
+    /// for PE32+ that is `DIR64` entries over eight-byte pointers.
     #[test]
-    fn kept_relocations_are_refused() {
-        let (r, _, _) = relocs(0, 0, (0x3b000, 0x5cc));
-        let err = r.expect_err("kept relocations need a rebuild this build lacks");
-        assert!(
-            matches!(&err, UpxError::Unsupported(m) if m.contains("base relocations")),
-            "{err}"
+    fn kept_pe32plus_relocations_are_rebuilt() {
+        let rvamin = 0x1000u32;
+        let base = 0x1_4000_0000u64;
+        let skip = 0x3000;
+        let mut b = block_with_header(skip, 0, (0x2800, 0x40), Width::Pe32Plus);
+        let targets = [(0x10usize, base + 0x1234), (0x1008usize, base + 0x3ff0)];
+        for (at, target) in targets {
+            let zero_based = target - base - u64::from(rvamin);
+            b[at..at + 8].copy_from_slice(&zero_based.to_be_bytes());
+        }
+        // Positions 0x10 then 0x1008: one short delta, one three-byte one.
+        let crelocs = 0x2000;
+        b[crelocs..crelocs + 5].copy_from_slice(&[0x14, 0xf0, 0xf8, 0x0f, 0x00]);
+        let mut oh = PeHeader::parse(&b, skip, Layout::Trailer).unwrap();
+        let record = oh.table_at + SECTION_HEADER_SIZE;
+        b[record..record + 4].copy_from_slice(&(crelocs as u32).to_le_bytes());
+        b[record + 4] = 0;
+        let mut trailer = record;
+        rebuild_relocs(&mut b, &mut oh, 0, rvamin, true, &mut trailer)
+            .expect("kept relocations rebuild");
+        assert_eq!(trailer, record + 5, "the relocation record is five trailer bytes");
+        for (at, target) in targets {
+            assert_eq!(u64::from_le_bytes(b[at..at + 8].try_into().unwrap()), target);
+        }
+        let table = &b[0x1800..0x1818];
+        assert_eq!(
+            table,
+            &[
+                0x00, 0x10, 0, 0, 12, 0, 0, 0, 0x10, 0xa0, 0, 0, //
+                0x00, 0x20, 0, 0, 12, 0, 0, 0, 0x08, 0xa0, 0, 0,
+            ]
         );
+        assert_eq!(oh.dir(DIR_BASERELOC), (0x2800, 24));
+        let written = PeHeader::parse(&b, skip, Layout::Trailer).unwrap();
+        assert_eq!(written.dir(DIR_BASERELOC), (0x2800, 24));
+    }
+
+    /// A PE32 image's `HIGHLOW` relocations take the same path, and the 16-bit
+    /// `LOW`/`HIGH` lists UPX appends after the stream come back as their own
+    /// entry types.
+    #[test]
+    fn kept_pe32_relocations_and_their_16_bit_lists_are_rebuilt() {
+        let rvamin = 0x1000u32;
+        let skip = 0x3000;
+        let mut b = block_with_header(skip, 0, (0x2800, 0x40), Width::Pe32);
+        b[0x20..0x24].copy_from_slice(&0x0000_0abcu32.to_be_bytes());
+        let crelocs = 0x2000;
+        // One HIGHLOW at 0x20, then a LOW list (0x40) and a HIGH list (0x44).
+        let mut stream = vec![0x24, 0x00];
+        for v in [0x40u32, 0, 0x44, 0] {
+            stream.extend_from_slice(&v.to_le_bytes());
+        }
+        b[crelocs..crelocs + stream.len()].copy_from_slice(&stream);
+        let mut oh = PeHeader::parse(&b, skip, Layout::Trailer).unwrap();
+        let record = oh.table_at + SECTION_HEADER_SIZE;
+        b[record..record + 4].copy_from_slice(&(crelocs as u32).to_le_bytes());
+        b[record + 4] = 6;
+        let mut trailer = record;
+        rebuild_relocs(&mut b, &mut oh, 0, rvamin, true, &mut trailer)
+            .expect("kept relocations rebuild");
+        assert_eq!(
+            u32::from_le_bytes(b[0x20..0x24].try_into().unwrap()),
+            0x40_0000 + 0x1000 + 0xabc
+        );
+        let entries: Vec<u16> =
+            (0..3).map(|i| u16::from_le_bytes([b[0x1808 + 2 * i], b[0x1809 + 2 * i]])).collect();
+        assert_eq!(entries, [0x3020, 0x2040, 0x1044]);
+        assert_eq!(oh.dir(DIR_BASERELOC).1, 16);
     }
 
     #[test]
@@ -999,6 +1676,275 @@ mod tests {
         let (r, oh, _) = relocs(0, 0, (0, 0));
         r.unwrap();
         assert_eq!(oh.flags, 0);
+    }
+
+    /// The three optional records are 8, 5 and 2 bytes, and no two sets of them
+    /// sum alike: every trailer length names exactly one set, and the lengths
+    /// no set reaches are refused.
+    #[test]
+    fn the_trailer_length_alone_names_its_records() {
+        let mut seen = BTreeSet::new();
+        for len in 0..=20 {
+            if let Some(r) = trailer_records(len) {
+                assert_eq!(
+                    8 * usize::from(r.imports)
+                        + 5 * usize::from(r.relocs)
+                        + 2 * usize::from(r.resources),
+                    len
+                );
+                assert!(seen.insert((r.imports, r.relocs, r.resources)), "two lengths for one set");
+            }
+        }
+        assert_eq!(seen.len(), 8);
+        assert!(
+            trailer_records(1).is_none()
+                && trailer_records(3).is_none()
+                && trailer_records(16).is_none()
+        );
+        let r = trailer_records(10).unwrap();
+        assert!(r.imports && !r.relocs && r.resources);
+    }
+
+    /// The trailer's import list: a name, a 2-byte ordinal, and a `KERNEL32`
+    /// ordinal recorded as the offset of the packer's own loader thunk -- which
+    /// must not be read as the ordinal itself.
+    #[test]
+    fn the_import_block_distinguishes_loader_slots_from_ordinals() {
+        let mut b = Vec::new();
+        b.extend_from_slice(&0x30u32.to_le_bytes());
+        b.extend_from_slice(&0x2000u32.to_le_bytes());
+        b.extend_from_slice(b"\x01Sleep\x00");
+        b.extend_from_slice(&[0xff, 0x07, 0x00]);
+        b.extend_from_slice(&[0xfe, 0x40, 0x00, 0x00, 0x00]);
+        b.push(0);
+        b.extend_from_slice(&0u32.to_le_bytes());
+        let dlls = parse_import_block(&b, 0, 0x1000).unwrap();
+        assert_eq!(dlls.len(), 1);
+        assert_eq!((dlls[0].name_off, dlls[0].iat), (0x30, 0x3000));
+        assert!(matches!(&dlls[0].thunks[0], Thunk::Name(n) if n == b"Sleep"));
+        assert!(matches!(dlls[0].thunks[1], Thunk::Ordinal(7)));
+        assert!(matches!(dlls[0].thunks[2], Thunk::LoaderSlot(0x40)));
+    }
+
+    /// A one-section PE32 whose section (at RVA 0x1000) holds `body`.
+    fn tiny_pe(body: &[u8]) -> Vec<u8> {
+        let mut b = vec![0u8; 0x200];
+        b[..2].copy_from_slice(b"MZ");
+        b[0x3c..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+        let pe = 0x40;
+        b[pe..pe + 4].copy_from_slice(b"PE\0\0");
+        b[pe + 6..pe + 8].copy_from_slice(&1u16.to_le_bytes());
+        b[pe + 20..pe + 22].copy_from_slice(&224u16.to_le_bytes());
+        let opt = pe + 24;
+        b[opt..opt + 2].copy_from_slice(&0x10bu16.to_le_bytes());
+        b[opt + 92..opt + 96].copy_from_slice(&16u32.to_le_bytes());
+        let t = opt + 224;
+        let size = body.len() as u32;
+        b[t + 8..t + 12].copy_from_slice(&size.to_le_bytes());
+        b[t + 12..t + 16].copy_from_slice(&0x1000u32.to_le_bytes());
+        b[t + 16..t + 20].copy_from_slice(&size.to_le_bytes());
+        b[t + 20..t + 24].copy_from_slice(&0x200u32.to_le_bytes());
+        b.extend_from_slice(body);
+        b
+    }
+
+    /// The packer's loader table carries its own `KERNEL32.DLL` descriptor even
+    /// when the original imports nothing from it -- a 32-bit image importing only
+    /// `arr.dll` failed with "cannot find the loader import table". One such
+    /// extra is allowed; any other DLL the trailer does not ask for is not.
+    #[test]
+    fn the_loader_table_may_carry_the_stubs_own_kernel32() {
+        let table = |extra: &[u8]| {
+            let mut body = vec![0u8; 0x100];
+            body[12..16].copy_from_slice(&0x1080u32.to_le_bytes());
+            body[32..36].copy_from_slice(&0x1090u32.to_le_bytes());
+            body[0x80..0x88].copy_from_slice(b"arr.dll\0");
+            body[0x90..0x90 + extra.len()].copy_from_slice(extra);
+            tiny_pe(&body)
+        };
+        let wanted = vec![ImportDll { name_off: 0x80, iat: 0, thunks: Vec::new() }];
+        let bytes = table(b"KERNEL32.DLL\0");
+        let img = Image::new(&bytes).unwrap();
+        assert_eq!(loader_import_table(&img, &wanted).unwrap(), 0x1000);
+        let bytes = table(b"USER32.dll\0");
+        let img = Image::new(&bytes).unwrap();
+        assert!(loader_import_table(&img, &wanted).is_err());
+    }
+
+    /// `Export::build`'s compact layout, rebuilt at the original address: the
+    /// header's tables are repointed, the names and the DLL name re-laid out,
+    /// an ordinal-only export kept, and a forwarder's string moved with it.
+    #[test]
+    fn a_moved_export_directory_is_rebuilt_at_its_original_address() {
+        let base = 0x9000u32;
+        let mut d = vec![0u8; 40];
+        let put =
+            |d: &mut Vec<u8>, at: usize, v: u32| d[at..at + 4].copy_from_slice(&v.to_le_bytes());
+        put(&mut d, 16, 1);
+        put(&mut d, 20, 3);
+        put(&mut d, 24, 2);
+        // functions, name pointers, ordinals, DLL name, names, forwarder
+        let funcs = d.len();
+        d.resize(funcs + 12, 0);
+        let names = d.len();
+        d.resize(names + 8, 0);
+        let ords = d.len();
+        d.extend_from_slice(&[0, 0, 2, 0]);
+        let ename = d.len();
+        d.extend_from_slice(b"lib.dll\0");
+        let n0 = d.len();
+        d.extend_from_slice(b"alpha\0");
+        let n1 = d.len();
+        d.extend_from_slice(b"fwd\0");
+        let fw = d.len();
+        d.extend_from_slice(b"K32.Sleep\0");
+        put(&mut d, 12, base + ename as u32);
+        put(&mut d, 28, base + funcs as u32);
+        put(&mut d, 32, base + names as u32);
+        put(&mut d, 36, base + ords as u32);
+        put(&mut d, funcs, 0x1100);
+        put(&mut d, funcs + 4, 0x1200);
+        put(&mut d, funcs + 8, base + fw as u32);
+        put(&mut d, names, base + n0 as u32);
+        put(&mut d, names + 4, base + n1 as u32);
+
+        let newbase = 0x3000u32;
+        let out = rebuild_export_dir(&d, base, newbase, 0x1000).unwrap();
+        let rd = |at: usize| u32::from_le_bytes(out[at..at + 4].try_into().unwrap());
+        let at = |rva: u32| (rva - newbase) as usize;
+        let cstr = |rva: u32| {
+            let o = at(rva);
+            let n = out[o..].iter().position(|&c| c == 0).unwrap();
+            String::from_utf8_lossy(&out[o..o + n]).into_owned()
+        };
+        assert_eq!(out.len() % 4, 0);
+        assert_eq!((rd(28), rd(32), rd(36)), (newbase + 40, newbase + 52, newbase + 60));
+        assert_eq!(cstr(rd(12)), "lib.dll");
+        assert_eq!((rd(40), rd(44)), (0x1100, 0x1200), "code addresses are not moved");
+        assert_eq!(cstr(rd(48)), "K32.Sleep", "the forwarder string moves with the table");
+        assert_eq!((cstr(rd(52)), cstr(rd(56))), ("alpha".to_owned(), "fwd".to_owned()));
+        assert_eq!(&out[60..64], &[0, 0, 2, 0]);
+    }
+
+    /// Every name pointer of a packed export directory may name the same long
+    /// string; the rebuild stops once its layout outgrows the room it has
+    /// instead of copying the string once per pointer.
+    #[test]
+    fn export_names_that_share_one_long_string_are_bounded_by_the_image() {
+        let base = 0x9000u32;
+        let n = 4000usize;
+        let mut d = vec![0u8; 40 + 4 * n];
+        let text = d.len() as u32;
+        d.extend_from_slice(&[b'A'; 8000]);
+        d.push(0);
+        d[12..16].copy_from_slice(&(base + text).to_le_bytes());
+        d[24..28].copy_from_slice(&(n as u32).to_le_bytes());
+        for f in [28, 32, 36] {
+            d[f..f + 4].copy_from_slice(&(base + 40).to_le_bytes());
+        }
+        for i in 0..n {
+            d[40 + 4 * i..44 + 4 * i].copy_from_slice(&(base + text).to_le_bytes());
+        }
+        let err = rebuild_export_dir(&d, base, 0x3000, 0x10000).expect_err("32 MB of names");
+        assert!(format!("{err}").contains("outgrows"), "{err}");
+    }
+
+    /// Five directories of a few hundred entries that all name the next one
+    /// would be walked hundreds-to-the-fourth times; a shared subdirectory is
+    /// refused the first time it is reached again.
+    #[test]
+    fn a_resource_tree_that_shares_a_subdirectory_is_refused() {
+        let (n, levels) = (300usize, 5usize);
+        let dsz = 16 + 8 * n;
+        let mut tree = vec![0u8; dsz * levels];
+        for k in 0..levels - 1 {
+            let o = k * dsz;
+            tree[o + 14..o + 16].copy_from_slice(&(n as u16).to_le_bytes());
+            for i in 0..n {
+                let e = o + 16 + 8 * i;
+                tree[e..e + 4].copy_from_slice(&(i as u32 + 1).to_le_bytes());
+                let child = 0x8000_0000 | ((k + 1) * dsz) as u32;
+                tree[e + 4..e + 8].copy_from_slice(&child.to_le_bytes());
+            }
+        }
+        let err = walk_resource_dir(&tree, 0, 0, 0, &mut ResourceWalk::default())
+            .expect_err("a shared subdirectory");
+        assert!(format!("{err}").contains("subdirectory twice"), "{err}");
+    }
+
+    /// A section mapped at the top of the address space must not wrap the
+    /// loader-table scan back to address zero, and a section whose raw data
+    /// lies past the end of the file names nothing.
+    #[test]
+    fn a_hostile_packed_section_table_cannot_wrap_or_overrun_the_scan() {
+        let wanted = vec![ImportDll { name_off: 0x80, iat: 0, thunks: Vec::new() }];
+        let mut bytes = tiny_pe(&[0x11u8; 0x40]);
+        let t = 0x40 + 24 + 224;
+        bytes[t + 12..t + 16].copy_from_slice(&0xffff_fff0u32.to_le_bytes());
+        bytes[t + 16..t + 20].copy_from_slice(&0xfu32.to_le_bytes());
+        let img = Image::new(&bytes).unwrap();
+        assert!(loader_import_table(&img, &wanted).is_err());
+
+        let mut bytes = tiny_pe(&[0x11u8; 0x40]);
+        bytes[t + 20..t + 24].copy_from_slice(&0x10_0000u32.to_le_bytes());
+        let img = Image::new(&bytes).unwrap();
+        assert!(img.cstr_at_rva(0x1000).is_err());
+        assert!(loader_import_table(&img, &wanted).is_err());
+    }
+
+    /// A huge `FileAlignment` in the recovered header used to pad the overlay
+    /// out to gigabytes before the length check refused the file; the layout
+    /// is now sized, and refused, before anything is allocated.
+    #[test]
+    fn a_huge_file_alignment_is_refused_before_it_is_allocated() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/upx_packed_pe_x86_64.exe");
+        let mut bytes = std::fs::read(p).unwrap();
+        let info = super::super::detect(&bytes).expect("fixture is UPX-packed");
+        let data = info.pack_header_offset + super::super::PACK_HEADER_SIZE;
+        let obuf = super::super::elf::method_codec(info.method)
+            .unwrap()
+            .decompress(&bytes[data..data + info.c_len as usize], info.u_len as usize)
+            .unwrap();
+        bytes.extend_from_slice(b"overlay!");
+        let img = Image::new(&bytes).unwrap();
+        let skip = le32(&obuf, obuf.len() - 4).unwrap() as usize;
+        let mut oh = PeHeader::parse(&obuf, skip, Layout::Trailer).unwrap();
+        let rvamin = oh.sections[0].vaddr;
+        let tail = &bytes[bytes.len() - 8..];
+        let sane = assemble(&img, &obuf, &oh, rvamin, skip, tail, 3072 + 8).unwrap();
+        assert_eq!(&sane[3072..], b"overlay!");
+        oh.file_align = 0xf000_0000;
+        let err = assemble(&img, &obuf, &oh, rvamin, skip, tail, 3072 + 8)
+            .expect_err("a 4 GB alignment is not credible");
+        assert!(format!("{err}").contains("rebuilt 4026531848 bytes"), "{err}");
+    }
+
+    /// The overlay is cut out of the packed file's tail by the original's
+    /// length. UPX 3.9x's spilled second copy of the stub relocations (and its
+    /// zero padding) comes off the front; bytes appended after packing -- a
+    /// signature, a payload -- come off the end instead of shifting the overlay.
+    #[test]
+    fn the_overlay_is_cut_from_whichever_end_holds_something_else() {
+        let relocs = [0, 0x10, 1, 0, 12, 0, 0, 0, 0x60, 0x39, 0, 0];
+        let mut front = vec![0x60, 0x39, 0, 0];
+        front.resize(512, 0);
+        assert!(is_stub_reloc_spill(&front, &relocs));
+        assert!(!is_stub_reloc_spill(b"COFF symbols", &relocs));
+        assert!(!is_stub_reloc_spill(&[0x39, 0x60, 0, 0], &relocs));
+
+        let overlay = b"COFF symbols and strings";
+        let later = b"certificate appended later";
+        let (end, len) = (0x1000, 0x1000 + overlay.len());
+        let spilled = [&front[..], overlay].concat();
+        assert_eq!(overlay_of(&spilled, end, len, 512), overlay);
+        let both = [&front[..], overlay, later].concat();
+        assert_eq!(overlay_of(&both, end, len, 512), overlay);
+        let appended = [&overlay[..], later].concat();
+        assert_eq!(overlay_of(&appended, end, len, 0), overlay);
+        assert_eq!(overlay_of(overlay, end, len, 0), overlay);
+        assert_eq!(overlay_of(overlay, end, len + 100, 0), overlay);
+        assert_eq!(overlay_of(&appended, end, end, 0), b"");
     }
 
     fn put(b: &mut [u8], at: usize, v: u32) {
@@ -1009,29 +1955,15 @@ mod tests {
     const TINY_SECTION: usize = 0x40 + 24 + 224;
     const TINY_DIRS: usize = 0x40 + 24 + 96;
 
-    /// A packed image with one section mapping `body` at 0x1000 from file
-    /// offset 0x200, and no data directories set.
-    fn tiny_pe(body: &[u8]) -> Vec<u8> {
-        let mut b = vec![0u8; 0x200];
-        b[..2].copy_from_slice(b"MZ");
-        put(&mut b, 0x3c, 0x40);
-        b[0x40..0x44].copy_from_slice(b"PE\0\0");
-        b[0x46..0x48].copy_from_slice(&1u16.to_le_bytes());
-        b[0x54..0x56].copy_from_slice(&224u16.to_le_bytes());
-        b[0x58..0x5a].copy_from_slice(&0x10bu16.to_le_bytes());
-        put(&mut b, 0x58 + 92, 16);
-        let len = body.len() as u32;
-        for (field, v) in [(8, len), (12, 0x1000), (16, len), (20, 0x200)] {
-            put(&mut b, TINY_SECTION + field, v);
-        }
-        b.extend_from_slice(body);
-        b
-    }
-
     /// Replay the resource rebuild of a packed image whose one section, at
     /// `packed_rva`, is the resource directory `tree`, into a recovered image
     /// whose `.rsrc` starts at 0x1000.
     fn rebuild_tree(tree: &[u8], packed_rva: u32) -> Result<(), UpxError> {
+        rebuild_tree_into(tree, packed_rva, &mut vec![0u8; 0x20000])
+    }
+
+    /// [`rebuild_tree`] into a recovered image `obuf` that starts at 0x1000.
+    fn rebuild_tree_into(tree: &[u8], packed_rva: u32, obuf: &mut [u8]) -> Result<(), UpxError> {
         let mut bytes = tiny_pe(tree);
         put(&mut bytes, TINY_SECTION + 12, packed_rva);
         put(&mut bytes, TINY_DIRS + 8 * DIR_RESOURCE, packed_rva);
@@ -1042,17 +1974,20 @@ mod tests {
         let rsrc = Section { vsize: 0x10000, vaddr: 0x1000, rawsize: 0x10000, rawptr: 0x400 };
         let oh = PeHeader {
             at: 0,
+            width: Width::Pe32,
             opt_size: 224,
-            optional_magic: 0x10b,
+            hdr_len: 24 + 224,
             flags: 0,
             code_size: 0,
             code_base: 0x1000,
+            image_base: 0x40_0000,
+            file_align: 0x200,
             sections: vec![rsrc],
             dirs,
+            table_at: 24 + 224,
         };
-        let mut obuf = vec![0u8; 0x20000];
         let mut trailer = obuf.len() - 2;
-        rebuild_resources(&img, &mut obuf, &oh, 0x1000, &mut trailer)
+        rebuild_resources(&img, obuf, &oh, 0x1000, true, &mut trailer)
     }
 
     /// A root directory with one entry naming the data entry at 24, which
@@ -1073,6 +2008,23 @@ mod tests {
         let err = rebuild_tree(&one_leaf_tree(0, 32), 0x1000).expect_err("a truncated entry");
         assert!(format!("{err}").contains("runs past its packed copy"), "{err}");
         rebuild_tree(&one_leaf_tree(0, 40), 0x1000).expect("the whole entry is there");
+    }
+
+    /// The packed copy keeps a named entry's string behind the data entries,
+    /// and the packer leaves the original's strings where its linker put them,
+    /// so the string and its four-byte padding are written back along with
+    /// the entry that points at them -- or the entry names whatever the
+    /// original had there.
+    #[test]
+    fn a_resource_name_comes_back_with_the_entry_that_points_at_it() {
+        let mut tree = one_leaf_tree(0, 48);
+        tree[12..16].copy_from_slice(&[1, 0, 0, 0]);
+        put(&mut tree, 16, 0x8000_0000 | 40);
+        tree[40..46].copy_from_slice(&[2, 0, b'I', 0, b'D', 0]);
+        let mut obuf = vec![0u8; 0x20000];
+        obuf[40..48].copy_from_slice(b"original");
+        rebuild_tree_into(&tree, 0x1000, &mut obuf).expect("a named leaf");
+        assert_eq!(&obuf[..48], &tree[..]);
     }
 
     /// A moved leaf's back-pointer sits four bytes before its data, so a leaf
