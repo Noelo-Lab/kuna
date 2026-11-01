@@ -27,6 +27,12 @@ pub(crate) fn wrap_cut(offset: u64, size: int4, highest: u64) -> Option<int4> {
     (size > 1 && room < size as u64).then_some(room as int4)
 }
 
+/// Every Varnode that runs past `highest`, the top of its space, starts at or
+/// above this offset: a Varnode holds at most `int4::MAX` bytes.
+pub(crate) fn wrap_floor(highest: u64) -> u64 {
+    highest.saturating_sub(int4::MAX as u64)
+}
+
 /// The refinement array that splits a `size`-byte Varnode after `cut` bytes,
 /// in the form `Heritage::refinement` hands to the refine helpers.
 pub(crate) fn wrap_refinement(size: int4, cut: int4) -> Vec<int4> {
@@ -55,6 +61,18 @@ mod tests {
         assert_eq!(wrap_cut(0xffff_fffe, 4, 0xffff_ffff), Some(2));
         assert_eq!(wrap_cut(0xffff_fffc, 4, 0xffff_ffff), None);
         assert_eq!(wrap_cut(0x1_0000_0000, 4, 0xffff_ffff), None);
+    }
+
+    #[test]
+    fn nothing_below_the_floor_wraps() {
+        for highest in [u64::MAX, 0xffff_ffff] {
+            let floor = wrap_floor(highest);
+            assert_eq!(wrap_cut(floor, int4::MAX, highest), None);
+            assert_eq!(wrap_cut(floor + 1, int4::MAX, highest), None);
+            assert_eq!(wrap_cut(floor + 2, int4::MAX, highest), Some(int4::MAX - 1));
+        }
+        assert_eq!(wrap_floor(0xffff), 0);
+        assert_eq!(wrap_cut(0, 0x1_0001, 0xffff), Some(0x1_0000));
     }
 
     #[test]

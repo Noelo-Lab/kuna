@@ -4650,17 +4650,21 @@ impl Heritage {
         ids: &[crate::context::VarnodeId],
     ) -> bool {
         let highest = space.get_highest();
-        let wrapped: Vec<_> = ids
+        let floor = super::kuna_wrapsplit::wrap_floor(highest);
+        let mut wrapped: Vec<_> = ids
             .iter()
-            .filter_map(|&vn| {
-                let v = fd.vbank().get(vn)?;
-                if v.is_write_mask() || (v.is_free() && v.has_no_descend()) {
-                    return None;
-                }
+            .rev()
+            .map_while(|&vn| {
+                let v = fd.vbank().get(vn).filter(|v| v.get_addr().get_offset() >= floor)?;
+                Some((vn, v))
+            })
+            .filter(|(_, v)| !(v.is_write_mask() || v.is_free() && v.has_no_descend()))
+            .filter_map(|(vn, v)| {
                 super::kuna_wrapsplit::wrap_cut(v.get_addr().get_offset(), v.get_size(), highest)
                     .map(|cut| (vn, cut))
             })
             .collect();
+        wrapped.reverse();
         let mut pieces = Vec::new();
         for &(vn, cut) in &wrapped {
             let (addr, size, written, input) = {
