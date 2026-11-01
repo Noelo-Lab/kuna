@@ -38,7 +38,7 @@ LTO-specialized sinks, and older fmt::Arguments layouts remain unsupported here.
 
 ## Measured breadth and speed
 
-On main `81aee549edeb8ec099589dc0e723fd409a40b36b`, the option changes seven
+On main `38b4be20b6ca9d9e86a1cf31afc1557d8d008324`, the option changes seven
 of the 20 assembly-fixture functions and one of the 455 real Rust 1.93 demo
 functions. All 7,763 functions in the older Rust coreutils `fmt` image are
 unchanged. That is 8,238 distinct functions and eight changed functions, with
@@ -48,14 +48,13 @@ literal runtime call replaced by its corresponding macro; returns, surrounding
 statements and the real witness's tail-call annotation remain unchanged.
 
 Thirty-one interleaved samples on CPU 79, after three warmups per mode, measured
-319.74 ms median with the option on versus 320.38 ms off (-0.20%). A separately
-built copy of the exact main commit measured 321.24 ms (-0.47% for the feature),
-including the load-time compiler-version reader. CPU-time deltas are likewise
-negative. Raw wall and CPU samples are in `timing.json`; the five-percent budget
-passes. These small differences indicate no observed slowdown, not a speedup
-claim.
+349.52 ms median with the option on versus 344.32 ms off (+1.51%). A separately
+built copy of the exact main commit measured 347.07 ms (+0.71% for the feature),
+including the load-time compiler-version reader. CPU-time deltas were +1.38% and
++0.70% respectively. Raw wall and CPU samples are in `timing.json`; the
+five-percent budget passes. These measurements replace the earlier base's data.
 
-Validation: 9,917 workspace tests passed (39 ignored), 675/675 original
-assertions, 3411/3411 stage assertions, catalog, spec, lint and tooling checks.
-The original baseline is unchanged. The stage baseline adds only three new
-assertions and updates the catalog count assertion name.
+Validation: 9,925 workspace tests passed (39 ignored), 675/675 original
+assertions, 3420/3420 stage assertions, catalog, spec, lint and tooling checks.
+The original baseline is unchanged. Relative to main, the stage baseline adds
+only three new assertions and updates the catalog count assertion name.

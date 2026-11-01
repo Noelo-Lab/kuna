@@ -7,6 +7,6 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal _print call becomes println!(\"just a literal\"); tail-call annotation and return are unchanged. Matches the pinned angr literal witness."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   }
 ]

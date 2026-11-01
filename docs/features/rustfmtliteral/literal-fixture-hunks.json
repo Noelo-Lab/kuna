@@ -7,7 +7,7 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   },
   {
     "name": "literal_plain",
@@ -17,7 +17,7 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   },
   {
     "name": "literal_stderr",
@@ -27,7 +27,7 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   },
   {
     "name": "literal_stderr_lf",
@@ -37,7 +37,7 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   },
   {
     "name": "literal_braces",
@@ -47,7 +47,7 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   },
   {
     "name": "literal_unicode",
@@ -57,7 +57,7 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   },
   {
     "name": "literal_empty",
@@ -67,6 +67,6 @@
     ],
     "before_error": null,
     "after_error": null,
-    "classification": "Literal sink replacement only; same return and surrounding statements. Emitted macros are compiled and their stdout/stderr compared byte-for-byte in verify_rustfmtliteral."
+    "classification": "Literal runtime output call replaced by the corresponding macro; surrounding statements, return and any tail-call annotation are unchanged. Exact bytes are covered by the compiled-output test and the pinned real literal witness."
   }
 ]
