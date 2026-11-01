@@ -548,10 +548,15 @@ Four front-ends drive one engine assembly:
   its kind (`rebase`, `bind`, `relocation`), the symbol a bind names, the value
   the loader stores where the image determines it, the file's bytes and the
   image's. What the listed bytes are there is decided by comparing the two, so it
-  holds with `dynrelocs` off too: the file's when they agree, kuna's zero
-  placeholder for a bind whose image bytes are zero, and the loader's value
-  otherwise. A span that overlaps anything but a rebase left as the file holds it
-  also gets one note, on stderr and in the JSON `notes`, naming up to three slots.
+  holds with `dynrelocs` off too: the file's when they agree (also where the file
+  already holds the loader's value, as a GNU ld x86-64 `RELATIVE` slot or a `REL`
+  or `RELR` one does), kuna's zero placeholder for an unvalued bind whose image
+  bytes are zero, and the loader's value otherwise. A span that overlaps anything
+  but a rebase whose bytes already are its target also gets one note, on stderr
+  and in the JSON `notes`, naming up to three slots; a rebase that still holds its
+  chain word or a `RELA` zero (`dynrelocs` off) is named, since those bytes are
+  not the pointer. A relocatable object lists no slots (coverage `none`) although
+  its bytes are kuna's relocated layout of it.
 
   (kuna) **A listing names the branch targets it decoded across, and `--follow`
   decodes from them.** A straight-line walk assumes every byte in the range

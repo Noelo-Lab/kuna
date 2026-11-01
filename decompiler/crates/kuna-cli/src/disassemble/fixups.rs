@@ -16,7 +16,7 @@ use kuna_analysis::loader::kuna_dataptrs::Coverage;
 use kuna_analysis::loader::kuna_dynrelocs::{FixupKind, FixupSite};
 use kuna_console::disasm::hex;
 use kuna_console::engine::ConsoleProgram;
-use object::read::ObjectSegment;
+use object::read::{Object, ObjectSegment};
 
 use crate::jsonfmt::Json;
 
@@ -52,6 +52,8 @@ struct Slot {
     file: Option<Vec<u8>>,
     image: Vec<u8>,
     returned: Returned,
+    /// The listed bytes already are `target`, the value the loader stores.
+    holds_target: bool,
 }
 
 /// The fixup slots one byte view overlaps, and the metadata that listed them.
@@ -78,6 +80,7 @@ pub(super) fn overlapping(
     let Ok(bytes) = crate::image::image_bytes(binary, pref) else { return none };
     let Ok(file) = kuna_analysis::loadimage_object::parse_object(&bytes) else { return none };
     let listed = kuna_analysis::loader::kuna_dynrelocs::fixup_sites(&file, &bytes);
+    let le = file.is_little_endian();
     let mut slots = Vec::new();
     for site in listed.sites {
         let width = u64::from(site.width);
@@ -89,31 +92,37 @@ pub(super) fn overlapping(
         let unchanged = file_bytes.as_deref().unwrap_or(&vec![0; image.len()])[..] == image[..];
         let returned = if unchanged {
             Returned::File
-        } else if site.kind == FixupKind::Bind && image.iter().all(|&b| b == 0) {
+        } else if site.kind == FixupKind::Bind && site.target.is_none() && image.iter().all(|&b| b == 0) {
             Returned::Placeholder
         } else {
             Returned::Applied
         };
-        slots.push(Slot { site, file: file_bytes, image, returned });
+        let holds_target = site.target.is_some_and(|t| encode(t, image.len(), le) == image);
+        slots.push(Slot { site, file: file_bytes, image, returned, holds_target });
     }
     Fixups { coverage: listed.coverage, slots }
 }
 
+/// `value` as a `width`-byte word in the image's byte order.
+fn encode(value: u64, width: usize, le: bool) -> Vec<u8> {
+    let width = width.min(8);
+    if le { value.to_le_bytes()[..width].to_vec() } else { value.to_be_bytes()[8 - width..].to_vec() }
+}
+
 /// The file's `width` bytes at `vma`, from the segment holding them.
 fn file_bytes(file: &object::File, vma: u64, width: u64) -> Option<Vec<u8>> {
-    use object::read::Object;
     file.segments().find_map(|seg| seg.data_range(vma, width).ok().flatten().map(<[u8]>::to_vec))
 }
 
 impl Fixups {
     /// The stderr / `notes` line for a span that overlaps a slot whose bytes are
-    /// not simply the file's pointer: anything but a rebase left as the file
-    /// holds it.
+    /// not simply the file's pointer: anything but a rebase whose file bytes
+    /// already hold its target.
     pub(super) fn note(&self) -> Option<String> {
         let flagged: Vec<&Slot> = self
             .slots
             .iter()
-            .filter(|s| s.returned != Returned::File || s.site.kind != FixupKind::Rebase)
+            .filter(|s| s.returned != Returned::File || s.site.kind != FixupKind::Rebase || !s.holds_target)
             .collect();
         if flagged.is_empty() {
             return None;
@@ -173,6 +182,9 @@ impl Slot {
             }
             (Returned::Applied, Some(t)) => format!("the pointer the loader stores, 0x{t:x}; the file holds {file}"),
             (Returned::Applied, None) => format!("the value the loader stores; the file holds {file}"),
+            (Returned::File, Some(_)) if self.holds_target => {
+                "the file's bytes, already the value the loader stores".to_string()
+            }
             (Returned::File, Some(t)) => format!("the file's bytes; the loader stores 0x{t:x}"),
             (Returned::File, None) => "the file's bytes; the loader rewrites them at run time".to_string(),
         };

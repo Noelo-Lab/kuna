@@ -5,9 +5,9 @@
 //! file's, the loader's value, or kuna's zero placeholder for an import.
 //!
 //! Fixtures: `macho_ptrslots_arm64` (two chained rebases and a bind at
-//! 0x100004000, see `macho_ptrslots_arm64.provenance`) and
-//! `dataptrs_so_x86_64.so` (see its `.provenance`). Integration tests require
-//! the built processor specs under `specs/`.
+//! 0x100004000, see `macho_ptrslots_arm64.provenance`), `dataptrs_so_x86_64.so`
+//! and its `SHT_RELR` sibling `relr_so_x86_64.so` (see their `.provenance`).
+//! Integration tests require the built processor specs under `specs/`.
 
 use crate::common;
 
@@ -86,7 +86,9 @@ fn a_slot_the_span_only_overlaps_is_listed_whole() {
     assert_eq!(doc["fixups"][0]["size"], 8);
 }
 
-/// With the loader's fixups turned off the bytes are the file's, and say so.
+/// With the loader's fixups turned off the bytes are the file's, and say so. A
+/// rebase's chain word is then not the pointer the loader stores, so it is in
+/// the note too.
 #[test]
 fn dynrelocs_off_lists_the_file_bytes_as_the_files() {
     let doc = read("macho_ptrslots_arm64", "0x100004010", "8", &["--option", "dynrelocs", "off"]);
@@ -94,6 +96,13 @@ fn dynrelocs_off_lists_the_file_bytes_as_the_files() {
     assert_eq!(
         fixups(&doc),
         [row(0x100004010, "bind", Some("_audit_imported"), None, "0000000000000080", "0000000000000080", "file")]
+    );
+    let rebase = read("macho_ptrslots_arm64", "0x100004000", "8", &["--option", "dynrelocs", "off"]);
+    assert_eq!(rebase["fixups"][0]["returned"], "file");
+    let notes = rebase["notes"].as_array().unwrap();
+    assert!(
+        notes.iter().any(|n| n.as_str().unwrap().contains("0x100004000 rebase (the file's bytes; the loader stores 0x100000440)")),
+        "{notes:?}"
     );
 }
 
@@ -113,6 +122,25 @@ fn elf_dynamic_relocations_say_which_slots_kuna_applied() {
             row(0x4038, "rebase", None, Some(0x1010), "1010000000000000", "1010000000000000", "file"),
         ]
     );
+}
+
+/// Packed relative relocations (`SHT_RELR`) are rebases too, listed beside the
+/// `.rela.dyn` ones; kuna leaves them as the file holds them, which is already
+/// the pointer, so they draw no note.
+#[test]
+fn relr_slots_are_listed_as_rebases() {
+    let doc = read("relr_so_x86_64.so", "0x4020", "32", &[]);
+    assert_eq!(doc["fixups_coverage"], "dynamic-relocations");
+    assert_eq!(
+        fixups(&doc),
+        [
+            row(0x4020, "rebase", None, Some(0x2000), "0020000000000000", "0020000000000000", "file"),
+            row(0x4030, "relocation", Some("audit_target"), None, "0000000000000000", "0000000000000000", "file"),
+            row(0x4038, "rebase", None, Some(0x1010), "1010000000000000", "1010000000000000", "file"),
+        ]
+    );
+    let notes: Vec<&str> = doc["notes"].as_array().unwrap().iter().map(|n| n.as_str().unwrap()).collect();
+    assert!(notes.iter().all(|n| !n.contains("0x4020") && !n.contains("0x4038")), "{notes:?}");
 }
 
 /// Bytes no fixup touches carry an empty list and no note; an image whose

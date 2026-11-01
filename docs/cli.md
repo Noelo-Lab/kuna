@@ -2791,16 +2791,20 @@ at run time. So every fixup slot the span overlaps is listed whole in `fixups`:
 | `symbol`, `addend` | The symbol a bind or relocation names, as the image spells it (`_malloc`), and a bind's addend; `null` where there is none. |
 | `target` | The value the loader stores, where this image alone determines it: a rebase's target, a bind to a symbol the image defines. `null` for an import. |
 | `file_bytes`, `image_bytes` | The slot's bytes in the file (`null` past the segment's file content) and in the load image. |
-| `returned` | What `hex`/`rows` hold there: `file` (the file's own bytes), `applied` (the loader's value, `target`), or `placeholder` (zero standing in for an import's address). |
+| `returned` | What `hex`/`rows` hold there: `file` (the file's own bytes), `applied` (the loader's value, `target`), or `placeholder` (zero standing in for an import's address). It is decided by comparing `image_bytes` with `file_bytes`, so a slot whose file bytes already hold `target` says `file`: GNU ld writes x86-64 `RELATIVE` targets in place, and a `REL` or `RELR` slot keeps its addend, the target, there. |
 
 `fixups_coverage` names the metadata the list came from — `chained-fixups`
-(Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF), or
-`none` for an image whose fixups kuna does not apply (a PE at its preferred
-base, a classic Mach-O, whose rebased words are already the unslid pointers),
-where `fixups` is empty and the bytes are the file's. `--option dynrelocs off`
-leaves every slot as the file holds it, and `returned` then says `file`. A span
-that overlaps a bind, an applied slot or an unapplied relocation also gets a
-note naming up to three of them:
+(Mach-O `LC_DYLD_CHAINED_FIXUPS`), `dynamic-relocations` (a linked ELF's
+dynamic relocation tables, `SHT_RELR` included), or `none`, where `fixups` is
+empty. `none` is a PE at its preferred base or a classic Mach-O, whose rebased
+words are already the unslid pointers and whose bytes are the file's, and a
+relocatable object (`.o`, `.obj`), whose bytes are kuna's own layout of it with
+the relocations it supports applied, which this list does not cover.
+`--option dynrelocs off` leaves every slot as the file holds it, and `returned`
+then says `file`. A span gets one note, naming up to three slots, when it
+overlaps anything but a rebase whose bytes already are its target: a bind, an
+applied slot, an unapplied relocation, or a rebase whose file word is not yet
+its target (a chain word, or a `RELA` slot's zero, with `dynrelocs off`):
 
 ```
 $ kuna read ./fixture.dylib 0x4000 --addr --bytes 8

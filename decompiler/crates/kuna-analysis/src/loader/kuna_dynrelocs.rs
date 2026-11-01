@@ -47,7 +47,8 @@
 //!
 //! [`fixup_sites`] lists the same slots for a reader of the loaded image (`kuna
 //! read`), every one of them, including the ones [`resolve`] leaves as the file
-//! holds them, so the reader can say which of its bytes are the file's.
+//! holds them and the `SHT_RELR` ones it never needs to write, so the reader can
+//! say which of its bytes are the file's.
 //!
 //! Linked images only (`ET_EXEC`/`ET_DYN`); an `ET_REL` `.o` takes the separate
 //! `relocobjects` layout path, which applies its own relocations. Architectures:
@@ -379,10 +380,11 @@ pub struct FixupSites {
 
 /// Every slot `file`'s load-time fixups fill (`bytes` is its raw image): a
 /// Mach-O's `LC_DYLD_CHAINED_FIXUPS` rebases and binds, a linked ELF's dynamic
-/// relocations. These are the slots whose loaded bytes [`resolve`] may have
-/// rewritten (rebase targets, a zero for each bind), so a reader of the load
-/// image can say which of its bytes are the file's. Read whether or not the
-/// `dynrelocs` gate is on. Empty, with [`Coverage::None`], for any other image.
+/// relocations, its `SHT_RELR` ones included. These are the slots whose loaded
+/// bytes [`resolve`] may have rewritten (rebase targets, a zero for each bind),
+/// so a reader of the load image can say which of its bytes are the file's.
+/// Read whether or not the `dynrelocs` gate is on. Empty, with
+/// [`Coverage::None`], for any other image.
 ///
 /// [`Coverage::None`]: crate::loader::kuna_dataptrs::Coverage::None
 pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
@@ -425,12 +427,91 @@ pub fn fixup_sites(file: &object::File, bytes: &[u8]) -> FixupSites {
                 target: fixup.value,
             });
         }
+        sites.extend(relr_sites(file, &table));
         Coverage::DynamicRelocations
     } else {
         Coverage::None
     };
     sites.sort_by_key(|site| site.vma);
     FixupSites { coverage, sites }
+}
+
+/// The slots an ELF's `SHT_RELR` tables rebase (`-z pack-relative-relocs`), on
+/// any machine: packed `RELATIVE` relocations, whose addend is the word the slot
+/// already holds. [`resolve`] writes none of them, since at the image's own
+/// vaddrs that word is the target.
+fn relr_sites(file: &object::File, table: &ElfTable) -> Vec<FixupSite> {
+    let slots = match file {
+        object::File::Elf32(elf) => relr_slots(elf, table.width),
+        object::File::Elf64(elf) => relr_slots(elf, table.width),
+        _ => Vec::new(),
+    };
+    slots
+        .into_iter()
+        .map(|vma| FixupSite {
+            vma,
+            width: table.width as u8,
+            kind: FixupKind::Rebase,
+            symbol: None,
+            addend: None,
+            target: implicit_addend(file, vma, table.width, table.le).map(|a| a & table.mask),
+        })
+        .collect()
+}
+
+/// Every slot address the `SHT_RELR` sections of `elf` encode.
+fn relr_slots<'data, Elf, R>(elf: &object::read::elf::ElfFile<'data, Elf, R>, width: usize) -> Vec<u64>
+where
+    Elf: object::read::elf::FileHeader,
+    R: object::ReadRef<'data>,
+{
+    use object::read::elf::SectionHeader;
+    use object::Endian;
+    let endian = elf.endian();
+    let mut entries = Vec::new();
+    for section in elf.elf_section_table().iter() {
+        if section.sh_type(endian) != object::elf::SHT_RELR {
+            continue;
+        }
+        let Ok(data) = section.data(endian, elf.data()) else { continue };
+        entries.extend(data.chunks_exact(width).map(|word| {
+            let mut raw = [0u8; 8];
+            if endian.is_little_endian() {
+                raw[..width].copy_from_slice(word);
+                u64::from_le_bytes(raw)
+            } else {
+                raw[8 - width..].copy_from_slice(word);
+                u64::from_be_bytes(raw)
+            }
+        }));
+    }
+    relr_decode(&entries, width as u64)
+}
+
+/// Decode `SHT_RELR` entries: an even word is a slot address, and an odd word a
+/// bitmap whose bit `i` (from 1) marks the slot `i - 1` words past the last
+/// address, the window then advancing by the bitmap's `8 * width - 1` words.
+fn relr_decode(entries: &[u64], width: u64) -> Vec<u64> {
+    let mut slots = Vec::new();
+    let mut next = 0u64;
+    for &entry in entries {
+        if entry & 1 == 0 {
+            slots.push(entry);
+            next = entry.wrapping_add(width);
+            continue;
+        }
+        let mut bits = entry >> 1;
+        let mut at = next;
+        while bits != 0 {
+            if bits & 1 == 1 {
+                slots.push(at);
+            }
+            bits >>= 1;
+            at = at.wrapping_add(width);
+        }
+        next = next.wrapping_add((8 * width - 1) * width);
+    }
+    slots
 }
 
 /// A Mach-O image's chained fixups as writes: each rebase's resolved target, and

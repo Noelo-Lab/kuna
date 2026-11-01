@@ -335,3 +335,15 @@ fn a_relocation_kuna_does_not_apply_is_listed_unvalued() {
     assert!(listed.sites.iter().all(|s| s.kind == FixupKind::Relocation && s.target.is_none()), "{:?}", listed.sites);
     assert_eq!(listed.sites[2].symbol.as_deref(), Some("imp"));
 }
+
+/// GH #1379: `SHT_RELR` entries. An address entry names one slot; a bitmap names
+/// the slots after it (bit 1 = the next word), then moves the window on by
+/// `8 * width - 1` words, so a second bitmap continues where the first ended.
+#[test]
+fn relr_entries_decode_to_their_slots() {
+    assert_eq!(relr_decode(&[0x4020, 0x9], 8), vec![0x4020, 0x4038]);
+    assert_eq!(relr_decode(&[0x1000, 0x3, 0x3], 8), vec![0x1000, 0x1008, 0x1008 + 63 * 8]);
+    assert_eq!(relr_decode(&[0x2000, 0x8000_0001], 4), vec![0x2000, 0x2004 + 30 * 4]);
+    assert_eq!(relr_decode(&[0x2000, 0x8000_0001, 0x3], 4), vec![0x2000, 0x2004 + 30 * 4, 0x2004 + 31 * 4]);
+    assert!(relr_decode(&[], 8).is_empty());
+}
