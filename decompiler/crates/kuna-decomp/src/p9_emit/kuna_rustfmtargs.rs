@@ -25,6 +25,12 @@ pub struct Plan {
     pub arguments: Vec<Argument>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum MacroKind {
+    Print(bool),
+    Format,
+}
+
 /// Full demangled identities, before display-name normalization. Conflicting
 /// aliases invalidate an address even when one alias names a supported trait.
 pub fn formatter_symbols(
@@ -42,8 +48,6 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
     if !arch.rust_fmt_args
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
-        || (arch.rust_display_formatters.is_empty()
-            && (!arch.rust_fmt_flags || arch.rust_integer_formatters.is_empty()))
     {
         return None;
     }
@@ -52,15 +56,38 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
         return None;
     }
     let stderr = super::kuna_rustfmtliteral::print_sink(fd, id)?;
+    recover_at(fd, arch, id, 1, 2, MacroKind::Print(stderr))
+}
+
+pub(crate) fn recover_at(
+    fd: &Funcdata,
+    arch: &Architecture,
+    id: OpId,
+    template_slot: i32,
+    array_slot: i32,
+    kind: MacroKind,
+) -> Option<Plan> {
+    if !arch.rust_fmt_args
+        || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
+        || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
+        || (arch.rust_display_formatters.is_empty()
+            && (!arch.rust_fmt_flags || arch.rust_integer_formatters.is_empty()))
+    {
+        return None;
+    }
+    let call = fd.obank().get(id)?;
+    if call.code() != OpCode::CPUI_CALL || call.get_out().is_some() {
+        return None;
+    }
     let space = fd.get_arch().manage().get_default_data_space()?;
     if space.get_addr_size() != 8 || space.is_big_endian() {
         return None;
     }
-    let template = constant_word(fd, call.get_in(1)?)?;
+    let template = constant_word(fd, call.get_in(template_slot)?)?;
     if template == 0 {
         return None;
     }
-    let array = stack_offset(fd, call.get_in(2)?)?;
+    let array = stack_offset(fd, call.get_in(array_slot)?)?;
     if array % 8 != 0 {
         return None;
     }
@@ -115,7 +142,7 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
         arguments.push(Argument { pointer, primitive });
         formatters.push(formatter);
     }
-    let (name, literal) = decoded.render(stderr, &formatters)?;
+    let (name, literal) = decoded.render(kind, &formatters)?;
     Some(Plan {
         name,
         literal,
@@ -298,19 +325,26 @@ fn decode_template(
 }
 
 impl Template {
-    fn render(mut self, stderr: bool, formatters: &[Formatter]) -> Option<(&'static str, String)> {
+    fn render(
+        mut self,
+        kind: MacroKind,
+        formatters: &[Formatter],
+    ) -> Option<(&'static str, String)> {
         let newline = match self.pieces.last_mut() {
-            Some(Piece::Literal(text)) if text.ends_with('\n') => {
+            Some(Piece::Literal(text))
+                if matches!(kind, MacroKind::Print(_)) && text.ends_with('\n') =>
+            {
                 text.pop();
                 true
             }
             _ => false,
         };
-        let name = match (stderr, newline) {
-            (false, false) => "print!",
-            (false, true) => "println!",
-            (true, false) => "eprint!",
-            (true, true) => "eprintln!",
+        let name = match (kind, newline) {
+            (MacroKind::Print(false), false) => "print!",
+            (MacroKind::Print(false), true) => "println!",
+            (MacroKind::Print(true), false) => "eprint!",
+            (MacroKind::Print(true), true) => "eprintln!",
+            (MacroKind::Format, _) => "format!",
         };
         let mut literal = String::from("\"");
         for piece in self.pieces {
@@ -361,7 +395,7 @@ mod tests {
             decode(b"\x08value = \xc0\x01\n\0")
                 .unwrap()
                 .render(
-                    false,
+                    MacroKind::Print(false),
                     &[Formatter {
                         primitive: "u64",
                         kind: Trait::Display
@@ -374,7 +408,7 @@ mod tests {
             decode(b"\xc0\x01 \xc0\x01 \xc8\0\0\x01\n\0")
                 .unwrap()
                 .render(
-                    false,
+                    MacroKind::Print(false),
                     &[Formatter {
                         primitive: "u64",
                         kind: Trait::Display
@@ -387,7 +421,7 @@ mod tests {
             decode(b"\x03{\"\\\xc0\x03}\0\n\0")
                 .unwrap()
                 .render(
-                    true,
+                    MacroKind::Print(true),
                     &[Formatter {
                         primitive: "u64",
                         kind: Trait::Display
@@ -400,7 +434,7 @@ mod tests {
             decode(b"\x80\x02\0ok\xc0\0")
                 .unwrap()
                 .render(
-                    false,
+                    MacroKind::Print(false),
                     &[Formatter {
                         primitive: "u64",
                         kind: Trait::Display

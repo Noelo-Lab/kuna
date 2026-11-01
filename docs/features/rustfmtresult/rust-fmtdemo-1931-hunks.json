@@ -1,0 +1,10 @@
+[
+  {
+    "name": "fmtdemo::hex_width",
+    "address": "0x11100",
+    "hunks": [
+      "@@ -13,6 +13,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  }
+]

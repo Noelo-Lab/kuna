@@ -511,6 +511,8 @@ Three tiers:
 | Rust print calls retain stack formatter descriptor arrays | [`rustfmtargs`](#rustfmtargs) |
 | Rust hexadecimal or padded integer printing retains runtime descriptors | [`rustfmtflags`](#rustfmtflags) |
 | Rust static format specifications remain opaque template bytes | [`rustfmtflags`](#rustfmtflags) |
+| Rust integer String construction retains format_inner with an output pointer | [`rustfmtresult`](#rustfmtresult) |
+| Rust format! results remain runtime calls despite recovered templates | [`rustfmtresult`](#rustfmtresult) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
 | imports carry no signatures and call arguments stay untyped | [`libproto`](#libproto) |
 | a caller's parameter is unsigned long where it is only ever passed to a libc function that takes a char */int | [`libcsigs`](#libcsigs) |
@@ -2519,6 +2521,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Leave on with rustfmtargs to read verified static integer formatting as source macros. Turn off to keep the primitive default-Display boundary. This does not recover generic callbacks, floating-point or pointer formatting, format!/write!, or specialized sinks.
 - **Where / provenance:** P9/integer-format · angr · opt-in-tool · angr-rust-format-specifications
 - **Example:** `option rustfmtflags off`
+
+### `rustfmtresult` -- on | off, default `on`
+
+- **Symptoms:** Rust integer String construction retains format_inner with an output pointer; Rust format! results remain runtime calls despite recovered templates.
+- **What it does:** Recover format! at exact alloc::fmt::format::format_inner calls in stable Rust 1.93.0/1.93.1 little-endian 64-bit Rust output. Reuse rustfmtargs template, descriptor and primitive integer proofs, including static specifications when rustfmtflags is on. Preserve the hidden String destination with std::ptr::write, all descriptor setup, existing returns and terminal newlines. Require an entry-value destination and no call result. Local output storage remains explicit until its complete String allocation is recovered. Unknown sinks, destinations, callbacks and layouts remain explicit; C output is unchanged.
+- **When to flip:** Leave on with rustfmtargs to read verified integer String construction as format!. Turn off to inspect the runtime call and hidden output buffer. This does not change function signatures, infer generic formatter types or recover write!/writeln! sinks.
+- **Where / provenance:** P9/format-result · angr · opt-in-tool · angr-rust-format-result
+- **Example:** `option rustfmtresult off`
 
 ## Analysis & loader passes
 

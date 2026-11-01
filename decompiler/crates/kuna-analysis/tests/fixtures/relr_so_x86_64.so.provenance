@@ -1,0 +1,23 @@
+relr_so_x86_64.so -- dataptrs_so_x86_64.so linked with packed relative
+relocations (SHT_RELR).
+
+What it is
+  A 14,168-byte ELF ET_DYN (SHA-256
+  c2a826c353692dc2b806c1683033ba9f84b3d4e9357cd8f5de86cbce49afe2f1) built from
+  dataptrs_so.c. Its two RELATIVE words moved out of .rela.dyn into .relr.dyn,
+  one address entry and one bitmap entry (20400000 00000000, 09000000 00000000):
+    0x3ff8 R_X86_64_GLOB_DAT exported_tab  (.rela.dyn)
+    0x4020 RELR              -> 0x2000 "hello" (msg), the address entry
+    0x4030 R_X86_64_64       audit_target  (.rela.dyn)
+    0x4038 RELR              -> 0x1010 local_target, bit 2 of the bitmap
+  A RELR slot's addend is the word it already holds.
+
+How it was built
+  gcc -O2 -shared -fPIC -nostdlib -Wl,--build-id=none -Wl,-z,pack-relative-relocs \
+      -o relr_so_x86_64.so dataptrs_so.c
+  gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, GNU ld 2.38 (the same toolchain
+  reproduces dataptrs_so_x86_64.so byte for byte without the -z flag).
+
+What it pins
+  `kuna read --json` lists both RELR slots as rebases with their targets,
+  `returned` file, beside the .rela.dyn bind and absolute relocation.

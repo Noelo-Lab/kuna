@@ -1,0 +1,10 @@
+--- off/fmtdemo::hex_width
++++ on/fmtdemo::hex_width
+@@ -13,6 +13,6 @@
+   v5 = fmt;
+   v1 = a1;
+   v4 = v2;
+-  alloc::fmt::format::format_inner(a0,0x6de2 as *mut u16,&mut v2);
++  std::ptr::write((a0 as *mut _) as *mut std::string::String,format!("0x{:08x} {:>5}",&*((v2 as *const _) as *const u32),&*((v4 as *const _) as *const u32)));
+   return;
+ }

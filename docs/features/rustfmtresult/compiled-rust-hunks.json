@@ -1,0 +1,26 @@
+[
+  {
+    "name": "decimal",
+    "address": "0x15a40",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  },
+  {
+    "name": "hex_width",
+    "address": "0x15b70",
+    "hunks": [
+      "@@ -12,6 +12,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  },
+  {
+    "name": "reordered",
+    "address": "0x15c20",
+    "hunks": [
+      "@@ -14,6 +14,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  }
+]

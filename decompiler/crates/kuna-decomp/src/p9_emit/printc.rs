@@ -7973,6 +7973,34 @@ impl PrintC {
         ));
     }
 
+    fn push_rust_format_plan(
+        &mut self,
+        fd: &Funcdata,
+        arch: &Architecture,
+        op: OpId,
+        plan: super::kuna_rustfmtargs::Plan,
+    ) {
+        self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+        self.push_atom(&Atom::with_op(plan.name, TagType::OpToken,
+            crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
+        for _ in &plan.arguments {
+            self.push_op(&tokens::COMMA, Some(op_key(op)));
+        }
+        self.push_atom(&Atom::syntax(plan.literal, TagType::Syntax,
+            crate::printlanguage::SyntaxHighlight::const_color));
+        for argument in plan.arguments {
+            self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
+            self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
+            self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+            self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+            self.push_vn_ir(fd, arch, argument.pointer, op);
+            self.push_atom(&Atom::syntax("*const _", TagType::TypeToken,
+                crate::printlanguage::SyntaxHighlight::type_color));
+            self.push_atom(&Atom::syntax(format!("*const {}", argument.primitive),
+                TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
+        }
+    }
+
     /// C++ `PrintC::opCall` (printc.cc:613) / `PrintC::opCallind` (printc.cc:657):
     /// the functional `callee(arg1, arg2, ...)` form over the recovered call
     /// inputs.
@@ -7984,27 +8012,30 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_result {
+            if let Some(plan) = super::kuna_rustfmtresult::recover(fd, arch, op) {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::with_op("std::ptr::write", TagType::OpToken,
+                    crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                if plan.pointer_bridge {
+                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                }
+                self.push_vn_ir(fd, arch, plan.destination, op);
+                if plan.pointer_bridge {
+                    self.push_atom(&Atom::syntax("*mut _", TagType::TypeToken,
+                        crate::printlanguage::SyntaxHighlight::type_color));
+                }
+                self.push_atom(&Atom::syntax("*mut std::string::String", TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+                self.push_rust_format_plan(fd, arch, op, plan.format);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_args {
             if let Some(plan) = super::kuna_rustfmtargs::recover(fd, arch, op) {
-                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
-                self.push_atom(&Atom::with_op(plan.name, TagType::OpToken,
-                    crate::printlanguage::SyntaxHighlight::funcname_color, op_key(op)));
-                for _ in &plan.arguments {
-                    self.push_op(&tokens::COMMA, Some(op_key(op)));
-                }
-                self.push_atom(&Atom::syntax(plan.literal, TagType::Syntax,
-                    crate::printlanguage::SyntaxHighlight::const_color));
-                for argument in plan.arguments {
-                    self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
-                    self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
-                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
-                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
-                    self.push_vn_ir(fd, arch, argument.pointer, op);
-                    self.push_atom(&Atom::syntax("*const _", TagType::TypeToken,
-                        crate::printlanguage::SyntaxHighlight::type_color));
-                    self.push_atom(&Atom::syntax(format!("*const {}", argument.primitive),
-                        TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
-                }
+                self.push_rust_format_plan(fd, arch, op, plan);
                 return;
             }
         }

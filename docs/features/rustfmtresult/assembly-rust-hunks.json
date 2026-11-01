@@ -1,0 +1,26 @@
+[
+  {
+    "name": "result_decimal",
+    "address": "0x1000",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  },
+  {
+    "name": "result_lf",
+    "address": "0x1035",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  },
+  {
+    "name": "result_scoped",
+    "address": "0x106a",
+    "hunks": [
+      "@@ -8,6 +8,6 @@"
+    ],
+    "classification": "One exact format_inner call becomes std::ptr::write of the recovered format! expression; destination, setup, control flow and return are preserved"
+  }
+]

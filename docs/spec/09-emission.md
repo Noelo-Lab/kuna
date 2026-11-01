@@ -4126,3 +4126,32 @@ Turning the option off restores default-only Display recovery. Disabling
 `rustfmtargs` disables this extension too. Floating-point, pointer and generic
 formatters, dynamic counts, `format!`, `write!` and specialized sinks remain
 explicit. No IR, descriptor setup or C output changes.
+
+### Rust format String initialization
+
+`rustfmtresult` (default on), in
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtresult.rs`, recognizes only
+`alloc::fmt::format::format_inner` at the existing direct-call rendering hook.
+The name must be fully qualified or resolve to the exact entry with the complete
+`alloc::fmt::format` namespace. The call has a hidden destination, template and
+argument-array input, and no output varnode. It reuses `rustfmtargs` version,
+language, endian, readonly-template, same-call descriptor and integer formatter
+proofs; disabling `rustfmtargs` also disables this result consumer. Static format
+specifications independently require `rustfmtflags`.
+
+The destination is a word-sized integer/unknown or pointer value that resolves
+through bounded pure copies/casts to a non-spacebase entry input. Constants,
+computed pointers, local destinations and incompatible types are refused. A
+local output buffer may still be split across several primitive declarations;
+it is not rendered as a String write until its complete allocation is recovered. An
+entry value is interpreted as an output pointer according to the verified sink's
+ABI; its dynamic address is not guessed from a type name.
+
+The renderer uses `std::ptr::write(destination as *mut std::string::String,
+format!(...))`, with a raw-pointer bridge for pointer/reference expressions.
+This initializes the caller's storage without dropping its previous contents,
+as the original hidden-result call does. Format literals retain terminal LF;
+there is no println-style newline removal. Descriptor setup, surrounding IR,
+existing returns and function signatures remain intact. The option does not
+recover generic wrappers, indirect calls, call-return values, unsupported
+formatters or other layouts, and it does not change C output.

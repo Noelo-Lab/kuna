@@ -1,0 +1,32 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_result_real_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmtresult off</com>
+  <com>load function hex_width</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmtresult on</com>
+  <com>print C</com>
+  <com>load function decimal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function reordered</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function local</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="format result off and incomplete local storage keep runtime calls" min="2" max="2">\bformat_inner\(</stringmatch>
+<stringmatch name="format String initializes the original destination with static width" min="1" max="1">std::ptr::write\(.*std::string::String,format!\("0x\{:08x\} \{:&gt;5\}"</stringmatch>
+<stringmatch name="format String retains terminal newline" min="1" max="1">format!\("value \{\}\\n"</stringmatch>
+<stringmatch name="format String retains repeated argument indices" min="1" max="1">format!\("\{0:#06x\}/\{1:\+\}/\{0:#06x\}"</stringmatch>
+<stringmatch name="format String preserves hidden destination returns" min="4" max="4">return a0;</stringmatch>
+</decompilertest>
