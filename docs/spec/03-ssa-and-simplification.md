@@ -245,6 +245,31 @@ smaller size, the stale MULTIEQUAL/INDIRECT/return-COPY markers from the earlier
 pass are deleted and the old outputs re-derived as SUBPIECEs of the new full
 range (`heritage.rs (Heritage::remove_revisited_markers)`).
 
+**Refining a revisited range (kuna, #1034).** The two meet when a later pass's
+access joins ranges an earlier pass heritaged apart: an 8-byte read at
+`rsp+0x13`, seen only once a spilled pointer resolves, joins the slots at
+`rsp+0x10` and `rsp+0x18`. `collect` sets the earlier MULTIEQUAL/INDIRECT
+markers aside, and the refinement is computed from the reads, writes and inputs
+alone, so it can cut through a marker (here at `+3` and `+11`). Upstream then
+collects each partition on its own, and the marker arrives in the partition it
+starts in as a write wider than that range. Renaming links that partition's
+reads to the whole marker (the read's 3-byte piece became the 8-byte phi, so
+the sum printed `CONCAT85`), and a partition that also takes a frame byte copy
+is refined again and indexes past its refinement array. Upstream's refinement
+and renaming assume every Varnode of a range lies inside it.
+`Heritage::refinement` keeps that true. Once the partition is final, each
+marker it would cut
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_revisitrefine.rs (Partitions::cut_span)`)
+is retired first, as a revisited marker always is, against the partitions it
+spans, and the read of those partitions that replaces it is refined with the
+other reads. Each partition a retired marker spans is flagged
+(`memrange_flags::retired_markers`) and guarded again even when nothing in it
+is read: a retired return-form COPY leaves no read behind, and skipping such a
+partition as an old range would leave a global's bytes with no return COPY, so
+the store of those bytes would die. A marker that one partition holds is left
+to that partition's own revisit, as before, so a refinement that cuts no marker
+is unchanged.
+
 **Register pairs refined at their midpoint** (`option pairrefine`,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_pairrefine.rs (split_pair)`,
 default **on**). The size test above never refines a range that some access

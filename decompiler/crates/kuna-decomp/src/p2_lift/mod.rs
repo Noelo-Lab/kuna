@@ -51,5 +51,6 @@ pub mod kuna_msvcimportcall; // (kuna `msvcsig`) a call through an import slot w
 pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
 pub mod kuna_decodehalt; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return
 pub mod kuna_fpuemu; // (kuna) decode the 8087 emulator's INT 34h-3Dh as the x87 instructions they stand for
+pub mod kuna_jumptablefault; // (kuna) test-only: panic one function's jump-table recovery
 
 pub mod kuna_gojumpchain;

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3452,
-    3452
+    3458,
+    3458
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1615,6 +1615,12 @@
     "data:RETURNPIECE #7: an argument in the high half beside a computed low half",
     "data:RETURNPIECE #8: the control whose high half is the first argument is unchanged",
     "data:RETURNPIECE #9: no function returns only four of the eight bytes it computes",
+    "data:REVISITREFINE #1: the unaligned read pieces 3 + 5 bytes, never an 8-byte phi as its high piece",
+    "data:REVISITREFINE #2: each slot is one 8-byte variable",
+    "data:REVISITREFINE #3: no 13-byte concatenation",
+    "data:REVISITREFINE #4: a global's bytes no read reaches are still stored",
+    "data:REVISITREFINE #5: the second argument stays 8 bytes",
+    "data:REVISITREFINE #6: the high bytes of the second global are stored",
     "data:RUST LOWERED LABELS #1: both option paths retain the first unsigned high-bit pattern",
     "data:RUST LOWERED LABELS #2: both option paths retain the second unsigned high-bit pattern",
     "data:RUST LOWERED LABELS #3: lowered matches are emitted in both passes",
