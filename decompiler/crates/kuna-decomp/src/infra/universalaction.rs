@@ -291,12 +291,15 @@ const ONCE: u32 = ruleflags::rule_onceperfunc;
 /// [`ActionExtraPopSetup`](crate::coreaction_protos::ActionExtraPopSetup) keeps).
 /// `extra_pool_rules` are the architecture's
 /// CPU-specific `conf->extra_pool_rules`, appended to `oppool1` exactly as the
-/// C++ loop does. The stack-space arguments do not affect listing fields;
-/// extra rules do. The default-tree snapshot uses `None`/`vec![]`.
+/// C++ loop does. `truncated` is whether the default data space is truncated
+/// (the C++ `RulePtrFlow` constructor's `hasTruncations`). The stack-space
+/// arguments do not affect listing fields; extra rules do. The default-tree
+/// snapshot uses `None`/`vec![]`/`false`.
 pub fn universal_sched(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,
     extra_pool_rules: Vec<RuleRow>,
+    truncated: bool,
 ) -> SchedNode {
     use crate::blockaction::{
         ActionBlockStructure, ActionBranchFlip, ActionFinalStructure, ActionNodeJoin,
@@ -453,7 +456,11 @@ pub fn universal_sched(
         rrow!("subvar_and", "subvar", crate::subflow::RuleSubvarAnd::new("subvar")),
         rrow!("subvar_subpiece", "subvar", crate::subflow::RuleSubvarSubpiece::new("subvar")),
         rrow!("splitflow", "subvar", crate::subflow::RuleSplitFlow::new("subvar")),
-        rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new()),
+        if truncated {
+            rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new(true))
+        } else {
+            rrow!("ptrflow", "subvar", crate::ruleaction_7::RulePtrFlow::new(false))
+        },
         rrow!("subvar_compzero", "subvar", crate::subflow::RuleSubvarCompZero::new("subvar")),
         rrow!("subvar_shift", "subvar", crate::subflow::RuleSubvarShift::new("subvar")),
         rrow!("subvar_zext", "subvar", crate::subflow::RuleSubvarZext::new("subvar")),
@@ -870,8 +877,9 @@ pub fn build_universal_action(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,
     extra_pool_rules: Vec<RuleRow>,
+    truncated: bool,
 ) -> Box<dyn Action> {
-    universal_sched(stackspace, stackspace_index, extra_pool_rules).materialize()
+    universal_sched(stackspace, stackspace_index, extra_pool_rules, truncated).materialize()
 }
 
 /// Install the universal tree and the default root group sets into an
@@ -883,9 +891,10 @@ pub fn install_universal(
     stackspace: Option<Rc<AddrSpace>>,
     stackspace_index: Option<i32>,
     extra_pool_rules: Vec<RuleRow>,
+    truncated: bool,
 ) {
     crate::action::build_default_groups(db);
-    db.set_universal(build_universal_action(stackspace, stackspace_index, extra_pool_rules));
+    db.set_universal(build_universal_action(stackspace, stackspace_index, extra_pool_rules, truncated));
 }
 
 #[cfg(test)]

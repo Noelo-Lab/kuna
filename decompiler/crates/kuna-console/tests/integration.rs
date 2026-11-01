@@ -1,6 +1,13 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "octeon_n64_arguments.rs"]
+mod octeon_n64_arguments;
+#[path = "octeon_abi.rs"]
+mod octeon_abi;
+#[path = "n32_stack.rs"]
+mod n32_stack;
+
 #[path = "setup_commands.rs"]
 mod setup_commands;
 

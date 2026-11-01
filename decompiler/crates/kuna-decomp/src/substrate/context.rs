@@ -1299,6 +1299,10 @@ pub struct ArchContext {
     /// entry of a loop the function never leaves. Read by
     /// [`crate::p3_dataflow::kuna_haltloopguard::guard`].
     pub halt_loop_guard: bool,
+    /// (kuna) `option truncptrflow` (default-on): on a truncated default data
+    /// space, narrow address operands and seed a wide stack register as
+    /// `PIECE(upper, low)`. Read by `RulePtrFlow` and `ActionPrototypeTypes`.
+    pub trunc_ptr_flow: bool,
     /// (kuna) `option globalcallstore` (default-on): keep a global's COPY of a
     /// loaded value whose only reader is the global's own marker. Read by
     /// [`crate::p3_dataflow::kuna_globalcallstore::declines`].
@@ -2023,6 +2027,7 @@ impl ArchContext {
             tied_store_keep: false,      // tiedstorekeep (Architecture::reset_defaults sets the shipped default: on)
             loop_counter_store: false,   // loopcounterstore (Architecture::reset_defaults sets the shipped default: on)
             halt_loop_guard: false,      // haltloopguard (Architecture::reset_defaults sets the shipped default: on)
+            trunc_ptr_flow: false,       // truncptrflow (Architecture::reset_defaults sets the shipped default: on)
             global_field_store: false,
             global_call_store: false,    // globalcallstore (Architecture::reset_defaults sets the shipped default: on)
             int_float_round: false,      // intfloatround (Architecture::reset_defaults sets the shipped default: on)

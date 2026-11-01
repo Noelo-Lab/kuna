@@ -178,3 +178,8 @@ function addresses stay unchanged. The new caller's declaration is retained
 without a producer declaration; it shares the original typed sink with the
 accepted path. Native checks exercise the original eight-vector paths and
 helpers, without treating the intentionally swapped path as a valid wide proof.
+
+Runtime data begins on a separate maximum-size linker page from the runtime
+text. Separate PT_LOAD flags do not preserve execution permission when their
+virtual ranges share a page; QEMU/Linux can apply the final RW mapping to it.
+The callwide function text and its fixed addresses are unaffected.

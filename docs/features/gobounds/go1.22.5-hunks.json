@@ -96,9 +96,9 @@
     "name": "internal/cpu.processOptions",
     "address": "0x401b80",
     "removed_checks": {
+      "runtime.panicSliceAlen(": 2,
       "runtime.panicIndex(": 5,
-      "runtime.panicSliceB(": 3,
-      "runtime.panicSliceAlen(": 2
+      "runtime.panicSliceB(": 3
     },
     "hunks": [
       {
@@ -158,9 +158,9 @@
     "name": "runtime.(*cpuProfile).addExtra",
     "address": "0x4072c0",
     "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceB(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -212,8 +212,8 @@
     "name": "runtime.panicwrap",
     "address": "0x409460",
     "removed_checks": {
-      "runtime.panicSliceB(": 2,
-      "runtime.panicSliceAlen(": 3
+      "runtime.panicSliceAlen(": 3,
+      "runtime.panicSliceB(": 2
     },
     "hunks": [
       {
@@ -452,8 +452,8 @@
     "name": "runtime.progToPointerMask",
     "address": "0x412f80",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAlenU(": 1
+      "runtime.panicSliceAlenU(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -774,11 +774,11 @@
     "name": "runtime.markrootSpans",
     "address": "0x41bec0",
     "removed_checks": {
-      "runtime.panicdivide(": 1,
       "runtime.panicSliceAcap(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceBU(": 1,
-      "runtime.panicIndexU(": 3
+      "runtime.panicdivide(": 1,
+      "runtime.panicIndexU(": 3,
+      "runtime.panicSliceBU(": 1
     },
     "hunks": [
       {
@@ -1047,8 +1047,8 @@
     "name": "runtime.(*sweepLocked).sweep",
     "address": "0x424300",
     "removed_checks": {
-      "runtime.panicdivide(": 1,
-      "runtime.panicIndex(": 5
+      "runtime.panicIndex(": 5,
+      "runtime.panicdivide(": 1
     },
     "hunks": [
       {
@@ -1197,8 +1197,8 @@
     "address": "0x426fe0",
     "removed_checks": {
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceBU(": 1,
-      "runtime.panicIndexU(": 4
+      "runtime.panicIndexU(": 4,
+      "runtime.panicSliceBU(": 1
     },
     "hunks": [
       {
@@ -1292,8 +1292,8 @@
     "name": "runtime.(*mheap).initSpan",
     "address": "0x4281c0",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
       "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 2,
       "runtime.panicIndexU(": 1
     },
     "hunks": [
@@ -1473,9 +1473,9 @@
       "runtime.panicSliceAcap(": 1,
       "runtime.panicIndex(": 1,
       "runtime.panicSliceB(": 1,
-      "runtime.panicSliceBU(": 1,
+      "runtime.panicSliceAcapU(": 1,
       "runtime.panicIndexU(": 5,
-      "runtime.panicSliceAcapU(": 1
+      "runtime.panicSliceBU(": 1
     },
     "hunks": [
       {
@@ -1798,8 +1798,8 @@
     "name": "runtime.mProf_Malloc",
     "address": "0x42f0a0",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -2013,8 +2013,8 @@
     "address": "0x4327c0",
     "removed_checks": {
       "runtime.panicSliceAcap(": 1,
-      "runtime.panicIndex(": 1,
       "runtime.panicSliceAlenU(": 1,
+      "runtime.panicIndex(": 1,
       "runtime.panicIndexU(": 1
     },
     "hunks": [
@@ -2310,8 +2310,8 @@
     "name": "runtime.getGodebugEarly",
     "address": "0x43ab60",
     "removed_checks": {
-      "runtime.panicSliceB(": 1,
-      "runtime.panicunsafestringlen(": 1
+      "runtime.panicunsafestringlen(": 1,
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -2371,8 +2371,8 @@
     "name": "runtime.sigprof",
     "address": "0x443440",
     "removed_checks": {
-      "runtime.panicSliceB(": 1,
-      "runtime.panicSliceAlen(": 2
+      "runtime.panicSliceAlen(": 2,
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -2503,8 +2503,8 @@
     "name": "runtime.(*randomOrder).start",
     "address": "0x447840",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
-      "runtime.panicIndex(": 1
+      "runtime.panicIndex(": 1,
+      "runtime.panicdivide(": 2
     },
     "hunks": [
       {
@@ -2556,11 +2556,11 @@
     "name": "runtime.(*profBuf).write",
     "address": "0x448320",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
       "runtime.panicIndex(": 4,
+      "runtime.panicdivide(": 2,
       "runtime.panicSliceB(": 2,
-      "runtime.panicIndexU(": 2,
-      "runtime.panicSliceAcapU(": 1
+      "runtime.panicSliceAcapU(": 1,
+      "runtime.panicIndexU(": 2
     },
     "hunks": [
       {
@@ -2631,8 +2631,8 @@
     "name": "runtime.parsegodebug",
     "address": "0x449ac0",
     "removed_checks": {
-      "runtime.panicSliceB(": 3,
-      "runtime.panicSliceAlen(": 3
+      "runtime.panicSliceAlen(": 3,
+      "runtime.panicSliceB(": 3
     },
     "hunks": [
       {
@@ -2947,8 +2947,8 @@
     "name": "runtime.rawstringtmp",
     "address": "0x452bc0",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -3080,8 +3080,8 @@
     "name": "runtime.funcpkgpath",
     "address": "0x454b80",
     "removed_checks": {
-      "runtime.panicIndex(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicIndex(": 1
     },
     "hunks": [
       {
@@ -3329,8 +3329,8 @@
     "name": "runtime.(*traceBuf).varint",
     "address": "0x457de0",
     "removed_checks": {
-      "runtime.panicSliceB(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceAlen(": 1,
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -3473,9 +3473,9 @@
     "name": "runtime.tracebackPCs",
     "address": "0x45c3c0",
     "removed_checks": {
+      "runtime.panicSliceAlen(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceB(": 1,
-      "runtime.panicSliceAlen(": 1
+      "runtime.panicSliceB(": 1
     },
     "hunks": [
       {
@@ -3599,10 +3599,10 @@
     "name": "runtime.vdsoInitFromSysinfoEhdr",
     "address": "0x4613a0",
     "removed_checks": {
+      "runtime.panicSliceAlen(": 2,
       "runtime.panicSliceAcap(": 1,
       "runtime.panicIndex(": 1,
-      "runtime.panicSliceB(": 4,
-      "runtime.panicSliceAlen(": 2
+      "runtime.panicSliceB(": 4
     },
     "hunks": [
       {
@@ -3619,8 +3619,8 @@
     "name": "runtime.vdsoParseSymbols",
     "address": "0x461960",
     "removed_checks": {
-      "runtime.panicdivide(": 2,
-      "runtime.panicIndex(": 4
+      "runtime.panicIndex(": 4,
+      "runtime.panicdivide(": 2
     },
     "hunks": [
       {

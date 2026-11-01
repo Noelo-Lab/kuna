@@ -1,0 +1,10 @@
+@define ENDIAN "big"
+@define MIPS64 ""
+@define ISA_VARIANT ""
+@define OCTEON ""
+@define OCTEON2 ""
+
+@include "mips.sinc"
+@include "mips32Instructions.sinc"
+@include "mips64Instructions.sinc"
+@include "octeonInstructions.sinc"

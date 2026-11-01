@@ -192,8 +192,8 @@
     "name": "internal/strconv.ParseUint",
     "address": "0x40b340",
     "removed_checks": {
-      "runtime.panicBounds(": 3,
-      "runtime.panicdivide(": 1
+      "runtime.panicdivide(": 1,
+      "runtime.panicBounds(": 3
     },
     "hunks": [
       {
@@ -1013,8 +1013,8 @@
     "name": "runtime.itabInit",
     "address": "0x41aca0",
     "removed_checks": {
-      "runtime.panicBounds(": 2,
-      "runtime.panicunsafeslicelen(": 1
+      "runtime.panicunsafeslicelen(": 1,
+      "runtime.panicBounds(": 2
     },
     "hunks": [
       {
@@ -1988,8 +1988,8 @@
     "name": "runtime.(*sweepLocked).sweep",
     "address": "0x439260",
     "removed_checks": {
-      "runtime.panicBounds(": 5,
-      "runtime.panicdivide(": 1
+      "runtime.panicdivide(": 1,
+      "runtime.panicBounds(": 5
     },
     "hunks": [
       {
@@ -2227,8 +2227,8 @@
     "name": "runtime.(*mheap).initSpan",
     "address": "0x43cfa0",
     "removed_checks": {
-      "runtime.panicBounds(": 2,
-      "runtime.panicdivide(": 1
+      "runtime.panicdivide(": 1,
+      "runtime.panicBounds(": 2
     },
     "hunks": [
       {
@@ -3195,8 +3195,8 @@
     "name": "runtime.getGodebugEarly",
     "address": "0x44f960",
     "removed_checks": {
-      "runtime.panicBounds(": 1,
-      "runtime.panicunsafestringlen(": 1
+      "runtime.panicunsafestringlen(": 1,
+      "runtime.panicBounds(": 1
     },
     "hunks": [
       {
@@ -3324,8 +3324,8 @@
     "name": "runtime.pMask.set",
     "address": "0x45b5c0",
     "removed_checks": {
-      "runtime.panicBounds(": 1,
-      "runtime.panicshift(": 1
+      "runtime.panicshift(": 1,
+      "runtime.panicBounds(": 1
     },
     "hunks": [
       {
@@ -3338,8 +3338,8 @@
     "name": "runtime.pMask.clear",
     "address": "0x45b620",
     "removed_checks": {
-      "runtime.panicBounds(": 1,
-      "runtime.panicshift(": 1
+      "runtime.panicshift(": 1,
+      "runtime.panicBounds(": 1
     },
     "hunks": [
       {
@@ -3365,8 +3365,8 @@
     "name": "runtime.(*randomOrder).start",
     "address": "0x45c7e0",
     "removed_checks": {
-      "runtime.panicBounds(": 1,
-      "runtime.panicdivide(": 2
+      "runtime.panicdivide(": 2,
+      "runtime.panicBounds(": 1
     },
     "hunks": [
       {
@@ -3418,8 +3418,8 @@
     "name": "runtime.(*profBuf).write",
     "address": "0x45d220",
     "removed_checks": {
-      "runtime.panicBounds(": 10,
-      "runtime.panicdivide(": 2
+      "runtime.panicdivide(": 2,
+      "runtime.panicBounds(": 10
     },
     "hunks": [
       {
@@ -3440,8 +3440,8 @@
     "name": "runtime.(*profBuf).read",
     "address": "0x45d920",
     "removed_checks": {
-      "runtime.panicBounds(": 16,
-      "runtime.panicdivide(": 3
+      "runtime.panicdivide(": 3,
+      "runtime.panicBounds(": 16
     },
     "hunks": [
       {
@@ -3595,8 +3595,8 @@
     "name": "runtime.fatalsignal",
     "address": "0x463060",
     "removed_checks": {
-      "runtime.panicBounds(": 1,
-      "runtime.panicdivide(": 1
+      "runtime.panicdivide(": 1,
+      "runtime.panicBounds(": 1
     },
     "hunks": [
       {
@@ -4373,8 +4373,8 @@
     "name": "runtime.dumpStacksRec",
     "address": "0x475d40",
     "removed_checks": {
-      "runtime.panicBounds(": 2,
-      "runtime.panicunsafeslicelen(": 1
+      "runtime.panicunsafeslicelen(": 1,
+      "runtime.panicBounds(": 2
     },
     "hunks": [
       {
@@ -4464,8 +4464,8 @@
     "name": "runtime.vdsoParseSymbols",
     "address": "0x47a1e0",
     "removed_checks": {
-      "runtime.panicBounds(": 4,
-      "runtime.panicdivide(": 2
+      "runtime.panicdivide(": 2,
+      "runtime.panicBounds(": 4
     },
     "hunks": [
       {

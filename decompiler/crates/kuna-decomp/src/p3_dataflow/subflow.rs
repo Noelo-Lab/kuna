@@ -2880,15 +2880,12 @@ impl Rule for RuleSubvarSubpiece {
         }
         let mut mask = calc_mask(flowsize);
         mask <<= 8 * sa;
-        let aggressive = data.vbank().get(outvn).expect("vn").is_ptr_flow();
-        if !aggressive {
-            let vnconsume = data.vbank().get(vn).expect("vn").get_consume();
-            if (vnconsume & mask) != vnconsume {
-                return 0;
-            }
-            if data.vbank().get(outvn).expect("vn").has_no_descend() {
-                return 0;
-            }
+        let vnconsume = data.vbank().get(vn).expect("vn").get_consume();
+        if (vnconsume & mask) != vnconsume {
+            return 0;
+        }
+        if data.vbank().get(outvn).expect("vn").has_no_descend() {
+            return 0;
         }
         let mut big = false;
         if flowsize >= 8 && data.vbank().get(vn).expect("vn").is_input() {
@@ -2898,7 +2895,7 @@ impl Rule for RuleSubvarSubpiece {
                 big = true;
             }
         }
-        run_subflow(data, vn, mask, aggressive, false, big)
+        run_subflow(data, vn, mask, false, false, big)
     }
 }
 
@@ -3081,9 +3078,7 @@ impl Rule for RuleSubvarZext {
         let invn = o.get_in(0).expect("in0");
         let invsize = data.vbank().get(invn).expect("vn").get_size();
         let mask = calc_mask(invsize);
-        let ptrflow = data.vbank().get(invn).expect("vn").is_ptr_flow();
-
-        let (applied, returned) = run_subflow_returning(data, vn, mask, ptrflow, false, false);
+        let (applied, returned) = run_subflow_returning(data, vn, mask, false, false, false);
         if returned {
             crate::kuna_callrettype::note_returned_extension(data, false, invsize);
         }
