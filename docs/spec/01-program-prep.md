@@ -3616,7 +3616,14 @@ every other binary's pass list is byte-identical to before the pass existed):
   pointer record's elem to the named struct pointee. It interns
   package-qualified named struct shells (fields at their recorded offsets,
   zero-size embedded markers dropped, overlapping or over-extent layouts
-  refused whole) plus the well-known header shells `go.string`/`go.slice`/
+  refused whole). A validated Go 1.18 build-info version selects the older
+  `offset << 1 | embedded` struct-field encoding: the importer shifts the
+  word before checking the field extent. Go 1.19 and later use byte offsets
+  directly. An absent or unrecognized version retains the direct-offset
+  interpretation; the importer never guesses from a plausible shifted layout.
+  The same bounds and overlap checks apply after decoding. Stripped amd64
+  and arm64 tests include an embedded pointer field at a nonzero offset.
+  The pass also interns the well-known header shells `go.string`/`go.slice`/
   `go.iface`/`go.eface` with their `LangFacet` records
   (`decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_langfacet.rs`). Phase
   1 is OUTPUT-NEUTRAL by construction — nothing binds the shells to a

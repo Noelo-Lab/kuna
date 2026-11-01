@@ -134,6 +134,37 @@ fn moduledata_scan_refuses_a_corrupt_typelinks() {
 }
 
 #[test]
+fn struct_offsets_follow_the_toolchain_layout() {
+    for (version, encoded, expected_size) in [
+        (Some((1, 18)), 17u64, 16),
+        (Some((1, 19)), 8, 16),
+        (Some((1, 27)), 8, 16),
+        (None, 8, 16),
+        (None, 17, 0),
+        (Some((1, 18)), 41, 0),
+    ] {
+        let (mut spans, anchor, _, _) = synth();
+        spans[0].1[0x328..0x330].copy_from_slice(&encoded.to_le_bytes());
+        let img = img_of(&spans);
+        let meta = locate_type_meta(&img, anchor).unwrap();
+        let tf = kuna_decomp::dtype::TypeFactoryImpl::new();
+        tf.set_default_alignment_map();
+        tf.set_max_basetype_size(8);
+        tf.setup_sizes(Some(8), 8, 8);
+        tf.cache_core_types().unwrap();
+        intern_named_structs(&tf, &img, &meta, version);
+        let pt = tf.find_by_name("main.Point").unwrap().unwrap();
+        assert_eq!(pt.get_size(), expected_size, "{version:?}, encoded={encoded}");
+        if expected_size != 0 {
+            for (i, (name, offset)) in [("X", 0), ("Y", 8)].into_iter().enumerate() {
+                let field = pt.get_field(i as i32).unwrap();
+                assert_eq!((field.name.as_str(), field.offset), (name, offset));
+            }
+        }
+    }
+}
+
+#[test]
 fn phase1_name_vocabulary() {
     assert!(name_ok("main.Point"));
     assert!(name_ok("internal/abi.Type"));

@@ -56,6 +56,12 @@ type Point struct {
 	Tag string
 }
 
+type Envelope struct {
+	Lead byte
+	*Point
+	Tail uint16
+}
+
 //go:noinline
 func mk(i int) Point {
 	return Point{X: i, Y: i * 3, Tag: "t"}
@@ -64,11 +70,12 @@ func mk(i int) Point {
 func main() {
 	p := mk(len(os.Args))
 	fmt.Println(p)
+	fmt.Println(Envelope{Lead: 1, Point: &p, Tail: 2})
 }
 "#;
 
-/// Build [`MAIN_GO`] stripped (`-ldflags=-s -w`) for linux/amd64, hermetically.
-fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
+/// Build [`MAIN_GO`] stripped (`-ldflags=-s -w`) for a 64-bit Linux target.
+fn build_go(dir: &std::path::Path, out_bin: &std::path::Path, arch: &str) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
@@ -81,7 +88,7 @@ fn build_go(dir: &std::path::Path, out_bin: &std::path::Path) -> bool {
         .arg("main.go")
         .current_dir(dir)
         .env("GOOS", "linux")
-        .env("GOARCH", "amd64")
+        .env("GOARCH", arch)
         .env("GOCACHE", dir.join(".gocache"))
         .env("GOPATH", dir.join(".gopath"))
         .env("CGO_ENABLED", "0")
@@ -125,12 +132,18 @@ fn stripped_go_binary_yields_its_own_named_struct() {
         eprintln!("verify_gotypes: skipping (`go` not on PATH)");
         return;
     }
+    for arch in ["amd64", "arm64"] {
+        check_named_struct(arch);
+    }
+}
+
+fn check_named_struct(arch: &str) {
     let dir = std::env::temp_dir().join(format!("kuna_gotypes_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let out_bin = dir.join("go_stripped");
-    if !build_go(&dir, &out_bin) {
+    if !build_go(&dir, &out_bin, arch) {
         let _ = std::fs::remove_dir_all(&dir);
-        panic!("installed Go compiler failed to build the linux/amd64 fixture");
+        panic!("installed Go compiler failed to build the linux/{arch} fixture");
     }
     let bin = out_bin.to_str().expect("utf8 path");
 
@@ -143,6 +156,15 @@ fn stripped_go_binary_yields_its_own_named_struct() {
         .expect("main.Point interned from the typelinks");
     assert_eq!(pt.get_metatype(), type_metatype::TYPE_STRUCT, "a struct shell");
     assert_eq!(pt.get_size(), 32, "X(8) + Y(8) + Tag(string header, 16)");
+    for (i, offset) in [0, 8, 16].into_iter().enumerate() {
+        assert_eq!(pt.get_field(i as i32).unwrap().offset, offset);
+    }
+    let envelope = tf.find_by_name("main.Envelope").unwrap().unwrap();
+    assert_eq!(envelope.get_size(), 24);
+    for (i, (name, offset)) in [("Lead", 0), ("Point", 8), ("Tail", 16)].into_iter().enumerate() {
+        let field = envelope.get_field(i as i32).unwrap();
+        assert_eq!((field.name.as_str(), field.offset), (name, offset));
+    }
 
     // The header shells carry their facets (the W3 plane fills).
     assert_eq!(tf.kuna_lang_facet("go.string"), Some(LangFacet::GoString));
