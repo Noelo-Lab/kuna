@@ -2183,7 +2183,8 @@ mod tests {
         // console path
         
         // and kuna-gowbphi / shared and phi-feeding barrier arms fold post-SSA (same option)
-        assert_eq!(count, 734, "corpus file count drifted");
+        // and kuna-octeon-atomics-n32 + kuna-octeon-atomics-n64 / Octeon atomic, reservation and barrier effects retained
+        assert_eq!(count, 736, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

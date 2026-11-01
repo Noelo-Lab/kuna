@@ -2395,6 +2395,24 @@ operands are never widened. Upstream sets sub-variable flow's aggressive mode
 for a pointer-flow value; kuna does not, since the mark says nothing about the
 upper bits of the full register.
 
+Octeon memory user operations identify only their first payload input as an
+address. On N32, `RulePtrFlow` applies the same narrowing to that input; atomic
+values, returned old values and other consumers of the original GPR retain
+their full width. Ordering operations have no pointer input.
+
+`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_octeoneffects.rs` resolves
+the known uninjected operations only for explicit Octeon targets. Heritage
+places memory guards across them for RAM and stack storage, including partial
+overlaps. A guard retains preceding stores even when the instruction result or
+the guarded memory value has no subsequent scalar consumer. Local alias
+heuristics cannot collapse it. Later reads therefore cannot reuse a value from
+before an atomic update or an ordering operation. This is deliberately
+conservative about aliasing and concurrent modification; it does not claim
+that an ordering instruction itself writes all memory. Readonly image values
+are not folded in a function containing these effects, because an explicit
+atomic write can contradict the image annotation. Other targets and unrelated
+user operations keep their existing treatment.
+
 Truncation can leave hundreds of fresh SUBPIECEs of one stack or base
 register in a single pool pass. While the option is live, `RuleSelectCse`
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/ruleaction_1.rs (RuleSelectCse)`)

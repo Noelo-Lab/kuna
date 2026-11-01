@@ -6,6 +6,16 @@ Anchors:
   - decompiler/crates/kuna-decomp/src/substrate/dtype.rs
 ```
 
+For target-checked Octeon memory user operations, local input-type queries
+identify the address operand as a pointer to an unsigned value of the access
+width. Payloads and scalar results are unsigned bit patterns; SLEIGH expresses
+word-result sign extension separately. Type inference and the merge phase's
+local queries use the same classifier. Pointer typing requires the address
+operand to have the target RAM width, so N32 does not turn the full physical
+GPR or a 64-bit atomic payload into a 32-bit pointer. Unknown user operations
+and operations replaced by a compiler-spec injection are not assigned these
+types.
+
 Phase 5 computes the **fact fabric** over the SSA graph: a data-type on every
 live Varnode, plus the value facts the other phases consume — circular value
 ranges, non-zero masks, and consume bits. None of it runs as a standalone

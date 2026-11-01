@@ -1,0 +1,120 @@
+# Memory effects are indivisible user operations. The decompiler guards aliased
+# memory; execution requires a stateful implementation of these operations.
+define pcodeop octeon_fetch_add32;
+define pcodeop octeon_fetch_add64;
+define pcodeop octeon_exchange32;
+define pcodeop octeon_exchange64;
+define pcodeop octeon_load_linked32;
+define pcodeop octeon_load_linked64;
+define pcodeop octeon_store_conditional32;
+define pcodeop octeon_store_conditional64;
+define pcodeop octeon_zero_cache_block;
+define pcodeop octeon_zero_cache_block_transient;
+define pcodeop octeon_sync;
+define pcodeop octeon_syncio;
+define pcodeop octeon_syncioall;
+define pcodeop octeon_synciobdma;
+define pcodeop octeon_syncw;
+define pcodeop octeon_syncws;
+define pcodeop octeon_syncs;
+define pcodeop octeon_sync_unknown;
+
+oct_rd: rd is rd { export rd; }
+oct_rd: rd is rd & rd=0 { local discarded:8 = 0; export discarded; }
+oct_rt: rt is rt { export rt; }
+oct_rt: rt is rt & rt=0 { local discarded:8 = 0; export discarded; }
+oct_atomic_addr: simmed(RSsrc) is simmed & RSsrc {
+    local addr:8 = RSsrc + simmed;
+    export addr;
+}
+
+:ll oct_rt, oct_atomic_addr is $(AMODE) & REL6=0 & prime=0x30 & oct_atomic_addr & oct_rt {
+    local value:4 = octeon_load_linked32(oct_atomic_addr);
+    oct_rt = sext(value);
+}
+:lld oct_rt, oct_atomic_addr is $(AMODE) & prime=0x34 & oct_atomic_addr & oct_rt {
+    oct_rt = octeon_load_linked64(oct_atomic_addr);
+}
+:sc RTsrc, oct_atomic_addr is $(AMODE) & REL6=0 & prime=0x38 & oct_atomic_addr & oct_rt & RTsrc {
+    local value:4 = RTsrc:4;
+    local success:1 = octeon_store_conditional32(oct_atomic_addr, value);
+    oct_rt = zext(success);
+}
+:scd RTsrc, oct_atomic_addr is $(AMODE) & prime=0x3c & oct_atomic_addr & oct_rt & RTsrc {
+    local success:1 = octeon_store_conditional64(oct_atomic_addr, RTsrc);
+    oct_rt = zext(success);
+}
+
+@ifdef OCTEONPLUS
+:saa RTsrc, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x18 & sa=0 & rd=0 & RTsrc & RSsrc {
+    local value:4 = RTsrc:4;
+    local discarded:4 = octeon_fetch_add32(RSsrc, value);
+}
+:saad RTsrc, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x19 & sa=0 & rd=0 & RTsrc & RSsrc {
+    local discarded:8 = octeon_fetch_add64(RSsrc, RTsrc);
+}
+@endif
+
+@ifdef OCTEON2
+:lai oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=2 & rt=0 & oct_rd & RSsrc {
+    local old:4 = octeon_fetch_add32(RSsrc, 1:4);
+    oct_rd = sext(old);
+}
+:laid oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=3 & rt=0 & oct_rd & RSsrc {
+    oct_rd = octeon_fetch_add64(RSsrc, 1:8);
+}
+:lad oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=6 & rt=0 & oct_rd & RSsrc {
+    local old:4 = octeon_fetch_add32(RSsrc, 0xffffffff:4);
+    oct_rd = sext(old);
+}
+:ladd oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=7 & rt=0 & oct_rd & RSsrc {
+    oct_rd = octeon_fetch_add64(RSsrc, 0xffffffffffffffff:8);
+}
+:las oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=10 & rt=0 & oct_rd & RSsrc {
+    local old:4 = octeon_exchange32(RSsrc, 0xffffffff:4);
+    oct_rd = sext(old);
+}
+:lasd oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=11 & rt=0 & oct_rd & RSsrc {
+    oct_rd = octeon_exchange64(RSsrc, 0xffffffffffffffff:8);
+}
+:lac oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=14 & rt=0 & oct_rd & RSsrc {
+    local old:4 = octeon_exchange32(RSsrc, 0:4);
+    oct_rd = sext(old);
+}
+:lacd oct_rd, (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=15 & rt=0 & oct_rd & RSsrc {
+    oct_rd = octeon_exchange64(RSsrc, 0:8);
+}
+:laa oct_rd, (RSsrc), RTsrc is $(AMODE) & prime=0x1c & fct=0x1f & sa=18 & oct_rd & RSsrc & RTsrc {
+    local value:4 = RTsrc:4;
+    local old:4 = octeon_fetch_add32(RSsrc, value);
+    oct_rd = sext(old);
+}
+:laad oct_rd, (RSsrc), RTsrc is $(AMODE) & prime=0x1c & fct=0x1f & sa=19 & oct_rd & RSsrc & RTsrc {
+    oct_rd = octeon_fetch_add64(RSsrc, RTsrc);
+}
+:law oct_rd, (RSsrc), RTsrc is $(AMODE) & prime=0x1c & fct=0x1f & sa=22 & oct_rd & RSsrc & RTsrc {
+    local value:4 = RTsrc:4;
+    local old:4 = octeon_exchange32(RSsrc, value);
+    oct_rd = sext(old);
+}
+:lawd oct_rd, (RSsrc), RTsrc is $(AMODE) & prime=0x1c & fct=0x1f & sa=23 & oct_rd & RSsrc & RTsrc {
+    oct_rd = octeon_exchange64(RSsrc, RTsrc);
+}
+:zcb (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=28 & rt=0 & rd=0 & RSsrc {
+    octeon_zero_cache_block(RSsrc);
+}
+:zcbt (RSsrc) is $(AMODE) & prime=0x1c & fct=0x1f & sa=29 & rt=0 & rd=0 & RSsrc {
+    octeon_zero_cache_block_transient(RSsrc);
+}
+@endif
+
+:sync is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=0 { octeon_sync(); }
+:syncio is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=1 { octeon_syncio(); }
+:synciobdma is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=2 { octeon_synciobdma(); }
+:syncioall is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=3 { octeon_syncioall(); }
+:syncw is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=4 { octeon_syncw(); }
+:syncws is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=5 { octeon_syncws(); }
+:syncs is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype=6 { octeon_syncs(); }
+:sync scalar is $(AMODE) & prime=0 & fct=0xf & szero=0 & stype [ scalar = stype + 0; ] {
+    octeon_sync_unknown(scalar:1);
+}
