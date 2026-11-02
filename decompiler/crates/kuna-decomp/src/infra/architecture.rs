@@ -733,6 +733,9 @@ pub struct Architecture {
     /// word in the first register where the ABI puts it there.  Read by
     /// [`crate::p4_calls::kuna_bejoin`] through the `ArchContext` handle.
     pub be_join: crate::kuna_bejoin::BeJoinMode,
+    /// (kuna) `option bejoinpass`: how a big-endian pair a call hands back to
+    /// the RETURN joins. Read by [`crate::p4_calls::kuna_bejoinpass`].
+    pub be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
     /// (kuna) `option mipsunaligned`: lift a MIPS `lwl`/`lwr`-style pair as one
@@ -3114,6 +3117,7 @@ impl Architecture {
             call_ret_pair: false, // (kuna) option callretpair; reset_defaults sets the shipped default
             multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
+            be_join_pass: crate::kuna_bejoinpass::BeJoinPassMode::Off, // (kuna) option bejoinpass; reset_defaults sets the shipped default
             call_wide: false,
             mips_unaligned: false,
             kuna_mips_pairs: None,
@@ -3578,6 +3582,7 @@ impl Architecture {
         self.multi_reg_args = true;
         self.mips_unaligned = true;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
+        self.be_join_pass = crate::kuna_bejoinpass::BeJoinPassMode::High; // (kuna) option bejoinpass default `high` (#904): a pair a call hands back untouched joins in the order of its proven side, and an unproven function handing back a proven callee's pair returns its first register, the high word
         self.call_wide = false;
         self.kuna_callwide.clear();
         self.rust_abi = 0; // (kuna) option rustabi default off: the pair-keeping rules are opt-in this round
@@ -4433,6 +4438,7 @@ impl Architecture {
         // (kuna) carry the big-endian pair-order gate so `kuna_bejoin` reaches
         // `option bejoin` via `glb`.
         ctx.be_join = self.be_join;
+        ctx.be_join_pass = self.be_join_pass;
         ctx.call_wide = self.call_wide;
         ctx.multi_reg_args = self.multi_reg_args;
         // (kuna) carry the Rust return-ABI gate and the detected source language

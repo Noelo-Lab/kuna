@@ -2423,11 +2423,14 @@ both `a + b` and `(a + b) >> 32` at -O1 and up), a product the multiply writes
 whole (`umull r1,r0,r1,r0`), a value a call of an unproven callee hands back,
 and one a proven callee's call leaves in place on every path.
 
-A call's two-register output joins in the ABI's order exactly when its callee
+A call's two-register output joins in the ABI's order when its callee
 is proven (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs
-(call_join_order)`), whatever the calling function itself returns, so the
-call reads the value the callee's printed C returns; a self-recursive call
-reads the function's own verdict. A caller of a proven callee that reads only
+(call_join_order)`), so the call reads the value the callee's printed C
+returns; a self-recursive call reads the function's own verdict. The one
+other case is a pair the calling function hands back (`bejoinpass`, below):
+the call also joins in the ABI's order when the function's own RETURN,
+joined high word first, reads its two registers untouched in the same
+places. A caller of a proven callee that reads only
 the first register reads the value's high word, so the call is given the pair
 as its output and the read becomes its high piece, `(int)((uint8)g() >>
 0x20)`, rather than the whole of a narrower result, which C's truncation would
@@ -2710,16 +2713,64 @@ none moves away. Little-endian MIPS, ARM, SPARC and x86 images, and the
 big-endian MIPS and PowerPC glibc and `ld.so` and MIPS busybox among angr's
 test binaries, print byte-identically.
 
-A function that hands such a pair back from a call keeps both registers
-once its callee returns eight bytes, as it already did after a callee whose
-own recovery kept both. Without a proof of its own it joins them first
-register low, so a `u64` wrapper none of whose callers reads the second
-register prints its words swapped (`CONCAT44((int)v1,(int)(v1 >> 0x20))`),
-and so does `u32 hi(..) { return add64(..) >> 32; }`, which compiles to the
-same `jal add64; jr $31` and printed its `int` before. Over the corpora above,
-five MIPS and five PowerPC wrappers newly print that way where they printed
-the high word alone; it is the open case of a `long long` none of whose
-callers reads its second register.
+A function that hands such a pair back from a call is judged on both sides
+of the pair, and the (kuna) `bejoinpass` option makes the two agree
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoinpass.rs`). Return
+recovery joins a function's pair by that function's own verdict and the call's
+output by its callee's, so a pair passing from one to the other unchanged
+could be joined in both orders at once. `u64 w(..) { return add64(..); }` on
+MIPS o32 is `jal add64; nop; lw $31,..; jr $31` (on PowerPC `bl add64; ..;
+blr`): `passthrough`'s tail-return claim gives `w` the callee's two
+registers, the call reads proven `add64` high word first, and `w`, with no
+proof of its own, joined its RETURN first register low, printing
+`CONCAT44((int)v1,(int)(v1 >> 0x20))`, the callee's value with its halves
+swapped. The other way round, a function its callers prove, or one declared
+eight bytes, that returns what an unknown callee left in the pair (a MIPS PIC
+call through the GOT, a call through a function pointer, a PowerPC tail call
+into an unproven callee) joined the call first register low under a RETURN
+joined high word first, and printed the same swap.
+
+A side with a proof now fixes the order of both. When the calling function's
+RETURN is joined high word first and reads a call's two output registers
+untouched, through moves and phis, as its own high and low words, the call's
+pair joins in the ABI's order too
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoinpass.rs (call_order)`):
+the bits are the same, and the function returns the call's value as it came
+(`v1 = (*hook)(); ext(); return v1;`). When a function with no proof of its
+own hands back, at every live RETURN, the pair a call to a proven callee left
+there untouched (the call's two indirect creations, or the most and least
+significant words of the eight-byte output it was already given), the pair
+is the callee's value
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoinpass.rs (settle_return)`).
+Its bytes are also those of `u32 hi(..) { return add64(..) >> 32; }`, which
+compiles to the identical instructions, and nothing in the function tells the
+two apart. `high`, the default, keeps that function's first register alone,
+the callee's high word, `return (int)((uint8)add64(..) >> 0x20);`: the same
+`int` C's truncation read off the first-register-low join, as for every
+other pair no proof covers. A caller that reads the second register
+(`bejoin callers`), or a declared, DWARF or `--assert prototype` 8-byte
+return, proves the function and joins its pair whole, high word first.
+`whole` reads the unproven wrapper as the callee's whole value,
+`return add64(..);`, which is right for the wrapper and too wide for `hi`.
+`off` leaves each side to its own verdict, as before. Only a pair of two
+four-byte registers is judged (PowerPC, MIPS o32, SPARC and ARM big-endian),
+and only under `bejoin evidence` or `callers`.
+
+Over the 359 MIPS images above (SQLite included) and the 250 PowerPC images,
+with their DWARF stripped, functions printing the swapped
+`CONCAT44((int)v,(int)(v >> 0x20))` fall from 22 to 4 on MIPS and from 16
+to 0 on PowerPC. Most were the second kind, a proven or declared function
+returning an unknown callee's pair (`intarith`'s tail calls in Lua,
+`sqlite3_column_int64`), which now return the call's value. The four left
+join a 64-bit temporary of the function's own (gcc -O0 `umla_hi`) or a call's
+pair the function keeps rather than returns (SQLite's `sqlite3VdbeExec`). Under
+`high`, 22 functions of the first kind change width: wrappers with no caller
+in the image whose DWARF return is eight bytes (`i64 p8(int x) { return
+fw(x); }`, `u64 ret_g(u64 a) { return add64(a, 3); }`) print their callee's
+high word as `unsigned int`, the reading an unproven `long long` of any other
+shape gets, and `whole` returns them whole. No return becomes wider than its
+DWARF type. x86-64, i386, AArch64, little-endian ARM, MIPS and PowerPC64
+images print byte-identically, as do 51 ARM big-endian objects.
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.

@@ -1,0 +1,70 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna option bejoinpass high (the default), GH-904: a big-endian register
+    pair a call hands back and the function returns untouched is one value.
+
+    bejoin joins a function's returned pair by that function's own proof and
+    a call's output pair by its callee's.  viahook calls through a function
+    pointer, keeps the pair across ext(), and returns it; its caller usehook
+    reads both words of the result, so bejoin callers proves viahook 64-bit,
+    while the callee behind the pointer is unknown.  The RETURN joined high
+    word first and the call first register low, so the same two registers
+    printed swapped:
+        unsigned long long v1; // v1:v0
+        v1 = (*hook)();
+        ext();
+        return CONCAT44((int4)v1,(int4)((uint8)v1 >> 0x20));      (bug)
+    A call whose two registers reach a RETURN joined high word first,
+    untouched in the same places, now joins high word first too, so the
+    function returns the call's value as it came.
+
+    The other direction, an unproven wrapper of a proven callee, needs the
+    callee's recovered prototype, which only a whole-binary decompile-all
+    states (protoorder); tests/cli/bejoinpass-*.json cover it on the same
+    images.
+
+    Stage: P4 calls and prototypes (output-prototype), option bejoinpass.
+    Pass 1 is the default (high), pass 2 option bejoinpass off.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_mips32_O2
+    (gcc -O2, MIPS o32) and bejoinpass_ppc32_O2.o (clang -O2, PowerPC), both
+    from bejoinpass.c; see bejoinpass.provenance.
+
+    Assert #1: the default returns the call's value on both targets.
+    Assert #2: the default joins the call high word first (v0:v1, r3:r4).
+    Assert #3: off prints the swap on both targets.
+    Assert #4: off joins the call first register low (v1:v0, r4:r3).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_mips32_O2</com>
+  <com>read symbols</com>
+  <com>lo fu viahook</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoinpass off</com>
+  <com>lo fu viahook</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_ppc32_O2.o</com>
+  <com>read symbols</com>
+  <com>option bejoinpass high</com>
+  <com>lo fu viahook</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option bejoinpass off</com>
+  <com>lo fu viahook</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="bejoinpass #1: the default returns the call's value as it came" min="2" max="2">^\s*return v1;$</stringmatch>
+<stringmatch name="bejoinpass #2: the default joins the call's pair high word first" min="2" max="2">unsigned long long v1; // (v0:v1|r3:r4)$</stringmatch>
+<stringmatch name="bejoinpass #3: off prints the pair with its halves swapped" min="2" max="2">return CONCAT44\(\(int4\)v1,\(int4\)\(\(uint8\)v1 &gt;&gt; 0x20\)\);</stringmatch>
+<stringmatch name="bejoinpass #4: off joins the call's pair first register low" min="2" max="2">unsigned long long v1; // (v1:v0|r4:r3)$</stringmatch>
+</decompilertest>

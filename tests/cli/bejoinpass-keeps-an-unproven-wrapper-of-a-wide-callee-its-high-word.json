@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_mips32_O2",
+    "binary_sha256": "8f0dea400c794e972b17160b99d97c25b0e9fcaea458d78b6fe9158a4efcb0cb",
+    "binary_size": 1964,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_mips32_O2",
+    "selector": "hi",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "unsigned int hi\\(int a0,unsigned int a1,int a2,int a3\\)",
+      "unsigned int wrap\\(int a0,unsigned int a1,int a2,int a3\\)",
+      "return \\(int\\)\\(\\(unsigned long long\\)add64\\(a0,a1,a2,a3\\) >> 0x20\\);",
+      "unsigned long long v1; // v0:v1",
+      "return v1;"
+    ],
+    "stdout_absent": [
+      "CONCAT44\\(\\(int\\)v1,\\(int\\)\\(\\(unsigned long long\\)v1 >> 0x20\\)\\)",
+      "// v1:v0"
+    ]
+  },
+  "notes": "MIPS o32: add64 is proven 64-bit; hi (u32, add64() >> 32) and wrap (u64) are the same jal add64; jr $31 with no proof of their own, so both return the high word. viahook, proven by its caller, returns the pair a call through a function pointer left, joined high word first on both sides."
+}
