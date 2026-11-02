@@ -1,7 +1,7 @@
 <decompilertest>
 <binaryimage arch="MIPS:BE:32:default:default">
 <!--
-    kuna option bejoinpass high (the default), GH-904: a big-endian register
+    kuna option bejoinpass whole (the default), GH-904: a big-endian register
     pair a call hands back and the function returns untouched is one value.
 
     bejoin joins a function's returned pair by that function's own proof and
@@ -25,7 +25,7 @@
     images.
 
     Stage: P4 calls and prototypes (output-prototype), option bejoinpass.
-    Pass 1 is the default (high), pass 2 option bejoinpass off.
+    Pass 1 is the default (whole), pass 2 option bejoinpass off.
 
     Images: decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_mips32_O2
     (gcc -O2, MIPS o32) and bejoinpass_ppc32_O2.o (clang -O2, PowerPC), both
@@ -53,7 +53,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoinpass_ppc32_O2.o</com>
   <com>read symbols</com>
-  <com>option bejoinpass high</com>
+  <com>option bejoinpass whole</com>
   <com>lo fu viahook</com>
   <com>decompile</com>
   <com>print C</com>

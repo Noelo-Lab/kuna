@@ -2744,17 +2744,21 @@ is the callee's value
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoinpass.rs (settle_return)`).
 Its bytes are also those of `u32 hi(..) { return add64(..) >> 32; }`, which
 compiles to the identical instructions, and nothing in the function tells the
-two apart. `high`, the default, keeps that function's first register alone,
-the callee's high word, `return (int)((uint8)add64(..) >> 0x20);`: the same
-`int` C's truncation read off the first-register-low join, as for every
-other pair no proof covers. A caller that reads the second register
-(`bejoin callers`), or a declared, DWARF or `--assert prototype` 8-byte
-return, proves the function and joins its pair whole, high word first.
-`whole` reads the unproven wrapper as the callee's whole value,
-`return add64(..);`, which is right for the wrapper and too wide for `hi`.
-`off` leaves each side to its own verdict, as before. Only a pair of two
-four-byte registers is judged (PowerPC, MIPS o32, SPARC and ARM big-endian),
-and only under `bejoin evidence` or `callers`.
+two apart. `whole`, the default, reads the function as the callee's whole
+value joined high word first, `return add64(..);`, which is right for the
+wrapper and too wide for `hi`. `high` keeps the function's first register
+alone, the callee's high word, `return (int)((uint8)add64(..) >> 0x20);`,
+which is right for `hi` and too narrow for the wrapper. A caller that reads
+the second register (`bejoin callers`), or a declared, DWARF or `--assert
+prototype` 8-byte return, proves the function and joins its pair whole, high
+word first, in either mode. Settling the pair does not prove the function
+for its callers: a caller in the image that reads only its first register (a
+sign test, `if (w() < 0)`) still joins that call first register low, and under
+`whole` prints the read as `(int)w()`, the low word of the value `w` returns,
+where `high` prints the whole `int` `w` returns. `off` leaves each side to its
+own verdict, as before. Only a pair of two four-byte registers is judged
+(PowerPC, MIPS o32, SPARC and ARM big-endian), and only under `bejoin
+evidence` or `callers`.
 
 Over the 359 MIPS images above (SQLite included) and the 250 PowerPC images,
 with their DWARF stripped, functions printing the swapped
@@ -2763,14 +2767,21 @@ to 0 on PowerPC. Most were the second kind, a proven or declared function
 returning an unknown callee's pair (`intarith`'s tail calls in Lua,
 `sqlite3_column_int64`), which now return the call's value. The four left
 join a 64-bit temporary of the function's own (gcc -O0 `umla_hi`) or a call's
-pair the function keeps rather than returns (SQLite's `sqlite3VdbeExec`). Under
-`high`, 22 functions of the first kind change width: wrappers with no caller
-in the image whose DWARF return is eight bytes (`i64 p8(int x) { return
-fw(x); }`, `u64 ret_g(u64 a) { return add64(a, 3); }`) print their callee's
-high word as `unsigned int`, the reading an unproven `long long` of any other
-shape gets, and `whole` returns them whole. No return becomes wider than its
-DWARF type. x86-64, i386, AArch64, little-endian ARM, MIPS and PowerPC64
-images print byte-identically, as do 51 ARM big-endian objects.
+pair the function keeps rather than returns (SQLite's `sqlite3VdbeExec`).
+Every function `whole` and `high` print differently is one of the first kind
+whose DWARF return is eight bytes: 22 wrappers with no caller in the image
+(`i64 p8(int x) { return fw(x); }`, `u64 ret_g(u64 a) { return add64(a, 3);
+}`), and 13 more in compiler-rt's builtins and 64 SDL3 sources built for MIPS
+and PowerPC with clang 14 and gcc 12 and 13 (-O0 to -Os, PIC and non-PIC,
+soft-float): `SDL_TellIO`, which returns `SDL_SeekIO(context, 0,
+SDL_IO_SEEK_CUR)`, the `SDL_IOStream` size and seek callbacks, and soft-float
+`__floatdidf`. `whole` prints all 35 at their DWARF width and `high` prints
+each as `unsigned int`; no `u32 hi()` shape occurs in any of these images. In
+big-endian MIPS and PowerPC glibc, libm, libgcc_s, libatomic, libgomp,
+libstdc++ and `ld.so` from Debian 12 and Ubuntu 24.04, and angr's MIPS and
+PowerPC test binaries, 59 images, the two print byte-identically. x86-64,
+i386, AArch64, little-endian ARM, MIPS and PowerPC64 images print
+byte-identically, as do 51 ARM big-endian objects.
 
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.

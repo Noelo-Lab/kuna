@@ -4,7 +4,10 @@
   "cmd": [
     "{{KUNA}}",
     "decompile-all",
-    "{{BIN}}"
+    "{{BIN}}",
+    "--option",
+    "bejoinpass",
+    "high"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -38,5 +41,5 @@
       "// v1:v0"
     ]
   },
-  "notes": "MIPS o32: add64 is proven 64-bit; hi (u32, add64() >> 32) and wrap (u64) are the same jal add64; jr $31 with no proof of their own, so both return the high word. viahook, proven by its caller, returns the pair a call through a function pointer left, joined high word first on both sides."
+  "notes": "HIGH: add64 is proven 64-bit; hi (u32, add64() >> 32) and wrap (u64) are the same jal add64; jr $31 with no proof of their own, so under bejoinpass high both return the high word. viahook, proven by its caller, returns the pair a call through a function pointer left, joined high word first on both sides."
 }

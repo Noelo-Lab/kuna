@@ -26,15 +26,14 @@
 //! * [`settle_return`]: when every live RETURN hands back the two registers a
 //!   call to a proven callee left, untouched (through moves and phis, before
 //!   or after the call's output is built), the function's pair is that
-//!   callee's value. `whole` joins it in the ABI's order, so the wrapper prints
-//!   `return add64(a,b);`. The same bytes are also `u32 hi(u64 a, u64 b) {
-//!   return add64(a, b) >> 32; }`, which compiles to the identical
-//!   instructions; nothing in the function tells the two apart. `high` (the
-//!   default) therefore returns the first register alone, the callee's high
-//!   word, `return (int)(add64(a,b) >> 0x20);`, unless the function is proven
-//!   itself (by its callers reading the second register, or a declared or
-//!   DWARF 8-byte return), which C's truncation reads as the same `int` the
-//!   first-register-low join did.
+//!   callee's value. `whole` (the default) joins it in the ABI's order, so the
+//!   wrapper prints `return add64(a,b);`. The same bytes are also `u32 hi(u64
+//!   a, u64 b) { return add64(a, b) >> 32; }`, which compiles to the identical
+//!   instructions; nothing in the function tells the two apart. `high` returns
+//!   the first register alone instead, the callee's high word, `return
+//!   (int)(add64(a,b) >> 0x20);`. A function proven itself (by its callers
+//!   reading the second register, or a declared or DWARF 8-byte return) keeps
+//!   the pair whole in either mode.
 //! * [`call_order`]: a call whose callee is not proven joins its pair in the
 //!   ABI's order when the function's RETURN, already joined high word first,
 //!   reads that pair's two registers untouched in the same places.
@@ -61,10 +60,10 @@ pub enum BeJoinPassMode {
     Off,
     /// One value, in the order of its proven side; an unproven function
     /// returning a proven callee's pair returns the whole value.
+    #[default]
     Whole,
     /// [`Self::Whole`], except that an unproven function returning a proven
     /// callee's pair returns its first register alone.
-    #[default]
     High,
 }
 

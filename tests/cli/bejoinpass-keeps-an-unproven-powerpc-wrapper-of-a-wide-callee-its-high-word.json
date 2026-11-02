@@ -4,7 +4,10 @@
   "cmd": [
     "{{KUNA}}",
     "decompile-all",
-    "{{BIN}}"
+    "{{BIN}}",
+    "--option",
+    "bejoinpass",
+    "high"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -37,5 +40,5 @@
       "// r4:r3"
     ]
   },
-  "notes": "PowerPC: the same shapes as the MIPS probe. hi returns add64's high word in r3; viahook returns the r3:r4 pair a call through a function pointer left, joined high word first on both sides."
+  "notes": "HIGH, PowerPC: the same shapes as the MIPS probe. Under bejoinpass high, hi returns add64's high word in r3; viahook returns the r3:r4 pair a call through a function pointer left, joined high word first on both sides."
 }

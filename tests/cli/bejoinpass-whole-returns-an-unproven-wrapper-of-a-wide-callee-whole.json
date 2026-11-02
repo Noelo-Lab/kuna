@@ -4,10 +4,7 @@
   "cmd": [
     "{{KUNA}}",
     "decompile-all",
-    "{{BIN}}",
-    "--option",
-    "bejoinpass",
-    "whole"
+    "{{BIN}}"
   ],
   "cwd": "{{WORK}}",
   "env": {
@@ -40,5 +37,5 @@
       "// v1:v0"
     ]
   },
-  "notes": "WHOLE: an unproven wrapper of a proven callee returns the callee's whole value high word first, so wrap prints right and hi, whose source returns the high word, prints as the 64-bit value it hands back."
+  "notes": "WHOLE (the default): an unproven wrapper of a proven callee returns the callee's whole value high word first, so wrap prints right and hi, whose source returns the high word, prints as the 64-bit value it hands back. viahook, proven by its caller, returns the pair a call through a function pointer left, joined high word first on both sides."
 }
