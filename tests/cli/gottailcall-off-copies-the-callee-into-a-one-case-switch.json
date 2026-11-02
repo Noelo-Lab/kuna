@@ -1,0 +1,44 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "gottailcall",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/gottailcall_x86_64.so",
+    "binary_sha256": "a0a97b04204117a92a35b818e548f394595082b64d8ee7126ea3f893f1c6b1f6",
+    "binary_size": 15184,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/gottailcall_x86_64.so",
+    "selector": "g",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "switch\\(0x1140\\)",
+      "return \\(a0 \\+ 1\\) \\* 3 \\+ 7;",
+      "switch\\(0x1150\\)",
+      "switch\\(0x1160\\)"
+    ],
+    "stdout_absent": [
+      "return f\\(a0 \\+ 1\\); // tail-call"
+    ]
+  },
+  "notes": "Option-off arm of gottailcall-fno-plt-tail-call-takes-its-arguments-and-return: tailcalljump's own rule follows each one-destination table into the callee, so g prints a one-case switch holding f's body.",
+  "probe_id": "p-5f782d76e0dc"
+}

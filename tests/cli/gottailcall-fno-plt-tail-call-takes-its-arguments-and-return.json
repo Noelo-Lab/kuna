@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/gottailcall_x86_64.so",
+    "binary_sha256": "a0a97b04204117a92a35b818e548f394595082b64d8ee7126ea3f893f1c6b1f6",
+    "binary_size": 15184,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/gottailcall_x86_64.so",
+    "selector": "g",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "int g\\(int a0\\)",
+      "return f\\(a0 \\+ 1\\); // tail-call",
+      "long fwd3\\(long a0,long a1,long a2\\)",
+      "return three\\(a0,a1,a2\\); // tail-call",
+      "void tick\\(void\\)\n\\{\n  bump\\(\\); // tail-call"
+    ],
+    "stdout_absent": [
+      "switch\\(0x"
+    ]
+  },
+  "notes": "x86-64 -fno-plt: g, fwd3 and tick jump through f's, three's and bump's GOT slots, and each caller is placed before its callee, so each is decompiled again once its callee has stated its prototype. Each prints the tail call with the arguments it forwards and the callee's return, not a one-case switch around the callee's body.",
+  "probe_id": "p-0692b11e9b72"
+}

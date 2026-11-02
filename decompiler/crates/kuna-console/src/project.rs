@@ -841,6 +841,8 @@ pub fn decompile_pulled(
                     kuna_decomp::kuna_voidret::record(prog.arch_mut(), &park_entry, &fd);
                     // (kuna `elemptr`) And which of its pointers are indexed buffers.
                     kuna_decomp::kuna_elemptr::state(prog.arch_mut(), &park_entry, &fd);
+                    // (kuna `gottailcall`) And whether a tail call to it loses nothing.
+                    kuna_decomp::kuna_gottailcall::record(prog.arch_mut(), &park_entry, &fd);
                 }
                 // (kuna `calleevote`) Record what this function passes at each call.
                 if prog.arch().kuna_calleevote.recording {

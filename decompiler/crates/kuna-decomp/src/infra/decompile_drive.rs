@@ -501,14 +501,24 @@ impl FlowEnvironment for ArchFlowEnv {
         dest_outside_extent: bool,
     ) -> bool {
         let glb = fd.get_arch();
+        let arch = self.arch();
         crate::kuna_tailcalljump::kuna_is_tail_call_table(
             fd,
             op,
-            self.arch().tail_call_tables,
+            arch.tail_call_tables,
             self.query_call(dest).is_some(),
             dest == fd.get_address(),
             dest_outside_extent,
             || {
+                if arch.got_tail_call
+                    && (crate::kuna_gottailcall::callable(arch, fd, dest)
+                        || !self.mapped_flow_image().map_or_else(
+                            || self.code_bytes_mapped(dest),
+                            |image| crate::kuna_mappedflowboundary::mapped_start(image, dest),
+                        ))
+                {
+                    return true;
+                }
                 use crate::kuna_tailcalljump::{
                     output_stated_by_pieces, stated_by_pieces, stated_by_proto,
                 };
@@ -961,7 +971,9 @@ fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcd
         if arch.mapped_flow_boundary_image {
             crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
         }
-        for (tp, ad, txt) in data.drain_pending_comments() {
+        let pending = data.drain_pending_comments();
+        crate::kuna_gottailcall::clear_stale_warnings(arch, &func_addr, &pending);
+        for (tp, ad, txt) in pending {
             arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
         }
     }
