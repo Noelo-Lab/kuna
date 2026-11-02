@@ -206,7 +206,7 @@ pub(super) fn entry_bound(file: &object::File, laid: &[(SectionIndex, u64)]) -> 
 /// For each REL `HI16`, or `GOT16` against a local symbol, the low half of its
 /// addend: the signed 16-bit field of the next `LO16` against the same target
 /// in the section's original bytes `data`. A `HI16` without one gets 0, as
-/// the GNU linker's does.
+/// LLD's does (the GNU linker reports it as an error).
 pub(super) fn lo_halves(relocs: &[(u64, Relocation)], data: &[u8], little_endian: bool) -> Vec<Option<i64>> {
     let mut out = vec![None; relocs.len()];
     for (i, (_, reloc)) in relocs.iter().enumerate() {

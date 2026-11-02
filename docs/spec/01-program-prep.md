@@ -720,9 +720,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   `HI22`/`LO10`/`PC22`/`PC10`/`DISP32` forms. A PowerPC64 ELFv1 object names each
   function by its `.opd` descriptor: the function symbol is registered at the
   code the descriptor's `R_PPC64_ADDR64` points at, a branch relocated against a
-  descriptor's symbol reaches that code, and the descriptors (with their TOC)
-  are the loader's ELFv1 descriptors, as a linked image's are. An undefined
-  `.TOC.` resolves to `.toc + 0x8000`.
+  descriptor's symbol, or against `.opd` plus a descriptor's offset (a call to a
+  `static` function), reaches that code, and the descriptors (with their TOC)
+  are the loader's ELFv1 descriptors, as a linked image's are. The TOC base is
+  `.toc + 0x8000`; an object with no `.toc` (medium-model code that reaches its
+  data through `@toc@ha`/`@toc@l` halves) still has the one the linker's `.got`
+  would give it, 256-aligned after the other sections, plus `0x8000`. An
+  undefined `.TOC.` resolves to that base.
   MIPS relocations go through
   `decompiler/crates/kuna-analysis/src/loader/kuna_mipsreloc.rs (Gp)`. An o32
   object (REL) keeps each addend in the field it patches, so a `HI16`, or a

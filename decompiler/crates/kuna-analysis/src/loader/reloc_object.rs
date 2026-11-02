@@ -397,11 +397,14 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
     let mut code_externs: std::collections::HashSet<SymbolIndex> = std::collections::HashSet::new();
 
     // ELFv2 defines `.TOC.` as `.toc + 0x8000`. Split TOC relocations use that
-    // base rather than the target section's own VMA.
+    // base rather than the target section's own VMA. An object with no `.toc`
+    // (medium-model code reaching its data directly) still has a TOC: the
+    // linker's `.got`, 256-aligned after the other sections.
     let toc = file
         .sections()
         .find(|section| section.name().ok() == Some(".toc"))
         .and_then(|section| vma_of.get(&section.index()).copied())
+        .or_else(|| (architecture == Architecture::PowerPc64).then(|| align_up(cursor, 256)))
         .map(|base| base.wrapping_add(0x8000));
     let opd = (architecture == Architecture::PowerPc64)
         .then(|| file.section_by_name(".opd"))
@@ -481,12 +484,21 @@ pub fn layout_relocatable(file: &object::File, fmt: &dyn ObjectFormat) -> RelocL
                     .map(Some),
                 _ => None,
             };
+            // A call to a static function names `.opd` plus the descriptor's
+            // offset; the branch reaches that descriptor's code, so `S` is the
+            // entry less the addend the encoder adds back.
             let descriptor = match (opd_index, reloc.target()) {
-                (Some(opd), RelocationTarget::Symbol(idx)) if spec.targets_code() => file
-                    .symbol_by_index(idx)
-                    .ok()
-                    .filter(|sym| sym.section() == SymbolSection::Section(opd))
-                    .and_then(|sym| opd_entries.get(&sym.address()).copied()),
+                (Some(opd), target) if spec.targets_code() => match target {
+                    RelocationTarget::Symbol(idx) => file
+                        .symbol_by_index(idx)
+                        .ok()
+                        .filter(|sym| sym.section() == SymbolSection::Section(opd))
+                        .map(|sym| sym.address()),
+                    RelocationTarget::Section(index) if index == opd => Some(0),
+                    _ => None,
+                }
+                .and_then(|at| opd_entries.get(&at.wrapping_add(reloc.addend() as u64)).copied())
+                .map(|entry| entry.wrapping_sub(reloc.addend() as u64)),
                 _ => None,
             };
             // S — the resolved value of the relocation's target.
@@ -2009,16 +2021,29 @@ mod tests {
         let text = object.section_id(write::StandardSection::Text);
         let opd = object.add_section(Vec::new(), b".opd".to_vec(), SectionKind::Data);
         let toc = object.add_section(Vec::new(), b".toc".to_vec(), SectionKind::Data);
-        let words: [u32; 4] = [0x4800_0001, 0x6000_0000, 0x4e80_0020, 0x4e80_0020];
+        let words: [u32; 4] = [0x4800_0001, 0x4800_0001, 0x4e80_0020, 0x4e80_0020];
         let code: Vec<u8> = words.iter().flat_map(|w| w.to_be_bytes()).collect();
         object.append_section_data(text, &code, 4);
         object.append_section_data(opd, &[0; 48], 8);
+        let opd_sym = object.section_symbol(opd);
         object.append_section_data(toc, &[0; 8], 8);
         let text_sym = object.section_symbol(text);
         let f = add_symbol(&mut object, b"f", write::SymbolSection::Section(opd), 0, SymbolKind::Text);
         let g = add_symbol(&mut object, b"g", write::SymbolSection::Section(opd), 24, SymbolKind::Text);
         let _ = f;
         add_elf_relocation(&mut object, text, 0, g, object::elf::R_PPC64_REL24);
+        // A call to a static function: `.opd` plus its descriptor's offset.
+        object
+            .add_relocation(
+                text,
+                write::Relocation {
+                    offset: 4,
+                    symbol: opd_sym,
+                    addend: 24,
+                    flags: RelocationFlags::Elf { r_type: object::elf::R_PPC64_REL24 },
+                },
+            )
+            .unwrap();
         for (offset, addend) in [(0u64, 0i64), (24, 12)] {
             object
                 .add_relocation(
@@ -2043,8 +2068,54 @@ mod tests {
         assert_eq!(at(b"f"), Some(text));
         assert_eq!(at(b"g"), Some(text + 12));
         assert_eq!(word_at(&layout, text, 4), 0x4800_000d, "bl g reaches g's code");
+        assert_eq!(word_at(&layout, text + 4, 4), 0x4800_0009, "bl .opd+24 reaches g's code");
         let descriptors: Vec<(u64, u64)> = layout.opd.iter().map(|d| (d.0, d.1)).collect();
         assert_eq!(descriptors, vec![(opd, text), (opd + 24, text + 12)]);
         assert!(layout.opd.iter().all(|d| d.2 == Some(vma(".toc") + 0x8000)));
+    }
+
+    /// Medium-model code with no `.toc` reaches its data as `@toc@ha`/`@toc@l`
+    /// halves; the TOC the linker would make still resolves them, and its
+    /// base is the descriptor's TOC.
+    #[test]
+    fn ppc64_object_without_a_toc_section_still_has_a_toc() {
+        let mut object = write::Object::new(BinaryFormat::Elf, Architecture::PowerPc64, Endianness::Big);
+        let text = object.section_id(write::StandardSection::Text);
+        let data = object.section_id(write::StandardSection::Data);
+        let opd = object.add_section(Vec::new(), b".opd".to_vec(), SectionKind::Data);
+        let words: [u32; 3] = [0x3d22_0000, 0x3869_0000, 0x4e80_0020]; // addis r9,r2; addi r3,r9; blr
+        let code: Vec<u8> = words.iter().flat_map(|w| w.to_be_bytes()).collect();
+        object.append_section_data(text, &code, 4);
+        object.append_section_data(data, &[0; 0x100], 8);
+        object.append_section_data(opd, &[0; 24], 8);
+        let text_sym = object.section_symbol(text);
+        let datum = add_symbol(&mut object, b"datum", write::SymbolSection::Section(data), 0x40, SymbolKind::Data);
+        add_symbol(&mut object, b"f", write::SymbolSection::Section(opd), 0, SymbolKind::Text);
+        for (section, offset, symbol, r_type, addend) in [
+            (text, 2u64, datum, object::elf::R_PPC64_TOC16_HA, 0i64),
+            (text, 6, datum, object::elf::R_PPC64_TOC16_LO, 0),
+            (opd, 0, text_sym, object::elf::R_PPC64_ADDR64, 0),
+        ] {
+            object
+                .add_relocation(section, write::Relocation { offset, symbol, addend, flags: RelocationFlags::Elf { r_type } })
+                .unwrap();
+        }
+        let toc_word = write::Relocation {
+            offset: 8,
+            symbol: object.section_symbol(opd),
+            addend: 0,
+            flags: RelocationFlags::Elf { r_type: object::elf::R_PPC64_TOC },
+        };
+        object.add_relocation(opd, toc_word).unwrap();
+
+        let bytes = object.write().expect("write synthetic PPC64 ET_REL without .toc");
+        let file = object::File::parse(&*bytes).expect("parse synthetic PPC64 ET_REL without .toc");
+        let layout = layout_relocatable(&file, &ElfFormat);
+        assert!(layout.diagnostics.is_empty(), "{:?}", layout.diagnostics.report_lines());
+        let vma = |name: &str| layout.section_info.iter().find(|s| s.name == name).unwrap().vma;
+        let toc = layout.opd.first().and_then(|d| d.2).expect("the descriptor's TOC");
+        assert_eq!(word_at(&layout, vma(".opd") + 8, 8), toc);
+        let reached = toc as i64 + (half(&layout, vma(".text")) << 16) + half(&layout, vma(".text") + 4);
+        assert_eq!(reached as u64, vma(".data") + 0x40);
     }
 }
