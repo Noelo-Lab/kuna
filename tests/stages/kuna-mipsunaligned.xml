@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    kuna option mipsunaligned (default on), GH-904: a MIPS unaligned word
+    load or store pair lifts as the one whole access it makes.
+
+    MIPS reads an unaligned word with two instructions (lwl $3,1($16);
+    lwr $3,4($16) on a big-endian target).  Lifted one at a time each half
+    merges memory into the register by a shift its address's low bits
+    pick, so the pair read the register it overwrites and printed as a
+    tangle of shifts and masks around that value.  After a call that value
+    is the call's dead second return word, which made c_unal read add_hi's
+    result as a 64-bit pair (and made SQLite's callers of
+    sqlite3PagerWrite read it as one, so it printed void):
+        v4 = add_hi();
+        return ((*(int4 *)((v3 + 1U) - v1) << v1 * 8 | (uint4)((uint8)v4 >> 0x20) & ...   (bug)
+    The processor spec's PAIR_INSTRUCTION_FLAG forms make one half do the
+    whole access and the other nothing; the flag is now set on both halves
+    of every pair before the first decode, as Ghidra's MipsPreAnalyzer
+    does.
+
+    Stage: P2 lift and flow (decode-context), option mipsunaligned.  Each
+    image is decompiled with the default, then with option mipsunaligned
+    off.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsunal
+    (bejoin_mipsunal.S; see bejoin_mipspic.provenance) and mipsunaligned_eb.o
+    and mipsunaligned_el.o (mipsunaligned.c; see mipsunaligned.provenance).
+
+    Assert #1: c_unal adds the unaligned word to add_hi's int; off, it reads
+      add_hi's dead high half.
+    Assert #2: get_word returns the word it loads on both byte orders; off,
+      it reads the uninitialized result register.
+    Assert #3: copy_word copies the word on both byte orders.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsunal</com>
+  <com>read symbols</com>
+  <com>lo fu c_unal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mipsunaligned off</com>
+  <com>lo fu c_unal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mipsunaligned_eb.o</com>
+  <com>read symbols</com>
+  <com>lo fu get_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mipsunaligned off</com>
+  <com>lo fu get_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/mipsunaligned_el.o</com>
+  <com>read symbols</com>
+  <com>lo fu get_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu copy_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option mipsunaligned off</com>
+  <com>lo fu get_word</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="mipsunaligned #1: c_unal adds the unaligned word to add_hi's int" min="1" max="1">return \*\(int4 \*\)\(\(int4\)v1 \+ 1\) \+ v2;</stringmatch>
+<stringmatch name="mipsunaligned #1b: off, c_unal reads add_hi's dead high half" min="1" max="1">\(uint4\)\(\(uint8\)v4 &gt;&gt; 0x20\)</stringmatch>
+<stringmatch name="mipsunaligned #2: get_word returns the word it loads on both byte orders" min="2" max="2">return \*\(unsigned int \*\)\(\(int4\)a0 \+ 1\);</stringmatch>
+<stringmatch name="mipsunaligned #2b: off, get_word reads the uninitialized result register" min="2" max="2">uint4 v3; // v0</stringmatch>
+<stringmatch name="mipsunaligned #3: copy_word copies the word on both byte orders" min="2" max="2">\*\(unsigned int \*\)\(\(int4\)a0 \+ 1\) = \*\(unsigned int \*\)\(\(int4\)a1 \+ 1\);</stringmatch>
+</decompilertest>

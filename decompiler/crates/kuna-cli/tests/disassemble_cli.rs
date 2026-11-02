@@ -1277,6 +1277,29 @@ fn raw_pcode_mips_return_includes_delay_slot() {
     assert!(delay < return_op);
 }
 
+#[test]
+fn raw_pcode_lifts_a_mips_unaligned_pair_as_the_decompiler_does() {
+    for name in ["mipsunaligned_eb.o", "mipsunaligned_el.o"] {
+        let binary = fixture(name);
+        let opcodes = |extra: &[&str]| {
+            let mut argv = vec!["raw-pcode", binary.as_str(), "copy_word", "--count", "2", "--json"];
+            argv.extend_from_slice(extra);
+            let (stdout, stderr, code) = run_kuna(&argv);
+            assert_eq!(code, 0, "{name}: {stderr}");
+            instructions(&stdout)
+                .iter()
+                .flat_map(|row| row["ops"].as_array().unwrap().iter().map(|op| as_str(&op["opcode"]).to_owned()).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+        let count = |ops: &[String], opcode: &str| ops.iter().filter(|op| *op == opcode).count();
+        let paired = opcodes(&[]);
+        assert_eq!(count(&paired, "LOAD"), 1, "{name}: one whole load: {paired:?}");
+        assert_eq!(count(&paired, "INT_LEFT") + count(&paired, "INT_RIGHT"), 0, "{name}: {paired:?}");
+        let halves = opcodes(&["--option", "mipsunaligned", "off"]);
+        assert_eq!(count(&halves, "LOAD"), 2, "{name}: each half merges: {halves:?}");
+    }
+}
+
 
 fn raw_flow_fixture(bytes: &[u8]) -> String {
     raw_flow_fixture_for(object::Architecture::X86_64, bytes)

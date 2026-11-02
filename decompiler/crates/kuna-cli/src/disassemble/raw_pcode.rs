@@ -67,14 +67,17 @@ pub fn run(argv: &[String]) -> i32 {
     }
 }
 
-/// Load and resolve the target as `disassemble` does, then run `walk` over it:
-/// in Thumb mode at the even address when the operand is an odd ARM32 pointer.
+/// Load and resolve the target as `disassemble` does, with the decode context
+/// the decompiler lifts under (`option mipsunaligned`'s pairs), then run
+/// `walk` over it: in Thumb mode at the even address when the operand is an
+/// odd ARM32 pointer.
 fn with_target<R>(
     args: &DisArgs,
     bounded: bool,
     walk: impl FnOnce(&ConsoleProgram, &DisArgs, Region) -> Result<R, String>,
 ) -> Result<R, String> {
-    let (prog, region) = load_target(args, ViewRequest::Code, bounded)?;
+    let (mut prog, region) = load_target(args, ViewRequest::Code, bounded)?;
+    kuna_decomp::kuna_mipsunaligned::paint(prog.arch_mut());
     let Some(vma) = thumb_pointer(&prog, args)? else {
         return walk(&prog, args, region);
     };
