@@ -1,0 +1,108 @@
+{
+  "declared_at": "2026-11-02T12:27:26.182483+00:00",
+  "scope": "Rust direct switch-exit arms against main db2ddd4d; earlier correctness evidence retained, no timing samples collected.",
+  "root": "/home/mahaloz/kwt/angr-rust-empty-match",
+  "base": "/home/mahaloz/kwt/angr-base-db2d",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-empty-match/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "empty_case",
+      "/home/mahaloz/kwt/angr-rust-empty-match/decompiler/crates/kuna-analysis/tests/fixtures/rust_empty_match_x86_64",
+      "empty_case",
+      "rust"
+    ],
+    [
+      "empty_shared",
+      "/home/mahaloz/kwt/angr-rust-empty-match/decompiler/crates/kuna-analysis/tests/fixtures/rust_empty_match_x86_64",
+      "empty_shared",
+      "rust"
+    ],
+    [
+      "empty_loop",
+      "/home/mahaloz/kwt/angr-rust-empty-match/decompiler/crates/kuna-analysis/tests/fixtures/rust_empty_match_x86_64",
+      "empty_loop",
+      "rust"
+    ],
+    [
+      "loop_break_control",
+      "/home/mahaloz/kwt/angr-rust-empty-match/decompiler/crates/kuna-analysis/tests/fixtures/rust_empty_match_x86_64",
+      "loop_break_control",
+      "rust"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611029,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 14,
+  "upper_quantile": 0.9964285714285714,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Seven comparisons on disjoint physical CPU pairs,384 balanced paired rounds; no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T12:27:26.182483+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T12:27:26.182483+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Retain observations and do not repeat unchanged code to chase a passing bound. Diagnose any material regression before publication; this strict Rust correctness fix never changes C or Go output.",
+  "parent_commit": "db2ddd4d63413227bd4cab9756ed329ad561bf05",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "main_update_amendment": {
+    "declared_at": "2026-11-02T12:42:16.315161+00:00",
+    "before_any_samples": true,
+    "previous_parent": "4453d333f48707d12a93d8d062dbbf3bf662746b",
+    "parent": "db2ddd4d63413227bd4cab9756ed329ad561bf05",
+    "reason": "Main changed declared-function CLI diagnostics and loader interface; fresh matching parent, candidate, all42whole-image captures, native proofs and all gates before timing.",
+    "original_plan": "/tmp/kuna-rust-empty-match/timing-plan.json"
+  },
+  "build": {
+    "at": "2026-11-02T12:49:37.913529+00:00",
+    "parent_commit": "db2ddd4d63413227bd4cab9756ed329ad561bf05",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-db2d",
+    "parent_cli_sha256": "18b86255bd2598a8b03c71a70da98dfc2c1eee60a70102fbfac8e74d899e2657",
+    "new_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+    "stage_assertions": [
+      3663,
+      3663
+    ],
+    "parent_artifact_provenance": "New independent build of clean main db2ddd4d; frozen154specs reused."
+  },
+  "binary_binding_recorded_at": "2026-11-02T12:58:23+00:00",
+  "source_binding": "timing.py verifies final production and parent source manifests immediately before and after the study; all gates/review still required before starting.",
+  "final_correctness_binding_at": "2026-11-02T13:07:27.457820+00:00",
+  "source_manifest_sha256": {
+    "production-source-before-validation.json": "e055f6cd5d8716ecb763466b19ea7871d310acad567494845287228738f0011c",
+    "parent-source-before-timing.json": "0ad6826b6f4e3c1de707f30610543b9005613e1be01ee996da06efc207239542"
+  }
+}

@@ -1,0 +1,1362 @@
+{
+  "at": "2026-11-02T12:39:08.534495+00:00",
+  "complete": true,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "8e37c31e64caddf50fa02fcd847a75a103e67a1000b1b9c721048788e1a8c609",
+  "parent_cli_sha256": "1bb69f239fb5e8437fe263b1e99dba9190383e0c336eaeb3f07c00dbba4f77ee",
+  "images": 42,
+  "distinct_functions": 33713,
+  "language_records": 75855,
+  "changed_records": 86,
+  "unchanged_records": 75769,
+  "all_C_and_Go_records_identical": true,
+  "all_Rust_changes_only_empty_direct_exit_arm_break_removal": true,
+  "inherited_go_parser_failures": [
+    {
+      "fixture": "raw-namespace",
+      "address": "0x15570"
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x15580"
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x15720"
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x156c0"
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x156d0"
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x15870"
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x15580"
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x15590"
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x15730"
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x157c0"
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x157d0"
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x15970"
+    }
+  ],
+  "changed": [
+    {
+      "fixture": "native-c",
+      "language": "rust",
+      "address": "0x401290",
+      "name": "dispatch",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "85be12d6b1869b5d1f694d3d29ee74985228100b674ac55eb0c6a0055a9d558c",
+      "after_sha256": "c5f99512c2a8f710cbe225408ed47bae95d730ae92fb1188e1f2073098d72d8b"
+    },
+    {
+      "fixture": "native-c",
+      "language": "rust",
+      "address": "0x4014d0",
+      "name": "fallthroughs",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "df7b750bc082f043813181a4f9f11a7bb6cb88cb95103a080ce990afdd005eec",
+      "after_sha256": "c03890ec62b3d80a34872881c51c9b225fde4d34fd8fbda3aa021b150ef95014"
+    },
+    {
+      "fixture": "grep",
+      "language": "rust",
+      "address": "0x4ff0",
+      "name": "main",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "22c2c49bc6d83e87147cd9a808dfc39e8de8d45574d6435c0d27a478951d8817",
+      "after_sha256": "34c70999cf36eed0f1fd05f681ddcc5a4e1959881bab8e7982cfaf09f5c7b305"
+    },
+    {
+      "fixture": "grep",
+      "language": "rust",
+      "address": "0x9130",
+      "name": "sub_9130",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "b96fff84a4c3b7ac86b7d848c380e76a965113803fa5d3cfed946dc7f28281ef",
+      "after_sha256": "fc8db7f734a2dd38f9847c406b88ec560d1cf61f008d7f4df33604313d9fffb7"
+    },
+    {
+      "fixture": "rust",
+      "language": "rust",
+      "address": "0x1ba3e",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "02b8e69323e699651d055bcba043db4769a2a6c91b3e714c4357ac28e5255ed1",
+      "after_sha256": "74719cf553a7237bff8246a22bcb6911c4acbc2128ab7ca415fc90f83d8c84da"
+    },
+    {
+      "fixture": "rust",
+      "language": "rust",
+      "address": "0x1f050",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "532030dd077678e016b0db67f7573967a38f23c57927ec13abae7696f2ca96f3",
+      "after_sha256": "c53f57326fb45be38c33bccdcf398471c6731b230285acb87b5b7c34ccfb180e"
+    },
+    {
+      "fixture": "str-native",
+      "language": "rust",
+      "address": "0x1aff9",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "e977fa8c38cdec724e25d9b809ca4538bea016024f000630ef85d0e8b4dbacb4",
+      "after_sha256": "34a5a5b40639a2fdf20e4255ea7ca78703295fb02bba6484cf92fc4cd883ea01"
+    },
+    {
+      "fixture": "str-native",
+      "language": "rust",
+      "address": "0x1e680",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "a578821cf81b458777c42d24e5a6e458f9be18e93615ebf21ed080768079f7c4",
+      "after_sha256": "2b2bf0936f584d4162a9eb5f8182c0c667783acaba36b1d1c352a1336932f894"
+    },
+    {
+      "fixture": "native-rust",
+      "language": "rust",
+      "address": "0x39660",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "e33c66c410c3b27fcdc68f33d3d695a0efbba3d54c914e850fa5ce6280ffaa86",
+      "after_sha256": "ffe95802cfed647e80c8859f9f202a972e69c9f068cf82fb1707cb8d396a3a26"
+    },
+    {
+      "fixture": "native-rust",
+      "language": "rust",
+      "address": "0x39bc0",
+      "name": "gimli::read::unit::Attribute::value",
+      "empty_exit_arms": 9,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "9154234f756ff5ec2038c325aeadbfda7e7cb39ad6a5ebbfd7cc3f88e7b5c8f9",
+      "after_sha256": "ff5fa4dccdedc48ec2cb6d45bdbdc15d03563b824b22b7a1be7b43c8dd92357f"
+    },
+    {
+      "fixture": "native-rust",
+      "language": "rust",
+      "address": "0x43b00",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "81b0fbc96641ac084140bb781720d4a3001ec5e28435217bea364b6eedd452e2",
+      "after_sha256": "f14a20ffb678f01b3a908d8d17164de2d009a1e261af141ccca5bc863734d7c5"
+    },
+    {
+      "fixture": "native-rust",
+      "language": "rust",
+      "address": "0x47750",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "f4ff6b4dfeef187df8199e27b4d2af36d85b5eb3c9ad4b4fe233f0eb52fde7ae",
+      "after_sha256": "4f5ae06a16a3b5fcc9690ab75debd843290935d74da86accd5a8c47f54d5a534"
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "address": "0x135150",
+      "name": "sub_135150",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "a9d49d8110c31de85a287bb1b39e3ed4a016b06eeabc3eabce25218849d34a04",
+      "after_sha256": "2406c778375496cd1f1307e9af7c4b60f051cf53a4a79106bb75fa9331a301f7"
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "address": "0x141820",
+      "name": "sub_141820",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "6623fe47819be7054803123834c79045fa6bf653c62323807a068f2183a4d4cb",
+      "after_sha256": "ecf00dad70410eea152a5620ca1aa7f93afc135061e90e2e84c722ecb4f47a29"
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "address": "0x148cc0",
+      "name": "sub_148cc0",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "4e8c31fabc3fac218c3af61b5b863b7b1e83c8396f68fccc40df83251c4b9181",
+      "after_sha256": "a19c2b3acd22ac4181e8c38a52bd98307f14a225aac9277d8fdaa94a3a06415d"
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "address": "0x14f610",
+      "name": "sub_14f610",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "763c0f0724e4eb1f4d1f0c25e51e9641db4c83ba25081e95839bc4623b5ba304",
+      "after_sha256": "fe308723385845ba5480191283e881eff06d06347f612dc833bf6bc8ea49010b"
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "address": "0x150620",
+      "name": "sub_150620",
+      "empty_exit_arms": 2,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "be0cdcf81381ef967579111d8df6d0973d1f48ed5006292de3d20aed32802ef6",
+      "after_sha256": "6c850dd53ef1691d86a2c3914c34e2179c7e518e2e51b8aa01b6bebad324ee13"
+    },
+    {
+      "fixture": "rust2025",
+      "language": "rust",
+      "address": "0x161bad",
+      "name": "sub_161bad",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "de1e263913708c3ad1757e3d944115a5f09f9c9496d91de7f1e2637f3e17430c",
+      "after_sha256": "732803c73dd5e272ad16fcc4fbea4f4261bea6a7d4556c2dc89101573e0aee4f"
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "rust",
+      "address": "0x2a9a0",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "767e3de4426670c3f1881c229cac00438922fc6d44d5dc2f0744f6bfd6ae7fc2",
+      "after_sha256": "fdc9d87581146e5154b3a9a7ea90d2e3f1fbd21ba046b22b3b87a4672d58b51a"
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "rust",
+      "address": "0x36880",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "183cf551d0044430a43a13392683c7de329b30b89cd30d0e2f73f1a6e32e0af3",
+      "after_sha256": "fc7e44df76259fd4e32e632aec99059083ea16d1572e7c59c3cb954899a5926f"
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "rust",
+      "address": "0x3c7e0",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "ed63525f761df3fea0898b65ce6a9a2c98ad87d4a26cef0eb897fe0f2476a952",
+      "after_sha256": "e839eb37e0b3367f3a4f17c1da45e7609a5e602a73e41e09a9c3e1e2f00caf99"
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "language": "rust",
+      "address": "0x4e591",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "b85d59f3cf5708c859b6754179a22742d9170d23c3acaaf277c2b8355e9d60aa",
+      "after_sha256": "140fe2a4e0ed1db6ac2b18e354ed296a32783741ede2f3caa9a2ff99a36346e1"
+    },
+    {
+      "fixture": "panic-native",
+      "language": "rust",
+      "address": "0x3c560",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "27dbf5e883050025a945d7048928223b1423294471fb7218e10063932bd9b942",
+      "after_sha256": "1e733af669038a36768b0adb0fd61c08b0cd4c60078468a7addde5ff138283d0"
+    },
+    {
+      "fixture": "panic-native",
+      "language": "rust",
+      "address": "0x3cac0",
+      "name": "gimli::read::unit::Attribute::value",
+      "empty_exit_arms": 9,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "f4009335c32b155acb5210e430f1d06c07eaa309d0434dd6aed1f764d21e9d05",
+      "after_sha256": "e60cf2e000de1b064a67e6c8b7dec573c80e07a0595c5d9b41c4e672955647c8"
+    },
+    {
+      "fixture": "panic-native",
+      "language": "rust",
+      "address": "0x46a00",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "60c688954ef3d0fecb93ccaae5a0d5c1e9012c5bb25e9ec5748abc7025972a41",
+      "after_sha256": "d9a45659a216ec49305fb313b9a9e09b395b816a2e9a2ebeb6a7460bef10ff5b"
+    },
+    {
+      "fixture": "panic-native",
+      "language": "rust",
+      "address": "0x4a650",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "9c0674b097ddb0ef8daa07ab61dec0f1364a9dbbd203e3078ab9089a3e0be8cc",
+      "after_sha256": "63a46812615e4b23edf1e9b8fd1e65044098ab3dff13a74dc46057a4f117de86"
+    },
+    {
+      "fixture": "write-native",
+      "language": "rust",
+      "address": "0x19ed9",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "7e48085af7f424775a15623b8590e43c0a3843483b710072fe8ca7aa6aea0621",
+      "after_sha256": "71be8d376aa3824e33e042d6c7b02a1572d1dd3a81f5493f5b18d5119c4f8e6c"
+    },
+    {
+      "fixture": "write-native",
+      "language": "rust",
+      "address": "0x1d6e0",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "b0dad9d87ab2ee2f12a4a0d405fece8ccd786a41f09d403899faa20b863511d3",
+      "after_sha256": "79ebcec3565c5b8498c9c2f8b12b3a6a1741afc0b7bf36766c945d4d054bef41"
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "rust",
+      "address": "0x39fa0",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "0a84b2d8b56bfb597ca1245d7c75d7607106269363498886dda4f932b79032d9",
+      "after_sha256": "504d3bfe0bc5aaa550d8cc1c2900e381c57b4ca7174f7c594acf754ee1936277"
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "rust",
+      "address": "0x3a500",
+      "name": "gimli::read::unit::Attribute::value",
+      "empty_exit_arms": 9,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "b22f3f4476cab0c193c883cd734abfa450d4f45203b214b00668ba145c8484d5",
+      "after_sha256": "8eeacaeb80a21b5f9f49ace7d6d875dca02a963f8d1d25165417b8ab9100c4ca"
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "rust",
+      "address": "0x447f0",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "6fdfdf885059d33968a7abae56e588fc3f02a2905f9c8731854684d2a6eaddfe",
+      "after_sha256": "1f550ff0312cbc4734713c26f094a0e72fd36a4bdd308996817f8f9e31871c61"
+    },
+    {
+      "fixture": "str-nonlto",
+      "language": "rust",
+      "address": "0x48440",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "61b141be5e6fccb6697a46c73e4f7b8484f89cf00a7e46d80d14d1e4b41ea3e9",
+      "after_sha256": "013f61ec21afa1e8c9fa3384c0d8c8568ba24a34d7487b311a7e127e4d187494"
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "rust",
+      "address": "0x1c990",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "58eeedecd2de1d2104d9589816a98e99ab0719cc00e423b242933a4ec174970f",
+      "after_sha256": "4205aab2283eea535ac9e1a7de340433d1eec3d2ae91679ec5790ec3619c00de"
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "rust",
+      "address": "0x286f0",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "45de8cc1d357914df680586af03a25232c029660bf0ea27a0ee2ee5fe89a659b",
+      "after_sha256": "b4b614ba6655003762fbaaf6ae91c8618466245cc2efc34b615fda52790c9981"
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "rust",
+      "address": "0x2e1f0",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "cec5a43327aa2055579519e8dfc1ce93ca4cf4ff0b757ce7b167596ae1630d42",
+      "after_sha256": "d990b36384e86a44f5674962bfb4b3a4309cbfc3bba0539b77fc0e4e5f222d15"
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "language": "rust",
+      "address": "0x3f9bb",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "7cb731673009e67a8419ec32b677cd26082345ec963bb47e352fc5d50ee4598a",
+      "after_sha256": "d9f00bbda98b5098f57e085935eaccccac3f547eba0130d8fcaa2f73880a4252"
+    },
+    {
+      "fixture": "io-native",
+      "language": "rust",
+      "address": "0x1aae9",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "4d657876721282413b5a0a0299183e3268f48e74fc09d8d676de3b9188d95d5c",
+      "after_sha256": "de338fb868b9c006955f3c1236e1fc3bd021b2ee36d1b62fc8c308479097f9ff"
+    },
+    {
+      "fixture": "io-native",
+      "language": "rust",
+      "address": "0x1e1b0",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "687b76ced17969d5ed4fad877ee0480d024c45648db7feeeaa0f8b0b2066572e",
+      "after_sha256": "0ddbb0ffa9b52de693440416c685cc5a762f8f3ea3dedb6bb59152f052f472d9"
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "rust",
+      "address": "0x27480",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "f52e864058f001fdeb379de693f4f9648015270281fc67965cf6d1a423d3bed1",
+      "after_sha256": "5d3b3ad531b83c5882df33ebac82a590fe4826d764751cbccede21eefe308af7"
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "rust",
+      "address": "0x37410",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "00341d92030122ecd1ece98c0ab4bc522cda8b259564bcc4f145d18356482df0",
+      "after_sha256": "27a751808894f9feab9406cb375b1c0a30e5f9344da4e094f58b84475843820d"
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "rust",
+      "address": "0x3d400",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "d727ad0242760d2c7b02ffb002fbacd28b5f4da6e4e55ad010fc30f59791fe13",
+      "after_sha256": "fe445340260df451013ff9976a83ef5626af71c304dd44c0b031687c188fcbe0"
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "language": "rust",
+      "address": "0x4f23d",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "5a962331c3ab6b4a8e52c6efc394f9414afe408f9c75b0719ebca75a49588c93",
+      "after_sha256": "77ae0909f0f6c164b6d2047fb8b89e54c51e5ee0f3b215077620d706fd94d1d7"
+    },
+    {
+      "fixture": "io-promoted",
+      "language": "rust",
+      "address": "0x1a2c9",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "7a0536be41b4559a2220328bc1e6c0b6319de758761d9d646253ff402fac330a",
+      "after_sha256": "da35916594e388f3a8e24557d039e483c2bd125443d2bf12d99304a34468f6c4"
+    },
+    {
+      "fixture": "io-promoted",
+      "language": "rust",
+      "address": "0x1d880",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "02dc7089a6b6ca8bb0c2f5c5ddcd68dd2bd16813c3272adf9eea6c48812b260d",
+      "after_sha256": "6bdfb0e2c07ba01c97e76a07b3bcc395cc94d171fed9bf5ba868693f449fa142"
+    },
+    {
+      "fixture": "empty-match-native",
+      "language": "rust",
+      "address": "0x4011f6",
+      "name": "empty_case",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "017582d2cac8c881c8917320f82628689f141b81f719b384440695fb9b7b529b",
+      "after_sha256": "b751b8a4ad11ab0217546330de3c228d5620f293975ef561968f3ef291593664"
+    },
+    {
+      "fixture": "empty-match-native",
+      "language": "rust",
+      "address": "0x401500",
+      "name": "empty_shared",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "1a95ea98c8dbc308a2502a6cfd344b7cb0104fc25dc1a72fb82892817c269a9b",
+      "after_sha256": "950c85228d8c4642fc8b5456f6fa686f6618d9ee0949b60b6c359d565355a6db"
+    },
+    {
+      "fixture": "empty-match-native",
+      "language": "rust",
+      "address": "0x40167a",
+      "name": "empty_loop",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "d8347a95224110ce39765310f8972900eb3d4dc32654dd28805780a2e83d802f",
+      "after_sha256": "26437b463d9d549a2a167ad4720200d9c7beec226ebfec6dab2a2e05172d02c4"
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "rust",
+      "address": "0x29060",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "fc231422974f3e4d9554e829d8ff3de0b17054a1a64deb17e793905bb83ae085",
+      "after_sha256": "0926bba1220761a6f63f1d45d0af5d2568e6982f57a855dc8d13ef3e7c1d5d9b"
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "rust",
+      "address": "0x34df0",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "dc4b6369c685145cbb1a8e27d4c934408971f61afdb2e536a01ef306e5d29e6f",
+      "after_sha256": "dd8ceae52ff9a1261b3941812c14bc6d74aa06a066079172b581a0ffe3ed0dbe"
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "rust",
+      "address": "0x3ad70",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "e521a22f9cf1c8d57c138c8eb332fdb49d9e5de8c002829d11bc8d8be2d0ddb1",
+      "after_sha256": "a5ea3056748e6b0a6a3836b4fcfee84b79c49a251ba1ca2f82ee19110857df44"
+    },
+    {
+      "fixture": "raw-namespace",
+      "language": "rust",
+      "address": "0x4cb21",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "dfdfdf1bb6151073daf1c16a36e31d3efcdd449507f9f8fc38697e0951be28c2",
+      "after_sha256": "1964ebaa989d90f51d66a77e60e21fb4d553d3bc7a2c1fe0e8c712fef18701ae"
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "rust",
+      "address": "0x292f0",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "ae901dc2ad1edb5683882ca01e6caec1c4babd12ab5897aaa6d59d957a05287c",
+      "after_sha256": "ce45b65e434b705cd721639707380ba9b4b736b0b9101457f2e9a79ef6ba3f54"
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "rust",
+      "address": "0x35080",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "733861f9aff83547fda52dcbbf1a93da15a04a2aaa14394f0405a4f4d2241911",
+      "after_sha256": "2328cff8c6570028b332310cac987097fe509c315c5a52b920da0dbfd0dff9ff"
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "rust",
+      "address": "0x3b000",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "d7b58bb8545e88601a1547d602609a80d2fe9affc516b10a78d169fc7f7ba884",
+      "after_sha256": "7a96a7714642987b77193516046c8fbf189f66a91072ab701c1fc3e9331117c3"
+    },
+    {
+      "fixture": "namespace-rust",
+      "language": "rust",
+      "address": "0x4cdb1",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "5f80115fe83021f17d3c50c45d8d57dd3f62cc52d3f48e942369b549144b0d61",
+      "after_sha256": "686c8c97f8e0478a6700844067020392c51c2aa21ffd69d8487100ea5fe80590"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x29060",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "fc231422974f3e4d9554e829d8ff3de0b17054a1a64deb17e793905bb83ae085",
+      "after_sha256": "0926bba1220761a6f63f1d45d0af5d2568e6982f57a855dc8d13ef3e7c1d5d9b"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x34df0",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "f2bc31bd0c71940062851d003d7e613e4b8534be028f0382b4daca1bdefce499",
+      "after_sha256": "7faad646d54d972d8be2126336d864c252e389d9f76bde9719060908ba0bfc1e"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x3ad70",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "9418f45cc1912430701bc355579ce68c9bd916c65fa9b7125446bc3931ff0f8e",
+      "after_sha256": "22be9726c7ce3df37b5f6c7b8158d588d118664841906b273c48354df964c461"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x4cb21",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "f2b578db57fdfb494709765cff435f6e22234e1541afb7150dfd4198a65cb3bc",
+      "after_sha256": "a09dbc34fe11ff1f53cfb0be071e136059491c57cb4450338e6509933ecde31b"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x29470",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "7c5fb2c9222ecaccb298e5988249391ed0944ef79700d0b16e41244f991d790e",
+      "after_sha256": "40623eccfbef1fdfe33e6cf355cf00760bc98edc52a4ddb0746c3cb41065c14a"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x35200",
+      "name": "std::path::Components::len_before_body",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "1c92a59d47dbaa51702aab788d0b6dbbd85de177582dcaf52d56a7c4a21d39b8",
+      "after_sha256": "443ed6a96a1acbf64670584f96846343517bab71db461fcb63104a443f9c7636"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x3b180",
+      "name": "rust_eh_personality",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "3d06befdd102cfa6d28ad9eacab22790ca35253502fc5c07fe2f415d007e31e1",
+      "after_sha256": "5b826c2f0fc5ca982478160794b9b8acc93a6e0db894039e0e5f733c8c65ba20"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x4cf31",
+      "name": "rustc_demangle::v0::Printer::print_const",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "fa6b7f9740ff0ade8fa20f77bd0154bf8389fcd55892e6be2cb450a7f88060ee",
+      "after_sha256": "8901a03c799037f786e241428bacc3af464953bafa325ba0a2cdd96afe415dfb"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x10d70",
+      "name": "gimli::read::unit::skip_attributes",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "1cbf6b498fb935a618fc92e9ca31c3624a790a197f50273a56e71b7a189c3fcb",
+      "after_sha256": "5e777fa713c9cc7cd34e08dc8f83de9f7453fad674f04392b8c89e82261d7b3c"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x1ea00",
+      "name": "addr2line::function::Function::parse_children",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "b6bfc4faf687ffa95987df709f161e3638c0f6d13b5d822749f516eaa393c99d",
+      "after_sha256": "183697d7ff6616d458f8673b457e08a5ccb8de0a453d3ea192b5b26fe216c6d9"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x1fb60",
+      "name": "std::rt::lang_start_internal",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "33765dbed77b3f1cac3c06797742daf826cae5e082ff3a88ad9d993786c17b17",
+      "after_sha256": "e20f974e4079097d226d7119e8afb6a69c387ce3b33a21e8ece986c496dee892"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x230b0",
+      "name": "std::path::Components::include_cur_dir",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "188e9f257082b92950479755985b618cfe105457222ed4c568446769a56a72af",
+      "after_sha256": "0e45b77d52ffbea650af1acb03b61bad80a9e6897b5817ebf7dbd1b9f09a01e9"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x231a0",
+      "name": "std::path::Components::parse_next_component_back",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "ff3a35fefc00ca833caaf330a77599cbcf221d0d518dee34442190c56bd7264e",
+      "after_sha256": "0cc305df4313ca23d56b772e17ff0933979b89dc4641dbbb46ca507760824a11"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x23360",
+      "name": "std::path::{impl#20}::next",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "6bb6ffcd73a81bf89d2dc5eb1e1075aad45defd7039b91ccf82e47cfef6b2219",
+      "after_sha256": "d228b3d9d0f76f68d19caf0bb680c24e6e5de584076fa18ff00c8cd3a3a5386d"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x23760",
+      "name": "std::path::{impl#21}::next_back",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "1e76277d8547234cca9ddd7c6ad8b97b97b40b1fd2c09da72ed9ab36d82435be",
+      "after_sha256": "cc6f06a486bef03f1b4654daeaefeb7ea7efc85d900bca7869a31a6e08c2dab2"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x2d510",
+      "name": "std::backtrace_rs::symbolize::gimli::Cache::with_global",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "820b36e6bb29e50784de219c84b0f4d8abce702806313c60b55320bb278fed3d",
+      "after_sha256": "cdb85f7bb027ecf864380700b2921667dba901ecc242aee1c6a57d43e3d63a2f"
+    },
+    {
+      "fixture": "hello",
+      "language": "rust",
+      "address": "0x44de0",
+      "name": "core::fmt::Formatter::pad_integral",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "cd42b337c26c1e6aec635f57c9847b256bac3ec689f9381a247958bc2059e3d5",
+      "after_sha256": "fc84c7e13790d5b686f6497b9b47dbf5aa1b899a9c8477b4bff12db66d868bea"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0xcca0",
+      "name": "base64::decode::decode_config_slice",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "74cee045d11edb670ddc7559b017960001923d202ca0c43721fee59ff2148eeb",
+      "after_sha256": "0ee44d3c75b4b449da29db4706df82416eba74d4a50612784db57a2414fb2539"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x27320",
+      "name": "addr2line::ResDwarf::parse",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "fbe349d61f7b443ebcbf7070a33e6ce096480a895b73cab5a9437baa2c6b01c9",
+      "after_sha256": "36d2c14132518609900c7ab02e0bd3bd1d592da590ec60e2e3fe0b72760ee6b5"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x2c4d0",
+      "name": "addr2line::function::Function::parse_children",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "ca59c759ef325e6233755dba17d202d1d4c385e6b935875a5087f39b25eebd5f",
+      "after_sha256": "e63b6a1655ba8c1e42c17cbb8a0232501a777cf7a0552fa97e9f1c65fb990078"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x31280",
+      "name": "std::path::Components::as_path",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "79b03e67b9ec25f9efbee2793767ac3f09f54ce78ebffc1ff9d0ae6da0f2356a",
+      "after_sha256": "ff99c487a7ab9da00c69346a8b82170a6c26c9b55feae49420331444b5d44061"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x31650",
+      "name": "std::path::Components::include_cur_dir",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "dbb6b612338278e03a5888330a6d79ed36c8393323921c5b472ddd0a8f21aa09",
+      "after_sha256": "18b75ee94407333b333bbaa4acd1be8eb468fd36eb104937807acfc7431ccdaa"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x31900",
+      "name": "std::path::{impl#20}::next",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "59ca157c9201c51ad42ec8ba8133d1d0f2e866feb0e850bd68fa18cd28235b19",
+      "after_sha256": "2af6ee16927010e8ff380d3fd46b599235cb63e571b5e934c49a40ed05715b5c"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x31d10",
+      "name": "std::path::{impl#21}::next_back",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "9ffa3f1a5e7c933f9f3b3ce3ac3b89905c761cc1089b2edc46bb0873b6935af8",
+      "after_sha256": "d39f123098ff9f63c1d465fb8ffe6df6084ccb939f9ede4c95cfcb192972ffe3"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x32630",
+      "name": "std::path::{impl#43}::fmt",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "2baf2e025dcb2a9161bdb315a19912cc27b44e3721a0967239444eb9fd82ac79",
+      "after_sha256": "5b5e1bfc0ee429978bf25a1bc25f8c2ff484d71c6c1afc1cf5ba2b047b640f7f"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x35760",
+      "name": "std::io::error::ErrorKind::fmt",
+      "empty_exit_arms": 3,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "cbdebea5925fb09a5b08e16ff41bb7bdeed290fd95a36ad985272232c14e588e",
+      "after_sha256": "c110bdc194a17753193cd724e42917908711a311c97ce680972ddbcf876b08f8"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x36bc0",
+      "name": "std::sys::unix::os_str::Slice::fmt",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "bdf4dfee83b59c3f66300b3aeda4f7896a9ca37f21f853929f357acf3d69c27e",
+      "after_sha256": "1f262b189cb85783cb44b17b19ece6b276947771d14650229dbea31b3cacd019"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x3f940",
+      "name": "panic_unwind::dwarf::eh::read_encoded_pointer",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "460d5c0172cf5051fe7ab0f1084afdf95df686d660ee5221b6c27482a2ee1345",
+      "after_sha256": "4b8b80f6c6f710b75d80df44592dc96a4e1322df56ebbb3999fa7223f469036b"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x44e80",
+      "name": "rustc_demangle::v0::Printer::print_quoted_escaped_chars",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "7886f791247dab94367e53e3e750f7064194a487e96a32100a7b3dad5293d623",
+      "after_sha256": "8197afda614215943543db7888971d0b492fd82e9a17fcced8b8e4598b8d5403"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x47db0",
+      "name": "rustc_demangle::v0::Printer::print_const_str_literal",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "46529aaf45fd8a85d02b69980f512f1cfe3f0df0440d2bc1b250aaaaf2c74db9",
+      "after_sha256": "63804c81feeea09d69f558095e274bff32ed6ce1afffdc2ef9752522034ac837"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x4ce80",
+      "name": "core::char::methods::escape_debug_ext",
+      "empty_exit_arms": 1,
+      "fields": [
+        "line_mappings",
+        "variables",
+        "code"
+      ],
+      "classification": "Only break in a direct empty match arm disappears; remaining text is identical except whitespace.",
+      "before_sha256": "aa237714bd7537a9364e3a17751f922d944c035f72e8cde8f9c1dcf3e23a8e6e",
+      "after_sha256": "8591357895d62a67ef069bd56f0d7e577ef16a7e61d56a1355b1d7d08a0da1f2"
+    }
+  ],
+  "native_values": 6900,
+  "full_angr_parity_claimed": false,
+  "limitations": [
+    "This does not fix nonempty switch-arm transfers, C fallthrough, Rust residual gotos, or unrelated inferred-type/string rendering errors.",
+    "The unchanged full emitted native proof covers the authored fixture. Upstream corpus changes are checked as exact empty-arm token edits; supplied upstream executables are not run."
+  ]
+}

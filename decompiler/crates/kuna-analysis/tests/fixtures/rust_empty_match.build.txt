@@ -1,0 +1,12 @@
+Authored harmless AMD64 fixture for Rust empty match arms.
+
+Build in this directory:
+gcc -O2 -fno-pie -no-pie -Wl,--build-id=none rust_empty_match.S rust_empty_match.c -o rust_empty_match_x86_64
+
+gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+ELF SHA-256: 1f5b85d546f736d668f8d75d9927c4776129308edc422096c95f40c10f1f3058
+
+The 64-bit guard intentionally avoids depending on the later high-slice guard matcher.
+The first three functions exercise empty, default and shared arms.
+empty_loop repeats the ordinary result n times for positive n.
+loop_break_control adds 3 until n iterations or a result of at least 10.
