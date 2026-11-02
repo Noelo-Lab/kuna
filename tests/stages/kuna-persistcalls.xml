@@ -7,16 +7,22 @@
      every global is guarded at every call, and the guards survive dead-code
      removal, so churn's live IR holds 84250 ops. Pass 2 is the default:
      churn's pass guards 319 RAM ranges at 288 calls (91,872 guards), past the
-     65,536-guard threshold, so each global keeps only the guards at the call
-     before its read and the call after its write, 542 of its 73,728, and the
-     live IR drops to 3159 ops; the skipped guards and joins keep their op
-     numbers, so every pass creates 95006. small, far below the threshold,
+     65,536-guard threshold, so each global keeps only the guards next to its
+     accesses (the call before its read, the call after its write, the last
+     call before a return or before a join that needs the value after it),
+     1053 of its 73,728, and the live IR drops to 3670 ops; the skipped
+     guards and joins keep their op numbers, so every pass creates 95006. small, far below the threshold,
      keeps every guard. Pass 3 is persistcalls on: small loses one guard that
      only hands a value to the next (16 ops to 15). Each function prints the
      same body in every pass. Two
      more passes count churn's ops only: at persistcalls 91873, one guard more
      than churn's pass, it keeps them; at 91872 it drops them. The fixture's
-     source, provenance and native oracle are beside it.
+     source, provenance and native oracle are beside it. The second fixture
+     holds two functions whose C the sparse guards once changed, decompiled
+     with the option off and on: revisit reads u0.s[0] on both sides of a call
+     before a later pass widens u0 to four bytes (it printed return 1), and
+     loopstore stores a value computed before a loop of calls after the loop
+     (the store moved in front of the loop).
 -->
 </binaryimage>
 <script>
@@ -58,6 +64,23 @@
   <com>load function churn</com>
   <com>decompile</com>
   <com>count pcode</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/persistcalls_sem_x86_64</com>
+  <com>read symbols</com>
+  <com>option persistcalls off</com>
+  <com>load function revisit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loopstore</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option persistcalls on</com>
+  <com>load function revisit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function loopstore</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
 <stringmatch name="persistcalls #1: all three passes print churn" min="3" max="3">^uint8 churn\(int8 a0\)$</stringmatch>
 <stringmatch name="persistcalls #2: all three passes keep churn's 288 calls and small's 3" min="873" max="873">sink\(</stringmatch>
@@ -66,7 +89,11 @@
 <stringmatch name="persistcalls #5: all three passes print small the same" min="3" max="3">^  return sink\(v1\) \+ h0;$</stringmatch>
 <stringmatch name="persistcalls #6: upstream placement keeps every guard in churn's live IR" min="2" max="2">Count - pcode = 84250</stringmatch>
 <stringmatch name="persistcalls #7: every pass numbers churn's ops as upstream placement does" min="5" max="5">Count - created = 95006</stringmatch>
-<stringmatch name="persistcalls #8: past the threshold churn keeps the guards next to its accesses" min="3" max="3">Count - pcode = 3159</stringmatch>
+<stringmatch name="persistcalls #8: past the threshold churn keeps the guards next to its accesses" min="3" max="3">Count - pcode = 3670</stringmatch>
 <stringmatch name="persistcalls #9: small keeps every guard below the threshold" min="2" max="2">Count - pcode = 16</stringmatch>
 <stringmatch name="persistcalls #10: persistcalls on drops the guard of small's that only passes a value on" min="1" max="1">Count - pcode = 15</stringmatch>
+<stringmatch name="persistcalls #11: revisit reads u0 again after the call with the option off and on" min="2" max="2">^  v2 = \(int2\)u0;$</stringmatch>
+<stringmatch name="persistcalls #12: revisit compares the two reads with the option off and on" min="2" max="2">^  return v1 == v2;$</stringmatch>
+<stringmatch name="persistcalls #13: loopstore stores after the loop with the option off and on" min="2" max="2">^  arr\._8_4_ = v1;$</stringmatch>
+<stringmatch name="persistcalls #14: loopstore keeps the call's value in a variable" min="2" max="2">^  v1 = fi\(arr\._8_4_\);$</stringmatch>
 </decompilertest>

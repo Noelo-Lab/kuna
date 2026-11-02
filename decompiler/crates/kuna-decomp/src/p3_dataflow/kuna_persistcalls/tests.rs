@@ -103,16 +103,19 @@ fn a_call_keeps_its_guard_only_next_to_a_read_or_a_write() {
     let w = write(&mut fd, b[0]);
     let c4 = call(&mut fd, b[0]);
     let c5 = call(&mut fd, b[0]);
+    let c6 = call(&mut fd, b[0]);
     ret(&mut fd, b[0]);
-    let calls = [c1, c2, c3, c4, c5];
+    let calls = [c1, c2, c3, c4, c5, c6];
     let (kept, read_kept) = keep(&fd, &mut MemoryOps::default(), space(&fd), &calls, &[r], &[w], &[]);
     assert!(kept.contains(&c1), "the read sees the call before it");
     assert!(kept.contains(&c2), "the value read may still be live past the first call after it");
     assert!(kept.contains(&c3), "the last call before the write is the read value's last reader");
     assert!(kept.contains(&c4), "the call after the write reads it");
-    assert!(!kept.contains(&c5), "c5 only passes a value along to the return");
+    assert!(!kept.contains(&c5), "c5 only passes a value along");
+    assert!(kept.contains(&c6), "the return's persist COPY sees the call before it");
     assert!(read_kept.contains(&c1) && read_kept.contains(&c2));
     assert!(!read_kept.contains(&c3) && !read_kept.contains(&c4));
+    assert!(read_kept.contains(&c6));
 }
 
 #[test]
@@ -142,6 +145,33 @@ fn guards_are_kept_across_joins_and_loops() {
     assert!(kept.contains(&c1) && kept.contains(&c2), "both arms reach the read and see the write");
     assert!(read_kept.contains(&c1) && read_kept.contains(&c2));
     assert!(kept.contains(&c4) && read_kept.contains(&c4), "c4 is the first call after the read on the way out");
+}
+
+#[test]
+fn a_loop_of_calls_before_a_full_write_keeps_a_guard_inside_it() {
+    let mut fd = build_fd();
+    // 0 -> 1, 1 -> 1 (loop), 1 -> 2
+    let b = blocks(&mut fd, 3, &[(0, 1), (1, 1), (1, 2)]);
+    let c0 = call(&mut fd, b[0]);
+    let c1 = call(&mut fd, b[1]);
+    let w = write(&mut fd, b[2]);
+    ret(&mut fd, b[2]);
+    let (kept, _) = keep(&fd, &mut MemoryOps::default(), space(&fd), &[c0, c1], &[], &[w], &[]);
+    assert!(kept.contains(&c1), "the loop's call is the last reader before the write on the way out");
+    assert!(!kept.contains(&c0), "c0's value reaches c1's guard");
+}
+
+#[test]
+fn a_call_keeps_its_guard_when_one_arm_reaches_a_full_write_unread() {
+    let mut fd = build_fd();
+    // 0 -> 1 (returns), 0 -> 2 (writes, then returns)
+    let b = blocks(&mut fd, 3, &[(0, 1), (0, 2)]);
+    let c1 = call(&mut fd, b[0]);
+    ret(&mut fd, b[1]);
+    let w = write(&mut fd, b[2]);
+    ret(&mut fd, b[2]);
+    let (kept, _) = keep(&fd, &mut MemoryOps::default(), space(&fd), &[c1], &[], &[w], &[]);
+    assert!(kept.contains(&c1), "the return arm can be folded away, leaving the write as c1's next access");
 }
 
 #[test]

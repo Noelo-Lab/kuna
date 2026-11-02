@@ -900,9 +900,10 @@ pub struct Heritage {
     /// call of which was left unguarded.
     persist_pruned: Vec<(int4, uintb, int4)>,
     /// (kuna `persistcalls`) For the range being guarded: where its kept call
-    /// guards start in its writes, how many there are, and the block of every
-    /// call it would have guarded, in guard order.
-    persist_skips: Option<(usize, usize, Vec<BlockId>)>,
+    /// guards start in its writes, how many there are, the block of every call
+    /// it would have guarded, in guard order, those calls and the kept ones.
+    #[allow(clippy::type_complexity)]
+    persist_skips: Option<(usize, usize, Vec<BlockId>, Vec<crate::context::OpId>, crate::kuna_fasthash::FxHashSet<crate::context::OpId>)>,
     /// (kuna `haltloopguard`) This pass's exitless loops, found at most once.
     halt_loops: Option<Vec<BlockId>>,
     /// (kuna `haltloopguard`) The ranges to keep alive at each exitless loop
@@ -1497,7 +1498,9 @@ impl Heritage {
     /// `heritage.cc:1157`).  Normalizes mismatched read/write sizes, marks the
     /// reads/writes active, and (when `add_indirects`) drives the call / return
     /// / store / load guards.  (`inputvars` is unused by the C++ body — it reads
-    /// only `read`/`write` — so it is not threaded here.)
+    /// only `read`/`write` — so it is not threaded here.)  (kuna `persistcalls`)
+    /// `revisit` is set for a range part of which an earlier pass heritaged; it
+    /// keeps every call guard.
     //
     // `needless_range_loop`: the body mutates the slot in place (`read[slot] =
     // normalizeReadSize(...)`) *and* re-borrows `fd` mutably inside the loop, so
@@ -1510,6 +1513,7 @@ impl Heritage {
         addr: &Address,
         size: int4,
         add_indirects: bool,
+        revisit: bool,
         read: &mut [crate::context::VarnodeId],
         write: &mut Vec<crate::context::VarnodeId>,
     ) -> Option<uint4> {
@@ -1648,7 +1652,7 @@ impl Heritage {
                     fd, fd.call_specs(), addr, size, read, &full_write_ops, &partial_write_ops,
                 )
             });
-            let sparse = (self.persist_sparse && super::kuna_persistcalls::applies(fd, fl, addr))
+            let sparse = (self.persist_sparse && !revisit && super::kuna_persistcalls::applies(fd, fl, addr))
                 .then_some((&*read, &full_write_ops[..], &partial_write_ops[..]));
             self.guard_calls(fd, fl, addr, size, write, live.as_ref(), sparse);
             crate::kuna_syscallregs::guard_memory(fd, fl, addr, size, write);
@@ -2116,9 +2120,23 @@ impl Heritage {
             self.seen_dead_code(&spc);
         }
         if let Some((read, full, partial)) = sparse {
-            let (keep, read_kept) = super::kuna_persistcalls::keep(
+            let (mut keep, read_kept) = super::kuna_persistcalls::keep(
                 fd, &mut self.persist_memory, spc.get_index(), &deferred, read, full, partial,
             );
+            let defs: Vec<crate::context::OpId> =
+                write.iter().filter_map(|&vn| fd.vbank().get(vn).and_then(|v| v.get_def())).collect();
+            let parent = |op: &crate::context::OpId| fd.obank().get(*op).and_then(|o| o.get_parent());
+            while keep.len() < deferred.len() {
+                let mut blocks: Vec<BlockId> = defs.iter().filter_map(parent).collect();
+                blocks.extend(deferred.iter().filter(|op| keep.contains(op)).filter_map(parent));
+                self.calc_multiequals(fd, &blocks);
+                let joins = std::mem::take(&mut self.merge);
+                let stale = super::kuna_persistcalls::stale_calls(fd, &deferred, &keep, &defs, &joins);
+                if stale.is_empty() {
+                    break;
+                }
+                keep.extend(stale);
+            }
             let sparse_range = keep.len() < deferred.len();
             if sparse_range {
                 self.persist_pruned.push((spc.get_index(), addr.get_offset(), size));
@@ -2126,7 +2144,7 @@ impl Heritage {
                     .iter()
                     .filter_map(|&op| fd.obank().get(op).and_then(|o| o.get_parent()))
                     .collect();
-                self.persist_skips = Some((write.len(), keep.len(), blocks));
+                self.persist_skips = Some((write.len(), keep.len(), blocks, deferred.clone(), keep.clone()));
             }
             for op in deferred {
                 if !keep.contains(&op) {
@@ -5172,7 +5190,8 @@ impl Heritage {
             }
             self.guard_input(fd, &memrange.addr, size, &inputvars);
             let add_indirects = memrange.new_addresses();
-            let fl = self.guard(fd, &memrange.addr, size, add_indirects, &mut readvars, &mut writevars);
+            let revisit = memrange.old_addresses();
+            let fl = self.guard(fd, &memrange.addr, size, add_indirects, revisit, &mut readvars, &mut writevars);
             // calcMultiequals(writevars): the realized engine takes the write
             // *blocks* (the C++ derives them as `write[i]->getDef()->getParent()`
             // — the block each normalized write is defined in).  Inputs/written
@@ -5184,18 +5203,27 @@ impl Heritage {
                     fd.obank().get(def).and_then(|o| o.get_parent())
                 })
                 .collect();
-            let skipped = self.persist_skips.take().map(|(start, kept, blocks)| {
+            let persist_skips = self.persist_skips.take();
+            let skipped = persist_skips.as_ref().map(|(start, kept, blocks, _, _)| {
+                let (start, kept) = (*start, *kept);
                 let block = |vn: &crate::context::VarnodeId| {
                     let def = fd.vbank().get(*vn).and_then(|v| v.get_def())?;
                     fd.obank().get(def).and_then(|o| o.get_parent())
                 };
                 let mut full: Vec<BlockId> = writevars[..start].iter().filter_map(block).collect();
-                full.extend(blocks);
+                full.extend(blocks.iter().copied());
                 full.extend(writevars[start + kept..].iter().filter_map(block));
                 self.calc_multiequals(fd, &full);
                 std::mem::take(&mut self.merge)
             });
             self.calc_multiequals(fd, &write_blocks);
+            if let Some((_, _, _, calls, keep)) = &persist_skips {
+                let defs: Vec<crate::context::OpId> =
+                    writevars.iter().filter_map(|&vn| fd.vbank().get(vn).and_then(|v| v.get_def())).collect();
+                if !super::kuna_persistcalls::stale_calls(fd, calls, keep, &defs, &self.merge).is_empty() {
+                    super::kuna_persistcalls::restart_full(fd);
+                }
+            }
             if fl.is_some_and(|fl| !memrange.old_addresses() && self.prunes(fd, fl, &memrange.addr))
                 && super::kuna_prunedssa::prune_merges(fd, &memrange.addr, size, &mut self.merge)
             {
@@ -6127,7 +6155,7 @@ impl Heritage {
                     if v.has_no_descend() {
                         continue;
                     }
-                    if !v.is_written() && super::kuna_persistcalls::crosses_skipped(fd, vn, &self.persist_pruned) {
+                    if super::kuna_persistcalls::crosses_skipped(fd, vn, &self.persist_pruned, false) {
                         super::kuna_persistcalls::restart_full(fd);
                     }
                     if !needwarning
@@ -6146,6 +6174,9 @@ impl Heritage {
                         resolved_size,
                         memrange_flags::old_addresses | memrange_flags::new_addresses,
                     );
+                    if super::kuna_persistcalls::crosses_skipped(fd, vn, &self.persist_pruned, true) {
+                        super::kuna_persistcalls::restart_full(fd);
+                    }
                     let v = fd.vbank().get(vn).expect("heritage: stale vn (prev==1)");
                     if !needwarning
                         && self.infolist[i].deadremoved > 0

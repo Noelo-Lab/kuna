@@ -22,21 +22,34 @@
 //! call after each read keeps its guard for that: past it, the read value is
 //! live alongside that guard's output.
 //!
-//! The skipped guards' values still flow through their calls to the next
-//! reader, so the range stays live over the same code, which is what merging
-//! tests. That holds wherever something reads the range later; before a full
-//! write or the end of a path with no return, upstream's last guard is the
-//! final reader. So a last walk keeps the last call before each such point:
-//! a call nothing reads after (no read, return or kept guard before a full
-//! write) keeps its guard.
+//! Every guard reads the value before it, so with every guard built the range
+//! is live wherever a call, a read or a return follows before a full write,
+//! and merging tests that cover: a value held in a register across calls the
+//! guards cover cannot become the global. A skipped call keeps that cover only
+//! if every path after it meets something that really reads the range before a
+//! full write or the end of the path: a free read, a partial write, a return or
+//! a kept guard. Every path, not some, because a later pass can remove the
+//! branch whose reader the call relied on. So a last walk, backward from the
+//! exits, keeps each call with a path to a full write or an end that meets no
+//! such reader, deciding as it meets each call: a run of calls before a full
+//! write keeps only its last, and a loop of calls before one keeps a guard
+//! inside the loop.
 //!
 //! The reads are the range's free reads, its partial writes (which read the
-//! bytes they keep) and every LOAD from the range's space that is not through
-//! the stack pointer, since a LOAD whose pointer later folds to a constant
-//! becomes a read of the range. The writes are its full and partial writes and
-//! every STORE into the space. Returns are not reads for the first walk: their
-//! persist COPYs read whichever guard or write is last, which needs no guard of
-//! its own.
+//! bytes they keep) and every LOAD and STORE in the range's space that is not
+//! through the stack pointer, since a LOAD whose pointer later folds to a
+//! constant becomes a read of the range and a STORE a write of part of it. The
+//! writes are its full and partial writes and every such STORE. For the last
+//! walk a LOAD reads nothing and a STORE may write all of the range, which is
+//! what each is until it folds. A return reads the range too (its persist
+//! COPY), so the call before it keeps its guard.
+//!
+//! What is left is a value that crosses skipped calls only into a kept guard's
+//! input, which nothing prints. A join is the other place such a value could
+//! land: a MULTIEQUAL that takes, on one edge, the value from before a skipped
+//! call is a stale definition merging may copy out where it is made. So the
+//! last skipped call on each such edge keeps its guard, until no join of the
+//! range takes one ([`stale_calls`]).
 
 use kuna_base::address::Address;
 use kuna_base::space::spacetype;
@@ -52,6 +65,7 @@ const KILL: u8 = 1;
 const DEF: u8 = 2;
 const UDEF: u8 = 3;
 const RET: u8 = 4;
+const LOAD: u8 = 5;
 const CALL: u8 = 9;
 
 type Event = (usize, u32, u8, OpId);
@@ -121,6 +135,64 @@ pub(crate) fn applies(fd: &Funcdata, fl: u32, addr: &Address) -> bool {
         })
 }
 
+/// The calls of `calls` not in `keep` whose value reaches a join of `joins`
+/// with no definition of the range after them: on each path back from an edge
+/// into a join, the first such call met before a definition (`defs`, a kept
+/// call), another join or the entry. A MULTIEQUAL taking one of their values
+/// would hold the value from before the call.
+pub(crate) fn stale_calls(
+    fd: &Funcdata,
+    calls: &[OpId],
+    keep: &FxHashSet<OpId>,
+    defs: &[OpId],
+    joins: &[BlockId],
+) -> Vec<OpId> {
+    let n = num_blocks(fd);
+    let mut events: Vec<Event> = Vec::with_capacity(calls.len() + defs.len());
+    for &op in defs {
+        push(fd, op, KILL, &mut events);
+    }
+    for &op in calls {
+        push(fd, op, if keep.contains(&op) { KILL } else { CALL }, &mut events);
+    }
+    events.sort_unstable_by_key(|&(bl, order, kind, _)| (bl, order, kind));
+    let bblocks = fd.bblocks_ref();
+    let Some(root) = bblocks.root else { return Vec::new() };
+    let rootb = bblocks.block(root);
+    let index = |b: BlockId| bblocks.block(b).get_index() as usize;
+    let mut last: Vec<Option<(u8, OpId)>> = vec![None; n];
+    for block in events.chunk_by(|a, b| a.0 == b.0) {
+        let e = block[block.len() - 1];
+        last[e.0] = Some((e.2, e.3));
+    }
+    let mut join = vec![false; n];
+    for &bl in joins {
+        join[index(bl)] = true;
+    }
+    let mut seen = vec![false; n];
+    let mut stale = Vec::new();
+    for &bl in joins {
+        let block = bblocks.block(bl);
+        let mut work: Vec<usize> = (0..block.size_in()).map(|k| index(block.get_in(k))).collect();
+        while let Some(at) = work.pop() {
+            if seen[at] {
+                continue;
+            }
+            seen[at] = true;
+            match last[at] {
+                Some((CALL, op)) => stale.push(op),
+                Some(_) => {}
+                None if join[at] => {}
+                None => {
+                    let b = bblocks.block(rootb.get_block(at as i32));
+                    work.extend((0..b.size_in()).map(|k| index(b.get_in(k))));
+                }
+            }
+        }
+    }
+    stale
+}
+
 /// Restart the function with every persistent global guarded at every call:
 /// a read or a guard removal reached a range across a call it left unguarded.
 pub(crate) fn restart_full(fd: &mut Funcdata) {
@@ -149,8 +221,9 @@ pub(crate) fn skip_join(fd: &mut Funcdata, slots: u32) {
 /// The calls of `calls` that keep their guard on the range: a write reaches
 /// the call with no call between, a read follows it with no call or full write
 /// between, a read reaches it with no call or full write between (the value
-/// read may still be live after the call), or nothing that reads the range (a
-/// read, a return, a kept guard) follows it at all before a full write. `read`
+/// read may still be live after the call), or some path after it meets a full
+/// write or its end before anything that reads the range (a read, a partial
+/// write, a return, a kept guard). `read`
 /// are the range's free reads, `full` and `partial` the ops writing all or part
 /// of it. The second set holds the calls kept for a read, before or after.
 pub(crate) fn keep(
@@ -173,7 +246,7 @@ pub(crate) fn keep(
         }
     }
     for &op in &memory.loads {
-        push(fd, op, USE, &mut events);
+        push(fd, op, LOAD, &mut events);
     }
     for &op in full {
         push(fd, op, KILL, &mut events);
@@ -194,7 +267,7 @@ pub(crate) fn keep(
     let n = num_blocks(fd);
     let mut read_kept = FxHashSet::default();
     solve(fd, n, &events, true, |kind, _| match kind {
-        USE | UDEF => Step::Gen,
+        USE | UDEF | LOAD | DEF | RET => Step::Gen,
         KILL => Step::Kill,
         CALL => Step::ObserveKill,
         _ => Step::Skip,
@@ -214,7 +287,7 @@ pub(crate) fn keep(
         }
     });
     solve(fd, n, &events, false, |kind, _| match kind {
-        USE | UDEF => Step::Gen,
+        USE | UDEF | LOAD => Step::Gen,
         KILL => Step::Kill,
         CALL => Step::ObserveKill,
         _ => Step::Skip,
@@ -224,19 +297,85 @@ pub(crate) fn keep(
             read_kept.insert(op);
         }
     });
-    let mut unread = Vec::new();
-    solve(fd, n, &events, true, |kind, _| match kind {
-        USE | UDEF | RET => Step::Gen,
-        KILL => Step::Kill,
-        CALL => Step::ObserveGen,
-        _ => Step::Skip,
-    }, |op, live| {
-        if !live && !keep.contains(&op) {
-            unread.push(op);
-        }
-    });
-    keep.extend(unread);
+    ground(fd, n, &events, &mut keep);
     (keep, read_kept)
+}
+
+/// Keep each call from which some path meets a full write of the range, or the
+/// end of the path, before a free read, a partial write, a return or a kept
+/// guard. A LOAD reads nothing until it folds and a STORE may fold into a full
+/// write. Walked backward,
+/// successors first, deciding at each call as it is met: a call with such a
+/// path after it is kept, and either way the calls before it reach a reader
+/// there. A block is walked again when such a path opens from one of its
+/// successors; a call once kept stays kept.
+fn ground(fd: &Funcdata, n: usize, events: &[Event], keep: &mut FxHashSet<OpId>) {
+    let bblocks = fd.bblocks_ref();
+    let Some(root) = bblocks.root else { return };
+    let rootb = bblocks.block(root);
+    let id = |i: usize| rootb.get_block(i as i32);
+    let index = |b: BlockId| bblocks.block(b).get_index() as usize;
+    let mut span: Vec<(usize, usize)> = vec![(0, 0); n];
+    let mut at = 0;
+    for block in events.chunk_by(|a, b| a.0 == b.0) {
+        span[block[0].0] = (at, at + block.len());
+        at += block.len();
+    }
+    let mut order = Vec::with_capacity(n);
+    let mut seen = vec![false; n];
+    for start in 0..n {
+        if seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        let mut stack = vec![(start, 0i32)];
+        while let Some(&mut (bl, ref mut next)) = stack.last_mut() {
+            let block = bblocks.block(id(bl));
+            if *next < block.size_out() {
+                let succ = index(block.get_out(*next));
+                *next += 1;
+                if !seen[succ] {
+                    seen[succ] = true;
+                    stack.push((succ, 0));
+                }
+            } else {
+                order.push(bl);
+                stack.pop();
+            }
+        }
+    }
+    let mut entry = vec![false; n];
+    let mut queued = vec![true; n];
+    let mut work: Vec<usize> = order.into_iter().rev().collect();
+    while let Some(bl) = work.pop() {
+        queued[bl] = false;
+        let block = bblocks.block(id(bl));
+        let mut open = block.size_out() == 0 || (0..block.size_out()).any(|k| entry[index(block.get_out(k))]);
+        let (lo, hi) = span[bl];
+        for &(_, _, kind, op) in events[lo..hi].iter().rev() {
+            match kind {
+                USE | UDEF | RET => open = false,
+                KILL | DEF => open = true,
+                CALL => {
+                    if open {
+                        keep.insert(op);
+                    }
+                    open = false;
+                }
+                _ => {}
+            }
+        }
+        if open && !entry[bl] {
+            entry[bl] = true;
+            for k in 0..block.size_in() {
+                let pred = index(block.get_in(k));
+                if !queued[pred] {
+                    queued[pred] = true;
+                    work.push(pred);
+                }
+            }
+        }
+    }
 }
 
 /// Does every path into `op` meet a guard of the range `addr:size`, another
@@ -249,10 +388,15 @@ pub(crate) fn guarded(fd: &Funcdata, op: OpId, addr: &Address, size: int4) -> bo
     walk(fd, op, addr, size, true) && walk(fd, op, addr, size, false)
 }
 
-/// Does the new read `vn` overlap a range of `pruned` (space index, offset,
-/// size) some of whose calls were left unguarded, at an op [`guarded`] does not
-/// clear?
-pub(crate) fn crosses_skipped(fd: &Funcdata, vn: VarnodeId, pruned: &[(int4, u64, int4)]) -> bool {
+/// Does the new Varnode `vn` overlap a range of `pruned` (space index, offset,
+/// size) some of whose calls were left unguarded, so that linking it could
+/// read a value across such a call? A read is cleared by [`guarded`] at each
+/// op reading it and a write of the whole range needs nothing; a partial write,
+/// which reads the bytes it keeps, must reach a guard or definition first. A
+/// Varnode reaching past the range (`partial`, a pass that grows it) is never
+/// cleared: refining or revisiting the range rebuilds its value from the
+/// skipped calls' stale inputs.
+pub(crate) fn crosses_skipped(fd: &Funcdata, vn: VarnodeId, pruned: &[(int4, u64, int4)], partial: bool) -> bool {
     let Some(v) = fd.vbank().get(vn) else { return false };
     let (space, lo) = (v.get_space(), v.get_offset());
     let hi = lo.saturating_add(v.get_size() as u64);
@@ -260,10 +404,14 @@ pub(crate) fn crosses_skipped(fd: &Funcdata, vn: VarnodeId, pruned: &[(int4, u64
         index == space.get_index()
             && offset < hi
             && lo < offset.saturating_add(size as u64)
-            && {
+            && (partial || {
                 let addr = Address::new(std::rc::Rc::clone(&space), offset);
-                v.descend_iter().any(|op| !guarded(fd, op, &addr, size))
-            }
+                if v.is_written() {
+                    v.get_size() < size && v.get_def().is_some_and(|op| !walk(fd, op, &addr, size, true))
+                } else {
+                    v.descend_iter().any(|op| !guarded(fd, op, &addr, size))
+                }
+            })
     })
 }
 
@@ -329,19 +477,18 @@ fn num_blocks(fd: &Funcdata) -> usize {
 
 /// What one access does to the walk: start or stop the range being tracked,
 /// let it through, or tell `observe` whether it is tracked there and then
-/// stop or start it.
+/// stop it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Step {
     Gen,
     Kill,
     Skip,
     ObserveKill,
-    ObserveGen,
 }
 
 /// One walk over the CFG, backward (`back`: is a read reachable from here?)
 /// or forward (does a write reach here?), calling `observe` with the answer at
-/// each `ObserveKill` or `ObserveGen` event.
+/// each `ObserveKill` event.
 fn solve(
     fd: &Funcdata,
     n: usize,
@@ -359,7 +506,7 @@ fn solve(
         let first = |e: &&Event| !matches!(class(e.2, e.3), Step::Skip);
         let step = if back { block.iter().find(first) } else { block.iter().rev().find(first) };
         match step.map(|e| class(e.2, e.3)) {
-            Some(Step::Gen | Step::ObserveGen) => {
+            Some(Step::Gen) => {
                 entry[bl] = true;
                 transparent[bl] = false;
                 work.push(bl);
@@ -392,10 +539,6 @@ fn solve(
             Step::ObserveKill => {
                 observe(op, live);
                 live = false;
-            }
-            Step::ObserveGen => {
-                observe(op, live);
-                live = true;
             }
         };
         if back {
