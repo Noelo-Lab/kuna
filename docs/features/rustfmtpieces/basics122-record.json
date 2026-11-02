@@ -1,0 +1,22 @@
+{
+  "fixture": "basics122",
+  "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 2018,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 2018,
+      "changed": [],
+      "parsed": 2018,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

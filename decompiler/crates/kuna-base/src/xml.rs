@@ -2144,7 +2144,7 @@ mod tests {
         // and kuna-revisitrefine / refining a range a later heritage pass revisited
         // and kuna-wrapsplit + kuna-wrapsplit-be / accesses that run past the top of their space
         // and kuna-switchrunonguard / a guard that does not bound the selector leaves the table unguarded (option switchrunonguard)
-        assert_eq!(count, 644, "corpus file count drifted");
+        assert_eq!(count, 645, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

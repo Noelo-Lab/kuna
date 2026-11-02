@@ -73,6 +73,7 @@ pub mod kuna_rustfmtargs;
 pub mod kuna_rustfmtflags;
 pub(crate) mod kuna_rustfmtresult;
 pub(crate) mod kuna_rustfmtpanic;
+pub(crate) mod kuna_rustfmtpieces;
 pub mod kuna_langrust; // (kuna) the rust-language policy objects (profile + caps)
 pub mod kuna_langgo;
 pub mod kuna_gopackage;

@@ -1,0 +1,30 @@
+{
+  "fixture": "native-c",
+  "sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 55,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 55,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 55,
+      "changed": [],
+      "parsed": 55,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

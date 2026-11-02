@@ -1,0 +1,30 @@
+{
+  "fixture": "panic-shapes",
+  "sha256": "2aae9c46507fe73bbd96b2f14680abda08a8e0b6230723e8a6e857af83a6aa41",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 19,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 19,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 19,
+      "changed": [],
+      "parsed": 19,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

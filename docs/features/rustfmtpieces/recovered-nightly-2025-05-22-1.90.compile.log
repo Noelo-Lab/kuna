@@ -1,0 +1,163 @@
+warning: value assigned to `v1` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:10:3
+   |
+10 |   v1 = 0x59868;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` on by default
+
+warning: value assigned to `v2` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:11:3
+   |
+11 |   v2 = 1;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v3` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:12:3
+   |
+12 |   v3 = 8;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v4` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:13:3
+   |
+13 |   v4 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v5` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:14:3
+   |
+14 |   v5 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v1` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:26:3
+   |
+26 |   v1 = 0x59878;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v2` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:27:3
+   |
+27 |   v2 = 1;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v3` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:28:3
+   |
+28 |   v3 = 8;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v4` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:29:3
+   |
+29 |   v4 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v5` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:30:3
+   |
+30 |   v5 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v1` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:42:3
+   |
+42 |   v1 = 0x59888;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v2` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:43:3
+   |
+43 |   v2 = 1;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v3` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:44:3
+   |
+44 |   v3 = 8;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v4` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:45:3
+   |
+45 |   v4 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v5` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:46:3
+   |
+46 |   v5 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v1` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:58:3
+   |
+58 |   v1 = 8;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v2` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:59:3
+   |
+59 |   v2 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v3` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:60:3
+   |
+60 |   v3 = 8;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v4` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:61:3
+   |
+61 |   v4 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `v5` is never read
+  --> /tmp/kuna-rust-fmt-pieces-f874/recovered-nightly-2025-05-22-execution.rs:62:3
+   |
+62 |   v5 = 0;
+   |   ^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: 20 warnings emitted
+

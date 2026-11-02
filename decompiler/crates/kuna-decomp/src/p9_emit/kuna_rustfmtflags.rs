@@ -25,21 +25,22 @@ pub fn formatter_symbols(
     symbols: impl IntoIterator<Item = (u64, Option<String>)>,
 ) -> BTreeMap<u64, Formatter> {
     let mut entries = BTreeMap::new();
-    for (address, name) in symbols {
-        let formatter = name.as_deref().and_then(classify);
-        entries
-            .entry(address)
-            .and_modify(|old| {
-                if *old != formatter {
-                    *old = None;
-                }
-            })
-            .or_insert(formatter);
+    let symbols: Vec<_> = symbols
+        .into_iter()
+        .map(|(address, name)| {
+            let formatter = name.as_deref().and_then(classify);
+            if let Some(formatter) = formatter {
+                entries.insert(address, formatter);
+            }
+            (address, formatter)
+        })
+        .collect();
+    for (address, formatter) in symbols {
+        if entries.get(&address).is_some_and(|known| Some(*known) != formatter) {
+            entries.remove(&address);
+        }
     }
     entries
-        .into_iter()
-        .filter_map(|(address, formatter)| formatter.map(|formatter| (address, formatter)))
-        .collect()
 }
 
 fn classify(name: &str) -> Option<Formatter> {
@@ -239,6 +240,9 @@ mod tests {
                 (4, Some(symbol("Binary", "u64"))),
                 (4, None),
                 (4, Some(symbol("Binary", "u64"))),
+                (5, None),
+                (5, Some(symbol("Display", "i32"))),
+                (5, Some(symbol("Display", "i32"))),
             ]),
             BTreeMap::from([(
                 1,

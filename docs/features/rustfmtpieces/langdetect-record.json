@@ -1,0 +1,22 @@
+{
+  "fixture": "langdetect",
+  "sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 1558,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "go",
+      "functions": 1558,
+      "changed": [],
+      "parsed": 1558,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

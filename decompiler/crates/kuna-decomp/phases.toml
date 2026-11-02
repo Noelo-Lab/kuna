@@ -8832,6 +8832,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "rustfmtpieces"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "piece-format"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-rust-piece-format"
+summary = "Recover print!, println!, eprint! and eprintln! from the verified piece-array fmt::Arguments layout in x86-64 ELF images built by stable Rust 1.89.0/1.90.0 or nightly 1.89.0 bf64d66bd (2025-05-21). Require exact output-sink identity, a complete stack descriptor, absent format specifications, immutable UTF-8 pieces and exact primitive Display identities. Preserve descriptor setup, typed reads and surrounding IR. Unknown compiler builds, mutable data, generic callbacks and non-default specifications remain explicit; C and Go output are unchanged."
+use_when = "On by default to expose older Rust literal and integer printing. Literal recovery also requires rustfmtliteral; primitive arguments require rustfmtargs. Turn off to retain the piece-array runtime call. This does not recover format!, panic!, write!, generic arguments or older compiler builds without verified layout evidence."
+example = "option rustfmtpieces off"
+source_decompiler = "angr"
+inspiration = "angr FormatMacroSimplifier.replace_call piece/argument array path and test_rust_decompiler.py nightly-2025-05-22 fixtures"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Older Rust print calls retain a stack fmt::Arguments descriptor|Rust literal output remains _print with opaque piece-array addresses"
+live_field = "rust_fmt_pieces"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "outlang"
 values = "c|rust|go"
 default = "c"

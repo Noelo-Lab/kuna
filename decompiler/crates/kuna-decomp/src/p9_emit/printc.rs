@@ -8208,6 +8208,12 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_pieces {
+            if let Some(plan) = super::kuna_rustfmtpieces::recover(fd, arch, op) {
+                self.push_rust_format_plan(fd, arch, op, plan);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Rust && arch.rust_fmt_panic {
             if let Some(plan) = super::kuna_rustfmtpanic::recover(fd, arch, op) {
                 self.push_rust_format_plan(fd, arch, op, plan);
