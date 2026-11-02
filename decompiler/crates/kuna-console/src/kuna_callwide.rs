@@ -675,6 +675,7 @@ pub fn prepare(prog: &mut ConsoleProgram) {
     {
         return;
     }
+    kuna_decomp::kuna_mipsunaligned::paint(prog.arch_mut());
     prog.arch_mut().kuna_callwide.clear();
     ingest_dwarf(prog);
     prog.callwide.frozen = true;

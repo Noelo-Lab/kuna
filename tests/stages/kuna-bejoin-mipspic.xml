@@ -31,7 +31,10 @@
     Assert #1: the default returns add64's sum high word first; evidence
       keeps it low word first, and add_hi stays an int in both passes.
     Assert #2: c_unal joins add_hi's result $3 high (the default join) in
-      both passes, since nothing of $3 is read after the call.
+      both passes, since nothing of $3 is read after the call.  It runs with
+      option mipsunaligned off, which lifts the pair as two merges reading
+      $3; on, the pair is one load and reads nothing of $3
+      (kuna-mipsunaligned.xml).
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -56,6 +59,7 @@
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsunal</com>
   <com>read symbols</com>
+  <com>option mipsunaligned off</com>
   <com>option bejoin callers</com>
   <com>lo fu c_unal</com>
   <com>decompile</com>

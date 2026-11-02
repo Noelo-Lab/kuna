@@ -1,0 +1,23 @@
+mipsunaligned_eb.o, mipsunaligned_el.o -- MIPS32 big- and little-endian
+objects for option mipsunaligned (GH-904; tests/stages/kuna-mipsunaligned.xml).
+
+What they are
+  The same packed-struct word load, store and copy from mipsunaligned.c,
+  each an lwl/lwr or swl/swr pair whose second half sits in the jr delay
+  slot (get_word, put_word) or follows the first (copy_word). The
+  big-endian object puts the left half at the lower offset, the
+  little-endian one at the higher.
+
+Why they are vendored
+  CI has no MIPS toolchain, and the assertions depend on the exact pairs.
+
+Where they came from
+  Ubuntu mipsel-linux-gnu-gcc 10.3.0-1ubuntu1 on the host:
+
+      mipsel-linux-gnu-gcc -EB -O2 -fno-pic -mno-abicalls -w -c mipsunaligned.c -o mipsunaligned_eb.o
+      mipsel-linux-gnu-gcc -EL -O2 -fno-pic -mno-abicalls -w -c mipsunaligned.c -o mipsunaligned_el.o
+
+  sha256:
+    0070e0af96e649cfc305957d750c4be322d4a2d7af8d9ed956ff616d2f3ce285  mipsunaligned_eb.o
+    c7697a31e220dc656ccdf5f9eb5d80d0d8525ab5c7011534c9ffb72261a13d96  mipsunaligned_el.o
+  Never executed.

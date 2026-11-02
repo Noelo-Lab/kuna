@@ -982,6 +982,10 @@ Three tiers:
 | Control flow encountered bad instruction data in a DOS function that does float math | [`fpuemu`](#fpuemu) |
 | a phantom function starts inside an INT 35h instruction's operand bytes | [`fpuemu`](#fpuemu) |
 | swi(0x3d) calls where the program waits for the coprocessor | [`fpuemu`](#fpuemu) |
+| a MIPS unaligned load prints as shifts and masks by (addr & 3) * 8 around another value | [`mipsunaligned`](#mipsunaligned) |
+| a MIPS function reads an uninitialized v0 or v1 local inside an unaligned load | [`mipsunaligned`](#mipsunaligned) |
+| a MIPS caller reads a call's result as a 64-bit v1:v0 pair it never uses whole | [`mipsunaligned`](#mipsunaligned) |
+| a MIPS function that returns a value prints void because its callers disagree on the width they read | [`mipsunaligned`](#mipsunaligned) |
 | boolean shifted into the sign bit tested with a less-than-zero compare | [`flagcompare`](#flagcompare) |
 | N==V signed-overflow branch idiom rendered as raw flag arithmetic | [`flagcompare`](#flagcompare) |
 | want the explicit condition-flag math visible (flip off) | [`flagcompare`](#flagcompare) |
@@ -3571,6 +3575,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** Leave auto: a DOS program linked with the 8087 emulator decompiles its float code, and every other input (no fpuEmu bit outside x86-16.sla, no emulator code in the image) is byte-identical. Use on for a raw-image or .COM program that uses the emulator but has too little float code for the evidence, off to read the interrupts as the bytes encode them.
 - **Where / provenance:** P2/decode-context · kuna · correctness-fix · kuna-1288-fpuemu
 - **Example:** `kuna decompile-all dazzle.exe --option fpuemu off`
+
+### `mipsunaligned` -- on | off, default `on`
+
+- **Symptoms:** a MIPS unaligned load prints as shifts and masks by (addr & 3) * 8 around another value; a MIPS function reads an uninitialized v0 or v1 local inside an unaligned load; a MIPS caller reads a call's result as a 64-bit v1:v0 pair it never uses whole; a MIPS function that returns a value prints void because its callers disagree on the width they read.
+- **What it does:** Lift a MIPS unaligned load or store pair (lwl/lwr, swl/swr, ldl/ldr, sdl/sdr) as the one whole access it makes. Lifted one at a time each half merges memory into the register by a shift its address's low bits pick, so the pair read the register it overwrites (after a call, the call's dead second return word; otherwise an argument or an uninitialized result) and printed as shifts and masks around that value. The processor spec's PAIR_INSTRUCTION_FLAG forms make one half do the whole access and the other nothing; on, the flag is set on both halves of every pair in the image's executable ranges before the first decode, as Ghidra's MipsPreAnalyzer does: the partner is the other half with the same base and data registers three (seven) bytes away on the side the byte order puts it, within five instructions, with no write of the base, no use of a load's data register or write of a store's, no control transfer but one whose delay slot holds the partner (not a branch-likely), and no direct branch or sized function symbol landing inside. MIPS16, microMIPS and release 6 code, XML and --raw-image inputs and every other language are unchanged.
+- **When to flip:** Leave on: an unaligned field load reads as one word load, and a caller that loads an unaligned word into $v1 after a call no longer reads the call's second return register. Turn off to see each half's merge as the processor spec lifts it alone.
+- **Where / provenance:** P2/decode-context · ghidra · correctness-fix · GH-904
+- **Example:** `kuna decompile-all sqlite.so --option mipsunaligned off`
 
 ### `flagcompare` -- on | off, default `on`
 
