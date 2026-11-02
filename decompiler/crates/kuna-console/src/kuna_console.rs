@@ -1443,9 +1443,13 @@ impl IfaceCommandAction for IfcKunaFunctionBounds {
         let name = prog
             .declare_function(addr, name.as_deref(), size)
             .map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        let unmapped = prog.declaration_note(start);
         status.out(&format!(
             "Declared {name} at {display_start:#x} spanning {size} bytes\n"
         ));
+        if let Some(sentence) = unmapped {
+            status.out(&crate::kuna_declaredbytes::transcript_line(&sentence));
+        }
         Ok(())
     }
 

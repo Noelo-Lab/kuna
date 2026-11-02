@@ -319,7 +319,8 @@ fn render(args: &DisArgs) -> Result<Output, String> {
                         ("message".into(), Json::Str(message.clone())),
                     ])
                 });
-                let mut doc = envelope(args, &region, addr, listed, truncated, &notes, "pcode");
+                let doc_notes = crate::funcdecl::json_notes(prog, &notes);
+                let mut doc = envelope(args, &region, addr, listed, truncated, &doc_notes, "pcode");
                 doc.push(("stop_reason".into(), Json::Str(stop_reason.into())));
                 doc.push(("error".into(), error));
                 object_with_rows(doc, "instructions", &rows) + "\n"
