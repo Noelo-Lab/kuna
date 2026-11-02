@@ -488,6 +488,9 @@ pub struct ObjectLoadImage {
     segment_info: Vec<SectionInfo>,
     /// Executable ELF segment extents, used when section headers are absent.
     executable_segments: Vec<(u64, u64)>,
+    /// `(vma, size)` of each segment the image declares inaccessible; see
+    /// [`LoadImage::inaccessible_segments`].
+    inaccessible_segments: Vec<(u64, u64)>,
     /// Function symbols, in symbol-table order.
     funcsyms: Vec<FuncSym>,
     /// ELF function names that share an address with an earlier name in
@@ -760,8 +763,12 @@ impl ObjectLoadImage {
         let mut segments: Vec<Segment> = Vec::new();
         let mut segment_info: Vec<SectionInfo> = Vec::new();
         let mut executable_segments = Vec::new();
+        let mut inaccessible_segments = Vec::new();
         for seg in file.segments() {
             let vma = seg.address();
+            if matches!(seg.flags(), SegmentFlags::MachO { initprot: 0, .. }) && seg.size() != 0 {
+                inaccessible_segments.push((vma, seg.size()));
+            }
             if matches!(seg.flags(), object::SegmentFlags::Elf { p_flags }
                 if p_flags & object::elf::PF_X != 0)
             {
@@ -1075,6 +1082,7 @@ impl ObjectLoadImage {
             image_entry,
             segment_info,
             executable_segments,
+            inaccessible_segments,
             funcsyms,
             funcsym_aliases,
             reloc_sections: Vec::new(),
@@ -1237,6 +1245,7 @@ impl ObjectLoadImage {
             // the only mapping story it has, and it always has one.
             segment_info: Vec::new(),
             executable_segments: Vec::new(),
+            inaccessible_segments: Vec::new(),
             funcsyms,
             funcsym_aliases,
             reloc_sections,
@@ -1589,6 +1598,10 @@ impl LoadImage for ObjectLoadImage {
         self.segment_info.iter().map(|s| (s.vma, s.size, s.flags)).collect()
     }
 
+    fn inaccessible_segments(&self) -> Vec<(u64, u64)> {
+        self.inaccessible_segments.clone()
+    }
+
     fn kuna_overlay_bytes(&mut self, addr: &Address, data: &[u8]) -> KunaResult<()> {
         let space = addr
             .get_space()
@@ -1656,7 +1669,7 @@ impl LoadImage for ObjectLoadImage {
         for s in &mut self.segment_info {
             s.vma = s.vma.wadd(badjust);
         }
-        for (vma, _) in &mut self.executable_segments {
+        for (vma, _) in self.executable_segments.iter_mut().chain(&mut self.inaccessible_segments) {
             *vma = vma.wadd(badjust);
         }
         self.elfv1.adjust_vma(badjust);

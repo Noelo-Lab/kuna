@@ -1,0 +1,62 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "functions",
+    "{{BIN}}",
+    "--json",
+    "--define-function",
+    "0x999999999-0x9999999a1=asserted_unmapped",
+    "--filter",
+    "^asserted_unmapped$"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports_arm64",
+    "binary_sha256": "7b9b3c64c2f16b56c99c6435423abc132ddb425ec640b95d745bf592a56eed64",
+    "binary_size": 50016,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/macho_imports_arm64",
+    "selector": "0x999999999",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "stderr_matches": [
+      "warning: declared function asserted_unmapped at 0x999999999-0x9999999a1: its entry 0x999999999 is not mapped in this input"
+    ],
+    "json": [
+      {
+        "path": "count",
+        "op": "eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "asserted_unmapped"
+      },
+      {
+        "path": "functions[0].declared.bytes",
+        "op": "eq",
+        "value": "unmapped"
+      },
+      {
+        "path": "notes[0]",
+        "op": "contains",
+        "value": "its entry 0x999999999 is not mapped in this input"
+      }
+    ]
+  },
+  "notes": "Issue #1438: a --define-function outside the image's mapped bytes is kept as an assertion (calls to it take its name) but no longer reads like a discovered entry: one stderr warning, the sentence in notes, and declared.bytes = unmapped on the row. Before, the row was indistinguishable and stderr was silent. arm64 Mach-O, the reporter's platform."
+}
