@@ -1938,11 +1938,6 @@ fn branch_cases(
     read
 }
 
-/// Decode the instruction at `vma` into `cap`, keeping every input varnode, and
-/// return its byte length.
-///
-/// A translator panic on exotic bytes is contained to `None` — a query surface
-/// must never take the process down over one bad address.
 /// Whether the instruction at `vma` is predicated: its p-code holds a `CBRANCH`.
 fn is_predicated(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> bool {
     let mut cap = FullCapture::default();
@@ -1950,6 +1945,11 @@ fn is_predicated(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64
         && cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH)
 }
 
+/// Decode the instruction at `vma` into `cap`, keeping every input varnode, and
+/// return its byte length.
+///
+/// A translator panic on exotic bytes is contained to `None` — a query surface
+/// must never take the process down over one bad address.
 pub(super) fn decode(
     translate: &dyn Translate,
     vma: u64,
