@@ -1,0 +1,135 @@
+{
+  "declared_at": "2026-11-02T16:30:57.988888+00:00",
+  "scope": "Required main8db14 integration; two earlier failed timing studies retained; ed740 plan superseded before any samples.",
+  "root": "/home/mahaloz/kwt/angr-rust-null-literals",
+  "base": "/home/mahaloz/kwt/angr-base-8db14",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-null-literals/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "null_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "null_pointer",
+      "rust"
+    ],
+    [
+      "maybe_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "maybe_pointer",
+      "rust"
+    ],
+    [
+      "pointer_is_null",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "pointer_is_null",
+      "rust"
+    ],
+    [
+      "clear_pointer",
+      "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "clear_pointer",
+      "rust"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611030,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 14,
+  "upper_quantile": 0.9964285714285714,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Seven comparisons on disjoint physical CPU pairs;384 paired rounds, balanced randomized order, no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Retain every observation and do not repeat unchanged code to chase a passing bound. Diagnose material regressions before publication; record failed confidence bounds honestly.",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "case_options": {
+    "null_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "maybe_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "pointer_is_null": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ],
+    "clear_pointer": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer.kuna"
+    ]
+  },
+  "parent_commit": "8db141bf41914de30128b3c8a067b912604ab281",
+  "main_integration_amendment": {
+    "declared_at": "2026-11-02T16:30:57.988888+00:00",
+    "before_any_integration_samples": true,
+    "previous_parent": "ed740d90151223e32853bcec5120ad2a934c1efc",
+    "parent": "8db141bf41914de30128b3c8a067b912604ab281",
+    "reason": "Main PR1445 changes big-endian ET_REL analysis rebasing and shared stage counts. Fresh independent parent/candidate,59image comparison,allgates andnativeproofs. Null implementation unchanged.",
+    "previous_studies": [
+      {
+        "path": "/tmp/kuna-rust-null-literals/timing-result.json",
+        "passed": false
+      },
+      {
+        "path": "/tmp/kuna-rust-null-literals-c1745/timing-result.json",
+        "passed": false
+      }
+    ],
+    "all_studies_passed_can_never_be_true": true,
+    "superseded_ed740_plan": {
+      "path": "/tmp/kuna-rust-null-literals-ed740/timing-plan.json",
+      "samples": 0
+    }
+  },
+  "build": {
+    "at": "2026-11-02T16:40:11.117816+00:00",
+    "parent_commit": "8db141bf41914de30128b3c8a067b912604ab281",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-8db14",
+    "parent_cli_sha256": "f53f2a062774cfb1158999e0ead7672eb144d79576eae601043140ccff7e25d2",
+    "new_cli_sha256": "d342d857b1b2340c06f278d28b223e89447cceacb09c01738d9e5789ccfe34a2",
+    "stage_assertions": [
+      3699,
+      3699
+    ],
+    "strict_correctness_fix": true,
+    "option": null
+  },
+  "bound_at": "2026-11-02T16:53:20.703603+00:00"
+}

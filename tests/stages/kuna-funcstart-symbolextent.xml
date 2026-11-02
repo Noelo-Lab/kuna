@@ -11,7 +11,7 @@
     .text+0x10, so the function-start pass committed sub_400010 inside
     buf_dup_char's 0x74-byte symbol, and decompile-all printed the tail of
     buf_dup_char a second time as a function of its own.  On a big-endian
-    object, whose analysis view is not rebased, the same start landed at the
+    object, whose analysis view was not yet rebased, the same start landed at the
     pre-link address 0x10.  A pattern or gap-walk entry strictly inside a
     sized function symbol is now that function's code.
 

@@ -869,8 +869,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   a laid-out section has its `st_value` shifted by **its own section's** delta,
   since the layout is non-contiguous and there is no single global offset (a COFF
   symbol needs no shift — it is reported as `VirtualAddress + value`, so the section
-  write already moved it). Every pass then produces an already-rebased fact with no
-  source change of its own.
+  write already moved it). Each patched field is written in the object's own byte
+  order (ELF `EI_DATA`), the implicit addends of a REL table read in it, so a
+  big-endian object (PowerPC, MIPS, SPARC, ARM big-endian) is rebased as a
+  little-endian one is; it used to keep the pre-link view, so `kuna functions`
+  listed each of its functions twice (`0x0 scale` beside `0x400000 scale`) and a
+  MIPS PIC function's `$t9` was seeded at its section offset rather than its
+  entry, so its `addu gp,gp,t9` never resolved and every call and global through
+  the GOT stayed a load from an unknown `t9`. Over 959 relocatable objects the 441
+  whose output changes are all big-endian: the `t9` variables left in MIPS PIC
+  functions drop from 3,352 to 25, string literals printed rise from 6,766 to
+  18,169, and no function is added or lost. Every pass then produces an
+  already-rebased fact with no source change of its own.
   A field with no relocation still yields an address in no laid-out section, so
   `kuna_relocrebase (retain_in_image)` **drops** exactly those rather than letting a
   pre-link address through — that is the phantom class. The single exception is a
@@ -1452,8 +1462,14 @@ funcsym stream:
   `.MIPS.stubs`/GOT layout from the dynamic table (`DT_MIPS_LOCAL_GOTNO`/
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
-  named import (the bootstrap turns `readonlypropagate` on for MIPS only). The
-  slots of what the image itself defines are covered under `dynrelocs` below.
+  named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+  Only a slot that holds its import's stub address is marked. An import with no
+  lazy stub (its address is taken, or the reference is weak) has a slot holding
+  0, which the dynamic linker overwrites with the import's address at load
+  time; folding that 0 printed `(*NULL)(a0)` for the call and folded a weak
+  `if (hook) hook();` guard away, so such a slot stays variable and reads like
+  an x86-64 `-fno-plt` GOT call, `(*dat_<slot>)(a0)`. The slots of what the
+  image itself defines are covered under `dynrelocs` below.
   PPC32 linked images use
   `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (resolve)`:
   a zero-addend `R_PPC_JMP_SLOT` names its call target directly inside an
@@ -3055,7 +3071,7 @@ moves.
   cross-unit graph. Concrete one-hop abstract origins must account for every
   inherited formal exactly once and in order; additional concrete formals may
   only be results. Malformed references, missing roles, closures, trampolines,
-  ABI0 wrappers, unsupported composites by value and multiple results are
+  ABI0 wrappers, unsupported composites by value and unsupported multiple results are
   refused as a whole, retaining existing inference.
 
   Go compilation units never supply prototypes through the generic C or C++
@@ -3085,6 +3101,24 @@ moves.
   bitfields and invalid extents are refused. Materialized pointees and fields
   must still match the validated graph; a generic void-pointer fallback cannot
   silently satisfy a typed contract.
+
+  `gopairreturns` extends this importer only when `godwarfsig` is also on;
+  both remain off by default. Exactly two signed or unsigned 64-bit integer
+  results may follow the scalar inputs. Result allocation restarts independently
+  at RAX and RBX. Explicit result locations must name those registers in source
+  order; unavailable locations still require the compiler and complete type
+  contract. Repeated concrete function entries are ambiguous and cannot receive
+  a pair contract. The bounded result list uses two fixed slots, including for
+  scalar contracts, so this extension adds no per-result list allocation.
+  Narrow, floating, mixed, aggregate and three-result contracts
+  remain unsupported. Assignment first uses a temporary ordinary 16-byte struct;
+  its zero-flag join must contain RBX then RAX, each eight bytes in the exact
+  architectural register space. Input assignments retain their existing checks.
+  Only after this proof is the struct interned with fields `result0` and
+  `result1` at offsets zero and eight and a `GoPairResults` language facet.
+  The facet stores signedness, never interned type references. Existing names
+  require matching metadata and complete layout; unrelated names or stale
+  metadata cannot be overwritten. No metatype or pcode output count changes.
 
   Native Go zlib debug sections are retained compressed at load time. Their
   combined stored/declared extents are bounded to 64 MiB and are inflated only
@@ -4764,10 +4798,11 @@ it is its code. gcc sinks a MIPS frame setup past an early `jr ra`
 (`bnez a2,L; nop; jr ra; nop; L: addiu sp,sp,-32`), which matches the
 return-then-stack-adjust pair, and the pass committed a `sub_` there that
 `decompile-all` printed as a second copy of the function's tail; on a big-endian
-object, whose analysis view keeps its pre-link addresses, the start landed at the
-section offset. The aggressive gap walk (§1.6) follows the same rule for its
-accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM and x86 images this removes 492
-starts, every one inside a sized symbol, and adds none. A stripped shared object
+object, whose analysis view kept its pre-link addresses until it was rebased in its
+own byte order, the start landed at the section offset. The aggressive gap walk
+(§1.6) follows the same rule for its accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM
+and x86 images this removes 492 starts, every one inside a sized symbol, and adds
+none. A stripped shared object
 keeps the sizes of its exported functions in `.dynsym`, and those filter the same
 way; an image with no sized function symbol (a fully stripped executable, Mach-O)
 is unchanged. The rule trusts the size: a symbol-less routine that hand-written

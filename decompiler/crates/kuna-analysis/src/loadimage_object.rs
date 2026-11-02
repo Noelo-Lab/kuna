@@ -3226,6 +3226,7 @@ mod tests {
         let starts: std::collections::HashSet<u64> = ranges.iter().map(|&(a, _)| a).collect();
         assert!(starts.contains(&0x411040), "puts GOT slot 0x411040 in {ranges:?}");
         assert!(starts.contains(&0x411044), "printf GOT slot 0x411044 in {ranges:?}");
+        assert!(!starts.contains(&0x41103c), "__gmon_start__ has no stub: {ranges:?}");
     }
 
     #[test]

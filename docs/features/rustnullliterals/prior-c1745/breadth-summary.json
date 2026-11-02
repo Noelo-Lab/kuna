@@ -1,0 +1,2530 @@
+{
+  "images": 46,
+  "distinct_functions": 34280,
+  "language_records": 77556,
+  "changed_records": 3084,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "0cc465def1ef6a803e429f975d2a677d76f32c0dfe45bb9db6e108a82f36f5f7",
+  "parent_cli_sha256": "f4dd1d2399a60f622ae3a54067733c55ce5474ab7d8620368fc7f548b68642ba",
+  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+  "records": [
+    {
+      "fixture": "hermetic-plain",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/tests/fixtures/go-dwarf-signatures/uncompressed",
+      "fixture_sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-plain-c-parent.json",
+          "parent_sha256": "0394d69e03a7947b23f1017d56da2d51d5572dd5fcfe51d2b8e3a3d170f035b9",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-plain-c-candidate.json",
+          "candidate_sha256": "0394d69e03a7947b23f1017d56da2d51d5572dd5fcfe51d2b8e3a3d170f035b9",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-plain-go-parent.json",
+          "parent_sha256": "ca3e6797afbc64b7fe8e719a468268e306fe6c5e8bbfa6b462c8b97d2e0b8eeb",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-plain-go-candidate.json",
+          "candidate_sha256": "ca3e6797afbc64b7fe8e719a468268e306fe6c5e8bbfa6b462c8b97d2e0b8eeb",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "entry-plain",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/tests/fixtures/go-dwarf-entry-ranges/entry-ranges-plain",
+      "fixture_sha256": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-plain-c-parent.json",
+          "parent_sha256": "0e8866a289d97c7d964b35c883fe4a71220584a50df0b391a018af3ab101fc30",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-plain-c-candidate.json",
+          "candidate_sha256": "0e8866a289d97c7d964b35c883fe4a71220584a50df0b391a018af3ab101fc30",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-plain-go-parent.json",
+          "parent_sha256": "e6c2dff7b0c2c482eb51efd28ea4f5d42c71d893d801216c47154b65602dd53d",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-plain-go-candidate.json",
+          "candidate_sha256": "e6c2dff7b0c2c482eb51efd28ea4f5d42c71d893d801216c47154b65602dd53d",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/tests/fixtures/go-dwarf-signatures/compressed",
+      "fixture_sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-c-parent.json",
+          "parent_sha256": "ee500432d9a86b2b80c90e82f9112282ec42048cad3a6cd220fd8345c8ebd60f",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-c-candidate.json",
+          "candidate_sha256": "ee500432d9a86b2b80c90e82f9112282ec42048cad3a6cd220fd8345c8ebd60f",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-go-parent.json",
+          "parent_sha256": "8c51039bb4ca5ce2b1178fe73e7cb9e981277759470d3653073fa2b84c8e6c3c",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hermetic-go-candidate.json",
+          "candidate_sha256": "8c51039bb4ca5ce2b1178fe73e7cb9e981277759470d3653073fa2b84c8e6c3c",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "panic-shapes",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_x86_64",
+      "fixture_sha256": "2aae9c46507fe73bbd96b2f14680abda08a8e0b6230723e8a6e857af83a6aa41",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-shapes-rust-parent.json",
+          "parent_sha256": "2e3d66675a79dd564a7e5fa3f155adc34888d2dd66b5251da02356d5dc791f49",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-shapes-rust-candidate.json",
+          "candidate_sha256": "2e3d66675a79dd564a7e5fa3f155adc34888d2dd66b5251da02356d5dc791f49",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 19,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-shapes-c-parent.json",
+          "parent_sha256": "c9825a5674f81e711d450142f26da8b5c78ceebeaef3f98782332f4412faf532",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-shapes-c-candidate.json",
+          "candidate_sha256": "c9825a5674f81e711d450142f26da8b5c78ceebeaef3f98782332f4412faf532",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 19,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-shapes-go-parent.json",
+          "parent_sha256": "6d416aaf85b7bf7d1d8f626533870586b615937406bc4de5623c09f96a623cde",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-shapes-go-candidate.json",
+          "candidate_sha256": "6d416aaf85b7bf7d1d8f626533870586b615937406bc4de5623c09f96a623cde",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 19,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "fnptr-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/function_pointer_namespaces_x86_64",
+      "fixture_sha256": "508e74f73ba455e35e3f3e5ed0db31802747b6183c16f19236d4897b40628499",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-native-c-parent.json",
+          "parent_sha256": "1f59c2626a958cd6322da39de687794fd9c1066e525ffb23f0d5a69a46c1ed4b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-native-c-candidate.json",
+          "candidate_sha256": "1f59c2626a958cd6322da39de687794fd9c1066e525ffb23f0d5a69a46c1ed4b",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-native-rust-parent.json",
+          "parent_sha256": "fb0d0db7bd6d15297cdf87498d8a777e1b9b270efba99de5091bd6efcdeea6f8",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-native-rust-candidate.json",
+          "candidate_sha256": "d0785be08046f656ffd1a427a039f9ddd428029d2723a1190d828b0fb7a2ed14",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 2,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-native-go-parent.json",
+          "parent_sha256": "8e127c424fd37f7ea8c474241b9da53a7766bf9de0ef029fb4c84cf7b2c6b1ba",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-native-go-candidate.json",
+          "candidate_sha256": "8e127c424fd37f7ea8c474241b9da53a7766bf9de0ef029fb4c84cf7b2c6b1ba",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/tests/fixtures/go-output/output-c",
+      "fixture_sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-c-parent.json",
+          "parent_sha256": "098f08983c50635d4749b9d0b69d88b43220c3acc0545f41e5e552a00c66afe8",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-c-candidate.json",
+          "candidate_sha256": "098f08983c50635d4749b9d0b69d88b43220c3acc0545f41e5e552a00c66afe8",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 55,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-rust-parent.json",
+          "parent_sha256": "a02a126f199059279582df3dd4f5e4d655ad5116e62a6a637e8a92b7f9483919",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-rust-candidate.json",
+          "candidate_sha256": "f5b6afae99e4d02f0391ce8fab5aba9f294286c8ba3b93a7e406bb0b73666d0a",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 55,
+          "changed": 4,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-go-parent.json",
+          "parent_sha256": "e9080fad7fac57818dce60f22b1dd34592695d4b2f1984165884b2a72a06c591",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-go-candidate.json",
+          "candidate_sha256": "e9080fad7fac57818dce60f22b1dd34592695d4b2f1984165884b2a72a06c591",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 55,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/tests/fixtures/go-dwarf-entry-ranges/entry-ranges",
+      "fixture_sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-ranges-c-parent.json",
+          "parent_sha256": "1dd7d64c1ca1359322c303c3a7020f81d724d74150ed682b6d1f1a00c7baf966",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-ranges-c-candidate.json",
+          "candidate_sha256": "1dd7d64c1ca1359322c303c3a7020f81d724d74150ed682b6d1f1a00c7baf966",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-ranges-go-parent.json",
+          "parent_sha256": "54fda7edfbf143c8fe50f40c7063e1cba35f95ad67998eaa6f6a153ceb80d9f1",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/entry-ranges-go-candidate.json",
+          "candidate_sha256": "54fda7edfbf143c8fe50f40c7063e1cba35f95ad67998eaa6f6a153ceb80d9f1",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 9,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_x86_64",
+      "fixture_sha256": "c6da9524b18af91d6170d1c08c51745fa22b23609a8896cb09e2c39e5a6c24b2",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-x86_64-rust-parent.json",
+          "parent_sha256": "7f787892f4d839ecb611a34f1977cfdf255fe165441577190f95d6408e64d1ea",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-x86_64-rust-candidate.json",
+          "candidate_sha256": "7f787892f4d839ecb611a34f1977cfdf255fe165441577190f95d6408e64d1ea",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 26,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-x86_64-c-parent.json",
+          "parent_sha256": "c4f8ee31fcf76428fc7384f6f1104b5c644b21d5d82bc9820ce559df6043aa49",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-x86_64-c-candidate.json",
+          "candidate_sha256": "c4f8ee31fcf76428fc7384f6f1104b5c644b21d5d82bc9820ce559df6043aa49",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 26,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-x86_64-go-parent.json",
+          "parent_sha256": "d07ae57b37a69754cda61daed06019cda7db9defbd6c923c8c06c50c8b122d6b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-x86_64-go-candidate.json",
+          "candidate_sha256": "d07ae57b37a69754cda61daed06019cda7db9defbd6c923c8c06c50c8b122d6b",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 26,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "fnptr-return",
+      "fixture_path": "/tmp/kuna-fnptr-namespace/address-return-no-debug",
+      "fixture_sha256": "1dbe24725d79f1154c56314598e634c895e94912024d139be52b4331fb0157f3",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-return-c-parent.json",
+          "parent_sha256": "86e4dc4eaf0d8bd8694fbdde88a4eb142572ccce7f2a5b25f931bab19b326fed",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-return-c-candidate.json",
+          "candidate_sha256": "86e4dc4eaf0d8bd8694fbdde88a4eb142572ccce7f2a5b25f931bab19b326fed",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 14,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-return-rust-parent.json",
+          "parent_sha256": "d57a0eb6a2492bf912223b3bf0a71809142657b27b110f2602b447d8c713dfac",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-return-rust-candidate.json",
+          "candidate_sha256": "e45d5977263a69df0bbba3e32f211dc1abb05e2ea5f8288e41fecf779595c702",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 14,
+          "changed": 2,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-return-go-parent.json",
+          "parent_sha256": "996030aaa47e535419cdc804fbdaa71be314cbd71d9a2f9b3d65385b0cee0239",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-return-go-candidate.json",
+          "candidate_sha256": "996030aaa47e535419cdc804fbdaa71be314cbd71d9a2f9b3d65385b0cee0239",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 14,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "fnptr-scopes",
+      "fixture_path": "/tmp/kuna-function-pointer-names/fixture-no-debug",
+      "fixture_sha256": "2c19c74bf4ff1af1be9a8f8bc7cb5e4e6eca6d57f8c28e1bc1b4a1fdedaa8f5f",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-scopes-c-parent.json",
+          "parent_sha256": "86314d56e8f38a36fc0c659a1bb2d5d35b87ae9695014073eb31559ac8c069d1",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-scopes-c-candidate.json",
+          "candidate_sha256": "86314d56e8f38a36fc0c659a1bb2d5d35b87ae9695014073eb31559ac8c069d1",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 23,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-scopes-rust-parent.json",
+          "parent_sha256": "b60a739d5ccb64dafe83736addd9a2f71ea1fb4aaa40ce4f65c6e5a14551d19d",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-scopes-rust-candidate.json",
+          "candidate_sha256": "f9db496acc9fee6aa803ecc93b1597452fcfd6c74211d3eec4c190468047b932",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 23,
+          "changed": 1,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-scopes-go-parent.json",
+          "parent_sha256": "22808d7cd7869587f4dfef925147402cfaee4bab0d96e355455fa43746285c00",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/fnptr-scopes-go-candidate.json",
+          "candidate_sha256": "22808d7cd7869587f4dfef925147402cfaee4bab0d96e355455fa43746285c00",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 23,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "cppproto",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/cppproto_x86_64",
+      "fixture_sha256": "f530f3b7d7a3591840cc12f646da518d9a142b63745a9b080215dba4a68176f4",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/cppproto-rust-parent.json",
+          "parent_sha256": "acfdb05b2d4d3ad7a350b0954398e998b9b8fecf6ce9c0d586aaf6fbac8203d3",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/cppproto-rust-candidate.json",
+          "candidate_sha256": "4b12c89e333bed8d2dec32e306ad8f93d0110e689eb3b9ea958cd933a1b8445f",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 1,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/cppproto-c-parent.json",
+          "parent_sha256": "61b6dd9123c97244e1e64235036cdbe78bc4f1afc0360b8a3e11b46a6b324864",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/cppproto-c-candidate.json",
+          "candidate_sha256": "61b6dd9123c97244e1e64235036cdbe78bc4f1afc0360b8a3e11b46a6b324864",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/cppproto-go-parent.json",
+          "parent_sha256": "7f7f429c975879c1074845c7f5028ad2fa5350700129b581cc16007141e652dc",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/cppproto-go-candidate.json",
+          "candidate_sha256": "7f7f429c975879c1074845c7f5028ad2fa5350700129b581cc16007141e652dc",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 25,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "namespace-cpp",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_cpp_x86_64",
+      "fixture_sha256": "c991b06657932b02ace710f7dd8a557a6db6a45d0eeaffad5d6ab0d57e527216",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-cpp-rust-parent.json",
+          "parent_sha256": "e7b50301e795d42a1a7a019fe69f80f6e090e47be277f09e51491f38ef06ffc5",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-cpp-rust-candidate.json",
+          "candidate_sha256": "3ae626ae3d10ceea9748cadc01a6be361dc974bfd1a4c871de9d758b1c4ae501",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 23,
+          "changed": 2,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-cpp-c-parent.json",
+          "parent_sha256": "1791e075d90378765cfdd1c78ca4dfe0f1ce4e10c0bbf32c3c2d0c069978f6ff",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-cpp-c-candidate.json",
+          "candidate_sha256": "1791e075d90378765cfdd1c78ca4dfe0f1ce4e10c0bbf32c3c2d0c069978f6ff",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 23,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-cpp-go-parent.json",
+          "parent_sha256": "2a6caa58188e28f0c9686ccbc0f7ff162b2e99ff68bdd45de3638e0ab98889f4",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-cpp-go-candidate.json",
+          "candidate_sha256": "2a6caa58188e28f0c9686ccbc0f7ff162b2e99ff68bdd45de3638e0ab98889f4",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 23,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "dwarf-pointer",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_function_pointer_x86_64",
+      "fixture_sha256": "3ae292f0b2b7084f5563d9f1b4c23d2bc2ef49a17a0bac815951d6e69c4a486d",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/dwarf-pointer-rust-parent.json",
+          "parent_sha256": "093cde0e1bed3ebd8dae0475a858b1eefc20f5adc28eda228fec2ccf9167d3ea",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/dwarf-pointer-rust-candidate.json",
+          "candidate_sha256": "074cf59dc74dd031950a1fe02d2fbb99c0f0d9bd98e9901801cb7c854865f9b8",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 14,
+          "changed": 2,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/dwarf-pointer-c-parent.json",
+          "parent_sha256": "5ff78d4fcde9ed907a78d5d2b333cc154721b0a2696fdfe1a6cd5f853c397b9d",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/dwarf-pointer-c-candidate.json",
+          "candidate_sha256": "5ff78d4fcde9ed907a78d5d2b333cc154721b0a2696fdfe1a6cd5f853c397b9d",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 14,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/dwarf-pointer-go-parent.json",
+          "parent_sha256": "f88308b981c994429acd27692e9b9956d150ff781f9554520b48605e917bd217",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/dwarf-pointer-go-candidate.json",
+          "candidate_sha256": "f88308b981c994429acd27692e9b9956d150ff781f9554520b48605e917bd217",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 14,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/tests/bug-repro/grep",
+      "fixture_sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/grep-c-parent.json",
+          "parent_sha256": "97d60efeb4a9b5439708c9502e553df3300e391c3518b2ac590d3cee9a974697",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/grep-c-candidate.json",
+          "candidate_sha256": "97d60efeb4a9b5439708c9502e553df3300e391c3518b2ac590d3cee9a974697",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 449,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/grep-rust-parent.json",
+          "parent_sha256": "bf7678b10372de1c42d32f876f5ec127e26c75559d47070750ff1d18a1fdf64a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/grep-rust-candidate.json",
+          "candidate_sha256": "4067e0873be9aa8b0aa8b3fa5b779500da47900831e036bb3a370608c26ac2af",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 449,
+          "changed": 143,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "empty-match-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_empty_match_x86_64",
+      "fixture_sha256": "1f5b85d546f736d668f8d75d9927c4776129308edc422096c95f40c10f1f3058",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/empty-match-native-rust-parent.json",
+          "parent_sha256": "839e752b0614a40eae3d25db75bcd4e450456a330c173107a1df84252814bf73",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/empty-match-native-rust-candidate.json",
+          "candidate_sha256": "c040d791a8d65e19f5d17acc8aa05b4e8a8d57e564612da2132aed81ee136214",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 18,
+          "changed": 2,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/empty-match-native-c-parent.json",
+          "parent_sha256": "189d194d42d5a8fac667ae50a6c3ca4d4fefb125727c506c94e54729d70d670a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/empty-match-native-c-candidate.json",
+          "candidate_sha256": "189d194d42d5a8fac667ae50a6c3ca4d4fefb125727c506c94e54729d70d670a",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 18,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/empty-match-native-go-parent.json",
+          "parent_sha256": "93e8534e2ae712c35bf7caaca86119d1d95a10975c0bf92dc04f3776f0b89cc5",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/empty-match-native-go-candidate.json",
+          "candidate_sha256": "93e8534e2ae712c35bf7caaca86119d1d95a10975c0bf92dc04f3776f0b89cc5",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 18,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native-plain",
+      "fixture_path": "/tmp/kuna-go-dwarf-formals-5e05-review/native-plain",
+      "fixture_sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-plain-go-parent.json",
+          "parent_sha256": "f92f65c66699b9ddc6fcaf639fd0471da6447b1f554f7ad0b999d94bce48498a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-plain-go-candidate.json",
+          "candidate_sha256": "f92f65c66699b9ddc6fcaf639fd0471da6447b1f554f7ad0b999d94bce48498a",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-plain-c-parent.json",
+          "parent_sha256": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-plain-c-candidate.json",
+          "candidate_sha256": "5aca5614794d1e9229327778499f548e87e253d5380985dc85795c9c9950fea8",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "fixture_path": "/tmp/kuna-go-output/output-go",
+      "fixture_sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-parent.json",
+          "parent_sha256": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-c-candidate.json",
+          "candidate_sha256": "540de76dfa61d6b065c840aac86eb70f25ce4ef4940c430ad9b56aeb82ea1704",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-go-parent.json",
+          "parent_sha256": "db9550ac96865fa369ca415ffd1959814a35719f0a9b8f246abac95d0e62746b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-go-candidate.json",
+          "candidate_sha256": "db9550ac96865fa369ca415ffd1959814a35719f0a9b8f246abac95d0e62746b",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1156,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/go/go1.22.5/basics_stripped",
+      "fixture_sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/stripped122-go-parent.json",
+          "parent_sha256": "304ac3b17c8957415607d9f08666940d943dbb7441f403689871b42f4d179757",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/stripped122-go-candidate.json",
+          "candidate_sha256": "304ac3b17c8957415607d9f08666940d943dbb7441f403689871b42f4d179757",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2017,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/stripped122-c-parent.json",
+          "parent_sha256": "ffa1e99e61130aa6703e1668a7d463b9a3093726df11f96b5e86423c76c68a0b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/stripped122-c-candidate.json",
+          "candidate_sha256": "ffa1e99e61130aa6703e1668a7d463b9a3093726df11f96b5e86423c76c68a0b",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2017,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/go/go1.22.5/basics",
+      "fixture_sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics122-c-parent.json",
+          "parent_sha256": "d539a6bb90b1c2bfd946171819a2b44709e4972db2c9a6075ba34ec3cb20894e",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics122-c-candidate.json",
+          "candidate_sha256": "d539a6bb90b1c2bfd946171819a2b44709e4972db2c9a6075ba34ec3cb20894e",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2018,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics122-go-parent.json",
+          "parent_sha256": "bbc8a986f9951a68ba8e72e79703b912f4d51faa488aa63580dbf00968829c36",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics122-go-candidate.json",
+          "candidate_sha256": "bbc8a986f9951a68ba8e72e79703b912f4d51faa488aa63580dbf00968829c36",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2018,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/langdetect_go",
+      "fixture_sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/langdetect-go-parent.json",
+          "parent_sha256": "2af7f98c99fbee7f9eb11922b0561b4f446ff3b5b2ac0c4b26ae75bdf7ab35da",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/langdetect-go-candidate.json",
+          "candidate_sha256": "2af7f98c99fbee7f9eb11922b0561b4f446ff3b5b2ac0c4b26ae75bdf7ab35da",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1558,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/langdetect-c-parent.json",
+          "parent_sha256": "f253b488db408f41eb727f4e94abccb0ef406d3c4eacfe88bc7634b5ba74a498",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/langdetect-c-candidate.json",
+          "candidate_sha256": "f253b488db408f41eb727f4e94abccb0ef406d3c4eacfe88bc7634b5ba74a498",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1558,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "fixture_path": "/tmp/kuna-go-dwarf-signatures/native1273",
+      "fixture_sha256": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-go-parent.json",
+          "parent_sha256": "1978113de496f5a2775c615114e6197795bb5a72284d2e80ff46b6a5225ed689",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-go-candidate.json",
+          "candidate_sha256": "1978113de496f5a2775c615114e6197795bb5a72284d2e80ff46b6a5225ed689",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-c-parent.json",
+          "parent_sha256": "b25cb10098717156dce200daf2e8897f03f41b999a2a1037eab28d221fc05816",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-c-candidate.json",
+          "candidate_sha256": "b25cb10098717156dce200daf2e8897f03f41b999a2a1037eab28d221fc05816",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/tests/x86_64/go/go1.27.1/basics",
+      "fixture_sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-c-parent.json",
+          "parent_sha256": "e2a13f03df285e7d01044eb38fa1b24e123db4f9d2621184c7217542d1b74038",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-c-candidate.json",
+          "candidate_sha256": "e2a13f03df285e7d01044eb38fa1b24e123db4f9d2621184c7217542d1b74038",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-go-parent.json",
+          "parent_sha256": "c5c8953929e59565e4faf93c6de5acdb77899cf2fc17f2d34b70195a00efc709",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-go-candidate.json",
+          "candidate_sha256": "c5c8953929e59565e4faf93c6de5acdb77899cf2fc17f2d34b70195a00efc709",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "highslice-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "fixture_sha256": "d4a0143e0705a2c7d1517dbb25915c9f288a8339a4f25eddad7d0204229023b9",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/highslice-native-rust-parent.json",
+          "parent_sha256": "ec4f9810402c1befdd1a4b9a3f00ee54330a76e0f049c2dff9bf4582bff4892a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/highslice-native-rust-candidate.json",
+          "candidate_sha256": "60727dc42ec8ebcbbc9e3c5442d57c0e4fcd3302a6b93da96fa72bdade492a55",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 18,
+          "changed": 1,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/highslice-native-c-parent.json",
+          "parent_sha256": "0d024ee36002e4e82cb0258baf751102f3a7fff8e6a3af6e5733123ef1e9627a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/highslice-native-c-candidate.json",
+          "candidate_sha256": "0d024ee36002e4e82cb0258baf751102f3a7fff8e6a3af6e5733123ef1e9627a",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 18,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/highslice-native-go-parent.json",
+          "parent_sha256": "e6168f36b2caa3cc4368a38732da1777f08774490381a00d8c930c298f322406",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/highslice-native-go-candidate.json",
+          "candidate_sha256": "e6168f36b2caa3cc4368a38732da1777f08774490381a00d8c930c298f322406",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 18,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "native1273-plain",
+      "fixture_path": "/tmp/kuna-go-dwarf-formals-5e05-review/native1273-plain",
+      "fixture_sha256": "a7bd1bd161b4ec27c9621ea107beec9197b7fd2bea618b7a7bbcf6d1a08f94ff",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-plain-c-parent.json",
+          "parent_sha256": "bb02c2462b1867d8871797546706d07f4dab5130101e6fb79a79447b1609eb89",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-plain-c-candidate.json",
+          "candidate_sha256": "bb02c2462b1867d8871797546706d07f4dab5130101e6fb79a79447b1609eb89",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-plain-go-parent.json",
+          "parent_sha256": "14ff3abc42f9241312a87fab9591f3d16a20956a7c9a95551e539f8737dabae9",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native1273-plain-go-candidate.json",
+          "candidate_sha256": "14ff3abc42f9241312a87fab9591f3d16a20956a7c9a95551e539f8737dabae9",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 1495,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "basics127-plain",
+      "fixture_path": "/tmp/kuna-go-dwarf-formals-5e05-review/basics127-plain",
+      "fixture_sha256": "c6336c1c1695e2a60d8366df79d8fb6bd49c5eda7600443f03708bf14e4df973",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-plain-c-parent.json",
+          "parent_sha256": "3506e6487394dc9c20e6627ba1720b9ef466990bdfb7e7fca9a31a1842636632",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-plain-c-candidate.json",
+          "candidate_sha256": "3506e6487394dc9c20e6627ba1720b9ef466990bdfb7e7fca9a31a1842636632",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-plain-go-parent.json",
+          "parent_sha256": "d056b8b24c8364ba5497b705f3612c796ab0890acb0d01e350e4d5bdd153b870",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/basics127-plain-go-candidate.json",
+          "candidate_sha256": "d056b8b24c8364ba5497b705f3612c796ab0890acb0d01e350e4d5bdd153b870",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 2552,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "fixture_sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust-c-parent.json",
+          "parent_sha256": "fd890a46eefc2757f5156a39ce878b3868080ca0d52091988b77dac444d06f34",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust-c-candidate.json",
+          "candidate_sha256": "fd890a46eefc2757f5156a39ce878b3868080ca0d52091988b77dac444d06f34",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 455,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust-rust-parent.json",
+          "parent_sha256": "d93328d364f45f1ebf41e5cdc95c0f882e5eda0bbab8a79016a57cd79cb26231",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust-rust-candidate.json",
+          "candidate_sha256": "0f4f14ac99b3dd7045c7e94c39e2dfe00cf6416e8f5457c549ed6b4ab7fbc006",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 455,
+          "changed": 123,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "fixture_sha256": "49e7820ee6b92f163d4c80e8c63f615405b3ed44ddbb4b4ad39b9322301cdc19",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/write-native-go-parent.json",
+          "parent_sha256": "ad45a58e2319442dd97cf00260d67442303f08d06299e928fffdea8455065801",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/write-native-go-candidate.json",
+          "candidate_sha256": "ad45a58e2319442dd97cf00260d67442303f08d06299e928fffdea8455065801",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 436,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/write-native-rust-parent.json",
+          "parent_sha256": "7197f6e05891a25c40c19a1de27a9b7c83739ffe845bd649a7548c7689fef800",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/write-native-rust-candidate.json",
+          "candidate_sha256": "ff21ab6e0ec8467d9427c11cea025fc99a8ed38ae1cab8f81f6f04c81a9a26e4",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 436,
+          "changed": 128,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/write-native-c-parent.json",
+          "parent_sha256": "aad903d4f0213c91872ea1c5067e9b800f7663f9465ac491309e85853f97fce4",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/write-native-c-candidate.json",
+          "candidate_sha256": "aad903d4f0213c91872ea1c5067e9b800f7663f9465ac491309e85853f97fce4",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 436,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "str-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_str_real_x86_64",
+      "fixture_sha256": "ade6bc5156662c54bbec228144697742f5d5d1f7eb5a16b99bc3903d41229658",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-native-c-parent.json",
+          "parent_sha256": "ac50175f874dee7666ad2878735ec1ae259c7d6c9d28e1cb3c9ab2c213925667",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-native-c-candidate.json",
+          "candidate_sha256": "ac50175f874dee7666ad2878735ec1ae259c7d6c9d28e1cb3c9ab2c213925667",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 455,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-native-rust-parent.json",
+          "parent_sha256": "7ab8801f837a77b522229154125b445f7f34c018f16f628c6a0c901bf596d1eb",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-native-rust-candidate.json",
+          "candidate_sha256": "2707fcf74fd137b76e0d594324bd83dbd5d3f4d21a60333186c9d9a320ea993f",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 455,
+          "changed": 133,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-native-go-parent.json",
+          "parent_sha256": "a4fa0ddaffc1195299f39b124661428373b11dc020516ea4e594623ca190c49f",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-native-go-candidate.json",
+          "candidate_sha256": "a4fa0ddaffc1195299f39b124661428373b11dc020516ea4e594623ca190c49f",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 455,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "io-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64",
+      "fixture_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-native-go-parent.json",
+          "parent_sha256": "6163e0d91cbf9724a235b555426b0d1de17d11d324deea68dc1bac6adc3e61c8",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-native-go-candidate.json",
+          "candidate_sha256": "6163e0d91cbf9724a235b555426b0d1de17d11d324deea68dc1bac6adc3e61c8",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 447,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-native-c-parent.json",
+          "parent_sha256": "ddf15d8e7b0bf4521a28992c0dc6cd2604aca3e1ee5954d764cabb46e2b12808",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-native-c-candidate.json",
+          "candidate_sha256": "ddf15d8e7b0bf4521a28992c0dc6cd2604aca3e1ee5954d764cabb46e2b12808",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 447,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-native-rust-parent.json",
+          "parent_sha256": "0be341d2023ddab1168f062f06758f1ad7c7014ecf84a1b65b94fab42d127fd7",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-native-rust-candidate.json",
+          "candidate_sha256": "cb6b6263f77c558f672b3a351f1e4215d0f1ff515cf0da967ea5e7248452ca51",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 447,
+          "changed": 136,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "fixture_path": "/tmp/kuna-rust-extensions-c281-review/native-1.93.1",
+      "fixture_sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-rust-rust-parent.json",
+          "parent_sha256": "9f8e32009ccd7d1152e0ef27c7c7a1327544568376fa18dcfdeac5fabacfe83b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-rust-rust-candidate.json",
+          "candidate_sha256": "adbf707a572137a47660e181e58d6137385db441215740b692f60bdfc5599bbd",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 550,
+          "changed": 142,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-rust-c-parent.json",
+          "parent_sha256": "447fb5d54bcc7392c6c7446647f5ade10fc7320a7cace8323fb5493821a496dc",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/native-rust-c-candidate.json",
+          "candidate_sha256": "447fb5d54bcc7392c6c7446647f5ade10fc7320a7cace8323fb5493821a496dc",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 550,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "rust2025",
+      "fixture_path": "/tmp/kuna-angr-reference/binaries/rust-fmt-2025-O3",
+      "fixture_sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust2025-c-parent.json",
+          "parent_sha256": "c3ec1c42fd20b19b60f0853abd481faa6e73d204fbb6086210c2d53707168470",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust2025-c-candidate.json",
+          "candidate_sha256": "c3ec1c42fd20b19b60f0853abd481faa6e73d204fbb6086210c2d53707168470",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 7763,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust2025-rust-parent.json",
+          "parent_sha256": "9ae1e3629504f30617145cd7b7a0fc8220e00c890e9a849c449e2b42196aff30",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/rust2025-rust-candidate.json",
+          "candidate_sha256": "b1016668bf568f8fdad83e32267302ccdeb7a9dbc05605d772f2f7ef18a00885",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 7763,
+          "changed": 515,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.90.0",
+      "fixture_sha256": "a7ec1cdec236eb04099cc34837e909b96026c8f123c0779172756c018a1506f5",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.90.0-rust-parent.json",
+          "parent_sha256": "3beb190615c450c35dc31c06dba6a98adaaef171cf4b3ccb38e68ebfffd39a4a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.90.0-rust-candidate.json",
+          "candidate_sha256": "00d9c6ed41f984f756a3ef1b5020fa64e48c905492624ccdac812b73dacdc647",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 572,
+          "changed": 130,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.90.0-go-parent.json",
+          "parent_sha256": "205693bf1ecbacdaf18e6ae98b7bc8357280bb3dc68c9e72058a6fa2fb3676fe",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.90.0-go-candidate.json",
+          "candidate_sha256": "205693bf1ecbacdaf18e6ae98b7bc8357280bb3dc68c9e72058a6fa2fb3676fe",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 572,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.90.0-c-parent.json",
+          "parent_sha256": "0be6972eb39d38f6e313b0b60bda77ba900497c7b69b76333b1b025330a51d92",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.90.0-c-candidate.json",
+          "candidate_sha256": "0be6972eb39d38f6e313b0b60bda77ba900497c7b69b76333b1b025330a51d92",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 572,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "str-nonlto",
+      "fixture_path": "/tmp/kuna-rust-fmt-str/native-nonlto",
+      "fixture_sha256": "28eb629c79f520445e6504f44097ff784ffe0e4d30b5002543068a2757ad0e6c",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-nonlto-c-parent.json",
+          "parent_sha256": "8092b61280a41cdaf12503aa0cfa9af9891ca55ecc5a566a482282b24f6059ce",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-nonlto-c-candidate.json",
+          "candidate_sha256": "8092b61280a41cdaf12503aa0cfa9af9891ca55ecc5a566a482282b24f6059ce",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 574,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-nonlto-rust-parent.json",
+          "parent_sha256": "ff4143c49384d62c5a78773a8f232aa7ce614f39c17bca229600b50b08208b79",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-nonlto-rust-candidate.json",
+          "candidate_sha256": "e8ba3bb1789234ec1836f701411e3010597f76e24ae7479c8620559bcb13267d",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 574,
+          "changed": 141,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-nonlto-go-parent.json",
+          "parent_sha256": "f2f365661e40005579e5d6e8222f7cb4e23e5e92f031350c226c9c60027a2baf",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/str-nonlto-go-candidate.json",
+          "candidate_sha256": "f2f365661e40005579e5d6e8222f7cb4e23e5e92f031350c226c9c60027a2baf",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 574,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "io-promoted",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_promoted_x86_64",
+      "fixture_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-promoted-c-parent.json",
+          "parent_sha256": "288e8c5fd45062fac9e2f7c95815bb3512ff8533a8f147df487d6877edcf4592",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-promoted-c-candidate.json",
+          "candidate_sha256": "288e8c5fd45062fac9e2f7c95815bb3512ff8533a8f147df487d6877edcf4592",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 425,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-promoted-rust-parent.json",
+          "parent_sha256": "ed862be9b39f590100d1a8db917f158a067982339d41c7ed91177dd37f41f305",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-promoted-rust-candidate.json",
+          "candidate_sha256": "b70184f2c592deab5e3369f031b5cb9aa92be23fa068192e71a1e7db3d9bed36",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 425,
+          "changed": 129,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-promoted-go-parent.json",
+          "parent_sha256": "529db9628972b2311ad1555e836bbda7670bb838634498ec384000c2c7cc2243",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/io-promoted-go-candidate.json",
+          "candidate_sha256": "529db9628972b2311ad1555e836bbda7670bb838634498ec384000c2c7cc2243",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 425,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "panic-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_panic_real_x86_64",
+      "fixture_sha256": "b0e67472c201256e056bcb5fa7df31247af95883ac8d63e67feeda143fb58fdc",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-native-rust-parent.json",
+          "parent_sha256": "03e09cd602b1f3884b16391d7aa6c93e14cce3591c87a2e5221e1545a697b2c1",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-native-rust-candidate.json",
+          "candidate_sha256": "0472df59596a171e121f8cfec95fb546ceb7d8dcc54d83745fcf5a5bcb663cba",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 597,
+          "changed": 145,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-native-go-parent.json",
+          "parent_sha256": "bce5cf1dc9242519c0ff2b91022067ce62a7ecc6bed1c87e211817323379282a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-native-go-candidate.json",
+          "candidate_sha256": "bce5cf1dc9242519c0ff2b91022067ce62a7ecc6bed1c87e211817323379282a",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 597,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-native-c-parent.json",
+          "parent_sha256": "aaa8d6f698b869a64a406fb0a09118ab50755a2359933b3b614a89da2e60b4e9",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/panic-native-c-candidate.json",
+          "candidate_sha256": "aaa8d6f698b869a64a406fb0a09118ab50755a2359933b3b614a89da2e60b4e9",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 597,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "namespace-rust",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64",
+      "fixture_sha256": "968267b715b92621e2ae1a1b40e72e55f1f5891e292cf8a391101a5d2a38cb68",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-rust-go-parent.json",
+          "parent_sha256": "0a9dcf7f1221433a54ddfd119d6c24aaf4bdbb254caf226d5e4f7893a0ba4591",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-rust-go-candidate.json",
+          "candidate_sha256": "0a9dcf7f1221433a54ddfd119d6c24aaf4bdbb254caf226d5e4f7893a0ba4591",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 549,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x156c0",
+                "0x156d0",
+                "0x15870"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x156c0",
+                "0x156d0",
+                "0x15870"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-rust-rust-parent.json",
+          "parent_sha256": "b24faa4a503854a53d78d74d541783975154253bb571e9e847afef0b08a2f78e",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-rust-rust-candidate.json",
+          "candidate_sha256": "1f3d7cd56a02837cbc7d2bca591eb979bd56fdf9c4b9ba9404d46a161f62f726",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 549,
+          "changed": 141,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-rust-c-parent.json",
+          "parent_sha256": "47a213b65afeb2784f76e1e440e747cb8ca669e75f6d74f77765fbfc2ddc724b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/namespace-rust-c-candidate.json",
+          "candidate_sha256": "47a213b65afeb2784f76e1e440e747cb8ca669e75f6d74f77765fbfc2ddc724b",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 549,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "probe-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_x86_64",
+      "fixture_sha256": "0b63214689c61292cbdbbd6f0bc1bd2f8e88d2f940ec12de0b1175dfe8c8d4c9",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-native-c-parent.json",
+          "parent_sha256": "eb15eae9e787f71000400936f08ef4b3887c28a9c22c2fdca9798eab20173d73",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-native-c-candidate.json",
+          "candidate_sha256": "eb15eae9e787f71000400936f08ef4b3887c28a9c22c2fdca9798eab20173d73",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 555,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-native-rust-parent.json",
+          "parent_sha256": "e1c8eaa3945102ad50f68ecb9ddd8253eb315210fca448af52c23e520c8882bf",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-native-rust-candidate.json",
+          "candidate_sha256": "6cf0624781428acf677cf6c4fc01d3baaa02beae7fa93b0993887b1a67e4836c",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 555,
+          "changed": 142,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-native-go-parent.json",
+          "parent_sha256": "2664969fc8721f7ed818abb956224edfd36f609f9bb03b4959b25b9f6649cd77",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-native-go-candidate.json",
+          "candidate_sha256": "2664969fc8721f7ed818abb956224edfd36f609f9bb03b4959b25b9f6649cd77",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 555,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x157c0",
+                "0x157d0",
+                "0x15970"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x157c0",
+                "0x157d0",
+                "0x15970"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "bejoin-clang-control",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsclang_O2.so",
+      "fixture_sha256": "b661720999f567e2edd2c5a6be2c9db1db6734f97e20ee1849264c87d5f28943",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-clang-control-c-parent.json",
+          "parent_sha256": "fdb809ebcdd82ced3b7ab6e069891ba39084591c14d60d7da45c948f1d437818",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-clang-control-c-candidate.json",
+          "candidate_sha256": "fdb809ebcdd82ced3b7ab6e069891ba39084591c14d60d7da45c948f1d437818",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 6,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-clang-control-rust-parent.json",
+          "parent_sha256": "b0a0018b5ba36786991efb250d15a3a0d31130570aca06a28179965d1dbf6ed1",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-clang-control-rust-candidate.json",
+          "candidate_sha256": "b0a0018b5ba36786991efb250d15a3a0d31130570aca06a28179965d1dbf6ed1",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 6,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-clang-control-go-parent.json",
+          "parent_sha256": "0d84b3d6b71067491d0dcafde9a7e559d9a97f2d1d2a6489f37ab01bf4106f40",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-clang-control-go-candidate.json",
+          "candidate_sha256": "0d84b3d6b71067491d0dcafde9a7e559d9a97f2d1d2a6489f37ab01bf4106f40",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 6,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "bejoin-entry-control",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/bejoin_mipsentry.elf",
+      "fixture_sha256": "a24cc47a5ad5a27a25fabee59c4387d53041674c10695bb753c8907949104abe",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-entry-control-c-parent.json",
+          "parent_sha256": "15f884edf719f909d06b16add52ce4e0ebbe7e41aaa8371d3306ba5ffacf1058",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-entry-control-c-candidate.json",
+          "candidate_sha256": "15f884edf719f909d06b16add52ce4e0ebbe7e41aaa8371d3306ba5ffacf1058",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 5,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-entry-control-rust-parent.json",
+          "parent_sha256": "a964b34497bb32f6ccb2dbcf4658f83eebde7f77d6de189a27d207caa56c418b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-entry-control-rust-candidate.json",
+          "candidate_sha256": "a964b34497bb32f6ccb2dbcf4658f83eebde7f77d6de189a27d207caa56c418b",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 5,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-entry-control-go-parent.json",
+          "parent_sha256": "385f59df6f8fc121ce3888b996feab1fe9f6b5e5ed9f581247d15199b909ce55",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/bejoin-entry-control-go-candidate.json",
+          "candidate_sha256": "385f59df6f8fc121ce3888b996feab1fe9f6b5e5ed9f581247d15199b909ce55",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 5,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_1.89.0",
+      "fixture_sha256": "97957a440ca3c4371d2db9a6466bf7fb04446c4635902a495b298cdafde4d1f9",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.89.0-c-parent.json",
+          "parent_sha256": "509a818e59a6ab95c43ea6a61c67a43640fdecf0436839022e15d69556dfde6d",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.89.0-c-candidate.json",
+          "candidate_sha256": "509a818e59a6ab95c43ea6a61c67a43640fdecf0436839022e15d69556dfde6d",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 576,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.89.0-rust-parent.json",
+          "parent_sha256": "1e31d587fda311649ed796c2c32ef411b39e155672e19078cdf97c661dc62079",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.89.0-rust-candidate.json",
+          "candidate_sha256": "69d0b6a0cd520549c48919efdb1f26f27d7f69e100e8a9a063be5f965853545d",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 576,
+          "changed": 133,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.89.0-go-parent.json",
+          "parent_sha256": "c5a520997bb67583f3900e4e1fe7da125dd50fd320abb7809845666e8e90e886",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-1.89.0-go-candidate.json",
+          "candidate_sha256": "c5a520997bb67583f3900e4e1fe7da125dd50fd320abb7809845666e8e90e886",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 576,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "raw-namespace",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/dwarf_raw_namespace_x86_64",
+      "fixture_sha256": "9e7adf8d569c8d6f06d2c0dffb47cd59323fe8d957e9dac2b17471368d8c0e42",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/raw-namespace-go-parent.json",
+          "parent_sha256": "352cee774f70bfae296c3cc6e328b8e0a69ddd50d22a28cecbc4dfc5de17b13d",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/raw-namespace-go-candidate.json",
+          "candidate_sha256": "352cee774f70bfae296c3cc6e328b8e0a69ddd50d22a28cecbc4dfc5de17b13d",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 541,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x15570",
+                "0x15580",
+                "0x15720"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x15570",
+                "0x15580",
+                "0x15720"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/raw-namespace-c-parent.json",
+          "parent_sha256": "85f0c6c1631f2dc09ba84b99f38f5e53d98615b4f8f53113d61e1acd307e1351",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/raw-namespace-c-candidate.json",
+          "candidate_sha256": "85f0c6c1631f2dc09ba84b99f38f5e53d98615b4f8f53113d61e1acd307e1351",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 541,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/raw-namespace-rust-parent.json",
+          "parent_sha256": "8d5e9a2443b6b7afd958636b712e4665c735bfbb9c866049dea38f972e1b6759",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/raw-namespace-rust-candidate.json",
+          "candidate_sha256": "1176c66bbe9af8f663274bcb412bb020f45a76d954a5e008c3f233743b740a64",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 541,
+          "changed": 142,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    },
+    {
+      "fixture": "probe-buffer",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64",
+      "fixture_sha256": "1b615ff6c4326b1c643bc3b6b3331ec465d30955596310d17c21655d2dcf2370",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-buffer-rust-parent.json",
+          "parent_sha256": "04dfe41475d4e415ba4193e191541f58e34bf1f9a2d8717a35d45236d9af3164",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-buffer-rust-candidate.json",
+          "candidate_sha256": "42fc6fe5170ead53b887a0f804f69f86ec9a610a6580bb6d0a066a86f2eef099",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 557,
+          "changed": 142,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-buffer-c-parent.json",
+          "parent_sha256": "a4a39a9314feba9e379cc8e91a90783bf11dec481c5b2e6f495c6e918dd8151a",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-buffer-c-candidate.json",
+          "candidate_sha256": "a4a39a9314feba9e379cc8e91a90783bf11dec481c5b2e6f495c6e918dd8151a",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 557,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-buffer-go-parent.json",
+          "parent_sha256": "66a1003d80961e5dff5213e53c89ee2da2ec9bc581be2b12426d0ca017ae1e26",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-buffer-go-candidate.json",
+          "candidate_sha256": "66a1003d80961e5dff5213e53c89ee2da2ec9bc581be2b12426d0ca017ae1e26",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 557,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x15580",
+                "0x15590",
+                "0x15730"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x15580",
+                "0x15590",
+                "0x15730"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "hello",
+      "fixture_path": "/tmp/kuna-angr-reference/general/hello",
+      "fixture_sha256": "bfd77e92784ea3b3b9a6e2f6393095d42816950540a3363532d5d570bd2584af",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hello-c-parent.json",
+          "parent_sha256": "b5ae26dff417ace23aa8c42420f93a11d9695f77c024ae354932c71f7db28622",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hello-c-candidate.json",
+          "candidate_sha256": "b5ae26dff417ace23aa8c42420f93a11d9695f77c024ae354932c71f7db28622",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 610,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hello-rust-parent.json",
+          "parent_sha256": "5268e0c4fb8ddeed8d09afbb77ce637df0b918773410aceb96d9f822cd13a01b",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hello-rust-candidate.json",
+          "candidate_sha256": "f8a94f2fbf71fa3073899e962deaeac9c39382d2cc4f79aeb13d77d69d08d869",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 610,
+          "changed": 115,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hello-go-parent.json",
+          "parent_sha256": "e7b7b55bd60b95e0e8627749078eb39086d46c430f5e8c4d7c10c8f3691ff3ff",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/hello-go-candidate.json",
+          "candidate_sha256": "e7b7b55bd60b95e0e8627749078eb39086d46c430f5e8c4d7c10c8f3691ff3ff",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 610,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_pieces_nightly-2025-05-22",
+      "fixture_sha256": "cd285172fbd14770c68d2cd4706c65165ed75ecee27a94e9f432e758370924e5",
+      "records": [
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-nightly-2025-05-22-rust-parent.json",
+          "parent_sha256": "067f31a0af7f206494101c6881533af380d585c5143d6fb954a745432fcb70af",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-nightly-2025-05-22-rust-candidate.json",
+          "candidate_sha256": "b9657903cdd9d1f143c8a24f34e79f5bfc96dac933eeba386e18159a5e2e9947",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 562,
+          "changed": 128,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-nightly-2025-05-22-c-parent.json",
+          "parent_sha256": "c0da53473c71672e19c4734319cace9a9f630c4c901fdda3c5be624bc4ab15d8",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-nightly-2025-05-22-c-candidate.json",
+          "candidate_sha256": "c0da53473c71672e19c4734319cace9a9f630c4c901fdda3c5be624bc4ab15d8",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 562,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-nightly-2025-05-22-go-parent.json",
+          "parent_sha256": "3186727c87d5e96527f8f400b9534c1c300c0392588604c71ffb6c4ee9695fa0",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/pieces-nightly-2025-05-22-go-candidate.json",
+          "candidate_sha256": "3186727c87d5e96527f8f400b9534c1c300c0392588604c71ffb6c4ee9695fa0",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 562,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "null-pointer-native",
+      "fixture_path": "/home/mahaloz/kwt/angr-rust-null-literals/decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64",
+      "fixture_sha256": "690421f0136c0e9f3423263ecdcc927daab88556472a63cd70a9ece65d8556f3",
+      "records": [
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/null-pointer-native-c-parent.json",
+          "parent_sha256": "b0e0384f8ff0e67c937e88aaca8a9b6bc63a8ec7f2318d735be43916ee58d678",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/null-pointer-native-c-candidate.json",
+          "candidate_sha256": "b0e0384f8ff0e67c937e88aaca8a9b6bc63a8ec7f2318d735be43916ee58d678",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 538,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/null-pointer-native-rust-parent.json",
+          "parent_sha256": "3e4be9ee34eb8bbf6865ec898cea1671a92f9f245cf9a0803206b05fdc39a23f",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/null-pointer-native-rust-candidate.json",
+          "candidate_sha256": "ccbc725fb66c8f25f280539f7772e65ab423f3f984c32ca49c93065b409287b3",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 538,
+          "changed": 142,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/null-pointer-native-go-parent.json",
+          "parent_sha256": "b08aed0cef10cbaac6fd8cae01419e0e4e1a0070b4fb2cdcfa9bd6df40490c4c",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/null-pointer-native-go-candidate.json",
+          "candidate_sha256": "b08aed0cef10cbaac6fd8cae01419e0e4e1a0070b4fb2cdcfa9bd6df40490c4c",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 538,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x152f0",
+                "0x15320",
+                "0x15330"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": false,
+              "failed_addresses": [
+                "0x152f0",
+                "0x15320",
+                "0x15330"
+              ],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "fixture": "probe-upstream",
+      "fixture_path": "/tmp/kuna-angr-reference/general/probestack",
+      "fixture_sha256": "1cbbf108f44c8f4babde546d26425ca5340dccf878d306b90eb0fbec2f83ab51",
+      "records": [
+        {
+          "language": "go",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-upstream-go-parent.json",
+          "parent_sha256": "ef4971dab1b4c026431171aa5522ed3f53ea3644a4a1c010cc51bb3c95f4b551",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-upstream-go-candidate.json",
+          "candidate_sha256": "ef4971dab1b4c026431171aa5522ed3f53ea3644a4a1c010cc51bb3c95f4b551",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 731,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": {
+            "parent": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            },
+            "candidate": {
+              "all_parse": true,
+              "failed_addresses": [],
+              "whole_emitted_bodies_unchanged": true
+            }
+          }
+        },
+        {
+          "language": "c",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-upstream-c-parent.json",
+          "parent_sha256": "d89f35a48a808a679e569abe2aa036a3985c42e571c8af3a257bf903603f4b1f",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-upstream-c-candidate.json",
+          "candidate_sha256": "d89f35a48a808a679e569abe2aa036a3985c42e571c8af3a257bf903603f4b1f",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 731,
+          "changed": 0,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        },
+        {
+          "language": "rust",
+          "parent_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-upstream-rust-parent.json",
+          "parent_sha256": "fdb9dcde446ff3da74abb77a6f763cb6aafddc2aba46634c9b602c5f4f111ec4",
+          "candidate_file": "/tmp/kuna-rust-null-literals-c1745/breadth/probe-upstream-rust-candidate.json",
+          "candidate_sha256": "b44fd2d9374d8e0e788634d4181a076aacf20b9b5507a8a8e848bb3c9bf85839",
+          "cached_parent_same_binary_and_fixture": false,
+          "fresh_candidate": true,
+          "functions": 731,
+          "changed": 117,
+          "inherited_errors": 0,
+          "new_errors": [],
+          "go_parse": null
+        }
+      ]
+    }
+  ]
+}

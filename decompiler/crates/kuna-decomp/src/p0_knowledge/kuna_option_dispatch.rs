@@ -260,6 +260,11 @@ kuna_options! { self, p1;
         self.be_join = mode;
         Ok(msg)
     },
+    "bejoinpass" => {
+        let (mode, msg) = crate::kuna_bejoinpass::BeJoinPassMode::parse(p1)?;
+        self.be_join_pass = mode;
+        Ok(msg)
+    },
     "rustabi" => {
         let (mode, msg) = crate::kuna_rustabi::parse_rust_abi_mode(p1)?;
         self.rust_abi = mode.as_u8();
@@ -1234,6 +1239,7 @@ kuna_options! { self, p1;
         on_off!(analysis_cppproto, "DWARF C++ prototype recovery arm")
     },
     "godwarfsig" => on_off!(analysis_godwarfsig, "Go DWARF scalar and pointer signatures"),
+    "gopairreturns" => on_off!(analysis_gopairreturns, "Go DWARF paired integer results"),
     "cppsig" => {
         let (mode, msg) = crate::kuna_cppsig::parse_cppsig_mode(p1)?;
         self.analysis_cppsig = mode;

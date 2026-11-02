@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_373() {
-    assert_eq!(kuna_num_settables(), 373);
-    assert_eq!(SETTABLE_TABLE.len(), 373);
+fn settable_count_is_375() {
+    assert_eq!(kuna_num_settables(), 375);
+    assert_eq!(SETTABLE_TABLE.len(), 375);
 }
 
 #[test]
-fn tier_counts_are_128_core_152_transform_93_analysis() {
+fn tier_counts_are_129_core_152_transform_94_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_128_core_152_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (128, 152, 93));
+    assert_eq!((core, transform, analysis), (129, 152, 94));
 }
 
 #[test]
@@ -545,6 +545,7 @@ fn option_values_live_value_present_for_177() {
         // analysis-pass gates above. Default-on.
         "cppproto",
         "godwarfsig",
+        "gopairreturns",
         // (kuna) Demangled C++ signature application — an analysis-tier gate read
         // at the analysis COMMIT boundary (console-side via kuna_live_value), like
         // `cppproto` above. Three-valued, default `proven`.
@@ -709,6 +710,9 @@ fn option_values_live_value_present_for_177() {
                             // over an enum field, for the same reason.  Its live
                             // value is `Architecture::be_join`.
                             | "bejoin"
+                            // (kuna) `bejoinpass` likewise (`off|whole|high`);
+                            // its live value is `Architecture::be_join_pass`.
+                            | "bejoinpass"
                             | "arraycoverwidth"
                             | "bytearrayc"
                             | "emptystrconst"
@@ -1160,7 +1164,8 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 372);
+    // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
+    assert_eq!(json.matches("},\n").count(), 374);
 }
 
 #[test]

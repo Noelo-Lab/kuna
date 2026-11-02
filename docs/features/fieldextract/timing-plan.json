@@ -1,0 +1,150 @@
+{
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T14:11:35.690913+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "declared_at": "2026-11-02T18:47:57.903585+00:00",
+  "scope": "Integer field width and intra-field bit position in shared C/Go/Rust emission",
+  "root": "/home/mahaloz/kwt/angr-integer-field-extract",
+  "base": "/home/mahaloz/kwt/angr-joined-callback-return",
+  "seed": 202611040,
+  "parent_commit": "8f403caeb8115aeb3f2eba8bef9840f1cdfbacef",
+  "cases": [
+    [
+      "c-narrow",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "signed_int32_wide",
+      "c"
+    ],
+    [
+      "go-narrow",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "signed_int32_wide",
+      "go"
+    ],
+    [
+      "rust-narrow",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "signed_int32_wide",
+      "rust"
+    ],
+    [
+      "c-shift",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "shift32",
+      "c"
+    ],
+    [
+      "go-shift",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "shift32",
+      "go"
+    ],
+    [
+      "rust-shift",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "shift32",
+      "rust"
+    ],
+    [
+      "c-exact-control",
+      "/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract_x86_64",
+      "exact_signed",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ]
+  ],
+  "comparisons": 18,
+  "upper_quantile": 0.9972222222222222,
+  "execution": "Nine comparisons on disjoint physical CPU pairs; 384 balanced paired rounds, no own builds/tests/captures overlap.",
+  "case_options": {
+    "c-narrow": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ],
+    "go-narrow": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ],
+    "rust-narrow": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ],
+    "c-shift": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ],
+    "go-shift": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ],
+    "rust-shift": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ],
+    "c-exact-control": [
+      "--assert",
+      "@/home/mahaloz/kwt/angr-integer-field-extract/decompiler/crates/kuna-analysis/tests/fixtures/integer_field_extract.kuna"
+    ]
+  },
+  "bound_at": "2026-11-02T19:12:17.142083+00:00",
+  "build": {
+    "at": "2026-11-02T19:01:07.762167+00:00",
+    "parent_commit": "8f403caeb8115aeb3f2eba8bef9840f1cdfbacef",
+    "parent_cli_sha256": "3bc54da6287e3ffc30d8b7c5706ee87af9934077db811151ab3304f3e9704031",
+    "new_cli_sha256": "cda6f76a7ccec63b17c82a2586edca75385f0b01fe7a7115297faeebfe45307d",
+    "strict_correctness_fix": true,
+    "option": null,
+    "stage_assertions": [
+      3721,
+      3721
+    ],
+    "stage_keys_added": [
+      "data:C and Rust field casts respect diagnostic suppression",
+      "data:Go field conversions respect diagnostic suppression",
+      "data:c preserves shift32 extraction",
+      "data:c preserves signed_int16 extraction",
+      "data:c preserves signed_int32_wide extraction",
+      "data:c preserves signed_int8 extraction",
+      "data:go preserves shift32 extraction",
+      "data:go preserves signed_int16 extraction",
+      "data:go preserves signed_int32_wide extraction",
+      "data:go preserves signed_int8 extraction",
+      "data:rust preserves shift32 extraction",
+      "data:rust preserves signed_int16 extraction",
+      "data:rust preserves signed_int32_wide extraction",
+      "data:rust preserves signed_int8 extraction"
+    ]
+  }
+}

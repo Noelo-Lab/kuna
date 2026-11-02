@@ -1,0 +1,4 @@
+prototype null_pointer unsigned char *null_pointer(void)
+prototype maybe_pointer unsigned char *maybe_pointer(unsigned long choice,unsigned char *pointer)
+prototype pointer_is_null int pointer_is_null(unsigned char *pointer)
+prototype clear_pointer void clear_pointer(unsigned char **slot)

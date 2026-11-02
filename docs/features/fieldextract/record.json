@@ -1,0 +1,236 @@
+{
+  "at": "2026-11-02T20:20:25.151091+00:00",
+  "feature": "Preserve integer field extraction width and bit position",
+  "strict_correctness_fix": true,
+  "option": null,
+  "parent_commit": "c5ea0fa96b83ac92b140e83017f57cff2d298e4c",
+  "parent_cli_sha256": "9a79c1053ae87b79bbf3db85eb838a12e179ffa5af99b4622a4e42e9570b58f6",
+  "candidate_cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
+  "original_assertions": 675,
+  "stage_assertions": 3725,
+  "added_stage_assertions": 14,
+  "workspace": {
+    "passed": 10335,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 72
+  },
+  "all_four_gates_passed": true,
+  "tools_lint_catalog_counters_passed": true,
+  "breadth": {
+    "images": 63,
+    "distinct_functions": 34429,
+    "language_records": 78003,
+    "changed_records": 57,
+    "unchanged_existing_images": 61
+  },
+  "native_matrix": {
+    "c": 26,
+    "go": 26,
+    "rust": 21,
+    "input_pairs_per_run": 784,
+    "every_changed_matrix_caller_covered": true
+  },
+  "native_go_versions": [
+    "1.22.5",
+    "1.27.3"
+  ],
+  "native_callback": {
+    "complete_c_go_bodies": 8,
+    "results": [
+      {
+        "arm": "source",
+        "language": "c",
+        "optimization": "0",
+        "matches_source": true,
+        "input_pairs": 169
+      },
+      {
+        "arm": "source",
+        "language": "c",
+        "optimization": "2",
+        "matches_source": true,
+        "input_pairs": 169
+      },
+      {
+        "arm": "candidate",
+        "language": "c",
+        "optimization": "0",
+        "matches_source": true,
+        "input_pairs": 169
+      },
+      {
+        "arm": "candidate",
+        "language": "c",
+        "optimization": "2",
+        "matches_source": true,
+        "input_pairs": 169
+      },
+      {
+        "language": "go",
+        "version": "1.22.5",
+        "all_eight_bodies_pass": true,
+        "input_pairs": 169,
+        "single_evaluation": true
+      },
+      {
+        "language": "go",
+        "version": "1.27.3",
+        "all_eight_bodies_pass": true,
+        "input_pairs": 169,
+        "single_evaluation": true
+      }
+    ],
+    "rust_narrow_body_native_claimed": false,
+    "rust_existing_gaps": [
+      "Keyword fn used as a parameter name",
+      "Function pointer rendered as *mut *const ()"
+    ],
+    "rust_diff_scope": "Only adds the signed 32-bit extraction; parameter and call spelling unchanged from parent.",
+    "candidate_cli_sha256": "cda6f76a7ccec63b17c82a2586edca75385f0b01fe7a7115297faeebfe45307d"
+  },
+  "five_unchanged_rust_signedness_failures": [
+    "signed_uint8_wide",
+    "signed_uint16_wide",
+    "signed_uint32_wide",
+    "signed_as_unsigned",
+    "unsigned_as_signed"
+  ],
+  "final_output_bodies_bound_to_native_proof": true,
+  "speed": {
+    "all_default_comparisons_passed": true,
+    "maximum_median_delta_pct": 0.5797533679372302,
+    "maximum_upper_delta_pct": 4.407152630731438,
+    "records": [
+      {
+        "case": "c-narrow",
+        "median_delta_pct": {
+          "cpu_ms": 0.15077518108939092,
+          "wall_ms": 0.1304532668579661
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.3278995176532865,
+          "wall_ms": 0.3342502839573077
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "go-narrow",
+        "median_delta_pct": {
+          "cpu_ms": 0.26475232770428736,
+          "wall_ms": 0.25314478935021256
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.40718301299790427,
+          "wall_ms": 0.41819032663788985
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "rust-narrow",
+        "median_delta_pct": {
+          "cpu_ms": 0.2375931393230557,
+          "wall_ms": 0.23620986667192145
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.3793983872577326,
+          "wall_ms": 0.37712869387182146
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "c-shift",
+        "median_delta_pct": {
+          "cpu_ms": 0.3170211269241774,
+          "wall_ms": 0.3030928764660379
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.4607072681274823,
+          "wall_ms": 0.4794964516964732
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "go-shift",
+        "median_delta_pct": {
+          "cpu_ms": 0.03280394022497912,
+          "wall_ms": 0.029224180659737087
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.2706836096244385,
+          "wall_ms": 0.2643531237911913
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "rust-shift",
+        "median_delta_pct": {
+          "cpu_ms": 0.06513040137148263,
+          "wall_ms": 0.06818043819147857
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.19659924378883173,
+          "wall_ms": 0.1969756271699655
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "c-exact-control",
+        "median_delta_pct": {
+          "cpu_ms": 0.1725714553684199,
+          "wall_ms": 0.14380465895866834
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.3201959319931191,
+          "wall_ms": 0.31609480027563497
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "go-control",
+        "median_delta_pct": {
+          "cpu_ms": 0.16792164420531552,
+          "wall_ms": -0.003789118019903448
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.2393234625942546,
+          "wall_ms": -0.3175112584253625
+        },
+        "speed_budget_passed": true
+      },
+      {
+        "case": "rust-large-control",
+        "median_delta_pct": {
+          "cpu_ms": 0.4212511718416412,
+          "wall_ms": 0.5797533679372302
+        },
+        "confidence_upper_mean_delta_pct": {
+          "cpu_ms": 0.34908747542944973,
+          "wall_ms": 4.407152630731438
+        },
+        "speed_budget_passed": true
+      }
+    ]
+  },
+  "initial_nocastprinting_failure_retained": true,
+  "initial_full_rust_matrix_failure_retained": true,
+  "catalog_count": 374,
+  "native_proof_binding": {
+    "build": {
+      "parent_commit": "c5ea0fa96b83ac92b140e83017f57cff2d298e4c",
+      "parent_cli_sha256": "9a79c1053ae87b79bbf3db85eb838a12e179ffa5af99b4622a4e42e9570b58f6",
+      "new_cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
+      "stage_assertions": [
+        3725,
+        3725
+      ],
+      "catalog_count": 374
+    },
+    "all_six_function_record_sets_equal_native_proof": true,
+    "fixture_sha256": "d7dbb0a7cfb1516ac500c55a008b1f2ffa432e23e89f2130a95e4dd29c4ff92b",
+    "all_callback_records_equal_native_proof": true,
+    "native_proof_cli_sha256": "cda6f76a7ccec63b17c82a2586edca75385f0b01fe7a7115297faeebfe45307d"
+  },
+  "validation_artifacts": "integration-c5ea/",
+  "previous_validation_record": "before-main-integration-record.json"
+}
