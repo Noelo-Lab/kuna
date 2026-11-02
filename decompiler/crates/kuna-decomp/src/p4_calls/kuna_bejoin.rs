@@ -211,7 +211,8 @@ pub fn keep_proven_pair(data: &Funcdata, active: &mut ParamActive, return_ops: &
 /// Mark `pair`'s two output trials active when each is one trial of
 /// `active` and every live RETURN of `return_ops` reads both as values the
 /// function wrote; with `computed`, not when either holds what a call left
-/// there (an indirect creation, which the output model never joins).
+/// there (an indirect creation, which the output model never joins) or, on
+/// some path, the register's own entry value ([`written_on_every_path`]).
 pub(crate) fn mark_written_pair(data: &Funcdata, active: &mut ParamActive, return_ops: &[OpId], pair: &WidePair, computed: bool) {
     let mut indices = Vec::new();
     for (address, size) in [&pair.hi, &pair.lo] {
@@ -239,8 +240,12 @@ pub(crate) fn mark_written_pair(data: &Funcdata, active: &mut ParamActive, retur
         live += 1;
         for &index in &indices {
             let trial = active.get_trial(index);
-            let Some(value) = ret.get_in(trial.get_slot()).and_then(|vn| data.vbank().get(vn)) else { return };
+            let Some(vn) = ret.get_in(trial.get_slot()) else { return };
+            let Some(value) = data.vbank().get(vn) else { return };
             if value.get_addr() != trial.get_address() || value.get_size() != trial.get_size() || !value.is_written() {
+                return;
+            }
+            if computed && !written_on_every_path(data, vn) {
                 return;
             }
         }
@@ -251,6 +256,31 @@ pub(crate) fn mark_written_pair(data: &Funcdata, active: &mut ParamActive, retur
     for index in indices {
         active.get_trial_mut(index).mark_active();
     }
+}
+
+/// Does every definition of `vn` reached back through choices and indirect
+/// effects write it? Not when one is the register's entry value or what a
+/// call left there.
+fn written_on_every_path(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut seen: BTreeSet<VarnodeId> = BTreeSet::new();
+    let mut work = vec![vn];
+    while let Some(cur) = work.pop() {
+        if !seen.insert(cur) {
+            continue;
+        }
+        if seen.len() > MAX_NODES {
+            return false;
+        }
+        let Some(v) = data.vbank().get(cur) else { return false };
+        let Some(op) = v.get_def().and_then(|d| data.obank().get(d)) else { return false };
+        match op.code() {
+            OpCode::CPUI_MULTIEQUAL => work.extend((0..op.num_input()).filter_map(|i| op.get_in(i))),
+            OpCode::CPUI_INDIRECT if op.is_indirect_creation() => return false,
+            OpCode::CPUI_INDIRECT => work.extend(op.get_in(0)),
+            _ => {}
+        }
+    }
+    true
 }
 
 /// The `option bejoin` mode in force.

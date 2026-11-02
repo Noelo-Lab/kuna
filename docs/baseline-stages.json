@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3668,
-    3668
+    3670,
+    3670
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2207,6 +2207,8 @@
     "data:bejoin-mipsclang #2: the default returns widen1's long long",
     "data:bejoin-mipsclang #2b: evidence keeps widen1 the shifted int",
     "data:bejoin-mipsclang #3: add_hi stays an int in both passes",
+    "data:bejoin-mipsclang #4: sum_both, whose two paths both compute the low word, returns it whole",
+    "data:bejoin-mipsclang #5: sum_or_entry, one of whose paths leaves the second register as it came in, stays an int",
     "data:bejoin-mipspic #1: the default returns add64's sum high word first",
     "data:bejoin-mipspic #1b: evidence keeps add64 low word first",
     "data:bejoin-mipspic #1c: add_hi stays an int in both passes",
