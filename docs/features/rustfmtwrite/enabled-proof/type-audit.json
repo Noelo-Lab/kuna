@@ -1,0 +1,402 @@
+{
+  "summary": {
+    "before": {
+      "functions_with_diagnostics": 8,
+      "diagnostics": 8,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 0,
+      "diagnostics": 0,
+      "compiles": 0
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "records": [
+    {
+      "fixture": "rust",
+      "address": "0x11230",
+      "name": "fmtdemo::write_str",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 76,
+                "column_end": 81,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4e388 as *mut (),0x5f14 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 76,
+                    "highlight_end": 81
+                  }
+                ]
+              },
+              {
+                "line_start": 13,
+                "line_end": 13,
+                "column_start": 6,
+                "column_end": 72,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4e388 as *mut (),0x5f14 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 72
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xf960",
+      "name": "write_empty",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 6,
+                "line_end": 6,
+                "column_start": 67,
+                "column_end": 72,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x1 as *mut u16,1) == b'\\0' {",
+                    "highlight_start": 67,
+                    "highlight_end": 72
+                  }
+                ]
+              },
+              {
+                "line_start": 6,
+                "line_end": 6,
+                "column_start": 6,
+                "column_end": 63,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x1 as *mut u16,1) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 63
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xf9b0",
+      "name": "write_flags",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 16,
+                "line_end": 16,
+                "column_start": 76,
+                "column_end": 81,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69b2 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 76,
+                    "highlight_end": 81
+                  }
+                ]
+              },
+              {
+                "line_start": 16,
+                "line_end": 16,
+                "column_start": 6,
+                "column_end": 72,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69b2 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 72
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfa30",
+      "name": "write_literal",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 6,
+                "line_end": 6,
+                "column_start": 73,
+                "column_end": 78,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69c5 as *mut u16,0x17) == b'\\0' {",
+                    "highlight_start": 73,
+                    "highlight_end": 78
+                  }
+                ]
+              },
+              {
+                "line_start": 6,
+                "line_end": 6,
+                "column_start": 6,
+                "column_end": 69,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69c5 as *mut u16,0x17) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 69
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfa80",
+      "name": "write_pair",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 20,
+                "line_end": 20,
+                "column_start": 76,
+                "column_end": 81,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5af5 as *mut u16,&mut v3) == b'\\0' {",
+                    "highlight_start": 76,
+                    "highlight_end": 81
+                  }
+                ]
+              },
+              {
+                "line_start": 20,
+                "line_end": 20,
+                "column_start": 6,
+                "column_end": 72,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5af5 as *mut u16,&mut v3) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 72
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfb50",
+      "name": "write_signed",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 12,
+                "line_end": 12,
+                "column_start": 76,
+                "column_end": 81,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5bb0 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 76,
+                    "highlight_end": 81
+                  }
+                ]
+              },
+              {
+                "line_start": 12,
+                "line_end": 12,
+                "column_start": 6,
+                "column_end": 72,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5bb0 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 72
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfbc0",
+      "name": "write_string",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 14,
+                "line_end": 14,
+                "column_start": 76,
+                "column_end": 81,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69d0 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 76,
+                    "highlight_end": 81
+                  }
+                ]
+              },
+              {
+                "line_start": 14,
+                "line_end": 14,
+                "column_start": 6,
+                "column_end": 72,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69d0 as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 72
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    },
+    {
+      "fixture": "write-native",
+      "address": "0xfc70",
+      "name": "write_unsigned",
+      "before": {
+        "compiles": false,
+        "diagnostics": [
+          {
+            "code": "E0308",
+            "message": "mismatched types",
+            "spans": [
+              {
+                "line_start": 12,
+                "line_end": 12,
+                "column_start": 76,
+                "column_end": 81,
+                "label": "expected `Result<(), Error>`, found `u8`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5aef as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 76,
+                    "highlight_end": 81
+                  }
+                ]
+              },
+              {
+                "line_start": 12,
+                "line_end": 12,
+                "column_start": 6,
+                "column_end": 72,
+                "label": "expected because this is `Result<(), std::fmt::Error>`",
+                "text": [
+                  {
+                    "text": "  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5aef as *mut u16,&mut v2) == b'\\0' {",
+                    "highlight_start": 6,
+                    "highlight_end": 72
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "after": {
+        "compiles": false,
+        "diagnostics": []
+      }
+    }
+  ]
+}

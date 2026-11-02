@@ -1,0 +1,141 @@
+{
+  "fixture": "pieces-x86_64",
+  "sha256": "c6da9524b18af91d6170d1c08c51745fa22b23609a8896cb09e2c39e5a6c24b2",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 26,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 26,
+      "changed": [
+        {
+          "address": "0x1000",
+          "name": "literal_shape",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "{{x}}",
+                  "newline": true,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v1"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 15,
+                  "source_line_start": 15,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 4151,
+                  "descriptor": {
+                    "argument_count": 0,
+                    "arguments": [],
+                    "descriptor_stack_offset": -56,
+                    "format_pointer": 0,
+                    "piece_count": 1,
+                    "table": 8200
+                  },
+                  "name": "std::io::stdio::_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x1000"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -12,5 +12,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0x1042",
+          "name": "stderr_shape",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "{{x}}",
+                  "newline": true,
+                  "stderr": true
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v1"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 15,
+                  "source_line_start": 15,
+                  "stderr": true
+                },
+                "independent_descriptor": {
+                  "call_instruction": 4217,
+                  "descriptor": {
+                    "argument_count": 0,
+                    "arguments": [],
+                    "descriptor_stack_offset": -56,
+                    "format_pointer": 0,
+                    "piece_count": 1,
+                    "table": 8200
+                  },
+                  "name": "std::io::stdio::_eprint"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0x1042"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -12,5 +12,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 26,
+      "changed": [],
+      "parsed": 26,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

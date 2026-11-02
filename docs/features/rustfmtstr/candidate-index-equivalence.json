@@ -1,0 +1,8 @@
+{
+  "all_function_records_identical": true,
+  "images": 26,
+  "function_records": 60876,
+  "previous_patched_kuna_sha256": "dd55613b8ccfa7c722fba87a1c8700c0348bc5c87b65795558ec19e2dc2c24c8",
+  "current_patched_kuna_sha256": "17616f548c0c1e3dd50ab93682a1812dcd04504ec1cafc56e1ad20bac7dac302",
+  "native_and_manual_review_evidence_remains_applicable": true
+}

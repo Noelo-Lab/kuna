@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>option rustfmtwrite off</com>
+  <com>load function write_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option rustfmtwrite on</com>
+  <com>print C</com>
+  <com>load function write_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_flags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_literal</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_empty</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_string</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function write_custom</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="off and custom formatting preserve runtime writes" min="2" max="2">core::fmt::write\(</stringmatch>
+<stringmatch name="all seven writes use a scoped trait import" min="7" max="7">use std::fmt::Write as _;</stringmatch>
+<stringmatch name="all seven writes preserve the byte result" min="7" max="7">\.is_err\(\)</stringmatch>
+<stringmatch name="unsigned String mutation" min="1" max="1">write!\(.*"\[\{\}\]".*\*const u32</stringmatch>
+<stringmatch name="signed newline String mutation" min="1" max="1">writeln!\(.*"\{\}".*\*const i64</stringmatch>
+<stringmatch name="static flags and repeated indices" min="1" max="1">writeln!\(.*"\{:#010x\}/\{:·&gt;12\}"</stringmatch>
+<stringmatch name="literal braces Unicode NUL and extra newline" min="1" max="1">writeln!\(.*"\{\{é🙂\}\}\\0\\n"</stringmatch>
+<stringmatch name="empty output still preserves the writer and result" min="1" max="1">write!\(.*,""\)</stringmatch>
+<stringmatch name="string fill width and precision" min="1" max="1">write!\(.*"\|\{:🦀\^10.3\}\|".*from_utf8_unchecked</stringmatch>
+<stringmatch name="mixed arguments retain their order" min="1" max="1">write!\(.*"\{\}: \{\}".*\*const u32.*from_utf8_unchecked</stringmatch>
+</decompilertest>

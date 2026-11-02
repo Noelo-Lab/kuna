@@ -1,0 +1,42 @@
+{
+  "declared_at": "2026-11-02T03:16:23.684914+00:00",
+  "option": "rustfmtio",
+  "cases": [
+    "scalar-c",
+    "go-control",
+    "rust-large-control",
+    "io-primitive",
+    "io-literal",
+    "io-string",
+    "io-promoted",
+    "io-reference",
+    "string-optin-control"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611023,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 36,
+  "upper_quantile": 0.9986111111111111,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bound for parent-to-enabled and disabled-to-enabled must be <=5 percent. One fixed study; no unchanged-code repeat. An unresolved enabled study keeps the feature opt-in.",
+  "execution": "parallel cases on disjoint physical CPU pairs",
+  "schedule": "Every six-round block contains all six permutations of parent/disabled/enabled in randomized order. No owned builds, tests, corpus or binary research during sampling.",
+  "reserved_lightwork_cpus": [
+    3,
+    43
+  ],
+  "cpu_selection": "Rank physical pairs by five-second minimum/sum sibling idle time before sampling; exclude reserved CPUs.",
+  "compiled_specs": {
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+    "verify": "All 154 spec bytes in parent and candidate before and after sampling."
+  },
+  "common_main_amendment": {
+    "declared_at": "2026-11-02T03:39:12.541105+00:00",
+    "main_commit": "dddff1dbabdec537afd6691104a93dc3eb7c6e2c",
+    "reason": "Integrate switchrunonguard into both parent and candidate before the first sample. Cases, sample counts, inference and acceptance are unchanged. Exact parent commit is bound by reanchor receipt before sampling."
+  }
+}

@@ -1,0 +1,17 @@
+hermetic PASS 2
+hermetic-plain PASS 2
+native-c PASS 4
+entry-ranges PASS 2
+native PASS 2
+entry-plain PASS 2
+grep PASS 3
+basics122 PASS 2
+stripped122 PASS 2
+langdetect PASS 2
+basics127 PASS 2
+native1273 PASS 2
+panic-shapes PASS 4
+native-plain PASS 2
+native1273-plain PASS 2
+pieces-x86_64 PASS 4
+basics127-plain PASS 2

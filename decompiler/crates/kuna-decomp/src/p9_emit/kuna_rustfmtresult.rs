@@ -60,7 +60,7 @@ pub(crate) fn recover(fd: &Funcdata, arch: &Architecture, id: OpId) -> Option<Pl
     })
 }
 
-fn entry_value(fd: &Funcdata, mut id: VarnodeId) -> bool {
+pub(crate) fn entry_value(fd: &Funcdata, mut id: VarnodeId) -> bool {
     for _ in 0..8 {
         let Some(value) = fd.vbank().get(id) else {
             return false;

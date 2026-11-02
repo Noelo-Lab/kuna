@@ -1,0 +1,60 @@
+{
+  "reason": "Lossless gzip retains exact original bytes for artifacts whose whitespace would otherwise be rejected in a patch.",
+  "files": [
+    {
+      "raw_name": "workspace-final.log",
+      "stored_name": "workspace-final.log.gz",
+      "raw_sha256": "2198fadd9ffbc3957f1ca4299f90be56bc0953c7f2cde125778749bcc7f8fb30"
+    },
+    {
+      "raw_name": "public-repro-after.rs",
+      "stored_name": "public-repro-after.rs.gz",
+      "raw_sha256": "cdb3ce1ab649c92a8a8e8fb34ac6b85696b1da4180dfc4a456e14ecf026d48f8"
+    },
+    {
+      "raw_name": "public-repro-before.rs",
+      "stored_name": "public-repro-before.rs.gz",
+      "raw_sha256": "fafe16d0a3a99dd4d81b59afc67c8b37b482dc60065da48a9fbb41ca4256f986"
+    },
+    {
+      "raw_name": "initial-proof/public-repro-after.rs",
+      "stored_name": "initial-proof/public-repro-after.rs.gz",
+      "raw_sha256": "cdb3ce1ab649c92a8a8e8fb34ac6b85696b1da4180dfc4a456e14ecf026d48f8"
+    },
+    {
+      "raw_name": "initial-proof/public-repro-before.rs",
+      "stored_name": "initial-proof/public-repro-before.rs.gz",
+      "raw_sha256": "fafe16d0a3a99dd4d81b59afc67c8b37b482dc60065da48a9fbb41ca4256f986"
+    },
+    {
+      "raw_name": "initial-proof/console-focused-isolated-expressions.log",
+      "stored_name": "initial-proof/console-focused-isolated-expressions.log.gz",
+      "raw_sha256": "f255996cc6ac096a7b7deb208133a7f7a14ceb3a13c996da03a3fe81b662ea92"
+    },
+    {
+      "raw_name": "enabled-candidate/workspace-final.log",
+      "stored_name": "enabled-candidate/workspace-final.log.gz",
+      "raw_sha256": "e5c87418fe924ddf6d097c70c6e746b8396383331394049b7cc8ffd0296f86eb"
+    },
+    {
+      "raw_name": "enabled-candidate/public-repro-after.rs",
+      "stored_name": "enabled-candidate/public-repro-after.rs.gz",
+      "raw_sha256": "cdb3ce1ab649c92a8a8e8fb34ac6b85696b1da4180dfc4a456e14ecf026d48f8"
+    },
+    {
+      "raw_name": "enabled-candidate/public-repro-before.rs",
+      "stored_name": "enabled-candidate/public-repro-before.rs.gz",
+      "raw_sha256": "fafe16d0a3a99dd4d81b59afc67c8b37b482dc60065da48a9fbb41ca4256f986"
+    },
+    {
+      "raw_name": "enabled-candidate/timing-lib.py",
+      "stored_name": "enabled-candidate/timing-lib.py.gz",
+      "raw_sha256": "9449a1abe817853392cdd2a43913bbc8456b9fdb4122ff333ba456086c265385"
+    },
+    {
+      "raw_name": "enabled-candidate/timing/timing-lib.py",
+      "stored_name": "enabled-candidate/timing/timing-lib.py.gz",
+      "raw_sha256": "9449a1abe817853392cdd2a43913bbc8456b9fdb4122ff333ba456086c265385"
+    }
+  ]
+}

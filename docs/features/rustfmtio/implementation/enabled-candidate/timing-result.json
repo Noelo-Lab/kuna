@@ -1,0 +1,275 @@
+{
+  "plan": {
+    "declared_at": "2026-11-02T03:16:23.684914+00:00",
+    "option": "rustfmtio",
+    "cases": [
+      "scalar-c",
+      "go-control",
+      "rust-large-control",
+      "io-primitive",
+      "io-literal",
+      "io-string",
+      "io-promoted",
+      "io-reference",
+      "string-optin-control"
+    ],
+    "samples_per_arm": 384,
+    "warmups_per_arm": 3,
+    "seed": 202611023,
+    "bootstrap_resamples": 20000,
+    "family_alpha": 0.05,
+    "comparisons": 36,
+    "upper_quantile": 0.9986111111111111,
+    "maximum_looks": 1,
+    "budget_pct": 5,
+    "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bound for parent-to-enabled and disabled-to-enabled must be <=5 percent. One fixed study; no unchanged-code repeat. An unresolved enabled study keeps the feature opt-in.",
+    "execution": "parallel cases on disjoint physical CPU pairs",
+    "schedule": "Every six-round block contains all six permutations of parent/disabled/enabled in randomized order. No owned builds, tests, corpus or binary research during sampling.",
+    "reserved_lightwork_cpus": [
+      3,
+      43
+    ],
+    "cpu_selection": "Rank physical pairs by five-second minimum/sum sibling idle time before sampling; exclude reserved CPUs.",
+    "compiled_specs": {
+      "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+      "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+      "verify": "All 154 spec bytes in parent and candidate before and after sampling."
+    },
+    "common_main_amendment": {
+      "declared_at": "2026-11-02T03:39:12.541105+00:00",
+      "main_commit": "dddff1dbabdec537afd6691104a93dc3eb7c6e2c",
+      "reason": "Integrate switchrunonguard into both parent and candidate before the first sample. Cases, sample counts, inference and acceptance are unchanged. Exact parent commit is bound by reanchor receipt before sampling."
+    }
+  },
+  "baseline_commit": "4bc5022b7606bc8c0930ab73ad4fc6cfd5528843",
+  "binaries_sha256": {
+    "baseline": "0fdc402c5cd45cbef01ada818305714c15bbd4691d105cba6e275cb4df70b341",
+    "patched": "9b135d0758d7d5c13dc8fa2c22ce639902c9e29d6df84c2fae5735b1b81b7be4"
+  },
+  "source_manifests": {
+    "current": "beaef3192a58e73f8deed9a21bb4ac684a4ef1ad6ce41c5dd61658528f0ff873",
+    "parent": "4362ef26f695668ae9246405b4d445858d8af0166d6f5b698913e85d124b02b3"
+  },
+  "compiled_specs": {
+    "count": 154,
+    "before": {
+      "/home/mahaloz/kwt/angr-rust-fmt-write-ddd": true,
+      "/home/mahaloz/kwt/angr-rust-io-proposal": true
+    },
+    "after": {
+      "/home/mahaloz/kwt/angr-rust-fmt-write-ddd": true,
+      "/home/mahaloz/kwt/angr-rust-io-proposal": true
+    }
+  },
+  "attempt": "/tmp/kuna-rust-io-ddd/timing-randomized-attempts/20261102-040835",
+  "accepted_for_speed_review": false,
+  "results": {
+    "scalar-c": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.19934696682488706,
+          "wall_ms": 0.24016438473686286
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.11872697212056416,
+          "wall_ms": 0.1312295830333543
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7138410145015572,
+          "wall_ms": 0.7099342693578143
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.4579646659282115,
+          "wall_ms": 0.4698736754751084
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "go-control": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.2754507669997528,
+          "wall_ms": 1.2197968801400894
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.024083665995977555,
+          "wall_ms": 0.005918040169827776
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 5.12271344336813,
+          "wall_ms": 5.388454756626192
+        },
+        "off_to_patched": {
+          "cpu_ms": 3.6765270524697247,
+          "wall_ms": 4.082940675325257
+        }
+      },
+      "speed_budget_passed": false
+    },
+    "rust-large-control": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.39573537465540376,
+          "wall_ms": 0.4038169810804293
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.05919164939861554,
+          "wall_ms": -0.057768489695086966
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.6717158744081385,
+          "wall_ms": 0.6170403328733401
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.16396346562558872,
+          "wall_ms": 0.12714873516022532
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "io-primitive": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.8269243857643716,
+          "wall_ms": 0.832471763204512
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.053748765323735626,
+          "wall_ms": 0.056245882343231024
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.1378773555098622,
+          "wall_ms": 3.2117700254705297
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.2692478111167298,
+          "wall_ms": 2.20787056034088
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "io-literal": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.9762146554364692,
+          "wall_ms": 0.9768675884755273
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.08845311280327728,
+          "wall_ms": 0.07284731277414913
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.1029103016331414,
+          "wall_ms": 1.5990595596228367
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.17657920439664307,
+          "wall_ms": 1.424120308096079
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "io-string": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7239845344640505,
+          "wall_ms": 0.7296059424442003
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.04924174244849144,
+          "wall_ms": 0.04689678808302844
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.0252803102205383,
+          "wall_ms": 0.9738878403384974
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.22895698957384708,
+          "wall_ms": 0.16209633967460185
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "io-promoted": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7188446939658366,
+          "wall_ms": 0.6831950048739488
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.08690683225093254,
+          "wall_ms": -0.07979012598317015
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.1649014341668469,
+          "wall_ms": 1.1123677336694653
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.3851317795730399,
+          "wall_ms": 0.40754116636042464
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "io-reference": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.0502931563310725,
+          "wall_ms": 1.0873305242887543
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.03366525822752209,
+          "wall_ms": 0.06450286763974855
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.2038147691353822,
+          "wall_ms": 1.204417613222216
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.18630439716964495,
+          "wall_ms": 0.18832088897325552
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "string-optin-control": {
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7585306025690519,
+          "wall_ms": 0.7661166607514147
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.0980632275223714,
+          "wall_ms": 0.07074488063298912
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.2829318369037472,
+          "wall_ms": 1.0881067220793095
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.4614032520464037,
+          "wall_ms": 0.7141769912399627
+        }
+      },
+      "speed_budget_passed": true
+    }
+  }
+}

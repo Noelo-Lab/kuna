@@ -1,0 +1,133 @@
+{
+  "producers": [
+    {
+      "producer": "1.89.0",
+      "native_sha256": "6397e35c42f1a5f0fd570eeb367be5bcb86142c9a0fb23923db394bd20d0df24",
+      "values": 265,
+      "primitive_calls": 1325,
+      "literal_calls": 4,
+      "executors": [
+        {
+          "compiler": "1.90.0",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        },
+        {
+          "compiler": "1.93.1",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        },
+        {
+          "compiler": "1.99.1",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        }
+      ]
+    },
+    {
+      "producer": "1.90.0",
+      "native_sha256": "bf43132a067545721418d123fb3e0ca0fc6cc3bc6023db43b50879e86ca46faa",
+      "values": 265,
+      "primitive_calls": 1325,
+      "literal_calls": 4,
+      "executors": [
+        {
+          "compiler": "1.90.0",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        },
+        {
+          "compiler": "1.93.1",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        },
+        {
+          "compiler": "1.99.1",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        }
+      ]
+    },
+    {
+      "producer": "nightly-2025-05-22",
+      "native_sha256": "2411b22f57259494e814461f59e7fec5680b7280cbcf85ef0e441a2570853a2b",
+      "values": 265,
+      "primitive_calls": 1325,
+      "literal_calls": 4,
+      "executors": [
+        {
+          "compiler": "1.90.0",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        },
+        {
+          "compiler": "1.93.1",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        },
+        {
+          "compiler": "1.99.1",
+          "stdout_sha256": "03bd8859d1dc4714895b30e47570bead821c5ebec00df8481cf567be23038042",
+          "stderr_sha256": "69e9aa16314b2dfb8e5c054175bc3d1719006e912f63ae964355f80ffef4f635",
+          "native_equal": true
+        }
+      ]
+    }
+  ],
+  "controls": [
+    {
+      "producer": "nightly-2025-05-21",
+      "function": "pieces_literal",
+      "unchanged": true
+    },
+    {
+      "producer": "nightly-2025-05-21",
+      "function": "pieces_u32",
+      "unchanged": true
+    },
+    {
+      "producer": "nightly-2025-05-21",
+      "function": "pieces_flags",
+      "unchanged": true
+    },
+    {
+      "producer": "1.93.1",
+      "function": "pieces_literal",
+      "unchanged": true
+    },
+    {
+      "producer": "1.93.1",
+      "function": "pieces_u32",
+      "unchanged": true
+    },
+    {
+      "producer": "1.93.1",
+      "function": "pieces_flags",
+      "unchanged": true
+    },
+    {
+      "producer": "1.99.1",
+      "function": "pieces_literal",
+      "unchanged": true
+    },
+    {
+      "producer": "1.99.1",
+      "function": "pieces_u32",
+      "unchanged": true
+    },
+    {
+      "producer": "1.99.1",
+      "function": "pieces_flags",
+      "unchanged": true
+    }
+  ],
+  "scope": "Unchanged entire literal bodies; unchanged primitive macro expressions with explicit typed input bindings; complete primitive descriptor bodies are not claimed recompilable."
+}

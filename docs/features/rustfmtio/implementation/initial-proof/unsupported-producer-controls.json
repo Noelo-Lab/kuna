@@ -1,0 +1,70 @@
+{
+  "kuna_sha256": "42c88e1fc70ff4c9ce6118fef6015883c40a9174a1ef9dd6cf3e9cb3aa185c8b",
+  "rows": [
+    {
+      "compiler": "1.90.0",
+      "fixture": "native",
+      "fixture_sha256": "75701246048819a2d7e01114ac4d7a7179a23913017de1fdefb5094df38936f0",
+      "source_sha256": "bc7c317f8546b8fc92e69323d5f4aa97fb6c9cb21fbd0ef5dcb417f1c4ebc3d0",
+      "functions": [
+        "write_unsigned",
+        "write_signed",
+        "write_flags",
+        "write_literal",
+        "write_empty",
+        "write_string",
+        "write_pair",
+        "write_dynamic",
+        "write_unknown",
+        "write_vec"
+      ],
+      "all_on_off_outputs_identical": true
+    },
+    {
+      "compiler": "1.90.0",
+      "fixture": "promoted",
+      "fixture_sha256": "a4eb2bf165d2b0063344819ccab0d8de7d0cf006340e6135225b39c16d47a75a",
+      "source_sha256": "4916768f3ea954a4cdd50d5fb38c013f6ed5c5274bdfd900c7609e81c35d2baf",
+      "functions": [
+        "write_value",
+        "write_hex",
+        "write_binary",
+        "write_debug"
+      ],
+      "all_on_off_outputs_identical": true
+    },
+    {
+      "compiler": "1.99.1",
+      "fixture": "native",
+      "fixture_sha256": "feaefd6a78c8762fc38bfe48355727df584f2cd51a3a3f164f74d04ae7036519",
+      "source_sha256": "bc7c317f8546b8fc92e69323d5f4aa97fb6c9cb21fbd0ef5dcb417f1c4ebc3d0",
+      "functions": [
+        "write_unsigned",
+        "write_signed",
+        "write_flags",
+        "write_literal",
+        "write_empty",
+        "write_string",
+        "write_pair",
+        "write_dynamic",
+        "write_unknown",
+        "write_vec"
+      ],
+      "all_on_off_outputs_identical": true
+    },
+    {
+      "compiler": "1.99.1",
+      "fixture": "promoted",
+      "fixture_sha256": "130a3cc38c17f6ab58f20f16e4ff9bc33d83db699326e1fdebafdd3cfc442f1d",
+      "source_sha256": "4916768f3ea954a4cdd50d5fb38c013f6ed5c5274bdfd900c7609e81c35d2baf",
+      "functions": [
+        "write_value",
+        "write_hex",
+        "write_binary",
+        "write_debug"
+      ],
+      "all_on_off_outputs_identical": true
+    }
+  ],
+  "functions": 28
+}

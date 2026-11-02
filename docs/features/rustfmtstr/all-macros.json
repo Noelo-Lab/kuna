@@ -1,0 +1,37 @@
+{
+  "changed_functions": 12,
+  "recovered_calls": 12,
+  "string_arguments": 13,
+  "execution_compilers": [
+    "1.90.0",
+    "1.93.1",
+    "1.99.1"
+  ],
+  "stream_sha256": {
+    "stdout": "14a6dacc91be91cc4efcf6ba78e856e5f364c733992f28cc691b54793fcc7a7a",
+    "stderr": "180ab41d1b839f22ed7fa632abcf9df071e54904f17f41dbb3d098e5818b2859"
+  },
+  "every_macro_expression_unchanged": true,
+  "execution_uses_explicit_input_bindings": true,
+  "all_template_bytes_and_argument_bindings_verified": true,
+  "type_diagnostics": {
+    "before": {
+      "functions_with_diagnostics": 1,
+      "diagnostics": 1,
+      "compiles": 0
+    },
+    "after": {
+      "functions_with_diagnostics": 1,
+      "diagnostics": 1,
+      "compiles": 0
+    },
+    "newly_diagnosed_functions": [],
+    "previously_compiling_now_failing": []
+  },
+  "new_diagnostic_multisets": [],
+  "source_mapping_classification_pending": false,
+  "source_mappings_reviewed": 12,
+  "source_mapping_classes": {
+    "native_stack_descriptor_address": 12
+  }
+}

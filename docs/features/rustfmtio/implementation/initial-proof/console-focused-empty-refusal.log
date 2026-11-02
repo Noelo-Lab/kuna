@@ -1,0 +1,149 @@
+warning: unused import: `kuna_base::types::Wrap`
+  --> crates/kuna-sleigh/src/kuna_sharedbytes.rs:20:5
+   |
+20 | use kuna_base::types::Wrap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-sleigh` (lib) generated 1 warning
+warning: unused import: `crate::dtype::TypeFactory`
+  --> crates/kuna-decomp/src/p5_types/kuna_fatstr.rs:56:5
+   |
+56 | use crate::dtype::TypeFactory;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+warning: `kuna-decomp` (lib) generated 1 warning
+   Compiling kuna-analysis v0.1.0 (/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis)
+warning: unused import: `flags as tflags`
+  --> crates/kuna-analysis/src/analyzers/gotypes/mod.rs:73:26
+   |
+73 | use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
+   |                          ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+   Compiling kuna-console v0.1.0 (/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-console)
+warning: `kuna-analysis` (lib) generated 1 warning (run `cargo fix --lib -p kuna-analysis` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 42.80s
+     Running tests/integration.rs (target/release/deps/integration-a4461d7fc26da47f)
+
+running 7 tests
+test verify_rustfmtio::stdout_recovery_obeys_underlying_format_options ... ok
+test verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results ... FAILED
+test verify_rustfmtio::promoted_receiver_uses_the_original_inner_pointer ... ok
+test verify_rustfmtio::dynamic_formats_and_other_writers_remain_explicit ... ok
+test verify_rustfmtio::stdout_formats_preserve_the_receiver_and_owned_result_word ... ok
+test verify_rustfmtio::direct_call_shape_nonnull_receiver_and_eight_byte_result_are_required ... ok
+test verify_rustfmtio::producer_language_and_current_image_evidence_are_required ... ok
+
+failures:
+
+---- verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results stdout ----
+
+thread 'verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results' panicked at crates/kuna-console/tests/verify_rustfmtio.rs:338:5:
+warning: unnecessary parentheses around assigned value
+ --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:1:164
+  |
+1 | ...aw=({ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"[{}]",&*((v2 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if...
+  |       ^                                                                                                                                                                                                                                                                                            ^
+  |
+  = note: `#[warn(unused_parens)]` on by default
+help: remove these parentheses
+  |
+1 - fn write_unsigned(out:&mut &std::io::Stdout,value:u32)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v2=&value as *const u32;let raw=({ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"[{}]",&*((v2 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+1 + fn write_unsigned(out:&mut &std::io::Stdout,value:u32)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v2=&value as *const u32;let raw={ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"[{}]",&*((v2 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } };if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+  |
+
+warning: unnecessary parentheses around assigned value
+ --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:2:162
+  |
+2 | ...aw=({ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{}",&*((v2 as *const _) as *const i64)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if...
+  |       ^                                                                                                                                                                                                                                                                                            ^
+  |
+help: remove these parentheses
+  |
+2 - fn write_signed(out:&mut &std::io::Stdout,value:i64)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v2=&value as *const i64;let raw=({ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{}",&*((v2 as *const _) as *const i64)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+2 + fn write_signed(out:&mut &std::io::Stdout,value:i64)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v2=&value as *const i64;let raw={ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{}",&*((v2 as *const _) as *const i64)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } };if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+  |
+
+warning: unnecessary parentheses around assigned value
+ --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:3:189
+  |
+3 | ...aw=({ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{:#010x}/{:·>12}",&*((v2 as *const _) as *const u32),&*((v4 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if...
+  |       ^                                                                                                                                                                                                                                                                                                                                             ^
+  |
+help: remove these parentheses
+  |
+3 - fn write_flags(out:&mut &std::io::Stdout,value:u32)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v2=&value as *const u32;let v4=&value as *const u32;let raw=({ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{:#010x}/{:·>12}",&*((v2 as *const _) as *const u32),&*((v4 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+3 + fn write_flags(out:&mut &std::io::Stdout,value:u32)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v2=&value as *const u32;let v4=&value as *const u32;let raw={ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{:#010x}/{:·>12}",&*((v2 as *const _) as *const u32),&*((v4 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } };if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+  |
+
+warning: unnecessary parentheses around assigned value
+ --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:4:125
+  |
+4 | ...aw=({ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{{é🙂}}\0\n") { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if ...
+  |       ^                                                                                                                                                                                                                                                                  ^
+  |
+help: remove these parentheses
+  |
+4 - fn write_literal(out:&mut &std::io::Stdout)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let raw=({ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{{é🙂}}\0\n") { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+4 + fn write_literal(out:&mut &std::io::Stdout)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let raw={ use std::io::Write as _; match writeln!(&mut *(a0 as *mut &std::io::Stdout),"{{é🙂}}\0\n") { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } };if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+  |
+
+warning: unnecessary parentheses around assigned value
+ --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:5:187
+  |
+5 | ...aw=({ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"|{:🦀^10.3}|",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if ...
+  |       ^                                                                                                                                                                                                                                                                                                                                                        ^
+  |
+help: remove these parentheses
+  |
+5 - fn write_string(out:&mut &std::io::Stdout,text:&str)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v1=text.as_ptr() as u64;let v3=text.len() as u64;let raw=({ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"|{:🦀^10.3}|",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+5 + fn write_string(out:&mut &std::io::Stdout,text:&str)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v1=text.as_ptr() as u64;let v3=text.len() as u64;let raw={ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"|{:🦀^10.3}|",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } };if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+  |
+
+warning: unnecessary parentheses around assigned value
+ --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:6:223
+  |
+6 | ...aw=({ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"{}: {}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize))) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if...
+  |       ^                                                                                                                                                                                                                                                                                                                                                                                     ^
+  |
+help: remove these parentheses
+  |
+6 - fn write_pair(out:&mut &std::io::Stdout,value:u32,text:&str)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v3=&value as *const u32;let v2=text.as_ptr() as u64;let v4=text.len() as u64;let raw=({ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"{}: {}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize))) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } });if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+6 + fn write_pair(out:&mut &std::io::Stdout,value:u32,text:&str)->std::io::Result<()> {unsafe{let a0=out as *mut &std::io::Stdout as u64;let v3=&value as *const u32;let v2=text.as_ptr() as u64;let v4=text.len() as u64;let raw={ use std::io::Write as _; match write!(&mut *(a0 as *mut &std::io::Stdout),"{}: {}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize))) { std::result::Result::Ok(()) => 0u64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as u64 } };if raw==0{Ok(())}else{Err(std::mem::transmute::<*mut (),std::io::Error>(raw as usize as *mut ()))}}}
+  |
+
+error[E0599]: no method named `write_fmt` found for mutable reference `&mut &Stdout` in the current scope
+  --> /home/mahaloz/kwt/angr-rust-io-proposal/decompiler/target/tmp/kuna-console/rustfmtio-346792-0.rs:23:9
+   |
+23 |     out.write_fmt(runtime_arguments(format_args!("")))
+   |         ^^^^^^^^^
+   |
+   = help: items from traits can only be used if the trait is in scope
+help: trait `Write` which provides `write_fmt` is implemented but not in scope; perhaps you want to import it
+   |
+ 1 + use std::io::Write;
+   |
+help: there is a method `write` with a similar name
+   |
+23 -     out.write_fmt(runtime_arguments(format_args!("")))
+23 +     out.write(runtime_arguments(format_args!("")))
+   |
+
+error: aborting due to 1 previous error; 6 warnings emitted
+
+For more information about this error, try `rustc --explain E0599`.
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    verify_rustfmtio::unchanged_expressions_match_native_stdout_and_broken_pipe_results
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 732 filtered out; finished in 6.28s
+
+error: test failed, to rerun pass `-p kuna-console --test integration`

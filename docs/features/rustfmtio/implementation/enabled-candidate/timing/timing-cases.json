@@ -1,0 +1,70 @@
+{
+  "root": "/home/mahaloz/kwt/angr-rust-io-proposal",
+  "base": "/home/mahaloz/kwt/angr-rust-fmt-write-ddd",
+  "option": "rustfmtio",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-io-proposal/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "io-primitive",
+      "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64",
+      "write_unsigned",
+      "rust"
+    ],
+    [
+      "io-literal",
+      "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64",
+      "write_literal",
+      "rust"
+    ],
+    [
+      "io-string",
+      "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_x86_64",
+      "write_string",
+      "rust"
+    ],
+    [
+      "io-promoted",
+      "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_io_promoted_x86_64",
+      "write_value",
+      "rust"
+    ],
+    [
+      "io-reference",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x111f0",
+      "rust"
+    ],
+    [
+      "string-optin-control",
+      "/home/mahaloz/kwt/angr-rust-io-proposal/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_unsigned",
+      "rust"
+    ]
+  ],
+  "extra_options": {
+    "string-optin-control": [
+      "--option",
+      "rustfmtwrite",
+      "on"
+    ]
+  },
+  "baseline_commit": "4bc5022b7606bc8c0930ab73ad4fc6cfd5528843",
+  "bound_at": "2026-11-02T04:07:42.889159+00:00"
+}

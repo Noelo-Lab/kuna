@@ -1,0 +1,13 @@
+   Compiling proc-macro2 v1.0.107
+   Compiling serde_core v1.0.229
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.45
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling memchr v2.8.3
+   Compiling itoa v1.0.18
+   Compiling syn v2.0.119
+   Compiling rust-pieces-verifier v0.1.0 (/tmp/kuna-rust-fmt-pieces/verifier)
+    Finished `dev` profile [unoptimized] target(s) in 4.56s
+     Running `/tmp/kuna-rust-fmt-pieces/verifier/target/debug/rust-pieces-verifier --selfcheck`
+6 statement, type, comment, stream and extra-call mutations rejected

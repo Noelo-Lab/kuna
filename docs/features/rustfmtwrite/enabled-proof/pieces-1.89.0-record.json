@@ -1,0 +1,32 @@
+{
+  "fixture": "pieces-1.89.0",
+  "sha256": "97957a440ca3c4371d2db9a6466bf7fb04446c4635902a495b298cdafde4d1f9",
+  "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+  "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 576,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 576,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 576,
+      "changed": [],
+      "parsed": 576,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

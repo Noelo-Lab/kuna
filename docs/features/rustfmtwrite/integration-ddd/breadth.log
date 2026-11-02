@@ -1,0 +1,31 @@
+hermetic PASS 2
+hermetic-plain PASS 2
+native-c PASS 5
+entry-ranges PASS 2
+native PASS 2
+basics122 PASS 2
+entry-plain PASS 2
+stripped122 PASS 2
+grep PASS 4
+langdetect PASS 2
+basics127 PASS 2
+native1273 PASS 2
+panic-shapes PASS 5
+native-plain PASS 2
+native1273-plain PASS 2
+pieces-x86_64 PASS 5
+basics127-plain PASS 2
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write-ddd/breadth.py", line 31, in <module>
+    with ThreadPoolExecutor(max_workers=8)as pool:records=[f.result()for f in as_completed([pool.submit(run,row)for row in ns['inputs']])]
+  File "/tmp/kuna-rust-fmt-write-ddd/breadth.py", line 31, in <listcomp>
+    with ThreadPoolExecutor(max_workers=8)as pool:records=[f.result()for f in as_completed([pool.submit(run,row)for row in ns['inputs']])]
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/tmp/kuna-rust-fmt-write-ddd/breadth.py", line 27, in run
+    before=Path(capture['fresh_file']);assert sha(before)==capture['fresh_sha256'];a=json.loads(before.read_text());b=json.loads(path.read_text());assert a['functions']==b['functions'],(name,language,mode,'complete records changed')
+AssertionError: ('rust', 'c', 'default', 'complete records changed')

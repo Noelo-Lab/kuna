@@ -1,0 +1,88 @@
+{
+  "checked_at": "2026-11-02 00:04:50.020507+00:00",
+  "source_sha256": "1de0aeaa63304a17ddbd140ce67fecff87cf260a7e5d1da23c97a6991807edd0",
+  "status": "Native research only; no decompiler feature or complete emitted-call equivalence claimed",
+  "records": [
+    {
+      "compiler": "1.90.0",
+      "receiver_mode": "original",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.90.0",
+      "receiver_mode": "reference",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.90.0",
+      "receiver_mode": "promoted",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.93.1",
+      "receiver_mode": "original",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.93.1",
+      "receiver_mode": "reference",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.93.1",
+      "receiver_mode": "promoted",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.99.1",
+      "receiver_mode": "original",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.99.1",
+      "receiver_mode": "reference",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    },
+    {
+      "compiler": "1.99.1",
+      "receiver_mode": "promoted",
+      "normal_stdout_utf8": "v: 4294967295 / \u00e9\ud83e\udd80\n",
+      "normal_status": "result=ok bits=0 drops=64\n",
+      "broken_pipe_status": "result=err bits=137438953474 errno=Some(32) kind=BrokenPipe drops=64\n",
+      "error_payloads_restored_and_dropped_once": 64,
+      "raw_os_errors_roundtripped": 6
+    }
+  ]
+}

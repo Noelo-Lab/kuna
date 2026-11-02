@@ -353,6 +353,7 @@ kuna_options! { self, p1;
     },
     "switchmodbound" => on_off!(switch_modulo_bound, "Switch modulo/and-mask index bound"),
     "switchrunon" => on_off!(switch_run_on, "Jump-table run-on cut"),
+    "switchrunonguard" => on_off!(switch_run_on_guard, "Jump-table run-on cut past a non-bounding guard"),
     "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
@@ -858,6 +859,10 @@ kuna_options! { self, p1;
     "rustfmtflags" => on_off!(rust_fmt_flags, "Rust static integer format specifications"),
     "rustfmtresult" => on_off!(rust_fmt_result, "Rust format String results"),
     "rustfmtpanic" => on_off!(rust_fmt_panic, "Rust panic formatting"),
+    "rustfmtpieces" => on_off!(rust_fmt_pieces, "Rust piece-array formatting"),
+    "rustfmtstr" => on_off!(rust_fmt_str, "Rust verified string Display arguments"),
+    "rustfmtwrite" => on_off!(rust_fmt_write, "Rust verified String writer formatting"),
+    "rustfmtio" => on_off!(rust_fmt_io, "Rust verified Stdout writer formatting"),
     "securitycheck" => {
         on_off!(strip_security_check, "Rust security-check branch stripping")
     },

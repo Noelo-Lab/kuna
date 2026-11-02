@@ -1,0 +1,22 @@
+{
+  "main_commit": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+  "all_gates": {
+    "all_four_gates_passed": true,
+    "additional_tools_lint_catalog_counters_passed": true,
+    "original_assertions": 675,
+    "stage_assertions": 3523,
+    "production_files_unchanged": 5281,
+    "release_sha256": "2a9b5c5676fc685ad3e6944b2d73c190ff57971cc7645a5e14d88c9114ede4c6"
+  },
+  "fresh_breadth": {
+    "main_commit": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+    "all_complete_function_records_identical": true,
+    "function_records": 57789,
+    "images": 24,
+    "all_original_native_and_manual_mapping_evidence_still_applies": true,
+    "prior_record_sha256": "606f655f27c7c5c69fc8ec87059874b28efb862d3741db7c428677d6beedd7b5",
+    "fresh_descriptor_helper_sha256": "b5fc1e25ff4d14fdc8aeb9cf13bbd13f381fd2afde64a7809b54b937839c5c60",
+    "binary_sha256": "2a9b5c5676fc685ad3e6944b2d73c190ff57971cc7645a5e14d88c9114ede4c6"
+  },
+  "original_master_failure": "Fourth feature stopped for stale catalog-count tests; first two feature gate records passed independently. Fourth corrected tests passed a separate full run."
+}

@@ -1,0 +1,15 @@
+{
+  "reason": "The initial native comparison crossed Rust 1.93.1 producer and Rust 1.90.0 execution. Follow-up original-source versus macro probes show within-version agreement and a library-version change in empty-write error behavior. Keep the empty call explicit because execution with the supported older compiler differs from the producer.",
+  "production_files_changed": [
+    "decompiler/crates/kuna-decomp/src/p9_emit/kuna_rustfmtio.rs",
+    "decompiler/crates/kuna-console/tests/verify_rustfmtio.rs",
+    "decompiler/crates/kuna-decomp/phases.toml",
+    "docs/spec/09-emission.md",
+    "tests/stages/ghangr-rustfmtio.xml"
+  ],
+  "initial_binary_sha256": "455bd8a388705e88b97cb5f297bfb4c25c0f010834ee95779f8336435bfd017f",
+  "failed_log": "console-focused-api-fixed.log",
+  "test_indirect_call_fix": "Use the original concrete target address for CALLIND instead of the per-session Fspec handle; no output normalization.",
+  "follow_up": "empty-crossversion.json",
+  "native_execution_scope": "Only the six recovered forms are executed in matched sequences. Empty refusal is checked by complete on/off output equality; no cross-version native-equivalence claim is made for that unrecovered call."
+}

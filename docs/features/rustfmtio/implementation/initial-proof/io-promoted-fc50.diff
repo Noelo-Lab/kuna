@@ -1,0 +1,9 @@
+--- before/write_binary
++++ after/write_binary
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = *(*a0 as *mut *mut i64);
+   v2 = a1;
+-  return _std::io::stdio::Stdout::write_fmt(v1,0x7b7c as *mut u16,&mut v3);
++  return ({ use std::io::Write as _; match write!(&mut std::mem::transmute::<*mut (), std::io::Stdout>((v1 as *mut _) as *mut ()),"{:#b}",&*((v3 as *const _) as *const u32)) { std::result::Result::Ok(()) => 0i64, std::result::Result::Err(_kuna_io_error) => std::mem::transmute::<std::io::Error, *mut ()>(_kuna_io_error) as usize as i64 } });
+ }

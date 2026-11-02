@@ -14,11 +14,18 @@
 //! would parse at all (`kuna_analysis::loader::elf_shdr::read_image_sliced`)
 //! is not the file's either, and says so.
 //!
+//! An image can declare one address more than once: two `PT_LOAD`s over the
+//! same page from different file offsets (GH #1426). The loader serves one of
+//! them and the bytes stay its; each range also lists every other segment that
+//! declares it, with what that segment holds there.
+//!
 //! The segment map is rebuilt from the object file the way the loader builds
 //! its own, and it is trusted only where its extents are the loader's
 //! ([`ConsoleProgram::segments`]). An image the loader lays out itself (a
 //! relocatable object) or reads with no object-file view (TE, MZ) answers
 //! `unknown` instead of a guess.
+
+use std::collections::BTreeMap;
 
 use kuna_analysis::loader::format::detect;
 use kuna_console::engine::ConsoleProgram;
@@ -91,6 +98,9 @@ impl Perms {
 /// One segment as the image declares it.
 #[derive(Debug, Clone)]
 struct Segment {
+    /// Its 0-based entry in the table that declares it ([`table_entries`]);
+    /// `None` for the PE header page.
+    index: Option<usize>,
     /// The Mach-O segment or PE section name; `None` for an ELF `PT_LOAD` and
     /// the PE header page.
     name: Option<String>,
@@ -108,7 +118,8 @@ struct Segment {
     perms: Option<Perms>,
 }
 
-/// One maximal run of the span with one source in one segment.
+/// One maximal run of the span with one source in one segment, and one set of
+/// other segments declaring it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Range {
     start: u64,
@@ -116,6 +127,16 @@ struct Range {
     source: Source,
     file_offset: Option<u64>,
     segment: Option<usize>,
+    overlaps: Vec<Overlap>,
+}
+
+/// A segment other than the serving one that declares a range, and what it
+/// holds there from the range's start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Overlap {
+    segment: usize,
+    source: Source,
+    file_offset: Option<u64>,
 }
 
 /// The ranges one byte view's span is made of.
@@ -138,7 +159,7 @@ pub(super) fn of(
 ) -> Provenance {
     let unknown = || Provenance {
         segments: Vec::new(),
-        ranges: vec![Range { start, end, source: Source::Unknown, file_offset: None, segment: None }],
+        ranges: vec![Range { start, end, source: Source::Unknown, file_offset: None, segment: None, overlaps: Vec::new() }],
     };
     if end <= start {
         return Provenance { segments: Vec::new(), ranges: Vec::new() };
@@ -161,8 +182,10 @@ pub(super) fn of(
 /// image.
 fn segment_map(file: &object::File, bytes: &[u8], slice: u64) -> Option<Vec<Segment>> {
     let elf = file.format() == object::BinaryFormat::Elf;
+    let (entry, indices) = table_entries(file);
+    let indices = (indices.len() == file.segments().count()).then_some(indices);
     let mut segments = Vec::new();
-    for seg in file.segments() {
+    for (k, seg) in file.segments().enumerate() {
         let file_size = seg.data().ok()?.len() as u64; // cast: byte count
         let perms = Perms::of(seg.flags());
         let memsz = if perms.is_some_and(|p| p.exec) { 0 } else { seg.size() };
@@ -177,6 +200,7 @@ fn segment_map(file: &object::File, bytes: &[u8], slice: u64) -> Option<Vec<Segm
             None => format!("the segment at 0x{:x}", seg.address()),
         };
         segments.push(Segment {
+            index: indices.as_ref().map(|v| v[k]),
             name,
             label,
             vma: seg.address(),
@@ -190,6 +214,7 @@ fn segment_map(file: &object::File, bytes: &[u8], slice: u64) -> Option<Vec<Segm
     if let Some(region) = detect(file).ok().and_then(|fmt| fmt.header_region(file, bytes)) {
         let len = region.len as u64; // cast: clamped to the file length
         segments.push(Segment {
+            index: None,
             name: None,
             label: "the header page".to_string(),
             vma: region.vma,
@@ -200,6 +225,7 @@ fn segment_map(file: &object::File, bytes: &[u8], slice: u64) -> Option<Vec<Segm
             perms: Some(Perms { read: true, write: false, exec: false }),
         });
     }
+    disambiguate(&mut segments, entry);
     segments.sort_by_key(|s| s.vma);
     let loaded: Vec<usize> = (0..segments.len()).filter(|&i| segments[i].served > 0).collect();
     for pair in loaded.windows(2) {
@@ -208,6 +234,53 @@ fn segment_map(file: &object::File, bytes: &[u8], slice: u64) -> Option<Vec<Segm
         seg.served = seg.served.min(room).max(seg.file_size);
     }
     Some(segments)
+}
+
+/// What the table declaring `file.segments()` calls an entry, and each
+/// segment's 0-based index in it: the ELF program header table (`PT_LOAD`s
+/// among the other program headers), the Mach-O load commands, the PE section
+/// table.
+fn table_entries(file: &object::File) -> (&'static str, Vec<usize>) {
+    use object::read::elf::{ElfFile, FileHeader, ProgramHeader};
+    use object::read::macho::{MachHeader, MachOFile};
+    fn loads<'d, H: FileHeader>(f: &ElfFile<'d, H>) -> Vec<usize> {
+        let endian = f.endian();
+        let headers = f.elf_program_headers().iter().enumerate();
+        headers.filter(|(_, h)| h.p_type(endian) == object::elf::PT_LOAD).map(|(i, _)| i).collect()
+    }
+    fn commands<'d, M: MachHeader>(f: &MachOFile<'d, M>, segment: u32) -> Vec<usize> {
+        let mut found = Vec::new();
+        let Ok(mut commands) = f.macho_load_commands() else { return found };
+        let mut i = 0;
+        while let Ok(Some(command)) = commands.next() {
+            if command.cmd() == segment {
+                found.push(i);
+            }
+            i += 1;
+        }
+        found
+    }
+    match file {
+        object::File::Elf32(f) => ("program header", loads(f)),
+        object::File::Elf64(f) => ("program header", loads(f)),
+        object::File::MachO32(f) => ("load command", commands(f, object::macho::LC_SEGMENT)),
+        object::File::MachO64(f) => ("load command", commands(f, object::macho::LC_SEGMENT_64)),
+        _ => ("section", (0..file.segments().count()).collect()),
+    }
+}
+
+/// Name each segment whose label another shares by its table entry as well:
+/// two `PT_LOAD`s at one address, two sections of one name.
+fn disambiguate(segments: &mut [Segment], entry: &str) {
+    let mut uses: BTreeMap<String, usize> = BTreeMap::new();
+    for seg in segments.iter() {
+        *uses.entry(seg.label.clone()).or_default() += 1;
+    }
+    for seg in segments.iter_mut() {
+        if let Some(index) = seg.index.filter(|_| uses[&seg.label] > 1) {
+            seg.label = format!("{} ({entry} {index})", seg.label);
+        }
+    }
 }
 
 /// Is `segments`'s declared map the loader's own? The loader lists every
@@ -226,20 +299,35 @@ fn same_extents(segments: &[Segment], loader: &[(u64, u64, u32)]) -> bool {
 fn classify(segments: &[Segment], repairs: &[(u64, u64)], addr: u64) -> (Source, Option<u64>, Option<usize>) {
     let serving = segments.iter().position(|s| s.served > 0 && addr >= s.vma && addr - s.vma < s.served);
     if let Some(i) = serving {
-        let rel = addr - segments[i].vma;
-        if rel < segments[i].file_size {
-            let offset = segments[i].file_offset + rel;
-            let source = if repairs.iter().any(|&(lo, hi)| offset >= lo && offset < hi) {
-                Source::Repaired
-            } else {
-                Source::File
-            };
-            return (source, Some(offset), Some(i));
-        }
-        return (Source::ZeroFill, None, Some(i));
+        let (source, offset) = held(&segments[i], repairs, addr);
+        return (source, offset, Some(i));
     }
     let declaring = segments.iter().position(|s| addr >= s.vma && addr - s.vma < s.size);
     (Source::ZeroFill, None, declaring)
+}
+
+/// What `seg` holds at `addr`, an address it declares: its file bytes there
+/// (repaired or not), else zero fill.
+fn held(seg: &Segment, repairs: &[(u64, u64)], addr: u64) -> (Source, Option<u64>) {
+    let rel = addr - seg.vma;
+    if rel >= seg.file_size {
+        return (Source::ZeroFill, None);
+    }
+    let offset = seg.file_offset + rel;
+    let repaired = repairs.iter().any(|&(lo, hi)| offset >= lo && offset < hi);
+    (if repaired { Source::Repaired } else { Source::File }, Some(offset))
+}
+
+/// Every segment but `chosen` whose declared memory or file extent holds `addr`.
+fn others(segments: &[Segment], repairs: &[(u64, u64)], addr: u64, chosen: Option<usize>) -> Vec<Overlap> {
+    let declares = |s: &Segment| addr >= s.vma && addr - s.vma < s.size.max(s.file_size);
+    (0..segments.len())
+        .filter(|&j| Some(j) != chosen && declares(&segments[j]))
+        .map(|j| {
+            let (source, file_offset) = held(&segments[j], repairs, addr);
+            Overlap { segment: j, source, file_offset }
+        })
+        .collect()
 }
 
 /// `[start, end)` cut at every point where the source or the segment changes.
@@ -260,22 +348,26 @@ fn cut(segments: &[Segment], repairs: &[(u64, u64)], start: u64, end: u64) -> Ve
     let mut ranges: Vec<Range> = Vec::new();
     for piece in points.windows(2) {
         let (source, file_offset, segment) = classify(segments, repairs, piece[0]);
+        let overlaps = others(segments, repairs, piece[0], segment);
         if let Some(last) = ranges.last_mut() {
             let len = last.end - last.start;
             let continues = last.file_offset.zip(file_offset).is_none_or(|(a, b)| a + len == b);
-            if last.source == source && last.segment == segment && continues {
+            let same = |a: &Overlap, b: &Overlap| a.segment == b.segment && a.source == b.source;
+            let alike = last.overlaps.len() == overlaps.len() && last.overlaps.iter().zip(&overlaps).all(|(a, b)| same(a, b));
+            if last.source == source && last.segment == segment && continues && alike {
                 last.end = piece[1];
                 continue;
             }
         }
-        ranges.push(Range { start: piece[0], end: piece[1], source, file_offset, segment });
+        ranges.push(Range { start: piece[0], end: piece[1], source, file_offset, segment, overlaps });
     }
     ranges
 }
 
 impl Provenance {
     /// The stderr / `notes` lines: one for zero fill, one for repaired header
-    /// bytes, one for bytes in a segment that declares no read access.
+    /// bytes, one for bytes in a segment that declares no read access, one for
+    /// addresses more than one segment declares.
     pub(super) fn notes(&self) -> Vec<String> {
         let mut notes = Vec::new();
         let filled: Vec<&Range> = self.ranges.iter().filter(|r| r.source == Source::ZeroFill).collect();
@@ -311,7 +403,47 @@ impl Provenance {
             });
             notes.push(format!("no read access: {parts} -- the image declares the segment unreadable; kuna lists its bytes anyway"));
         }
+        let shared: Vec<&Range> = self.ranges.iter().filter(|r| !r.overlaps.is_empty()).collect();
+        if !shared.is_empty() {
+            let mut parts: Vec<String> = shared.iter().take(NOTE_RANGES).map(|r| self.spell_overlap(r)).collect();
+            if shared.len() > NOTE_RANGES {
+                parts.push(format!("and {} more", shared.len() - NOTE_RANGES));
+            }
+            notes.push(format!(
+                "overlapping segments: {} -- the image maps these addresses more than once; kuna orders its \
+                 segments by start address, equal starts in table order, ends each one's zero fill where the \
+                 next starts, and reads the first that covers an address; `--json` lists the others in each \
+                 range's `overlaps`",
+                parts.join("; ")
+            ));
+        }
         notes
+    }
+
+    /// `0x401000..0x401010 is read from file offset 0x1000 in A, and B maps it
+    /// from file offset 0x2000`.
+    fn spell_overlap(&self, r: &Range) -> String {
+        let label = |i: usize| &self.segments[i].label;
+        let chosen = match (r.source, r.file_offset, r.segment) {
+            (Source::ZeroFill, _, Some(i)) => format!("is zero fill in {}", label(i)),
+            (source, Some(offset), Some(i)) => {
+                let repaired = if source == Source::Repaired { " (repaired)" } else { "" };
+                format!("is read from file offset 0x{offset:x}{repaired} in {}", label(i))
+            }
+            _ => "is listed".to_string(),
+        };
+        let others: Vec<String> = r
+            .overlaps
+            .iter()
+            .map(|o| match (o.source, o.file_offset) {
+                (Source::Repaired, Some(offset)) => {
+                    format!("{} maps it from file offset 0x{offset:x} (repaired)", label(o.segment))
+                }
+                (_, Some(offset)) => format!("{} maps it from file offset 0x{offset:x}", label(o.segment)),
+                _ => format!("{} declares it as zero fill", label(o.segment)),
+            })
+            .collect();
+        format!("0x{:x}..0x{:x} {chosen}, and {}", r.start, r.end, others.join(" and "))
     }
 
     /// `0x0..0x10 in __PAGEZERO (detail)`, for up to [`NOTE_RANGES`] ranges.
@@ -332,24 +464,22 @@ impl Provenance {
 
     /// `provenance`, for the byte view's JSON document.
     pub(super) fn json_fields(&self) -> Vec<(String, Json)> {
-        let number = |v: u64| Json::Number(v.to_string());
-        let hex = |v: u64| Json::Str(format!("0x{v:x}"));
         let rows = self
             .ranges
             .iter()
             .map(|r| {
-                let segment = r.segment.map_or(Json::Null, |i| {
-                    let s = &self.segments[i];
-                    Json::Object(vec![
-                        ("name".into(), s.name.clone().map_or(Json::Null, Json::Str)),
-                        ("start".into(), number(s.vma)),
-                        ("start_hex".into(), hex(s.vma)),
-                        ("size".into(), number(s.size)),
-                        ("file_offset".into(), number(s.file_offset)),
-                        ("file_size".into(), number(s.file_size)),
-                        ("permissions".into(), s.perms.map_or(Json::Null, |p| Json::Str(p.spelled()))),
-                    ])
-                });
+                let overlaps = r
+                    .overlaps
+                    .iter()
+                    .map(|o| {
+                        Json::Object(vec![
+                            ("source".into(), Json::Str(o.source.as_str().into())),
+                            ("file_offset".into(), o.file_offset.map_or(Json::Null, number)),
+                            ("file_offset_hex".into(), o.file_offset.map_or(Json::Null, hex)),
+                            ("segment".into(), self.segment_json(o.segment)),
+                        ])
+                    })
+                    .collect();
                 Json::Object(vec![
                     ("start".into(), number(r.start)),
                     ("start_hex".into(), hex(r.start)),
@@ -359,12 +489,35 @@ impl Provenance {
                     ("source".into(), Json::Str(r.source.as_str().into())),
                     ("file_offset".into(), r.file_offset.map_or(Json::Null, number)),
                     ("file_offset_hex".into(), r.file_offset.map_or(Json::Null, hex)),
-                    ("segment".into(), segment),
+                    ("segment".into(), r.segment.map_or(Json::Null, |i| self.segment_json(i))),
+                    ("overlaps".into(), Json::Array(overlaps)),
                 ])
             })
             .collect();
         vec![("provenance".into(), Json::Array(rows))]
     }
+
+    fn segment_json(&self, i: usize) -> Json {
+        let s = &self.segments[i];
+        Json::Object(vec![
+            ("index".into(), s.index.map_or(Json::Null, |i| number(i as u64))), // cast: table index
+            ("name".into(), s.name.clone().map_or(Json::Null, Json::Str)),
+            ("start".into(), number(s.vma)),
+            ("start_hex".into(), hex(s.vma)),
+            ("size".into(), number(s.size)),
+            ("file_offset".into(), number(s.file_offset)),
+            ("file_size".into(), number(s.file_size)),
+            ("permissions".into(), s.perms.map_or(Json::Null, |p| Json::Str(p.spelled()))),
+        ])
+    }
+}
+
+fn number(v: u64) -> Json {
+    Json::Number(v.to_string())
+}
+
+fn hex(v: u64) -> Json {
+    Json::Str(format!("0x{v:x}"))
 }
 
 #[cfg(test)]
@@ -373,6 +526,7 @@ mod tests {
 
     fn seg(vma: u64, size: u64, file_size: u64, served: u64) -> Segment {
         Segment {
+            index: None,
             name: None,
             label: format!("the PT_LOAD at 0x{vma:x}"),
             vma,
@@ -385,7 +539,7 @@ mod tests {
     }
 
     fn range(start: u64, end: u64, source: Source, file_offset: Option<u64>, segment: Option<usize>) -> Range {
-        Range { start, end, source, file_offset, segment }
+        Range { start, end, source, file_offset, segment, overlaps: Vec::new() }
     }
 
     #[test]
@@ -412,6 +566,55 @@ mod tests {
     fn the_first_serving_segment_owns_a_byte_two_segments_claim() {
         let segments = [seg(0x1000, 0x100, 0x10, 0x20), seg(0x1020, 0x10, 0x10, 0x10)];
         assert_eq!(classify(&segments, &[], 0x1020), (Source::File, Some(0x100), Some(1)));
+    }
+
+    fn at(file_offset: u64, segment: Segment) -> Segment {
+        Segment { file_offset, ..segment }
+    }
+
+    fn other(segment: usize, source: Source, file_offset: Option<u64>) -> Overlap {
+        Overlap { segment, source, file_offset }
+    }
+
+    #[test]
+    fn two_loads_of_one_address_keep_the_first_and_list_the_second() {
+        let segments = [at(0x1000, seg(0x401000, 0x10, 0x10, 0x10)), at(0x2000, seg(0x401000, 0x10, 0x10, 0x10))];
+        let mut want = range(0x401000, 0x401010, Source::File, Some(0x1000), Some(0));
+        want.overlaps = vec![other(1, Source::File, Some(0x2000))];
+        assert_eq!(cut(&segments, &[], 0x401000, 0x401010), [want]);
+    }
+
+    #[test]
+    fn a_partial_overlap_is_its_own_range() {
+        let segments = [at(0x1000, seg(0x401000, 0x20, 0x20, 0x20)), at(0x2000, seg(0x401010, 0x20, 0x20, 0x20))];
+        let mut shared = range(0x401010, 0x401020, Source::File, Some(0x1010), Some(0));
+        shared.overlaps = vec![other(1, Source::File, Some(0x2000))];
+        assert_eq!(
+            cut(&segments, &[], 0x401000, 0x401030),
+            [
+                range(0x401000, 0x401010, Source::File, Some(0x1000), Some(0)),
+                shared,
+                range(0x401020, 0x401030, Source::File, Some(0x2010), Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_zero_fill_tail_under_the_next_segments_bytes_is_an_overlap() {
+        // The tail is trimmed where the next segment starts, so the next one
+        // serves; the first still declares that memory, as zero fill.
+        let segments = [at(0x1000, seg(0x601000, 0x100, 0x10, 0x80)), at(0x2080, seg(0x601080, 0x10, 0x10, 0x10))];
+        let mut shared = range(0x601080, 0x601090, Source::File, Some(0x2080), Some(1));
+        shared.overlaps = vec![other(0, Source::ZeroFill, None)];
+        assert_eq!(cut(&segments, &[], 0x601070, 0x601090)[1], shared);
+    }
+
+    #[test]
+    fn neighbours_that_meet_or_share_a_page_do_not_overlap() {
+        let meeting = [at(0x1000, seg(0x401000, 0x1000, 0x1000, 0x1000)), at(0x2000, seg(0x402000, 0x10, 0x10, 0x10))];
+        assert!(cut(&meeting, &[], 0x400ff0, 0x402010).iter().all(|r| r.overlaps.is_empty()));
+        let one_page = [at(0x1000, seg(0x401000, 0x10, 0x10, 0x10)), at(0x1800, seg(0x401800, 0x10, 0x10, 0x10))];
+        assert!(cut(&one_page, &[], 0x401000, 0x401810).iter().all(|r| r.overlaps.is_empty()));
     }
 
     #[test]

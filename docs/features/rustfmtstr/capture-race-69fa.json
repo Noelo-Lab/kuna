@@ -1,0 +1,50 @@
+{
+  "time": "2026-11-02 00:28:20.342245+00:00",
+  "reason": "Two distinct third-feature capture processes wrote identical files concurrently. Stop both, preserve the ambiguous captures, and recapture under an exclusive lock. Stop the waiting timing launcher before any samples.",
+  "stopped": [
+    {
+      "pid": 2203120,
+      "pgid": 2203099,
+      "args": [
+        "python3",
+        "-u",
+        "/tmp/kuna-angr-reference/launch-timing-candidate-index.py",
+        ""
+      ]
+    },
+    {
+      "pid": 2913808,
+      "pgid": 2913808,
+      "args": [
+        "python3",
+        "-u",
+        "/tmp/kuna-rust-fmt-str/breadth.py",
+        ""
+      ]
+    },
+    {
+      "pid": 2935303,
+      "pgid": 2935303,
+      "args": [
+        "python3",
+        "-u",
+        "/tmp/kuna-rust-fmt-str/breadth.py",
+        "--capture-only",
+        ""
+      ]
+    }
+  ],
+  "ambiguous_capture_directory": "/tmp/kuna-rust-fmt-str/breadth-ambiguous-20261102T002820Z",
+  "recovery_script": "/tmp/kuna-angr-reference/breadth-69fa-recovery.py",
+  "third_all_images_recaptured": true,
+  "exclusive_nonblocking_lock_added_to_capture_and_review": true,
+  "fourth_capture_unique_process_and_complete": true,
+  "fourth_capture_ready_sha256": "0aea14587c87a8eeba93fa2e4948f67f18570699a9276bc002bd1f356586a11f",
+  "note": "Boolean recapture field declares the required recovery action, not completion; main-69fa-equivalence.json proves completion.",
+  "recovery_completed_at": "2026-11-02 00:49:33.467965+00:00",
+  "recovery_completed": true,
+  "fresh_function_records_verified": 60876,
+  "fresh_images": 26,
+  "fresh_capture_receipt_sha256": "9ecac16bbc779f4eed530d3a34112d667297daa9e30390dd6ba8c69d3ee2b89e",
+  "all_fresh_capture_file_hashes_rechecked": true
+}

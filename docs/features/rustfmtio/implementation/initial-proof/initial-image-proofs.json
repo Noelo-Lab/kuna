@@ -1,0 +1,1812 @@
+{
+  "changed_functions": 11,
+  "records": [
+    {
+      "fixture": "native",
+      "function": "write_flags",
+      "address": "0x10560",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout)",
+                "\"{:#010x}/{:\u00b7>12}\"",
+                "& * ((v2 as * const _) as * const u32)",
+                "& * ((v4 as * const _) as * const u32)"
+              ],
+              "kind": "macro",
+              "literal": "{:#010x}/{:\u00b7>12}",
+              "name": "writeln",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v2",
+                  "primitive": "u32"
+                },
+                {
+                  "kind": "primitive",
+                  "pointer": "v4",
+                  "primitive": "u32"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match writeln ! (& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout) , \"{:#010x}/{:\u00b7>12}\" ,&* ((v2 as * const _) as * const u32) ,&* ((v4 as * const _) as * const u32)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "ReferenceCell",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 15,
+              "source_line_start": 15,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x6e27 as * mut u16",
+                "& mut v2"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x6e27 as * mut u16 , & mut v2)",
+              "sink": "write",
+              "source_line_end": 15,
+              "source_line_start": 15
+            },
+            "independent_descriptor": {
+              "call_instruction": 66971,
+              "callee": 293840,
+              "descriptor": {
+                "argument_count": 2,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 81712,
+                    "length_word": null,
+                    "pointer_stack_offset": -36
+                  },
+                  {
+                    "data_word": null,
+                    "formatter": 81424,
+                    "length_word": null,
+                    "pointer_stack_offset": -36
+                  }
+                ],
+                "array_stack_offset": -32,
+                "template": 28199
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "template_bytes": {
+              "address": "0x6e27",
+              "bytes": "c3200080690a00012fc3b70000280c00010a00",
+              "used_arguments": [
+                0,
+                1
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "ReferenceCell",
+              "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+              "callee": "0x47bd0",
+              "full_body_sha256": "8432513e8953800e407bd8c814c4e7f07fc7301d3c08767d18794cdce9f0b10d",
+              "body_bytes": 502,
+              "adapter_table": {
+                "address": "0x4ec10",
+                "words": [
+                  "0x46540",
+                  "0x10",
+                  "0x8",
+                  "0x48280",
+                  "0x48330",
+                  "0x48470"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x46540",
+                  "bytes": 131,
+                  "sha256": "a823411e096815bde08b484dbaca93ccd8070b170ca1f0f7e16b98714352a88e"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48280",
+                  "bytes": 170,
+                  "sha256": "4882a6e1d4b45ebb2b108ec02981292605e163c4c5d0f081c1a315b9dbaaa36e"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48330",
+                  "bytes": 307,
+                  "sha256": "a97277b7acbd3d0ae950c3f1c502fc35317b5d1f299ad5152466558ec777ed12"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x48470",
+                  "bytes": 18,
+                  "sha256": "72ed831f8760f8402e193f32c90b933d48f6d8f8157e833f54b719abde7ca6c4"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "native",
+      "function": "write_literal",
+      "address": "0x105b0",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout)",
+                "\"{{\u00e9\ud83d\ude42}}\\0\\n\""
+              ],
+              "kind": "macro",
+              "literal": "{{\u00e9\ud83d\ude42}}\u0000\n",
+              "name": "writeln",
+              "parameters": [],
+              "raw": "({ use std :: io :: Write as _ ; match writeln ! (& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout) , \"{{\u00e9\ud83d\ude42}}\\0\\n\") { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "ReferenceCell",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 4,
+              "source_line_start": 4,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x6e3a as * mut u16",
+                "0x17"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x6e3a as * mut u16 , 0x17)",
+              "sink": "write",
+              "source_line_end": 4,
+              "source_line_start": 4
+            },
+            "template_bytes": {
+              "address": "0x6e3a",
+              "literal_tag": 23,
+              "bytes": "7bc3a9f09f99827d000a0a"
+            },
+            "independent_descriptor": {
+              "call_instruction": 67004,
+              "callee": 293840,
+              "descriptor": {
+                "argument_count": 0,
+                "arguments": [],
+                "literal_tag": 23,
+                "template": 28218
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "ReferenceCell",
+              "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+              "callee": "0x47bd0",
+              "full_body_sha256": "8432513e8953800e407bd8c814c4e7f07fc7301d3c08767d18794cdce9f0b10d",
+              "body_bytes": 502,
+              "adapter_table": {
+                "address": "0x4ec10",
+                "words": [
+                  "0x46540",
+                  "0x10",
+                  "0x8",
+                  "0x48280",
+                  "0x48330",
+                  "0x48470"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x46540",
+                  "bytes": 131,
+                  "sha256": "a823411e096815bde08b484dbaca93ccd8070b170ca1f0f7e16b98714352a88e"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48280",
+                  "bytes": 170,
+                  "sha256": "4882a6e1d4b45ebb2b108ec02981292605e163c4c5d0f081c1a315b9dbaaa36e"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48330",
+                  "bytes": 307,
+                  "sha256": "a97277b7acbd3d0ae950c3f1c502fc35317b5d1f299ad5152466558ec777ed12"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x48470",
+                  "bytes": 18,
+                  "sha256": "72ed831f8760f8402e193f32c90b933d48f6d8f8157e833f54b719abde7ca6c4"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "native",
+      "function": "write_pair",
+      "address": "0x105d0",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout)",
+                "\"{}: {}\"",
+                "& * ((v3 as * const _) as * const u32)",
+                "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))"
+              ],
+              "kind": "macro",
+              "literal": "{}: {}",
+              "name": "write",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v3",
+                  "primitive": "u32"
+                },
+                {
+                  "data": "v2",
+                  "kind": "string",
+                  "length": "v4"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match write ! (& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout) , \"{}: {}\" ,&* ((v3 as * const _) as * const u32) , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v4 as usize))) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "ReferenceCell",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 19,
+              "source_line_start": 19,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x5eae as * mut u16",
+                "& mut v3"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x5eae as * mut u16 , & mut v3)",
+              "sink": "write",
+              "source_line_end": 19,
+              "source_line_start": 19
+            },
+            "independent_descriptor": {
+              "call_instruction": 67098,
+              "callee": 293840,
+              "descriptor": {
+                "argument_count": 2,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 81424,
+                    "length_word": null,
+                    "pointer_stack_offset": -52
+                  },
+                  {
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435517,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "formatter": 65296,
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435525,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "pointer_stack_offset": -48
+                  }
+                ],
+                "array_stack_offset": -32,
+                "template": 24238
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "template_bytes": {
+              "address": "0x5eae",
+              "bytes": "c0023a20c000",
+              "used_arguments": [
+                0,
+                1
+              ]
+            },
+            "verified_string_forwarders": [
+              {
+                "address": "0xff10",
+                "bytes": "4889f0488b37488b57084889c7e9ce310000",
+                "target": "0x130f0",
+                "target_name": "core::fmt::Formatter::pad",
+                "data_word": {
+                  "constant": null,
+                  "definition": "CPUI_COPY",
+                  "offset": 268435517,
+                  "size": 8,
+                  "space": "unique"
+                },
+                "length_word": {
+                  "constant": null,
+                  "definition": "CPUI_COPY",
+                  "offset": 268435525,
+                  "size": 8,
+                  "space": "unique"
+                }
+              }
+            ],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "ReferenceCell",
+              "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+              "callee": "0x47bd0",
+              "full_body_sha256": "8432513e8953800e407bd8c814c4e7f07fc7301d3c08767d18794cdce9f0b10d",
+              "body_bytes": 502,
+              "adapter_table": {
+                "address": "0x4ec10",
+                "words": [
+                  "0x46540",
+                  "0x10",
+                  "0x8",
+                  "0x48280",
+                  "0x48330",
+                  "0x48470"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x46540",
+                  "bytes": 131,
+                  "sha256": "a823411e096815bde08b484dbaca93ccd8070b170ca1f0f7e16b98714352a88e"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48280",
+                  "bytes": 170,
+                  "sha256": "4882a6e1d4b45ebb2b108ec02981292605e163c4c5d0f081c1a315b9dbaaa36e"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48330",
+                  "bytes": 307,
+                  "sha256": "a97277b7acbd3d0ae950c3f1c502fc35317b5d1f299ad5152466558ec777ed12"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x48470",
+                  "bytes": 18,
+                  "sha256": "72ed831f8760f8402e193f32c90b933d48f6d8f8157e833f54b719abde7ca6c4"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "native",
+      "function": "write_signed",
+      "address": "0x10630",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout)",
+                "\"{}\"",
+                "& * ((v2 as * const _) as * const i64)"
+              ],
+              "kind": "macro",
+              "literal": "{}",
+              "name": "writeln",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v2",
+                  "primitive": "i64"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match writeln ! (& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout) , \"{}\" ,&* ((v2 as * const _) as * const i64)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "ReferenceCell",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 11,
+              "source_line_start": 11,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x5f69 as * mut u16",
+                "& mut v2"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x5f69 as * mut u16 , & mut v2)",
+              "sink": "write",
+              "source_line_end": 11,
+              "source_line_start": 11
+            },
+            "independent_descriptor": {
+              "call_instruction": 67160,
+              "callee": 293840,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "formatter": 81328,
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_PTRSUB",
+                      "offset": 32,
+                      "size": 8,
+                      "space": "register"
+                    },
+                    "pointer_stack_offset": -24
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 24425
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "template_bytes": {
+              "address": "0x5f69",
+              "bytes": "c0010a00",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "ReferenceCell",
+              "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+              "callee": "0x47bd0",
+              "full_body_sha256": "8432513e8953800e407bd8c814c4e7f07fc7301d3c08767d18794cdce9f0b10d",
+              "body_bytes": 502,
+              "adapter_table": {
+                "address": "0x4ec10",
+                "words": [
+                  "0x46540",
+                  "0x10",
+                  "0x8",
+                  "0x48280",
+                  "0x48330",
+                  "0x48470"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x46540",
+                  "bytes": 131,
+                  "sha256": "a823411e096815bde08b484dbaca93ccd8070b170ca1f0f7e16b98714352a88e"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48280",
+                  "bytes": 170,
+                  "sha256": "4882a6e1d4b45ebb2b108ec02981292605e163c4c5d0f081c1a315b9dbaaa36e"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48330",
+                  "bytes": 307,
+                  "sha256": "a97277b7acbd3d0ae950c3f1c502fc35317b5d1f299ad5152466558ec777ed12"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x48470",
+                  "bytes": 18,
+                  "sha256": "72ed831f8760f8402e193f32c90b933d48f6d8f8157e833f54b719abde7ca6c4"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "native",
+      "function": "write_string",
+      "address": "0x10670",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout)",
+                "\"|{:\ud83e\udd80^10.3}|\"",
+                "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))"
+              ],
+              "kind": "macro",
+              "literal": "|{:\ud83e\udd80^10.3}|",
+              "name": "write",
+              "parameters": [
+                {
+                  "data": "v1",
+                  "kind": "string",
+                  "length": "v3"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match write ! (& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout) , \"|{:\ud83e\udd80^10.3}|\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v3 as usize))) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "ReferenceCell",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x6e45 as * mut u16",
+                "& mut v2"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x6e45 as * mut u16 , & mut v2)",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13
+            },
+            "independent_descriptor": {
+              "call_instruction": 67232,
+              "callee": 293840,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "formatter": 65296,
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435505,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "pointer_stack_offset": -32
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 28229
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "template_bytes": {
+              "address": "0x6e45",
+              "bytes": "017cc780f901580a000300017c00",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [
+              {
+                "address": "0xff10",
+                "bytes": "4889f0488b37488b57084889c7e9ce310000",
+                "target": "0x130f0",
+                "target_name": "core::fmt::Formatter::pad",
+                "data_word": {
+                  "constant": null,
+                  "definition": "CPUI_COPY",
+                  "offset": 268435497,
+                  "size": 8,
+                  "space": "unique"
+                },
+                "length_word": {
+                  "constant": null,
+                  "definition": "CPUI_COPY",
+                  "offset": 268435505,
+                  "size": 8,
+                  "space": "unique"
+                }
+              }
+            ],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "ReferenceCell",
+              "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+              "callee": "0x47bd0",
+              "full_body_sha256": "8432513e8953800e407bd8c814c4e7f07fc7301d3c08767d18794cdce9f0b10d",
+              "body_bytes": 502,
+              "adapter_table": {
+                "address": "0x4ec10",
+                "words": [
+                  "0x46540",
+                  "0x10",
+                  "0x8",
+                  "0x48280",
+                  "0x48330",
+                  "0x48470"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x46540",
+                  "bytes": 131,
+                  "sha256": "a823411e096815bde08b484dbaca93ccd8070b170ca1f0f7e16b98714352a88e"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48280",
+                  "bytes": 170,
+                  "sha256": "4882a6e1d4b45ebb2b108ec02981292605e163c4c5d0f081c1a315b9dbaaa36e"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48330",
+                  "bytes": 307,
+                  "sha256": "a97277b7acbd3d0ae950c3f1c502fc35317b5d1f299ad5152466558ec777ed12"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x48470",
+                  "bytes": 18,
+                  "sha256": "72ed831f8760f8402e193f32c90b933d48f6d8f8157e833f54b719abde7ca6c4"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "native",
+      "function": "write_unsigned",
+      "address": "0x106f0",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout)",
+                "\"[{}]\"",
+                "& * ((v2 as * const _) as * const u32)"
+              ],
+              "kind": "macro",
+              "literal": "[{}]",
+              "name": "write",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v2",
+                  "primitive": "u32"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match write ! (& mut * ((a0 as * mut _) as * mut & std :: io :: Stdout) , \"[{}]\" ,&* ((v2 as * const _) as * const u32)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "ReferenceCell",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 11,
+              "source_line_start": 11,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x5ea8 as * mut u16",
+                "& mut v2"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x5ea8 as * mut u16 , & mut v2)",
+              "sink": "write",
+              "source_line_end": 11,
+              "source_line_start": 11
+            },
+            "independent_descriptor": {
+              "call_instruction": 67354,
+              "callee": 293840,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 81424,
+                    "length_word": null,
+                    "pointer_stack_offset": -20
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 24232
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "template_bytes": {
+              "address": "0x5ea8",
+              "bytes": "015bc0015d00",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "ReferenceCell",
+              "binary_sha256": "6daea045edfbf828ec65c2f34c876e7dedf1cf1a483fd6f3e9295ef5fd9494bc",
+              "callee": "0x47bd0",
+              "full_body_sha256": "8432513e8953800e407bd8c814c4e7f07fc7301d3c08767d18794cdce9f0b10d",
+              "body_bytes": 502,
+              "adapter_table": {
+                "address": "0x4ec10",
+                "words": [
+                  "0x46540",
+                  "0x10",
+                  "0x8",
+                  "0x48280",
+                  "0x48330",
+                  "0x48470"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x46540",
+                  "bytes": 131,
+                  "sha256": "a823411e096815bde08b484dbaca93ccd8070b170ca1f0f7e16b98714352a88e"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48280",
+                  "bytes": 170,
+                  "sha256": "4882a6e1d4b45ebb2b108ec02981292605e163c4c5d0f081c1a315b9dbaaa36e"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48330",
+                  "bytes": 307,
+                  "sha256": "a97277b7acbd3d0ae950c3f1c502fc35317b5d1f299ad5152466558ec777ed12"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x48470",
+                  "bytes": 18,
+                  "sha256": "72ed831f8760f8402e193f32c90b933d48f6d8f8157e833f54b719abde7ca6c4"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_binary",
+      "address": "0xfc50",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut std :: mem :: transmute :: < * mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ())",
+                "\"{:#b}\"",
+                "& * ((v3 as * const _) as * const u32)"
+              ],
+              "kind": "macro",
+              "literal": "{:#b}",
+              "name": "write",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v3",
+                  "primitive": "u32"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match write ! (& mut std :: mem :: transmute ::<* mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ()) , \"{:#b}\" ,&* ((v3 as * const _) as * const u32)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "PromotedInner",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13,
+              "writer": "v1"
+            },
+            "before": {
+              "arguments": [
+                "v1",
+                "0x7b7c as * mut u16",
+                "& mut v3"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (v1 , 0x7b7c as * mut u16 , & mut v3)",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13
+            },
+            "independent_descriptor": {
+              "call_instruction": 64640,
+              "callee": 291120,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 79280,
+                    "length_word": null,
+                    "pointer_stack_offset": -20
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 31612
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": "CPUI_LOAD",
+                "offset": 146944,
+                "size": 8,
+                "space": "unique"
+              }
+            },
+            "template_bytes": {
+              "address": "0x7b7c",
+              "bytes": "c12000806000",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "PromotedInner",
+              "binary_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+              "callee": "0x47130",
+              "full_body_sha256": "0910b6a9107ed5c5ea2ed77ff3516df37aa08f12a8eacd07e4c201d70489f8d4",
+              "body_bytes": 509,
+              "adapter_table": {
+                "address": "0x4d8b0",
+                "words": [
+                  "0x45cd0",
+                  "0x10",
+                  "0x8",
+                  "0x47950",
+                  "0x47a00",
+                  "0x47b40"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x45cd0",
+                  "bytes": 131,
+                  "sha256": "5f909ee6eb1d8585d474a9992e9df952c8faf269582257fb8b5c86e56cad8f11"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x47950",
+                  "bytes": 170,
+                  "sha256": "fe89616894a553acd4ebee96aaf9baaf600aee9f6b6a4463c653346e14127545"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x47a00",
+                  "bytes": 307,
+                  "sha256": "83736ef85d862057c85d8badee5cc6ebdead1d22e14dd58665d4fc74bda147d1"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x47b40",
+                  "bytes": 18,
+                  "sha256": "4bdc09661de20a9b9c40c45def5a57682fca077e3223ab7353bede1644ce9a2d"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_debug",
+      "address": "0xfc90",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut std :: mem :: transmute :: < * mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ())",
+                "\"{:?}\"",
+                "& * ((v3 as * const _) as * const u32)"
+              ],
+              "kind": "macro",
+              "literal": "{:?}",
+              "name": "write",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v3",
+                  "primitive": "u32"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match write ! (& mut std :: mem :: transmute ::<* mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ()) , \"{:?}\" ,&* ((v3 as * const _) as * const u32)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "PromotedInner",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13,
+              "writer": "v1"
+            },
+            "before": {
+              "arguments": [
+                "v1",
+                "0x612d as * mut u16",
+                "& mut v3"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (v1 , 0x612d as * mut u16 , & mut v3)",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13
+            },
+            "independent_descriptor": {
+              "call_instruction": 64704,
+              "callee": 291120,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 64208,
+                    "length_word": null,
+                    "pointer_stack_offset": -20
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 24877
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": "CPUI_LOAD",
+                "offset": 146944,
+                "size": 8,
+                "space": "unique"
+              }
+            },
+            "template_bytes": {
+              "address": "0x612d",
+              "bytes": "c000",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "PromotedInner",
+              "binary_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+              "callee": "0x47130",
+              "full_body_sha256": "0910b6a9107ed5c5ea2ed77ff3516df37aa08f12a8eacd07e4c201d70489f8d4",
+              "body_bytes": 509,
+              "adapter_table": {
+                "address": "0x4d8b0",
+                "words": [
+                  "0x45cd0",
+                  "0x10",
+                  "0x8",
+                  "0x47950",
+                  "0x47a00",
+                  "0x47b40"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x45cd0",
+                  "bytes": 131,
+                  "sha256": "5f909ee6eb1d8585d474a9992e9df952c8faf269582257fb8b5c86e56cad8f11"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x47950",
+                  "bytes": 170,
+                  "sha256": "fe89616894a553acd4ebee96aaf9baaf600aee9f6b6a4463c653346e14127545"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x47a00",
+                  "bytes": 307,
+                  "sha256": "83736ef85d862057c85d8badee5cc6ebdead1d22e14dd58665d4fc74bda147d1"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x47b40",
+                  "bytes": 18,
+                  "sha256": "4bdc09661de20a9b9c40c45def5a57682fca077e3223ab7353bede1644ce9a2d"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_hex",
+      "address": "0xfcd0",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut std :: mem :: transmute :: < * mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ())",
+                "\"{:#x}\"",
+                "& * ((v3 as * const _) as * const u32)"
+              ],
+              "kind": "macro",
+              "literal": "{:#x}",
+              "name": "write",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v3",
+                  "primitive": "u32"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match write ! (& mut std :: mem :: transmute ::<* mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ()) , \"{:#x}\" ,&* ((v3 as * const _) as * const u32)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "PromotedInner",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13,
+              "writer": "v1"
+            },
+            "before": {
+              "arguments": [
+                "v1",
+                "0x7b7c as * mut u16",
+                "& mut v3"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (v1 , 0x7b7c as * mut u16 , & mut v3)",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13
+            },
+            "independent_descriptor": {
+              "call_instruction": 64768,
+              "callee": 291120,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 79536,
+                    "length_word": null,
+                    "pointer_stack_offset": -20
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 31612
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": "CPUI_LOAD",
+                "offset": 146944,
+                "size": 8,
+                "space": "unique"
+              }
+            },
+            "template_bytes": {
+              "address": "0x7b7c",
+              "bytes": "c12000806000",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "PromotedInner",
+              "binary_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+              "callee": "0x47130",
+              "full_body_sha256": "0910b6a9107ed5c5ea2ed77ff3516df37aa08f12a8eacd07e4c201d70489f8d4",
+              "body_bytes": 509,
+              "adapter_table": {
+                "address": "0x4d8b0",
+                "words": [
+                  "0x45cd0",
+                  "0x10",
+                  "0x8",
+                  "0x47950",
+                  "0x47a00",
+                  "0x47b40"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x45cd0",
+                  "bytes": 131,
+                  "sha256": "5f909ee6eb1d8585d474a9992e9df952c8faf269582257fb8b5c86e56cad8f11"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x47950",
+                  "bytes": 170,
+                  "sha256": "fe89616894a553acd4ebee96aaf9baaf600aee9f6b6a4463c653346e14127545"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x47a00",
+                  "bytes": 307,
+                  "sha256": "83736ef85d862057c85d8badee5cc6ebdead1d22e14dd58665d4fc74bda147d1"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x47b40",
+                  "bytes": 18,
+                  "sha256": "4bdc09661de20a9b9c40c45def5a57682fca077e3223ab7353bede1644ce9a2d"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "promoted",
+      "function": "write_value",
+      "address": "0xfd10",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut std :: mem :: transmute :: < * mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ())",
+                "\"v: {}\"",
+                "& * ((v3 as * const _) as * const u32)"
+              ],
+              "kind": "macro",
+              "literal": "v: {}",
+              "name": "writeln",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v3",
+                  "primitive": "u32"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match writeln ! (& mut std :: mem :: transmute ::<* mut () , std :: io :: Stdout > ((v1 as * mut _) as * mut ()) , \"v: {}\" ,&* ((v3 as * const _) as * const u32)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "PromotedInner",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13,
+              "writer": "v1"
+            },
+            "before": {
+              "arguments": [
+                "v1",
+                "0x62d9 as * mut u16",
+                "& mut v3"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (v1 , 0x62d9 as * mut u16 , & mut v3)",
+              "sink": "write",
+              "source_line_end": 13,
+              "source_line_start": 13
+            },
+            "independent_descriptor": {
+              "call_instruction": 64832,
+              "callee": 291120,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": null,
+                    "formatter": 78544,
+                    "length_word": null,
+                    "pointer_stack_offset": -20
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 25305
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": "CPUI_LOAD",
+                "offset": 146944,
+                "size": 8,
+                "space": "unique"
+              }
+            },
+            "template_bytes": {
+              "address": "0x62d9",
+              "bytes": "03763a20c0010a00",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "PromotedInner",
+              "binary_sha256": "0a3a3b2b8b6b2d36c4746b9bcae65920babdd186ed2b1851ef7fedeea9caa76e",
+              "callee": "0x47130",
+              "full_body_sha256": "0910b6a9107ed5c5ea2ed77ff3516df37aa08f12a8eacd07e4c201d70489f8d4",
+              "body_bytes": 509,
+              "adapter_table": {
+                "address": "0x4d8b0",
+                "words": [
+                  "0x45cd0",
+                  "0x10",
+                  "0x8",
+                  "0x47950",
+                  "0x47a00",
+                  "0x47b40"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x45cd0",
+                  "bytes": 131,
+                  "sha256": "5f909ee6eb1d8585d474a9992e9df952c8faf269582257fb8b5c86e56cad8f11"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x47950",
+                  "bytes": 170,
+                  "sha256": "fe89616894a553acd4ebee96aaf9baaf600aee9f6b6a4463c653346e14127545"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x47a00",
+                  "bytes": 307,
+                  "sha256": "83736ef85d862057c85d8badee5cc6ebdead1d22e14dd58665d4fc74bda147d1"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x47b40",
+                  "bytes": 18,
+                  "sha256": "4bdc09661de20a9b9c40c45def5a57682fca077e3223ab7353bede1644ce9a2d"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    },
+    {
+      "fixture": "reference",
+      "function": "fmtdemo::write_out",
+      "address": "0x111f0",
+      "proof": {
+        "changes": [
+          {
+            "after": {
+              "arguments": [
+                "& mut std :: mem :: transmute :: < * mut () , std :: io :: Stdout > ((a0 as * mut _) as * mut ())",
+                "\"v: {}\"",
+                "& * ((v2 as * const _) as * const i64)"
+              ],
+              "kind": "macro",
+              "literal": "v: {}",
+              "name": "writeln",
+              "parameters": [
+                {
+                  "kind": "primitive",
+                  "pointer": "v2",
+                  "primitive": "i64"
+                }
+              ],
+              "raw": "({ use std :: io :: Write as _ ; match writeln ! (& mut std :: mem :: transmute ::<* mut () , std :: io :: Stdout > ((a0 as * mut _) as * mut ()) , \"v: {}\" ,&* ((v2 as * const _) as * const i64)) { std :: result :: Result :: Ok (()) => 0i64 , std :: result :: Result :: Err (_kuna_io_error) => std :: mem :: transmute :: < std :: io :: Error , * mut () > (_kuna_io_error) as usize as i64 } })",
+              "receiver": "PromotedInner",
+              "result_type": "i64",
+              "sink": "write",
+              "source_line_end": 12,
+              "source_line_start": 12,
+              "writer": "a0"
+            },
+            "before": {
+              "arguments": [
+                "a0",
+                "0x6697 as * mut u16",
+                "& mut v2"
+              ],
+              "kind": "runtime",
+              "raw": "_std :: io :: stdio :: Stdout :: write_fmt (a0 , 0x6697 as * mut u16 , & mut v2)",
+              "sink": "write",
+              "source_line_end": 12,
+              "source_line_start": 12
+            },
+            "independent_descriptor": {
+              "call_instruction": 70168,
+              "callee": 296800,
+              "descriptor": {
+                "argument_count": 1,
+                "arguments": [
+                  {
+                    "data_word": {
+                      "constant": null,
+                      "definition": "CPUI_COPY",
+                      "offset": 268435497,
+                      "size": 8,
+                      "space": "unique"
+                    },
+                    "formatter": 84608,
+                    "length_word": {
+                      "constant": null,
+                      "definition": "CPUI_PTRSUB",
+                      "offset": 32,
+                      "size": 8,
+                      "space": "register"
+                    },
+                    "pointer_stack_offset": -24
+                  }
+                ],
+                "array_stack_offset": -16,
+                "template": 26263
+              },
+              "name": "&std::io::stdio::Stdout::write_fmt",
+              "result_size": 8,
+              "result_type": "u64",
+              "runtime_argument_count": 3,
+              "writer": {
+                "constant": null,
+                "definition": null,
+                "offset": 56,
+                "size": 8,
+                "space": "register"
+              }
+            },
+            "template_bytes": {
+              "address": "0x6697",
+              "bytes": "03763a20c0010a00",
+              "used_arguments": [
+                0
+              ]
+            },
+            "verified_string_forwarders": [],
+            "all_template_bytes_and_argument_bindings_verified": true,
+            "writer_profile": {
+              "receiver": "PromotedInner",
+              "binary_sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+              "callee": "0x48760",
+              "full_body_sha256": "4bde4be5b49710f32cbf8298a40dcba5a0243890acccfefcdf3ee6546641c849",
+              "body_bytes": 509,
+              "adapter_table": {
+                "address": "0x4f070",
+                "words": [
+                  "0x470d0",
+                  "0x10",
+                  "0x8",
+                  "0x48f40",
+                  "0x48ff0",
+                  "0x49130"
+                ],
+                "names": [
+                  [
+                    "core::ptr::drop_in_place<std::io::default_write_fmt::Adapter<std::io::cursor::Cursor<&mut [u8]>>>"
+                  ],
+                  [],
+                  [
+                    "std::panicking::panic_count::LOCAL_PANIC_COUNT::{{constant}}::{{closure}}::__RUST_STD_INTERNAL_VAL"
+                  ],
+                  [
+                    "<std::io::default_write_fmt::Adapter<T> as core::fmt::Write>::write_str"
+                  ],
+                  [
+                    "core::fmt::Write::write_char"
+                  ],
+                  [
+                    "core::fmt::Write::write_fmt"
+                  ]
+                ]
+              },
+              "callbacks": [
+                {
+                  "slot": 0,
+                  "address": "0x470d0",
+                  "bytes": 131,
+                  "sha256": "8ef791f5555f9a441f449ba91651bb97edbb977fbb51774e05d6703b87450f7c"
+                },
+                {
+                  "slot": 3,
+                  "address": "0x48f40",
+                  "bytes": 170,
+                  "sha256": "378f959f910b3a1119a28df9f616b9ed1e2af8f6f12e1bda8d08bd57bd0dc699"
+                },
+                {
+                  "slot": 4,
+                  "address": "0x48ff0",
+                  "bytes": 307,
+                  "sha256": "317d6b5e3c408e6b98497bae4194a088ede41b95ff47c1b2703710cd9127a785"
+                },
+                {
+                  "slot": 5,
+                  "address": "0x49130",
+                  "bytes": 18,
+                  "sha256": "3bceabe30e5f753a7993f0db57662a5d9b38a30233d54b3e96053f9f4e99e13a"
+                }
+              ],
+              "basis": "Exact image hash and complete bodies match the separately decoded instruction/target-role records, including the StdoutLock write_all target in both adapter writers. No inference from generic adapter names alone."
+            },
+            "result_bridge": {
+              "storage_bytes": 8,
+              "single_function_parent_type": "u64",
+              "complete_function_return_type": "i64",
+              "same_eight_bits_per_byte": true,
+              "signedness_note": "Complete-project signatures are inferred as i64 while the independent single-function parent extractor often reports u64. Both preserve the complete eight-byte result word; the emitted cast follows the unchanged complete-project return type."
+            }
+          }
+        ],
+        "identical_preexisting_syntax_repairs": {}
+      }
+    }
+  ],
+  "all_template_bytes_and_argument_bindings_verified": true,
+  "all_exact_writer_profiles_verified": true,
+  "scope": "Independent parent raw operands and separately decoded complete body profiles bind every initial recovered call. Full breadth and instruction mapping classification remain separate."
+}

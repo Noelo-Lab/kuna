@@ -1,0 +1,92 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling serde_core v1.0.229
+   Compiling crc32fast v1.5.0
+   Compiling simd-adler32 v0.3.9
+   Compiling thiserror v2.0.18
+   Compiling adler2 v2.0.1
+   Compiling serde v1.0.229
+   Compiling miniz_oxide v0.8.9
+   Compiling winnow v1.0.4
+   Compiling memchr v2.8.2
+   Compiling version_check v0.9.5
+   Compiling bitflags v2.13.0
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling slotmap v1.1.1
+   Compiling flate2 v1.1.9
+   Compiling syn v2.0.117
+   Compiling syn v3.0.6
+   Compiling thiserror v1.0.69
+   Compiling itoa v1.0.18
+   Compiling cpp_demangle v0.5.1
+   Compiling object v0.39.1
+   Compiling smallvec v1.15.1
+   Compiling uuid v1.23.4
+   Compiling arrayvec v0.7.8
+   Compiling nonmax v0.5.5
+   Compiling bumpalo v3.20.3
+   Compiling scroll v0.11.0
+   Compiling fallible-iterator v0.2.0
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling pdb v0.8.0
+   Compiling msvc-demangler v0.11.0
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling gimli v0.33.0
+   Compiling thiserror-impl v2.0.18
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v1.0.69
+   Compiling undname v2.1.2
+   Compiling kuna-base v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-base)
+   Compiling rustc-demangle v0.1.27
+   Compiling kuna-num v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-num)
+   Compiling kuna-console v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-console)
+   Compiling kuna-sleigh v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-sleigh)
+   Compiling aho-corasick v1.1.4
+   Compiling kuna-decomp v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-decomp)
+warning: unused import: `kuna_base::types::Wrap`
+  --> crates/kuna-sleigh/src/kuna_sharedbytes.rs:20:5
+   |
+20 | use kuna_base::types::Wrap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+   Compiling libc v0.2.189
+   Compiling regex-syntax v0.8.11
+   Compiling getrandom v0.4.3
+   Compiling rustix v1.1.5
+   Compiling zmij v1.0.23
+   Compiling serde_json v1.0.151
+   Compiling linux-raw-sys v0.12.1
+   Compiling once_cell v1.21.4
+   Compiling regex-automata v0.4.14
+   Compiling kuna-cli v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-cli)
+   Compiling fastrand v2.5.0
+   Compiling tempfile v3.27.0
+   Compiling regex v1.12.4
+   Compiling kuna-slacomp v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-slacomp)
+warning: `kuna-sleigh` (lib) generated 1 warning
+warning: unused import: `crate::dtype::TypeFactory`
+  --> crates/kuna-decomp/src/p5_types/kuna_fatstr.rs:56:5
+   |
+56 | use crate::dtype::TypeFactory;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+   Compiling kuna-analysis v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-analysis)
+warning: unused import: `flags as tflags`
+  --> crates/kuna-analysis/src/analyzers/gotypes/mod.rs:73:26
+   |
+73 | use kuna_decomp::dtype::{flags as tflags, type_metatype, Datatype, TypeFactory, TypeField};
+   |                          ^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` on by default
+
+   Compiling kuna-harness v0.1.0 (/home/mahaloz/kwt/angr-rust-fmt-write-main/decompiler/crates/kuna-harness)
+warning: `kuna-analysis` (lib) generated 1 warning (run `cargo fix --lib -p kuna-analysis` to apply 1 suggestion)
+warning: `kuna-decomp` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 1m 49s

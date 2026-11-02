@@ -4602,8 +4602,15 @@ pub fn bootstrap_from_object_with_isa(
     sleigh.base_mut().unwrap().source_lang_detected = compiler.to_source_lang();
     sleigh.base_mut().unwrap().rustc_stable_version =
         kuna_analysis::sourcelang::stable_rustc_version(&bytes);
-    if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1))) {
-        let formatters = kuna_analysis::sourcelang::integer_formatters(&bytes);
+    if let Some(layout) = kuna_analysis::sourcelang::fmt_pieces_layout(&bytes) {
+        sleigh.base_mut().unwrap().rustc_pieces_layout = true;
+        sleigh.base_mut().unwrap().rust_fmt_pieces_relro = layout.relro;
+    }
+    if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1)))
+        || sleigh.base().unwrap().rustc_pieces_layout
+    {
+        let metadata = kuna_analysis::sourcelang::formatter_metadata(&bytes);
+        let formatters = metadata.integers;
         sleigh.base_mut().unwrap().rust_display_formatters = formatters
             .iter()
             .filter_map(|(&address, formatter)| {
@@ -4612,6 +4619,10 @@ pub fn bootstrap_from_object_with_isa(
             })
             .collect();
         sleigh.base_mut().unwrap().rust_integer_formatters = formatters;
+        sleigh.base_mut().unwrap().rust_str_display_formatters = metadata.strings;
+        sleigh.base_mut().unwrap().rust_string_writer_methods = metadata.writers.methods;
+        sleigh.base_mut().unwrap().rust_fmt_write_relro = metadata.writers.relro;
+        sleigh.base_mut().unwrap().rust_io_writer_profiles = metadata.io_writers;
     }
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames

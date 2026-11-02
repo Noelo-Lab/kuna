@@ -1,0 +1,10 @@
+{
+  "main_commit": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+  "all_complete_function_records_identical": true,
+  "function_records": 60876,
+  "images": 26,
+  "all_original_native_and_manual_mapping_evidence_still_applies": true,
+  "prior_record_sha256": "f454196ffa0b5ae551d16a7ba336c69991e4be7eef453a929491cfb750812963",
+  "fresh_descriptor_helper_sha256": "f449cc0007f7622138e0c8e7ec5e85004b4bc4e60d7517370003aba6cc6e4c91",
+  "binary_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436"
+}

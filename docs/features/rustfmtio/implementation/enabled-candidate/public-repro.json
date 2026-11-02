@@ -1,0 +1,18 @@
+{
+  "fixture_sha256": "f9b4a0e7c8da1f548c8b7e9021fb653563a75b3fc20a1b7a54586acdf2305c0b",
+  "records": [
+    {
+      "side": "before",
+      "cli_sha256": "0fdc402c5cd45cbef01ada818305714c15bbd4691d105cba6e275cb4df70b341",
+      "complete_output_unchanged": true,
+      "output_sha256": "fafe16d0a3a99dd4d81b59afc67c8b37b482dc60065da48a9fbb41ca4256f986"
+    },
+    {
+      "side": "after",
+      "cli_sha256": "9b135d0758d7d5c13dc8fa2c22ce639902c9e29d6df84c2fae5735b1b81b7be4",
+      "complete_output_unchanged": true,
+      "output_sha256": "cdb3ce1ab649c92a8a8e8fb34ac6b85696b1da4180dfc4a456e14ecf026d48f8"
+    }
+  ],
+  "all_outputs_unchanged": true
+}

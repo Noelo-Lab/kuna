@@ -1,0 +1,1897 @@
+{
+  "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+  "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+  "baseline_commit": "e29a0ef52489142062669b7b8b41d0db09120fcb",
+  "baseline_has_pending_feature": false,
+  "options": {
+    "godwarfsig": "on"
+  },
+  "semantic_evidence_pending": false,
+  "fixtures": [
+    {
+      "fixture": "hermetic",
+      "sha256": "bba8279cd1d9fd4eaeba20c569b42220ac2669077ab6b821af9ecb7ed34edbf4",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "changed": [],
+          "parsed": 25,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "hermetic-plain",
+      "sha256": "5a4639f1ec63784e2df482446cb805199b53dc2989ebec936f31c5064692bb29",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 25,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 25,
+          "changed": [],
+          "parsed": 25,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native-c",
+      "sha256": "2ab52230e3235ef5517798c672c476e136122a11526b0d4a5560f04fb4bfa8d4",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 55,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 55,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 55,
+          "changed": [],
+          "parsed": 55,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native",
+      "sha256": "243073101d99260f354c13a6a06640d53d9eef64e4c4a4fdf8d9a5d8c6465c09",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 1156,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "stripped122",
+      "sha256": "7dd6e9c20e0237149281df4ad3eb2e0fef0460b8c5958dee0ef7ed88c8bb8e32",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2017,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2017,
+          "changed": [],
+          "parsed": 2017,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "basics122",
+      "sha256": "b0c5144b05517c764da886a30b5eeca5709b6b655e93b55ae4967042943db50f",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2018,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2018,
+          "changed": [],
+          "parsed": 2018,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "langdetect",
+      "sha256": "98a0709c40921feb13de3b88d035f01dd1a457366e9df12ddc86eeb6ee1f0d84",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1558,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1558,
+          "changed": [],
+          "parsed": 1558,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "basics127",
+      "sha256": "62d72f2a7d729ff139c7c08fbc999a9d7e073735f81dcce752dcc6174c1959d4",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 2552,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "grep",
+      "sha256": "f71085ac2429924667499e96cac0c82963a1982f5f503c8374ec21c6fd21902d",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 449,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 449,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "entry-ranges",
+      "sha256": "b0f38a89fec7a625d005888c2b10b77352e63d605ac64357eccf2d0bbfabb5a0",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "changed": [],
+          "parsed": 9,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "entry-plain",
+      "sha256": "4634398d909f8a704c9a9c5b7dbb281435d8615362364559b8608d45a2136179",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 9,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 9,
+          "changed": [],
+          "parsed": 9,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "rust",
+      "sha256": "d0fa5f85392912679e5c38216ffc5382119eeb6fbf8de27ac95fb33b24e7fdfb",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 455,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 455,
+          "changed": [
+            {
+              "address": "0x11230",
+              "name": "fmtdemo::write_str",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"[{}]\"",
+                        "& * ((v2 as * const _) as * const i64)"
+                      ],
+                      "kind": "macro",
+                      "literal": "[{}]",
+                      "name": "write",
+                      "parameters": [
+                        {
+                          "kind": "primitive",
+                          "pointer": "v2",
+                          "primitive": "i64"
+                        }
+                      ],
+                      "raw": "({ use std :: fmt :: Write as _ ; write ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"[{}]\" ,&* ((v2 as * const _) as * const i64)) }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 13,
+                      "source_line_start": 13,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4e388 as * mut ()",
+                        "0x5f14 as * mut u16",
+                        "& mut v2"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4e388 as * mut () , 0x5f14 as * mut u16 , & mut v2)",
+                      "sink": "write",
+                      "source_line_end": 13,
+                      "source_line_start": 13
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 70242,
+                      "callee": 74688,
+                      "descriptor": {
+                        "argument_count": 1,
+                        "arguments": [
+                          {
+                            "data_word": {
+                              "constant": null,
+                              "definition": "CPUI_COPY",
+                              "offset": 268435539,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "formatter": 84608,
+                            "length_word": {
+                              "constant": null,
+                              "definition": "CPUI_PTRSUB",
+                              "offset": 40192,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "pointer_stack_offset": -24
+                          }
+                        ],
+                        "array_stack_offset": -16,
+                        "template": 24340
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 320392,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "template_bytes": {
+                      "address": "0x5f14",
+                      "bytes": "015bc0015d00",
+                      "used_arguments": [
+                        0
+                      ]
+                    },
+                    "verified_string_forwarders": [],
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4e388",
+                      "bytes": "800001000000000018000000000000000800000000000000600201000000000050010100000000004000010000000000",
+                      "words": [
+                        "0x10080",
+                        "0x18",
+                        "0x8",
+                        "0x10260",
+                        "0x10150",
+                        "0x10040"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0x1125d"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "param_1",
+                    "added_call_addresses": [],
+                    "lost_call_addresses": [
+                      "0x1125d"
+                    ]
+                  },
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0x11262",
+                      "0x11267"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -10,7 +10,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "native1273",
+      "sha256": "86b2eb60b0fa1cc1d79b265fd2285fce8c64dc228c7cae9011088cc066101d9c",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 1495,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native-plain",
+      "sha256": "6a205d35899107445c0d702d7a6c4900180be4203770983a8a050d3ec40f2da5",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1156,
+          "changed": [],
+          "parsed": 1156,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "basics127-plain",
+      "sha256": "c6336c1c1695e2a60d8366df79d8fb6bd49c5eda7600443f03708bf14e4df973",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 2552,
+          "changed": [],
+          "parsed": 2552,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native1273-plain",
+      "sha256": "a7bd1bd161b4ec27c9621ea107beec9197b7fd2bea618b7a7bbcf6d1a08f94ff",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "go",
+          "functions": 1495,
+          "changed": [],
+          "parsed": 1495,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "native-rust",
+      "sha256": "a8d645aa936436b48f25da980315057d94a4e4b2996ef4f47f8ed465c4f1e3dd",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 550,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 550,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "panic-shapes",
+      "sha256": "2aae9c46507fe73bbd96b2f14680abda08a8e0b6230723e8a6e857af83a6aa41",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 19,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 19,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 19,
+          "changed": [],
+          "parsed": 19,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "panic-native",
+      "sha256": "b0e67472c201256e056bcb5fa7df31247af95883ac8d63e67feeda143fb58fdc",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 597,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 597,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 597,
+          "changed": [],
+          "parsed": 597,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "rust2025",
+      "sha256": "236a96c8188b5ac75e93615118526b14b91a4aef0aca12d18f9c2a4ef91fce8a",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 7763,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 7763,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-x86_64",
+      "sha256": "c6da9524b18af91d6170d1c08c51745fa22b23609a8896cb09e2c39e5a6c24b2",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 26,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 26,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 26,
+          "changed": [],
+          "parsed": 26,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-1.89.0",
+      "sha256": "97957a440ca3c4371d2db9a6466bf7fb04446c4635902a495b298cdafde4d1f9",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 576,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 576,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 576,
+          "changed": [],
+          "parsed": 576,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-1.90.0",
+      "sha256": "a7ec1cdec236eb04099cc34837e909b96026c8f123c0779172756c018a1506f5",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 572,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 572,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 572,
+          "changed": [],
+          "parsed": 572,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "str-native",
+      "sha256": "ade6bc5156662c54bbec228144697742f5d5d1f7eb5a16b99bc3903d41229658",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 455,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 455,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 455,
+          "changed": [],
+          "parsed": 455,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "pieces-nightly-2025-05-22",
+      "sha256": "cd285172fbd14770c68d2cd4706c65165ed75ecee27a94e9f432e758370924e5",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 562,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 562,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 562,
+          "changed": [],
+          "parsed": 562,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "str-nonlto",
+      "sha256": "28eb629c79f520445e6504f44097ff784ffe0e4d30b5002543068a2757ad0e6c",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 574,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 574,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 574,
+          "changed": [],
+          "parsed": 574,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    },
+    {
+      "fixture": "write-native",
+      "sha256": "49e7820ee6b92f163d4c80e8c63f615405b3ed44ddbb4b4ad39b9322301cdc19",
+      "patched_kuna_sha256": "9d21d6cfb2ef53ce9dd9f936685914e7f61c62f92e860f084b19c2042f61728d",
+      "baseline_kuna_sha256": "3c02df83c668a800f017b8e382f6d9d82776e65caa90fdbfdcb3a956db473436",
+      "languages": [
+        {
+          "language": "c",
+          "functions": 436,
+          "changed": [],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": false
+        },
+        {
+          "language": "rust",
+          "functions": 436,
+          "changed": [
+            {
+              "address": "0xf960",
+              "name": "write_empty",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"\""
+                      ],
+                      "kind": "macro",
+                      "literal": "",
+                      "name": "write",
+                      "parameters": [],
+                      "raw": "({ use std :: fmt :: Write as _ ; write ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"\") }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 6,
+                      "source_line_start": 6,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x1 as * mut u16",
+                        "1"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x1 as * mut u16 , 1)",
+                      "sink": "write",
+                      "source_line_end": 6,
+                      "source_line_start": 6
+                    },
+                    "template_bytes": {
+                      "address": "0x1",
+                      "literal_tag": 1,
+                      "bytes": ""
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 63858,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 0,
+                        "arguments": [],
+                        "literal_tag": 1,
+                        "template": 1
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -3,7 +3,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            },
+            {
+              "address": "0xf9b0",
+              "name": "write_flags",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"{:#010x}/{:\u00b7>12}\"",
+                        "& * ((v2 as * const _) as * const u32)",
+                        "& * ((v5 as * const _) as * const u32)"
+                      ],
+                      "kind": "macro",
+                      "literal": "{:#010x}/{:\u00b7>12}",
+                      "name": "writeln",
+                      "parameters": [
+                        {
+                          "kind": "primitive",
+                          "pointer": "v2",
+                          "primitive": "u32"
+                        },
+                        {
+                          "kind": "primitive",
+                          "pointer": "v5",
+                          "primitive": "u32"
+                        }
+                      ],
+                      "raw": "({ use std :: fmt :: Write as _ ; writeln ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"{:#010x}/{:\u00b7>12}\" ,&* ((v2 as * const _) as * const u32) ,&* ((v5 as * const _) as * const u32)) }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 16,
+                      "source_line_start": 16,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x69b2 as * mut u16",
+                        "& mut v2"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x69b2 as * mut u16 , & mut v2)",
+                      "sink": "write",
+                      "source_line_end": 16,
+                      "source_line_start": 16
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 63986,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 2,
+                        "arguments": [
+                          {
+                            "data_word": null,
+                            "formatter": 78704,
+                            "length_word": null,
+                            "pointer_stack_offset": -36
+                          },
+                          {
+                            "data_word": null,
+                            "formatter": 78416,
+                            "length_word": null,
+                            "pointer_stack_offset": -36
+                          }
+                        ],
+                        "array_stack_offset": -32,
+                        "template": 27058
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "template_bytes": {
+                      "address": "0x69b2",
+                      "bytes": "c3200080690a00012fc3b70000280c00010a00",
+                      "used_arguments": [
+                        0,
+                        1
+                      ]
+                    },
+                    "verified_string_forwarders": [],
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0xf9ed"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "param_1",
+                    "added_call_addresses": [],
+                    "lost_call_addresses": [
+                      "0xf9ed"
+                    ]
+                  },
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0xf9f7"
+                    ],
+                    "lost_call_addresses": []
+                  },
+                  {
+                    "name": "v5",
+                    "added_call_addresses": [
+                      "0xf9f7"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -13,7 +13,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            },
+            {
+              "address": "0xfa30",
+              "name": "write_literal",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"{{\u00e9\ud83d\ude42}}\\0\\n\""
+                      ],
+                      "kind": "macro",
+                      "literal": "{{\u00e9\ud83d\ude42}}\u0000\n",
+                      "name": "writeln",
+                      "parameters": [],
+                      "raw": "({ use std :: fmt :: Write as _ ; writeln ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"{{\u00e9\ud83d\ude42}}\\0\\n\") }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 6,
+                      "source_line_start": 6,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x69c5 as * mut u16",
+                        "0x17"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x69c5 as * mut u16 , 0x17)",
+                      "sink": "write",
+                      "source_line_end": 6,
+                      "source_line_start": 6
+                    },
+                    "template_bytes": {
+                      "address": "0x69c5",
+                      "literal_tag": 23,
+                      "bytes": "7bc3a9f09f99827d000a0a"
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 64068,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 0,
+                        "arguments": [],
+                        "literal_tag": 23,
+                        "template": 27077
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -3,7 +3,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            },
+            {
+              "address": "0xfa80",
+              "name": "write_pair",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"{}: {}\"",
+                        "& * ((v3 as * const _) as * const u32)",
+                        "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v5 as usize))"
+                      ],
+                      "kind": "macro",
+                      "literal": "{}: {}",
+                      "name": "write",
+                      "parameters": [
+                        {
+                          "kind": "primitive",
+                          "pointer": "v3",
+                          "primitive": "u32"
+                        },
+                        {
+                          "data": "v2",
+                          "kind": "string",
+                          "length": "v5"
+                        }
+                      ],
+                      "raw": "({ use std :: fmt :: Write as _ ; write ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"{}: {}\" ,&* ((v3 as * const _) as * const u32) , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v2 as * const u8 , v5 as usize))) }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 20,
+                      "source_line_start": 20,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x5af5 as * mut u16",
+                        "& mut v3"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x5af5 as * mut u16 , & mut v3)",
+                      "sink": "write",
+                      "source_line_end": 20,
+                      "source_line_start": 20
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 64209,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 2,
+                        "arguments": [
+                          {
+                            "data_word": null,
+                            "formatter": 78416,
+                            "length_word": null,
+                            "pointer_stack_offset": -52
+                          },
+                          {
+                            "data_word": {
+                              "constant": null,
+                              "definition": "CPUI_COPY",
+                              "offset": 268435567,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "formatter": 62784,
+                            "length_word": {
+                              "constant": null,
+                              "definition": "CPUI_COPY",
+                              "offset": 268435575,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "pointer_stack_offset": -48
+                          }
+                        ],
+                        "array_stack_offset": -32,
+                        "template": 23285
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "template_bytes": {
+                      "address": "0x5af5",
+                      "bytes": "c0023a20c000",
+                      "used_arguments": [
+                        0,
+                        1
+                      ]
+                    },
+                    "verified_string_forwarders": [
+                      {
+                        "address": "0xf540",
+                        "bytes": "4889f0488b37488b57084889c7e96e2f0000",
+                        "target": "0x124c0",
+                        "target_name": "core::fmt::Formatter::pad",
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435567,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435575,
+                          "size": 8,
+                          "space": "unique"
+                        }
+                      }
+                    ],
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0xfacc"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "param_1",
+                    "added_call_addresses": [],
+                    "lost_call_addresses": [
+                      "0xfacc"
+                    ]
+                  },
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0xfad6"
+                    ],
+                    "lost_call_addresses": []
+                  },
+                  {
+                    "name": "v5",
+                    "added_call_addresses": [
+                      "0xfad6"
+                    ],
+                    "lost_call_addresses": []
+                  },
+                  {
+                    "name": "v3",
+                    "added_call_addresses": [
+                      "0xfad1",
+                      "0xfad6"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -17,7 +17,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            },
+            {
+              "address": "0xfb50",
+              "name": "write_signed",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"{}\"",
+                        "& * ((v2 as * const _) as * const i64)"
+                      ],
+                      "kind": "macro",
+                      "literal": "{}",
+                      "name": "writeln",
+                      "parameters": [
+                        {
+                          "kind": "primitive",
+                          "pointer": "v2",
+                          "primitive": "i64"
+                        }
+                      ],
+                      "raw": "({ use std :: fmt :: Write as _ ; writeln ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"{}\" ,&* ((v2 as * const _) as * const i64)) }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 12,
+                      "source_line_start": 12,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x5bb0 as * mut u16",
+                        "& mut v2"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x5bb0 as * mut u16 , & mut v2)",
+                      "sink": "write",
+                      "source_line_end": 12,
+                      "source_line_start": 12
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 64386,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 1,
+                        "arguments": [
+                          {
+                            "data_word": {
+                              "constant": null,
+                              "definition": "CPUI_COPY",
+                              "offset": 268435547,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "formatter": 78320,
+                            "length_word": {
+                              "constant": null,
+                              "definition": "CPUI_PTRSUB",
+                              "offset": 40192,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "pointer_stack_offset": -24
+                          }
+                        ],
+                        "array_stack_offset": -16,
+                        "template": 23472
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "template_bytes": {
+                      "address": "0x5bb0",
+                      "bytes": "c0010a00",
+                      "used_arguments": [
+                        0
+                      ]
+                    },
+                    "verified_string_forwarders": [],
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0xfb7d"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "param_1",
+                    "added_call_addresses": [],
+                    "lost_call_addresses": [
+                      "0xfb7d"
+                    ]
+                  },
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0xfb82",
+                      "0xfb87"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -9,7 +9,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            },
+            {
+              "address": "0xfbc0",
+              "name": "write_string",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"|{:\ud83e\udd80^10.3}|\"",
+                        "std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize))"
+                      ],
+                      "kind": "macro",
+                      "literal": "|{:\ud83e\udd80^10.3}|",
+                      "name": "write",
+                      "parameters": [
+                        {
+                          "data": "v1",
+                          "kind": "string",
+                          "length": "v4"
+                        }
+                      ],
+                      "raw": "({ use std :: fmt :: Write as _ ; write ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"|{:\ud83e\udd80^10.3}|\" , std :: str :: from_utf8_unchecked (std :: slice :: from_raw_parts (v1 as * const u8 , v4 as usize))) }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 14,
+                      "source_line_start": 14,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x69d0 as * mut u16",
+                        "& mut v2"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x69d0 as * mut u16 , & mut v2)",
+                      "sink": "write",
+                      "source_line_end": 14,
+                      "source_line_start": 14
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 64503,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 1,
+                        "arguments": [
+                          {
+                            "data_word": {
+                              "constant": null,
+                              "definition": "CPUI_COPY",
+                              "offset": 268435547,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "formatter": 62784,
+                            "length_word": {
+                              "constant": null,
+                              "definition": "CPUI_COPY",
+                              "offset": 268435555,
+                              "size": 8,
+                              "space": "unique"
+                            },
+                            "pointer_stack_offset": -32
+                          }
+                        ],
+                        "array_stack_offset": -16,
+                        "template": 27088
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "template_bytes": {
+                      "address": "0x69d0",
+                      "bytes": "017cc780f901580a000300017c00",
+                      "used_arguments": [
+                        0
+                      ]
+                    },
+                    "verified_string_forwarders": [
+                      {
+                        "address": "0xf540",
+                        "bytes": "4889f0488b37488b57084889c7e96e2f0000",
+                        "target": "0x124c0",
+                        "target_name": "core::fmt::Formatter::pad",
+                        "data_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435547,
+                          "size": 8,
+                          "space": "unique"
+                        },
+                        "length_word": {
+                          "constant": null,
+                          "definition": "CPUI_COPY",
+                          "offset": 268435555,
+                          "size": 8,
+                          "space": "unique"
+                        }
+                      }
+                    ],
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0xfbf2"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "param_1",
+                    "added_call_addresses": [],
+                    "lost_call_addresses": [
+                      "0xfbf2"
+                    ]
+                  },
+                  {
+                    "name": "v1",
+                    "added_call_addresses": [
+                      "0xfbfc"
+                    ],
+                    "lost_call_addresses": []
+                  },
+                  {
+                    "name": "v4",
+                    "added_call_addresses": [
+                      "0xfbfc"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -11,7 +11,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            },
+            {
+              "address": "0xfc70",
+              "name": "write_unsigned",
+              "proof": {
+                "changes": [
+                  {
+                    "after": {
+                      "arguments": [
+                        "& mut * ((a0 as * mut _) as * mut std :: string :: String)",
+                        "\"[{}]\"",
+                        "& * ((v2 as * const _) as * const u32)"
+                      ],
+                      "kind": "macro",
+                      "literal": "[{}]",
+                      "name": "write",
+                      "parameters": [
+                        {
+                          "kind": "primitive",
+                          "pointer": "v2",
+                          "primitive": "u32"
+                        }
+                      ],
+                      "raw": "({ use std :: fmt :: Write as _ ; write ! (& mut * ((a0 as * mut _) as * mut std :: string :: String) , \"[{}]\" ,&* ((v2 as * const _) as * const u32)) }) . is_err () as u8",
+                      "result_type": "u8",
+                      "sink": "write",
+                      "source_line_end": 12,
+                      "source_line_start": 12,
+                      "writer": "a0"
+                    },
+                    "before": {
+                      "arguments": [
+                        "a0",
+                        "0x4bfa8 as * mut ()",
+                        "0x5aef as * mut u16",
+                        "& mut v2"
+                      ],
+                      "kind": "runtime",
+                      "raw": "core :: fmt :: write (a0 , 0x4bfa8 as * mut () , 0x5aef as * mut u16 , & mut v2)",
+                      "sink": "write",
+                      "source_line_end": 12,
+                      "source_line_start": 12
+                    },
+                    "independent_descriptor": {
+                      "call_instruction": 64673,
+                      "callee": 68240,
+                      "descriptor": {
+                        "argument_count": 1,
+                        "arguments": [
+                          {
+                            "data_word": null,
+                            "formatter": 78416,
+                            "length_word": null,
+                            "pointer_stack_offset": -20
+                          }
+                        ],
+                        "array_stack_offset": -16,
+                        "template": 23279
+                      },
+                      "name": "core::fmt::write",
+                      "result_size": 1,
+                      "result_type": "u8",
+                      "runtime_argument_count": 4,
+                      "vtable": 311208,
+                      "writer": {
+                        "constant": null,
+                        "definition": null,
+                        "offset": 56,
+                        "size": 8,
+                        "space": "register"
+                      }
+                    },
+                    "template_bytes": {
+                      "address": "0x5aef",
+                      "bytes": "015bc0015d00",
+                      "used_arguments": [
+                        0
+                      ]
+                    },
+                    "verified_string_forwarders": [],
+                    "all_template_bytes_and_argument_bindings_verified": true,
+                    "verified_writer_vtable": {
+                      "address": "0x4bfa8",
+                      "bytes": "b0f50000000000001800000000000000080000000000000020f700000000000010f600000000000070f5000000000000",
+                      "words": [
+                        "0xf5b0",
+                        "0x18",
+                        "0x8",
+                        "0xf720",
+                        "0xf610",
+                        "0xf570"
+                      ],
+                      "method_identities": {
+                        "0": "core::ptr::drop_in_place<alloc::string::String>",
+                        "3": "<alloc::string::String as core::fmt::Write>::write_str",
+                        "4": "<alloc::string::String as core::fmt::Write>::write_char",
+                        "5": "core::fmt::Write::write_fmt"
+                      }
+                    },
+                    "result_bridge_type_verified": true
+                  }
+                ],
+                "identical_preexisting_syntax_repairs": {}
+              },
+              "source_mapping": {
+                "added_instruction_addresses": [],
+                "lost_instruction_addresses": [
+                  "0xfc9c"
+                ],
+                "lost_addresses_belong_to_replaced_call_lines": true,
+                "variable_mapping_changes": [
+                  {
+                    "name": "param_1",
+                    "added_call_addresses": [],
+                    "lost_call_addresses": [
+                      "0xfc9c"
+                    ]
+                  },
+                  {
+                    "name": "v2",
+                    "added_call_addresses": [
+                      "0xfca1",
+                      "0xfca6"
+                    ],
+                    "lost_call_addresses": []
+                  }
+                ],
+                "declarations_and_function_metadata_unchanged": true
+              },
+              "hunks": [
+                {
+                  "range": "@@ -9,7 +9,7 @@",
+                  "classification": "only runtime formatting calls replaced; every other AST node and comment unchanged; writer vtable identities, result bytes, template bytes and original argument slots independently verified"
+                }
+              ]
+            }
+          ],
+          "parsed": 0,
+          "errors": 0,
+          "off_equals_parent": true
+        },
+        {
+          "language": "go",
+          "functions": 436,
+          "changed": [],
+          "parsed": 436,
+          "errors": 0,
+          "off_equals_parent": false
+        }
+      ]
+    }
+  ],
+  "captured_baseline_commit": "a8a55f1df9482eda606cb96b6f7599437fe6d77f",
+  "parent_source_identity_verified": true,
+  "parent_source_files_verified": 5288
+}

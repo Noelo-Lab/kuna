@@ -4269,7 +4269,7 @@ symbols establish both integer width/signedness and Display, Debug, LowerHex,
 UpperHex, Octal, Binary, LowerExp or UpperExp trait identity. Only exact standard
 library paths for 8-, 16-, 32- and 64-bit integers qualify. Pointer-sized integer
 aliases may share their corresponding 64-bit formatter; different types or traits
-and unknown aliases invalidate the address. Generic formatter types are not inferred.
+and unknown aliases invalidate the address. Generic formatter types are not inferred. The loader indexes only candidate formatter addresses, then checks every symbol against those candidates; unknown aliases before or after a recognized name still invalidate the address.
 
 The bounded template decoder accepts static flags, width and precision before an
 optional explicit argument index. Dynamic count headers are refused before reading
@@ -4354,3 +4354,141 @@ The change is confined to rendering the call expression. All descriptor setup,
 IR, declarations, existing returns and no-return control flow remain intact.
 It does not recover generic arguments, other panic entry points, indirect calls
 or earlier formatting layouts, and it does not change C or Go output.
+
+## Verified Rust piece-array printing
+
+`kuna_rustfmtpieces` extends source printing to the pre-template
+`fmt::Arguments` representation. The default-on `rustfmtpieces` option accepts
+x86-64 little-endian ELF executables from stable Rust 1.89.0 and 1.90.0 and
+nightly 1.89.0 `bf64d66bd` dated 2025-05-21. Compiler comments must identify one
+unambiguous supported build; other nightly commits, missing metadata and mixed
+versions do not qualify. The stable-version fact used by the 1.93 template
+readers retains its existing meaning.
+
+An exact `_print` or `_eprint` identity, including exact namespace resolution,
+must have one runtime argument and no result. Its argument must point to an
+aligned stack descriptor. The call's non-creation INDIRECT effects must supply
+five distinct complete words: piece pointer/count, argument pointer/count, and
+a null optional-format pointer. The inactive optional-format length is not
+read. Missing, overlapping, dynamic or ambiguous cells prevent recovery.
+There may be at most sixteen arguments, and the piece count must equal that
+count or exceed it by one. Every table span and string span must be mapped,
+immutable and nonvolatile; all strings must be UTF-8 and total at most 4096
+bytes. Null pointers and overflowed spans are rejected.
+
+The loader records the supported image's RELRO extent for this renderer only.
+The upper bound is rounded down to a complete 4096-byte page, while the lower
+bound remains inside the declared segment. This supplies immutable-range
+proof for adjacent length words in relocation-backed piece arrays. It does
+not change global readonly properties or general constant propagation.
+Explicit volatile markings override both this fact and existing readonly
+properties. A relocated pointer alone is insufficient evidence for the
+surrounding table.
+
+Literal recovery also requires `rustfmtliteral`. Nonempty argument arrays also
+require `rustfmtargs`, exact full primitive Display callback identities, and
+the shared aligned stack-pointer proof for each 8/16/32/64-bit signed or
+unsigned input. Formatting specifications, generic callbacks and non-Display
+traits remain explicit. The pieces are interleaved with default placeholders
+and escaped through the shared renderer; precisely one final newline selects
+`println!` or `eprintln!`. Empty arrays, empty separating pieces, braces,
+Unicode and control characters preserve their output bytes.
+
+The pass replaces only the print call's presentation. All setup assignments,
+IR, function prototypes, returns and surrounding statements remain. Existing
+descriptor type gaps can still prevent complete primitive functions from
+compiling; primitive macro execution does not imply whole-function
+recompilability. C and Go output, newer layouts and other formatting sinks are
+unchanged. Disabling `rustfmtpieces` restores the runtime-call presentation.
+
+String callback discovery likewise indexes only the forwarding and pad candidates, then rejects every conflicting or unknown alias before reading callback bytes.
+
+`rustfmtstr` extends template-layout formatting to a proven string Display
+argument. In x86-64 ELF images, complete object-symbol identities must identify
+both a generic reference Display callback and `core::fmt::Formatter::pad`.
+The callback must have the exact 18-byte body that loads the first two words of
+its argument as string data and length, preserves the formatter argument, and
+tail-jumps directly to that pad function. Conflicting aliases, another target,
+extra operations and other instruction sequences do not establish this fact.
+The generic name itself never supplies a concrete type.
+
+Recovery is restricted to stable Rust 1.93.0/1.93.1 and requires both live,
+eight-byte, aligned stack words at the existing formatting call. It constructs
+`std::str::from_utf8_unchecked(std::slice::from_raw_parts(data, length))` from
+those values. Valid UTF-8 storage follows the original `pad(&str)` call contract;
+no string contents are guessed from neighboring memory. Existing literal,
+argument, static-format, result-destination and panic-location checks still
+apply. Every setup statement, IR operation, prototype and return remains.
+Disabling the option preserves runtime calls containing these string arguments;
+unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
+is unchanged.
+
+`rustfmtwrite` is off by default: the declared speed study did not clear the
+small-C wall-time confidence bound, despite median deltas below 0.2 percent.
+When enabled, it recovers formatting into an existing `String` only for the verified
+Rust 1.93.0/1.93.1 x86-64 little-endian ELF layout. The direct call must resolve
+exactly to `core::fmt::write`, with four runtime arguments and a one-byte result.
+The writer must derive from a function input through copies or casts. Its vtable
+must be aligned and contain six complete immutable, nonvolatile words: String
+drop identity, size 24, alignment 8, String's `fmt::Write::write_str` and
+`write_char`, and `core::fmt::Write::write_fmt`. Every method requires its full
+object-symbol identity; conflicting aliases invalidate that address. The loader
+provides a private RELRO extent with its upper boundary rounded down to a full
+4096-byte page, without changing global memory properties. Volatile annotations
+always override the private immutable-range evidence.
+
+The existing literal or compact-template checks establish all formatting bytes
+and arguments. One terminal newline selects `writeln!`; otherwise the renderer
+uses `write!`. The writer is cast to the proven String type and borrowed mutably.
+A local expression block imports `std::fmt::Write` for this call. The macro's
+`is_err()` preserves the original `fmt::Result` zero/success and one/error byte,
+with a cast matching the recovered signed or unsigned byte type; boolean results
+need no cast. Other result sizes or types remain explicit. Descriptor stores,
+result uses, branches, prototypes and IR remain unchanged. Custom writers,
+unsupported callbacks and IO-error result layouts do not qualify. Disabling the
+option retains the runtime call, and C/Go output is unchanged.
+
+
+`rustfmtio` is off in every preset: the declared speed study did not clear the
+Go-control CPU and wall-time confidence bounds, despite median deltas below
+1.3 percent. When enabled, it recovers Stdout `write!` and `writeln!` expressions only for exact
+stable Rust 1.93.1 x86-64 little-endian linked ELF implementations. The loader
+proves the full `&Stdout` write_fmt body and all four formatting-adapter callback
+bodies. All nonrelative bytes, internal branches, external target roles and
+symbol aliases must agree. In particular, generic adapter callback names alone
+do not establish the writer: write_str and write_char must call the exact
+StdoutLock write_all identity. The forwarded write_fmt must use the same adapter
+table and core formatting function. The complete table, panic text and location,
+code and unwind stubs must be immutable and nonvolatile. Resolved whole-word
+relocations are applied before comparison; unresolved, overlapping or partial
+relocations in protected spans invalidate recovery. Import slots must have one
+exact unresolved binding with the expected identity and zero addend. Private
+RELRO evidence uses the same page boundary rule as String writes. The emitter
+rechecks every protected byte against its current loader image.
+
+The two verified method bodies distinguish a reference-cell receiver from an
+optimizer-promoted inner pointer, even when both have the same method name.
+Recovery borrows the original `&Stdout` cell or reconstructs a temporary Stdout
+handle from that same inner pointer. It evaluates the original receiver once
+and never substitutes a newly acquired stdout handle. The original direct call
+must have three runtime arguments and an eight-byte integer result. Existing
+literal, primitive, string and flag proofs establish the formatting inputs.
+
+A scoped `std::io::Write` import enables the macro. Matching its Result preserves
+zero for success; an error is consumed into its pointer representation, then
+converted through usize to the original signed or unsigned integer type. This
+preserves the owned error payload for surrounding result handling, without
+dropping it or reducing it to a Boolean. Descriptor setup, branches, prototypes
+and IR remain. Other writers, producer versions, dynamic formats, callback
+profiles and result layouts stay explicit. Disabling the option restores the
+runtime call, and C/Go emission is unchanged.
+
+An empty literal stays a runtime call. In the buffered broken-pipe regression,
+the Rust 1.93.1 producer reports an error for that call, while a recovered empty
+macro built with Rust 1.90.0 reports success. Rebuilding the original empty-call
+source shows the same compiler-version difference: original and macro agree
+within 1.90.0, 1.93.1 and 1.99.1. This is a standard-library-version boundary,
+not evidence that a same-version macro changes the result. Recovery refuses it
+because the supported older execution compiler does not preserve the producer's
+behavior. Six other recovered forms match across all three execution compilers;
+no broader compiler-version equivalence is inferred.

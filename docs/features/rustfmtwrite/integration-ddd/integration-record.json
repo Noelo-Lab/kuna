@@ -1,0 +1,30 @@
+{
+  "recorded_at": "2026-11-02T04:05:33.868213+00:00",
+  "integrated_main": "dddff1dbabdec537afd6691104a93dc3eb7c6e2c",
+  "cli_sha256": "0fdc402c5cd45cbef01ada818305714c15bbd4691d105cba6e275cb4df70b341",
+  "baseline_cli_sha256": "8c33c6fc908fa97e4fc155ecb4df792f8d2742ef8c7beb142761530b706c3cd5",
+  "all_four_gates_passed": true,
+  "original_assertions": 675,
+  "stage_assertions": 3551,
+  "workspace": {
+    "passed": 10117,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 71
+  },
+  "fresh_corpus_images": 27,
+  "all_default_off_records_equal_current_parent": true,
+  "all_feature_changes_identical_to_reviewed_records": true,
+  "inherited_main_changed_records": 2093,
+  "native_expressions_reused_through_exact_whole_record_equality": true,
+  "fresh_default_off_speed_passed": true,
+  "fresh_speed_maximums_pct": {
+    "median_cpu": 0.11960901577570127,
+    "median_wall": 0.1738216808633508,
+    "upper_mean_cpu_or_wall": 0.3743361184542522
+  },
+  "enabled_default_on_accepted": false,
+  "historical_failed_enabled_study_unchanged": true,
+  "source_files_verified": 5296,
+  "full_go_rust_parity": false
+}

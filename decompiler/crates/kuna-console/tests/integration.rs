@@ -482,6 +482,9 @@ mod verify_rustfmtresult;
 
 #[path = "verify_rustfmtpanic.rs"]
 mod verify_rustfmtpanic;
+
+#[path = "verify_rustfmtpieces.rs"]
+mod verify_rustfmtpieces;
 #[path = "verify_outlang_go.rs"]
 mod verify_outlang_go;
 
@@ -495,3 +498,10 @@ mod verify_rustuserop;
 
 #[path = "verify_rustsigned.rs"]
 mod verify_rustsigned;
+
+#[path = "verify_rustfmtstr.rs"]
+mod verify_rustfmtstr;
+#[path = "verify_rustfmtwrite.rs"]
+mod verify_rustfmtwrite;
+#[path = "verify_rustfmtio.rs"]
+mod verify_rustfmtio;

@@ -1,0 +1,7 @@
+angr-rust-base-ddd-build.log PASS
+angr-rust-fmt-write-ddd-build.log PASS
+catalog-capture.log PASS
+counters-fix.log PASS
+record-stages.log PASS
+Counts 368 174 [3551, 3551]
+BOTH CURRENT MAIN BUILDS AND GENERATED DATA COMPLETE
