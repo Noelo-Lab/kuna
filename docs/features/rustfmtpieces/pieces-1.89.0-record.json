@@ -1,0 +1,691 @@
+{
+  "fixture": "pieces-1.89.0",
+  "sha256": "97957a440ca3c4371d2db9a6466bf7fb04446c4635902a495b298cdafde4d1f9",
+  "languages": [
+    {
+      "language": "c",
+      "functions": 576,
+      "changed": [],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": false
+    },
+    {
+      "language": "rust",
+      "functions": 576,
+      "changed": [
+        {
+          "address": "0xca10",
+          "name": "pieces_literal",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "literal {{\u00e9\ud83d\ude42}}\n",
+                  "newline": true,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v1"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 15,
+                  "source_line_start": 15,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 51775,
+                  "descriptor": {
+                    "argument_count": 0,
+                    "arguments": [],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 1,
+                    "table": 382608
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xca3a"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -12,5 +12,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xca50",
+          "name": "pieces_plain",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "quote=\" slash=\\ nul=\u0000 {{}} ",
+                  "newline": false,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v1"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 15,
+                  "source_line_start": 15,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 51839,
+                  "descriptor": {
+                    "argument_count": 0,
+                    "arguments": [],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 1,
+                    "table": 382624
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xca7a"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -12,5 +12,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xca90",
+          "name": "pieces_stderr",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "stderr\r",
+                  "newline": true,
+                  "stderr": true
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v1"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 15,
+                  "source_line_start": 15,
+                  "stderr": true
+                },
+                "independent_descriptor": {
+                  "call_instruction": 51903,
+                  "descriptor": {
+                    "argument_count": 0,
+                    "arguments": [],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 1,
+                    "table": 382640
+                  },
+                  "name": "_eprint"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xcaba"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -12,5 +12,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xcad0",
+          "name": "pieces_empty",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [],
+                  "kind": "macro",
+                  "literal": "",
+                  "newline": false,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v1"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 15,
+                  "source_line_start": 15,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 51964,
+                  "descriptor": {
+                    "argument_count": 0,
+                    "arguments": [],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 0,
+                    "table": 8
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xcaf7"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -12,5 +12,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xcb10",
+          "name": "pieces_u32",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    {
+                      "pointer": "v2",
+                      "primitive": "u32"
+                    }
+                  ],
+                  "kind": "macro",
+                  "literal": "value {} end",
+                  "newline": true,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v3"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 21,
+                  "source_line_start": 21,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 52068,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "formatter": 311520,
+                        "pointer_stack_offset": -68
+                      }
+                    ],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 2,
+                    "table": 382656
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xcb5f"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v2",
+                "added_call_addresses": [
+                  "0xcb64"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -18,5 +18,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xcb70",
+          "name": "pieces_i64",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    {
+                      "pointer": "v2",
+                      "primitive": "i64"
+                    }
+                  ],
+                  "kind": "macro",
+                  "literal": "{}",
+                  "newline": false,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v3"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 21,
+                  "source_line_start": 21,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 52162,
+                  "descriptor": {
+                    "argument_count": 1,
+                    "arguments": [
+                      {
+                        "formatter": 312352,
+                        "pointer_stack_offset": -72
+                      }
+                    ],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 1,
+                    "table": 315464
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xcbbd"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v2",
+                "added_call_addresses": [
+                  "0xcbc2"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -18,5 +18,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xcbd0",
+          "name": "pieces_pair",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    {
+                      "pointer": "v3",
+                      "primitive": "i8"
+                    },
+                    {
+                      "pointer": "v6",
+                      "primitive": "u64"
+                    }
+                  ],
+                  "kind": "macro",
+                  "literal": "{} = {}",
+                  "newline": false,
+                  "stderr": true
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v4"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 27,
+                  "source_line_start": 27,
+                  "stderr": true
+                },
+                "independent_descriptor": {
+                  "call_instruction": 52288,
+                  "descriptor": {
+                    "argument_count": 2,
+                    "arguments": [
+                      {
+                        "formatter": 310832,
+                        "pointer_stack_offset": -89
+                      },
+                      {
+                        "formatter": 312080,
+                        "pointer_stack_offset": -88
+                      }
+                    ],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 2,
+                    "table": 382688
+                  },
+                  "name": "_eprint"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xcc3b"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v3",
+                "added_call_addresses": [
+                  "0xcc40"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v6",
+                "added_call_addresses": [
+                  "0xcc40"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -24,5 +24,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xcc50",
+          "name": "pieces_narrow",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    {
+                      "pointer": "v5",
+                      "primitive": "u8"
+                    },
+                    {
+                      "pointer": "v8",
+                      "primitive": "i16"
+                    },
+                    {
+                      "pointer": "v10",
+                      "primitive": "u16"
+                    },
+                    {
+                      "pointer": "v12",
+                      "primitive": "i32"
+                    }
+                  ],
+                  "kind": "macro",
+                  "literal": "[{}|{}|{}|{}]",
+                  "newline": true,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v6"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 39,
+                  "source_line_start": 39,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 52472,
+                  "descriptor": {
+                    "argument_count": 4,
+                    "arguments": [
+                      {
+                        "formatter": 310672,
+                        "pointer_stack_offset": -121
+                      },
+                      {
+                        "formatter": 311264,
+                        "pointer_stack_offset": -120
+                      },
+                      {
+                        "formatter": 311008,
+                        "pointer_stack_offset": -118
+                      },
+                      {
+                        "formatter": 311792,
+                        "pointer_stack_offset": -116
+                      }
+                    ],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 5,
+                    "table": 382720
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xccf3"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v5",
+                "added_call_addresses": [
+                  "0xccf8"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v8",
+                "added_call_addresses": [
+                  "0xccf8"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v10",
+                "added_call_addresses": [
+                  "0xccf8"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v12",
+                "added_call_addresses": [
+                  "0xccf8"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -36,5 +36,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        },
+        {
+          "address": "0xcda0",
+          "name": "pieces_adjacent",
+          "proof": {
+            "changes": [
+              {
+                "after": {
+                  "arguments": [
+                    {
+                      "pointer": "v3",
+                      "primitive": "u64"
+                    },
+                    {
+                      "pointer": "v6",
+                      "primitive": "i64"
+                    }
+                  ],
+                  "kind": "macro",
+                  "literal": "{}{}",
+                  "newline": true,
+                  "stderr": false
+                },
+                "before": {
+                  "arguments": [
+                    "& mut v4"
+                  ],
+                  "kind": "runtime",
+                  "source_line_end": 27,
+                  "source_line_start": 27,
+                  "stderr": false
+                },
+                "independent_descriptor": {
+                  "call_instruction": 52752,
+                  "descriptor": {
+                    "argument_count": 2,
+                    "arguments": [
+                      {
+                        "formatter": 312080,
+                        "pointer_stack_offset": -96
+                      },
+                      {
+                        "formatter": 312352,
+                        "pointer_stack_offset": -88
+                      }
+                    ],
+                    "descriptor_stack_offset": -48,
+                    "format_pointer": 0,
+                    "piece_count": 3,
+                    "table": 382864
+                  },
+                  "name": "_print"
+                },
+                "all_piece_bytes_and_formatter_identities_verified": true
+              }
+            ],
+            "identical_preexisting_syntax_repairs": {}
+          },
+          "source_mapping": {
+            "added_instruction_addresses": [],
+            "lost_instruction_addresses": [
+              "0xce0b"
+            ],
+            "lost_addresses_belong_to_replaced_call_lines": true,
+            "variable_mapping_changes": [
+              {
+                "name": "v3",
+                "added_call_addresses": [
+                  "0xce10"
+                ],
+                "lost_call_addresses": []
+              },
+              {
+                "name": "v6",
+                "added_call_addresses": [
+                  "0xce10"
+                ],
+                "lost_call_addresses": []
+              }
+            ],
+            "declarations_and_function_metadata_unchanged": true
+          },
+          "hunks": [
+            {
+              "range": "@@ -24,5 +24,5 @@",
+              "classification": "only verified piece-array print calls become print macros; every other AST node and comment unchanged"
+            }
+          ]
+        }
+      ],
+      "parsed": 0,
+      "errors": 0,
+      "off_equals_parent": true
+    },
+    {
+      "language": "go",
+      "functions": 576,
+      "changed": [],
+      "parsed": 576,
+      "errors": 0,
+      "off_equals_parent": false
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+datatests: 0/7 assertions passed
+FAILURES:
+  [data] off and nondefault specifications retain the runtime sink
+  [data] piece literal keeps Unicode braces and the extra newline
+  [data] empty piece array is empty printing
+  [data] default u32 argument is a typed read
+  [data] stderr pair preserves narrow signed and wide unsigned types
+  [data] all narrow widths retain exact formatter types
+  [data] adjacent arguments preserve empty separating pieces
+exit: 7

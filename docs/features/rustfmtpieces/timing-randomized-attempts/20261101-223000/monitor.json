@@ -1,0 +1,277 @@
+{
+  "method": "balanced_randomized_block_bootstrap",
+  "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+  "attempt": "/tmp/kuna-rust-fmt-pieces-f874/timing-randomized-attempts/20261101-223000",
+  "cpu_assignments": {
+    "0:panic-integers": {
+      "target_cpu": 75,
+      "sibling_cpu": 35
+    },
+    "0:go-control": {
+      "target_cpu": 69,
+      "sibling_cpu": 29
+    },
+    "1:scalar-c": {
+      "target_cpu": 63,
+      "sibling_cpu": 23
+    },
+    "1:pieces-literal": {
+      "target_cpu": 73,
+      "sibling_cpu": 33
+    },
+    "1:pieces-integers": {
+      "target_cpu": 68,
+      "sibling_cpu": 28
+    },
+    "1:older-rust-c-control": {
+      "target_cpu": 76,
+      "sibling_cpu": 36
+    },
+    "1:original-angr-rust": {
+      "target_cpu": 57,
+      "sibling_cpu": 17
+    },
+    "1:rust-newer-control": {
+      "target_cpu": 78,
+      "sibling_cpu": 38
+    },
+    "1:go-control": {
+      "target_cpu": 70,
+      "sibling_cpu": 30
+    },
+    "2:scalar-c": {
+      "target_cpu": 59,
+      "sibling_cpu": 19
+    },
+    "2:str-plain": {
+      "target_cpu": 42,
+      "sibling_cpu": 2
+    },
+    "2:str-flags": {
+      "target_cpu": 58,
+      "sibling_cpu": 18
+    },
+    "2:str-result": {
+      "target_cpu": 79,
+      "sibling_cpu": 39
+    },
+    "2:reference-make-string": {
+      "target_cpu": 74,
+      "sibling_cpu": 34
+    },
+    "2:older-rust-control": {
+      "target_cpu": 64,
+      "sibling_cpu": 24
+    },
+    "2:rust-large-control": {
+      "target_cpu": 72,
+      "sibling_cpu": 32
+    },
+    "2:go-control": {
+      "target_cpu": 62,
+      "sibling_cpu": 22
+    }
+  },
+  "plan": {
+    "declared_at": "2026-11-01 21:49:12.515576+00:00",
+    "reason": "First speed review for rustfmtpieces after main f874 integration; balanced protocol declared before all samples.",
+    "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+    "cases": [
+      "scalar-c",
+      "pieces-literal",
+      "pieces-integers",
+      "older-rust-c-control",
+      "original-angr-rust",
+      "rust-newer-control",
+      "go-control"
+    ],
+    "samples_per_arm": 192,
+    "warmups_per_arm": 3,
+    "seed": 20261103,
+    "bootstrap_resamples": 20000,
+    "block_rounds": 6,
+    "family_alpha": 0.05,
+    "comparisons": 28,
+    "upper_quantile": 0.9982142857142857,
+    "budget_pct": 5,
+    "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+    "cpu_selection": "Rank allowed physical CPU pairs by minimum sibling idle percentage over five seconds; assign the highest-ranked distinct pairs to cases before collecting any timings. No absolute idle threshold. No owned builds/tests/corpus work during measurements; only these measurement workers run concurrently.",
+    "amended_at_before_sampling": "2026-11-01 22:03:06.593470+00:00",
+    "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+    "execution_amendment": "Only benchmark cases share the scheduler. Physical CPU pairs remain disjoint across all cases, with fixed affinity per run and worker-local child CPU accounting. Production sources and binaries are frozen; pending baseline commit identities are bound afterward using existing manifests.",
+    "amended_at_before_new_sampling": "2026-11-01 22:29:49.354939+00:00"
+  },
+  "accepted_for_speed_review": false,
+  "baseline_commit": "78183c657032066c628cc063a0596c19f354f331",
+  "baseline_has_pending_feature": true,
+  "results": {
+    "scalar-c": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.03854000408841651,
+          "wall_ms": 0.4410480643981307
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.15361692304747265,
+          "wall_ms": 0.6190300178808839
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.7254469683431711,
+          "wall_ms": 0.6764121996348125
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.6991098794597326,
+          "wall_ms": 1.7381348222708204
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "pieces-literal": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.05965759218529154,
+          "wall_ms": -0.0815951159543582
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.16202290318905188,
+          "wall_ms": 0.1694016950550159
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 4.104335478744861,
+          "wall_ms": 4.759407284109443
+        },
+        "off_to_patched": {
+          "cpu_ms": 5.19787378689254,
+          "wall_ms": 6.091009751394441
+        }
+      },
+      "speed_budget_passed": false
+    },
+    "pieces-integers": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.7838315950552399,
+          "wall_ms": -0.6041165734186671
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.04218198533244566,
+          "wall_ms": 0.07003868552748482
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.49261703238193255,
+          "wall_ms": 3.600147973410036
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.7411022440664752,
+          "wall_ms": 4.368566833096987
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "older-rust-c-control": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.4745983281151722,
+          "wall_ms": -0.44862872593632863
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.16084846504222927,
+          "wall_ms": -0.003022533847862885
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.4878455622055955,
+          "wall_ms": 0.8773940691241382
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.6580413916963597,
+          "wall_ms": 2.423935137194563
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "original-angr-rust": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -1.5263767621785385,
+          "wall_ms": -1.5367103869650345
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.15902912542666847,
+          "wall_ms": -0.2454810819689568
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 1.2820467687139858,
+          "wall_ms": 3.3968195112213655
+        },
+        "off_to_patched": {
+          "cpu_ms": 3.1303067151629174,
+          "wall_ms": 3.3898145706980793
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "rust-newer-control": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.01900150373903564,
+          "wall_ms": 0.21052665085030675
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.5306476601601551,
+          "wall_ms": 0.7648660131350349
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.4289632010011039,
+          "wall_ms": 0.3313466314440313
+        },
+        "off_to_patched": {
+          "cpu_ms": 1.4751187332521507,
+          "wall_ms": 1.41799291966445
+        }
+      },
+      "speed_budget_passed": true
+    },
+    "go-control": {
+      "samples": 192,
+      "median_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": -0.580046009361368,
+          "wall_ms": -0.7339546293679722
+        },
+        "off_to_patched": {
+          "cpu_ms": -0.13261399382813455,
+          "wall_ms": -0.23860514474558503
+        }
+      },
+      "confidence_upper_delta_pct": {
+        "baseline_to_patched": {
+          "cpu_ms": 0.1059423303754913,
+          "wall_ms": 1.4306402200235582
+        },
+        "off_to_patched": {
+          "cpu_ms": 0.42589370346570626,
+          "wall_ms": 2.3488666148608153
+        }
+      },
+      "speed_budget_passed": true
+    }
+  }
+}
