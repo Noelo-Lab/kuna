@@ -12,8 +12,9 @@ The recovered global symbol and live function database must agree on its leaf
 name and complete namespace path at the instruction's use point. This preserves
 explicit high-variable renames and declines conflicting aliases, data objects,
 interior addresses and remote-provider contexts.
-Every namespace component must be a plain ASCII C++ identifier rather than a
-keyword. Rust reference/pointer type names, template spellings, anonymous scopes
+The shared `kuna_namespaces.rs (plain_scope)` spelling check also guards P1
+DWARF alias reconciliation. Every namespace component must be a plain ASCII
+C++ identifier rather than a keyword. Rust reference/pointer type names, template spellings, anonymous scopes
 and other unspellable paths retain their previous expression: prefixing `fmt`
 with a raw `*mut T::` or `char::` would not name a C++ function.
 The existing `namespacestrategy` policy controls the prefix: `minimal` uses the

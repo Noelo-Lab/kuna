@@ -1,0 +1,90 @@
+<!--
+  Upstream: angr test_decompiler.py::test_function_pointer_identification
+  (std::rt::lang_start(rust_hello_world::main)); a distinct loader-side cause.
+  P1 / DWARF symbol commit; P0 assertion: option cppproto off|on (default on).
+  Off prints a bare target for namespace calls. On retains C++ namespace and
+  Rust crate/module names, while the true global target remains unqualified.
+  A returned function address must agree with its qualified definition.
+  Rust raw-identifier modules keep a printable C fallback.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_cpp_x86_64</com>
+  <com>option cppproto off</com>
+  <com>read symbols</com>
+  <com>load function direct_left</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_cpp_x86_64</com>
+  <com>read symbols</com>
+  <com>load function direct_left</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_nested</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_right</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_global</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_shadow</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64</com>
+  <com>option cppproto off</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>load function direct_left</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_namespaces_rust_x86_64</com>
+  <com>read symbols</com>
+  <com>option setlanguage rust-language</com>
+  <com>load function direct_left</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_nested</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_right</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function direct_global</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_function_pointer_x86_64</com>
+  <com>option cppproto on</com>
+  <com>read symbols</com>
+  <com>load function get_target</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarf_raw_namespace_x86_64</com>
+  <com>read symbols</com>
+  <com>load function direct_target</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="disabled namespace calls, genuine global and raw-identifier fallback stay bare" min="4" max="4">return target\(x\);</stringmatch>
+<stringmatch name="C++ namespace target" min="1" max="1">return left::target\(x\);</stringmatch>
+<stringmatch name="C++ nested namespace target" min="1" max="1">return left::deep::target\(x\);</stringmatch>
+<stringmatch name="C++ other namespace target" min="1" max="1">return right::target\(x\);</stringmatch>
+<stringmatch name="C++ namespace despite same-named parameter" min="1" max="1">return left::target\(left\);</stringmatch>
+<stringmatch name="Rust module target" min="1" max="1">return dwarf_namespaces::left::target\(x\);</stringmatch>
+<stringmatch name="Rust nested module target" min="1" max="1">return dwarf_namespaces::left::deep::target\(x\);</stringmatch>
+<stringmatch name="Rust other module target" min="1" max="1">return dwarf_namespaces::right::target\(x\);</stringmatch>
+<stringmatch name="Rust crate-level target" min="1" max="1">return dwarf_namespaces::target\(x\);</stringmatch>
+<stringmatch name="DWARF function value agrees with its qualified definition" min="1" max="1">return \(uint8\)left::target;</stringmatch>
+<stringmatch name="raw Rust module is not a C++ keyword scope" min="0" max="0">::union::</stringmatch>
+</decompilertest>

@@ -4755,7 +4755,7 @@ fn commit_analysis_output(
     let mut out = out;
     if prog.arch().analysis_cppproto {
         let cpp = std::mem::take(&mut out.cpp_dwarf);
-        out.symbols.extend(cpp.symbols);
+        kuna_analysis::dwarf::merge_cpp_symbols(&mut out.symbols, cpp.symbols);
         out.locals.extend(cpp.locals);
         out.cpp_dwarf.prototypes = cpp.prototypes;
     } else {

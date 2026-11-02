@@ -1,0 +1,23 @@
+{
+  "tools": {
+    "clang++": "Ubuntu clang version 14.0.0-1ubuntu1.1\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+    "g++": "g++ (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0\nCopyright (C) 2021 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+    "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14)\n"
+  },
+  "dwarf_namespaces.cpp": {
+    "sha256": "48d0d346e807d7b96f26f21d08f85c5b51b2d4057a0831b0ddaa8821f92b8c29",
+    "bytes": 1373
+  },
+  "dwarf_namespaces.rs": {
+    "sha256": "b9e9231dc8bec40238dba12d61036b2818708854f4dbaa1faa2fe72e31f76194",
+    "bytes": 1137
+  },
+  "dwarf_namespaces_cpp_x86_64": {
+    "sha256": "c991b06657932b02ace710f7dd8a557a6db6a45d0eeaffad5d6ab0d57e527216",
+    "bytes": 24976
+  },
+  "dwarf_namespaces_rust_x86_64": {
+    "sha256": "968267b715b92621e2ae1a1b40e72e55f1f5891e292cf8a391101a5d2a38cb68",
+    "bytes": 3909704
+  }
+}

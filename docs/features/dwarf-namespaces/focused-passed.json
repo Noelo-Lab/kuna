@@ -1,0 +1,19 @@
+{
+  "build": {
+    "at": "2026-11-02T08:03:16.059606+00:00",
+    "parent_commit": "1d5f5287431b6a4305d5341ca60a880040afbe3a",
+    "baseline_root": "/home/mahaloz/kwt/angr-base-1d5f",
+    "parent_cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+    "new_cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+    "stage_assertions": [
+      3582,
+      3582
+    ],
+    "parent_artifact_provenance": "setup.json proves identical merge/published source trees and reuse of the validated P9 release."
+  },
+  "checks": [
+    "analysis-focused.log",
+    "console-focused.log",
+    "cli-focused.log"
+  ]
+}

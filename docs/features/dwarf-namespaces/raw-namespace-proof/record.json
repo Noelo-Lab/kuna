@@ -1,0 +1,416 @@
+{
+  "fixture_sha256": "9e7adf8d569c8d6f06d2c0dffb47cd59323fe8d957e9dac2b17471368d8c0e42",
+  "records": {
+    "parent": {
+      "cli_sha256": "384f7547f58af97719b98b7923a1f5ee530d2bedb7c4981436dbe4f0d53b8723",
+      "capture_sha256": "e04d3d203c7d9f30948cdb2b42e093682065f1037fada035b47edc5786d3391a",
+      "source_sha256": "6b3e5c334331e482e0271337735779a978fd8f0ff10759d2ed692483b79a7efd",
+      "body_rewrites": 0,
+      "whole_bodies": 2,
+      "runs": [
+        {
+          "compiler": "g++",
+          "optimization": "0",
+          "compile_returncode": 0,
+          "log": "parent-g++-O0.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        },
+        {
+          "compiler": "g++",
+          "optimization": "2",
+          "compile_returncode": 0,
+          "log": "parent-g++-O2.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        },
+        {
+          "compiler": "clang++",
+          "optimization": "0",
+          "compile_returncode": 0,
+          "log": "parent-clang++-O0.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        },
+        {
+          "compiler": "clang++",
+          "optimization": "2",
+          "compile_returncode": 0,
+          "log": "parent-clang++-O2.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        }
+      ]
+    },
+    "rejected": {
+      "cli_sha256": "42b301c5b3a4f6e4b3d3b8c4c937ed3fed21dabddb8b23827a86447c9bd5f9f8",
+      "capture_sha256": "23941264bb4fff480eaab8b38158eecdcf8eef14971a56ebe4a30f8e216a817a",
+      "source_sha256": "ad4bc4c7c2db1a5e0ae69877246e7fdd65aab44a15a0a99bd5b8f0dd88168d97",
+      "body_rewrites": 0,
+      "whole_bodies": 2,
+      "runs": [
+        {
+          "compiler": "g++",
+          "optimization": "0",
+          "compile_returncode": 1,
+          "log": "rejected-g++-O0.log",
+          "samples": []
+        },
+        {
+          "compiler": "g++",
+          "optimization": "2",
+          "compile_returncode": 1,
+          "log": "rejected-g++-O2.log",
+          "samples": []
+        },
+        {
+          "compiler": "clang++",
+          "optimization": "0",
+          "compile_returncode": 1,
+          "log": "rejected-clang++-O0.log",
+          "samples": []
+        },
+        {
+          "compiler": "clang++",
+          "optimization": "2",
+          "compile_returncode": 1,
+          "log": "rejected-clang++-O2.log",
+          "samples": []
+        }
+      ]
+    },
+    "candidate": {
+      "cli_sha256": "08f63c4dd29b2997d032be3ffa7e85447c58017174b051865ec56d0bdad1a198",
+      "capture_sha256": "e04d3d203c7d9f30948cdb2b42e093682065f1037fada035b47edc5786d3391a",
+      "source_sha256": "6b3e5c334331e482e0271337735779a978fd8f0ff10759d2ed692483b79a7efd",
+      "body_rewrites": 0,
+      "whole_bodies": 2,
+      "runs": [
+        {
+          "compiler": "g++",
+          "optimization": "0",
+          "compile_returncode": 0,
+          "log": "candidate-g++-O0.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        },
+        {
+          "compiler": "g++",
+          "optimization": "2",
+          "compile_returncode": 0,
+          "log": "candidate-g++-O2.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        },
+        {
+          "compiler": "clang++",
+          "optimization": "0",
+          "compile_returncode": 0,
+          "log": "candidate-clang++-O0.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        },
+        {
+          "compiler": "clang++",
+          "optimization": "2",
+          "compile_returncode": 0,
+          "log": "candidate-clang++-O2.log",
+          "samples": [
+            {
+              "input": 0,
+              "native_and_recompiled_stdout": "10\n"
+            },
+            {
+              "input": 1,
+              "native_and_recompiled_stdout": "11\n"
+            },
+            {
+              "input": 7,
+              "native_and_recompiled_stdout": "17\n"
+            },
+            {
+              "input": 12345,
+              "native_and_recompiled_stdout": "12355\n"
+            },
+            {
+              "input": 2147483647,
+              "native_and_recompiled_stdout": "2147483657\n"
+            },
+            {
+              "input": 2147483648,
+              "native_and_recompiled_stdout": "2147483658\n"
+            },
+            {
+              "input": 4294967255,
+              "native_and_recompiled_stdout": "4294967265\n"
+            },
+            {
+              "input": 4294967285,
+              "native_and_recompiled_stdout": "4294967295\n"
+            },
+            {
+              "input": 4294967295,
+              "native_and_recompiled_stdout": "9\n"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "candidate_native_values_compared": 36,
+  "parent_records_equal_candidate": true,
+  "rejected_candidate_compile_failures": 4,
+  "status": "PASS"
+}

@@ -3079,6 +3079,26 @@ moves.
   recovery is the name-only walk, byte for byte. (Struct/class **fields** are the
   sibling `dwarfstructs` increment below; before it, a class stayed a named opaque
   and `this->balance` printed as an offset.)
+  At the enabled commit boundary,
+  `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_cppnames.rs`
+  also reconciles a qualified
+  function fact with the generic DWARF fact at the same entry address. A unique
+  qualified name replaces only its exact bare leaf in the incoming function
+  stream. This prevents a redundant global `target` from shadowing
+  `left::target` during address lookup, including Rust crate/module paths.
+  Definitions, direct calls and whole-function values then share the same
+  namespace fact; P9's C function-address qualification preserves the target when
+  a function returns its address instead of calling it.
+  Every component must be a plain ASCII C++ identifier and must not be a C++
+  keyword, using the same spelling check as P9 function-address qualification.
+  This retains the generic alias for Rust raw-identifier modules such as `union`,
+  template/reference type scopes, and anonymous or malformed scope paths rather
+  than replacing printable C definitions with invalid qualified spellings.
+  Conflicting qualified facts, different names or addresses, and data symbols
+  remain intact. Existing symbols in the database,
+  including explicit global aliases and unmangled exports, are never removed.
+  With `cppproto off`, the generic stream is unchanged. Address-keyed prototype
+  application still follows generic prototype application.
 - **Aggregate layout** (`dwarfstructs`, default-on,
   `decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarfstructs.rs`) is
   what turns a recovered aggregate from a *name* into a *type*. The mapper used to
