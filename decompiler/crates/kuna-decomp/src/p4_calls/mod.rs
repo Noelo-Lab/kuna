@@ -81,6 +81,7 @@ pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns i
 pub mod kuna_callerreads; // (kuna) a function decompiled alone returns what its callers read
 pub mod kuna_callwide;
 pub mod kuna_bejoin; // (kuna) a big-endian pair joins its halves in the ABI's order when its low word is returned on purpose
+pub mod kuna_bejoinpass; // (kuna) a big-endian pair a call hands back to the RETURN untouched is one value
 
 pub(crate) mod kuna_customreturn;
 pub(crate) mod kuna_stackparamalign;

@@ -1,3 +1,27 @@
+The field extraction fix has been validated with main's big-endian joined
+return handling at c5ea0fa96b83ac92b140e83017f57cff2d298e4c. The two changes share a corpus
+counter and stage baseline; their implementation changes combine without edits.
+The combined stage baseline has 3725 passing assertions,
+including the same 14 added extraction assertions. The original 675 baseline
+is unchanged, and the workspace reports 10335 passed, zero failed.
+
+Fresh parent/candidate captures cover 63 images,
+34429 distinct functions and 78003
+language records. The same 57 records change; 61
+images have identical function records, including both new big-endian fixtures.
+Every changed hunk is reviewed. All 26 direct caller records in each language
+and all eight callback records match the previously executed native proofs
+exactly. Their Rust exclusions remain unchanged and are not claimed to pass.
+
+A separate predeclared timing comparison against the updated parent uses nine
+cases and 384 balanced paired rounds. Maximum median change: 0.580%;
+maximum simultaneous upper bound: 4.407%. All comparisons pass the
+5% criterion. Source, binary and compiled-spec hashes remain stable.
+
+The integration-c5ea directory contains the current validation artifacts.
+The earlier validation and its retained failures are preserved below and in
+before-main-integration-record.json.
+
 An implied struct field projection could discard the width of its SUBPIECE.
 Returning that field through a narrower C return type masked the omission, but
 widening it again retained unwanted upper bits. Go and Rust instead rejected
@@ -31,12 +55,12 @@ binary's counterexample and source are retained; incomplete validation was
 stopped, two suppression assertions were added, and the corrected source was
 validated again. The original 675-assertion baseline was not changed.
 
-Final breadth: 61 images, 34416 distinct functions, 77964
+Before main integration, breadth: 61 images, 34416 distinct functions, 77964
 language records. There are 57 changed records: 18 direct callers in
 three languages and one narrowed callback in three languages. All 59 other
 images have identical function records. Every changed hunk is classified in
 breadth-review.json.gz. Fifteen inherited Go parser failures are unchanged.
 
-Timing uses nine cases, 384 balanced paired rounds and one final look. All raw
+Before main integration, timing used nine cases, 384 balanced paired rounds and one final look. All raw
 samples and simultaneous CPU/wall bounds are retained. Maximum median change
 is 0.194%, maximum upper bound 3.597%. Every comparison meets the predeclared 5% criterion.

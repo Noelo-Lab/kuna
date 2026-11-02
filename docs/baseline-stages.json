@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3721,
-    3721
+    3725,
+    3725
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1033,7 +1033,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 373 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 374 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2257,6 +2257,10 @@
     "data:bejoin-sparc64 #5b: nothing returns a0 or 5 for a wider value",
     "data:bejoin-sparc64 #6: mix3 returns 0x500000000",
     "data:bejoin-sparc64 #7: mix2 and mix3 join the product high word first",
+    "data:bejoinpass #1: the default returns the call's value as it came",
+    "data:bejoinpass #2: the default joins the call's pair high word first",
+    "data:bejoinpass #3: off prints the pair with its halves swapped",
+    "data:bejoinpass #4: off joins the call's pair first register low",
     "data:boolbyte #10: the slot both controls hand to the callee stays a character in both passes -- the INDIRECT a call leaves on it is not identity, and one byte of a bigger object is not a declaration of its own",
     "data:boolbyte #11: with the option off a truncation whose destination a comparison already made bool prints as the raw SUB41 intrinsic -- an undeclared identifier",
     "data:boolbyte #12: with the option on the same truncation prints as the cast it is",
