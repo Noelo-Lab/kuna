@@ -1,46 +1,47 @@
-The option `gopairreturns on` recovers exactly two 64-bit integer results for
-amd64 Go ABIInternal functions with complete, consistent DWARF contracts. It
-requires `godwarfsig on` and remains off in every preset. C and Rust use the
-ordinary struct representation; Go exposes two source-level results.
+With `godwarfsig on` and `gopairreturns on`, complete amd64 Go ABIInternal
+DWARF contracts recover exactly two full-width signed or unsigned integer
+results. The option remains off in every preset. Go declarations, calls and
+returns use two-result syntax; C and Rust retain ordinary structs.
 
-Sixteen complete recovered functions execute unchanged against authored Go
-source on Go 1.22.5 and 1.27.3. The same sixteen C bodies pass at O0/O2 with
-explicit-width types and wrapping arithmetic. The native checks cover 210 Go
-and 420 C input comparisons; C division by zero is excluded. Seven complete
-callback/projection/identity/mixed-sign bodies add 180 comparisons, including
-a narrowed second result and an exact one-call counter. Complete opaque-return
-forwarders add 560 comparisons across both languages, both fixture versions,
-both Go compilers and both C optimization levels. Half exercise an unresolved
-unlocked prototype while retaining the recovered 16-byte result.
+The final build includes current main's GOT tail-call feature and DWARF member-layout corrections. Its full
+workspace passes 10356 tests with zero failures, and all 675 original
+assertions remain unchanged. The stage baseline passes 3737
+assertions; catalog and corpus counts are 376/683.
 
-The full workspace passes 10343 tests, with zero failures. The original
-675 baseline assertions are unchanged. The stages contain 3733 assertions,
-including eight new pair assertions. Catalog and corpus counts are 375/682.
+Native proofs bind this final binary: sixteen complete Go bodies on Go 1.22.5
+and 1.27.3, the same sixteen C bodies at O0/O2, seven callback and projection
+bodies, and explicit/inferred opaque-return forwarders. All recovered bodies
+execute unchanged. These provide 1370 native input comparisons, including
+exact callback counts, signed boundaries, zero/high-word constructors and
+Go division panics. C division by zero is excluded; C integer widths and
+wrapping arithmetic are explicit. Native Rust equivalence is not claimed.
 
-The final whole-image comparison covers 67 images. Default-off
-function records are identical to the independent parent. Enabled changes,
-all corresponding full function records, and review limits are retained in
-implementation/. Structural review is not a whole-runtime equivalence proof.
-In particular, untyped callers still have incomplete bool/slice return and
-argument inference; some signed Go field stores and Rust aggregate-carrier
-expressions still need work. These are listed individually in record.json.
-No claim of complete Go or Rust parity is made by this feature.
+Fresh whole-image comparisons cover 72 images, including three GOT
+tail-call fixtures and two DWARF member-layout fixtures. They retain 37908 distinct functions and
+88440 language records per arm. Default-off records are identical
+to current main. All 439 enabled changes are reviewed using complete
+before/after records, with unfamiliar changes held pending. The exact review
+basis is preserved in implementation/breadth-review.json.gz. This is not a
+whole-runtime native equivalence claim.
 
-Six default-off timing comparisons pass the predeclared 5% criterion: largest
-median change 0.743%, largest simultaneous upper bound 4.122%.
-Three parent-to-opt-in comparisons report costs separately. A distinct 32-round
-measurement flips the option on the same final binary and supplies the
-timeit-compatible speed fields in record.json. Each parent comparison uses
-1536 balanced paired rounds; binaries, sources and compiled
-specs are hash-bound.
+Remaining limitations include untyped bool/slice results and call arguments,
+signed Go field assignments, and Rust aggregate carriers. Individual cases
+remain listed in record.json. No complete Go or Rust parity is claimed.
 
-The proposal record and previous failures remain preserved. The previous
-candidate's 384-round timing study did not establish the required wall-time
-bounds. That full result is retained. The revision removes two heap allocations
-per imported scalar result and bypasses disabled pair call dispatch. All
-176670 complete enabled/disabled function records equal the prior candidate.
-The revised sample size and unchanged acceptance criteria were declared before
-the final measurement; no failed sample was removed.
-The first complete
-capture found invalid raw-to-pair conversions at unresolved runtime calls;
-the final implementation handles those through a single-evaluation adapter.
+The six required default-off speed comparisons pass their predeclared 5%
+median criteria: largest median increase 0.967%. Each parent comparison
+has 128 balanced paired rounds. Per-case 95% upper bounds on mean ratios are
+reported as uncertainty, with a largest default-off bound of 5.705%;
+these bounds are not acceptance gates. Three opt-in comparisons report costs
+separately. A distinct 32-round
+same-binary option flip supplies the standard speed fields. Sources, binaries,
+fixtures and compiled specs are hash-bound. Every sample is retained.
+
+Prior evidence is preserved under prior-a76/ and prior-a324/. The a76 build
+passed its stronger simultaneous-bound study. The a324 integration passed
+correctness and native checks; its timing was cancelled before analysis when
+main gained DWARF member-layout changes. Its worker kept samples in memory,
+so only its plan and progress log survived cancellation. No pass is claimed.
+The final integration study was declared before its builds and samples, using
+the repository median budget and explicit uncertainty reporting. These studies
+are distinct. Earlier inconclusive measurements and failed probes are retained.

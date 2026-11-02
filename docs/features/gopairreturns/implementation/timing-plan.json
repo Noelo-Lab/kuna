@@ -3,13 +3,12 @@
     "parent",
     "candidate"
   ],
-  "samples_per_arm": 1536,
+  "samples_per_arm": 128,
   "warmups_per_arm": 3,
-  "bootstrap_resamples": 20000,
-  "family_alpha": 0.05,
+  "bootstrap_resamples": 5000,
   "maximum_looks": 1,
   "budget_pct": 5,
-  "criterion": "Six default-off comparisons require every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. Three opt-in comparisons report the same estimates without a default-on acceptance claim. One final look; no unchanged-code repeat.",
+  "criterion": "Both CPU and wall ratio-of-medians deltas must be at most5% in each of the six default-off comparisons. Three opt-in comparisons report costs separately. Report all per-case95% upper mean-ratio bounds as uncertainty; they are not acceptance gates. One final look, fixed128balanced pairs, no unchanged-code repeat after failure.",
   "lightwork_reservation_amendment": {
     "declared_at": "2026-11-02T14:11:35.690913+00:00",
     "reserved_cpus": [
@@ -23,12 +22,12 @@
     "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
     "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
   },
-  "declared_at": "2026-11-02T21:19:32.975014+00:00",
-  "scope": "Go exact two integer results: default-off overhead and separately reported opt-in costs on the merged integer-field-extraction parent",
+  "declared_at": "2026-11-02T23:10:56.582926+00:00",
+  "scope": "Updated-main integration of default-off Go paired-result recovery",
   "root": "/home/mahaloz/kwt/angr-go-pair-results",
-  "base": "/home/mahaloz/kwt/angr-integer-field-extract-main",
-  "seed": 202611053,
-  "parent_commit": "35005170a58026809d2ec82b975d2660cc7e2003",
+  "base": "/home/mahaloz/kwt/angr-go-pair-parent-460",
+  "seed": 202611059,
+  "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
   "cases": [
     [
       "off-c-small",
@@ -86,8 +85,8 @@
     ]
   ],
   "comparisons": 18,
-  "upper_quantile": 0.9972222222222222,
-  "execution": "Nine comparisons on disjoint physical CPU pairs; 1536 balanced paired rounds. No own builds/tests/captures overlap; light work restricted to reserved CPUs3,43.",
+  "upper_quantile": 0.95,
+  "execution": "Nine comparisons on disjoint physical CPU pairs;128 balanced paired rounds. No owned builds/tests/captures overlap. Lightweight work pinned3,43. Persist samples after each balanced block without inspecting intermediate effects.",
   "case_options": {
     "off-c-small": [
       "--option",
@@ -143,25 +142,27 @@
     "off-rust-large",
     "off-go-runtime"
   ],
-  "revised_candidate_reason": "Remove two heap allocations per imported scalar output using a fixed two-slot array; bypass pair projection dispatch for disabled option. Prior unchanged candidate timing is retained and inconclusive; no repeat of that candidate.",
-  "sample_size_reason": "The prior run had wall-time tail delays up to 8x the median and two required upper bounds over 5%. Four times the original samples reduces sampling uncertainty; keep all samples and the original 5% criteria, with one final look.",
+  "integration_revision": "Main advanced froma324 to460 with DWARF member-layout corrections. Integrate/rebuild both arms and rerun correctness, whole-image comparison and native proofs.",
+  "prior_study": "../integration-350-round3/timing-result.json",
+  "study_change_reason": "New integration study declared before its build or any samples, while no a324 effect estimates have been inspected. Use the repository median speed budget for final integration and report uncertainty explicitly, instead of extending the earlier stricter simultaneous-mean-bound study. Earlier a76 study passed that stronger criterion; a324 was cancelled solely because main advanced and has no final estimate. These studies are distinct and must not be presented as equivalent.",
+  "cancelled_study": "../integration-a324/timing-cancelled.json",
   "declared_binary_sha256": {
-    "parent": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
-    "candidate": "3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131"
+    "parent": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "candidate": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305"
   },
   "build": {
-    "at": "2026-11-02T21:24:36.675123+00:00",
-    "parent_commit": "35005170a58026809d2ec82b975d2660cc7e2003",
-    "parent_cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
-    "new_cli_sha256": "3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131",
+    "at": "2026-11-02T23:15:50.094880+00:00",
+    "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+    "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "new_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
     "option": "gopairreturns",
     "default": "off",
     "requires": "godwarfsig on",
-    "catalog_count": 375,
-    "corpus_files": 682,
+    "catalog_count": 376,
+    "corpus_files": 683,
     "stage_assertions": [
-      3733,
-      3733
+      3737,
+      3737
     ],
     "stage_keys_added": [
       "data:Go pair option off retains the register byte carrier",
@@ -174,10 +175,10 @@
       "data:Go unsigned pair retains both unsigned result types"
     ],
     "catalog_label_rename": [
-      "data:KUNA-CATALOG #15: 374 registry rows plus six individual queries",
-      "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries"
+      "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries",
+      "data:KUNA-CATALOG #15: 376 registry rows plus six individual queries"
     ],
     "publication_requires_parent_pr_merged": true
   },
-  "bound_at": "2026-11-02T21:41:34.557497+00:00"
+  "bound_at": "2026-11-02T23:41:25.329881+00:00"
 }

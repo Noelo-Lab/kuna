@@ -298,8 +298,10 @@ pub(super) fn resolve_name(
 /// Walk the `DW_TAG_member` children into kuna fields.
 ///
 /// A member is SKIPPED (never fatal) when it has no name, no buildable type, a
-/// zero-width or `void` type, or a negative offset — one exotic member costs its
-/// own field, not the whole layout. Bitfield members go to the second list (or
+/// zero-width or `void` type, a negative offset, a location that is not a
+/// constant displacement, or is a static member — one exotic member costs its
+/// own field, not the whole layout. A member with no location starts the
+/// container. Bitfield members go to the second list (or
 /// back to the first when they are byte-exact);
 /// `DW_TAG_variant_part`/`DW_TAG_variant` children are not members and are not
 /// read. LOSS: an ANONYMOUS member (a C11 anonymous struct/union inside a struct)
@@ -324,11 +326,9 @@ fn collect_members(
     let big_endian = types.is_big_endian();
     for &coff in &die.children {
         let Some(m) = dies.get(&coff) else { continue };
-        if m.tag != gimli::DW_TAG_member || m.name.is_empty() {
+        if m.tag != gimli::DW_TAG_member || m.name.is_empty() || is_static_member(m) {
             continue;
         }
-        // A C++ `static` data member is a global, not part of the layout: it has
-        // no `DW_AT_data_member_location` (upstream skips it the same way).
         let Some(ty) = super::build_datatype(m.type_ref, dies, types, word_size, walk, cpp) else {
             continue;
         };
@@ -343,7 +343,7 @@ fn collect_members(
             fields.push(TypeField::new(fields.len() as int4, 0, m.name.clone(), ty));
             continue;
         }
-        let off = m.data_member_location.unwrap_or(0);
+        let Some(off) = member_offset(m) else { continue };
         if off < 0 || off > int4::MAX as i64 {
             continue;
         }
@@ -377,6 +377,25 @@ fn collect_members(
     (fields, bits)
 }
 
+/// A C++ `static` data member is a global, not part of the layout. DWARF 2-4
+/// declares it as a `DW_TAG_member` marked external (upstream skips those) or
+/// declaration-only; DWARF 5 uses `DW_TAG_variable` instead.
+pub(super) fn is_static_member(m: &DieSnap) -> bool {
+    m.external == Some(true) || m.declaration
+}
+
+/// A member's byte offset, as upstream `parseDataMemberOffset` reads it: an
+/// absent `DW_AT_data_member_location` places the member at the start of its
+/// container (DWARF permits omitting it there), and a location that is present
+/// but not a constant displacement leaves the member unplaced.
+pub(super) fn member_offset(m: &DieSnap) -> Option<i64> {
+    match m.data_member_location {
+        Some(offset) => Some(offset),
+        None if m.member_location_unknown => None,
+        None => Some(0),
+    }
+}
+
 /// The absolute bit position and width of one bitfield member, or `None` for a
 /// plain member.
 ///
@@ -399,7 +418,7 @@ fn bitfield_bits(m: &DieSnap, big_endian: bool) -> Option<(i64, int4)> {
     }
     let container = m.byte_size.filter(|&b| b > 0 && b <= 16)? as int4;
     let bit_offset = m.bit_offset? as int4;
-    let byte_offset = m.data_member_location.filter(|&o| o >= 0)?;
+    let byte_offset = member_offset(m).filter(|&o| o >= 0)?;
     let within = container * 8 - bit_offset - num_bits;
     if within < 0 {
         return None;
@@ -504,4 +523,57 @@ pub(super) fn aggregate_alignment(
         a *= 2;
     }
     a
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kuna_decomp::dtype::TypeFactoryImpl;
+
+    fn die(tag: gimli::DwTag, name: &str) -> DieSnap {
+        let mut d = DieSnap::new(tag, 1);
+        d.name = name.into();
+        d
+    }
+
+    #[test]
+    fn absent_locations_start_the_container_and_unknown_or_static_members_are_skipped() {
+        let types = TypeFactoryImpl::new();
+        types.set_default_alignment_map();
+        types.set_max_basetype_size(8);
+        types.setup_sizes(Some(8), 8, 4);
+        let _ = types.cache_core_types();
+        let mut dies = BTreeMap::new();
+        let mut int = die(gimli::DW_TAG_base_type, "int");
+        int.byte_size = Some(4);
+        int.encoding = Some(gimli::DW_ATE_signed);
+        dies.insert(1, int);
+        let mut record = die(gimli::DW_TAG_structure_type, "Layout");
+        record.byte_size = Some(8);
+        record.children = vec![2, 3, 4, 5, 6];
+        dies.insert(10, record);
+        let member = |name: &str| {
+            let mut m = die(gimli::DW_TAG_member, name);
+            m.type_ref = Some(1);
+            m
+        };
+        dies.insert(2, member("first"));
+        let mut second = member("second");
+        second.data_member_location = Some(4);
+        dies.insert(3, second);
+        let mut virtual_base = member("virtual_base");
+        virtual_base.member_location_unknown = true;
+        dies.insert(4, virtual_base);
+        let mut shared = member("shared");
+        shared.external = Some(true);
+        dies.insert(5, shared);
+        let mut declared = member("declared");
+        declared.declaration = true;
+        dies.insert(6, declared);
+        let ty = intern_aggregate(&types, &dies[&10], &dies, None, "Layout",
+            &mut TypeWalk::with_gate(false), 8, false, false).unwrap();
+        let fields: Vec<_> = (0..ty.num_depend()).filter_map(|i| ty.get_field(i))
+            .map(|f| (f.offset, f.name.clone())).collect();
+        assert_eq!(fields, vec![(0, "first".to_string()), (4, "second".to_string())]);
+    }
 }

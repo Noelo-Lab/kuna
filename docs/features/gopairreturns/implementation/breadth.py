@@ -2,8 +2,8 @@ from common import *
 from concurrent.futures import ThreadPoolExecutor,as_completed
 import difflib,re
 while not(w/'build.json').exists():time.sleep(2)
-out=w/'breadth';out.mkdir(exist_ok=False);base=Path('/home/mahaloz/kwt/angr-integer-field-extract-main');prior=json.loads(Path('/tmp/kuna-integer-field-extract/integration-c5ea/breadth-final/record.json').read_text());sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();candidate_sha=sha(r/'decompiler/target/release/kuna');parent_sha=sha(base/'decompiler/target/release/kuna');assert parent_sha==prior['new_cli_sha256'];previous={row['fixture']:row for row in prior['records']};inputs=[(row['fixture'],Path(row['fixture_path']),[item['language']for item in row['records']])for row in previous.values()]
-inputs.extend((name,r/'tests/fixtures/go-pair-results'/filename,['c','go','rust'])for name,filename in [('gopair122','go1.22.5-pair'),('gopair127','go1.27.3-pair'),('gopair-contracts','contracts'),('gopair-contracts-plain','contracts-plain')]);assert len(inputs)==67
+out=w/'breadth';out.mkdir(exist_ok=False);base=Path('/home/mahaloz/kwt/angr-go-pair-parent-460');prior=json.loads(Path('/tmp/kuna-integer-field-extract/integration-c5ea/breadth-final/record.json').read_text());sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();candidate_sha=sha(r/'decompiler/target/release/kuna');parent_sha=sha(base/'decompiler/target/release/kuna');assert parent_sha==json.loads((w/'build.json').read_text())['parent_cli_sha256'];previous={row['fixture']:row for row in prior['records']};inputs=[(row['fixture'],Path(row['fixture_path']),[item['language']for item in row['records']])for row in previous.values()]
+inputs.extend((name,r/'tests/fixtures/go-pair-results'/filename,['c','go','rust'])for name,filename in [('gopair122','go1.22.5-pair'),('gopair127','go1.27.3-pair'),('gopair-contracts','contracts'),('gopair-contracts-plain','contracts-plain')]);inputs.extend((name,r/'decompiler/crates/kuna-analysis/tests/fixtures'/name,['c','go','rust'])for name in ['gottailcall_x86_64.so','gottailcall_refused_x86_64.so','gottailcall_mipsel.o','dwarf2_members_x86_64.o','dwarf_static_member_x86_64.o']);assert len(inputs)==72
 
 def functions(path):
  d=json.loads(path.read_text());assert not d.get('error');fs=d['functions'];result={f['address']:f for f in fs};assert len(result)==len(fs)and result;return result
@@ -32,9 +32,7 @@ def run_row(row):
  if name in previous:assert digest==previous[name]['fixture_sha256']
  records=[];changes=[]
  def one_language(lang):
-  if name in previous:
-   cache=next(item for item in previous[name]['records']if item['language']==lang);before=Path(cache['candidate_file']);assert sha(before)==cache['candidate_sha256']
-  else:before=capture(binary,lang,name,'parent')
+  before=capture(binary,lang,name,'parent')
   old=functions(before);paths={};data={}
   for arm in ['off','on']:
    path=capture(binary,lang,name,arm);new=functions(path);assert old.keys()==new.keys();paths[arm]=str(path);data[arm]=new
@@ -48,4 +46,4 @@ def run_row(row):
  assert sha(binary)==digest;result={'fixture':name,'fixture_path':str(binary),'fixture_sha256':digest,'records':records,'changes':changes};(out/(name+'-record.json')).write_text(json.dumps(result,indent=2)+'\n');print(name,'complete',len(changes),'changed records',flush=True);return result
 with ThreadPoolExecutor(max_workers=4)as pool:records=[f.result()for f in as_completed([pool.submit(run_row,row)for row in inputs])]
 assert sha(r/'decompiler/target/release/kuna')==candidate_sha and sha(base/'decompiler/target/release/kuna')==parent_sha
-result={'distinct_functions':sum(row['records'][0]['functions']for row in records),'language_records_per_arm':sum(item['functions']for row in records for item in row['records']),'changed_on':sum(x['arm']=='on'for row in records for x in row['changes']),'changed_off':sum(x['arm']=='off'for row in records for x in row['changes']),'scope':'Complete 67-image parent/default-off/opt-in comparison on the updated field extraction parent','images':len(records),'parent_cli_sha256':parent_sha,'candidate_cli_sha256':candidate_sha,'records':records,'semantic_review_pending':True};(out/'record.json').write_text(json.dumps(result,indent=2)+'\n');print('Complete Go pair breadth captured; semantic review pending',flush=True)
+result={'distinct_functions':sum(row['records'][0]['functions']for row in records),'language_records_per_arm':sum(item['functions']for row in records for item in row['records']),'changed_on':sum(x['arm']=='on'for row in records for x in row['changes']),'changed_off':sum(x['arm']=='off'for row in records for x in row['changes']),'scope':'Complete 72-image parent/default-off/opt-in comparison on current main including the GOT tail-call fixtures','images':len(records),'parent_cli_sha256':parent_sha,'candidate_cli_sha256':candidate_sha,'records':records,'semantic_review_pending':True};(out/'record.json').write_text(json.dumps(result,indent=2)+'\n');print('Complete Go pair breadth captured; semantic review pending',flush=True)

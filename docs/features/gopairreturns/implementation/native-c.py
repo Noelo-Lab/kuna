@@ -1,6 +1,6 @@
 from pathlib import Path
 import hashlib,itertools,json,os,re,subprocess
-r=Path('/home/mahaloz/kwt/angr-go-pair-results');w=Path('/tmp/kuna-go-pair-results-implementation/integration-350-round3/native-c');w.mkdir(parents=True,exist_ok=False);k=r/'decompiler/target/release/kuna';sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();digest=sha(k);env=os.environ|{'KUNA_SPECS':str(r/'specs')};names=['pair','divmod','unsignedPair','branchPair','consume','first','second','forward','effect','consumeEffect','zeroPair','lowPair','signedLowPair','highPair','onesPair','choosePair'];inputs=list(itertools.product([-(1<<63),-(1<<63)+1,-65536,-17,-2,-1,0,1,2,17,65536,(1<<31)-1,(1<<32)-1,(1<<63)-2,(1<<63)-1],[-(1<<63),-17,-1,0,1,17,(1<<63)-1]));records=[]
+r=Path('/home/mahaloz/kwt/angr-go-pair-results');w=Path('/tmp/kuna-go-pair-results-implementation/integration-460/native-c');w.mkdir(parents=True,exist_ok=False);k=r/'decompiler/target/release/kuna';sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();digest=sha(k);env=os.environ|{'KUNA_SPECS':str(r/'specs')};names=['pair','divmod','unsignedPair','branchPair','consume','first','second','forward','effect','consumeEffect','zeroPair','lowPair','signedLowPair','highPair','onesPair','choosePair'];inputs=list(itertools.product([-(1<<63),-(1<<63)+1,-65536,-17,-2,-1,0,1,2,17,65536,(1<<31)-1,(1<<32)-1,(1<<63)-2,(1<<63)-1],[-(1<<63),-17,-1,0,1,17,(1<<63)-1]));records=[]
 prelude='''#include <stdio.h>
 #include <stdlib.h>
 typedef unsigned char xunknown1;
@@ -21,7 +21,7 @@ for version in ['go1.22.5','go1.27.3']:
  for opt in ['0','2']:
   exe=w/(version+'-O'+opt);p=subprocess.run(['cc','-std=c11','-O'+opt,'-fwrapv',str(source),'-o',str(exe)],text=True,capture_output=True);(w/(exe.name+'-build.log')).write_text(p.stdout+p.stderr);assert p.returncode==0,p.stderr;observations=[]
   for a,b in inputs:
-   reference=Path('/tmp/kuna-go-pair-results-implementation/integration-350-round3/native-go')/(version+'-source');expected=subprocess.check_output([str(reference),str(a),str(b)],text=True)
+   reference=Path('/tmp/kuna-go-pair-results-implementation/integration-460/native-go')/(version+'-source');expected=subprocess.check_output([str(reference),str(a),str(b)],text=True)
    if b==0:expected='\n'.join(expected.splitlines()[:-1])+'\n'
    actual=subprocess.check_output([str(exe),str(a),str(b)],text=True);assert actual==expected,(version,opt,a,b,expected,actual);observations.append({'a':a,'b':b,'division_executed':b!=0,'stdout':actual})
   records.append({'version':version,'optimization':'O'+opt,'complete_bodies':16,'body_rewrites':False,'source_sha256':sha(source),'binary_sha256':sha(exe),'assertions':assertions,'inputs':105,'nonzero_divisions':90,'observations':observations})

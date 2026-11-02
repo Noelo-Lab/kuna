@@ -1,24 +1,24 @@
 {
   "feature": "gopairreturns",
   "status": "implemented-default-off",
-  "at": "2026-11-02T22:17:25.507803+00:00",
+  "at": "2026-11-02T23:45:32.315992+00:00",
   "profile": "amd64 Go ABIInternal, exactly two full-width signed/unsigned integer results with complete consistent DWARF contracts",
   "option": "gopairreturns",
   "default": "off in every mode",
   "requires_option": "godwarfsig",
   "build": {
-    "at": "2026-11-02T21:24:36.675123+00:00",
-    "parent_commit": "35005170a58026809d2ec82b975d2660cc7e2003",
-    "parent_cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
-    "new_cli_sha256": "3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131",
+    "at": "2026-11-02T23:15:50.094880+00:00",
+    "parent_commit": "460ac0a18f0efcce2e28f794050ad74e70b371ae",
+    "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "new_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
     "option": "gopairreturns",
     "default": "off",
     "requires": "godwarfsig on",
-    "catalog_count": 375,
-    "corpus_files": 682,
+    "catalog_count": 376,
+    "corpus_files": 683,
     "stage_assertions": [
-      3733,
-      3733
+      3737,
+      3737
     ],
     "stage_keys_added": [
       "data:Go pair option off retains the register byte carrier",
@@ -31,13 +31,13 @@
       "data:Go unsigned pair retains both unsigned result types"
     ],
     "catalog_label_rename": [
-      "data:KUNA-CATALOG #15: 374 registry rows plus six individual queries",
-      "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries"
+      "data:KUNA-CATALOG #15: 375 registry rows plus six individual queries",
+      "data:KUNA-CATALOG #15: 376 registry rows plus six individual queries"
     ],
     "publication_requires_parent_pr_merged": true
   },
   "workspace": {
-    "passed": 10343,
+    "passed": 10356,
     "failed": 0,
     "ignored": 39,
     "suites": 72
@@ -46,11 +46,11 @@
   "breadth": {
     "complete": true,
     "semantic_review_pending": false,
-    "review_scope": "Structural review of every changed function group, preservation of all full changed records and explicit remaining limits. Not whole-corpus native equivalence.",
+    "review_scope": "Every complete changed before/after record must equal its prior reviewed pair or remain explicitly pending. No whole-runtime native equivalence claim.",
     "whole_corpus_native_equivalence": false,
-    "images": 67,
-    "distinct_functions": 37873,
-    "language_records": 88335,
+    "images": 72,
+    "distinct_functions": 37908,
+    "language_records": 88440,
     "changed_records": 439,
     "default_off_changed_records": 0,
     "changed_by_language": {
@@ -66,8 +66,8 @@
     "inherited_go_parse_failures": 15,
     "new_errors": 0,
     "new_go_parse_failures": 0,
-    "parent_cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
-    "candidate_cli_sha256": "3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131",
+    "parent_cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
+    "candidate_cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
     "first_capture_review": {
       "at": "2026-11-02T20:56:14.914151+00:00",
       "scope": "Review of all 155 language/name groups across the first complete 439-change capture. Normalized views coalesce temporary identifiers and duplicate lines; original per-function diffs remain authoritative. This is structural review, not whole-runtime native equivalence.",
@@ -118,106 +118,6 @@
         "/tmp/kuna-toolchains/go1.27.3/go/src/runtime/mbitmap.go": "7b37b6496357b8d5e07c56c7a9e5099a32af960fc26ec6f120f46ea172bdf770"
       }
     },
-    "refinements": [
-      {
-        "fixture": "native",
-        "language": "c",
-        "address": "0x422380",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "native",
-        "language": "go",
-        "address": "0x422380",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "basics122",
-        "language": "c",
-        "address": "0x4279c0",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "basics122",
-        "language": "go",
-        "address": "0x4279c0",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "native1273",
-        "language": "c",
-        "address": "0x435800",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "native1273",
-        "language": "go",
-        "address": "0x435800",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "langdetect",
-        "language": "c",
-        "address": "0x425c40",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "langdetect",
-        "language": "go",
-        "address": "0x425c40",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "basics127",
-        "language": "c",
-        "address": "0x43ca00",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "basics127",
-        "language": "go",
-        "address": "0x43ca00",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "basics127-plain",
-        "language": "c",
-        "address": "0x43ca00",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "basics127-plain",
-        "language": "go",
-        "address": "0x43ca00",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "gopair122",
-        "language": "c",
-        "address": "0x425ca0",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      },
-      {
-        "fixture": "gopair122",
-        "language": "go",
-        "address": "0x425ca0",
-        "name": "runtime.(*mheap).allocSpan",
-        "proof": "Only the invalid opaque-to-pair cast is replaced by the single-evaluation adapter; reversing that substitution yields the previous complete function byte for byte."
-      }
-    ],
     "remaining_gaps": [
       {
         "id": "go-signed-field-assignment",
@@ -244,7 +144,8 @@
         "example": "main.highPair/runtime.(*mheap).allocSpan; main.signedUnsigned/main.onesPair",
         "description": "Rust byte-array to struct conversions, signed destination casts and out-of-range literals still need work."
       }
-    ]
+    ],
+    "prior_changes_no_longer_present": []
   },
   "native": {
     "go_whole_functions": 16,
@@ -266,33 +167,32 @@
     "rust_native_equivalence_claim": false
   },
   "speed": {
-    "prior_candidate_default_off_result": "inconclusive; retained-inconclusive-speed contains the failed 384-round comparison",
     "default_off_budget_passed": true,
-    "maximum_default_off_median_pct": 0.7429030139513237,
-    "maximum_default_off_upper_pct": 4.121659084512839,
+    "maximum_default_off_median_pct": 0.9669723694235355,
+    "maximum_default_off_upper_pct": 5.705464820998634,
     "opt_in_records": [
       {
         "case": "on-c-forward",
         "comparison": "candidate-opt-in-versus-parent",
         "fixture_sha256": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
-        "cpu": 73,
+        "cpu": 67,
         "medians": {
           "parent": {
-            "cpu_ms": 204.96149999999957,
-            "wall_ms": 205.94916958361864
+            "cpu_ms": 204.67749999999808,
+            "wall_ms": 205.15133743174374
           },
           "candidate": {
-            "cpu_ms": 206.31950000000288,
-            "wall_ms": 207.0937198586762
+            "cpu_ms": 205.97299999999973,
+            "wall_ms": 206.46790508180857
           }
         },
         "median_delta_pct": {
-          "cpu_ms": 0.6625634570410988,
-          "wall_ms": 0.5557440592606211
+          "cpu_ms": 0.6329469531344056,
+          "wall_ms": 0.6417543587805552
         },
         "confidence_upper_mean_delta_pct": {
-          "cpu_ms": 0.9057499415631242,
-          "wall_ms": 2.1524530765736305
+          "cpu_ms": 0.8589519071836061,
+          "wall_ms": 0.862809227224548
         },
         "speed_budget_passed": true
       },
@@ -303,21 +203,21 @@
         "cpu": 63,
         "medians": {
           "parent": {
-            "cpu_ms": 203.6550000000048,
-            "wall_ms": 204.19667311944067
+            "cpu_ms": 203.80699999999985,
+            "wall_ms": 204.28011007606983
           },
           "candidate": {
-            "cpu_ms": 204.95699999997186,
-            "wall_ms": 205.52409999072552
+            "cpu_ms": 205.01800000000014,
+            "wall_ms": 205.5281545035541
           }
         },
         "median_delta_pct": {
-          "cpu_ms": 0.6393164911085103,
-          "wall_ms": 0.6500727220508651
+          "cpu_ms": 0.5941896009461489,
+          "wall_ms": 0.610947598872702
         },
         "confidence_upper_mean_delta_pct": {
-          "cpu_ms": 0.9304007237131922,
-          "wall_ms": 3.340152262207612
+          "cpu_ms": 0.8111816664441829,
+          "wall_ms": 0.8120544666485041
         },
         "speed_budget_passed": true
       },
@@ -325,28 +225,32 @@
         "case": "on-rust-forward",
         "comparison": "candidate-opt-in-versus-parent",
         "fixture_sha256": "f1bddc056cfd6ad43210a10c73fbfe7001a770b949e980d6ec6a20cdc53342d0",
-        "cpu": 46,
+        "cpu": 61,
         "medians": {
           "parent": {
-            "cpu_ms": 204.16649999999947,
-            "wall_ms": 204.76560317911208
+            "cpu_ms": 204.68299999999886,
+            "wall_ms": 205.1037938799709
           },
           "candidate": {
-            "cpu_ms": 205.07350000000457,
-            "wall_ms": 205.6769949849695
+            "cpu_ms": 206.03299999999925,
+            "wall_ms": 206.45120553672314
           }
         },
         "median_delta_pct": {
-          "cpu_ms": 0.4442452606108649,
-          "wall_ms": 0.4450902845534177
+          "cpu_ms": 0.6595564849061208,
+          "wall_ms": 0.656941361865182
         },
         "confidence_upper_mean_delta_pct": {
-          "cpu_ms": 0.6828830164997944,
-          "wall_ms": 5.32914930764518
+          "cpu_ms": 0.8619148589234205,
+          "wall_ms": 0.8677142798267967
         },
-        "speed_budget_passed": false
+        "speed_budget_passed": true
       }
-    ]
+    ],
+    "acceptance": "Both CPU and wall ratio-of-medians deltas must be at most5% in each of the six default-off comparisons. Three opt-in comparisons report costs separately. Report all per-case95% upper mean-ratio bounds as uncertainty; they are not acceptance gates. One final look, fixed128balanced pairs, no unchanged-code repeat after failure.",
+    "confidence_interpretation": "Reported per-case 95% upper mean-ratio bounds are uncertainty, not acceptance gates. Final integration uses the median5% budget.",
+    "prior_a76": "prior-a76/ retains the earlier passed stronger simultaneous-bound study and earlier inconclusive evidence.",
+    "prior_a324": "prior-a324/ retains full correctness/native checks and the explicitly cancelled, unanalysed timing study after main advanced."
   },
   "remaining_gaps": [
     {
@@ -402,11 +306,11 @@
     "body_rewrites": false,
     "records": {
       "parent": {
-        "cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
+        "cli_sha256": "b545021c00cf8a9a73329c1318464c571dc2afa00245a33a398b0ba090cb0d1c",
         "command": [
-          "/home/mahaloz/kwt/angr-integer-field-extract-main/decompiler/target/release/kuna",
+          "/home/mahaloz/kwt/angr-go-pair-parent-460/decompiler/target/release/kuna",
           "decompile",
-          "/tmp/kuna-go-pair-results-implementation/integration-350-round3/public-repro/pair",
+          "/tmp/kuna-go-pair-results-implementation/integration-460/public-repro/pair",
           "main.pair",
           "--language",
           "go",
@@ -419,11 +323,11 @@
         "address": 4824544
       },
       "candidate": {
-        "cli_sha256": "3877ad7912406ee1c8c6007ec69241b5b66c2fc1362c79846687d65d59ec3131",
+        "cli_sha256": "3e03cb033e748d92b059115f579a1b463bd787ff1147b7d7c43fca361691c305",
         "command": [
           "/home/mahaloz/kwt/angr-go-pair-results/decompiler/target/release/kuna",
           "decompile",
-          "/tmp/kuna-go-pair-results-implementation/integration-350-round3/public-repro/pair",
+          "/tmp/kuna-go-pair-results-implementation/integration-460/public-repro/pair",
           "main.pair",
           "--language",
           "go",
@@ -445,12 +349,16 @@
     "Remain opt-in in every mode.",
     "Use ordinary joined structs and validated Go emission adapters with one evaluation."
   ],
-  "speed_off_ms": 194.51800594106317,
-  "speed_on_ms": 194.01173433288932,
-  "speed_delta_pct": -0.260269791336043,
+  "speed_off_ms": 194.04933881014585,
+  "speed_on_ms": 193.34501633420587,
+  "speed_delta_pct": -0.3629605131657221,
   "speed_samples": 32,
   "speed_budget_pct": 5,
   "speed_within_budget": true,
   "speed_forced_off": false,
-  "speed_measurement": "Same candidate, gopairreturns off/on, godwarfsig on, Go main.forward; distinct from the parent comparison."
+  "speed_measurement": "Same final candidate, gopairreturns off/on, godwarfsig on, Go main.forward; separate from parent comparison.",
+  "prior_integration_evidence": [
+    "prior-a76/",
+    "prior-a324/"
+  ]
 }

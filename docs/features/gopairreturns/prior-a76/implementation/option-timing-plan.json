@@ -1,0 +1,17 @@
+{
+  "declared_at": "2026-11-02T21:35:41.449475+00:00",
+  "purpose": "Record genuine option off/on cost on one final binary, separately from the parent-versus-candidate default-overhead study. Default remains off regardless of timing.",
+  "seed": 202611054,
+  "paired_rounds": 32,
+  "warmups_per_arm": 3,
+  "binary": "/home/mahaloz/kwt/angr-go-pair-results/tests/fixtures/go-pair-results/go1.27.3-pair",
+  "selector": "main.forward",
+  "language": "go",
+  "options": [
+    "godwarfsig",
+    "on"
+  ],
+  "option": "gopairreturns",
+  "budget_pct": 5,
+  "acceptance": "Report median cost and the standard timeit-compatible speed block. Do not use this study to claim default-on acceptance or to repeat a failed study."
+}

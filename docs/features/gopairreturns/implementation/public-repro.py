@@ -5,7 +5,7 @@ import "fmt"
 func pair(a,b int64)(int64,int64){return a+b,a-b}
 func main(){fmt.Println(pair(7,3))}
 ''';(out/'pair.go').write_text(source);go='/tmp/kuna-toolchains/go1.27.3/go/bin/go';run(r,out,[go,'build','-trimpath','-o',str(out/'pair'),str(out/'pair.go')],'build.log');expected=subprocess.check_output([str(out/'pair')]);assert expected==b'10 4\n';(out/'source.stdout').write_bytes(expected);records={}
-for arm,root in [('parent',Path('/home/mahaloz/kwt/angr-integer-field-extract-main')),('candidate',r)]:
+for arm,root in [('parent',Path('/home/mahaloz/kwt/angr-go-pair-parent-460')),('candidate',r)]:
  cli=root/'decompiler/target/release/kuna';cmd=[str(cli),'decompile',str(out/'pair'),'main.pair','--language','go','--option','godwarfsig','on','--json']
  if arm=='candidate':cmd+=['--option','gopairreturns','on']
  p=subprocess.run(cmd,env=env|{'KUNA_SPECS':str(r/'specs')},capture_output=True,text=True,check=True);(out/(arm+'.json')).write_text(p.stdout);(out/(arm+'.log')).write_text(p.stderr);d=json.loads(p.stdout);f=d['functions'][0]if'functions'in d else d;assert not f.get('error');(out/(arm+'.go.body')).write_text(f['code']);records[arm]={'cli_sha256':sha(cli),'command':cmd,'code':f['code'],'address':f['address']}

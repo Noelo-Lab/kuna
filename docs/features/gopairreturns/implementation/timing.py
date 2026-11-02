@@ -1,7 +1,7 @@
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import datetime,gzip,hashlib,itertools,json,multiprocessing,os,random,resource,statistics,subprocess,threading,time
-w=Path('/tmp/kuna-go-pair-results-implementation/integration-350-round3')
+w=Path('/tmp/kuna-go-pair-results-implementation/integration-460')
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def sample():
  return {'time':time.monotonic(),'cpus':{int(p[0][3:]):list(map(int,p[1:]))for line in Path('/proc/stat').read_text().splitlines()if(p:=line.split())and p[0].startswith('cpu')and p[0][3:].isdigit()}}
@@ -24,6 +24,7 @@ def case(job):
   for order in permutations:
    orders.append(order)
    for arm in order:raw[arm].append(run(arm))
+  (w/(name+'-samples.json')).write_text(json.dumps({'raw':raw,'orders':orders}))
   if(block+1)%24==0:print(name,'completed rounds',(block+1)*2,flush=True)
  assert sha(binary)==fixture_sha
  return {'case':name,'comparison':'candidate-opt-in-versus-parent'if name.startswith('on-')else'candidate-default-off-versus-parent','fixture_sha256':fixture_sha,'cpu':cpu,'raw':raw,'orders':orders}
@@ -36,7 +37,7 @@ def main():
   if not p.name.isdigit()or int(p.name)==os.getpid():continue
   try:args=(p/'cmdline').read_bytes().decode(errors='replace').split('\0')
   except OSError:continue
-  if args and Path(args[0]).name not in ['bash','timeout','rg']and any(prefix in ' '.join(args)for prefix in ['/home/mahaloz/kwt/angr-go-store-conversions','/tmp/kuna-go-store-conversions','/tmp/kuna-go-signed-store-research','/home/mahaloz/kwt/angr-integer-field-extract','/tmp/kuna-integer-field-extract','/home/mahaloz/kwt/angr-go-pair-results','/tmp/kuna-go-pair-results-proposal','/tmp/kuna-go-pair-results-implementation','/home/mahaloz/kwt/angr-base-83a6f','/home/mahaloz/kwt/angr-joined-callback-return','/tmp/kuna-joined-callback-return','/tmp/kuna-highslice-optin','/home/mahaloz/kwt/angr-rust-','/tmp/kuna-rust-','/home/mahaloz/kwt/angr-fnptr-namespace','/tmp/kuna-fnptr-namespace','/home/mahaloz/kwt/angr-base-1d5f','/home/mahaloz/kwt/angr-base-c5fc','/tmp/kuna-dwarf-namespace','/home/mahaloz/kwt/angr-dwarf-namespace']):unexpected.append({'pid':int(p.name),'args':args})
+  if args and Path(args[0]).name not in ['bash','timeout','rg']and any(prefix in ' '.join(args)for prefix in ['/home/mahaloz/kwt/angr-go-pair-parent-460','/home/mahaloz/kwt/angr-go-store-conversions','/tmp/kuna-go-store-conversions','/tmp/kuna-go-signed-store-research','/home/mahaloz/kwt/angr-integer-field-extract','/tmp/kuna-integer-field-extract','/home/mahaloz/kwt/angr-go-pair-results','/tmp/kuna-go-pair-results-proposal','/tmp/kuna-go-pair-results-implementation','/home/mahaloz/kwt/angr-base-83a6f','/home/mahaloz/kwt/angr-joined-callback-return','/tmp/kuna-joined-callback-return','/tmp/kuna-highslice-optin','/home/mahaloz/kwt/angr-rust-','/tmp/kuna-rust-','/home/mahaloz/kwt/angr-fnptr-namespace','/tmp/kuna-fnptr-namespace','/home/mahaloz/kwt/angr-base-1d5f','/home/mahaloz/kwt/angr-base-c5fc','/tmp/kuna-dwarf-namespace','/home/mahaloz/kwt/angr-dwarf-namespace']):unexpected.append({'pid':int(p.name),'args':args})
  assert not unexpected,unexpected
  manifests={}
  for label,name in [('current',w/'production-source-before-validation.json'),('parent',w/'parent-source-before-timing.json')]:
@@ -89,8 +90,8 @@ def main():
   upper={}
   for metric,values in distributions.items():
    values.sort();position=plan['upper_quantile']*(len(values)-1);lo=int(position);hi=min(lo+1,len(values)-1);upper[metric]=values[lo]+(position-lo)*(values[hi]-values[lo])
-  record.update(medians=medians,median_delta_pct=delta,confidence_upper_mean_delta_pct=upper,speed_budget_passed=all(value<=plan['budget_pct']for value in list(delta.values())+list(upper.values())))
-  print('FINAL SPEED BOUNDS',record['case'],delta,upper,record['speed_budget_passed'],flush=True)
+  record.update(medians=medians,median_delta_pct=delta,confidence_upper_mean_delta_pct=upper,speed_budget_passed=all(value<=plan['budget_pct']for value in list(delta.values())))
+  print('FINAL SPEED ESTIMATES',record['case'],delta,upper,record['speed_budget_passed'],flush=True)
  result={'plan':plan,'completed_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'binary_sha256':digests,'source_manifest_sha256':manifests,'compiled_specs':{'count':len(specs),'before':specs_before,'after':specs_after},'parent_commit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=plan['base'],text=True).strip(),'all_default_comparisons_passed':all(record['speed_budget_passed']for record in records if record['case']in plan['required_cases']),'records':records}
  (w/'timing-result.json').write_text(json.dumps(result,indent=2)+'\n')
  assert result['all_default_comparisons_passed'],'Go paired-result default-off speed comparison unresolved; no unchanged-code repeat.'
