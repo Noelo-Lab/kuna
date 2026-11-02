@@ -1,6 +1,9 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
 mod common;
 
+#[path = "rust_empty_match.rs"]
+mod rust_empty_match;
+
 #[path = "function_pointer_namespaces.rs"]
 mod function_pointer_namespaces;
 

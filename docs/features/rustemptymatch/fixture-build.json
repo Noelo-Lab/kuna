@@ -1,0 +1,20 @@
+{
+  "command": [
+    "gcc",
+    "-O2",
+    "-fno-pie",
+    "-no-pie",
+    "-Wl,--build-id=none",
+    "rust_empty_match.S",
+    "rust_empty_match.c",
+    "-o",
+    "rust_empty_match_x86_64"
+  ],
+  "compiler": "gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0",
+  "files": {
+    "rust_empty_match.S": "e6727f537e25230a72febddcc95486314f41bf9402bcb139753e5a20f3e0f307",
+    "rust_empty_match.c": "1c98540036f1a5bf46f8101b532849adb37e4c574572bb0ee0ab9f3ead3915f6",
+    "rust_empty_match_x86_64": "1f5b85d546f736d668f8d75d9927c4776129308edc422096c95f40c10f1f3058",
+    "rust_empty_match.kuna": "9641aedcb7eb26a40054107e3569ededf1d97bd3f31428d95a5fc9d44b517467"
+  }
+}
