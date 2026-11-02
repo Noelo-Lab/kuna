@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3670,
-    3670
+    3675,
+    3675
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2952,6 +2952,11 @@
     "data:loop initial and backedge definitions share a family",
     "data:low address outside pointer inference range still folds",
     "data:marker has no executable trap",
+    "data:mipsgot-local #1: c_add calls add64",
+    "data:mipsgot-local #1b: c_add stores to sink64",
+    "data:mipsgot-local #2: c_calls bumps counter",
+    "data:mipsgot-local #2b: c_calls calls wfn and reads gdata",
+    "data:mipsgot-local #3: no call through a GOT slot",
     "data:mirror receives the local without a device read",
     "data:mixed argument reads: byte uses fifth argument",
     "data:mixed argument reads: complete six-argument prototype",
