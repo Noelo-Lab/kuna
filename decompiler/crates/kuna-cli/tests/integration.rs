@@ -10,6 +10,9 @@ mod function_pointer_namespaces;
 #[path = "dwarf_namespaces.rs"]
 mod dwarf_namespaces;
 
+#[path = "dwarf_member_layout.rs"]
+mod dwarf_member_layout;
+
 #[path = "local_array_bits.rs"]
 mod local_array_bits;
 
