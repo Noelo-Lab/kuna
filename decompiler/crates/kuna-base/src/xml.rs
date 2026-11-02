@@ -2146,7 +2146,7 @@ mod tests {
         // and kuna-relocobj-ppc-mips / PowerPC and MIPS relocatable objects' calls and addresses
         // and kuna-bejoin-mipspic / MIPS PIC callers and unaligned loads (option bejoin callers)
         // and kuna-bejoin-mipsclang / a proven pair whose low word feeds its high word stays whole
-        assert_eq!(count, 671, "corpus file count drifted");
+        assert_eq!(count, 672, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
