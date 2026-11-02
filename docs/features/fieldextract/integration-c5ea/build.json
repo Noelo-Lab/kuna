@@ -1,0 +1,10 @@
+{
+  "parent_commit": "c5ea0fa96b83ac92b140e83017f57cff2d298e4c",
+  "parent_cli_sha256": "9a79c1053ae87b79bbf3db85eb838a12e179ffa5af99b4622a4e42e9570b58f6",
+  "new_cli_sha256": "602e9b096f935f1cd268dafbabc65f52addef2d120094151078a75e767918b46",
+  "stage_assertions": [
+    3725,
+    3725
+  ],
+  "catalog_count": 374
+}

@@ -1,0 +1,28 @@
+{
+  "at": "2026-11-02T19:01:07.762167+00:00",
+  "parent_commit": "8f403caeb8115aeb3f2eba8bef9840f1cdfbacef",
+  "parent_cli_sha256": "3bc54da6287e3ffc30d8b7c5706ee87af9934077db811151ab3304f3e9704031",
+  "new_cli_sha256": "cda6f76a7ccec63b17c82a2586edca75385f0b01fe7a7115297faeebfe45307d",
+  "strict_correctness_fix": true,
+  "option": null,
+  "stage_assertions": [
+    3721,
+    3721
+  ],
+  "stage_keys_added": [
+    "data:C and Rust field casts respect diagnostic suppression",
+    "data:Go field conversions respect diagnostic suppression",
+    "data:c preserves shift32 extraction",
+    "data:c preserves signed_int16 extraction",
+    "data:c preserves signed_int32_wide extraction",
+    "data:c preserves signed_int8 extraction",
+    "data:go preserves shift32 extraction",
+    "data:go preserves signed_int16 extraction",
+    "data:go preserves signed_int32_wide extraction",
+    "data:go preserves signed_int8 extraction",
+    "data:rust preserves shift32 extraction",
+    "data:rust preserves signed_int16 extraction",
+    "data:rust preserves signed_int32_wide extraction",
+    "data:rust preserves signed_int8 extraction"
+  ]
+}

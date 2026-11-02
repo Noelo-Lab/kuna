@@ -2154,7 +2154,7 @@ mod tests {
         // and ghangr-rust-null-pointer / Rust null-constructor expressions
         // and ghangr-joined-callback-return / a callback's joined return components
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
-        assert_eq!(count, 680, "corpus file count drifted");
+        assert_eq!(count, 681, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

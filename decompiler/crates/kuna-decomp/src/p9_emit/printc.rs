@@ -7712,14 +7712,23 @@ impl PrintC {
                             }
                             // Fall through to the cast/functional dispatch below.
                         } else {
-                            // A struct findTruncation hit at offset 0 renders as
-                            // an object_member access.
                             if ct.get_metatype() == type_metatype::TYPE_STRUCT {
                                 if let Ok(Some((idx, off2))) =
                                     ct.find_truncation(byte_off, out_sz, op, 1)
                                 {
-                                    if off2 == 0 {
-                                        if let Some(f) = ct.get_field(idx) {
+                                    if let Some(f) = ct.get_field(idx) {
+                                        let extraction = super::kuna_fieldextract::plan(
+                                            fd, op, &ct, idx, off2,
+                                        );
+                                        if off2 == 0 || extraction.is_some() {
+                                            if let Some(extraction) = &extraction {
+                                                if !self.options.nocasts {
+                                                    self.push_cast_open(&extraction.target, op);
+                                                }
+                                                if extraction.shift != 0 {
+                                                    self.push_op(&tokens::SHIFT_RIGHT, Some(op_key(op)));
+                                                }
+                                            }
                                             let fname = f.name.clone();
                                             let fident = f.ident;
                                             self.push_op(
@@ -7735,6 +7744,14 @@ impl PrintC {
                                                 fident,
                                                 op_key(op),
                                             ));
+                                            if let Some(extraction) = &extraction {
+                                                if extraction.shift != 0 {
+                                                    self.push_constant_ir(extraction.shift, 4, op);
+                                                }
+                                                if !self.options.nocasts {
+                                                    self.push_cast_close(&extraction.target);
+                                                }
+                                            }
                                             return;
                                         }
                                     }

@@ -1,0 +1,7 @@
+{
+  "previous_head": "f226728d352e33098f989aeed20179b07875e8ea",
+  "new_parent": "c5ea0fa96b83ac92b140e83017f57cff2d298e4c",
+  "worktree": "/home/mahaloz/kwt/angr-integer-field-extract-main",
+  "parent_worktree": "/home/mahaloz/kwt/angr-field-extract-parent-c5",
+  "merge_exit": 1
+}
