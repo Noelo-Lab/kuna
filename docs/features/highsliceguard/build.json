@@ -1,0 +1,15 @@
+{
+  "at": "2026-11-02T14:03:48.679865+00:00",
+  "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+  "baseline_root": "/home/mahaloz/kwt/angr-rust-empty-match",
+  "parent_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+  "new_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+  "stage_assertions": [
+    3670,
+    3670
+  ],
+  "option": "highsliceguard",
+  "default": "off",
+  "disabled_in_all_presets": true,
+  "enabled_study_passed": false
+}

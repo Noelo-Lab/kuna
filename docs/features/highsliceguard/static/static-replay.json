@@ -1,0 +1,72 @@
+{
+  "at": "2026-11-02T12:59:55.826658+00:00",
+  "supplied_binary_executed": false,
+  "capstone": "5.0.1",
+  "tables": 6,
+  "rows": 246,
+  "records": [
+    {
+      "entry": "0x207f0",
+      "table": "0x49e38",
+      "rows": 41,
+      "zero_reaches_join": true,
+      "nonzero_set_index_then_join": 40
+    },
+    {
+      "entry": "0x9f70",
+      "table": "0x53040",
+      "rows": 41,
+      "zero_reaches_join": true,
+      "nonzero_set_index_then_join": 40
+    },
+    {
+      "entry": "0xbcf0",
+      "table": "0x530f4",
+      "rows": 41,
+      "zero_reaches_join": true,
+      "nonzero_set_index_then_join": 40
+    },
+    {
+      "entry": "0x2e810",
+      "table": "0x5d1a4",
+      "rows": 41,
+      "zero_reaches_join": true,
+      "nonzero_set_index_then_join": 40
+    },
+    {
+      "entry": "0x2f2c0",
+      "table": "0x5d258",
+      "rows": 41,
+      "zero_reaches_join": true,
+      "nonzero_set_index_then_join": 40
+    },
+    {
+      "entry": "0x2f6e0",
+      "table": "0x5d30c",
+      "rows": 41,
+      "zero_reaches_join": true,
+      "nonzero_set_index_then_join": 40
+    }
+  ],
+  "inputs": {
+    "hello-49e38-table.json": "9135c3785cf727d40f6796ba82c0804763994978a6f2345b39d5b5f1e01de3af",
+    "hello-49e38-cases.json": "1c12d206dcc25a28ef46280e63d7a06ecd86d3a44dc712d178bc9a2588204620",
+    "hello-207f0-asm.json": "ab6f58818fd09263d2436a3166ef7ac908910d0ef841cdcbd6dc9022022ed1a0",
+    "upstream-53040-table.json": "c471b2044cd7f03f3b3bc25458a2c2accbb2785e79605ed64b1f7fb47eafeaf2",
+    "upstream-53040-cases.json": "418986ba6923f9886a2a5cc6f6e9b4c0608b9689893d4c4122e64cad7503c88f",
+    "upstream-9f70-asm.json": "6fa606c184fd4065cae56964ab907f4aeeb5969a1c04b1478c4ead07866c6fa1",
+    "upstream-530f4-table.json": "b32880ffeaefdda2dfde4f4ab84e304201d55ae5875c5fa7e175771cf2ba57a5",
+    "upstream-530f4-cases.json": "5313995b93dcb39bbef7cb57f009dfebaa35be017fec96ff13b5b3248d529b6c",
+    "upstream-bcf0-asm.json": "023943b5e4e100f09d80925341782dc527584d9cd299818ae1b5220880900561",
+    "upstream-5d1a4-table.json": "f3b47796f43754beb74b0ae22aabc6cd45b2e43ce2fc6e792ca2f81cede7940c",
+    "upstream-5d1a4-cases.json": "d0b4c3526c83d1cd9d82ddffcb159b7ba37cc40ef943431232d1b707af8023c1",
+    "upstream-2e810-asm.json": "d132e96685671c6d54fbf9dc09bab75937c5585b4aec58641ec637b528a83455",
+    "upstream-5d258-table.json": "1ea64014d1159ed3de34d2ba1a7c4ee049f0fa434090e2970bd15df29b054a3b",
+    "upstream-5d258-cases.json": "6034a6bb35771e25e3b038b59eddb37c6c40daf33214f168517016366dc040c6",
+    "upstream-2f2c0-asm.json": "2da77e805fd3a2b5b85870f88acd5bee876550a60f0e0f94374f2559bf93dbf6",
+    "upstream-5d30c-table.json": "2ab1ad2208e8cee619b51ec2514337c3c813c807b3cbc115ecedd1aa5aa44d7a",
+    "upstream-5d30c-cases.json": "bdd9bd325cadb217b2916b204b67b249ad021837bea51546557c17e6efed957c",
+    "upstream-2f6e0-asm.json": "931115ab5a7bf164913a7a9315e4170bd478d23f6ad5ede8c470fede01d22df9"
+  },
+  "original_review_sha256": "f1ae4950babc267aedb7922816e7ec4df346ff3d09f95ccee56b52296d20e810"
+}

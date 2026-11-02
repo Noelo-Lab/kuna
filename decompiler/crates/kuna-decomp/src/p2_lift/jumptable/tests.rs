@@ -32,6 +32,8 @@ use crate::context::{ArchContext, TypeOp};
 
 use super::*;
 
+mod highslice_guard;
+
 // ---------------------------------------------------------------------------
 // helpers (mirrors funcdata_op/tests.rs)
 // ---------------------------------------------------------------------------
