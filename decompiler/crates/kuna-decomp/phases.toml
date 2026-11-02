@@ -8832,6 +8832,28 @@ live_true = "on"
 live_false = "off"
 
 [[settable]]
+option = "rustfmtstr"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P9"
+subphase = "string-format"
+strength = "HARD"
+rewind = "P9"
+issue = "angr-rust-string-format"
+summary = "Recover string Display arguments in verified Rust 1.93.0/1.93.1 formatting calls. Require an exact x86-64 ELF forwarding body to core::fmt::Formatter::pad and two complete live aligned stack words for the string data and length. Construct a string view from those words without changing descriptor setup, IR, types or prototypes. Generic names alone, derived Debug callbacks, unknown wrappers and unsupported layouts remain explicit. C and Go output are unchanged."
+use_when = "On by default to expose proven string arguments in print!, format! and panic! recovery. Requires rustfmtargs and the corresponding sink option; explicit format specifications also require rustfmtflags. Turn off to retain runtime calls containing string arguments. The original formatter contract requires valid UTF-8 storage for the recorded length."
+example = "option rustfmtstr off"
+source_decompiler = "angr"
+inspiration = "angr test_rust_decompiler.py::TestRustFormatMacrosTemplateLayout::test_format_macros make_string and Rust 1.93.1 Display for str forwarding to Formatter::pad"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "Rust string formatting remains a runtime descriptor call|format! with mixed integer and string arguments remains format_inner"
+live_field = "rust_fmt_str"
+live_true = "on"
+live_false = "off"
+
+[[settable]]
 option = "outlang"
 values = "c|rust|go"
 default = "c"

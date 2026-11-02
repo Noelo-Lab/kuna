@@ -1,0 +1,67 @@
+{
+  "declared_at": "2026-11-01 21:49:12.515992+00:00",
+  "reason": "First speed review for rustfmtstr after main f874 integration; balanced protocol declared before all samples.",
+  "method": "192 balanced randomized three-arm rounds; all six permutations per six-round block, independently shuffled. Moving interference is handled by resampling complete six-round blocks; CPU affinity is fixed within the run.",
+  "cases": [
+    "scalar-c",
+    "str-plain",
+    "str-flags",
+    "str-result",
+    "reference-make-string",
+    "older-rust-control",
+    "rust-large-control",
+    "go-control"
+  ],
+  "samples_per_arm": 192,
+  "warmups_per_arm": 3,
+  "seed": 20261104,
+  "bootstrap_resamples": 20000,
+  "block_rounds": 6,
+  "family_alpha": 0.025,
+  "comparisons": 32,
+  "upper_quantile": 0.99921875,
+  "budget_pct": 5,
+  "acceptance": "Every original ratio-of-medians CPU/wall comparison AND every upper confidence bound on the ratio of mean CPU/wall times must be <= 5%. All complete results retained; no automatic retry on failure.",
+  "cpu_selection": "Rank allowed physical CPU pairs by minimum sibling idle percentage over five seconds; assign the highest-ranked distinct pairs to cases before collecting any timings. No absolute idle threshold. No owned builds/tests/corpus work during measurements; only these measurement workers run concurrently.",
+  "amended_at_before_sampling": "2026-11-01 22:03:06.598819+00:00",
+  "execution": "Shared scheduler; independent cases across three features on disjoint physical CPU pairs",
+  "execution_amendment": "Only benchmark cases share the scheduler. Physical CPU pairs remain disjoint across all cases, with fixed affinity per run and worker-local child CPU accounting. Production sources and binaries are frozen; pending baseline commit identities are bound afterward using existing manifests.",
+  "amended_at_before_new_sampling": "2026-11-01 22:29:49.354939+00:00",
+  "study_family_alpha": 0.05,
+  "maximum_looks": 2,
+  "confirmation_additional_rounds": 384,
+  "confirmation_final_rounds": 576,
+  "confirmation_declaration": {
+    "declared_at": "2026-11-01 22:44:54.878726+00:00",
+    "workdirs": [
+      "/tmp/kuna-rust-fmt-pieces-f874",
+      "/tmp/kuna-rust-fmt-str"
+    ],
+    "initial_attempt": "20261101-223000",
+    "reason": "Completed 192-round cases show small medians but unresolved upper bounds for older literal printing, string results and a Rust control. The remaining full first-look control must complete before case selection. No partial-case samples are used.",
+    "selection": "Re-evaluate every complete first-look case at family alpha .025 across all feature comparisons. Confirm every case failing any median or upper-bound criterion; preserve all other complete initial cases.",
+    "additional_rounds": 384,
+    "final_rounds": 576,
+    "seeds": [
+      20261106,
+      20261107
+    ],
+    "acceptance": "All median CPU/wall ratios and simultaneous upper mean-ratio bounds <=5%. Allocate .025 to the initial look and .025 to the one fixed final look, using the complete comparison family at both looks. All initial samples remain included. No third look or automatic repeat for unchanged code.",
+    "scheduling": "Use only physical CPU pairs outside every pair reserved by the active shared study; coordinator also excludes both studies. Existing shared-study descendants are the only allowed concurrent owned workloads. No owned builds/tests/corpus work during measurements.",
+    "pending_baselines": "Baseline source manifests and binary hashes must remain identical; later commit binding uses the existing reanchor proof."
+  },
+  "confirmation_cases": [
+    "str-result",
+    "rust-large-control"
+  ],
+  "final_samples_by_case": {
+    "scalar-c": 192,
+    "str-plain": 192,
+    "str-flags": 192,
+    "str-result": 576,
+    "reference-make-string": 192,
+    "older-rust-control": 192,
+    "rust-large-control": 576,
+    "go-control": 192
+  }
+}

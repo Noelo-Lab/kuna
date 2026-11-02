@@ -14,9 +14,9 @@ use kuna_num::opcodes::OpCode;
 const MAX_BYTES: usize = 4096;
 const MAX_ARGS: usize = 16;
 
-pub struct Argument {
-    pub pointer: VarnodeId,
-    pub primitive: &'static str,
+pub enum Argument {
+    Primitive { pointer: VarnodeId, primitive: &'static str },
+    String { data: VarnodeId, length: VarnodeId, pointer_bridge: bool },
 }
 
 pub struct Plan {
@@ -72,7 +72,8 @@ pub(crate) fn recover_at(
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
         || (arch.rust_display_formatters.is_empty()
-            && (!arch.rust_fmt_flags || arch.rust_integer_formatters.is_empty()))
+            && (!arch.rust_fmt_flags || arch.rust_integer_formatters.is_empty())
+            && (!arch.rust_fmt_str || arch.rust_str_display_formatters.is_empty()))
     {
         return None;
     }
@@ -140,12 +141,17 @@ pub(crate) fn primitive_arguments(
         let pointer = cells[index * 2];
         let address = constant_word(fd, cells[index * 2 + 1])?;
         let formatter = if arch.rust_fmt_flags {
-            *arch.rust_integer_formatters.get(&address)?
+            arch.rust_integer_formatters.get(&address).copied()
         } else {
-            Formatter {
-                primitive: *arch.rust_display_formatters.get(&address)?,
+            arch.rust_display_formatters.get(&address).map(|&primitive| Formatter {
+                primitive,
                 kind: Trait::Display,
-            }
+            })
+        };
+        let Some(formatter) = formatter else {
+            arguments.push(super::kuna_rustfmtstr::recover(fd, arch, id, address, pointer)?);
+            formatters.push(Formatter { primitive: "&str", kind: Trait::Display });
+            continue;
         };
         let primitive = formatter.primitive;
         let offset = stack_offset(fd, pointer)?;
@@ -159,7 +165,7 @@ pub(crate) fn primitive_arguments(
         if offset % size != 0 {
             return None;
         }
-        arguments.push(Argument { pointer, primitive });
+        arguments.push(Argument::Primitive { pointer, primitive });
         formatters.push(formatter);
     }
     Some((arguments, formatters))

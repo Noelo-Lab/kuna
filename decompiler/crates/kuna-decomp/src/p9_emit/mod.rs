@@ -70,6 +70,7 @@ pub mod kuna_langtypes; // (kuna) the type-spelling seam (TypeSpeller + SpellCtx
 pub mod kuna_langc; // (kuna) the c-language policy objects (CSpeller)
 pub(crate) mod kuna_rustfmtliteral;
 pub mod kuna_rustfmtargs;
+pub mod kuna_rustfmtstr;
 pub mod kuna_rustfmtflags;
 pub(crate) mod kuna_rustfmtresult;
 pub(crate) mod kuna_rustfmtpanic;

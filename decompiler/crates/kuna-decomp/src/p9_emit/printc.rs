@@ -8185,14 +8185,42 @@ impl PrintC {
         self.push_atom(&Atom::syntax(plan.literal, TagType::Syntax,
             crate::printlanguage::SyntaxHighlight::const_color));
         for argument in plan.arguments {
+            if let super::kuna_rustfmtargs::Argument::String { data, length, pointer_bridge } = argument {
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("std::str::from_utf8_unchecked", TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::funcname_color));
+                self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
+                self.push_atom(&Atom::syntax("std::slice::from_raw_parts", TagType::Syntax,
+                    crate::printlanguage::SyntaxHighlight::funcname_color));
+                self.push_op(&tokens::COMMA, Some(op_key(op)));
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                if pointer_bridge {
+                    self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                }
+                self.push_vn_ir(fd, arch, data, op);
+                if pointer_bridge {
+                    self.push_atom(&Atom::syntax("*const _", TagType::TypeToken,
+                        crate::printlanguage::SyntaxHighlight::type_color));
+                }
+                self.push_atom(&Atom::syntax("*const u8", TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+                self.push_op(self.lang().tok_typecast, Some(op_key(op)));
+                self.push_vn_ir(fd, arch, length, op);
+                self.push_atom(&Atom::syntax("usize", TagType::TypeToken,
+                    crate::printlanguage::SyntaxHighlight::type_color));
+                continue;
+            }
+            let super::kuna_rustfmtargs::Argument::Primitive { pointer, primitive } = argument else {
+                unreachable!();
+            };
             self.push_op(&tokens::ADDRESSOF, Some(op_key(op)));
             self.push_op(&tokens::DEREFERENCE, Some(op_key(op)));
             self.push_op(self.lang().tok_typecast, Some(op_key(op)));
             self.push_op(self.lang().tok_typecast, Some(op_key(op)));
-            self.push_vn_ir(fd, arch, argument.pointer, op);
+            self.push_vn_ir(fd, arch, pointer, op);
             self.push_atom(&Atom::syntax("*const _", TagType::TypeToken,
                 crate::printlanguage::SyntaxHighlight::type_color));
-            self.push_atom(&Atom::syntax(format!("*const {}", argument.primitive),
+            self.push_atom(&Atom::syntax(format!("*const {primitive}"),
                 TagType::TypeToken, crate::printlanguage::SyntaxHighlight::type_color));
         }
     }

@@ -1,0 +1,92 @@
+--- before/str_flags
++++ after/str_flags
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = a0;
+   v3 = a1;
+-  std::io::stdio::_print(0x5c0c as *mut u16,&mut v2);
++  println!("|{0:·<8}|{0:🦀^10.3}|{0:>7.3}|",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize)));
+ }
+--- before/str_integer
++++ after/str_integer
+@@ -16,6 +16,6 @@
+   v1 = a1;
+   v2 = a2;
+   v4 = a3;
+-  alloc::fmt::format::format_inner(a0,0x50c3 as *mut u16,&mut v3);
++  std::ptr::write((a0 as *mut _) as *mut std::string::String,format!("{}-{}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize))));
+   return a0;
+ }
+--- before/str_line
++++ after/str_line
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = a0;
+   v3 = a1;
+-  std::io::stdio::_print(0x50c8 as *mut u16,&mut v2);
++  println!("{{é🙂}} {}\n",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize)));
+ }
+--- before/str_pair
++++ after/str_pair
+@@ -18,5 +18,5 @@
+   v4 = a1;
+   v2 = a2;
+   v5 = a3;
+-  std::io::stdio::_print(0x4ec6 as *mut u16,&mut v3);
++  println!("{} / {}",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v4 as usize)),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v5 as usize)));
+ }
+--- before/str_panic
++++ after/str_panic
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = a0;
+   v3 = a1;
+-  core::panicking::panic_fmt(0x595f,&mut v2,0x4d3c8); // no-return
++  panic!("bad {}",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))); // no-return
+ }
+--- before/str_plain
++++ after/str_plain
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = a0;
+   v3 = a1;
+-  std::io::stdio::_print(0x51de as *mut u16,&mut v2);
++  print!("{}",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize)));
+ }
+--- before/str_result
++++ after/str_result
+@@ -10,6 +10,6 @@
+   v4 = fmt;
+   v1 = a1;
+   v3 = a2;
+-  alloc::fmt::format::format_inner(a0,0x4c39 as *mut u16,&mut v2);
++  std::ptr::write((a0 as *mut _) as *mut std::string::String,format!("[{}]",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize))));
+   return a0;
+ }
+--- before/str_stderr
++++ after/str_stderr
+@@ -10,5 +10,5 @@
+   v4 = fmt;
+   v1 = a0;
+   v3 = a1;
+-  std::io::stdio::_eprint(0x567b as *mut u16,&mut v2);
++  eprintln!("stderr {}",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v3 as usize)));
+ }
+--- before/str_stderr_pair
++++ after/str_stderr_pair
+@@ -16,5 +16,5 @@
+   v1 = a0;
+   v2 = a1;
+   v4 = a2;
+-  std::io::stdio::_eprint(0x4ecf as *mut u16,&mut v3);
++  eprintln!("{}: {}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v4 as usize)));
+ }
+--- before/core::option::expect_failed
++++ after/core::option::expect_failed
+@@ -11,5 +11,5 @@
+   v4 = 0x26;
+   v2 = &mut v1;
+   v3 = fmt;
+-  core::panicking::panic_fmt(0x51de,&mut v2,0x4e2f8); // no-return
++  panic!("{}",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v4 as usize))); // no-return
+ }
