@@ -2706,7 +2706,10 @@ the first input of `LOAD`/`STORE` is the accessed space's id, and a `BRANCH` or
 
 When SLEIGH lifts a delay slot with its branch (a MIPS `jr`), the row's `size`
 and `bytes` cover both and its ops include the slot's before the branch;
-`--count` counts the pair as one. An odd ARM32 address is a Thumb code pointer:
+`--count` counts the pair as one. A MIPS unaligned pair (`lwl`/`lwr` and the
+like) lifts as the decompiler lifts it under `option mipsunaligned`: one half
+makes the whole access and the other has no effect (`--option mipsunaligned
+off` shows each half's merge). An odd ARM32 address is a Thumb code pointer:
 it lifts as Thumb at the even address, inside a function too, in a decode
 context scoped to the query. `--isa arm` with an odd address is an error, a
 range is read literally, and other architectures keep odd addresses.

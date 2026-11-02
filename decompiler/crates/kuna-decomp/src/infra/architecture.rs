@@ -735,6 +735,14 @@ pub struct Architecture {
     pub be_join: crate::kuna_bejoin::BeJoinMode,
     /// Retain register-pair returns established by complete declared caller evidence.
     pub call_wide: bool,
+    /// (kuna) `option mipsunaligned`: lift a MIPS `lwl`/`lwr`-style pair as one
+    /// whole access ([`crate::kuna_mipsunaligned`]).
+    pub mips_unaligned: bool,
+    /// (kuna) `option mipsunaligned`: the halves of the image's unaligned
+    /// pairs, once scanned.
+    pub kuna_mips_pairs: Option<Rc<Vec<u64>>>,
+    /// (kuna) `option mipsunaligned`: whether those halves carry the pair flag.
+    pub kuna_mips_pairs_painted: bool,
     /// (kuna) `option rustabi`: how hard to try to keep a rustc two-register
     /// (`ScalarPair`) return intact -- 0 off, 1 auto (only on a detected rustc
     /// image), 2 always.  Read by [`crate::kuna_rustabi`] through the
@@ -3107,6 +3115,9 @@ impl Architecture {
             multi_reg_args: false,
             be_join: crate::kuna_bejoin::BeJoinMode::Off, // (kuna) option bejoin; reset_defaults sets the shipped default
             call_wide: false,
+            mips_unaligned: false,
+            kuna_mips_pairs: None,
+            kuna_mips_pairs_painted: false,
             rust_abi: 0,        // (kuna) option rustabi; reset_defaults sets the shipped default
             rustc_stable_version: None,
             rustc_pieces_layout: false,
@@ -3565,6 +3576,7 @@ impl Architecture {
         self.exclusive_arg_use = true; // (kuna) DIV-PENDING default-on: a LOAD/STORE on a path that provably cannot co-execute with a call is not a competing use of the value the call is passed, so it no longer sinks the call's input trial. 0/675 byte-identical on the datatest corpus. Restore the upstream rejection with `option exclusivearguse off`
         self.call_ret_pair = true; // (kuna) DIV-162 default-on: the multi-trial arm of `FuncCallSpecs::buildOutputFromTrials` (fspec.cc:5777) shipped as a stub, so a CALL whose cspec output rule asked for a register pair got NO output and both halves rendered as locals the function never assigns. Completing it is upstream behaviour and is not language-specific -- a 16-byte aggregate return in RAX:RDX is ordinary System V C. 0/675 byte-identical on the datatest corpus. Restore the stub with `option callretpair off`
         self.multi_reg_args = true;
+        self.mips_unaligned = true;
         self.be_join = crate::kuna_bejoin::BeJoinMode::Callers; // (kuna) option bejoin default `callers` (#904): a big-endian or AVR pair joins high word first, as the ABI returns it, only where the instructions prove one wide value (a sign or zero extension, a product's halves made apart, two adjacent loads, a proven callee's pair) or a caller reads the second register after the call; `evidence` drops the callers, `on` is the instruction-shape guess, which also reads an int over the high half of a 64-bit temporary as that long long
         self.call_wide = false;
         self.kuna_callwide.clear();

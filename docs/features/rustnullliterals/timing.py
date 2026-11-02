@@ -1,7 +1,7 @@
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
 import datetime,gzip,hashlib,itertools,json,multiprocessing,os,random,resource,statistics,subprocess,threading,time
-w=Path('/tmp/kuna-rust-null-literals-c1745')
+w=Path('/tmp/kuna-rust-null-literals-8db14')
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def sample():
  return {'time':time.monotonic(),'cpus':{int(p[0][3:]):list(map(int,p[1:]))for line in Path('/proc/stat').read_text().splitlines()if(p:=line.split())and p[0].startswith('cpu')and p[0][3:].isdigit()}}
@@ -36,7 +36,7 @@ def main():
   if not p.name.isdigit()or int(p.name)==os.getpid():continue
   try:args=(p/'cmdline').read_bytes().decode(errors='replace').split('\0')
   except OSError:continue
-  if args and Path(args[0]).name not in ['bash','timeout','rg']and any(prefix in ' '.join(args)for prefix in ['/home/mahaloz/kwt/angr-base-c1745','/tmp/kuna-highslice-optin','/home/mahaloz/kwt/angr-rust-','/tmp/kuna-rust-','/home/mahaloz/kwt/angr-fnptr-namespace','/tmp/kuna-fnptr-namespace','/home/mahaloz/kwt/angr-base-1d5f','/home/mahaloz/kwt/angr-base-c5fc','/tmp/kuna-dwarf-namespace','/home/mahaloz/kwt/angr-dwarf-namespace']):unexpected.append({'pid':int(p.name),'args':args})
+  if args and Path(args[0]).name not in ['bash','timeout','rg']and any(prefix in ' '.join(args)for prefix in ['/home/mahaloz/kwt/angr-go-pair-results','/tmp/kuna-go-pair-results-proposal','/home/mahaloz/kwt/angr-base-8db14','/tmp/kuna-highslice-optin','/home/mahaloz/kwt/angr-rust-','/tmp/kuna-rust-','/home/mahaloz/kwt/angr-fnptr-namespace','/tmp/kuna-fnptr-namespace','/home/mahaloz/kwt/angr-base-1d5f','/home/mahaloz/kwt/angr-base-c5fc','/tmp/kuna-dwarf-namespace','/home/mahaloz/kwt/angr-dwarf-namespace']):unexpected.append({'pid':int(p.name),'args':args})
  assert not unexpected,unexpected
  manifests={}
  for label,name in [('current',w/'production-source-before-validation.json'),('parent',w/'parent-source-before-timing.json')]:

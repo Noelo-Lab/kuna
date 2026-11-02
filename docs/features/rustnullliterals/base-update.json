@@ -1,11 +1,25 @@
 {
-  "at": "2026-11-02T15:08:55.854598+00:00",
-  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
-  "old_parent": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
-  "old_candidate_sha256": "21ec96665ba3f31219817cd9bdb7e3ca3fd8934b644ac07a88e86a70b3d5f350",
-  "initial_timing_study_passed": false,
-  "old_evidence": "/tmp/kuna-rust-null-literals/initial-evidence",
-  "corpus_files": 674,
+  "at": "2026-11-02T16:30:04.372657+00:00",
+  "parent_commit": "8db141bf41914de30128b3c8a067b912604ab281",
+  "existing_head": "3d0594ccf49f15b95ceaa19b1798672ad1bb1193",
+  "previous_studies": [
+    {
+      "parent": "44eaff2b3853a17440c5dc880bdc4b88370227e9",
+      "passed": false
+    },
+    {
+      "parent": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+      "passed": false
+    }
+  ],
+  "prior_evidence": "/tmp/kuna-rust-null-literals-c1745/published-evidence",
+  "old_candidate_sha256": "45120316fb81989859f3d948eda6d9e69efeddbe18ec20c6c173738fd8a78719",
+  "corpus_files": 678,
   "specs": 154,
-  "scope": "Required integration of main PR1446, which changes the P4 return-recovery hot path and adds seven stage assertions; no change to the null-expression fix."
+  "scope": "Required main integration including PR1445 big-endian ET_REL rebasing and a stage count change. Null implementation unchanged. The ed740 correctness proof is retained and had no timing samples.",
+  "intermediate_ed740": {
+    "workdir": "/tmp/kuna-rust-null-literals-ed740",
+    "tree": "d407ffc712ba1cb2caa08dcea3cbd43b08b7b5b2",
+    "timing_samples": 0
+  }
 }

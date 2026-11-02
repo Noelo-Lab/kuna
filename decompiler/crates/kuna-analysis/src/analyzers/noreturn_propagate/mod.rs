@@ -88,6 +88,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::listing::model::Insn;
 use crate::listing::Listing;
+use crate::loader::format::{ImportSym, ImportSymKind};
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, NoReturnFact, Phase};
 
 /// The structural no-return propagation consumer pass (the second Listing/xref
@@ -123,18 +124,20 @@ impl AnalysisPass for NoReturnPropagatePass {
         // `--option noreturn_error` flag (default-on, DIV-16). When on, compute the
         // `error`/`error_at_line` entry addresses (PLT stubs + any defined funcsym)
         // so the propagation rule can treat a `call error(nonzero)` tail as terminal.
+        let imports = crate::loader::format::resolve_imports(ctx.file, ctx.bytes);
         let error_recog = if ctx.arch.analysis_noreturn_error {
-            ErrorRecognizer::from_object(ctx.file, ctx.bytes, listing)
+            ErrorRecognizer::from_imports(&imports, listing)
         } else {
             ErrorRecognizer::disabled()
         };
+        let stubs = import_stubs(&imports);
         // (kuna, ghidra port) The CFG-reachability rule (Ghidra's
         // `targetOnlyCallsNoReturn`) generalizes the tail-call rule to mid-body
         // no-return calls, dead returns, and switch-of-no-return. Its own flag
         // (`--option noreturn_reach`, default-on, DIV-19); Listing-gated like the rest,
         // so every parity gate stays byte-identical.
         let reach = ctx.arch.analysis_noreturn_reach;
-        for fact in propagate_noreturn(listing, &error_recog, reach) {
+        for fact in propagate_noreturn(listing, &error_recog, reach, &stubs) {
             out.noreturn.push(fact);
         }
         // (kuna, Ghidra-gap) Emit every `call error(nonzero,…)` site so the decompile
@@ -266,11 +269,11 @@ impl ErrorRecognizer {
     /// dynamic-import PLT stubs (`resolve_imports`, the same stream the Known
     /// no-return pass scans) plus any defined/named funcsym the Listing carries
     /// (the unstripped-static case). Version-suffix stripped like the Known pass.
-    fn from_object(file: &object::File, bytes: &[u8], listing: &Listing) -> Self {
+    fn from_imports(imports: &[ImportSym], listing: &Listing) -> Self {
         let mut error_addrs = BTreeSet::new();
         let is_error_name = |n: &str| n == "error" || n == "error_at_line";
         // Dynamic imports (PLT stubs): the common dynamically-linked case.
-        for p in crate::loader::format::resolve_imports(file, bytes) {
+        for p in imports {
             if let Ok(n) =
                 String::from_utf8(crate::loader::elf_plt::strip_version(&p.name))
             {
@@ -408,12 +411,28 @@ fn is_padding_nop(insn: &Insn) -> bool {
         .is_some_and(|prefix| prefix.eq_ignore_ascii_case("NOP"))
 }
 
+/// The addresses the image's imports resolve to (PLT and `.MIPS.stubs` entries,
+/// Mach-O stubs, IAT slots). A stub's body is the dynamic linker's trampoline, not
+/// the import, so whether it returns is the import's: the Known pass decides it by
+/// name and propagation never concludes it from the body.
+fn import_stubs(imports: &[ImportSym]) -> BTreeSet<u64> {
+    imports
+        .iter()
+        .filter(|p| p.kind == ImportSymKind::Import)
+        .map(|p| p.addr)
+        .collect()
+}
+
 /// Is `callee` skippable as a propagation candidate — already modeled no-return /
-/// call-fixup'd, already concluded this run, or not a discovered function entry?
-/// (Identical guard shape to `noreturn_disc`'s `skip_callee`.)
-fn skip_candidate(listing: &Listing, entry: u64, terminal: &BTreeSet<u64>) -> bool {
-    if terminal.contains(&entry) {
-        // Already concluded no-return (Known-seeded or propagated this run).
+/// call-fixup'd, already concluded this run, an import stub, or not a discovered
+/// function entry? (Identical guard shape to `noreturn_disc`'s `skip_callee`.)
+fn skip_candidate(
+    listing: &Listing,
+    entry: u64,
+    terminal: &BTreeSet<u64>,
+    stubs: &BTreeSet<u64>,
+) -> bool {
+    if terminal.contains(&entry) || stubs.contains(&entry) {
         return true;
     }
     match listing.function_at(entry) {
@@ -694,6 +713,7 @@ fn propagate_noreturn(
     listing: &Listing,
     error_recog: &ErrorRecognizer,
     reach: bool,
+    stubs: &BTreeSet<u64>,
 ) -> Vec<NoReturnFact> {
     let mut discovered: BTreeMap<u64, NoReturnFact> = BTreeMap::new();
     // The "already no-return" anchor set: the Known-seeded functions plus
@@ -716,7 +736,7 @@ fn propagate_noreturn(
         changed = false;
         sweeps += 1;
         for &entry in &candidates {
-            if skip_candidate(listing, entry, &terminal) {
+            if skip_candidate(listing, entry, &terminal, stubs) {
                 continue;
             }
             // The strict tail-call rule first (cheap, proven); then, if enabled, the
@@ -1014,6 +1034,43 @@ mod tests {
         reaches_only_noreturn_walk(&body, 0x100, Some(NEXT), &terminal, &ErrorRecognizer::disabled())
     }
     const ABORT: u64 = 0x50;
+
+    /// A `.MIPS.stubs` stub's `jalr $t9` reaches the lazy resolver, which jumps to
+    /// the import and never comes back, yet the Listing gives the call a
+    /// fall-through into the next stub. A stub laid out before a Known no-return
+    /// stub must not be concluded no-return from that fall-through.
+    #[test]
+    fn import_stub_is_not_concluded_from_its_neighbour() {
+        use crate::listing::model::DiscoveredFunction;
+        let stub = |entry: u64| {
+            [
+                rinsn(entry, Some(entry + 4), vec![], false, false, false, false, false, true),
+                rinsn(entry + 4, Some(entry + 8), vec![], false, false, false, false, false, true),
+                rinsn(entry + 8, Some(entry + 16), vec![], true, false, false, true, true, true),
+            ]
+        };
+        let func = |entry: u64, has_no_return: bool| DiscoveredFunction {
+            entry,
+            name: None,
+            from_symbol: true,
+            has_no_return,
+            call_fixup: None,
+        };
+        let mut insns: Vec<Insn> = [0x10, 0x20].into_iter().flat_map(stub).collect();
+        insns.push(rinsn(0x30, None, vec![], false, false, true, false, false, false));
+        let listing = Listing::from_model_for_test(
+            insns,
+            vec![func(0x10, false), func(0x20, true), func(0x30, false)],
+            Vec::new(),
+            vec![(0, 0x100)],
+        );
+        let recog = ErrorRecognizer::disabled();
+        let concluded = |stubs: &BTreeSet<u64>| -> Vec<u64> {
+            propagate_noreturn(&listing, &recog, true, stubs).iter().map(|f| f.addr).collect()
+        };
+        assert_eq!(concluded(&BTreeSet::new()), vec![0x10]);
+        assert!(concluded(&[0x10, 0x20].into_iter().collect()).is_empty());
+    }
 
     #[test]
     fn reach_tail_noreturn_call_is_noreturn() {

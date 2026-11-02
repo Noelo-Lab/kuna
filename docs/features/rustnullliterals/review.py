@@ -1,6 +1,6 @@
 from pathlib import Path
 import datetime,hashlib,json
-w=Path('/tmp/kuna-rust-null-literals-c1745');r=Path('/home/mahaloz/kwt/angr-rust-null-literals');read=lambda p:json.loads(Path(p).read_text());sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();build=read(w/'build.json');breadth=read(w/'breadth/record.json');assert sha(r/'decompiler/target/release/kuna')==build['new_cli_sha256']==breadth['new_cli_sha256'];changed=[];inherited=[];occurrences=0
+w=Path('/tmp/kuna-rust-null-literals-8db14');r=Path('/home/mahaloz/kwt/angr-rust-null-literals');read=lambda p:json.loads(Path(p).read_text());sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();build=read(w/'build.json');breadth=read(w/'breadth/record.json');assert sha(r/'decompiler/target/release/kuna')==build['new_cli_sha256']==breadth['new_cli_sha256'];changed=[];inherited=[];occurrences=0
 for row in breadth['records']:
  assert sha(row['fixture_path'])==row['fixture_sha256']
  for item in row['records']:

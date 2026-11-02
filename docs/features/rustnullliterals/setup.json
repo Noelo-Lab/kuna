@@ -1,8 +1,8 @@
 {
   "at": "2026-11-02T14:33:34.878162+00:00",
   "root": "/home/mahaloz/kwt/angr-rust-null-literals",
-  "parent_commit": "c1745d3ebe1f0eea03bb478494c89629ab2302c0",
+  "parent_commit": "8db141bf41914de30128b3c8a067b912604ab281",
   "specs": 154,
   "fixture_sha256": "690421f0136c0e9f3423263ecdcc927daab88556472a63cd70a9ece65d8556f3",
-  "integrated_from": "/tmp/kuna-rust-null-literals"
+  "integrated_from": "/tmp/kuna-rust-null-literals-ed740"
 }

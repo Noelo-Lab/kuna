@@ -869,8 +869,18 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   a laid-out section has its `st_value` shifted by **its own section's** delta,
   since the layout is non-contiguous and there is no single global offset (a COFF
   symbol needs no shift — it is reported as `VirtualAddress + value`, so the section
-  write already moved it). Every pass then produces an already-rebased fact with no
-  source change of its own.
+  write already moved it). Each patched field is written in the object's own byte
+  order (ELF `EI_DATA`), the implicit addends of a REL table read in it, so a
+  big-endian object (PowerPC, MIPS, SPARC, ARM big-endian) is rebased as a
+  little-endian one is; it used to keep the pre-link view, so `kuna functions`
+  listed each of its functions twice (`0x0 scale` beside `0x400000 scale`) and a
+  MIPS PIC function's `$t9` was seeded at its section offset rather than its
+  entry, so its `addu gp,gp,t9` never resolved and every call and global through
+  the GOT stayed a load from an unknown `t9`. Over 959 relocatable objects the 441
+  whose output changes are all big-endian: the `t9` variables left in MIPS PIC
+  functions drop from 3,352 to 25, string literals printed rise from 6,766 to
+  18,169, and no function is added or lost. Every pass then produces an
+  already-rebased fact with no source change of its own.
   A field with no relocation still yields an address in no laid-out section, so
   `kuna_relocrebase (retain_in_image)` **drops** exactly those rather than letting a
   pre-link address through — that is the phantom class. The single exception is a
@@ -1452,7 +1462,8 @@ funcsym stream:
   `.MIPS.stubs`/GOT layout from the dynamic table (`DT_MIPS_LOCAL_GOTNO`/
   `DT_MIPS_GOTSYM`) and marks the external GOT slots constant, so with
   read-only propagation the `lw $t9, off($gp); jalr $t9` sequence folds to the
-  named import (the bootstrap turns `readonlypropagate` on for MIPS only).
+  named import (the bootstrap turns `readonlypropagate` on for MIPS only). The
+  slots of what the image itself defines are covered under `dynrelocs` below.
   PPC32 linked images use
   `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (resolve)`:
   a zero-addend `R_PPC_JMP_SLOT` names its call target directly inside an
@@ -1674,6 +1685,36 @@ funcsym stream:
   `RELATIVE` pointer in ordinary `.data` — are still filled in, because that IS
   the value at process start, but are never declared constant, because the
   program may legitimately overwrite them.
+
+  A MIPS dynamic image relocates its primary GOT with no relocation records at
+  all (glibc's `elf_machine_got_rel`), so the walk above never reaches it. Its
+  first `DT_MIPS_LOCAL_GOTNO` entries are local: page or full link-time
+  addresses, to which the run-time loader adds the load bias. Entry 0 (the lazy
+  resolver) and entry 1 when its top bit is set (the GNU module pointer) are
+  written at run time. The global entries that follow map one to one onto
+  `.dynsym` from `DT_MIPS_GOTSYM` to `DT_MIPS_SYMTABNO`, and for a symbol the
+  image defines the run-time loader stores the address its lookup binds the
+  name to, which the linker already wrote as the symbol's value. At kuna's zero
+  bias each of those slots holds its run-time value, and only the run-time
+  loader ever writes one, so
+  `decompiler/crates/kuna-analysis/src/loader/kuna_mipsgot.rs (const_ranges)`
+  reports every local entry after the reserved ones, and every defined symbol's
+  global entry whose contents are that symbol's value, as constant beside the
+  import-stub slots above (`ElfFormat::const_ranges`; MIPS folds read-only
+  loads). `lw $25,%call16(add64)($gp); jalr $25` to a function of the same image
+  becomes a call to `add64`, a `%got` page load plus `%lo` names the static or
+  global it addresses, and a PIC jump table's base folds, so its switch is
+  recovered. A `jr $25` tail call through such a slot is a one-destination
+  table, which `tailcalljump` (§2.2) takes as a call or copies in. A
+  default-visibility definition in a shared object can be interposed by another
+  object's definition of the same name; the fold names the symbol the access
+  binds by and gives it the body this image carries, the choice this pass makes
+  for a `GLOB_DAT` slot of a defined symbol. Undefined, common, absolute, TLS
+  and `STT_GNU_IFUNC` symbols are skipped, as is a multi-GOT image's secondary
+  GOT, which `R_MIPS_REL32` records relocate. Every slot is read from the
+  allocated section that holds `DT_PLTGOT`, so a count that claims more entries
+  than that section holds stops at its end. `dynrelocs off` leaves every such
+  slot variable.
 
   This is a different path from `relocobjects`/`relocrebase` above, which own the
   *pre-link* `ET_REL` object; a relocatable object's relocations are applied by
@@ -4726,6 +4767,24 @@ Cortex-M vector-table oracle (6) above: with the vector-table seeds + Thumb regi
 paint, the pattern scan and the recursive-descent promotion (§1.6) lift betaflight
 STM32F405 from 1 to ~1830 discovered functions (and libopencm3 `button` from 1 to
 31, with `main` decoding as a real Thumb body rather than A32 garbage).
+A candidate strictly inside the extent of a defined function symbol that states
+its size is dropped (`entry/mod.rs (sized_function_bodies)`): the size is the
+compiler's own statement of where that function ends, so a prologue shape inside
+it is its code. gcc sinks a MIPS frame setup past an early `jr ra`
+(`bnez a2,L; nop; jr ra; nop; L: addiu sp,sp,-32`), which matches the
+return-then-stack-adjust pair, and the pass committed a `sub_` there that
+`decompile-all` printed as a second copy of the function's tail; on a big-endian
+object, whose analysis view kept its pre-link addresses until it was rebased in its
+own byte order, the start landed at the section offset. The aggressive gap walk
+(§1.6) follows the same rule for its accepts. Over 1,496 MIPS, PowerPC, SPARC, ARM
+and x86 images this removes 492 starts, every one inside a sized symbol, and adds
+none. A stripped shared object
+keeps the sizes of its exported functions in `.dynsym`, and those filter the same
+way; an image with no sized function symbol (a fully stripped executable, Mach-O)
+is unchanged. The rule trusts the size: a symbol-less routine that hand-written
+assembly places inside another function's `.size`, and that only a data pointer
+reaches, loses its pattern start. One with an FDE or a direct call is still found
+by those passes.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its
@@ -6197,7 +6256,9 @@ the validity walk counts that branch as adding information. The Listing's functi
 model is entry-ordered and carries no extents, so "this hole lies inside one body"
 cannot be read off the interval between known entries — on a sparsely discovered
 image nearly every hole lies between two of them, and an interval test swallows
-whole unexplored regions. It is the `fdeinterior` question (§1.5) asked of an image
+whole unexplored regions. (Where a defined function symbol states its size, the
+extent is known and no accept strictly inside it is emitted at all, the rule of
+`funcstart_patterns` in §1.5.) It is the `fdeinterior` question (§1.5) asked of an image
 with no unwind extents, and the candidate's own speculative body answers it instead:
 an accept is a fragment of its enclosing function when that body falls through or
 jumps (not calls) into an instruction the walk decoded that is not a function entry
@@ -8212,6 +8273,21 @@ threshold; `call abort` followed by padding, invisible to the evidence predicate
 which unconditionally cannot return. Without it, every caller grows a spurious
 fall-through edge into the cold path that structures into an invalid
 `while(true)`+`goto`.
+
+An import stub is never a candidate (`import_stubs`, read from the same
+`resolve_imports` stream the Known pass and the `error` recognizer use, keeping
+only `ImportSymKind::Import` entries). A stub's body is the dynamic linker's
+trampoline, not the import, so whether it returns belongs to the import: the
+Known pass decides that by name at the stub address, and propagation draws
+nothing from the body. MIPS is where the body misleads. A `.MIPS.stubs` lazy
+stub is `lw $t9,-0x7ff0($gp); move $t7,$ra; jalr $t9; li $t8,<dynsym index>`;
+the resolver jumps to the import, which returns to the caller through `$t7`, so
+control never reaches the word after the stub. The Listing still models the
+`jalr` as a returning call whose fall-through is the next stub's entry, and the
+reachability rule below therefore concluded every stub laid out in front of a
+Known no-return stub (`exit`, `abort`, `__stack_chk_fail`) no-return, then the
+stub in front of that one, and so on. Ordinary imports such as `memcpy`,
+`fopen64` and `pthread_once` then truncated every caller at the call.
 
 The deferred analysis commit also seeds the Listing from function symbols already
 marked no-return, including `option noreturn <name>` applied before `read symbols`.

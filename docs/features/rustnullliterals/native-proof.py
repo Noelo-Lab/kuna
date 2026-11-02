@@ -1,6 +1,6 @@
 from pathlib import Path
 import datetime,hashlib,json,os,subprocess
-w=Path('/tmp/kuna-rust-null-literals-c1745');r=Path('/home/mahaloz/kwt/angr-rust-null-literals');base=Path('/home/mahaloz/kwt/angr-base-c1745');out=w/'native-proof';out.mkdir(exist_ok=False);sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();fixture=r/'decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64';facts=fixture.with_name('rust_null_pointer.kuna');names=['null_pointer','maybe_pointer','pointer_is_null','clear_pointer'];inputs=[0,1,2,41,42,43,127,255,0x7fffffff,0x80000000,0xffffffff,0x100000000,0x7fffffffffffffff,0x8000000000000000,0xffffffffffffffff]
+w=Path('/tmp/kuna-rust-null-literals-8db14');r=Path('/home/mahaloz/kwt/angr-rust-null-literals');base=Path('/home/mahaloz/kwt/angr-base-8db14');out=w/'native-proof';out.mkdir(exist_ok=False);sha=lambda p:hashlib.sha256(Path(p).read_bytes()).hexdigest();fixture=r/'decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64';facts=fixture.with_name('rust_null_pointer.kuna');names=['null_pointer','maybe_pointer','pointer_is_null','clear_pointer'];inputs=[0,1,2,41,42,43,127,255,0x7fffffff,0x80000000,0xffffffff,0x100000000,0x7fffffffffffffff,0x8000000000000000,0xffffffffffffffff]
 harness='''
 fn main() {
  let choice:u64=std::env::args().nth(1).unwrap().parse().unwrap();

@@ -1,6 +1,6 @@
 from pathlib import Path
 import subprocess,os,time,json,hashlib,signal
-r=Path("/home/mahaloz/kwt/angr-rust-null-literals");w=Path("/tmp/kuna-rust-null-literals-c1745")
+r=Path("/home/mahaloz/kwt/angr-rust-null-literals");w=Path("/tmp/kuna-rust-null-literals-8db14")
 env=os.environ|{'CARGO_INCREMENTAL': '0', 'CARGO_PROFILE_DEV_DEBUG': '0', 'CARGO_PROFILE_TEST_DEBUG': '0', 'CARGO_BUILD_JOBS': '8', 'RUST_TEST_THREADS': '8'}
 def run(r,w,cmd,log,cwd=None):
  with(w/log).open('w')as f:

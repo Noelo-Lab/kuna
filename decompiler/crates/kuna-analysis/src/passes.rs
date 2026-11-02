@@ -1218,7 +1218,9 @@ pub fn run_listing_consumers_replaying(
                 &listing, None, arch, translate, std::rc::Rc::clone(code_space), ptrentry_out.clone(),
                 bracket(listing.exec_ranges()), None,
             ));
+            let bodies = crate::entry::sized_function_bodies(&file);
             aif_out.entries = checked.entries;
+            aif_out.entries.retain(|&vma| !crate::entry::inside_body(&bodies, vma));
             if !checked.pool_entries.is_empty() {
                 let mut pool_out = AnalysisOutput::default();
                 pool_out.entries = checked.pool_entries;
