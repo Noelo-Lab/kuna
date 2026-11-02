@@ -498,3 +498,6 @@ mod verify_rustuserop;
 
 #[path = "verify_rustsigned.rs"]
 mod verify_rustsigned;
+
+#[path = "verify_rustfmtstr.rs"]
+mod verify_rustfmtstr;

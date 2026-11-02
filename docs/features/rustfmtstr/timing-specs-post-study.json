@@ -1,0 +1,29 @@
+{
+  "scope": "Post-study compiled-spec identity check against the validated parent-derived manifest recorded before sampling. This check was not part of the frozen timing runner or its predeclared protocol.",
+  "recorded_at": "2026-11-02T01:34:57.647464+00:00",
+  "reference_manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+  "reference_sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+  "roots": [
+    {
+      "root": "/home/mahaloz/kwt/angr-rust-panic-main",
+      "checked": 154,
+      "mismatches": []
+    },
+    {
+      "root": "/home/mahaloz/kwt/angr-rust-fmt-pieces",
+      "checked": 154,
+      "mismatches": []
+    },
+    {
+      "root": "/home/mahaloz/kwt/angr-rust-fmt-str",
+      "checked": 154,
+      "mismatches": []
+    },
+    {
+      "root": "/home/mahaloz/kwt/angr-rust-fmt-write",
+      "checked": 154,
+      "mismatches": []
+    }
+  ],
+  "all_identical": true
+}

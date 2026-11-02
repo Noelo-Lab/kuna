@@ -1,0 +1,4 @@
+[
+  {"side": "before", "status": 8, "assertions_passed": 0, "assertions_total": 8},
+  {"side": "after", "status": 0, "assertions_passed": 8, "assertions_total": 8}
+]

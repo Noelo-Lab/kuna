@@ -1,0 +1,10 @@
+{
+  "rejected": [
+    "data",
+    "length",
+    "literal",
+    "formatter_identity",
+    "target_identity"
+  ],
+  "actual_fixture_sha256": "ade6bc5156662c54bbec228144697742f5d5d1f7eb5a16b99bc3903d41229658"
+}

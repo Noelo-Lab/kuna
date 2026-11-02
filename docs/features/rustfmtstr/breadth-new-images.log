@@ -1,0 +1,13 @@
+str-nonlto [('c', 574, 0), ('rust', 574, 0), ('go', 574, 0)]
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-str/breadth.py", line 106, in <module>
+    if language=='go':
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 451, in result
+    return self.__get_result()
+  File "/usr/lib/python3.10/concurrent/futures/_base.py", line 403, in __get_result
+    raise self._exception
+  File "/usr/lib/python3.10/concurrent/futures/thread.py", line 58, in run
+    result = self.fn(*self.args, **self.kwargs)
+  File "/tmp/kuna-rust-fmt-str/breadth.py", line 87, in run
+    for x,y in zip(a[addr]['variables'],b[addr]['variables']):
+AssertionError: ('str-native', '0x10290', 'param_1', {'v2', 'v4', 'v3'})

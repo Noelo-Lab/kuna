@@ -1,0 +1,16 @@
+{
+  "main_commit": "69fad3ce4cbdbb3232680938252bd75c2bec5a68",
+  "previous_main": "f8746b9730b525a065c89c26e358ffd7c2328bc7",
+  "changed_main_paths": [
+    "decompiler/crates/kuna-base/src/xml.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_wrapsplit.rs",
+    "decompiler/crates/kuna-decomp/src/p3_dataflow/mod.rs",
+    "docs/baseline-stages.json",
+    "docs/spec/03-ssa-and-simplification.md",
+    "tests/stages/kuna-wrapsplit-be.xml",
+    "tests/stages/kuna-wrapsplit.xml"
+  ],
+  "corpus_files": 645,
+  "previous_evidence": "/tmp/kuna-rust-fmt-str-pre69fa"
+}

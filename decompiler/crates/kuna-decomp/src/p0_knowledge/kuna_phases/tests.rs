@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_365() {
-    assert_eq!(kuna_num_settables(), 365);
-    assert_eq!(SETTABLE_TABLE.len(), 365);
+fn settable_count_is_366() {
+    assert_eq!(kuna_num_settables(), 366);
+    assert_eq!(SETTABLE_TABLE.len(), 366);
 }
 
 #[test]
-fn tier_counts_are_127_core_145_transform_93_analysis() {
+fn tier_counts_are_127_core_146_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_145_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 145, 93));
+    assert_eq!((core, transform, analysis), (127, 146, 93));
 }
 
 #[test]
@@ -932,7 +932,7 @@ fn option_values_live_value_present_for_171() {
     // 160 -> 161: +1 for `haltloopguard` (halt_loop_guard).
     // 161 -> 162: +1 for `truncptrflow` (trunc_ptr_flow).
     // 168 -> 169: +1 for `switchrunon` (switch_run_on).
-    assert_eq!(with_live, 171);
+    assert_eq!(with_live, 172);
 }
 
 #[test]
@@ -1156,7 +1156,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 364);
+    assert_eq!(json.matches("},\n").count(), 365);
 }
 
 #[test]

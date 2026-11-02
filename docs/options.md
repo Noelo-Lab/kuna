@@ -521,6 +521,8 @@ Three tiers:
 | Rust primitive panic arguments retain runtime formatter descriptors | [`rustfmtpanic`](#rustfmtpanic) |
 | Older Rust print calls retain a stack fmt::Arguments descriptor | [`rustfmtpieces`](#rustfmtpieces) |
 | Rust literal output remains _print with opaque piece-array addresses | [`rustfmtpieces`](#rustfmtpieces) |
+| Rust string formatting remains a runtime descriptor call | [`rustfmtstr`](#rustfmtstr) |
+| format! with mixed integer and string arguments remains format_inner | [`rustfmtstr`](#rustfmtstr) |
 | Go output language is unavailable | [`outlang`](#outlang) |
 | Go functions retain C declarations and control-flow syntax | [`outlang`](#outlang) |
 | puts/printf arguments untyped so string literals render as bare constants or dat_ addresses | [`libproto`](#libproto) |
@@ -2566,6 +2568,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** On by default to expose older Rust literal and integer printing. Literal recovery also requires rustfmtliteral; primitive arguments require rustfmtargs. Turn off to retain the piece-array runtime call. This does not recover format!, panic!, write!, generic arguments or older compiler builds without verified layout evidence.
 - **Where / provenance:** P9/piece-format · angr · opt-in-tool · angr-rust-piece-format
 - **Example:** `option rustfmtpieces off`
+
+### `rustfmtstr` -- on | off, default `on`
+
+- **Symptoms:** Rust string formatting remains a runtime descriptor call; format! with mixed integer and string arguments remains format_inner.
+- **What it does:** Recover string Display arguments in verified Rust 1.93.0/1.93.1 formatting calls. Require an exact x86-64 ELF forwarding body to core::fmt::Formatter::pad and two complete live aligned stack words for the string data and length. Construct a string view from those words without changing descriptor setup, IR, types or prototypes. Generic names alone, derived Debug callbacks, unknown wrappers and unsupported layouts remain explicit. C and Go output are unchanged.
+- **When to flip:** On by default to expose proven string arguments in print!, format! and panic! recovery. Requires rustfmtargs and the corresponding sink option; explicit format specifications also require rustfmtflags. Turn off to retain runtime calls containing string arguments. The original formatter contract requires valid UTF-8 storage for the recorded length.
+- **Where / provenance:** P9/string-format · angr · opt-in-tool · angr-rust-string-format
+- **Example:** `option rustfmtstr off`
 
 ### `outlang` -- c | rust | go, default `c`
 

@@ -4609,7 +4609,8 @@ pub fn bootstrap_from_object_with_isa(
     if matches!(sleigh.base().unwrap().rustc_stable_version, Some((1, 93, 0 | 1)))
         || sleigh.base().unwrap().rustc_pieces_layout
     {
-        let formatters = kuna_analysis::sourcelang::integer_formatters(&bytes);
+        let metadata = kuna_analysis::sourcelang::formatter_metadata(&bytes);
+        let formatters = metadata.integers;
         sleigh.base_mut().unwrap().rust_display_formatters = formatters
             .iter()
             .filter_map(|(&address, formatter)| {
@@ -4618,6 +4619,7 @@ pub fn bootstrap_from_object_with_isa(
             })
             .collect();
         sleigh.base_mut().unwrap().rust_integer_formatters = formatters;
+        sleigh.base_mut().unwrap().rust_str_display_formatters = metadata.strings;
     }
     // (kuna `pebnames`) The same kind of one-bit image fact: is this a Windows
     // GUI/console PE, whose segment base holds a user-mode TEB?  `option pebnames
