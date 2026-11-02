@@ -1,0 +1,10 @@
+angr-rust-fmt-write original.log PASS
+angr-rust-fmt-write stages.log PASS
+angr-rust-fmt-write tools.log PASS
+angr-rust-fmt-write lint.log PASS
+angr-rust-fmt-write spec.log PASS
+angr-rust-fmt-write catalog.log PASS
+angr-rust-fmt-write counters.log PASS
+angr-rust-fmt-write workspace-final.log PASS
+angr-rust-fmt-write ALL OPT-IN GATES PASSED
+FOURTH OPT-IN ALL GATES PASSED

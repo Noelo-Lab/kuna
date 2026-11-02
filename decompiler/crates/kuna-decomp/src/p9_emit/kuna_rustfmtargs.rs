@@ -30,6 +30,7 @@ pub(crate) enum MacroKind {
     Print(bool),
     Format,
     Panic,
+    Write,
 }
 
 /// Full demangled identities, before display-name normalization. Conflicting
@@ -68,6 +69,21 @@ pub(crate) fn recover_at(
     array_slot: i32,
     kind: MacroKind,
 ) -> Option<Plan> {
+    if fd.obank().get(id)?.get_out().is_some() {
+        return None;
+    }
+    recover_inputs_at(fd, arch, id, template_slot, array_slot, kind)
+}
+
+/// Decode formatting inputs after the consumer validates its result ABI.
+pub(crate) fn recover_inputs_at(
+    fd: &Funcdata,
+    arch: &Architecture,
+    id: OpId,
+    template_slot: i32,
+    array_slot: i32,
+    kind: MacroKind,
+) -> Option<Plan> {
     if !arch.rust_fmt_args
         || arch.source_lang() != crate::kuna_sourcelang::SourceLang::Rust
         || !matches!(arch.rustc_stable_version, Some((1, 93, 0 | 1)))
@@ -78,7 +94,7 @@ pub(crate) fn recover_at(
         return None;
     }
     let call = fd.obank().get(id)?;
-    if call.code() != OpCode::CPUI_CALL || call.get_out().is_some() {
+    if call.code() != OpCode::CPUI_CALL {
         return None;
     }
     let space = fd.get_arch().manage().get_default_data_space()?;
@@ -388,7 +404,7 @@ impl Template {
     ) -> Option<(&'static str, String)> {
         let newline = match self.pieces.last_mut() {
             Some(Piece::Literal(text))
-                if matches!(kind, MacroKind::Print(_)) && text.ends_with('\n') =>
+                if matches!(kind, MacroKind::Print(_) | MacroKind::Write) && text.ends_with('\n') =>
             {
                 text.pop();
                 true
@@ -402,6 +418,8 @@ impl Template {
             (MacroKind::Print(true), true) => "eprintln!",
             (MacroKind::Format, _) => "format!",
             (MacroKind::Panic, _) => "panic!",
+            (MacroKind::Write, false) => "write!",
+            (MacroKind::Write, true) => "writeln!",
         };
         let mut literal = String::from("\"");
         for piece in self.pieces {

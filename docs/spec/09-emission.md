@@ -4422,3 +4422,28 @@ apply. Every setup statement, IR operation, prototype and return remains.
 Disabling the option preserves runtime calls containing these string arguments;
 unknown wrappers and derived Debug callbacks remain explicit. C and Go emission
 is unchanged.
+
+`rustfmtwrite` is off by default: the declared speed study did not clear the
+small-C wall-time confidence bound, despite median deltas below 0.2 percent.
+When enabled, it recovers formatting into an existing `String` only for the verified
+Rust 1.93.0/1.93.1 x86-64 little-endian ELF layout. The direct call must resolve
+exactly to `core::fmt::write`, with four runtime arguments and a one-byte result.
+The writer must derive from a function input through copies or casts. Its vtable
+must be aligned and contain six complete immutable, nonvolatile words: String
+drop identity, size 24, alignment 8, String's `fmt::Write::write_str` and
+`write_char`, and `core::fmt::Write::write_fmt`. Every method requires its full
+object-symbol identity; conflicting aliases invalidate that address. The loader
+provides a private RELRO extent with its upper boundary rounded down to a full
+4096-byte page, without changing global memory properties. Volatile annotations
+always override the private immutable-range evidence.
+
+The existing literal or compact-template checks establish all formatting bytes
+and arguments. One terminal newline selects `writeln!`; otherwise the renderer
+uses `write!`. The writer is cast to the proven String type and borrowed mutably.
+A local expression block imports `std::fmt::Write` for this call. The macro's
+`is_err()` preserves the original `fmt::Result` zero/success and one/error byte,
+with a cast matching the recovered signed or unsigned byte type; boolean results
+need no cast. Other result sizes or types remain explicit. Descriptor stores,
+result uses, branches, prototypes and IR remain unchanged. Custom writers,
+unsupported callbacks and IO-error result layouts do not qualify. Disabling the
+option retains the runtime call, and C/Go output is unchanged.

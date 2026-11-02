@@ -1,0 +1,61 @@
+{
+  "declared_at": "2026-11-02T01:56:14.248698+00:00",
+  "scope": "Fresh parent versus the rebuilt default-off binary. This does not retest enabled recovery or permit promoting rustfmtwrite to default-on; the failed enabled study remains final for that implementation.",
+  "root": "/home/mahaloz/kwt/angr-rust-fmt-write",
+  "base": "/home/mahaloz/kwt/angr-rust-fmt-str",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "write-primitive",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_unsigned",
+      "rust"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "default_off"
+  ],
+  "samples_per_arm": 192,
+  "warmups_per_arm": 3,
+  "seed": 202611021,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 8,
+  "upper_quantile": 0.99375,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Four cases in separate workers on disjoint physical CPU pairs; each two-round block contains both arm orders in random order; coordinator/telemetry use other CPUs; no owned builds, tests, corpus or decompiler research while sampling.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T02:25:54.321605+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve one physical pair for light document/code review commands; exclude it from timing workers before any samples. Acceptance, sample counts and inference unchanged."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T02:26:38.665058+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48",
+    "scope": "Assert parent and candidate compiled spec bytes against the existing 154-spec manifest before and after sampling."
+  }
+}

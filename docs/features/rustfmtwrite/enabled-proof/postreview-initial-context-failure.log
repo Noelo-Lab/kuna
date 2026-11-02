@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/tmp/kuna-rust-fmt-write/postreview.py", line 20, in <module>
+    assert function==previous[int(item['address'],16)],('Fresh full capture differs from reviewed function',key)
+AssertionError: ('Fresh full capture differs from reviewed function', ('rust', '0x11230'))

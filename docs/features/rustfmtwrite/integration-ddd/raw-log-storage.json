@@ -1,0 +1,17 @@
+{
+  "reason": "Lossless gzip preserves original log bytes including trailing blank lines without creating patch whitespace errors.",
+  "files": [
+    {
+      "raw_name": "workspace-final.log",
+      "stored_name": "workspace-final.log.gz",
+      "raw_sha256": "a97ab5b4e8ccdc449391925aa46deb68b9844589cd7694c40ed7178cb0afc064",
+      "raw_bytes": 871620
+    },
+    {
+      "raw_name": "initial-catalog-count-failure/counters-fix.log",
+      "stored_name": "initial-catalog-count-failure/counters-fix.log.gz",
+      "raw_sha256": "3edc234035be905ba56cbd46e8648cd7c005741d37541fff10e181cb8ce53a2f",
+      "raw_bytes": 3025
+    }
+  ]
+}

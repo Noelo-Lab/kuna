@@ -1,0 +1,84 @@
+--- before/write_empty
++++ after/write_empty
+@@ -3,7 +3,7 @@
+ {
+   let mut v1: u8; // stack - 0x1
+   
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x1 as *mut u16,1) == b'\0' {
++  if ({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"") }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v1,0x4bfd8,0x4c040); // no-return
+
+--- before/write_flags
++++ after/write_flags
+@@ -13,7 +13,7 @@
+   v6 = fmt;
+   v1 = a1;
+   v5 = v2;
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69b2 as *mut u16,&mut v2) == b'\0' {
++  if ({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),"{:#010x}/{:·>12}",&*((v2 as *const _) as *const u32),&*((v5 as *const _) as *const u32)) }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4bfd8,0x4c058); // no-return
+
+--- before/write_literal
++++ after/write_literal
+@@ -3,7 +3,7 @@
+ {
+   let mut v1: u8; // stack - 0x1
+   
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69c5 as *mut u16,0x17) == b'\0' {
++  if ({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),"{{é🙂}}\0\n") }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v1,0x4bfd8,0x4c070); // no-return
+
+--- before/write_pair
++++ after/write_pair
+@@ -17,7 +17,7 @@
+   v1 = a1;
+   v2 = a2;
+   v5 = a3;
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5af5 as *mut u16,&mut v3) == b'\0' {
++  if ({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"{}: {}",&*((v3 as *const _) as *const u32),std::str::from_utf8_unchecked(std::slice::from_raw_parts(v2 as *const u8,v5 as usize))) }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v4,0x4bfd8,0x4c088); // no-return
+
+--- before/write_signed
++++ after/write_signed
+@@ -9,7 +9,7 @@
+   v2 = &mut v1;
+   v4 = fmt;
+   v1 = a1;
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5bb0 as *mut u16,&mut v2) == b'\0' {
++  if ({ use std::fmt::Write as _; writeln!(&mut *((a0 as *mut _) as *mut std::string::String),"{}",&*((v2 as *const _) as *const i64)) }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4bfd8,0x4c0a0); // no-return
+
+--- before/write_string
++++ after/write_string
+@@ -11,7 +11,7 @@
+   v5 = fmt;
+   v1 = a1;
+   v4 = a2;
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x69d0 as *mut u16,&mut v2) == b'\0' {
++  if ({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"|{:🦀^10.3}|",std::str::from_utf8_unchecked(std::slice::from_raw_parts(v1 as *const u8,v4 as usize))) }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4bfd8,0x4c0b8); // no-return
+
+--- before/write_unsigned
++++ after/write_unsigned
+@@ -9,7 +9,7 @@
+   v2 = &mut v1;
+   v4 = fmt;
+   v1 = a1;
+-  if core::fmt::write(a0,0x4bfa8 as *mut (),0x5aef as *mut u16,&mut v2) == b'\0' {
++  if ({ use std::fmt::Write as _; write!(&mut *((a0 as *mut _) as *mut std::string::String),"[{}]",&*((v2 as *const _) as *const u32)) }).is_err() as u8 == b'\0' {
+     return 0;
+   }
+   core::result::unwrap_failed(_called__Result::unwrap____on_an__Err__value_,0x2b,&mut v3,0x4bfd8,0x4c0d0); // no-return
+

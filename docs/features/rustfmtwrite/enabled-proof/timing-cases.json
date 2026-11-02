@@ -1,0 +1,67 @@
+{
+  "root": "/home/mahaloz/kwt/angr-rust-fmt-write",
+  "base": "/home/mahaloz/kwt/angr-rust-fmt-str",
+  "option": "rustfmtwrite",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "write-primitive",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_unsigned",
+      "rust"
+    ],
+    [
+      "write-flags",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_flags",
+      "rust"
+    ],
+    [
+      "write-literal",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_literal",
+      "rust"
+    ],
+    [
+      "write-string",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_string",
+      "rust"
+    ],
+    [
+      "reference-write",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x11230",
+      "rust"
+    ],
+    [
+      "native-rust-c-control",
+      "/home/mahaloz/kwt/angr-rust-fmt-write/decompiler/crates/kuna-analysis/tests/fixtures/rust_fmt_write_real_x86_64",
+      "write_unsigned",
+      "c"
+    ],
+    [
+      "older-rust-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmt-2025-O3",
+      "0x96920",
+      "rust"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ]
+  ]
+}

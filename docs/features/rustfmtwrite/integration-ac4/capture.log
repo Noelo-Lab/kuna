@@ -1,0 +1,7 @@
+rust c default 455 FULL RECORDS IDENTICAL
+rust rust on 455 FULL RECORDS IDENTICAL
+write-native rust on 436 FULL RECORDS IDENTICAL
+rust rust default 455 FULL RECORDS IDENTICAL
+write-native go default 436 FULL RECORDS IDENTICAL
+write-native c default 436 FULL RECORDS IDENTICAL
+write-native rust default 436 FULL RECORDS IDENTICAL

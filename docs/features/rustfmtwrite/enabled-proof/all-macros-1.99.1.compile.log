@@ -1,0 +1,40 @@
+warning: unused variable: `text`
+ --> /tmp/kuna-rust-fmt-write/all-macros-execution.rs:2:6
+  |
+2 | {let text="é🦀\0{}\n";let mut out=String::from("prefix:é\0");let a0=&mut out as *mut String as *mut ();let v2_value:i64=i64::MIN+1;le...
+  |      ^^^^ help: if this is intentional, prefix it with an underscore: `_text`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `text`
+ --> /tmp/kuna-rust-fmt-write/all-macros-execution.rs:3:6
+  |
+3 | {let text="é🦀\0{}\n";let mut out=String::from("prefix:é\0");let a0=&mut out as *mut String as *mut ();let result=unsafe{({ use std::...
+  |      ^^^^ help: if this is intentional, prefix it with an underscore: `_text`
+
+warning: unused variable: `text`
+ --> /tmp/kuna-rust-fmt-write/all-macros-execution.rs:4:6
+  |
+4 | {let text="é🦀\0{}\n";let mut out=String::from("prefix:é\0");let a0=&mut out as *mut String as *mut ();let v2_value:u32=u32::MAX;let ...
+  |      ^^^^ help: if this is intentional, prefix it with an underscore: `_text`
+
+warning: unused variable: `text`
+ --> /tmp/kuna-rust-fmt-write/all-macros-execution.rs:5:6
+  |
+5 | {let text="é🦀\0{}\n";let mut out=String::from("prefix:é\0");let a0=&mut out as *mut String as *mut ();let result=unsafe{({ use std::...
+  |      ^^^^ help: if this is intentional, prefix it with an underscore: `_text`
+
+warning: unused variable: `text`
+ --> /tmp/kuna-rust-fmt-write/all-macros-execution.rs:7:6
+  |
+7 | {let text="é🦀\0{}\n";let mut out=String::from("prefix:é\0");let a0=&mut out as *mut String as *mut ();let v2_value:i64=i64::MIN+1;le...
+  |      ^^^^ help: if this is intentional, prefix it with an underscore: `_text`
+
+warning: unused variable: `text`
+ --> /tmp/kuna-rust-fmt-write/all-macros-execution.rs:9:6
+  |
+9 | {let text="é🦀\0{}\n";let mut out=String::from("prefix:é\0");let a0=&mut out as *mut String as *mut ();let v2_value:u32=u32::MAX;let ...
+  |      ^^^^ help: if this is intentional, prefix it with an underscore: `_text`
+
+warning: 6 warnings emitted
+

@@ -1,0 +1,7 @@
+{
+  "initial_failure": "aggressive_carries_every_default_off_option required an explicit exclusion; no production preset enables rustfmtwrite.",
+  "change": "Document rustfmtwrite in EXCLUDED_ON_PURPOSE with the failed confidence-bound reason.",
+  "only_cfg_test_source_changed": true,
+  "production_prefix_identical": true,
+  "release_sha256_unchanged": "ebff674185bf38266bea0adc10afda33a0bba10a699f09be32a1ab9b09e9a923"
+}

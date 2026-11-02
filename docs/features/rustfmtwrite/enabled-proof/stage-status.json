@@ -1,0 +1,8 @@
+{
+  "before_assertions_passed": 0,
+  "after_assertions_passed": 10,
+  "total_assertions": 10,
+  "before_exit": 10,
+  "after_exit": 0,
+  "before_omits_new_option_commands": true
+}

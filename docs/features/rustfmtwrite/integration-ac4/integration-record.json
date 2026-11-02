@@ -1,0 +1,103 @@
+{
+  "feature_head": "a874bff7a12391fe05867088692c1a23d8d3c4fe",
+  "integrated_main_commit": "ac4cd3aeef7565684fb1547101d61ee09e75cd6f",
+  "kuna_sha256": "36f142e20db7524ad49d3c117cc3d8ba0fba2ea295b939897792c99b8a42e106",
+  "changed_paths": [
+    "decompiler/crates/kuna-cli/src/disassemble.rs",
+    "decompiler/crates/kuna-cli/src/disassemble/provenance.rs",
+    "decompiler/crates/kuna-cli/tests/read_provenance_cli.rs",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ],
+  "decomp_analysis_console_sources_unchanged": true,
+  "workspace": {
+    "passed": 10117,
+    "failed": 0,
+    "ignored": 39,
+    "suites": 71
+  },
+  "all_required_checks_passed": true,
+  "datatests": 675,
+  "stages": 3541,
+  "fresh_record_equivalence": {
+    "kuna_sha256": "36f142e20db7524ad49d3c117cc3d8ba0fba2ea295b939897792c99b8a42e106",
+    "prior_kuna_sha256": "ebff674185bf38266bea0adc10afda33a0bba10a699f09be32a1ab9b09e9a923",
+    "main_commit": "ac4cd3aeef7565684fb1547101d61ee09e75cd6f",
+    "changed_paths": [
+      "decompiler/crates/kuna-cli/src/disassemble.rs",
+      "decompiler/crates/kuna-cli/src/disassemble/provenance.rs",
+      "decompiler/crates/kuna-cli/tests/read_provenance_cli.rs",
+      "docs/cli.md",
+      "docs/spec/01-program-prep.md"
+    ],
+    "images": 2,
+    "records": [
+      {
+        "fixture": "rust",
+        "language": "c",
+        "mode": "default",
+        "functions": 455,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "33afa077560f4dd45959fa86a13ead65e32bb44b5b2ded0c10114c899a3bc289",
+        "prior_sha256": "33afa077560f4dd45959fa86a13ead65e32bb44b5b2ded0c10114c899a3bc289"
+      },
+      {
+        "fixture": "rust",
+        "language": "rust",
+        "mode": "on",
+        "functions": 455,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "fb656c471cb4558c7d9174557cba97d7e339283142dbc7b93104632048c46c72",
+        "prior_sha256": "fb656c471cb4558c7d9174557cba97d7e339283142dbc7b93104632048c46c72"
+      },
+      {
+        "fixture": "rust",
+        "language": "rust",
+        "mode": "default",
+        "functions": 455,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "0edd0b223a5e933d1a8be8f3dcdbd076678e822a0355528557bc64ba4569632e",
+        "prior_sha256": "0edd0b223a5e933d1a8be8f3dcdbd076678e822a0355528557bc64ba4569632e"
+      },
+      {
+        "fixture": "write-native",
+        "language": "c",
+        "mode": "default",
+        "functions": 436,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "35ce7e58e11518545af4aa59909da5295eb49ab085cb5893dee692578d013966",
+        "prior_sha256": "766c781363fe6e92673722c259cbb4d09f46b93dfb3e18e2435bef5f5dc2d6e7"
+      },
+      {
+        "fixture": "write-native",
+        "language": "rust",
+        "mode": "on",
+        "functions": 436,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "6c3abc65071ce1667e2c2b24de6c990dd4fb025c38271d1fa679a829e871a248",
+        "prior_sha256": "96587def3c1c0b6184d65415aa4775dca6ded3609280b8fcc53dc39649284e21"
+      },
+      {
+        "fixture": "write-native",
+        "language": "rust",
+        "mode": "default",
+        "functions": 436,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "ead551c438b62cd874c2e476cf53e25c69a1d731a24ed27f61bf32979503868b",
+        "prior_sha256": "352f837de4d32ed30f5396f78dae15ecad48427401f451a12d5aeaa99879981a"
+      },
+      {
+        "fixture": "write-native",
+        "language": "go",
+        "mode": "default",
+        "functions": 436,
+        "all_complete_function_records_identical": true,
+        "fresh_sha256": "b1e8cf84a0c59afd37d873cc1595fde958788520881be31a239da621c5c34762",
+        "prior_sha256": "a721d7508b8a941f73dce753429f04b407886595c44901713580bd0d2d98a1aa"
+      }
+    ],
+    "all_complete_function_records_identical": true,
+    "scope": "Fresh complete records for the modern reference image and native String-writer fixture. Engine, analysis and console source paths remain identical. The earlier 27-image and speed studies retain their original binary identities; no claim they were rerun on this integration build."
+  },
+  "speed_scope": "The accepted default-off speed study and earlier enabled study retain the pre-integration executable identities. They were not repeated after this unrelated CLI byte-read change. The feature remains off in every preset."
+}
