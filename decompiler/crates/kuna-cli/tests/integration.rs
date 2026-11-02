@@ -557,6 +557,9 @@ mod global_aggregate_store;
 #[path = "multireg_call_inputs.rs"]
 mod multireg_call_inputs;
 
+#[path = "mips_got_nostub.rs"]
+mod mips_got_nostub;
+
 #[path = "narrow_register_inputs.rs"]
 mod narrow_register_inputs;
 #[path = "float_field_slices.rs"]
