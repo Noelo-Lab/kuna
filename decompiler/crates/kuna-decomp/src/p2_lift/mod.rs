@@ -61,3 +61,4 @@ pub mod kuna_gojumpchain;
 pub mod kuna_rustprobestack;
 
 pub(crate) mod kuna_highslice_guard;
+pub mod kuna_stubtailcall; // (kuna) a loader-proven lazy-binding stub flows as a tail call

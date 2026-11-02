@@ -2156,7 +2156,9 @@ mod tests {
         // and kuna-bejoinpass / a big-endian pair a call hands back is one value (option bejoinpass)
         // and kuna-gottailcall / a one-destination jump through an extern's slot is a tail call
         // and kuna-persistcalls / a persistent global's guards next to its accesses (option persistcalls)
-        assert_eq!(count, 698, "corpus file count drifted");
+        // and kuna-stubtailcall / a loader-proven lazy-binding stub flowed as a tail call
+        // and kuna-gotimportproto / a type-only declaration bound at a MIPS GOT import call
+        assert_eq!(count, 700, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

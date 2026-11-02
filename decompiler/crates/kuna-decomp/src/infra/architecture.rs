@@ -261,6 +261,12 @@ pub struct Architecture {
     pub loader_entry_tracks:
         std::collections::BTreeMap<Address, kuna_sleigh::globalcontext::TrackedSet>,
 
+    /// Loader-proven tail transfers: a call whose callee returns to this
+    /// function's caller, decoded as a call followed by a return.
+    pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
+    /// MIPS GOT import entries identified by the loader, never ordinary definitions.
+    pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
     pub trim_recurse_max: int4,
@@ -472,6 +478,12 @@ pub struct Architecture {
     /// (kuna GH-8913) Fuse 8-bit carry-chain 16-bit adds into one wide add
     /// (C++ `add_carry_chain`).
     pub add_carry_chain: bool,
+    /// (kuna `stubtailcall`) Flow loader-proven lazy-binding stubs as tail calls,
+    /// in the decompiler and the Listing; see [`crate::kuna_stubtailcall`].
+    pub stub_tail_call: bool,
+    /// (kuna `gotimportproto`) Bind type-only declarations at loader-proven MIPS
+    /// GOT import calls; see [`crate::kuna_gotimportproto`].
+    pub got_import_proto: bool,
     /// (kuna GH-8817) Reclassify V850 `jmp [reg]` CALLIND to BRANCHIND
     /// (C++ `v850_indirect_branch`).
     pub v850_indirect_branch: bool,
@@ -3010,6 +3022,8 @@ impl Architecture {
             input_arm_isa_override: false,
             arm_inventory_modes: Vec::new(),
             loader_entry_tracks: std::collections::BTreeMap::new(),
+            loader_transfer_sites: Rc::default(),
+            loader_mips_imports: Rc::default(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),
@@ -3073,6 +3087,8 @@ impl Architecture {
             caller_ptr: false, // (kuna) option callerptr
             codescalar: false, // (kuna) option codescalar; reset_defaults sets the shipped default
             add_carry_chain: false,
+            stub_tail_call: false, // (kuna) option stubtailcall; reset_defaults sets the shipped default
+            got_import_proto: false, // (kuna) option gotimportproto; reset_defaults sets the shipped default
             v850_indirect_branch: false,
             fastfail_noreturn: false, // (kuna) option fastfailnoreturn; reset_defaults sets the shipped default
             int3_pad: crate::kuna_int3pad::Int3PadMode::Off, // (kuna) option int3pad; reset_defaults sets the shipped default
@@ -3797,6 +3813,8 @@ impl Architecture {
         self.codescalar = true; // (kuna) DIV-138 default-on: a `code` pointee is never a value type, so blocking it can only replace a widthless scalar with the size-correct default
         self.condexe_block_placement = true; // (kuna) DIV-3 default-on (GH-9203)
         self.add_carry_chain = true; // (kuna) DIV-2 default-on (GH-8913)
+        self.stub_tail_call = true; // (kuna) option stubtailcall default-on: only loader-proven MIPS lazy-binding stubs, which raw and XML images never have (0/675); restore the plain resolver call with `option stubtailcall off`
+        self.got_import_proto = true; // (kuna) option gotimportproto default-on: only loader-proven MIPS GOT imports, which raw and XML images never have (0/675); restore the storage requirement with `option gotimportproto off`
         self.model_stack_probe_loop = true; // (kuna) DIV-3 default-on (GH-8017)
         self.analyze_for_loops = true;
         self.present_lessequal = true; // (kuna) DIV-2 default-on (GH-558)
@@ -4524,6 +4542,8 @@ impl Architecture {
             .collect();
         ctx.fold_flag_compare = self.fold_flag_compare; // GH-1276/8777 flagcompare
         ctx.add_carry_chain = self.add_carry_chain; // GH-8913 addcarrychain
+        ctx.stub_tail_call = self.stub_tail_call; // stubtailcall
+        ctx.got_import_proto = self.got_import_proto; // gotimportproto
         ctx.ov_less_simplify = self.ov_less_simplify; // GH-7190 ovlesssimplify
         ctx.recover_array_stride = self.recover_array_stride; // GH-8724 arraystride
         ctx.memset_recover = self.memset_recover; // GH-9230/1537 memsetrecover
@@ -4799,6 +4819,8 @@ impl Architecture {
         // `ActionDefaultParams` copies a known callee's locked `FuncProto` into the
         // call site (C++ `coreaction.cc:2385` `fc->copy(otherfunc->getFuncProto())`).
         ctx.callee_protos = callee_protos;
+        ctx.loader_transfer_sites = Rc::clone(&self.loader_transfer_sites);
+        ctx.loader_mips_imports = Rc::clone(&self.loader_mips_imports);
         // (kuna) The convention each of those callees was DECLARED under, keyed
         // the same way the pieces are (entry address).  The declaration names the
         // function, the parked pieces carry that name, and the read side

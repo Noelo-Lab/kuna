@@ -787,3 +787,9 @@ mod rust_array_decay;
 
 #[path = "rust_array_constant.rs"]
 mod rust_array_constant;
+
+#[path = "mips_import_flow.rs"]
+mod mips_import_flow;
+
+#[path = "qualified_call.rs"]
+mod qualified_call;

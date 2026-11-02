@@ -4480,6 +4480,7 @@ pub fn bootstrap_from_object_with_isa(
     let parsed = is_arm32_language(&arch_id)
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
+    let mips_linkage = loader.mips_linkage().filter(|_| arch_id.starts_with("MIPS:")).cloned();
     let isa = isa.or_else(|| {
         let file = parsed.as_ref()?;
         kuna_analysis::loadimage_object::arm_isa_hint(file, &bytes).map(|thumb| {
@@ -4696,6 +4697,12 @@ pub fn bootstrap_from_object_with_isa(
     let description = sleigh.base().unwrap().get_description().to_string();
 
     let mut prog = empty_program(sleigh, registry, ProgramContainer::Object, description);
+    if let Some(linkage) = mips_linkage {
+        prog.arch_mut().loader_transfer_sites = Rc::new(linkage.transfers.into_iter()
+            .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
+        prog.arch_mut().loader_mips_imports = Rc::new(elf_functions.imports.iter()
+            .map(|&entry| Address::new(Rc::clone(&code_space), entry)).collect());
+    }
     prog.load_notes = load_notes;
     prog.symbols = SymbolStream::from_loader(symbols);
     prog.object_sections = object_sections;
