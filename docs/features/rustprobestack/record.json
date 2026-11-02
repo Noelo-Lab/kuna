@@ -1,20 +1,18 @@
 {
   "feature": "rustprobestack",
   "default": "off in all presets",
-  "parent_commit": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+  "parent_commit": "887325c0adda6e525bc759fe0c3ac4eb86d89eba",
   "binary_sha256": {
-    "parent": "476e4ae92ad3e20538fb1a05332f5930e571581c29b99f1a294d266242fec7dd",
-    "candidate": "5a780409701e9ea22f46fa38552933dcb29da7069c6ede7168f06940db293998"
+    "parent": "c0bd40cab52d4f955ca1d4b8fd42a52df9a60ac3a3d0c702984a162025f95d5d",
+    "candidate": "1bb69f239fb5e8437fe263b1e99dba9190383e0c336eaeb3f07c00dbba4f77ee"
   },
-  "upstream_commit": "6afa0c79a83d9f677a46b0275cdb63bf16c1979e",
-  "upstream_test": "tests/analyses/decompiler/test_decompiler.py::test_decompiling_rust_binary_rust_probestack",
   "original_assertions": 675,
-  "stage_assertions": 3606,
+  "stage_assertions": 3658,
   "workspace": {
-    "passed": 10209,
+    "passed": 10276,
     "failed": 0,
     "ignored": 39,
-    "completed_suites": 71
+    "completed_suites": 72
   },
   "breadth": {
     "images": 41,
@@ -26,29 +24,17 @@
   "native_complete_bodies": 12,
   "native_values": 384,
   "asan_buffer_values": 32,
-  "auto_default_speed_passed": false,
-  "changed_off_default_speed_passed": false,
-  "changed_off_default_failed_cases": [
-    {
-      "case": "native-page",
-      "median_delta_pct": {
-        "cpu_ms": 0.20756786644202663,
-        "wall_ms": -0.0006514246996158768
-      },
-      "confidence_upper_mean_delta_pct": {
-        "cpu_ms": 1.3537464408645021,
-        "wall_ms": 7.347839596233431
-      }
-    }
-  ],
-  "speed_budget_pct": 5,
-  "off_default_maximum_median_delta_pct": {
-    "cpu_ms": 0.6377069820553638,
-    "wall_ms": 0.868677697051945
-  },
-  "off_default_maximum_upper_mean_delta_pct": {
-    "cpu_ms": 1.4262760162297505,
-    "wall_ms": 7.347839596233431
+  "catalog_options": 371,
+  "corpus_files": 670,
+  "initial_feature_record": "initial-record.json",
+  "integration_record": "integration-8873/record.json",
+  "timing": {
+    "auto_study": "auto-study/timing-result.json",
+    "auto_study_passed": false,
+    "off_study": "timing-off-result.json",
+    "off_study_passed": false,
+    "current_integration_timed": false,
+    "scope": "Completed failed studies remain scoped to their recorded8332/c5fc parents and binaries. No unchanged-feature timing repeat after PPC32 main integration and no default promotion."
   },
   "supplied_upstream_binary_executed": false,
   "full_angr_parity_claimed": false

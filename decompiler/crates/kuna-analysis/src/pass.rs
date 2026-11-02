@@ -299,6 +299,8 @@ pub struct FidMatch {
 /// merging two outputs is concatenation (the driver dedups by address).
 #[derive(Default, Debug)]
 pub struct AnalysisOutput {
+    /// Validated PPC32 JMP_SLOT metadata, consumed only by caller-local flow proof.
+    pub ppc32_pic_slots: Vec<kuna_decomp::kuna_ppc32piccalls::ImportSlot>,
     /// `(addr, name, kind)` -> seed `Database::add_function` / symbol map.
     pub symbols: Vec<SymFact>,
     /// Named, sized data globals (the symbol-table / DWARF data objects). Mapped
@@ -661,6 +663,7 @@ impl AnalysisOutput {
         self.fde_interior_entries.extend(other.fde_interior_entries);
         self.pdb_bodies.extend(other.pdb_bodies);
         self.entry_names.extend(other.entry_names);
+        self.ppc32_pic_slots.extend(other.ppc32_pic_slots);
         self.noreturn.extend(other.noreturn);
         self.no_fallthru_calls.extend(other.no_fallthru_calls);
         self.call_returns.extend(other.call_returns);

@@ -40,7 +40,9 @@ pub mod elf_plt;
 pub mod kuna_globalref;
 pub mod elfv1;
 mod elfv1_imports;
-mod kuna_ppc32_imports;
+pub mod kuna_ppc32_imports;
+mod kuna_ppc32picimports;
+pub use kuna_ppc32picimports::{ImportProofMemo, ImportProofScope};
 // (kuna) ELF section-table tolerance: an image whose section headers are
 // unreadable still has program headers describing every loadable byte.
 pub mod elf_shdr;

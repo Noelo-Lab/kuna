@@ -62,3 +62,7 @@ path = "tests/process_helpers.rs"
 [[test]]
 name = "single_binary_cli"
 path = "tests/single_binary_cli.rs"
+
+[[test]]
+name = "ppc32_pic_session"
+path = "tests/ppc32_pic_session.rs"
