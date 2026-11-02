@@ -32,19 +32,19 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_120() {
-    assert_eq!(kuna_num_surfaces(), 120);
-    assert_eq!(SURFACE_TABLE.len(), 120);
+fn surface_count_is_121() {
+    assert_eq!(kuna_num_surfaces(), 121);
+    assert_eq!(SURFACE_TABLE.len(), 121);
 }
 
 #[test]
-fn settable_count_is_374() {
-    assert_eq!(kuna_num_settables(), 374);
-    assert_eq!(SETTABLE_TABLE.len(), 374);
+fn settable_count_is_375() {
+    assert_eq!(kuna_num_settables(), 375);
+    assert_eq!(SETTABLE_TABLE.len(), 375);
 }
 
 #[test]
-fn tier_counts_are_129_core_152_transform_93_analysis() {
+fn tier_counts_are_129_core_153_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_129_core_152_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (129, 152, 93));
+    assert_eq!((core, transform, analysis), (129, 153, 93));
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_177() {
+fn option_values_live_value_present_for_178() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -939,7 +939,8 @@ fn option_values_live_value_present_for_177() {
     // 168 -> 169: +1 for `switchrunon` (switch_run_on).
     // 175 -> 176: +1 for `highsliceguard` (highslice_guard).
     // 176 -> 177: +1 for `mipsunaligned` (mips_unaligned).
-    assert_eq!(with_live, 177);
+    // 177 -> 178: +1 for `gottailcall` (got_tail_call).
+    assert_eq!(with_live, 178);
 }
 
 #[test]
@@ -1164,7 +1165,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
     // +1 for `bejoinpass`; its P4 row sits after `bejoin`.
-    assert_eq!(json.matches("},\n").count(), 373);
+    assert_eq!(json.matches("},\n").count(), 374);
 }
 
 #[test]

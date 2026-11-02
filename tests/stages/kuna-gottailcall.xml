@@ -1,0 +1,75 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-904: a tail call through a GOT slot that names an extern with no bytes
+    lost its arguments to halt_missing().
+
+    A position-independent tail call loads its target from a slot and jumps
+    through it (x86-64 -fno-plt `jmp *ext@GOTPCREL(%rip)`, MIPS
+    `lw $t9,%call16(ext)($gp); jr $t9`):
+
+        0x401000 h:       add  edi,1
+        0x401003          jmp  qword ptr [0x401010]   ; *0x401010 = 0x402000 (ext)
+        0x401018 notfn:   add  edi,2
+        0x40101b          jmp  qword ptr [0x401028]   ; *0x401028 = 0x403000
+        0x401030 onecase: add  edi,3
+        0x401033          jmp  qword ptr [0x401040]   ; *0x401040 = 0x401048
+        0x401048          lea  eax,[rdi+5]
+        0x40104b          ret
+
+    Jump-table recovery reads the read-only slot and yields a one-entry
+    table.  ext is a function symbol with no bytes, as an undefined symbol
+    of a relocatable object is, and its prototype is not stated, so
+    tailcalljump followed the table into unmapped memory and printed
+    `switch(0x402000) { case 0x402000: halt_missing(); }`.
+
+    Stage / sub-stage: P2 "flow-classification".  The P0 assertion
+    `option gottailcall on|off` decides whether a one-destination computed
+    jump to a function with no bytes is a tail call.  Pass 1 (off)
+    reproduces the bug (#1); pass 2 (the shipped on) prints the call with
+    the argument the caller set (#2).  Controls hold in both passes: a slot
+    naming unmapped memory that is no function (#3), and a slot naming a
+    label in the function's own code, a real one-case switch (#4).  The other
+    arm of the option, a callee a callee-first decompile-all decompiled
+    first, is covered by tests/cli/gottailcall-*.json.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+83c701ff2507000000cccccccccccccc0020400000000000
+83c702ff2507000000cccccccccccccc0030400000000000
+83c703ff2507000000cccccccccccccc4810400000000000
+8d4705c3
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="h"/>
+<symbol space="ram" offset="0x401018" name="notfn"/>
+<symbol space="ram" offset="0x401030" name="onecase"/>
+<symbol space="ram" offset="0x402000" name="ext"/>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>option gottailcall off</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu notfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu onecase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gottailcall on</com>
+  <com>lo fu h</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu notfn</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu onecase</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOTTAILCALL #1: off, the jump through ext's slot is lost to halt_missing" min="1" max="1">halt_missing\(\); // warn: Function flow reaches unmapped memory: r0x00401003 flows to r0x00402000</stringmatch>
+<stringmatch name="GOTTAILCALL #2: on, it is a tail call that keeps the argument" min="1" max="1">ext\(a0 \+ 1\); // tail-call</stringmatch>
+<stringmatch name="GOTTAILCALL #3: a slot naming unmapped memory that is no function stays a jump" min="2" max="2">flows to r0x00403000</stringmatch>
+<stringmatch name="GOTTAILCALL #4: a slot naming a label of the function's own code stays a switch" min="2" max="2">switch\(0x401048\)</stringmatch>
+</decompilertest>
