@@ -62,6 +62,9 @@ mod verify_assertplane;
 #[path = "verify_assertranges.rs"]
 mod verify_assertranges;
 
+#[path = "verify_branchtable.rs"]
+mod verify_branchtable;
+
 #[path = "verify_buildstamp.rs"]
 mod verify_buildstamp;
 
@@ -358,6 +361,9 @@ mod verify_ppc64_plt;
 
 #[path = "verify_ppclocalentry.rs"]
 mod verify_ppclocalentry;
+
+#[path = "verify_predjump.rs"]
+mod verify_predjump;
 
 #[path = "verify_ptrarray_declarators.rs"]
 mod verify_ptrarray_declarators;
