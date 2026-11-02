@@ -227,6 +227,8 @@ pub mod pcodeop_addlflags {
     /// cleared within one heritage pass by
     /// [`crate::p3_dataflow::kuna_renamereads`].
     pub const kuna_rename_read: uint4 = 0x800000;
+    /// Transient saved RBP in a summarized Rust callee, not a caller-reserved slot.
+    pub const kuna_rustprobe_spill: uint4 = 0x1000000;
 }
 
 // ---------------------------------------------------------------------------

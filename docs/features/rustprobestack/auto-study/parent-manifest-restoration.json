@@ -1,0 +1,6 @@
+{
+  "at": "2026-11-02T11:06:36.861779+00:00",
+  "reason": "New parent preparation overwrote the live parent manifest. Reconstructed the earlier deterministic JSON from clean8332 and matched its original timing-record SHA256 exactly.",
+  "sha256": "d8b891de4cbea5684529a914a11b13aa5d4e465c717b7c6b07ee13d1f55c0450",
+  "matches_original_study_manifest_sha256": true
+}

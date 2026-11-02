@@ -710,3 +710,6 @@ mod ppc32_imports;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+
+#[path = "rust_probestack.rs"]
+mod rust_probestack;

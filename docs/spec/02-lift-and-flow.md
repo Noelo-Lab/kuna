@@ -2955,3 +2955,41 @@ Octeon II/III load-and-atomic instructions. Disabling only the wildcard SPECIAL2
 constructor is insufficient: an unsupported atomic must fail assembly decoding
 and p-code lifting without emitting stack effects. Original GNU-assembled atomic
 probes cover both colliding constructors; generic MIPS retains them unchanged.
+
+## Verified Rust stack-probe summaries
+
+`rustprobestack` ships off in every preset: its predeclared default comparison
+exceeded the 5% wall-time confidence bound. When enabled, it runs before
+ExtraPopSetup, FuncLink and SSA. At explicit `auto` it
+requires Rust source-language evidence; `always` permits the same proof on other
+images, and `off` retains the helper. The action in
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_rustprobestack.rs` matches the
+complete 57-byte AMD64 page-probing helper, canonical x86-64 register storage,
+a direct relative CALL and its raw stack push/return-address store, and an
+immediately following `sub rsp,rax`. The full RAX frame-size constant must reach
+the call within 48 raw operations in the same block, with no intervening call,
+branch or overlapping unknown write, and be at most 16 MiB. Unavailable bytes,
+changed helper bodies, interior targets, injected/inline/nonreturning call facts,
+and intervening flag observations decline the summary.
+
+The summary preserves the existing return-address store, writes saved RBP eight
+bytes below the call-time SP, restores SP by eight bytes for RET, and writes R11
+as zero for a zero frame or `((frame - 1) % 4096) + 1` otherwise. Other general
+registers retain their values; the next SUB kills the helper's arithmetic flags.
+Ordinary SSA and dead-store analysis decide which scratch writes remain. The
+option deliberately abstracts page-touch reads and their fault behavior and is
+therefore destructive. It never suppresses a call by its name or in the printer.
+
+The live shared image must prove mapped coverage of every helper and call-site
+byte. Direct reads leave the loader prefetch window unchanged; frontends without
+that coverage interface retain the call. An overlay participates through the live
+image, so stale file bytes cannot establish the helper identity.
+
+The saved-RBP store carries transient callee-spill provenance so P6 does not
+reserve its bytes as a caller callee-save slot. This affects storage ownership,
+not the store's value or observability.
+
+The summary declines when `stackviews` or `stackalias` is enabled. Those policies
+retain transient physical stack writes, which can create an independent scalar
+in the tail of a later buffer. Their original call representation remains until
+that overlapping ownership can be represented without shrinking the buffer.

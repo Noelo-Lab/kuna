@@ -1,0 +1,211 @@
+{
+  "at": "2026-11-02T09:47:28.520280+00:00",
+  "commands": [
+    [
+      "cc",
+      "-c",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack.S",
+      "-o",
+      "/tmp/kuna-rust-probestack/fixture-build/probe.o"
+    ],
+    [
+      "rustc",
+      "+1.90.0",
+      "--edition=2021",
+      "--crate-name",
+      "probe_native",
+      "-C",
+      "opt-level=1",
+      "-C",
+      "debuginfo=2",
+      "-C",
+      "link-arg=/tmp/kuna-rust-probestack/fixture-build/probe.o",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack.rs",
+      "-o",
+      "/tmp/kuna-rust-probestack/mutable-fixture/rust_probestack_x86_64"
+    ]
+  ],
+  "source": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack.rs",
+  "source_sha256": "5172e2e60f8414035a647f38c508c3d4910e45e6b877754af1c2f2741db47442",
+  "binary_sha256": "0b63214689c61292cbdbbd6f0bc1bd2f8e88d2f940ec12de0b1175dfe8c8d4c9",
+  "old_and_new_function_addresses_equal": true,
+  "symbols": {
+    "__rust_probestack": "00000000000563e0",
+    "probe_page": "0000000000056420",
+    "probe_tail": "0000000000056460",
+    "probe_pages": "00000000000564a0",
+    "probe_observes_r11": "00000000000564e0",
+    "not_a_probe": "0000000000056500",
+    "probe_side_effect": "0000000000056510",
+    "probe_zero": "0000000000056550",
+    "probe_one": "0000000000056570",
+    "probe_page_r11": "0000000000056590",
+    "probe_plus_one": "00000000000565b0",
+    "probe_pages_r11": "00000000000565d0",
+    "probe_saved_rbp": "00000000000565f0",
+    "probe_return_slot": "0000000000056610",
+    "probe_observes_flags": "0000000000056640",
+    "probe_unknown": "0000000000056660",
+    "probe_counter": "000000000005c6b8"
+  },
+  "observations": 112,
+  "samples": [
+    {
+      "input": 0,
+      "values": [
+        7,
+        7,
+        7,
+        8,
+        0,
+        1,
+        4096,
+        1,
+        4096,
+        0,
+        1,
+        7,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 1,
+      "values": [
+        8,
+        8,
+        8,
+        9,
+        1,
+        2,
+        4097,
+        2,
+        4097,
+        1,
+        1,
+        8,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 7,
+      "values": [
+        14,
+        14,
+        14,
+        15,
+        7,
+        8,
+        4103,
+        8,
+        4103,
+        7,
+        1,
+        14,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 12345,
+      "values": [
+        12352,
+        12352,
+        12352,
+        12353,
+        12345,
+        12346,
+        16441,
+        12346,
+        16441,
+        12345,
+        1,
+        12352,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 2147483647,
+      "values": [
+        2147483654,
+        2147483654,
+        2147483654,
+        2147483655,
+        2147483647,
+        2147483648,
+        2147487743,
+        2147483648,
+        2147487743,
+        2147483647,
+        1,
+        2147483654,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 2147483648,
+      "values": [
+        2147483655,
+        2147483655,
+        2147483655,
+        2147483656,
+        2147483648,
+        2147483649,
+        2147487744,
+        2147483649,
+        2147487744,
+        2147483648,
+        1,
+        2147483655,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 4294967288,
+      "values": [
+        4294967295,
+        4294967295,
+        4294967295,
+        0,
+        4294967288,
+        4294967289,
+        4088,
+        4294967289,
+        4088,
+        4294967288,
+        1,
+        4294967295,
+        0,
+        1
+      ]
+    },
+    {
+      "input": 4294967295,
+      "values": [
+        6,
+        6,
+        6,
+        7,
+        4294967295,
+        0,
+        4095,
+        0,
+        4095,
+        4294967295,
+        1,
+        6,
+        0,
+        1
+      ]
+    }
+  ],
+  "native_original_fixture_declaration_corrected": "static mut probe_counter: u32",
+  "reference": "https://doc.rust-lang.org/reference/items/external-blocks.html#statics",
+  "binary_not_promoted_yet": "Original breadth may still read old binary; promote only after those captures finish.",
+  "promoted_path": "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_x86_64",
+  "promoted_at": "2026-11-02T10:07:40.135273+00:00"
+}

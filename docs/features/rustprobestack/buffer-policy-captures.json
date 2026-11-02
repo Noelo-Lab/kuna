@@ -1,0 +1,78 @@
+[
+  {
+    "policy": "stackviews",
+    "arm": "parent",
+    "command": [
+      "/home/mahaloz/kwt/angr-base-8332/decompiler/target/release/kuna",
+      "decompile",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64",
+      "probe_buffer",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.kuna",
+      "--option",
+      "stackviews",
+      "on"
+    ],
+    "code": "unsigned int probe_buffer(unsigned int x)\n{\n  unsigned char v1 [4096]; // stack - 0x1018\n  unsigned long v2; // stack - 0x18\n  \n  v2 = 0x5627f;\n  __rust_probestack();\n  return fill_probe_page(v1,x);\n}"
+  },
+  {
+    "policy": "stackviews",
+    "arm": "candidate",
+    "command": [
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/target/release/kuna",
+      "decompile",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64",
+      "probe_buffer",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.kuna",
+      "--option",
+      "stackviews",
+      "on"
+    ],
+    "code": "unsigned int probe_buffer(unsigned int x)\n{\n  unsigned char v1 [4088]; // stack - 0x1018\n  unsigned long v2; // rbp\n  unsigned long v3; // rbp | stack - 0x20\n  unsigned long v4; // stack - 0x18\n  \n  v4 = 0x5627f;\n  v3 = v2;\n  return fill_probe_page(v1,x);\n}"
+  },
+  {
+    "policy": "stackalias",
+    "arm": "parent",
+    "command": [
+      "/home/mahaloz/kwt/angr-base-8332/decompiler/target/release/kuna",
+      "decompile",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64",
+      "probe_buffer",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.kuna",
+      "--option",
+      "stackalias",
+      "on"
+    ],
+    "code": "unsigned int probe_buffer(unsigned int x)\n{\n  unsigned char v1 [4096]; // stack - 0x1018\n  unsigned long v2; // stack - 0x18\n  \n  v2 = 0x5627f;\n  __rust_probestack();\n  return fill_probe_page(v1,x);\n}"
+  },
+  {
+    "policy": "stackalias",
+    "arm": "candidate",
+    "command": [
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/target/release/kuna",
+      "decompile",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64",
+      "probe_buffer",
+      "--language",
+      "c",
+      "--json",
+      "--assert",
+      "@/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.kuna",
+      "--option",
+      "stackalias",
+      "on"
+    ],
+    "code": "unsigned int probe_buffer(unsigned int x)\n{\n  unsigned char v1 [4088]; // stack - 0x1018\n  unsigned long v2; // rbp\n  unsigned long v3; // rbp | stack - 0x20\n  unsigned long v4; // stack - 0x18\n  \n  v4 = 0x5627f;\n  v3 = v2;\n  return fill_probe_page(v1,x);\n}"
+  }
+]

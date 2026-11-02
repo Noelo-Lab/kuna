@@ -516,3 +516,6 @@ mod verify_rustfmtstr;
 mod verify_rustfmtwrite;
 #[path = "verify_rustfmtio.rs"]
 mod verify_rustfmtio;
+
+#[path = "verify_rustprobestack.rs"]
+mod verify_rustprobestack;

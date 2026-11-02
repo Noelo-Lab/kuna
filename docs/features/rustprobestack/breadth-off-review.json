@@ -1,0 +1,537 @@
+{
+  "at": "2026-11-02T11:13:47.551169+00:00",
+  "complete": true,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "5a780409701e9ea22f46fa38552933dcb29da7069c6ede7168f06940db293998",
+  "parent_cli_sha256": "476e4ae92ad3e20538fb1a05332f5930e571581c29b99f1a294d266242fec7dd",
+  "images": 41,
+  "distinct_functions": 33695,
+  "language_records": 75801,
+  "default_changed_records": 0,
+  "enabled_changed_records": 84,
+  "fresh_parent_default_candidate_default_and_selected_candidate_auto": true,
+  "enabled_full_records_equal_previously_reviewed_AUTO_build": true,
+  "affected_parent_records_equal_previous_parent": true,
+  "new_parent_commit": "c5fcb0331dbdbbe9498237d0afe0bfaa372f9246",
+  "inherited_go_parser_failures": [
+    {
+      "fixture": "namespace-rust",
+      "address": "0x156c0",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x156d0",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "namespace-rust",
+      "address": "0x15870",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x15570",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x15580",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "raw-namespace",
+      "address": "0x15720",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x157c0",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x157d0",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "probe-native",
+      "address": "0x15970",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x15580",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x15590",
+      "whole_record_equal": true
+    },
+    {
+      "fixture": "probe-buffer",
+      "address": "0x15730",
+      "whole_record_equal": true
+    }
+  ],
+  "enabled_changes": [
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56420"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56460"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x564a0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x564e0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56550"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56570"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56590"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x565b0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x565d0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x565f0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "rust",
+      "address": "0x56610"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56420"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56460"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x564a0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x564e0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56550"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56570"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56590"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x565b0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x565d0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x565f0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "go",
+      "address": "0x56610"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56420"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56460"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x564a0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x564e0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56550"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56570"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56590"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x565b0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x565d0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x565f0"
+    },
+    {
+      "fixture": "probe-native",
+      "language": "c",
+      "address": "0x56610"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56010"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56050"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56090"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x560d0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56140"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56160"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56180"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x561a0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x561c0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x561e0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56200"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "rust",
+      "address": "0x56270"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56010"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56050"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56090"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x560d0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56140"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56160"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56180"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x561a0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x561c0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x561e0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56200"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "c",
+      "address": "0x56270"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56010"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56050"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56090"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x560d0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56140"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56160"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56180"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x561a0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x561c0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x561e0"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56200"
+    },
+    {
+      "fixture": "probe-buffer",
+      "language": "go",
+      "address": "0x56270"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x9f70"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0xb720"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x12ff0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x3ebf0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "go",
+      "address": "0x3f1f0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x9f70"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0xb720"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x12ff0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x3ebf0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "rust",
+      "address": "0x3f1f0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x9f70"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0xb720"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x12ff0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x3ebf0"
+    },
+    {
+      "fixture": "probe-upstream",
+      "language": "c",
+      "address": "0x3f1f0"
+    }
+  ],
+  "enabled_manual_review_sha256": "6091aeb994c530f25e30170e8b48599a083ef8ddca4e86c13b41b2b5f3ecb501",
+  "enabled_manual_review_scope": {
+    "at": "2026-11-02T10:28:39.385935+00:00",
+    "all_hunks_reviewed": true,
+    "diff_lines": 1424,
+    "changed_records": 84,
+    "files_read": [
+      "probe-native-old-diffs.txt",
+      "probe-buffer-old-diffs.txt",
+      "upstream-c-old-diffs.txt",
+      "upstream-rust-old-diffs.txt",
+      "upstream-go-old-diffs.txt",
+      "final-metadata-brief.json"
+    ],
+    "final_records_verified_equal_to_reviewed_before_and_after_records": true,
+    "full_diff_sha256": "08b18babaff842f5d537d63872e4a15c04afdabc63b21b577f98da8a043d0642",
+    "classification": {
+      "probe-native": "Eleven exact helper summaries: helper removal, known R11 residuals, saved-RBP input recovery and return-slot observability. The zero residual permits ordinary unsigned identity typing. No changed controls.",
+      "probe-buffer": "The same eleven probes plus one4096-byte buffer whose complete C body remains intact except helper removal. Both optional physical stack policies retain the original call by focused tests.",
+      "probe-upstream": "Five independently inventoried helper callers. create_note/decompress_zlib only lose the helper. add_file coalesces duplicate a0 copies and reorders independent assignments. ctr reorders zero/copy assignments with equal-value storage merging. Object::section propagates three parameter copies and consistently renumbers three surviving locals."
+    },
+    "metadata_review": "All variable identity/storage deltas agree across C/Rust/Go; explicit type-spelling mapping checks their corresponding language types. Dead synthesized spills appear as unused undefined8 metadata with no printed uses. Unused gaps split around those slots; this does not shrink emitted buffers. Object::section drops three copied parameter locals, retains unused storage records and consistently renumbers the surviving locals. R11 undefined register values disappear; saved-RBP forwarding recovers the source input. Line numbers are in range and track removed calls, propagated copies and renumbering.",
+    "limitations": [
+      "Page-touch reads and faults deliberately abstracted.",
+      "Summary declines stackviews/stackalias.",
+      "Cross-language Rust literal sanitization remains a separate known limitation.",
+      "No native execution of supplied upstream executable.",
+      "Full angr parity remains incomplete."
+    ]
+  },
+  "limitations": [
+    "Page-touch reads and faults deliberately abstracted.",
+    "Summary declines stackviews/stackalias.",
+    "Cross-language Rust literal sanitization remains a separate known limitation.",
+    "No native execution of supplied upstream executable.",
+    "Full angr parity remains incomplete."
+  ]
+}

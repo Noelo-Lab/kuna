@@ -780,6 +780,7 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_gomorestack`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub go_morestack: u8,
+    pub rust_probestack: crate::kuna_rustprobestack::RustProbestackMode,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_bool: u8,
@@ -1898,6 +1899,7 @@ impl ArchContext {
             // (kuna) `option gomorestack` default auto; the real value is
             // copied from the engine Architecture in `build_arch_handle`.
             go_morestack: 1,
+            rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             // (kuna) `option gobool` default auto; copied the same way.
             go_bool: 1,
             // (kuna) `option gowritebarrier` default auto; the real value is

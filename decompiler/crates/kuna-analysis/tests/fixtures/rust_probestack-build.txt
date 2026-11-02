@@ -1,0 +1,19 @@
+Authored stack-probe evidence fixture, built with rustc 1.90.0 and GNU assembler.
+The helper is the 57-byte AMD64 compiler-rt pattern recognized by pinned angr
+6afa0c79a83d9f677a46b0275cdb63bf16c1979e. All other assembly and Rust source is
+original and harmless. No supplied upstream executable is executed.
+
+cc -c rust_probestack.S -o /tmp/rust_probestack.o
+rustc +1.90.0 --edition=2021 --crate-name probe_native -C opt-level=1 \
+  -C debuginfo=2 -C link-arg=/tmp/rust_probestack.o rust_probestack.rs \
+  -o rust_probestack_x86_64
+
+The .kuna file states source-proven unsigned extern prototypes so comparisons
+include wrapping u32 boundary values without introducing signed C overflow.
+Console raw-action tests pin this committed ELF's addresses; a rebuild updates
+those addresses if compiler/linker placement changes.
+
+The buffer regression links the same probe.o with rust_probestack_buffer.S and
+rust_probestack_buffer.c (gcc -g -O1 -c), then builds rust_probestack_buffer.rs
+with the same Rust flags and all three objects. Its page fill writes all 4096
+bytes, including the old RBP slot; unchanged emitted C is executed under ASan.
