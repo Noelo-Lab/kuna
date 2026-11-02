@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    3649,
-    3649
+    3654,
+    3654
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1023,7 +1023,7 @@
     "data:KUNA-CATALOG #12: scalar ARM inputs are a default-off opt-in",
     "data:KUNA-CATALOG #13: validated A32 inventory frames are the default",
     "data:KUNA-CATALOG #14: full ARM frames are explicitly enabled",
-    "data:KUNA-CATALOG #15: 370 registry rows plus six individual queries",
+    "data:KUNA-CATALOG #15: 371 registry rows plus six individual queries",
     "data:KUNA-CATALOG #16: standard C byte-array rendering is explicitly opt-in",
     "data:KUNA-CATALOG #17: standard C byte-array rendering exposes its live state",
     "data:KUNA-CATALOG #18: bounded local views are default-on and live",
@@ -2935,6 +2935,11 @@
     "data:loop initial and backedge definitions share a family",
     "data:low address outside pointer inference range still folds",
     "data:marker has no executable trap",
+    "data:mipsunaligned #1: c_unal adds the unaligned word to add_hi's int",
+    "data:mipsunaligned #1b: off, c_unal reads add_hi's dead high half",
+    "data:mipsunaligned #2: get_word returns the word it loads on both byte orders",
+    "data:mipsunaligned #2b: off, get_word reads the uninitialized result register",
+    "data:mipsunaligned #3: copy_word copies the word on both byte orders",
     "data:mirror receives the local without a device read",
     "data:mixed argument reads: byte uses fifth argument",
     "data:mixed argument reads: complete six-argument prototype",

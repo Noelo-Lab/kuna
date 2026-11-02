@@ -49,6 +49,7 @@ pub mod kuna_syscallregs; // (kuna) give the ARM/AArch64/RISC-V/MIPS/PowerPC sys
 pub mod kuna_msvcstrappend; // (kuna) collapse an inlined MSVC std::string push_back/append diamond into one call
 pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack
 pub mod kuna_msvcimportcall; // (kuna `msvcsig`) a call through an import slot with a locked MSVC prototype is direct from the flow on
+pub mod kuna_mipsunaligned; // (kuna) lift a MIPS lwl/lwr-style unaligned pair as one whole access
 pub mod kuna_int3pad; // (kuna) name the int3 pad control ran into instead of printing it as a call through swi()
 pub mod kuna_decodehalt; // (kuna) a halt planted where the decode failed says so instead of printing as an ordinary return
 pub mod kuna_fpuemu; // (kuna) decode the 8087 emulator's INT 34h-3Dh as the x87 instructions they stand for

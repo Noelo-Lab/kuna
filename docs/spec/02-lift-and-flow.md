@@ -158,6 +158,52 @@ does not list (one the `FLD1` call target) are gone, 297 to 295. Borland's
 On 42 FreeDOS executables the evidence never holds, so their output is
 byte-identical.
 
+MIPS reads and writes a word at an address that may not be aligned with a
+pair of instructions: `lwl $3,0($2); lwr $3,3($2)` on a big-endian target,
+`lwl $3,3($2); lwr $3,0($2)` on a little-endian one, and `swl`/`swr`,
+`ldl`/`ldr` and `sdl`/`sdr` likewise. The processor spec lifts each half
+alone as a merge of memory into the register by a shift its address's low
+bits pick, so the pair reads the register it overwrites and prints as shifts
+and masks around that value: after a call, the call's dead second return word,
+which made SQLite's callers read `sqlite3PagerWrite`'s result as a 64-bit
+pair, so `kuna_voidret` saw them disagree and printed it `void`. The spec also
+has whole-access forms for both halves, selected by the context bit
+`PAIR_INSTRUCTION_FLAG`: the half at the lower address on a big-endian target
+(the higher on a little-endian one) loads or stores the whole word, and the
+other does nothing. Ghidra's `MipsPreAnalyzer` sets the bit;
+`decompiler/crates/kuna-decomp/src/p2_lift/kuna_mipsunaligned.rs (paint)`
+does the same once per image, at the first flow (and before `callwide`'s
+whole-image proof), from `option mipsunaligned` (`on|off`, default **on**).
+It reads the image's executable ranges, collects the target of every direct
+branch and jump, and pairs a half with the other half of the same width, base
+and data register three (seven) bytes away on the side the byte order puts
+it, when that follows within five instructions, nothing on the way writes the
+base, reads or writes a load's data register or writes a store's, and no
+control transfer comes first except one whose delay slot holds the partner
+(not a branch-likely, whose slot runs only when taken). The first half may
+not sit in a delay slot, a load may not use its data register as its base,
+and no branch may land after the first half and at or before the second,
+since a path entering there would run one half alone. Code decoding as
+MIPS16, microMIPS or release 6 is left alone. The whole-access form of a left
+half sets the bit at the next instruction too, so a pair whose left half is
+followed by a half that pairs with nothing is dropped. Turned off again, the
+bit is cleared on the same halves. XML images (no executable ranges) and
+every other language are unchanged, so the datatests are byte-identical.
+Over 355 gcc and clang MIPS images (zlib, Lua and authored shapes, -O0 to -O3
+and -Os, big- and little-endian PIC shared objects and big-endian non-PIC
+objects) and four SQLite builds, with their DWARF stripped, 3,481 functions
+change: 790 lose all or some of their shift-and-mask merges (clang's struct
+copies, whose halves can sit more than five instructions apart, keep some),
+2,539 only renumber auto-named struct types after an earlier function's types
+changed, and the rest follow from callees whose arguments or results no
+longer read a stale register. Fifteen returns change, each to its DWARF type:
+`sqlite3PagerWrite` returns its `int` in the three gcc builds, and 12
+functions that printed an `int` for a `void` (`walChecksumBytes`,
+`checkPtrmap`, a `void fv(int *)` whose caller's `lwl` read `$2`) return
+nothing. Of 68 parameter counts that change, 65 move to the DWARF count; the
+other three lose an argument only the merge read. PowerPC, ARM, SPARC and x86
+images print byte-identically.
+
 Ordinary ARM flow establishes a `TMode` write boundary at the function entry.
 A backward interworking call may publish the callee's mode up to that boundary,
 but cannot repaint the caller. After a successful instruction, a mode commit

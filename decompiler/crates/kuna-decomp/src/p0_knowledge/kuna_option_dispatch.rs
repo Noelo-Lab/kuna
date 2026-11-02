@@ -247,6 +247,7 @@ kuna_options! { self, p1;
     "stackaddrargtrial" => on_off!(stack_addr_arg_trial, "Stack-address input trials"),
     "callretpair" => on_off!(call_ret_pair, "Two-register CALL output completion"),
     "multiregargs" => on_off!(multi_reg_args, "Complete ABI register argument partitions"),
+    "mipsunaligned" => on_off!(mips_unaligned, "MIPS unaligned load/store pairs as one access"),
     "callwide" => {
         let enabled = on_or_off(p1)?;
         self.kuna_callwide.clear();
