@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-literal-halfword.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-store-word-halfword.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-stub-interior.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function 0x1004</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-unaligned-exec.elf</com>
+  <com>read symbols</com>
+  <com>option ppc32picimports on</com>
+  <com>load function check2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="narrow loads and bypassed or unaligned entries retain returns" min="4" max="4">return 7;</stringmatch>
+<stringmatch name="stub bypass retains returning tail caller" min="1" max="1">return;</stringmatch>
+<stringmatch name="partial pointer loads and stub bypasses acquire no terminal contract" min="0" max="0">__stack_chk_fail|no-return</stringmatch>
+</decompilertest>

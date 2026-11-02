@@ -747,18 +747,45 @@ pub fn build_and_follow_flow_within_budget(
     size: int4,
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
+    within_flow_budget(arch, |arch| {
+        build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides)
+    })
+}
+
+/// The caller-local PPC32 import calls `ppc32picimports on` proves for one entry.
+/// One unpublished flow under the drive budget: the proof is read off the flow a
+/// decompile would discard, so the replacement flow is never built.
+pub fn ppc32_pic_call_bindings(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+) -> KunaResult<Vec<crate::kuna_ppc32piccalls::CallBinding>> {
+    within_flow_budget(arch, |arch| {
+        crate::kuna_armfloatreturn::park_float_library_prototypes(arch);
+        let fd = arch.new_funcdata(name, entry, size)?;
+        let data = generate_flow(arch, fd)?;
+        Ok(crate::kuna_ppc32piccalls::prove(&data, arch).into_values().collect())
+    })
+}
+
+/// Run `follow` under the budget and memory limit a drive of `arch` would arm.
+fn within_flow_budget<T>(
+    arch: &mut Architecture,
+    follow: impl FnOnce(&mut Architecture) -> KunaResult<T>,
+) -> KunaResult<T> {
     let memory = arch.kuna_drive_publishes().then(crate::kuna_fnmemory::Armed::enter);
     let horizon = match fn_budget(arch) {
         Some(budget) => budget,
         None if memory.as_ref().is_some_and(|guard| guard.is_armed()) => MEMORY_ONLY_HORIZON,
-        None => return build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides),
+        None => return follow(arch),
     };
     let outer = arch.kuna_fn_deadline.replace(std::time::Instant::now() + horizon);
     let result = {
         let _deadline_scope = DeadlineScope::enter(arch.kuna_fn_deadline);
-        let fd = build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides);
+        let followed = follow(arch);
         deadline_passed_in("flow following");
-        budget_error(arch).map_or(fd, Err)
+        budget_error(arch).map_or(followed, Err)
     };
     arch.kuna_fn_deadline = outer;
     result
@@ -813,6 +840,24 @@ pub fn build_and_follow_flow_with_override_and_protos(
 /// clear, so the re-flow rebuilds the CALLIND straight as a direct CALL).
 #[allow(clippy::mutable_key_type)]
 fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
+    let comments = fd.pending_comment_count();
+    let mut data = generate_flow(arch, fd)?;
+    let bindings = crate::kuna_ppc32piccalls::prove(&data, arch);
+    if !bindings.is_empty() {
+        // The discarded flow ran past calls the proof ends; nothing it buffered
+        // describes the replacement. Comments buffered before it are kept.
+        data.clear();
+        data.truncate_pending_comments(comments);
+        data.ppc32_pic_calls = bindings;
+        data = generate_flow(arch, data)?;
+    }
+    publish_flow(arch, data)
+}
+
+/// C++ `Funcdata::followFlow` through `startProcessing`'s sorting, without
+/// publishing the flow's buffered comments.
+#[allow(clippy::mutable_key_type)]
+fn generate_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata> {
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -893,6 +938,11 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // C++ startProcessing also calls sortCallSpecs() (dominance order for the
     // call-spec list); now that qlst exists, sort it.
     data.sort_call_specs();
+    Ok(data)
+}
+
+/// Mark processing started and publish the flow's buffered comments.
+fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcdata> {
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
@@ -904,6 +954,9 @@ fn follow_flow_on_fd(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcda
     // program-wide comment database.
     let func_addr = data.get_address().clone();
     if arch.kuna_drive_publishes() {
+        if !arch.ppc32_pic_imports.is_empty() {
+            crate::kuna_ppc32piccalls::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+        }
         if arch.mapped_flow_boundary_image {
             crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
         }

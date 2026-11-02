@@ -782,7 +782,7 @@ const DT_FINI_ARRAYSZ: u64 = 28;
 /// external entry points). The address-only projection of
 /// [`dynamic_entry_points_named`] (which also documents the table decode); the
 /// Ghidra-faithful names ride the additive overlay (`dynamic_entry_names`).
-fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
+pub(crate) fn dynamic_entry_points(file: &object::File) -> Vec<u64> {
     // The address-only projection of the named oracle. Discovery (WHICH VMAs) is
     // defined here; the names are an additive overlay (see `dynamic_entry_names`).
     dynamic_entry_points_named(file).into_iter().map(|(addr, _name)| addr).collect()

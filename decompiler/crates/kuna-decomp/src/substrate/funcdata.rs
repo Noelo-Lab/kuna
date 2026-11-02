@@ -325,6 +325,8 @@ pub struct Funcdata {
     /// *is* that pointer; here the entries live inline and the offset is the
     /// vector index (the faithful equivalent — see `newVarnodeCallSpecs`).
     qlst: Vec<FuncCallSpecs>,
+    /// Proofs belong to this entry's flow only, and are rebuilt after clear/restart.
+    pub(crate) ppc32_pic_calls: std::collections::BTreeMap<u64, crate::kuna_ppc32piccalls::CallBinding>,
     /// HighVariable merging engine (C++ `Merge covermerge`, `funcdata.hh:91`).
     ///
     /// The C++ `Funcdata` owns a single `Merge` whose `copyTrims` accumulator
@@ -803,6 +805,7 @@ impl Funcdata {
             high_bank: crate::variable::HighVariableBank::new(),
             heritage: crate::heritage::Heritage::new(),
             qlst: Vec::new(),
+            ppc32_pic_calls: Default::default(),
             covermerge: None,
             cover_blocks: None,
             affecting_ops_revision: 0,
@@ -973,6 +976,17 @@ impl Funcdata {
         &mut self,
     ) -> Vec<(kuna_base::types::uint4, Address, String)> {
         std::mem::take(&mut self.pending_comments)
+    }
+
+    /// How many analysis comments are buffered (a mark for
+    /// [`Self::truncate_pending_comments`]).
+    pub fn pending_comment_count(&self) -> usize {
+        self.pending_comments.len()
+    }
+
+    /// Drop the comments buffered after `mark`: a discarded flow's statements.
+    pub fn truncate_pending_comments(&mut self, mark: usize) {
+        self.pending_comments.truncate(mark);
     }
 
     /// Read-only view of the buffered analysis comments (the
@@ -4224,6 +4238,11 @@ impl Funcdata {
     // clear / printRaw (W3-portable / seam-noted)
     // -----------------------------------------------------------------------
 
+    /// The caller-local PPC32 import calls this entry's flow applied.
+    pub fn ppc32_import_calls(&self) -> impl Iterator<Item = &crate::kuna_ppc32piccalls::CallBinding> {
+        self.ppc32_pic_calls.values()
+    }
+
     /// Clear everything associated with decompilation analysis
     /// (C++ `Funcdata::clear`, `funcdata.cc:84`).
     ///
@@ -4231,8 +4250,10 @@ impl Funcdata {
     /// `clearActiveOutput`, `unionMap`, `clearCallSpecs`, `clearJumpTables`,
     /// `heritage.clear`, `covermerge.clear`) are seam-noted; the W3 IR clears
     /// (`clearBlocks`, `obank.clear`, `vbank.clear`) and the flag/index reset are
-    /// faithful.
+    /// faithful. Buffered comments survive, as C++ comments already in the
+    /// database survive a restart.
     pub fn clear(&mut self) {
+        self.ppc32_pic_calls.clear();
         self.kuna_regnarrow_runs = 0;
         self.kuna_regnarrow_values.clear();
         self.kuna_regnarrow_failed.clear();

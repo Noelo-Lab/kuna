@@ -38,13 +38,13 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_369() {
-    assert_eq!(kuna_num_settables(), 369);
-    assert_eq!(SETTABLE_TABLE.len(), 369);
+fn settable_count_is_370() {
+    assert_eq!(kuna_num_settables(), 370);
+    assert_eq!(SETTABLE_TABLE.len(), 370);
 }
 
 #[test]
-fn tier_counts_are_127_core_149_transform_93_analysis() {
+fn tier_counts_are_127_core_150_transform_93_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -56,7 +56,7 @@ fn tier_counts_are_127_core_149_transform_93_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (127, 149, 93));
+    assert_eq!((core, transform, analysis), (127, 150, 93));
 }
 
 #[test]
@@ -511,6 +511,7 @@ fn option_values_live_value_present_for_175() {
         // (kuna) loader-tier gate, no codegen live reader (read console-side via
         // kuna_live_value), same as the analysis-pass gates above.
         "i386_pie_plt",
+        "ppc32picimports",
         // (kuna) x86-64 IFUNC PLT-stub naming: a load-time gate read via the
         // `kuna_ifuncfpret` env var (no codegen live reader), like `i386_pie_plt`.
         "ifuncfpret",
@@ -1156,7 +1157,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 368);
+    assert_eq!(json.matches("},\n").count(), 369);
 }
 
 #[test]

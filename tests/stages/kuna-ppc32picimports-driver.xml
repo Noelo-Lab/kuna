@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:32:default">
+  <bytechunk space="ram" offset="0x1000" readonly="true">4e800020</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>option ppc32picimports off</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-driver.so</com>
+  <com>read symbols</com>
+  <com>load function refs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option ppc32picimports abi</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-cli/tests/fixtures/ppc32-pic-driver.so</com>
+  <com>read symbols</com>
+  <com>load function refs</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PIC off leaves every driver-linked stub unnamed" min="5" max="5">^  sub_5[89bd]0\(\);</stringmatch>
+<stringmatch name="PIC abi names every stub despite the start files' jump through CTR" min="5" max="5">^  (other|another|extra|__stack_chk_fail)\(\);</stringmatch>
+<stringmatch name="the no-return import ends refs only with the option abi" min="1" max="1">__stack_chk_fail\(\); // no-return</stringmatch>
+<stringmatch name="both passes keep check's return" min="2" max="2">return 7;</stringmatch>
+</decompilertest>
