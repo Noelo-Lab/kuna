@@ -1672,6 +1672,22 @@ the case targets.
    indexes the table with the other; without that match the byte's full 256
    rows were emulated and the next table's rows were read with this table's
    base, sending flow into instruction interiors (#1028).
+   A logical right shift also matches a high-byte slice of the same SSA input
+   (`kuna_highslice_guard.rs (matches)`). For an input of `N` bytes, shifting
+   right by `8*k` produces exactly the unsigned value of `SUBPIECE(input,k)`
+   when the slice has `N-k` bytes and the shift retains the input's width.
+   Both offsets must be constant, `0 < k < N`, and `N <= 8`. This lets a
+   32-bit bounds comparison constrain an AMD64 table index produced by a
+   64-bit right shift. Arithmetic shifts, shorter interior slices, different
+   SSA inputs and non-byte shifts do not establish this equality. Matching
+   changes no guard condition: the existing circular-range intersection keeps
+   its signed, unsigned or wrapping value set. `highsliceguard on|off` gates
+   this exact value match; it does not infer equality from a cached non-zero
+   mask. The option is off in every preset: enabled recovery added 10.8%
+   median CPU time and 11.2% median wall time on the pinned upstream table
+   case, exceeding the 5% default speed budget while preserving all 675
+   original datatest assertions. An explicit `highsliceguard on` requests the
+   additional recovery work.
 3. **Range.** For each meld candidate, `jumptable.rs
    (JumpBasicModel::calc_range)` seeds a range from what the Varnode itself
    proves (a constant; a boolean output = {0,1}; an AND-mask bound + power-of-2

@@ -1,0 +1,17 @@
+{
+  "at": "2026-11-02T13:19:34.786876+00:00",
+  "old_head": "4453d333f48707d12a93d8d062dbbf3bf662746b",
+  "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+  "dependency": {
+    "head": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+    "url": "https://github.com/Noelo-Lab/kuna/pull/1448",
+    "at": "2026-11-02T13:18:33.441327+00:00"
+  },
+  "dependency_state_when_validation_started": "OPEN",
+  "publication_requires_dependency_merged": true,
+  "corpus_files": 672,
+  "parent_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+  "predependency_candidate_sha256": "1d9a4da4ec36ae8dfb318de5b0d5413e95bd0f2bdbe1e8892d68dbc29f4242b2",
+  "old_evidence_preserved": "/tmp/kuna-narrow-table-guard",
+  "no_timing_samples_collected": true
+}

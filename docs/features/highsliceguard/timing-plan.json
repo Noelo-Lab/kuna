@@ -1,0 +1,127 @@
+{
+  "declared_at": "2026-11-02T13:54:10.086631+00:00",
+  "scope": "Default-OFF highsliceguard versus the matching merged empty-match parent; enabled recovery remains explicitly opt-in after its failed study.",
+  "root": "/home/mahaloz/kwt/angr-narrow-table-guard",
+  "base": "/home/mahaloz/kwt/angr-rust-empty-match",
+  "cases": [
+    [
+      "scalar-c",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/tests/fixtures/go-output/output-c",
+      "choose",
+      "c"
+    ],
+    [
+      "go-control",
+      "/tmp/kuna-go-dwarf-signatures/native1273",
+      "main.main",
+      "go"
+    ],
+    [
+      "rust-large-control",
+      "/tmp/kuna-angr-reference/binaries/rust-fmtdemo-1931",
+      "0x13df0",
+      "rust"
+    ],
+    [
+      "narrow-guard",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "narrow_guard",
+      "c"
+    ],
+    [
+      "byte-guard",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "byte_guard",
+      "c"
+    ],
+    [
+      "signed-guard",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "signed_guard",
+      "c"
+    ],
+    [
+      "wide-guard-control",
+      "/home/mahaloz/kwt/angr-narrow-table-guard/decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64",
+      "wide_guard",
+      "c"
+    ],
+    [
+      "upstream-walk-dir",
+      "/tmp/kuna-angr-reference/general/probestack",
+      "0xbcf0",
+      "c"
+    ]
+  ],
+  "arms": [
+    "parent",
+    "candidate"
+  ],
+  "samples_per_arm": 384,
+  "warmups_per_arm": 3,
+  "seed": 202611028,
+  "bootstrap_resamples": 20000,
+  "family_alpha": 0.05,
+  "comparisons": 16,
+  "upper_quantile": 0.996875,
+  "maximum_looks": 1,
+  "budget_pct": 5,
+  "criterion": "Every CPU/wall ratio-of-medians and simultaneous upper mean-ratio bootstrap bound <=5 percent. One final look; no unchanged-code repeat.",
+  "execution": "Eight comparisons on disjoint physical CPU pairs;384 paired rounds, balanced randomized order, no own builds/tests/captures/backends overlap.",
+  "lightwork_reservation_amendment": {
+    "declared_at": "2026-11-02T11:58:07.619690+00:00",
+    "reserved_cpus": [
+      3,
+      43
+    ],
+    "reason": "Reserve a physical pair for light work; exclude it from workers before samples."
+  },
+  "compiled_spec_verification": {
+    "declared_at": "2026-11-02T11:58:07.619690+00:00",
+    "manifest": "/tmp/kuna-rust-io-proposal/built-specs.json",
+    "sha256": "e15235b14f597f5cbd501d35c7c8346cd8a435d3f0ae3adfaa38c5ae9e07be48"
+  },
+  "failure_policy": "Keep every observation and one final look. No unchanged-code repeat. Enabled recovery stays OFF in every preset regardless of this result. Diagnose any material default-path slowdown; report any failed confidence bound as failed, without promoting the feature or claiming a passed study.",
+  "build_binding": "Record final binary and source hashes after parent integration, all gates, complete breadth review, and native proofs, before sampling.",
+  "dependency_amendment": {
+    "declared_at": "2026-11-02T13:11:04.336349+00:00",
+    "before_any_samples": true,
+    "reason": "Land the independent Rust empty-match correction first. Re-anchor the high-slice guard and validate complete outputs against that matching parent before sampling.",
+    "previous_plan": "/tmp/kuna-narrow-table-guard/timing-plan.json",
+    "new_parent_binding": "The committed, merged empty-match head and binary; resolved by prepare.py."
+  },
+  "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+  "expanded_native_validation_before_sampling": {
+    "c_and_go_and_rust_values": 19728,
+    "combined_narrow_guard_empty_match_values": 6900,
+    "must_pass_before_sampling": true
+  },
+  "default_off_amendment": {
+    "declared_at": "2026-11-02T13:54:10.086631+00:00",
+    "material_code_change": "Add a named on/off gate, false in every preset, before the exact proof; default behavior declines this extra match.",
+    "enabled_study": "/tmp/kuna-highslice-after-empty-match/timing-result.json",
+    "enabled_cpu_median_upstream_pct": 10.771788502836333,
+    "enabled_study_passed": false,
+    "before_any_default_off_samples": true
+  },
+  "build": {
+    "at": "2026-11-02T14:03:48.679865+00:00",
+    "parent_commit": "af49462d8c34c3047d3b6a54943e02658f0ca11b",
+    "baseline_root": "/home/mahaloz/kwt/angr-rust-empty-match",
+    "parent_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+    "new_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+    "stage_assertions": [
+      3670,
+      3670
+    ],
+    "option": "highsliceguard",
+    "default": "off",
+    "disabled_in_all_presets": true,
+    "enabled_study_passed": false
+  },
+  "build_binding_sha256": {
+    "build.json": "8009f9e8708141ad966689fd3dd3ba70f2b3ec39a4eb6bd1320c721435486345",
+    "production-source-before-validation.json": "ce9a10e30d04a9e6f4d657bd257553cfd5447e8212824dbec246187779f79bbe",
+    "parent-source-before-timing.json": "c4c9fb9fc11c718437f28e50836676bda26c655511fcd5a2ee1627dfe1becdea"
+  }
+}

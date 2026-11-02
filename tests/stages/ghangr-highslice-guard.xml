@@ -1,0 +1,61 @@
+<!--
+  Upstream: angr test_decompiler.py::test_decompiling_amd64_single_block_jumptable.
+  P2: exact equivalence of a logical right shift and a complete high-byte slice.
+  Authored harmless AMD64 fixture; no upstream executable is run.
+  Three narrow unsigned guards and one signed guard recover their tables.
+  Wide comparison and explicit zero extension are unchanged controls.
+  Default off preserves the missing table; explicit highsliceguard on recovers it.
+  The exact proof is opt-in because the enabled speed budget was exceeded.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64</com>
+  <com>phase catalog highsliceguard</com>
+  <com>read symbols</com>
+  <com>parse line extern uint4 narrow_guard(uint8 x);</com>
+  <com>load function narrow_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/highslice_guard_x86_64</com>
+  <com>option highsliceguard on</com>
+  <com>phase catalog highsliceguard</com>
+  <com>read symbols</com>
+  <com>parse line extern uint4 narrow_guard(uint8 x);</com>
+  <com>load function narrow_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 wide_guard(uint8 x);</com>
+  <com>load function wide_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 explicit_zext(uint8 x);</com>
+  <com>load function explicit_zext</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 byte_guard(uint8 x);</com>
+  <com>load function byte_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 word_guard(uint8 x);</com>
+  <com>load function word_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint4 signed_guard(uint8 x);</com>
+  <com>load function signed_guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="all six guards recover switches" min="6" max="6">switch\(</stringmatch>
+<stringmatch name="all forty-one cases retained" min="246" max="246">case </stringmatch>
+<stringmatch name="all first case values retained" min="6" max="6">return 3;</stringmatch>
+<stringmatch name="all last case values retained" min="6" max="6">return 0x11b;</stringmatch>
+<stringmatch name="all out of range values retained" min="7" max="7">return 1000;</stringmatch>
+<stringmatch name="both option states are observable" min="2" max="2">"option": "highsliceguard"</stringmatch>
+<stringmatch name="only disabled recovery leaves the indirect call" min="1" max="1">; // jump-as-call</stringmatch>
+</decompilertest>

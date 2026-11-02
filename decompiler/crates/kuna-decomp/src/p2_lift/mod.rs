@@ -58,3 +58,5 @@ pub mod kuna_jumptablefault; // (kuna) test-only: panic one function's jump-tabl
 pub mod kuna_gojumpchain;
 
 pub mod kuna_rustprobestack;
+
+pub(crate) mod kuna_highslice_guard;

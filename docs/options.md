@@ -144,6 +144,9 @@ Three tiers:
 | the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump) |
 | 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound) |
 | computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound) |
+| narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard) |
+| a high-byte table index renders as jump-as-call | [`highsliceguard`](#highsliceguard) |
+| a Rust match over a shifted tag is missing despite an unsigned bound | [`highsliceguard`](#highsliceguard) |
 | getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase) |
 | pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase) |
 | 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase) |
@@ -1698,6 +1701,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch is range-guarded (vs the modulo form switchmodbound handles); DESTRUCTIVE as a global default (the guard-to-index correspondence is asserted across a stack spill it cannot prove in dataflow, so it may over-bound an unrelated indirect jump).
 - **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-missing-function-call
 - **Example:** `option switchguardbound on`
+
+### `highsliceguard` -- on | off, default `off`
+
+- **Symptoms:** narrow comparison after a logical right shift does not bound a jump table; a high-byte table index renders as jump-as-call; a Rust match over a shifted tag is missing despite an unsigned bound.
+- **What it does:** Match a logical right shift to the complete high-byte slice of the same SSA input, so a narrow comparison can bound the full-width jump-table index. Both offsets must be constant and byte-aligned, the slice must reach the input's high end, and the shift must retain the input's width. Arithmetic shifts, interior slices and unrelated inputs are rejected; existing signed, unsigned and wrapping range intersections retain their value sets.
+- **When to flip:** Off in every preset. Enable when a narrow comparison after a logical right shift bounds a table but it renders as a computed call or reports too many branches. The exact guard identity recovers the missing switch without a non-zero-mask assumption. Measured enabled recovery added 10.8% median CPU and 11.2% median wall time on the pinned upstream walk_dir case, exceeding the 5% default speed budget; the original 675 datatest assertions were unchanged.
+- **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-amd64-single-block-jumptable
+- **Example:** `option highsliceguard on`
 
 ### `switchsharedcase` -- on | off, default `on` (destructive opt-in)
 
