@@ -1,0 +1,123 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    GH-1034, P2 switch model, option switchrunonguard (default on), with
+    switchrunon (default on).
+
+    pick dispatches on a byte with no bounds check, the shape kuna-switchrunon
+    covers, but first tests an unrelated parameter: test esi,esi; jne. The
+    model records that branch as a guard although it says nothing about the
+    byte, the way a Rust deserializer checks the Result tag of next_key()
+    right before matching the key it holds. Its own table has four rows
+    (cases returning 0x11..0x14); the 252 rows after them land in the bodies
+    of the next two functions, left and right.
+
+    Source (GNU as, linked at 0x100000): pick at 0x100000 (flag set returns
+    0x99), left at 0x100100, right at 0x100200, the table at 0x100300 (4 own
+    rows, then 126 pairs of rows into left and right).
+
+    Pass 1 (default): the branch on flag does not narrow the byte, so the
+        table counts as unguarded and stops at its four rows: pick prints its
+        four cases, the flag branch, and none of left's or right's code (#1,
+        #2, #6, and the single counts of #3-#5).
+    Pass 2 (option switchrunonguard off): the recorded guard keeps the whole
+        width, so left's and right's returns print as cases of pick up to
+        0xff (#3-#5).
+
+    pick2 (0x100800) sends selector 1 elsewhere before the dispatch
+    (cmp eax,1; je), the way a Rust visitor loop skips one key, so its
+    range runs 2..0xff and wraps to 0: the row of case 0 (returning 0x40)
+    comes last, after the 252 rows into left2 and right2. Read in value
+    order the table keeps cases 0, 2 and 3 (#7, #8, and the single counts
+    of #9 and #10); with the option off it is read whole.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+85f6752c400fb6c7488d0df1020000486304814801c8ffe0b811000000c3b812000000c3b813000000c3b814000000c3b899000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100100" readonly="true">
+b821000000c3b822000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100200" readonly="true">
+b831000000c3b832000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100300" readonly="true">
+18fdffff1efdffff24fdffff2afdffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+</bytechunk>
+<bytechunk space="ram" offset="0x100800" readonly="true">
+400fb6c783f8017422488d0df0020000486304814801c8ffe0b840000000c3b842000000c3b843000000c3b841000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100900" readonly="true">
+b851000000c3b852000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100a00" readonly="true">
+b861000000c3b862000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100b00" readonly="true">
+19fdffff2bfdffff1ffdffff25fdffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff06feffff06ffffff
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+<symbol space="ram" offset="0x100100" name="left"/>
+<symbol space="ram" offset="0x100200" name="right"/>
+<symbol space="ram" offset="0x100800" name="pick2"/>
+<symbol space="ram" offset="0x100900" name="left2"/>
+<symbol space="ram" offset="0x100a00" name="right2"/>
+</binaryimage>
+<script>
+  <com>parse line extern int4 pick(uint1 sel,int4 flag);</com>
+  <com>parse line extern int4 pick2(uint1 sel);</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option switchrunonguard off</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SWITCHRUNONGUARD #1: both passes print pick" min="2" max="2">pick\(uint1 sel,int4 flag\)</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #2: both passes keep pick's own four cases" min="2" max="2">return 0x14;</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #3: only the whole-width tables read row 0xff, so the default pass prints no case past 3" min="2" max="2">case 0xff:</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #4: with the option off, left's body is decoded into pick" min="1" max="1">return 0x22;</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #5: with the option off, right's body is decoded into pick" min="1" max="1">return 0x32;</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #6: both passes keep the branch on flag" min="2" max="2">return 0x99;</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #7: both passes print pick2" min="2" max="2">pick2\(uint1 sel\)</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #8: both passes keep pick2's case 0, whose row comes last" min="2" max="2">return 0x40;</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #9: with the option off, left2's body is decoded into pick2" min="1" max="1">return 0x52;</stringmatch>
+<stringmatch name="SWITCHRUNONGUARD #10: with the option off, right2's body is decoded into pick2" min="1" max="1">return 0x62;</stringmatch>
+</decompilertest>
