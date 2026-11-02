@@ -7697,7 +7697,10 @@ no `Jump` row for the skip. Under `armframes off`, and on every other
 architecture, the skip keeps its row and no A32 table is read. The switch record states the guard's case count, so a table longer than
 `jumptablemax` is marked truncated. A dispatch whose table gives no case (a run
 shorter than two entries, or `b caseN` slots past the section end) states no
-count, and the other table readers run on it as on any computed jump. A dispatch the walk reaches before the
+count, and the other table readers run on it only when it is unpredicated: a predicated computed jump
+that is no A32 table gets no table at all. A literal-pool word after a call that the walk falls into is one
+such jump, since a GOT offset like `0x000ff4a8` decodes as `andeq pc,pc,...`, and the pool words after it
+must not become its cases. A dispatch the walk reaches before the
 guard that falls into it (a branch into the dispatch, or breadth-first order)
 waits at the address the guard read stopped at and is read again, A32 reader
 first, once that code is decoded.

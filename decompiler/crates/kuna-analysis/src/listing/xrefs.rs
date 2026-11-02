@@ -1103,7 +1103,8 @@ fn descend(
                     let decoded = |at: u64| st.decoded.contains(&at);
                     read = tables.targets(translate, &code_space, &exec, &decoded, vma);
                 }
-                if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() {
+                let predicated = a32_tables.is_some() && is_predicated(translate, &code_space, vma);
+                if read.cases.is_empty() && read.stated.is_none() && read.gap.is_none() && !predicated {
                     read = branch_cases(
                         translate,
                         &code_space,
@@ -1296,8 +1297,9 @@ fn descend(
                     if let (Some(gap), Some(branch)) = (a32.gap, branch) {
                         waiting.entry(gap).or_default().push((vma, mode, branch.clone()));
                     }
+                    let unpredicated = c.flows.is_empty();
                     for &(base, kind) in &drefs {
-                        if kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
+                        if unpredicated && kind == XrefKind::Data && stated.is_none() && a32.gap.is_none() {
                             cases.extend(kuna_switchtable::targets(
                                 base,
                                 vma,
@@ -1311,7 +1313,7 @@ fn descend(
                     // The base is on an instruction of its own and the entries
                     // are displacements on every x86-64 compiler, so ask what the
                     // branch register holds when the operand carried nothing.
-                    if cases.is_empty() && stated.is_none() && a32.gap.is_none() {
+                    if unpredicated && cases.is_empty() && stated.is_none() && a32.gap.is_none() {
                         let read = branch_cases(
                             translate,
                             &code_space,
@@ -1941,6 +1943,13 @@ fn branch_cases(
 ///
 /// A translator panic on exotic bytes is contained to `None` — a query surface
 /// must never take the process down over one bad address.
+/// Whether the instruction at `vma` is predicated: its p-code holds a `CBRANCH`.
+fn is_predicated(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> bool {
+    let mut cap = FullCapture::default();
+    decode(translate, vma, code_space, &mut cap).is_some()
+        && cap.ops().iter().any(|op| op.opcode == OpCode::CPUI_CBRANCH)
+}
+
 pub(super) fn decode(
     translate: &dyn Translate,
     vma: u64,

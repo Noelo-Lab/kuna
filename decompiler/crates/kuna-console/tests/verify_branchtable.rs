@@ -6,6 +6,12 @@
 //! words. Both make the GOT base in r6 before the dispatch, and every case
 //! reads a callback's slot through it, calls `set_timeout` and forms a string.
 //! `early_dispatch` branches into its own `addls` dispatch ahead of the guard.
+//!
+//! Fixture: `a32tablefp_arm_le32` (built from `a32tablefp_arm_le32.S`), mapped
+//! at 0xff000. Its predicated computed jumps are no tables: a pool word after
+//! `bl __stack_chk_fail` that decodes as `andeq pc,pc,...`, an `addls` with
+//! 8-byte slots, an unscaled `add pc,pc,r0`, and an `ldrls` table whose third
+//! word has bit 0 set.
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -87,7 +93,11 @@ fn index() -> &'static XrefIndex {
 
 /// The fixture's reference index, with `configure` applied before analysis.
 fn build(configure: fn(&mut Architecture)) -> XrefIndex {
-    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/branchtable_arm_le32");
+    build_fixture("branchtable_arm_le32", configure)
+}
+
+fn build_fixture(name: &str, configure: fn(&mut Architecture)) -> XrefIndex {
+    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name);
     let specs = repo_root().join("specs");
     let spec_roots = vec![specs.to_str().unwrap().to_string()];
     let mut prog = bootstrap_from_object(bin.to_str().unwrap(), "", &spec_roots)
@@ -229,4 +239,23 @@ fn armframes_off_reads_no_a32_table() {
             assert!(idx.refs_to(c.body).iter().all(|r| r.from != sw.dispatch), "{:#x}", c.body);
         }
     }
+}
+
+/// `a32tablefp_arm_le32` under the default options, built once.
+fn fp_index() -> &'static XrefIndex {
+    static INDEX: OnceLock<XrefIndex> = OnceLock::new();
+    INDEX.get_or_init(|| build_fixture("a32tablefp_arm_le32", |_| {}))
+}
+
+fn jumps_from(idx: &XrefIndex, at: u64) -> Vec<u64> {
+    from(idx, at).into_iter().filter(|&(_, kind)| kind == XrefKind::Jump).map(|(to, _)| to).collect()
+}
+
+/// A pool word after a call decodes as a predicated computed jump; the pool
+/// words after it are code addresses but no case.
+#[test]
+fn a_pool_word_read_as_a_predicated_jump_reads_no_table() {
+    let idx = fp_index();
+    assert_eq!(jumps_from(idx, 0xff020), Vec::<u64>::new());
+    assert!(idx.switch_tables().iter().all(|t| t.dispatch != 0xff020), "{:?}", idx.switch_tables());
 }
