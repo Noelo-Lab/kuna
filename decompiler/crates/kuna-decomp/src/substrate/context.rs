@@ -1679,6 +1679,8 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kuna_try_guard_bound_table`.  `false` (default off / upstream byte-identical).
     pub switch_guard_bound: bool,
+    /// Match complete high-byte slices to equivalent logical shifts.
+    pub highslice_guard: bool,
     /// (kuna) Recover a GCC PIC relative-offset jump table whose base register is a
     /// loop-carried MULTIEQUAL, so the path-meld collapses and the CBRANCH range
     /// guard on the load index never bounds the table (C++
@@ -2151,6 +2153,7 @@ impl ArchContext {
             switch_run_on_guard: false, // switchrunonguard (the ArchSeam carries the real default)
             lazy_entry_starts: Rc::default(),
             const_select_jump: false, // (kuna) constant-select indirect branch: default off
+            highslice_guard: false,
             switch_guard_bound: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_shared_case: false, // (kuna) angr opt-in default off (upstream byte-identical)
             switch_multi_pred: false, // (kuna) angr opt-in default off (upstream byte-identical)

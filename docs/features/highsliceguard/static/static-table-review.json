@@ -1,0 +1,3976 @@
+{
+  "tables": 6,
+  "rows": 246,
+  "all_tables_verified": true,
+  "fmt_thunk_target": "0x2f6e0",
+  "fmt_return_32bit_proof": "Ghidra listing: all exits merge through MOV EAX,EBX at0x2f9ce; values saved from EAX after finish calls.",
+  "supplied_binary_executed": false,
+  "records": [
+    {
+      "binary": "hello",
+      "entry": "0x207f0",
+      "table": "0x49e38",
+      "join": "0x208a8",
+      "guard": [
+        "0x208ee:\tSHR RDI,0x20",
+        "0x208f2:\tCMP EDI,0x28",
+        "0x208f5:\tJA 0x0012090d",
+        "0x208f7:\tXOR EAX,EAX",
+        "0x208f9:\tLEA RCX,[0x149e38]",
+        "0x20900:\tMOVSXD RDX,dword ptr [RCX + RDI*0x4]",
+        "0x20904:\tADD RDX,RCX",
+        "0x20907:\tJMP RDX"
+      ],
+      "default": "0x2090d:\tMOV AL,0x29",
+      "case_zero_uses_initial_zero": true,
+      "all_40_nonzero_cases_set_the_index_and_join": true,
+      "cases": [
+        {
+          "index": 1,
+          "target": "0x20909",
+          "instructions": [
+            [
+              "0x20909",
+              "mov",
+              "al, 1"
+            ],
+            [
+              "0x2090b",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 2,
+          "target": "0x20911",
+          "instructions": [
+            [
+              "0x20911",
+              "mov",
+              "al, 2"
+            ],
+            [
+              "0x20913",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 3,
+          "target": "0x20915",
+          "instructions": [
+            [
+              "0x20915",
+              "mov",
+              "al, 3"
+            ],
+            [
+              "0x20917",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 4,
+          "target": "0x20919",
+          "instructions": [
+            [
+              "0x20919",
+              "mov",
+              "al, 4"
+            ],
+            [
+              "0x2091b",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 5,
+          "target": "0x2091d",
+          "instructions": [
+            [
+              "0x2091d",
+              "mov",
+              "al, 5"
+            ],
+            [
+              "0x2091f",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 6,
+          "target": "0x20921",
+          "instructions": [
+            [
+              "0x20921",
+              "mov",
+              "al, 6"
+            ],
+            [
+              "0x20923",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 7,
+          "target": "0x20925",
+          "instructions": [
+            [
+              "0x20925",
+              "mov",
+              "al, 7"
+            ],
+            [
+              "0x20927",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 8,
+          "target": "0x2092c",
+          "instructions": [
+            [
+              "0x2092c",
+              "mov",
+              "al, 8"
+            ],
+            [
+              "0x2092e",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 9,
+          "target": "0x20933",
+          "instructions": [
+            [
+              "0x20933",
+              "mov",
+              "al, 9"
+            ],
+            [
+              "0x20935",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 10,
+          "target": "0x2093a",
+          "instructions": [
+            [
+              "0x2093a",
+              "mov",
+              "al, 0xa"
+            ],
+            [
+              "0x2093c",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 11,
+          "target": "0x20941",
+          "instructions": [
+            [
+              "0x20941",
+              "mov",
+              "al, 0xb"
+            ],
+            [
+              "0x20943",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 12,
+          "target": "0x20948",
+          "instructions": [
+            [
+              "0x20948",
+              "mov",
+              "al, 0xc"
+            ],
+            [
+              "0x2094a",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 13,
+          "target": "0x2094f",
+          "instructions": [
+            [
+              "0x2094f",
+              "mov",
+              "al, 0xd"
+            ],
+            [
+              "0x20951",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 14,
+          "target": "0x20956",
+          "instructions": [
+            [
+              "0x20956",
+              "mov",
+              "al, 0xe"
+            ],
+            [
+              "0x20958",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 15,
+          "target": "0x2095d",
+          "instructions": [
+            [
+              "0x2095d",
+              "mov",
+              "al, 0xf"
+            ],
+            [
+              "0x2095f",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 16,
+          "target": "0x20964",
+          "instructions": [
+            [
+              "0x20964",
+              "mov",
+              "al, 0x10"
+            ],
+            [
+              "0x20966",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 17,
+          "target": "0x2096b",
+          "instructions": [
+            [
+              "0x2096b",
+              "mov",
+              "al, 0x11"
+            ],
+            [
+              "0x2096d",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 18,
+          "target": "0x20972",
+          "instructions": [
+            [
+              "0x20972",
+              "mov",
+              "al, 0x12"
+            ],
+            [
+              "0x20974",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 19,
+          "target": "0x20979",
+          "instructions": [
+            [
+              "0x20979",
+              "mov",
+              "al, 0x13"
+            ],
+            [
+              "0x2097b",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 20,
+          "target": "0x20980",
+          "instructions": [
+            [
+              "0x20980",
+              "mov",
+              "al, 0x14"
+            ],
+            [
+              "0x20982",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 21,
+          "target": "0x20987",
+          "instructions": [
+            [
+              "0x20987",
+              "mov",
+              "al, 0x15"
+            ],
+            [
+              "0x20989",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 22,
+          "target": "0x2098e",
+          "instructions": [
+            [
+              "0x2098e",
+              "mov",
+              "al, 0x16"
+            ],
+            [
+              "0x20990",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 23,
+          "target": "0x20995",
+          "instructions": [
+            [
+              "0x20995",
+              "mov",
+              "al, 0x17"
+            ],
+            [
+              "0x20997",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 24,
+          "target": "0x2099c",
+          "instructions": [
+            [
+              "0x2099c",
+              "mov",
+              "al, 0x18"
+            ],
+            [
+              "0x2099e",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 25,
+          "target": "0x209a3",
+          "instructions": [
+            [
+              "0x209a3",
+              "mov",
+              "al, 0x19"
+            ],
+            [
+              "0x209a5",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 26,
+          "target": "0x209aa",
+          "instructions": [
+            [
+              "0x209aa",
+              "mov",
+              "al, 0x1a"
+            ],
+            [
+              "0x209ac",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 27,
+          "target": "0x209b1",
+          "instructions": [
+            [
+              "0x209b1",
+              "mov",
+              "al, 0x1b"
+            ],
+            [
+              "0x209b3",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 28,
+          "target": "0x209b8",
+          "instructions": [
+            [
+              "0x209b8",
+              "mov",
+              "al, 0x1c"
+            ],
+            [
+              "0x209ba",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 29,
+          "target": "0x209bf",
+          "instructions": [
+            [
+              "0x209bf",
+              "mov",
+              "al, 0x1d"
+            ],
+            [
+              "0x209c1",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 30,
+          "target": "0x209c6",
+          "instructions": [
+            [
+              "0x209c6",
+              "mov",
+              "al, 0x1e"
+            ],
+            [
+              "0x209c8",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 31,
+          "target": "0x209cd",
+          "instructions": [
+            [
+              "0x209cd",
+              "mov",
+              "al, 0x1f"
+            ],
+            [
+              "0x209cf",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 32,
+          "target": "0x209d4",
+          "instructions": [
+            [
+              "0x209d4",
+              "mov",
+              "al, 0x20"
+            ],
+            [
+              "0x209d6",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 33,
+          "target": "0x209db",
+          "instructions": [
+            [
+              "0x209db",
+              "mov",
+              "al, 0x21"
+            ],
+            [
+              "0x209dd",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 34,
+          "target": "0x209e2",
+          "instructions": [
+            [
+              "0x209e2",
+              "mov",
+              "al, 0x22"
+            ],
+            [
+              "0x209e4",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 35,
+          "target": "0x209e9",
+          "instructions": [
+            [
+              "0x209e9",
+              "mov",
+              "al, 0x23"
+            ],
+            [
+              "0x209eb",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 36,
+          "target": "0x209f0",
+          "instructions": [
+            [
+              "0x209f0",
+              "mov",
+              "al, 0x24"
+            ],
+            [
+              "0x209f2",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 37,
+          "target": "0x209f7",
+          "instructions": [
+            [
+              "0x209f7",
+              "mov",
+              "al, 0x25"
+            ],
+            [
+              "0x209f9",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 38,
+          "target": "0x209fe",
+          "instructions": [
+            [
+              "0x209fe",
+              "mov",
+              "al, 0x26"
+            ],
+            [
+              "0x20a00",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 39,
+          "target": "0x20a05",
+          "instructions": [
+            [
+              "0x20a05",
+              "mov",
+              "al, 0x27"
+            ],
+            [
+              "0x20a07",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        },
+        {
+          "index": 40,
+          "target": "0x20a0c",
+          "instructions": [
+            [
+              "0x20a0c",
+              "mov",
+              "al, 0x28"
+            ],
+            [
+              "0x20a0e",
+              "jmp",
+              "0x208a8"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "binary": "upstream",
+      "entry": "0x9f70",
+      "table": "0x53040",
+      "join": "0xa5b6",
+      "guard": [
+        "0xa590:\tSHR RDI,0x20",
+        "0xa594:\tCMP EDI,0x28",
+        "0xa597:\tJA 0x0010afd4",
+        "0xa59d:\tXOR ECX,ECX",
+        "0xa59f:\tLEA RAX,[0x153040]",
+        "0xa5a6:\tMOVSXD RDX,dword ptr [RAX + RDI*0x4]",
+        "0xa5aa:\tADD RDX,RAX",
+        "0xa5ad:\tJMP RDX"
+      ],
+      "default": "0xafd4:\tMOV CL,0x29",
+      "case_zero_uses_initial_zero": true,
+      "all_40_nonzero_cases_set_the_index_and_join": true,
+      "cases": [
+        {
+          "index": 1,
+          "target": "0xa5af",
+          "instructions": [
+            [
+              "0xa5af",
+              "mov",
+              "cl, 1"
+            ],
+            [
+              "0xa5b1",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 2,
+          "target": "0xafaa",
+          "instructions": [
+            [
+              "0xafaa",
+              "mov",
+              "cl, 2"
+            ],
+            [
+              "0xafac",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 3,
+          "target": "0xafb8",
+          "instructions": [
+            [
+              "0xafb8",
+              "mov",
+              "cl, 3"
+            ],
+            [
+              "0xafba",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 4,
+          "target": "0xaf80",
+          "instructions": [
+            [
+              "0xaf80",
+              "mov",
+              "cl, 4"
+            ],
+            [
+              "0xaf82",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 5,
+          "target": "0xafe2",
+          "instructions": [
+            [
+              "0xafe2",
+              "mov",
+              "cl, 5"
+            ],
+            [
+              "0xafe4",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 6,
+          "target": "0xaff7",
+          "instructions": [
+            [
+              "0xaff7",
+              "mov",
+              "cl, 6"
+            ],
+            [
+              "0xaff9",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 7,
+          "target": "0xafbf",
+          "instructions": [
+            [
+              "0xafbf",
+              "mov",
+              "cl, 7"
+            ],
+            [
+              "0xafc1",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 8,
+          "target": "0xb00c",
+          "instructions": [
+            [
+              "0xb00c",
+              "mov",
+              "cl, 8"
+            ],
+            [
+              "0xb00e",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 9,
+          "target": "0xaf95",
+          "instructions": [
+            [
+              "0xaf95",
+              "mov",
+              "cl, 9"
+            ],
+            [
+              "0xaf97",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 10,
+          "target": "0xb005",
+          "instructions": [
+            [
+              "0xb005",
+              "mov",
+              "cl, 0xa"
+            ],
+            [
+              "0xb007",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 11,
+          "target": "0xaf79",
+          "instructions": [
+            [
+              "0xaf79",
+              "mov",
+              "cl, 0xb"
+            ],
+            [
+              "0xaf7b",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 12,
+          "target": "0xaf8e",
+          "instructions": [
+            [
+              "0xaf8e",
+              "mov",
+              "cl, 0xc"
+            ],
+            [
+              "0xaf90",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 13,
+          "target": "0xaff0",
+          "instructions": [
+            [
+              "0xaff0",
+              "mov",
+              "cl, 0xd"
+            ],
+            [
+              "0xaff2",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 14,
+          "target": "0xaf6b",
+          "instructions": [
+            [
+              "0xaf6b",
+              "mov",
+              "cl, 0xe"
+            ],
+            [
+              "0xaf6d",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 15,
+          "target": "0xafb1",
+          "instructions": [
+            [
+              "0xafb1",
+              "mov",
+              "cl, 0xf"
+            ],
+            [
+              "0xafb3",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 16,
+          "target": "0xaf64",
+          "instructions": [
+            [
+              "0xaf64",
+              "mov",
+              "cl, 0x10"
+            ],
+            [
+              "0xaf66",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 17,
+          "target": "0xafcd",
+          "instructions": [
+            [
+              "0xafcd",
+              "mov",
+              "cl, 0x11"
+            ],
+            [
+              "0xafcf",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 18,
+          "target": "0xaffe",
+          "instructions": [
+            [
+              "0xaffe",
+              "mov",
+              "cl, 0x12"
+            ],
+            [
+              "0xb000",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 19,
+          "target": "0xb02f",
+          "instructions": [
+            [
+              "0xb02f",
+              "mov",
+              "cl, 0x13"
+            ],
+            [
+              "0xb031",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 20,
+          "target": "0xafdb",
+          "instructions": [
+            [
+              "0xafdb",
+              "mov",
+              "cl, 0x14"
+            ],
+            [
+              "0xafdd",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 21,
+          "target": "0xafe9",
+          "instructions": [
+            [
+              "0xafe9",
+              "mov",
+              "cl, 0x15"
+            ],
+            [
+              "0xafeb",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 22,
+          "target": "0xb021",
+          "instructions": [
+            [
+              "0xb021",
+              "mov",
+              "cl, 0x16"
+            ],
+            [
+              "0xb023",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 23,
+          "target": "0xb036",
+          "instructions": [
+            [
+              "0xb036",
+              "mov",
+              "cl, 0x17"
+            ],
+            [
+              "0xb038",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 24,
+          "target": "0xafa3",
+          "instructions": [
+            [
+              "0xafa3",
+              "mov",
+              "cl, 0x18"
+            ],
+            [
+              "0xafa5",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 25,
+          "target": "0xaf9c",
+          "instructions": [
+            [
+              "0xaf9c",
+              "mov",
+              "cl, 0x19"
+            ],
+            [
+              "0xaf9e",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 26,
+          "target": "0xb052",
+          "instructions": [
+            [
+              "0xb052",
+              "mov",
+              "cl, 0x1a"
+            ],
+            [
+              "0xb054",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 27,
+          "target": "0xaf56",
+          "instructions": [
+            [
+              "0xaf56",
+              "mov",
+              "cl, 0x1b"
+            ],
+            [
+              "0xaf58",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 28,
+          "target": "0xb03d",
+          "instructions": [
+            [
+              "0xb03d",
+              "mov",
+              "cl, 0x1c"
+            ],
+            [
+              "0xb03f",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 29,
+          "target": "0xb044",
+          "instructions": [
+            [
+              "0xb044",
+              "mov",
+              "cl, 0x1d"
+            ],
+            [
+              "0xb046",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 30,
+          "target": "0xb013",
+          "instructions": [
+            [
+              "0xb013",
+              "mov",
+              "cl, 0x1e"
+            ],
+            [
+              "0xb015",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 31,
+          "target": "0xafc6",
+          "instructions": [
+            [
+              "0xafc6",
+              "mov",
+              "cl, 0x1f"
+            ],
+            [
+              "0xafc8",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 32,
+          "target": "0xb01a",
+          "instructions": [
+            [
+              "0xb01a",
+              "mov",
+              "cl, 0x20"
+            ],
+            [
+              "0xb01c",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 33,
+          "target": "0xaf72",
+          "instructions": [
+            [
+              "0xaf72",
+              "mov",
+              "cl, 0x21"
+            ],
+            [
+              "0xaf74",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 34,
+          "target": "0xaf5d",
+          "instructions": [
+            [
+              "0xaf5d",
+              "mov",
+              "cl, 0x22"
+            ],
+            [
+              "0xaf5f",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 35,
+          "target": "0xaf48",
+          "instructions": [
+            [
+              "0xaf48",
+              "mov",
+              "cl, 0x23"
+            ],
+            [
+              "0xaf4a",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 36,
+          "target": "0xaf4f",
+          "instructions": [
+            [
+              "0xaf4f",
+              "mov",
+              "cl, 0x24"
+            ],
+            [
+              "0xaf51",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 37,
+          "target": "0xaf41",
+          "instructions": [
+            [
+              "0xaf41",
+              "mov",
+              "cl, 0x25"
+            ],
+            [
+              "0xaf43",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 38,
+          "target": "0xb04b",
+          "instructions": [
+            [
+              "0xb04b",
+              "mov",
+              "cl, 0x26"
+            ],
+            [
+              "0xb04d",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 39,
+          "target": "0xb028",
+          "instructions": [
+            [
+              "0xb028",
+              "mov",
+              "cl, 0x27"
+            ],
+            [
+              "0xb02a",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        },
+        {
+          "index": 40,
+          "target": "0xaf87",
+          "instructions": [
+            [
+              "0xaf87",
+              "mov",
+              "cl, 0x28"
+            ],
+            [
+              "0xaf89",
+              "jmp",
+              "0xa5b6"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "binary": "upstream",
+      "entry": "0xbcf0",
+      "table": "0x530f4",
+      "join": "0xc5d4",
+      "guard": [
+        "0xc5ae:\tSHR RDX,0x20",
+        "0xc5b2:\tCMP EDX,0x28",
+        "0xc5b5:\tJA 0x0010c6df",
+        "0xc5bb:\tXOR ECX,ECX",
+        "0xc5bd:\tLEA RAX,[0x1530f4]",
+        "0xc5c4:\tMOVSXD RDX,dword ptr [RAX + RDX*0x4]",
+        "0xc5c8:\tADD RDX,RAX",
+        "0xc5cb:\tJMP RDX"
+      ],
+      "default": "0xc6df:\tMOV CL,0x29",
+      "case_zero_uses_initial_zero": true,
+      "all_40_nonzero_cases_set_the_index_and_join": true,
+      "cases": [
+        {
+          "index": 1,
+          "target": "0xc5cd",
+          "instructions": [
+            [
+              "0xc5cd",
+              "mov",
+              "cl, 1"
+            ],
+            [
+              "0xc5cf",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 2,
+          "target": "0xc6b5",
+          "instructions": [
+            [
+              "0xc6b5",
+              "mov",
+              "cl, 2"
+            ],
+            [
+              "0xc6b7",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 3,
+          "target": "0xc6c3",
+          "instructions": [
+            [
+              "0xc6c3",
+              "mov",
+              "cl, 3"
+            ],
+            [
+              "0xc6c5",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 4,
+          "target": "0xc68b",
+          "instructions": [
+            [
+              "0xc68b",
+              "mov",
+              "cl, 4"
+            ],
+            [
+              "0xc68d",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 5,
+          "target": "0xc6ed",
+          "instructions": [
+            [
+              "0xc6ed",
+              "mov",
+              "cl, 5"
+            ],
+            [
+              "0xc6ef",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 6,
+          "target": "0xc702",
+          "instructions": [
+            [
+              "0xc702",
+              "mov",
+              "cl, 6"
+            ],
+            [
+              "0xc704",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 7,
+          "target": "0xc6ca",
+          "instructions": [
+            [
+              "0xc6ca",
+              "mov",
+              "cl, 7"
+            ],
+            [
+              "0xc6cc",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 8,
+          "target": "0xc717",
+          "instructions": [
+            [
+              "0xc717",
+              "mov",
+              "cl, 8"
+            ],
+            [
+              "0xc719",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 9,
+          "target": "0xc6a0",
+          "instructions": [
+            [
+              "0xc6a0",
+              "mov",
+              "cl, 9"
+            ],
+            [
+              "0xc6a2",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 10,
+          "target": "0xc710",
+          "instructions": [
+            [
+              "0xc710",
+              "mov",
+              "cl, 0xa"
+            ],
+            [
+              "0xc712",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 11,
+          "target": "0xc684",
+          "instructions": [
+            [
+              "0xc684",
+              "mov",
+              "cl, 0xb"
+            ],
+            [
+              "0xc686",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 12,
+          "target": "0xc699",
+          "instructions": [
+            [
+              "0xc699",
+              "mov",
+              "cl, 0xc"
+            ],
+            [
+              "0xc69b",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 13,
+          "target": "0xc6fb",
+          "instructions": [
+            [
+              "0xc6fb",
+              "mov",
+              "cl, 0xd"
+            ],
+            [
+              "0xc6fd",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 14,
+          "target": "0xc676",
+          "instructions": [
+            [
+              "0xc676",
+              "mov",
+              "cl, 0xe"
+            ],
+            [
+              "0xc678",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 15,
+          "target": "0xc6bc",
+          "instructions": [
+            [
+              "0xc6bc",
+              "mov",
+              "cl, 0xf"
+            ],
+            [
+              "0xc6be",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 16,
+          "target": "0xc66f",
+          "instructions": [
+            [
+              "0xc66f",
+              "mov",
+              "cl, 0x10"
+            ],
+            [
+              "0xc671",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 17,
+          "target": "0xc6d8",
+          "instructions": [
+            [
+              "0xc6d8",
+              "mov",
+              "cl, 0x11"
+            ],
+            [
+              "0xc6da",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 18,
+          "target": "0xc709",
+          "instructions": [
+            [
+              "0xc709",
+              "mov",
+              "cl, 0x12"
+            ],
+            [
+              "0xc70b",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 19,
+          "target": "0xc73a",
+          "instructions": [
+            [
+              "0xc73a",
+              "mov",
+              "cl, 0x13"
+            ],
+            [
+              "0xc73c",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 20,
+          "target": "0xc6e6",
+          "instructions": [
+            [
+              "0xc6e6",
+              "mov",
+              "cl, 0x14"
+            ],
+            [
+              "0xc6e8",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 21,
+          "target": "0xc6f4",
+          "instructions": [
+            [
+              "0xc6f4",
+              "mov",
+              "cl, 0x15"
+            ],
+            [
+              "0xc6f6",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 22,
+          "target": "0xc72c",
+          "instructions": [
+            [
+              "0xc72c",
+              "mov",
+              "cl, 0x16"
+            ],
+            [
+              "0xc72e",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 23,
+          "target": "0xc741",
+          "instructions": [
+            [
+              "0xc741",
+              "mov",
+              "cl, 0x17"
+            ],
+            [
+              "0xc743",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 24,
+          "target": "0xc6ae",
+          "instructions": [
+            [
+              "0xc6ae",
+              "mov",
+              "cl, 0x18"
+            ],
+            [
+              "0xc6b0",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 25,
+          "target": "0xc6a7",
+          "instructions": [
+            [
+              "0xc6a7",
+              "mov",
+              "cl, 0x19"
+            ],
+            [
+              "0xc6a9",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 26,
+          "target": "0xc75d",
+          "instructions": [
+            [
+              "0xc75d",
+              "mov",
+              "cl, 0x1a"
+            ],
+            [
+              "0xc75f",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 27,
+          "target": "0xc661",
+          "instructions": [
+            [
+              "0xc661",
+              "mov",
+              "cl, 0x1b"
+            ],
+            [
+              "0xc663",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 28,
+          "target": "0xc748",
+          "instructions": [
+            [
+              "0xc748",
+              "mov",
+              "cl, 0x1c"
+            ],
+            [
+              "0xc74a",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 29,
+          "target": "0xc74f",
+          "instructions": [
+            [
+              "0xc74f",
+              "mov",
+              "cl, 0x1d"
+            ],
+            [
+              "0xc751",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 30,
+          "target": "0xc71e",
+          "instructions": [
+            [
+              "0xc71e",
+              "mov",
+              "cl, 0x1e"
+            ],
+            [
+              "0xc720",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 31,
+          "target": "0xc6d1",
+          "instructions": [
+            [
+              "0xc6d1",
+              "mov",
+              "cl, 0x1f"
+            ],
+            [
+              "0xc6d3",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 32,
+          "target": "0xc725",
+          "instructions": [
+            [
+              "0xc725",
+              "mov",
+              "cl, 0x20"
+            ],
+            [
+              "0xc727",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 33,
+          "target": "0xc67d",
+          "instructions": [
+            [
+              "0xc67d",
+              "mov",
+              "cl, 0x21"
+            ],
+            [
+              "0xc67f",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 34,
+          "target": "0xc668",
+          "instructions": [
+            [
+              "0xc668",
+              "mov",
+              "cl, 0x22"
+            ],
+            [
+              "0xc66a",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 35,
+          "target": "0xc653",
+          "instructions": [
+            [
+              "0xc653",
+              "mov",
+              "cl, 0x23"
+            ],
+            [
+              "0xc655",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 36,
+          "target": "0xc65a",
+          "instructions": [
+            [
+              "0xc65a",
+              "mov",
+              "cl, 0x24"
+            ],
+            [
+              "0xc65c",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 37,
+          "target": "0xc64f",
+          "instructions": [
+            [
+              "0xc64f",
+              "mov",
+              "cl, 0x25"
+            ],
+            [
+              "0xc651",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 38,
+          "target": "0xc756",
+          "instructions": [
+            [
+              "0xc756",
+              "mov",
+              "cl, 0x26"
+            ],
+            [
+              "0xc758",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 39,
+          "target": "0xc733",
+          "instructions": [
+            [
+              "0xc733",
+              "mov",
+              "cl, 0x27"
+            ],
+            [
+              "0xc735",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        },
+        {
+          "index": 40,
+          "target": "0xc692",
+          "instructions": [
+            [
+              "0xc692",
+              "mov",
+              "cl, 0x28"
+            ],
+            [
+              "0xc694",
+              "jmp",
+              "0xc5d4"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "binary": "upstream",
+      "entry": "0x2e810",
+      "table": "0x5d1a4",
+      "join": "0x2e861",
+      "guard": [
+        "0x2e8a3:\tSHR RDI,0x20",
+        "0x2e8a7:\tCMP EDI,0x28",
+        "0x2e8aa:\tJA 0x0012e8c2",
+        "0x2e8ac:\tXOR EAX,EAX",
+        "0x2e8ae:\tLEA RCX,[0x15d1a4]",
+        "0x2e8b5:\tMOVSXD RDX,dword ptr [RCX + RDI*0x4]",
+        "0x2e8b9:\tADD RDX,RCX",
+        "0x2e8bc:\tJMP RDX"
+      ],
+      "default": "0x2e8c2:\tMOV AL,0x29",
+      "case_zero_uses_initial_zero": true,
+      "all_40_nonzero_cases_set_the_index_and_join": true,
+      "cases": [
+        {
+          "index": 1,
+          "target": "0x2e8be",
+          "instructions": [
+            [
+              "0x2e8be",
+              "mov",
+              "al, 1"
+            ],
+            [
+              "0x2e8c0",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 2,
+          "target": "0x2e8c6",
+          "instructions": [
+            [
+              "0x2e8c6",
+              "mov",
+              "al, 2"
+            ],
+            [
+              "0x2e8c8",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 3,
+          "target": "0x2e8ca",
+          "instructions": [
+            [
+              "0x2e8ca",
+              "mov",
+              "al, 3"
+            ],
+            [
+              "0x2e8cc",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 4,
+          "target": "0x2e8ce",
+          "instructions": [
+            [
+              "0x2e8ce",
+              "mov",
+              "al, 4"
+            ],
+            [
+              "0x2e8d0",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 5,
+          "target": "0x2e8d2",
+          "instructions": [
+            [
+              "0x2e8d2",
+              "mov",
+              "al, 5"
+            ],
+            [
+              "0x2e8d4",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 6,
+          "target": "0x2e8d6",
+          "instructions": [
+            [
+              "0x2e8d6",
+              "mov",
+              "al, 6"
+            ],
+            [
+              "0x2e8d8",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 7,
+          "target": "0x2e8da",
+          "instructions": [
+            [
+              "0x2e8da",
+              "mov",
+              "al, 7"
+            ],
+            [
+              "0x2e8dc",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 8,
+          "target": "0x2e8de",
+          "instructions": [
+            [
+              "0x2e8de",
+              "mov",
+              "al, 8"
+            ],
+            [
+              "0x2e8e0",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 9,
+          "target": "0x2e8e5",
+          "instructions": [
+            [
+              "0x2e8e5",
+              "mov",
+              "al, 9"
+            ],
+            [
+              "0x2e8e7",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 10,
+          "target": "0x2e8ec",
+          "instructions": [
+            [
+              "0x2e8ec",
+              "mov",
+              "al, 0xa"
+            ],
+            [
+              "0x2e8ee",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 11,
+          "target": "0x2e8f3",
+          "instructions": [
+            [
+              "0x2e8f3",
+              "mov",
+              "al, 0xb"
+            ],
+            [
+              "0x2e8f5",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 12,
+          "target": "0x2e8fa",
+          "instructions": [
+            [
+              "0x2e8fa",
+              "mov",
+              "al, 0xc"
+            ],
+            [
+              "0x2e8fc",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 13,
+          "target": "0x2e901",
+          "instructions": [
+            [
+              "0x2e901",
+              "mov",
+              "al, 0xd"
+            ],
+            [
+              "0x2e903",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 14,
+          "target": "0x2e908",
+          "instructions": [
+            [
+              "0x2e908",
+              "mov",
+              "al, 0xe"
+            ],
+            [
+              "0x2e90a",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 15,
+          "target": "0x2e90f",
+          "instructions": [
+            [
+              "0x2e90f",
+              "mov",
+              "al, 0xf"
+            ],
+            [
+              "0x2e911",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 16,
+          "target": "0x2e916",
+          "instructions": [
+            [
+              "0x2e916",
+              "mov",
+              "al, 0x10"
+            ],
+            [
+              "0x2e918",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 17,
+          "target": "0x2e91d",
+          "instructions": [
+            [
+              "0x2e91d",
+              "mov",
+              "al, 0x11"
+            ],
+            [
+              "0x2e91f",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 18,
+          "target": "0x2e924",
+          "instructions": [
+            [
+              "0x2e924",
+              "mov",
+              "al, 0x12"
+            ],
+            [
+              "0x2e926",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 19,
+          "target": "0x2e92b",
+          "instructions": [
+            [
+              "0x2e92b",
+              "mov",
+              "al, 0x13"
+            ],
+            [
+              "0x2e92d",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 20,
+          "target": "0x2e932",
+          "instructions": [
+            [
+              "0x2e932",
+              "mov",
+              "al, 0x14"
+            ],
+            [
+              "0x2e934",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 21,
+          "target": "0x2e939",
+          "instructions": [
+            [
+              "0x2e939",
+              "mov",
+              "al, 0x15"
+            ],
+            [
+              "0x2e93b",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 22,
+          "target": "0x2e940",
+          "instructions": [
+            [
+              "0x2e940",
+              "mov",
+              "al, 0x16"
+            ],
+            [
+              "0x2e942",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 23,
+          "target": "0x2e947",
+          "instructions": [
+            [
+              "0x2e947",
+              "mov",
+              "al, 0x17"
+            ],
+            [
+              "0x2e949",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 24,
+          "target": "0x2e94e",
+          "instructions": [
+            [
+              "0x2e94e",
+              "mov",
+              "al, 0x18"
+            ],
+            [
+              "0x2e950",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 25,
+          "target": "0x2e955",
+          "instructions": [
+            [
+              "0x2e955",
+              "mov",
+              "al, 0x19"
+            ],
+            [
+              "0x2e957",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 26,
+          "target": "0x2e95c",
+          "instructions": [
+            [
+              "0x2e95c",
+              "mov",
+              "al, 0x1a"
+            ],
+            [
+              "0x2e95e",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 27,
+          "target": "0x2e963",
+          "instructions": [
+            [
+              "0x2e963",
+              "mov",
+              "al, 0x1b"
+            ],
+            [
+              "0x2e965",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 28,
+          "target": "0x2e96a",
+          "instructions": [
+            [
+              "0x2e96a",
+              "mov",
+              "al, 0x1c"
+            ],
+            [
+              "0x2e96c",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 29,
+          "target": "0x2e971",
+          "instructions": [
+            [
+              "0x2e971",
+              "mov",
+              "al, 0x1d"
+            ],
+            [
+              "0x2e973",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 30,
+          "target": "0x2e978",
+          "instructions": [
+            [
+              "0x2e978",
+              "mov",
+              "al, 0x1e"
+            ],
+            [
+              "0x2e97a",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 31,
+          "target": "0x2e97f",
+          "instructions": [
+            [
+              "0x2e97f",
+              "mov",
+              "al, 0x1f"
+            ],
+            [
+              "0x2e981",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 32,
+          "target": "0x2e986",
+          "instructions": [
+            [
+              "0x2e986",
+              "mov",
+              "al, 0x20"
+            ],
+            [
+              "0x2e988",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 33,
+          "target": "0x2e98d",
+          "instructions": [
+            [
+              "0x2e98d",
+              "mov",
+              "al, 0x21"
+            ],
+            [
+              "0x2e98f",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 34,
+          "target": "0x2e994",
+          "instructions": [
+            [
+              "0x2e994",
+              "mov",
+              "al, 0x22"
+            ],
+            [
+              "0x2e996",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 35,
+          "target": "0x2e99b",
+          "instructions": [
+            [
+              "0x2e99b",
+              "mov",
+              "al, 0x23"
+            ],
+            [
+              "0x2e99d",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 36,
+          "target": "0x2e9a2",
+          "instructions": [
+            [
+              "0x2e9a2",
+              "mov",
+              "al, 0x24"
+            ],
+            [
+              "0x2e9a4",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 37,
+          "target": "0x2e9a9",
+          "instructions": [
+            [
+              "0x2e9a9",
+              "mov",
+              "al, 0x25"
+            ],
+            [
+              "0x2e9ab",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 38,
+          "target": "0x2e9b0",
+          "instructions": [
+            [
+              "0x2e9b0",
+              "mov",
+              "al, 0x26"
+            ],
+            [
+              "0x2e9b2",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 39,
+          "target": "0x2e9b7",
+          "instructions": [
+            [
+              "0x2e9b7",
+              "mov",
+              "al, 0x27"
+            ],
+            [
+              "0x2e9b9",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        },
+        {
+          "index": 40,
+          "target": "0x2e9be",
+          "instructions": [
+            [
+              "0x2e9be",
+              "mov",
+              "al, 0x28"
+            ],
+            [
+              "0x2e9c0",
+              "jmp",
+              "0x2e861"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "binary": "upstream",
+      "entry": "0x2f2c0",
+      "table": "0x5d258",
+      "join": "0x2f444",
+      "guard": [
+        "0x2f41c:\tSHR RCX,0x20",
+        "0x2f420:\tCMP ECX,0x28",
+        "0x2f423:\tJA 0x0012f4c0",
+        "0x2f429:\tXOR EAX,EAX",
+        "0x2f42b:\tLEA RDX,[0x15d258]",
+        "0x2f432:\tMOVSXD RCX,dword ptr [RDX + RCX*0x4]",
+        "0x2f436:\tADD RCX,RDX",
+        "0x2f439:\tJMP RCX"
+      ],
+      "default": "0x2f4c0:\tMOV AL,0x29",
+      "case_zero_uses_initial_zero": true,
+      "all_40_nonzero_cases_set_the_index_and_join": true,
+      "cases": [
+        {
+          "index": 1,
+          "target": "0x2f43b",
+          "instructions": [
+            [
+              "0x2f43b",
+              "mov",
+              "al, 1"
+            ],
+            [
+              "0x2f43d",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 2,
+          "target": "0x2f4a8",
+          "instructions": [
+            [
+              "0x2f4a8",
+              "mov",
+              "al, 2"
+            ],
+            [
+              "0x2f4aa",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 3,
+          "target": "0x2f4b0",
+          "instructions": [
+            [
+              "0x2f4b0",
+              "mov",
+              "al, 3"
+            ],
+            [
+              "0x2f4b2",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 4,
+          "target": "0x2f490",
+          "instructions": [
+            [
+              "0x2f490",
+              "mov",
+              "al, 4"
+            ],
+            [
+              "0x2f492",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 5,
+          "target": "0x2f4cb",
+          "instructions": [
+            [
+              "0x2f4cb",
+              "mov",
+              "al, 5"
+            ],
+            [
+              "0x2f4cd",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 6,
+          "target": "0x2f4e0",
+          "instructions": [
+            [
+              "0x2f4e0",
+              "mov",
+              "al, 6"
+            ],
+            [
+              "0x2f4e2",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 7,
+          "target": "0x2f4b4",
+          "instructions": [
+            [
+              "0x2f4b4",
+              "mov",
+              "al, 7"
+            ],
+            [
+              "0x2f4b6",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 8,
+          "target": "0x2f4f5",
+          "instructions": [
+            [
+              "0x2f4f5",
+              "mov",
+              "al, 8"
+            ],
+            [
+              "0x2f4f7",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 9,
+          "target": "0x2f49c",
+          "instructions": [
+            [
+              "0x2f49c",
+              "mov",
+              "al, 9"
+            ],
+            [
+              "0x2f49e",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 10,
+          "target": "0x2f4ee",
+          "instructions": [
+            [
+              "0x2f4ee",
+              "mov",
+              "al, 0xa"
+            ],
+            [
+              "0x2f4f0",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 11,
+          "target": "0x2f48c",
+          "instructions": [
+            [
+              "0x2f48c",
+              "mov",
+              "al, 0xb"
+            ],
+            [
+              "0x2f48e",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 12,
+          "target": "0x2f498",
+          "instructions": [
+            [
+              "0x2f498",
+              "mov",
+              "al, 0xc"
+            ],
+            [
+              "0x2f49a",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 13,
+          "target": "0x2f4d9",
+          "instructions": [
+            [
+              "0x2f4d9",
+              "mov",
+              "al, 0xd"
+            ],
+            [
+              "0x2f4db",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 14,
+          "target": "0x2f484",
+          "instructions": [
+            [
+              "0x2f484",
+              "mov",
+              "al, 0xe"
+            ],
+            [
+              "0x2f486",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 15,
+          "target": "0x2f4ac",
+          "instructions": [
+            [
+              "0x2f4ac",
+              "mov",
+              "al, 0xf"
+            ],
+            [
+              "0x2f4ae",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 16,
+          "target": "0x2f480",
+          "instructions": [
+            [
+              "0x2f480",
+              "mov",
+              "al, 0x10"
+            ],
+            [
+              "0x2f482",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 17,
+          "target": "0x2f4bc",
+          "instructions": [
+            [
+              "0x2f4bc",
+              "mov",
+              "al, 0x11"
+            ],
+            [
+              "0x2f4be",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 18,
+          "target": "0x2f4e7",
+          "instructions": [
+            [
+              "0x2f4e7",
+              "mov",
+              "al, 0x12"
+            ],
+            [
+              "0x2f4e9",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 19,
+          "target": "0x2f518",
+          "instructions": [
+            [
+              "0x2f518",
+              "mov",
+              "al, 0x13"
+            ],
+            [
+              "0x2f51a",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 20,
+          "target": "0x2f4c4",
+          "instructions": [
+            [
+              "0x2f4c4",
+              "mov",
+              "al, 0x14"
+            ],
+            [
+              "0x2f4c6",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 21,
+          "target": "0x2f4d2",
+          "instructions": [
+            [
+              "0x2f4d2",
+              "mov",
+              "al, 0x15"
+            ],
+            [
+              "0x2f4d4",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 22,
+          "target": "0x2f50a",
+          "instructions": [
+            [
+              "0x2f50a",
+              "mov",
+              "al, 0x16"
+            ],
+            [
+              "0x2f50c",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 23,
+          "target": "0x2f51f",
+          "instructions": [
+            [
+              "0x2f51f",
+              "mov",
+              "al, 0x17"
+            ],
+            [
+              "0x2f521",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 24,
+          "target": "0x2f4a4",
+          "instructions": [
+            [
+              "0x2f4a4",
+              "mov",
+              "al, 0x18"
+            ],
+            [
+              "0x2f4a6",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 25,
+          "target": "0x2f4a0",
+          "instructions": [
+            [
+              "0x2f4a0",
+              "mov",
+              "al, 0x19"
+            ],
+            [
+              "0x2f4a2",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 26,
+          "target": "0x2f53b",
+          "instructions": [
+            [
+              "0x2f53b",
+              "mov",
+              "al, 0x1a"
+            ],
+            [
+              "0x2f53d",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 27,
+          "target": "0x2f478",
+          "instructions": [
+            [
+              "0x2f478",
+              "mov",
+              "al, 0x1b"
+            ],
+            [
+              "0x2f47a",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 28,
+          "target": "0x2f526",
+          "instructions": [
+            [
+              "0x2f526",
+              "mov",
+              "al, 0x1c"
+            ],
+            [
+              "0x2f528",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 29,
+          "target": "0x2f52d",
+          "instructions": [
+            [
+              "0x2f52d",
+              "mov",
+              "al, 0x1d"
+            ],
+            [
+              "0x2f52f",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 30,
+          "target": "0x2f4fc",
+          "instructions": [
+            [
+              "0x2f4fc",
+              "mov",
+              "al, 0x1e"
+            ],
+            [
+              "0x2f4fe",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 31,
+          "target": "0x2f4b8",
+          "instructions": [
+            [
+              "0x2f4b8",
+              "mov",
+              "al, 0x1f"
+            ],
+            [
+              "0x2f4ba",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 32,
+          "target": "0x2f503",
+          "instructions": [
+            [
+              "0x2f503",
+              "mov",
+              "al, 0x20"
+            ],
+            [
+              "0x2f505",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 33,
+          "target": "0x2f488",
+          "instructions": [
+            [
+              "0x2f488",
+              "mov",
+              "al, 0x21"
+            ],
+            [
+              "0x2f48a",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 34,
+          "target": "0x2f47c",
+          "instructions": [
+            [
+              "0x2f47c",
+              "mov",
+              "al, 0x22"
+            ],
+            [
+              "0x2f47e",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 35,
+          "target": "0x2f470",
+          "instructions": [
+            [
+              "0x2f470",
+              "mov",
+              "al, 0x23"
+            ],
+            [
+              "0x2f472",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 36,
+          "target": "0x2f474",
+          "instructions": [
+            [
+              "0x2f474",
+              "mov",
+              "al, 0x24"
+            ],
+            [
+              "0x2f476",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 37,
+          "target": "0x2f46c",
+          "instructions": [
+            [
+              "0x2f46c",
+              "mov",
+              "al, 0x25"
+            ],
+            [
+              "0x2f46e",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 38,
+          "target": "0x2f534",
+          "instructions": [
+            [
+              "0x2f534",
+              "mov",
+              "al, 0x26"
+            ],
+            [
+              "0x2f536",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 39,
+          "target": "0x2f511",
+          "instructions": [
+            [
+              "0x2f511",
+              "mov",
+              "al, 0x27"
+            ],
+            [
+              "0x2f513",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        },
+        {
+          "index": 40,
+          "target": "0x2f494",
+          "instructions": [
+            [
+              "0x2f494",
+              "mov",
+              "al, 0x28"
+            ],
+            [
+              "0x2f496",
+              "jmp",
+              "0x2f444"
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "binary": "upstream",
+      "entry": "0x2f6e0",
+      "table": "0x5d30c",
+      "join": "0x2f990",
+      "guard": [
+        "0x2f8bb:\tSHR RBX,0x20",
+        "0x2f8bf:\tCMP EBX,0x28",
+        "0x2f8c2:\tJA 0x0012f8dd",
+        "0x2f8c4:\tXOR EAX,EAX",
+        "0x2f8c6:\tLEA RCX,[0x15d30c]",
+        "0x2f8cd:\tMOVSXD RDX,dword ptr [RCX + RBX*0x4]",
+        "0x2f8d1:\tADD RDX,RCX",
+        "0x2f8d4:\tJMP RDX"
+      ],
+      "default": "0x2f8dd:\tMOV AL,0x29",
+      "case_zero_uses_initial_zero": true,
+      "all_40_nonzero_cases_set_the_index_and_join": true,
+      "cases": [
+        {
+          "index": 1,
+          "target": "0x2f8d6",
+          "instructions": [
+            [
+              "0x2f8d6",
+              "mov",
+              "al, 1"
+            ],
+            [
+              "0x2f8d8",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 2,
+          "target": "0x2f8e4",
+          "instructions": [
+            [
+              "0x2f8e4",
+              "mov",
+              "al, 2"
+            ],
+            [
+              "0x2f8e6",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 3,
+          "target": "0x2f8eb",
+          "instructions": [
+            [
+              "0x2f8eb",
+              "mov",
+              "al, 3"
+            ],
+            [
+              "0x2f8ed",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 4,
+          "target": "0x2f8f2",
+          "instructions": [
+            [
+              "0x2f8f2",
+              "mov",
+              "al, 4"
+            ],
+            [
+              "0x2f8f4",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 5,
+          "target": "0x2f8f9",
+          "instructions": [
+            [
+              "0x2f8f9",
+              "mov",
+              "al, 5"
+            ],
+            [
+              "0x2f8fb",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 6,
+          "target": "0x2f900",
+          "instructions": [
+            [
+              "0x2f900",
+              "mov",
+              "al, 6"
+            ],
+            [
+              "0x2f902",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 7,
+          "target": "0x2f907",
+          "instructions": [
+            [
+              "0x2f907",
+              "mov",
+              "al, 7"
+            ],
+            [
+              "0x2f909",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 8,
+          "target": "0x2f90e",
+          "instructions": [
+            [
+              "0x2f90e",
+              "mov",
+              "al, 8"
+            ],
+            [
+              "0x2f910",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 9,
+          "target": "0x2f912",
+          "instructions": [
+            [
+              "0x2f912",
+              "mov",
+              "al, 9"
+            ],
+            [
+              "0x2f914",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 10,
+          "target": "0x2f916",
+          "instructions": [
+            [
+              "0x2f916",
+              "mov",
+              "al, 0xa"
+            ],
+            [
+              "0x2f918",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 11,
+          "target": "0x2f91a",
+          "instructions": [
+            [
+              "0x2f91a",
+              "mov",
+              "al, 0xb"
+            ],
+            [
+              "0x2f91c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 12,
+          "target": "0x2f91e",
+          "instructions": [
+            [
+              "0x2f91e",
+              "mov",
+              "al, 0xc"
+            ],
+            [
+              "0x2f920",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 13,
+          "target": "0x2f922",
+          "instructions": [
+            [
+              "0x2f922",
+              "mov",
+              "al, 0xd"
+            ],
+            [
+              "0x2f924",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 14,
+          "target": "0x2f926",
+          "instructions": [
+            [
+              "0x2f926",
+              "mov",
+              "al, 0xe"
+            ],
+            [
+              "0x2f928",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 15,
+          "target": "0x2f92a",
+          "instructions": [
+            [
+              "0x2f92a",
+              "mov",
+              "al, 0xf"
+            ],
+            [
+              "0x2f92c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 16,
+          "target": "0x2f92e",
+          "instructions": [
+            [
+              "0x2f92e",
+              "mov",
+              "al, 0x10"
+            ],
+            [
+              "0x2f930",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 17,
+          "target": "0x2f932",
+          "instructions": [
+            [
+              "0x2f932",
+              "mov",
+              "al, 0x11"
+            ],
+            [
+              "0x2f934",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 18,
+          "target": "0x2f936",
+          "instructions": [
+            [
+              "0x2f936",
+              "mov",
+              "al, 0x12"
+            ],
+            [
+              "0x2f938",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 19,
+          "target": "0x2f93a",
+          "instructions": [
+            [
+              "0x2f93a",
+              "mov",
+              "al, 0x13"
+            ],
+            [
+              "0x2f93c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 20,
+          "target": "0x2f93e",
+          "instructions": [
+            [
+              "0x2f93e",
+              "mov",
+              "al, 0x14"
+            ],
+            [
+              "0x2f940",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 21,
+          "target": "0x2f942",
+          "instructions": [
+            [
+              "0x2f942",
+              "mov",
+              "al, 0x15"
+            ],
+            [
+              "0x2f944",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 22,
+          "target": "0x2f946",
+          "instructions": [
+            [
+              "0x2f946",
+              "mov",
+              "al, 0x16"
+            ],
+            [
+              "0x2f948",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 23,
+          "target": "0x2f94a",
+          "instructions": [
+            [
+              "0x2f94a",
+              "mov",
+              "al, 0x17"
+            ],
+            [
+              "0x2f94c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 24,
+          "target": "0x2f94e",
+          "instructions": [
+            [
+              "0x2f94e",
+              "mov",
+              "al, 0x18"
+            ],
+            [
+              "0x2f950",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 25,
+          "target": "0x2f952",
+          "instructions": [
+            [
+              "0x2f952",
+              "mov",
+              "al, 0x19"
+            ],
+            [
+              "0x2f954",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 26,
+          "target": "0x2f956",
+          "instructions": [
+            [
+              "0x2f956",
+              "mov",
+              "al, 0x1a"
+            ],
+            [
+              "0x2f958",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 27,
+          "target": "0x2f95a",
+          "instructions": [
+            [
+              "0x2f95a",
+              "mov",
+              "al, 0x1b"
+            ],
+            [
+              "0x2f95c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 28,
+          "target": "0x2f95e",
+          "instructions": [
+            [
+              "0x2f95e",
+              "mov",
+              "al, 0x1c"
+            ],
+            [
+              "0x2f960",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 29,
+          "target": "0x2f962",
+          "instructions": [
+            [
+              "0x2f962",
+              "mov",
+              "al, 0x1d"
+            ],
+            [
+              "0x2f964",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 30,
+          "target": "0x2f966",
+          "instructions": [
+            [
+              "0x2f966",
+              "mov",
+              "al, 0x1e"
+            ],
+            [
+              "0x2f968",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 31,
+          "target": "0x2f96a",
+          "instructions": [
+            [
+              "0x2f96a",
+              "mov",
+              "al, 0x1f"
+            ],
+            [
+              "0x2f96c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 32,
+          "target": "0x2f96e",
+          "instructions": [
+            [
+              "0x2f96e",
+              "mov",
+              "al, 0x20"
+            ],
+            [
+              "0x2f970",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 33,
+          "target": "0x2f972",
+          "instructions": [
+            [
+              "0x2f972",
+              "mov",
+              "al, 0x21"
+            ],
+            [
+              "0x2f974",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 34,
+          "target": "0x2f976",
+          "instructions": [
+            [
+              "0x2f976",
+              "mov",
+              "al, 0x22"
+            ],
+            [
+              "0x2f978",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 35,
+          "target": "0x2f97a",
+          "instructions": [
+            [
+              "0x2f97a",
+              "mov",
+              "al, 0x23"
+            ],
+            [
+              "0x2f97c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 36,
+          "target": "0x2f97e",
+          "instructions": [
+            [
+              "0x2f97e",
+              "mov",
+              "al, 0x24"
+            ],
+            [
+              "0x2f980",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 37,
+          "target": "0x2f982",
+          "instructions": [
+            [
+              "0x2f982",
+              "mov",
+              "al, 0x25"
+            ],
+            [
+              "0x2f984",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 38,
+          "target": "0x2f986",
+          "instructions": [
+            [
+              "0x2f986",
+              "mov",
+              "al, 0x26"
+            ],
+            [
+              "0x2f988",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 39,
+          "target": "0x2f98a",
+          "instructions": [
+            [
+              "0x2f98a",
+              "mov",
+              "al, 0x27"
+            ],
+            [
+              "0x2f98c",
+              "jmp",
+              "0x2f990"
+            ]
+          ]
+        },
+        {
+          "index": 40,
+          "target": "0x2f98e",
+          "instructions": [
+            [
+              "0x2f98e",
+              "mov",
+              "al, 0x28"
+            ],
+            [
+              "0x2f990",
+              "mov",
+              "byte ptr [rsp + 8], al"
+            ]
+          ]
+        }
+      ]
+    }
+  ]
+}

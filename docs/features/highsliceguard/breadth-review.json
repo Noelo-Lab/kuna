@@ -1,0 +1,72 @@
+{
+  "at": "2026-11-02T14:19:15.779707+00:00",
+  "complete": true,
+  "semantic_review_pending": false,
+  "new_cli_sha256": "ad23578b9660521c2bfeb6f2bf1a9981c2d2dc4523eb690328a5a9f6f46ac6d0",
+  "parent_cli_sha256": "b7a5bf1856c6bdbc752c6eb3f616bc98d999cd1976b6344a309cb85f6b90996f",
+  "images": 43,
+  "distinct_functions": 33731,
+  "language_records_per_mode": 75909,
+  "default_changed_records": 0,
+  "explicit_on_changed_records": 33,
+  "all_default_records_identical_to_parent": true,
+  "all_explicit_on_records_identical_to_previously_reviewed_candidate": true,
+  "inherited_go_parser_failures": [
+    [
+      "namespace-rust",
+      "0x156c0"
+    ],
+    [
+      "namespace-rust",
+      "0x156d0"
+    ],
+    [
+      "namespace-rust",
+      "0x15870"
+    ],
+    [
+      "probe-native",
+      "0x157c0"
+    ],
+    [
+      "probe-native",
+      "0x157d0"
+    ],
+    [
+      "probe-native",
+      "0x15970"
+    ],
+    [
+      "raw-namespace",
+      "0x15570"
+    ],
+    [
+      "raw-namespace",
+      "0x15580"
+    ],
+    [
+      "raw-namespace",
+      "0x15720"
+    ],
+    [
+      "probe-buffer",
+      "0x15580"
+    ],
+    [
+      "probe-buffer",
+      "0x15590"
+    ],
+    [
+      "probe-buffer",
+      "0x15730"
+    ]
+  ],
+  "native_values": 26628,
+  "previous_complete_review_sha256": "16f9c99f5ba113951328728829954bbeb4276ce1a9718c934582bfd9640dc458",
+  "enabled_study_sha256": "1fb850ca579f8bd38c153a26b788669af9ae8d2fd47c90e824a981c4cc34592f",
+  "enabled_study_passed": false,
+  "option": "highsliceguard",
+  "default": "off",
+  "disabled_in_all_presets": true,
+  "full_angr_parity_claimed": false
+}

@@ -144,6 +144,9 @@ Three tiers:
 | the body behind a conditional indirect branch is never decoded | [`constselectjump`](#constselectjump) |
 | 'Too many branches' jumptable failure where a cbranch range guard bounds the index | [`switchguardbound`](#switchguardbound) |
 | computed (code *)() call at a gcc sub/ja guarded dispatch with the index spilled to the stack | [`switchguardbound`](#switchguardbound) |
+| narrow comparison after a logical right shift does not bound a jump table | [`highsliceguard`](#highsliceguard) |
+| a high-byte table index renders as jump-as-call | [`highsliceguard`](#highsliceguard) |
+| a Rust match over a shifted tag is missing despite an unsigned bound | [`highsliceguard`](#highsliceguard) |
 | getopt-style switch inside a loop degrades to a computed call with goto spaghetti | [`switchsharedcase`](#switchsharedcase) |
 | pic relative-offset jump table with a loop-carried base register never recovered | [`switchsharedcase`](#switchsharedcase) |
 | 'Too many branches' on a dispatch whose table base is set before the loop | [`switchsharedcase`](#switchsharedcase) |
@@ -709,6 +712,8 @@ Three tiers:
 | a got slot reads back as 0 in the decompiled output | [`dynrelocs`](#dynrelocs) |
 | reading a relocated function-pointer table in a pie binary yields all zeroes | [`dynrelocs`](#dynrelocs) |
 | kuna read of a mach-o pointer slot shows a chained-fixup word such as 1004000000000000 instead of the pointer | [`dynrelocs`](#dynrelocs) |
+| a mips pic shared object calls its own function as (*dat_<addr>)() through the got | [`dynrelocs`](#dynrelocs) |
+| a mips pic function reads a static or global as *(int *)(dat_<got slot> + 0x...) | [`dynrelocs`](#dynrelocs) |
 | could not build an architecture for <binary>: Non-global scope has empty name | [`symbolnamerepair`](#symbolnamerepair) |
 | an unstripped C++ binary fails to load entirely while a stripped copy of it loads fine | [`symbolnamerepair`](#symbolnamerepair) |
 | kuna functions, decompile-all and decompile-project all fail on the same binary with the same scope error | [`symbolnamerepair`](#symbolnamerepair) |
@@ -1694,6 +1699,14 @@ The control surface: each of these can make output worse on the wrong source sha
 - **When to flip:** Set on PER PROGRAM when a switch reports 'Could not recover jumptable ... Too many branches' and renders as a computed (code *)() call AND the dispatch is range-guarded (vs the modulo form switchmodbound handles); DESTRUCTIVE as a global default (the guard-to-index correspondence is asserted across a stack spill it cannot prove in dataflow, so it may over-bound an unrelated indirect jump).
 - **Where / provenance:** P2/switch-model · angr · opt-in-tool · angr-missing-function-call
 - **Example:** `option switchguardbound on`
+
+### `highsliceguard` -- on | off, default `off`
+
+- **Symptoms:** narrow comparison after a logical right shift does not bound a jump table; a high-byte table index renders as jump-as-call; a Rust match over a shifted tag is missing despite an unsigned bound.
+- **What it does:** Match a logical right shift to the complete high-byte slice of the same SSA input, so a narrow comparison can bound the full-width jump-table index. Both offsets must be constant and byte-aligned, the slice must reach the input's high end, and the shift must retain the input's width. Arithmetic shifts, interior slices and unrelated inputs are rejected; existing signed, unsigned and wrapping range intersections retain their value sets.
+- **When to flip:** Off in every preset. Enable when a narrow comparison after a logical right shift bounds a table but it renders as a computed call or reports too many branches. The exact guard identity recovers the missing switch without a non-zero-mask assumption. Measured enabled recovery added 10.8% median CPU and 11.2% median wall time on the pinned upstream walk_dir case, exceeding the 5% default speed budget; the original 675 datatest assertions were unchanged.
+- **Where / provenance:** P2/switch-model · angr · structure-recovery · angr-amd64-single-block-jumptable
+- **Example:** `option highsliceguard on`
 
 ### `switchsharedcase` -- on | off, default `on` (destructive opt-in)
 
@@ -2941,9 +2954,9 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 
 ### `dynrelocs` -- on | off, default `on`
 
-- **Symptoms:** a call in a pie binary renders as (*dat_<addr>)(...) with no name although the callee is a named function in the same image; a got slot reads back as 0 in the decompiled output; reading a relocated function-pointer table in a pie binary yields all zeroes; kuna read of a mach-o pointer slot shows a chained-fixup word such as 1004000000000000 instead of the pointer.
-- **What it does:** Apply a LINKED image's dynamic relocations (.rela.dyn / .rel.dyn / .rela.plt) when the loader snapshots it, and mark the slots PT_GNU_RELRO freezes as constant. kuna maps the PT_LOAD bytes the linker wrote, but a PIE (ET_DYN) or dynamically linked ET_EXEC leaves every R_*_RELATIVE / GLOB_DAT / JUMP_SLOT slot at 0 for the run-time loader, so the whole .got reads back null and a call through a function pointer the linker itself resolved renders (*dat_<addr>)(...). This fills the slots in (RELATIVE = load bias + addend; GLOB_DAT/JUMP_SLOT only when the symbol is DEFINED in this same image, so imports and the PLT naming path are untouched) and reports the written slots that PT_GNU_RELRO covers as constant, which is what lets the engine fold the load and resolve the call to its name. x86-64, AArch64, i386 and ARM; both RELA and REL (in-place addend) tables. A Mach-O image's LC_DYLD_CHAINED_FIXUPS chains are applied the same way: each pointer slot on disk is a packed chain entry, not the pointer, so a rebase is written as its resolved target and a bind (an import) as 0; no Mach-O slot is reported constant. Distinct from relocobjects/relocrebase, which own the pre-link ET_REL .o path. Loader-tier: read via the kuna_dynrelocs env var (the image bytes are snapshotted at load file).
-- **When to flip:** On (default) names calls made through a relocated GOT slot in any PIE, and gives the relocated value to anything that reads that memory; an unrelocated slot holds 0, which the run-time image never holds, so this is a correctness fix rather than a judgement call. Flip off to restore the pre-fix bytes exactly - every GOT slot back to 0 and every such call back to (*dat_<addr>)(...).
+- **Symptoms:** a call in a pie binary renders as (*dat_<addr>)(...) with no name although the callee is a named function in the same image; a got slot reads back as 0 in the decompiled output; reading a relocated function-pointer table in a pie binary yields all zeroes; kuna read of a mach-o pointer slot shows a chained-fixup word such as 1004000000000000 instead of the pointer; a mips pic shared object calls its own function as (*dat_<addr>)() through the got; a mips pic function reads a static or global as *(int *)(dat_<got slot> + 0x...).
+- **What it does:** Apply a LINKED image's dynamic relocations (.rela.dyn / .rel.dyn / .rela.plt) when the loader snapshots it, and mark the slots PT_GNU_RELRO freezes as constant. kuna maps the PT_LOAD bytes the linker wrote, but a PIE (ET_DYN) or dynamically linked ET_EXEC leaves every R_*_RELATIVE / GLOB_DAT / JUMP_SLOT slot at 0 for the run-time loader, so the whole .got reads back null and a call through a function pointer the linker itself resolved renders (*dat_<addr>)(...). This fills the slots in (RELATIVE = load bias + addend; GLOB_DAT/JUMP_SLOT only when the symbol is DEFINED in this same image, so imports and the PLT naming path are untouched) and reports the written slots that PT_GNU_RELRO covers as constant, which is what lets the engine fold the load and resolve the call to its name. x86-64, AArch64, i386 and ARM; both RELA and REL (in-place addend) tables. A Mach-O image's LC_DYLD_CHAINED_FIXUPS chains are applied the same way: each pointer slot on disk is a packed chain entry, not the pointer, so a rebase is written as its resolved target and a bind (an import) as 0; no Mach-O slot is reported constant. MIPS has no records for its primary GOT: the run-time loader adds the load bias to the local entries and stores each defined dynamic symbol's address in its global entry, so those slots already hold their run-time values at kuna's zero bias and are reported constant as they stand (kuna_mipsgot), which names a PIC call or data access to what the same image defines. Distinct from relocobjects/relocrebase, which own the pre-link ET_REL .o path. Loader-tier: read via the kuna_dynrelocs env var (the image bytes are snapshotted at load file).
+- **When to flip:** On (default) names calls made through a relocated GOT slot in any PIE or MIPS PIC image, and gives the relocated value to anything that reads that memory; an unrelocated slot holds 0, which the run-time image never holds, so this is a correctness fix rather than a judgement call. Flip off to restore the pre-fix bytes exactly - every GOT slot back to 0 and every such call back to (*dat_<addr>)(...).
 - **Where / provenance:** P1/code-data-partition · kuna · correctness-fix · kuna-analysis-dynrelocs
 - **Example:** `option dynrelocs off`
 

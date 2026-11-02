@@ -361,6 +361,7 @@ kuna_options! { self, p1;
     "switchrunonguard" => on_off!(switch_run_on_guard, "Jump-table run-on cut past a non-bounding guard"),
     "constselectjump" => on_off!(const_select_jump, "Constant-select indirect branch recovery"),
     "switchguardbound" => on_off!(switch_guard_bound, "Switch CBRANCH-guard index bound"),
+    "highsliceguard" => on_off!(highslice_guard, "High-byte slice jump-table guard"),
     "switchsharedcase" => on_off!(switch_shared_case, "Switch loop-carried-guard table"),
     "switchmultipred" => on_off!(switch_multi_pred, "Switch multi-predecessor unrolled-guard table"),
     "unrolledguard" => on_off!(unrolled_guard, "Interleaved unrolled-guard jump-table partial-flow recovery"),

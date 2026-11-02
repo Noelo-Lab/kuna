@@ -1,0 +1,25 @@
+bejoin_mipsclang_O2.so -- MIPS32 big-endian clang image for option bejoin
+callers with a pair whose low word also feeds its high word (GH-904;
+tests/stages/kuna-bejoin-mipsclang.xml).
+
+What it is
+  o32 PIC shared object from bejoin_mipsclang.c. clang computes add64's low
+  word in $3 and reads it there for the carry (addu $3,$7,$5; sltu
+  $2,$3,$7), and widens widen1's x + 1 from $3 (addiu $3,$4,1; sra
+  $2,$3,31); c_add and c_widen store both words of the result, c_hi one.
+
+Why it is vendored
+  CI has no MIPS toolchain, and the assertions depend on clang's exact
+  register choices.
+
+Where it came from
+  Ubuntu clang 14.0.0-1ubuntu1.1 and Ubuntu binutils 2.38 (mipsel-linux-gnu-ld,
+  -EB) on the host:
+
+      clang -target mips-linux-gnu -fPIC -O2 -w -c bejoin_mipsclang.c -o bejoin_mipsclang.o
+      mipsel-linux-gnu-ld -EB -shared --build-id=none bejoin_mipsclang.o \
+          -o bejoin_mipsclang_O2.so
+
+  sha256:
+    b661720999f567e2edd2c5a6be2c9db1db6734f97e20ee1849264c87d5f28943  bejoin_mipsclang_O2.so
+  Never executed.

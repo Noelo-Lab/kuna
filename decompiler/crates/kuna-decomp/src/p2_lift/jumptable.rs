@@ -826,7 +826,10 @@ impl GuardRecord {
     pub fn one_off_match(fd: &Funcdata, op1: OpId, op2: OpId) -> int4 {
         let c1 = fd.obank().get(op1).unwrap().code();
         if c1 != fd.obank().get(op2).unwrap().code() {
-            return 0;
+            return i32::from(
+                fd.get_arch().highslice_guard
+                    && crate::p2_lift::kuna_highslice_guard::matches(fd, op1, op2),
+            );
         }
         match c1 {
             OpCode::CPUI_INT_AND

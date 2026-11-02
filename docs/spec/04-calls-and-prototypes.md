@@ -2675,6 +2675,52 @@ first. A caller that passes the pair straight on as the next call's arguments
 (`bl f; bl use64`), and a `long long` none of whose callers reads its second
 register, stay as `evidence` prints them.
 
+A pair proven either way is the function's output even where return recovery
+alone would leave its second register out
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (keep_proven_pair)`).
+Upstream's `onlyOpUse` takes a register whose value also reaches another of
+the RETURN's output registers for a temporary of that one, and on MIPS that
+is how clang builds a 64-bit value: `addu $3,$7,$5; sltu $2,$3,$7` computes a
+sum's low word in `$3` and its carry from it, and `addiu $3,$4,1; sra
+$2,$3,31` widens `x + 1` from `$3`. Both printed as an `int` that dropped the
+low word, though their callers store both words. Once the trials are checked,
+a function that `evidence` or `callers` proves keeps both registers of the
+model's pair when each is one trial and every live RETURN reads both as values
+the function wrote. A register that holds what a call left there (an indirect
+creation, which the output model never joins into a pair), or that some path
+brings to the RETURN still holding its entry value, keeps the old outcome
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_bejoin.rs (written_on_every_path)`);
+`callwide`'s retained pair goes through the same test without that
+restriction. A function no proof covers keeps the `int`: its bytes are those
+of an `int` that leaves a scratch value in the second register, which `int`
+functions often do: over the 355 images below, keeping every pair whose two
+registers the function writes would turn 2,321 `int` and 1,325 `void`
+functions into 8-byte returns for 155 real ones. Over 355 gcc and clang MIPS
+images with their DWARF stripped (zlib, Lua and authored shapes, -O0 to -O3
+and -Os, big- and little-endian PIC shared objects and big-endian non-PIC
+objects) and four SQLite builds, 219 functions whose DWARF type is eight bytes
+now return it where they printed an `int` or a `bool`, two SQLite functions
+that printed `void` return their `int`, four that printed `unsigned int` for
+a `void` return nothing, and no return moves away from its DWARF type.
+PowerPC has the same shapes (`addi 4,3,1; srawi 3,4,31` for `x + 1` from gcc
+and clang): over 250 gcc 13 and clang 14 PowerPC images (the same sources,
+-O0 to -O3 and -Os, PIC shared objects and non-PIC objects), 54 functions now
+return the eight bytes their DWARF type says where they printed four, and
+none moves away. Little-endian MIPS, ARM, SPARC and x86 images, and the
+big-endian MIPS and PowerPC glibc and `ld.so` and MIPS busybox among angr's
+test binaries, print byte-identically.
+
+A function that hands such a pair back from a call keeps both registers
+once its callee returns eight bytes, as it already did after a callee whose
+own recovery kept both. Without a proof of its own it joins them first
+register low, so a `u64` wrapper none of whose callers reads the second
+register prints its words swapped (`CONCAT44((int)v1,(int)(v1 >> 0x20))`),
+and so does `u32 hi(..) { return add64(..) >> 32; }`, which compiles to the
+same `jal add64; jr $31` and printed its `int` before. Over the corpora above,
+five MIPS and five PowerPC wrappers newly print that way where they printed
+the high word alone; it is the open case of a `long long` none of whose
+callers reads its second register.
+
 With `bejoin on`, the pair joins in the ABI's order only when its second
 register holds a low word the function returns on purpose.
 Ancestor realism makes a pair of any function whose second register reaches the
