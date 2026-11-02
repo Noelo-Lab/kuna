@@ -62,7 +62,14 @@
 //! ARM `bl` and `blx` and their Thumb forms) whose target starts a symbol, each
 //! decoded again before it is read, and the extents from the image's own
 //! symbol table, so a verdict is the same whichever function a run decompiles,
-//! in whatever order. An image without symbols proves nothing this way.
+//! in whatever order. An image without symbols proves nothing this way. A
+//! MIPS PIC call, `lw $25,%call16(f)($28); jalr $25` (or a `%got` page load
+//! that `addiu $25,..,%lo(f)` completes), is a call to the function its GOT
+//! entry names, read at the GOT pointer the caller's prologue computes from
+//! `$t9`, when nothing between the load and the `jalr` branches or writes
+//! the registers it uses and no branch of the caller lands there. An
+//! unaligned load into the second register (`lwl $3,0($2); lwr $3,3($2)`)
+//! writes it whole and reads nothing of it.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::rc::Rc;
@@ -232,6 +239,177 @@ pub(super) fn t32(site: u64, h1: u16, h2: u16) -> Option<u64> {
     Some((pc as i64 + sext(imm, 25)) as u64 & M32)
 }
 
+/// MIPS `jalr $ra, $t9`, the PIC call.
+const JALR_T9: u32 = 0x0320_f809;
+
+/// Does the MIPS instruction `w` transfer control: a branch, a jump, or a
+/// coprocessor branch?
+fn mips_control(w: u32) -> bool {
+    let op = w >> 26;
+    matches!(op, 1..=7 | 0x14..=0x17 | 0x1d)
+        || (op == 0 && matches!(w & 0x3f, 8 | 9))
+        || (matches!(op, 0x10..=0x13) && (w >> 21) & 0x1f == 8)
+}
+
+/// May the MIPS instruction `w` write the general register `r`? Anything
+/// but a store, a branch or a jump that names `r` where an instruction names
+/// what it writes may; a store conditional (`sc`, `scd`) writes its flag.
+fn mips_writes(w: u32, r: u32) -> bool {
+    let op = w >> 26;
+    let (rt, rd) = ((w >> 16) & 0x1f, (w >> 11) & 0x1f);
+    if matches!(op, 0x28..=0x2f | 0x39..=0x3b | 0x3d..=0x3f) {
+        return false;
+    }
+    match op {
+        0 | 0x1c => rd == r,
+        0x1f => rd == r || rt == r,
+        _ => rt == r,
+    }
+}
+
+/// The GOT pointer the prologue of the MIPS function at `entry` computes,
+/// and the registers that hold it once the prologue is done. The prologue
+/// is its first instructions up to the first control transfer, evaluated
+/// over literals and `$t9`, which holds the entry on a PIC call. The pointer
+/// is what the prologue writes to `$gp`, or else the first sum of a literal
+/// and `$t9` (`lui $28,%hi(_gp_disp); addiu $28,$28,%lo(_gp_disp);
+/// addu $28,$28,$25`, or clang's `addu $17,$2,$25`).
+fn mips_gp(entry: u64, words: &[u32]) -> Option<(u32, Vec<u32>)> {
+    let mut regs: [Option<u32>; 32] = [None; 32];
+    regs[0] = Some(0);
+    regs[25] = Some(entry as u32);
+    let (mut gp, mut sum) = (None, None);
+    for &w in words.iter().take(16) {
+        if mips_control(w) {
+            break;
+        }
+        let (op, rs, rt, rd) = (w >> 26, ((w >> 21) & 0x1f) as usize, ((w >> 16) & 0x1f) as usize, ((w >> 11) & 0x1f) as usize);
+        let (imm, simm) = (w & 0xffff, w as u16 as i16 as i32 as u32);
+        let both = |f: fn(u32, u32) -> u32| regs[rs].zip(regs[rt]).map(|(a, b)| f(a, b));
+        let (dst, val) = match (op, w & 0x3f) {
+            (0x0f, _) => (rt, Some(imm << 16)),
+            (0x09, _) => (rt, regs[rs].map(|v| v.wrapping_add(simm))),
+            (0x0d, _) => (rt, regs[rs].map(|v| v | imm)),
+            (0, 0x21) => {
+                let v = both(u32::wrapping_add);
+                if (rs == 25) != (rt == 25) && sum.is_none() {
+                    sum = v;
+                }
+                (rd, v)
+            }
+            (0, 0x25) => (rd, both(|a, b| a | b)),
+            _ => match (1..32).find(|&r| mips_writes(w, r as u32)) {
+                Some(r) => (r, None),
+                None => continue,
+            },
+        };
+        if dst != 0 {
+            regs[dst] = val;
+            if dst == 28 {
+                gp = val;
+            }
+        }
+    }
+    let gp = gp.or(sum)?;
+    let bases = (1..32u32).filter(|&r| r != 25 && regs[r as usize] == Some(gp)).collect();
+    Some((gp, bases))
+}
+
+/// May the GOT pointer be read through `base` anywhere in the MIPS function
+/// `words` after its prologue (`skip` instructions)? Only a reload from a
+/// frame slot the function stores `base` to writes it again: `$gp` from
+/// gcc's `.cprestore` slot anywhere, another register only where it returns
+/// (`jr $ra`) before any other control transfer, so no path that leaves that
+/// register changed reaches a call.
+fn mips_base_holds(words: &[u32], skip: usize, base: u32) -> bool {
+    let reload = 0x8c00_0000 | (29 << 21) | (base << 16);
+    let saved: BTreeSet<u32> = words.iter().filter(|&&w| w & 0xffff_0000 == (reload | 0x2000_0000)).map(|&w| w & 0xffff).collect();
+    let returns = |i: usize| {
+        words.iter().skip(i + 1).take(16).find(|&&x| mips_control(x)) == Some(&0x03e0_0008)
+    };
+    words.iter().enumerate().skip(skip).all(|(i, &w)| {
+        !mips_writes(w, base) || (w & 0xffff_0000 == reload && saved.contains(&(w & 0xffff)) && (base == 28 || returns(i)))
+    })
+}
+
+/// The `jalr $t9` calls in the MIPS function at `entry` (its words `words`)
+/// whose `$t9` came from the GOT: `lw $25,%call16(f)(base)`, or a page
+/// `lw rX,%got(f)(base)` that `addiu $25,rX,%lo(f)` completes, with `base`
+/// a register the prologue left the GOT pointer in ([`mips_gp`],
+/// [`mips_base_holds`]), and no control transfer, nor another write of the
+/// registers involved, between the load and the call. The entry is read at
+/// the GOT pointer plus the load's offset through `word`. Each is added to
+/// `calls` as `(target, site)` and to `pic` with the load's address.
+fn mips_pic_calls(entry: u64, words: &[u32], word: &mut impl FnMut(u64) -> Option<u32>, calls: &mut Vec<(u64, u64)>, pic: &mut BTreeMap<u64, u64>) {
+    if !words.contains(&JALR_T9) {
+        return;
+    }
+    let Some((gp, bases)) = mips_gp(entry, words) else { return };
+    let skip = words.iter().take(16).position(|&w| mips_control(w)).unwrap_or(16.min(words.len()));
+    let bases: Vec<u32> = bases.into_iter().filter(|&b| mips_base_holds(words, skip, b)).collect();
+    for (i, _) in words.iter().enumerate().filter(|(_, &w)| w == JALR_T9) {
+        let (mut want, mut add, mut found) = (25u32, None, None);
+        for j in (i.saturating_sub(8)..i).rev() {
+            let w = words[j];
+            if mips_control(w) {
+                break;
+            }
+            let (op, rs, rt) = (w >> 26, (w >> 21) & 0x1f, (w >> 16) & 0x1f);
+            if op == 0x23 && rt == want && bases.contains(&rs) {
+                found = Some((j, gp.wrapping_add(w as u16 as i16 as i32 as u32)));
+                break;
+            }
+            if op == 0x09 && rt == 25 && add.is_none() && rs != 0 {
+                want = rs;
+                add = Some(w as u16 as i16 as i32 as u32);
+                continue;
+            }
+            if mips_writes(w, want) {
+                break;
+            }
+        }
+        let add = add.unwrap_or(0);
+        let Some((j, slot)) = found else { continue };
+        let Some(target) = word(u64::from(slot)) else { continue };
+        let site = entry + 4 * i as u64;
+        calls.push((u64::from(target.wrapping_add(add)), site));
+        pic.insert(site, entry + 4 * j as u64);
+    }
+}
+
+/// Is the MIPS instruction at `at` (decoded `insn`) half of an unaligned
+/// load (`lwl`, `lwr`) into the second register `lo` whose other half follows
+/// it, before any control transfer, from the same base three bytes along?
+/// Each half merges memory into what the register held, but the two together
+/// overwrite it, so the pair writes the register and reads nothing of it
+/// (gcc's copy of an unaligned word: `lwl $3,0($2); lwr $3,3($2)`).
+fn mips_whole_load(arch: &Architecture, index: &Index, at: u64, insn: &Insn, lo: &Key) -> bool {
+    if !insn.ops.iter().any(|(_, out, _)| out.as_ref().and_then(key).is_some_and(|o| o == *lo)) {
+        return false;
+    }
+    let loader = arch.translate().loader_rc();
+    let mut buf = [0u8; 20];
+    if loader.borrow_mut().load_fill(&mut buf, &index.at(at)).is_err() {
+        return false;
+    }
+    let w: Vec<u32> = buf.chunks_exact(4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).collect();
+    let (op, base, rt, off) = (w[0] >> 26, (w[0] >> 21) & 0x1f, (w[0] >> 16) & 0x1f, i32::from(w[0] as u16 as i16));
+    let (other, delta) = match op {
+        0x22 => (0x26, 3),
+        0x26 => (0x22, -3),
+        _ => return false,
+    };
+    for &x in &w[1..] {
+        if x >> 26 == other && (x >> 21) & 0x1f == base && (x >> 16) & 0x1f == rt && i32::from(x as u16 as i16) == off + delta {
+            return true;
+        }
+        if mips_control(x) || mips_writes(x, base) || (mips_writes(x, rt) && x >> 26 != op) {
+            return false;
+        }
+    }
+    false
+}
+
 /// What the walk after one call site found.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Use {
@@ -274,11 +452,16 @@ pub(super) struct Index {
     code: Rc<AddrSpace>,
     /// Does the instruction set have register windows (SPARC)?
     windows: bool,
+    /// Is the instruction set MIPS (big-endian)?
+    mips: bool,
     /// `[start, end)` of each symbol, sorted: to the next symbol, or to the
     /// end of the size the symbol table states for it.
     funcs: Vec<(u64, u64)>,
     /// `(target, site)` of each direct call to a symbol, sorted.
     calls: Vec<(u64, u64)>,
+    /// The MIPS PIC `jalr $t9` sites among [`Self::calls`], each with the
+    /// address of the GOT load that gave `$t9` its target.
+    pic: BTreeMap<u64, u64>,
     /// The target of every direct call into the executable ranges other than
     /// itself (an object's unrelocated `bl .`), sorted: a function's entry,
     /// whether or not a symbol starts it.
@@ -362,6 +545,23 @@ impl Index {
                 }
             }
         }
+        let mut pic = BTreeMap::new();
+        if isa == Isa::Mips {
+            let mut word = |a: u64| -> Option<u32> {
+                let mut b = [0u8; 4];
+                loader.borrow_mut().load_fill(&mut b, &Address::new(Rc::clone(&code), a)).ok()?;
+                Some(u32::from_be_bytes(b))
+            };
+            for &(start, end) in &funcs {
+                let n = (end.saturating_sub(start) / 4).min(MAX_SCAN_INSNS as u64) as usize;
+                let mut buf = vec![0u8; 4 * n];
+                if loader.borrow_mut().load_fill(&mut buf, &Address::new(Rc::clone(&code), start)).is_err() {
+                    continue;
+                }
+                let words: Vec<u32> = buf.chunks_exact(4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]])).collect();
+                mips_pic_calls(start, &words, &mut word, &mut calls, &mut pic);
+            }
+        }
         let mut entries: Vec<u64> = calls.iter().filter(|c| c.0 != c.1 && range_of(c.0).is_some()).map(|c| c.0).collect();
         entries.sort_unstable();
         entries.dedup();
@@ -371,7 +571,9 @@ impl Index {
         let eh = landing::read(arch.eh_sections.as_deref().map(Vec::as_slice), named, sjlj, &|a| range_of(a).is_some(), &mut |a, buf| {
             loader.borrow_mut().load_fill(buf, &Address::new(Rc::clone(&code), a)).is_ok()
         });
-        Some(Index { code, windows: isa == Isa::Sparc, funcs, calls, entries, cold, eh })
+        let sites: BTreeSet<u64> = calls.iter().map(|c| c.1).collect();
+        pic.retain(|site, _| sites.contains(site));
+        Some(Index { code, windows: isa == Isa::Sparc, mips: isa == Isa::Mips, funcs, calls, pic, entries, cold, eh })
     }
 
     fn start(&self, entry: u64) -> Option<(u64, u64)> {
@@ -952,11 +1154,14 @@ fn delay_slot(arch: &Architecture, index: &Index, at: u64, insn: &Insn) -> Optio
 /// that branches to a direct call's target is a tail call and ends there.
 fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64, caller: (u64, u64), layout: &Layout) -> Use {
     let Some(insn) = decode(arch, &index.at(site)) else { return Use::Dead };
-    let Some(k) = insn
-        .ops
-        .iter()
-        .position(|(opc, _, ins)| *opc == OpCode::CPUI_CALL && ins.first().and_then(|v| index.target(v)) == Some(callee))
-    else {
+    let pic = index.pic.get(&site).copied();
+    if pic.is_some_and(|load| layout.joins.range(load + 1..=site).next().is_some()) {
+        return Use::Dead;
+    }
+    let Some(k) = insn.ops.iter().position(|(opc, _, ins)| match pic {
+        Some(_) => *opc == OpCode::CPUI_CALLIND,
+        None => *opc == OpCode::CPUI_CALL && ins.first().and_then(|v| index.target(v)) == Some(callee),
+    }) else {
         return Use::Dead;
     };
     let mut entry = PathFacts::default();
@@ -1000,7 +1205,7 @@ fn site_use(arch: &Architecture, index: &Index, lo: Key, callee: u64, site: u64,
         let mut forked = branched;
         let counts = |i: &Insn| i.ops.iter().filter(|(opc, out, ins)| reads(i, *opc, out, ins, &lo, branched)).count();
         let slot = delay_slot(arch, index, at, &insn).map_or(0, |d| counts(&d));
-        let genuine = slot == 0 || counts(&insn) > slot;
+        let genuine = (slot == 0 || counts(&insn) > slot) && !(index.mips && mips_whole_load(arch, index, at, &insn, &lo));
         let mut dep = None;
         while op < insn.ops.len() {
             let (opc, out, ins) = &insn.ops[op];

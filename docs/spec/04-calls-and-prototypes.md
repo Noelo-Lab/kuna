@@ -2596,7 +2596,34 @@ for the direct-call encodings (PowerPC `bl`/`bla`, MIPS `jal`/`bal`, SPARC
 image) whose target starts a symbol, and each site is decoded again before it
 is read, so a data word that happens to encode such a call is dropped. The
 function holding a site is the symbol whose extent (to the next symbol)
-contains it, and the walk after the call stays inside it. The walk keeps, on
+contains it, and the walk after the call stays inside it. MIPS PIC code (gcc's
+and clang's default, `-mabicalls`) calls through the GOT instead:
+`lw $25,%call16(f)($28); jalr $25`, or for a local function a page entry that
+an add completes (`lw $25,%got(f)($28); addiu $25,$25,%lo(f)`, clang's
+`lw $1,%got(f)($17); addiu $25,$1,%lo(f)`). Such a `jalr $25` is a call to
+the function the GOT entry names when the load is the nearest earlier
+instruction that writes `$25` (or the add's source), within eight
+instructions with no control transfer between, and its base register holds
+the GOT pointer: the value the caller's prologue, read over literals and
+`$t9` (the entry, on a PIC call) up to its first control transfer, leaves in
+`$gp` (`lui $28,%hi(_gp_disp); addiu $28,$28,%lo(_gp_disp); addu
+$28,$28,$25`) or, for clang, in the register its first sum of a literal and
+`$t9` writes. The register may be written again only by a load from a
+frame slot the function saves it to: `$gp` (gcc's `.cprestore` slot)
+anywhere, another such register only where the function then returns before
+any other control transfer; a store conditional into it (`sc`) is a write
+like any other.
+The entry is read from the image at the GOT pointer plus the load's offset (a
+linked image's GOT, or the one an object's layout makes), and the site gives
+no evidence when a branch of the caller lands between the load and the call.
+MIPS has one more instruction that names the second register without reading
+its value: an unaligned word load is a pair (`lwl $3,0($2); lwr $3,3($2)` on a
+big-endian target), each half merging memory into the register, and the two
+together overwrite it. A `lwl` or `lwr` whose other half follows it, before
+any control transfer, from the same base three bytes along, writes the
+register and reads none of it (gcc copies an unaligned struct field into `$3`
+right after a call; SQLite's `int sqlite3PagerWrite` and `void
+vdbeMemClearExternAndSetNull` read as wide that way in a PIC build). The walk keeps, on
 each path, what the branches it took decided about the one-byte flag registers
 and the conditions it tested, so instructions that one condition skips are
 skipped together: ARM's `cmp r3,#0; ldrne r1,[sp,#0x1c]; orrnes r2,r1,r0`
@@ -2631,8 +2658,13 @@ are libgcc's and glibc's 64-bit routines (`__divdi3`, `strtoull`, `lseek64`,
 `__time64`). The four SQLite objects (6,010 functions) change the same way
 (`sqlite3VdbeIntValue`, `memIntValue` and
 `sqlite3BtreeOffset` return high word first, and `sqlite3_column_int` returns
-`(unsigned int)memIntValue(v)` where it lost the word); none change on MIPS,
-whose gcc build calls through `jalr`. Over 1,428 authored objects (sums,
+`(unsigned int)memIntValue(v)` where it lost the word). Reading MIPS PIC calls
+through the GOT, over 16 gcc PIC shared objects (SQLite, Lua, zlib and the
+authored shapes, -O0 to -O2 and -Os), every function the callers newly prove
+(47) returns eight bytes by its DWARF type, as Lua's `lua_tointegerx` and
+`luaL_checkinteger` do, and the three SQLite functions an unaligned load had
+proven (`int sqlite3PagerWrite`, `int sqlite3VdbeMemFinalize`, `void
+vdbeMemClearExternAndSetNull`) no longer are. Over 1,428 authored objects (sums,
 differences, negations, shifts, `umull`/`smull`/`umlal` products,
 accumulations, loads, wrappers and chains, each beside the `int` over its high
 word, constant divisions, volatile high-word reads, MIPS -O0 `>> 32` and
