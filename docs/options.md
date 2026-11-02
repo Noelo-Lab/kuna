@@ -1429,6 +1429,9 @@ Three tiers:
 | decompile of a huge function is killed before the first jump table is recovered | [`readonlycalls`](#readonlycalls) |
 | thousands of INDIRECTs over read-only globals survive in a large function's IR | [`readonlycalls`](#readonlycalls) |
 | a function prints read-only literals differently once it grows past the readonlycalls threshold | [`readonlycalls`](#readonlycalls) |
+| a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile | [`persistcalls`](#persistcalls) |
+| heritage builds millions of INDIRECTs over writable globals that survive dead-code removal | [`persistcalls`](#persistcalls) |
+| a huge initializer or finalizer exhausts memory in assignhigh or merging | [`persistcalls`](#persistcalls) |
 | a huge function exhausts memory during heritage | [`prunedssa`](#prunedssa) |
 | heritage builds millions of INDIRECTs and MULTIEQUALs that dead-code removal deletes | [`prunedssa`](#prunedssa) |
 | a mid-sized function with thousands of calls and string-instruction loops takes gigabytes to decompile | [`prunedssa`](#prunedssa) |
@@ -4415,6 +4418,14 @@ Part of the decompiler; not the control surface. Flip only to reproduce upstream
 - **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes. Set `on` to print every function as one above the threshold prints (no per-element copies of read-only literals, constant globals read again after calls), a smaller N to lower the size at which that starts, a larger N or `off` to keep upstream's guards in larger functions, for example to compare the SSA heritage builds for a large constant table read across calls.
 - **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
 - **Example:** `option readonlycalls off`
+
+### `persistcalls` -- off | on | <n>, default `65536`
+
+- **Symptoms:** a function that touches thousands of globals between thousands of calls takes gigabytes and minutes to decompile; heritage builds millions of INDIRECTs over writable globals that survive dead-code removal; a huge initializer or finalizer exhausts memory in assignhigh or merging.
+- **What it does:** In a heritage pass that would guard at least N persistent-RAM-range and call pairs (default 65,536), give a call an INDIRECT guard over a writable persistent global only where the guard carries something: a write of the global reaches the call with no other call in between, a read of it follows the call with no call or full write in between, or nothing reads it after the call at all (no read, return or kept guard before a full write or the end of the path), where upstream's guard is the value's last reader. Upstream guards every persistent global at every call whose effect on it is unknown, and the guards survive dead-code removal, so a function that touches thousands of globals across thousands of calls builds millions of them. A guard's input lets the call read the last write and its output is what a later read sees; the first call after a write keeps that write live, and the last call before a read is the one the read sees, so every other guard only hands one opaque value from the call before it to the call after it, and the value still flows through those calls to a reader, so the global stays live over the same code and merges the same way. Every LOAD from the global's space that is not through the stack pointer counts as a read and every STORE into it as a write, since either can fold into a direct access later. Returns are not reads: the persist COPY at a return reads the last guard or write. If a later pass links a new read of the range across a call left unguarded, or a guard a read depends on is removed with its call, the function restarts with every guard built. A skipped guard, and a join only skipped guards needed, keep their op and Varnode numbers. Below N every call keeps upstream's guard, and jump-table recovery partials always do. The count is the pass's calls times its new ranges in the default data space.
+- **When to flip:** On by default at 65,536 guards, the size at which the guards cost a huge function gigabytes and minutes. Set `on` to place the sparse guards in every pass with a call, a larger N or `off` to keep upstream's guard on every persistent global at every call, for example to compare heritage's IR with upstream.
+- **Where / provenance:** P3/call-guard · kuna · performance · gh-1034
+- **Example:** `option persistcalls off`
 
 ### `prunedssa` -- on | off, default `on`
 

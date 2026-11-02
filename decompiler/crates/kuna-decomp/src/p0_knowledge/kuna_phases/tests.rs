@@ -38,9 +38,9 @@ fn surface_count_is_120() {
 }
 
 #[test]
-fn settable_count_is_373() {
-    assert_eq!(kuna_num_settables(), 373);
-    assert_eq!(SETTABLE_TABLE.len(), 373);
+fn settable_count_is_374() {
+    assert_eq!(kuna_num_settables(), 374);
+    assert_eq!(SETTABLE_TABLE.len(), 374);
 }
 
 #[test]
@@ -652,6 +652,9 @@ fn option_values_live_value_present_for_177() {
                             // (kuna) `readonlycalls` takes `off|on|<n>`, a guard
                             // count; its live value is `Architecture::readonly_calls`.
                             | "readonlycalls"
+                            // (kuna) `persistcalls` takes `off|on|<n>`, a guard
+                            // count; its live value is `Architecture::persist_calls`.
+                            | "persistcalls"
                             // (kuna) `retsplitlimit` takes `off|<n>`, an op count;
                             // its live value is `Architecture::ret_split_limit`.
                             | "retsplitlimit"
@@ -1160,7 +1163,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 for `truncptrflow`; its P3 row sits after `haltloopguard`.
     // +1 for `clonephiorder`; its P8 row sits after `rettriangle`.
     // +1 for `switchrunon`; its P2 row sits after `switchsharedcase`.
-    assert_eq!(json.matches("},\n").count(), 372);
+    assert_eq!(json.matches("},\n").count(), 373);
 }
 
 #[test]

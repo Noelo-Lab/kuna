@@ -670,6 +670,15 @@ impl Rule for RuleIndirectCollapse {
 
         let out = op_out(data, op).expect("RuleIndirectCollapse: op out");
         let in0 = op_in(data, op, 0).expect("RuleIndirectCollapse: op in0");
+        if data.obank().get(op).is_some_and(|o| o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_persist_guard != 0) {
+            let (addr, size) = {
+                let v = data.vbank().get(out).expect("RuleIndirectCollapse: stale op out");
+                (v.get_addr().clone(), v.get_size())
+            };
+            if !crate::p3_dataflow::kuna_persistcalls::guarded(data, op, &addr, size) {
+                crate::p3_dataflow::kuna_persistcalls::restart_full(data);
+            }
+        }
         data.total_replace(out, in0).expect("RuleIndirectCollapse: totalReplace");
         data.op_destroy(op); // Get rid of the INDIRECT
         1

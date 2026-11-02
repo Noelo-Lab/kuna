@@ -229,6 +229,10 @@ pub mod pcodeop_addlflags {
     pub const kuna_rename_read: uint4 = 0x800000;
     /// Transient saved RBP in a summarized Rust callee, not a caller-reserved slot.
     pub const kuna_rustprobe_spill: uint4 = 0x1000000;
+    /// (kuna `persistcalls`) This call guard of a persistent global is the one
+    /// a following read sees, on a range some earlier call was left unguarded
+    /// over. Set by `Heritage::guard_calls`; read by `RuleIndirectCollapse`.
+    pub const kuna_persist_guard: uint4 = 0x2000000;
 }
 
 // ---------------------------------------------------------------------------
@@ -1720,6 +1724,12 @@ impl PcodeOpBank {
         self.loadlist.clear();
         self.returnlist.clear();
         self.useroplist.clear();
+    }
+
+    /// Take `n` sequence times without creating ops, so later ops are timed as
+    /// if they had been created.
+    pub fn reserve_uniq(&mut self, n: uintm) {
+        self.uniqid = self.uniqid.wadd(n);
     }
 
     /// Create a PcodeOp with `inputs` empty input slots at the given Address;
