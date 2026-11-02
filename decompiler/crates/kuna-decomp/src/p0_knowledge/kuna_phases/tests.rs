@@ -32,9 +32,9 @@ fn subphase_count_is_48() {
 }
 
 #[test]
-fn surface_count_is_120() {
-    assert_eq!(kuna_num_surfaces(), 120);
-    assert_eq!(SURFACE_TABLE.len(), 120);
+fn surface_count_is_121() {
+    assert_eq!(kuna_num_surfaces(), 121);
+    assert_eq!(SURFACE_TABLE.len(), 121);
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn option_values_set_validates_against_values() {
 }
 
 #[test]
-fn option_values_live_value_present_for_177() {
+fn option_values_live_value_present_for_178() {
     let ov = OptionValues::default();
     // 28 options have a codegen live reader (realtypes + dedupvardecls join the
     // field-backed group; switchguardbound is field-backed via switch_guard_bound;
@@ -936,7 +936,8 @@ fn option_values_live_value_present_for_177() {
     // 168 -> 169: +1 for `switchrunon` (switch_run_on).
     // 175 -> 176: +1 for `highsliceguard` (highslice_guard).
     // 176 -> 177: +1 for `mipsunaligned` (mips_unaligned).
-    assert_eq!(with_live, 177);
+    // 177 -> 178: +1 for `gottailcall` (got_tail_call).
+    assert_eq!(with_live, 178);
 }
 
 #[test]
