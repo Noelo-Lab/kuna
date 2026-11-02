@@ -2145,11 +2145,13 @@ mod tests {
         // and kuna-wrapsplit + kuna-wrapsplit-be / accesses that run past the top of their space
         // and kuna-relocobj-ppc-mips / PowerPC and MIPS relocatable objects' calls and addresses
         // and kuna-bejoin-mipspic / MIPS PIC callers and unaligned loads (option bejoin callers)
+        // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
+        // and kuna-relocrebase-be / a big-endian object's analysis facts at its load addresses
         // and kuna-bejoin-mipsclang / a proven pair whose low word feeds its high word stays whole
         // and kuna-mipsgot-local / MIPS GOT slots of what the image defines (option dynrelocs)
         // and kuna-funcstart-symbolextent / no pattern or gap start inside a sized function symbol
         // and kuna-mipsunaligned / a MIPS unaligned pair lifts as one access (option mipsunaligned)
-        assert_eq!(count, 676, "corpus file count drifted");
+        assert_eq!(count, 677, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

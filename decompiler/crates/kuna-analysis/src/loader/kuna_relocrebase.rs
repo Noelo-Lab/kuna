@@ -196,9 +196,10 @@ fn relocate_unlaid_sections(file: &object::File, layout: &RelocLayout, out: &mut
                 continue;
             }
             let Some(s) = resolve_target(file, layout, &reloc) else { continue };
+            let order = Order::of(file);
             let a = reloc.addend() as i128
                 + if reloc.has_implicit_addend() {
-                    implicit_addend(&out[at..at + nbytes])
+                    order.signed(&out[at..at + nbytes])
                 } else {
                     0
                 };
@@ -211,8 +212,7 @@ fn relocate_unlaid_sections(file: &object::File, layout: &RelocLayout, out: &mut
                 RelocationKind::Relative | RelocationKind::PltRelative => s as i128 + a - p,
                 _ => continue,
             };
-            let le = (value as u64).to_le_bytes();
-            out[at..at + nbytes].copy_from_slice(&le[..nbytes]);
+            order.write(&mut out[at..at + nbytes], value as u64);
         }
     }
 }
@@ -251,15 +251,47 @@ fn resolve_target(
     }
 }
 
-/// Read the in-place addend of a REL-style relocation (COFF, 32-bit ELF), the
-/// twin of `reloc_object`'s helper.
-fn implicit_addend(field: &[u8]) -> i128 {
-    match field.len() {
-        4 => i32::from_le_bytes([field[0], field[1], field[2], field[3]]) as i128,
-        8 => i64::from_le_bytes([
-            field[0], field[1], field[2], field[3], field[4], field[5], field[6], field[7],
-        ]) as i128,
-        _ => 0,
+/// The byte order of the fields an object stores: its own (COFF's is always
+/// little-endian).
+#[derive(Clone, Copy)]
+struct Order {
+    big: bool,
+}
+
+impl Order {
+    fn of(file: &object::File) -> Order {
+        Order { big: !file.is_little_endian() }
+    }
+
+    fn uint(self, field: &[u8]) -> u64 {
+        let fold = |acc: u64, b: &u8| (acc << 8) | u64::from(*b);
+        if self.big {
+            field.iter().fold(0, fold)
+        } else {
+            field.iter().rev().fold(0, fold)
+        }
+    }
+
+    /// The in-place addend of a REL-style relocation (COFF, 32-bit ELF), the
+    /// twin of `reloc_object`'s helper.
+    fn signed(self, field: &[u8]) -> i128 {
+        match field.len() {
+            4 => self.uint(field) as u32 as i32 as i128,
+            8 => self.uint(field) as i64 as i128,
+            _ => 0,
+        }
+    }
+
+    fn read(self, b: &[u8], at: usize, width: usize) -> Option<u64> {
+        Some(self.uint(b.get(at..at.checked_add(width)?)?))
+    }
+
+    fn write(self, field: &mut [u8], value: u64) {
+        let n = field.len();
+        for (i, byte) in field.iter_mut().enumerate() {
+            let shift = if self.big { (n - 1 - i) * 8 } else { i * 8 };
+            *byte = (value >> shift) as u8;
+        }
     }
 }
 
@@ -299,18 +331,20 @@ fn patch_elf(file: &object::File, layout: &RelocLayout, out: &mut [u8]) -> Optio
         2 => true,
         _ => return None,
     };
-    if out[5] != 1 {
-        return None; // big-endian ELF: the field writes below are little-endian
-    }
+    let order = match out[5] {
+        1 => Order { big: false },
+        2 => Order { big: true },
+        _ => return None,
+    };
     let shape = if is64 {
         ElfShape { sh_addr: 16, st_value: 8, width: 8 }
     } else {
         ElfShape { sh_addr: 12, st_value: 4, width: 4 }
     };
     let (e_shoff, e_shentsize, e_shnum) = if is64 {
-        (read_u64(out, 0x28)?, read_u16(out, 0x3a)? as usize, read_u16(out, 0x3c)? as usize)
+        (order.read(out, 0x28, 8)?, order.read(out, 0x3a, 2)? as usize, order.read(out, 0x3c, 2)? as usize)
     } else {
-        (read_u32(out, 0x20)? as u64, read_u16(out, 0x2e)? as usize, read_u16(out, 0x30)? as usize)
+        (order.read(out, 0x20, 4)?, order.read(out, 0x2e, 2)? as usize, order.read(out, 0x30, 2)? as usize)
     };
     let shoff = usize::try_from(e_shoff).ok()?;
     if e_shentsize < shape.sh_addr + shape.width {
@@ -326,14 +360,15 @@ fn patch_elf(file: &object::File, layout: &RelocLayout, out: &mut [u8]) -> Optio
         if i >= e_shnum {
             return None;
         }
-        write_uint(out, shoff + i * e_shentsize + shape.sh_addr, shape.width, vma)?;
+        let at = shoff + i * e_shentsize + shape.sh_addr;
+        order.write(out.get_mut(at..at + shape.width)?, vma);
     }
 
     // (4) st_value <- section VMA + st_value, for every symbol defined in a
     // laid-out section. An undefined/common/absolute symbol is left alone: the
     // engine addresses an extern through the loader's own synthetic slot, and a
     // pass that reads a zero address already treats it as "no address".
-    let (sym_off, sym_entsize) = elf_symtab_extent(out, shoff, e_shentsize, e_shnum, is64)?;
+    let (sym_off, sym_entsize) = elf_symtab_extent(out, shoff, e_shentsize, e_shnum, is64, order)?;
     if sym_entsize < shape.st_value + shape.width {
         return None;
     }
@@ -344,7 +379,7 @@ fn patch_elf(file: &object::File, layout: &RelocLayout, out: &mut [u8]) -> Optio
         if at + shape.width > out.len() {
             return None;
         }
-        write_uint(out, at, shape.width, base.wrapping_add(sym.address()))?;
+        order.write(out.get_mut(at..at + shape.width)?, base.wrapping_add(sym.address()));
     }
     Some(())
 }
@@ -357,17 +392,18 @@ fn elf_symtab_extent(
     shentsize: usize,
     shnum: usize,
     is64: bool,
+    order: Order,
 ) -> Option<(usize, usize)> {
-    const SHT_SYMTAB: u32 = 2;
+    const SHT_SYMTAB: u64 = 2;
     for i in 0..shnum {
         let h = shoff + i * shentsize;
-        if read_u32(out, h + 4)? != SHT_SYMTAB {
+        if order.read(out, h + 4, 4)? != SHT_SYMTAB {
             continue;
         }
         return if is64 {
-            Some((usize::try_from(read_u64(out, h + 24)?).ok()?, usize::try_from(read_u64(out, h + 56)?).ok()?))
+            Some((usize::try_from(order.read(out, h + 24, 8)?).ok()?, usize::try_from(order.read(out, h + 56, 8)?).ok()?))
         } else {
-            Some((read_u32(out, h + 16)? as usize, read_u32(out, h + 36)? as usize))
+            Some((order.read(out, h + 16, 4)? as usize, order.read(out, h + 36, 4)? as usize))
         };
     }
     // No symbol table at all: nothing to shift, which is not a failure.
@@ -404,7 +440,7 @@ fn patch_coff(layout: &RelocLayout, out: &mut [u8]) -> Option<()> {
     Some(())
 }
 
-use super::le::{read_u16, read_u32, read_u64};
+use super::le::read_u16;
 
 fn write_uint(b: &mut [u8], at: usize, width: usize, value: u64) -> Option<()> {
     let field = b.get_mut(at..at + width)?;
@@ -504,6 +540,46 @@ mod tests {
             assert!(view.contains(*start), "FDE start {start:#x} outside the loaded image");
         }
         assert!(starts.contains(&RELOC_BASE), "the .text+0 FDE resolves to the layout base");
+    }
+
+    /// A big-endian object's headers, symbols and debug fields are patched in
+    /// its own byte order, so its sections, symbols and DWARF read at the
+    /// addresses the loader gives them, as a little-endian object's do.
+    #[test]
+    fn big_endian_et_rel_is_rebased_in_its_own_byte_order() {
+        let _serial = serial();
+        for name in ["relocrebase_be_armeb.o", "relocrebase_be_ppc32.o"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(&*bytes).expect("parse");
+            assert!(!file.is_little_endian(), "{name} is big-endian");
+            let view = rebased_view(&file, &bytes).unwrap_or_else(|| panic!("{name} is rebased"));
+            let rebased = object::File::parse(&*view.bytes).expect("patched image still parses");
+            let text = rebased.section_by_name(".text").expect(".text");
+            assert_eq!(text.address(), RELOC_BASE, "{name}: .text at the layout base");
+            let sym = |n: &str| rebased.symbols().find(|s| s.name() == Ok(n)).map(|s| s.address());
+            assert_eq!(sym("scale"), Some(RELOC_BASE), "{name}: scale rebased");
+            assert!(sym("greet").is_some_and(|a| view.contains(a) && a > RELOC_BASE), "{name}: greet rebased");
+            // DWARF 5 keeps the code addresses in `.debug_addr`, big-endian.
+            let addrs = rebased.section_by_name(".debug_addr").unwrap().data().unwrap();
+            let words: Vec<u32> = addrs[8..].chunks_exact(4).map(|w| u32::from_be_bytes(w.try_into().unwrap())).collect();
+            assert!(words.contains(&(RELOC_BASE as u32)), "{name}: .debug_addr names .text at its load VMA: {words:x?}");
+        }
+    }
+
+    /// A big-endian MIPS PIC object's functions sit at their load addresses in
+    /// the rebased view, which is where the `t9 = entry` seed of a PIC prologue
+    /// (`addu gp,gp,t9`) must point.
+    #[test]
+    fn big_endian_mips_pic_object_is_rebased() {
+        let _serial = serial();
+        let bytes = fixture("relocrebase_be_mips.o");
+        let file = object::File::parse(&*bytes).expect("parse");
+        let view = rebased_view(&file, &bytes).expect("rebased");
+        let rebased = object::File::parse(&*view.bytes).expect("patched image still parses");
+        let sym = |n: &str| rebased.symbols().find(|s| s.name() == Ok(n)).map(|s| s.address());
+        assert_eq!(rebased.section_by_name(".text").map(|s| s.address()), Some(RELOC_BASE));
+        assert_eq!(sym("scale"), Some(RELOC_BASE));
+        assert_eq!(sym("greet"), Some(RELOC_BASE + 8));
     }
 
     /// The DWARF pass's `DW_AT_low_pc` and `DW_FORM_strp` fields need their
