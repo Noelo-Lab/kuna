@@ -714,6 +714,9 @@ fn decompile(args: &DecompileArgs) -> Result<DecompileOutcome, String> {
             pinned_by,
         );
         let combined = format!("{stdout_text}\n{stderr_text}");
+        for sentence in kuna_console::kuna_declaredbytes::from_transcript(&stdout_text) {
+            kuna_base::notes::say_once(&binary, &format!("warning: {sentence}"));
+        }
         if let Some(msg) = check_errors(
             &combined,
             &args.target,
@@ -1272,7 +1275,7 @@ fn run_json(req: &JsonRequest) -> i32 {
     // `run`'s stdout-then-stderr ordering.
     let (text, failure) = match decompile_json(&args, req.target) {
         Ok(answered) => answered,
-        Err(message) => (
+        Err((message, declared)) => (
             decompile_all::render_result_json(
                 &args.binary,
                 &[],
@@ -1280,6 +1283,7 @@ fn run_json(req: &JsonRequest) -> i32 {
                 Some(&message),
                 &[],
                 &Default::default(),
+                &declared,
                 args.omit,
             ),
             Some(message),
@@ -1299,17 +1303,24 @@ fn run_json(req: &JsonRequest) -> i32 {
 /// `1` on. A function whose pipeline aborted is a failed run here — `decompile`
 /// was asked about exactly that function — so `--json` cannot turn the text
 /// surface's non-zero verdict into a success; the reason is in the document too,
-/// as the record's `error` and as the run-level one.
-fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String>), String> {
-    let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)?;
-    let targets = decompile_all::resolve_targets(&prog, args)?;
+/// as the record's `error` and as the run-level one. A failure keeps the
+/// declarations' notes for the document that reports it.
+fn decompile_json(
+    args: &AllArgs,
+    target: &str,
+) -> Result<(String, Option<String>), (String, crate::funcdecl::Declared)> {
+    let mut prog = decompile_all::load_program(args, DriverDefaults::Decompile)
+        .map_err(|message| (message, Default::default()))?;
+    let declared = crate::funcdecl::Declared::of(&prog);
+    let targets = decompile_all::resolve_targets(&prog, args)
+        .map_err(|message| (message, declared.clone()))?;
     let interior = crate::interior::selections(&prog, args, &targets);
     if targets.is_empty() {
         // Two different answers, and the caller acts on the difference: a binary
         // that yielded NOTHING is the whole-binary discovery failure (which names
         // a packer when it can see one), while a binary that yielded functions
         // but not this one is the text surface's "no function <name>".
-        return Err(if prog.function_entries_executable().is_empty() {
+        let message = if prog.function_entries_executable().is_empty() {
             decompile_all::zero_discovery_error(&args.binary)
                 .unwrap_or_else(|| format!("no function {target:?} in {}", args.binary))
         } else {
@@ -1319,7 +1330,8 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
                 .and_then(|error| decompile_all::name_miss_hint(&error))
                 .unwrap_or_else(|| "for a stripped binary pass an address with --addr".to_string());
             format!("no function {target:?} in {}; {hint}", args.binary)
-        });
+        };
+        return Err((message, declared));
     }
 
     let funcs = decompile_all::decompile_entries(&mut prog, args, targets, false);
@@ -1347,6 +1359,7 @@ fn decompile_json(args: &AllArgs, target: &str) -> Result<(String, Option<String
         failure.as_deref(),
         &assertions,
         &interior,
+        &declared,
         args.omit,
     );
     if failure.is_none() && args.assert_strict && rejected {

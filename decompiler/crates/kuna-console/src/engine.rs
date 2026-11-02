@@ -658,6 +658,10 @@ pub struct ConsoleProgram {
     /// (`elfmain` naming a libc-start `main` at an address the caller declared
     /// `stage1`). The discovered names stay as aliases; only the report changes.
     declared_names: BTreeMap<u64, String>,
+    /// (kuna, issue #1438) Each declaration measured against the image's byte
+    /// map when it was made, keyed by the same normalized VMA as
+    /// [`Self::declared_entries`] -- what [`Self::declaration_notes`] warns of.
+    declared_bytes: BTreeMap<u64, crate::kuna_declaredbytes::Declaration>,
     /// Changes whenever `declared_names` (it orders canonical entry names) or
     /// `declared_extents` (it sizes them) does.
     declared_revision: u64,
@@ -2346,6 +2350,29 @@ impl ConsoleProgram {
         self.declared_entries.contains(&self.thumb_normalized(vma))
     }
 
+    /// (kuna, issue #1438) Every declared entry's byte address and how much of
+    /// its extent the input maps, in address order.
+    pub fn declarations(
+        &self,
+    ) -> impl Iterator<Item = (u64, crate::kuna_declaredbytes::DeclaredBytes)> + '_ {
+        self.declared_bytes.iter().map(|(&vma, decl)| (vma, decl.bytes))
+    }
+
+    /// (kuna, issue #1438) One sentence per declared function whose extent is
+    /// not wholly mapped, in address order.
+    pub fn declaration_notes(&self) -> Vec<String> {
+        self.declared_bytes
+            .iter()
+            .filter_map(|(&vma, decl)| crate::kuna_declaredbytes::note(self, vma, decl))
+            .collect()
+    }
+
+    /// The sentence for the declaration at `vma` alone.
+    pub(crate) fn declaration_note(&self, vma: u64) -> Option<String> {
+        let vma = self.thumb_normalized(vma);
+        crate::kuna_declaredbytes::note(self, vma, self.declared_bytes.get(&vma)?)
+    }
+
     /// (kuna) Whether `name` is NOT the one the caller declared at `vma`.
     /// `false` sorts first, so a `--define-function <addr>=<name>` spelling is
     /// the reported name of that entry and every other registration at the same
@@ -2470,6 +2497,12 @@ impl ConsoleProgram {
         self.register_symbol(&name, addr.clone());
         self.declare_extent(vma, size);
         self.declared_entries.insert(vma);
+        let extent = u64::try_from(size).unwrap_or(0);
+        let bytes = crate::kuna_declaredbytes::measure(self, vma, extent);
+        self.declared_bytes.insert(
+            vma,
+            crate::kuna_declaredbytes::Declaration { name: name.clone(), size: extent, bytes },
+        );
         if explicit.is_some() {
             self.declared_names.insert(vma, name.clone());
             self.declared_revision = next_revision();
@@ -3881,6 +3914,7 @@ fn empty_program(
         declared_extents: BTreeMap::new(),
         declared_entries: BTreeSet::new(),
         declared_names: BTreeMap::new(),
+        declared_bytes: BTreeMap::new(),
         declared_revision: 0,
         canonical_entries: std::cell::RefCell::new(None),
         assertions: Vec::new(),

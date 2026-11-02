@@ -8975,3 +8975,22 @@ inspiration = "angr Go DWARF signatures and Go cmd/compile DW_AT_variable_parame
 change_kind = "analysis-enablement"
 tier = "analysis"
 symptoms = "go functions lose source parameters despite dwarf|go identity function decompiles as void|go result parameters appear as inputs"
+
+[[settable]]
+option = "rustprobestack"
+values = "off|auto|always"
+default = "off"
+destructive = true
+phase = "P2"
+subphase = "flow-classification"
+strength = "HARD"
+rewind = "P2"
+issue = "angr-rust-probestack"
+summary = "Off in every preset because the predeclared default comparison exceeded its 5% wall-time confidence bound. Explicit auto/always summarize the verified 57-byte AMD64 Rust stack-probe helper before SSA and call recovery. Require a direct relative call, a full RAX constant of at most 16 MiB reaching it within 48 raw ops in one block, canonical call push/store p-code, and an immediate SUB RSP,RAX that kills the helper flags. Preserve the caller return-address store, saved RBP store, restored stack pointer and exact R11 residual; ordinary dead-store analysis removes unused scratch writes. Mark the saved-RBP store as a transient callee spill so P6 permits caller buffers to reuse its bytes. Require the live shared image to prove complete mapped coverage, then read it directly without disturbing loader prefetch state. Match complete helper bytes and x86-64 register storage, never the symbol name. Decline missing bytes, modified bodies, unknown frames, intervening flag use, inline/injected/nonreturning call facts and the stackviews/stackalias memory policies. Page-touch reads and their faults are intentionally abstracted. Auto applies only to Rust images; always removes the language gate; off retains the original probe."
+use_when = "Enable auto explicitly to summarize verified Rust compiler stack instrumentation while preserving live R11 and stack writes. Use off to audit page-touch and fault behavior; always accepts matching raw or non-Rust images with the same proof obligations."
+example = "option rustprobestack off"
+source_decompiler = "angr"
+inspiration = "angr 6afa0c79a83d9f677a46b0275cdb63bf16c1979e CFGFast Rust stack-probe signature and Clinic call rewrite; Kuna additionally models observable R11 and writable stack effects"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "Rust large-frame functions retain __rust_probestack calls|live stack-probe R11 residual renders as an undefined local|stack-probe calls obscure a known constant frame allocation"

@@ -233,6 +233,15 @@ pub trait LoadImage {
         Vec::new()
     }
 
+    /// (kuna) `(vma, size)` of each load segment the image declares
+    /// inaccessible -- a Mach-O segment with no initial protection, such as
+    /// `__PAGEZERO`. The byte map still serves its RAM footprint as zero fill;
+    /// this is for a reader asking whether the image holds bytes at an address.
+    /// Empty by default.
+    fn inaccessible_segments(&self) -> Vec<(u64, u64)> {
+        Vec::new()
+    }
+
     /// (kuna) A `Send + Sync` view of this image's mapped bytes, for a decoder
     /// running on another thread.
     ///

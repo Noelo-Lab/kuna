@@ -355,7 +355,9 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
             ),
             (
                 "notes".into(),
-                Json::Array(notes.iter().cloned().map(Json::Str).collect()),
+                Json::Array(
+                    crate::funcdecl::json_notes(prog, &notes).into_iter().map(Json::Str).collect(),
+                ),
             ),
             (
                 "issues".into(),

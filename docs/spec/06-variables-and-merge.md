@@ -3853,3 +3853,11 @@ links both register spills and the stack tail, including writes through the
 struct pointer and a field pointer passed to a callback. Indexed references,
 different struct types, all-stack parameters, and nonwrapping locals continue
 through the ordinary layout path.
+
+A saved-RBP store synthesized by `rustprobestack` belongs to a completed nested
+helper call. Its `kuna_rustprobe_spill` provenance survives STORE-to-COPY
+conversion. Full-register spill restriction leaves this slot
+available to caller locals: the caller can reuse it immediately after the helper
+returns. Excising it as a caller callee-save slot would truncate a later buffer
+covering those bytes. The store itself retains ordinary dataflow and alias
+semantics, including an actual caller read of the saved RBP value.

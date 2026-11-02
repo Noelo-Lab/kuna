@@ -38,7 +38,13 @@
 //! command: the script path emits it, the in-process path calls the
 //! [`kuna_console::engine::ConsoleProgram::declare_function`] it is a wrapper for.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
+
+use kuna_console::engine::ConsoleProgram;
+use kuna_console::kuna_declaredbytes::DeclaredBytes;
+
+use crate::jsonfmt::Json;
 
 /// One caller-declared function boundary.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,6 +150,55 @@ pub(crate) fn apply(
             })?;
     }
     Ok(())
+}
+
+/// Print each declaration the input does not wholly map as a `warning:`, once
+/// per process however often the image is loaded (issue #1438).
+pub(crate) fn warn_unmapped(prog: &ConsoleProgram, binary: &str) {
+    for sentence in prog.declaration_notes() {
+        kuna_base::notes::say_once(binary, &format!("warning: {sentence}"));
+    }
+}
+
+/// [`warn_unmapped`]'s sentences ahead of a listing's own `notes`, for the
+/// `--json` document of a surface that prints those `notes` itself.
+pub(crate) fn json_notes(prog: &ConsoleProgram, notes: &[String]) -> Vec<String> {
+    prog.declaration_notes().into_iter().chain(notes.iter().cloned()).collect()
+}
+
+/// What a run's declarations add to its JSON: a `declared` marker on each
+/// declared entry's record and the run-level `notes` [`warn_unmapped`] prints.
+/// Empty when nothing was declared, so such a document gains no key.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Declared {
+    bytes: BTreeMap<u64, DeclaredBytes>,
+    notes: Vec<String>,
+}
+
+impl Declared {
+    pub(crate) fn of(prog: &ConsoleProgram) -> Declared {
+        Declared { bytes: prog.declarations().collect(), notes: prog.declaration_notes() }
+    }
+
+    /// The `declared` field of the record at engine byte address `byte_address`.
+    pub(crate) fn marker(&self, byte_address: u64) -> Option<(String, Json)> {
+        let bytes = self.bytes.get(&byte_address)?;
+        Some((
+            "declared".into(),
+            Json::Object(vec![("bytes".into(), Json::Str(bytes.label().into()))]),
+        ))
+    }
+
+    /// The document's `notes` field, when there is a note.
+    pub(crate) fn notes_field(&self) -> Option<(String, Json)> {
+        (!self.notes.is_empty()).then(|| {
+            ("notes".into(), Json::Array(self.notes.iter().cloned().map(Json::Str).collect()))
+        })
+    }
+
+    pub(crate) fn notes(&self) -> &[String] {
+        &self.notes
+    }
 }
 
 #[cfg(test)]

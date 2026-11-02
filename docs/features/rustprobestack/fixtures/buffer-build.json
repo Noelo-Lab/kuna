@@ -1,0 +1,89 @@
+{
+  "at": "2026-11-02T09:24:11.399820+00:00",
+  "commands": [
+    [
+      "cc",
+      "-c",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack.S",
+      "-o",
+      "/tmp/kuna-rust-probestack/buffer-regression/probe.o"
+    ],
+    [
+      "cc",
+      "-c",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.S",
+      "-o",
+      "/tmp/kuna-rust-probestack/buffer-regression/buffer.o"
+    ],
+    [
+      "gcc",
+      "-g",
+      "-O1",
+      "-c",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.c",
+      "-o",
+      "/tmp/kuna-rust-probestack/buffer-regression/fill.o"
+    ],
+    [
+      "rustc",
+      "+1.90.0",
+      "--edition=2021",
+      "--crate-name",
+      "probe_buffer_native",
+      "-C",
+      "opt-level=1",
+      "-C",
+      "debuginfo=2",
+      "-C",
+      "link-arg=/tmp/kuna-rust-probestack/buffer-regression/probe.o",
+      "-C",
+      "link-arg=/tmp/kuna-rust-probestack/buffer-regression/buffer.o",
+      "-C",
+      "link-arg=/tmp/kuna-rust-probestack/buffer-regression/fill.o",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.rs",
+      "-o",
+      "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64"
+    ]
+  ],
+  "samples": [
+    {
+      "input": 0,
+      "output": 65535
+    },
+    {
+      "input": 1,
+      "output": 1
+    },
+    {
+      "input": 7,
+      "output": 1549
+    },
+    {
+      "input": 12345,
+      "output": 14449
+    },
+    {
+      "input": 2147483647,
+      "output": 65533
+    },
+    {
+      "input": 2147483648,
+      "output": 65535
+    },
+    {
+      "input": 4294967288,
+      "output": 63727
+    },
+    {
+      "input": 4294967295,
+      "output": 65533
+    }
+  ],
+  "files": {
+    "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.kuna": "f8cf5a281517081ea324fc3ebae294c52b690929e1ca0a73aa995ac446ec0e5e",
+    "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer_x86_64": "1b615ff6c4326b1c643bc3b6b3331ec465d30955596310d17c21655d2dcf2370",
+    "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.c": "25e17d6410009536ae0811094cbef1b30c715272cc5159034606749c988f46d1",
+    "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.rs": "2cb0ac4a040847291e18c688e43fb242044ad51d4f163e59aa994c006ca16ec9",
+    "/home/mahaloz/kwt/angr-rust-probestack/decompiler/crates/kuna-analysis/tests/fixtures/rust_probestack_buffer.S": "65df7ded4550ad89f8b39104e00b2f0104090a7fe502b4b8e6c3e2847cbc4d26"
+  }
+}

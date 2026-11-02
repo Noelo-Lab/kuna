@@ -2301,7 +2301,8 @@ from the address width for a small size, and keys the name with `as` so a
 declaration that gives a name but no extent cannot have its name read as the end
 address. The CLI flag is `--define-function <start[-end][=name] | @file>`
 (`decompiler/crates/kuna-cli/src/funcdecl.rs`), repeatable, honored by
-`decompile`, `decompile-all`, `functions`, `decompile-project` and `disassemble`.
+`decompile`, `decompile-all`, `functions`, `decompile-project`, `decompile-graph`,
+`disassemble`, `read` and `raw-pcode`.
 `end` is exclusive. The script surface emits the console command AFTER `read
 symbols` and BEFORE the load, and the in-process surfaces apply the declarations
 after `commit_pending_analysis`
@@ -2309,6 +2310,35 @@ after `commit_pending_analysis`
 declaration is applied after discovery has had its say, because it is an assertion
 that outranks it. Durability is caller-carried — the `@file` form is the artifact,
 and kuna does not write boundaries back into the image.
+
+(kuna, issue #1438) **A declaration the image does not map** is still honored:
+the entry enumerates, resolves by name and names its call sites, which is what a
+routine in a boot ROM or another module, called at a fixed address, needs. What
+a declaration cannot supply is bytes, so `declare_function` measures each one
+when it is made against the loader's shared byte map — the map the lifter refuses
+unmapped instructions by, rather than a staged `load_fill`, which can answer out
+of a padded window — over `[start, end)`, or the entry byte alone when no end was
+given (`decompiler/crates/kuna-console/src/kuna_declaredbytes.rs`). A segment the
+image declares inaccessible (a Mach-O segment with no initial protection, such as
+`__PAGEZERO`, which the byte map serves as zero fill) is not counted, and neither is
+the last byte of the address space, which ends no half-open extent and which the
+lifter never treats as mapped. A loader with
+no shared map is asked through its section table, and one with neither through a
+probe of the entry. The outcome is `mapped`, `partial` (the entry is mapped and
+the extent runs past the mapped bytes; the first unmapped byte is kept) or
+`unmapped` (the entry itself is not mapped), stored beside the declared extent
+and read back as one sentence per declaration that is not `mapped`
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declaration_notes)`).
+Every surface says it the same way: the in-process ones print each sentence as a
+`warning:` once per process right after the declarations are applied (a `--jobs`
+worker, which loads the same declarations, prints nothing), the console's
+`function bounds` writes it to the transcript, from which the script surface
+relays it, and the `--json` documents carry it in a run-level `notes` array and
+put a `declared: {bytes}` object on each declared entry's record. Both keys are
+absent from a run that declared nothing, so its documents are unchanged. Nothing
+about the decompile changes: an unmapped entry is still refused by the command
+that needs its bytes, and a partial extent still bounds flow where it was
+declared to end.
 
 (kuna) **Caller assertions (`--assert`).** Declared boundaries are one fact an
 agent can state; the assertion plane is the rest of them. Everything the engine
