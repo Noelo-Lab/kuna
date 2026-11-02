@@ -1,0 +1,11 @@
+angr-rust-fmt-write-main build.log PASS
+angr-rust-fmt-write-main original.log PASS
+angr-rust-fmt-write-main stages.log PASS
+angr-rust-fmt-write-main tools.log PASS
+angr-rust-fmt-write-main lint.log PASS
+angr-rust-fmt-write-main spec.log PASS
+angr-rust-fmt-write-main catalog.log PASS
+angr-rust-fmt-write-main counters.log PASS
+angr-rust-fmt-write-main workspace-final.log PASS
+angr-rust-fmt-write-main ALL AC4 INTEGRATION GATES PASSED
+WRITE AC4 INTEGRATION ALL GATES PASSED

@@ -1,0 +1,12 @@
+{
+  "feature_head": "a874bff7a12391fe05867088692c1a23d8d3c4fe",
+  "main_head": "ac4cd3aeef7565684fb1547101d61ee09e75cd6f",
+  "specs_verified_and_linked": 154,
+  "change_files": [
+    "decompiler/crates/kuna-cli/src/disassemble.rs",
+    "decompiler/crates/kuna-cli/src/disassemble/provenance.rs",
+    "decompiler/crates/kuna-cli/tests/read_provenance_cli.rs",
+    "docs/cli.md",
+    "docs/spec/01-program-prep.md"
+  ]
+}

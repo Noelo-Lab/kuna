@@ -102,3 +102,19 @@ The enabled proof artifacts name their original binary and capture state. The
 parent source manifest and reanchor receipt bind that state to committed parent
 `e29a0ef52489142062669b7b8b41d0db09120fcb` without changing its executable. The fresh binary hash is
 `ebff674185bf38266bea0adc10afda33a0bba10a699f09be32a1ab9b09e9a923`. Full Go/Rust parity remains separate work.
+
+## Current-main integration
+
+The later integration of `ac4cd3aeef7565684fb1547101d61ee09e75cd6f` changes
+only byte-read provenance, its CLI tests and documentation. Decompiler, analysis
+and console sources remain identical. All required checks pass again: 675
+original assertions, 3,541 stage assertions and 10,117 workspace
+tests, with zero failures and 39 ignored across 71 suites.
+
+Fresh captures of the modern reference image and native String-writer fixture
+match all complete function records from the previous binary, including enabled
+Rust, default Rust and their available C/Go captures. The earlier 27-image and
+speed studies retain their original binary identities and were not rerun in
+full for this CLI-only integration. The feature remains off in every preset.
+The new executable hash and precise scope are in
+[integration-ac4/integration-record.json](integration-ac4/integration-record.json).
