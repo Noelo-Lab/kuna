@@ -1,0 +1,34 @@
+<!-- Rust pointer constants retain constructor syntax and variable/op provenance. -->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/rust_null_pointer_x86_64</com>
+  <com>option setlanguage rust-language</com>
+  <com>read symbols</com>
+  <com>parse line extern uint1 *null_pointer(void);</com>
+  <com>load function null_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern uint1 *maybe_pointer(uint8 choice,uint1 *pointer);</com>
+  <com>load function maybe_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern int4 pointer_is_null(uint1 *pointer);</com>
+  <com>load function pointer_is_null</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>parse line extern void clear_pointer(uint1 **slot);</com>
+  <com>load function clear_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="all four null constructors retain call syntax" min="4" max="4">core::ptr::null_mut\(\)</stringmatch>
+<stringmatch name="null syntax is not a recovered identifier" min="0" max="0">core::ptr::null_mut__</stringmatch>
+<stringmatch name="non-null branch returns the original pointer" min="1" max="1">return pointer;</stringmatch>
+<stringmatch name="the null store targets the pointer slot" min="1" max="1">\*slot = core::ptr::null_mut\(\);</stringmatch>
+<stringmatch name="all four authored functions remain" min="4" max="4">unsafe fn </stringmatch>
+</decompilertest>

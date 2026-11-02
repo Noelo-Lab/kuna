@@ -3175,6 +3175,13 @@ What differs, and why each is a language fact rather than a preference:
   `braceelide` (DIV-38) would emit a braceless body, and `nullprinting` (DIV-35)
   would emit `NULL` (Rust spells it `core::ptr::null_mut()`). `condfold`'s comma
   operand has no Rust form either and is refused the same way.
+- **Constructed null expressions** use `printlanguage.rs (TagType)`'s
+  `LiteralToken`. `printc.rs (PrintC::emit_atom)` emits that final Rust spelling
+  through the same variable-markup path, preserving the operation and varnode
+  associations while keeping the parentheses in `core::ptr::null_mut()`.
+  Recovered variable names, including enum constants, still pass through the
+  identifier speller. The tag preserves this distinction for both constant
+  and variable highlighting. C and Go null atoms keep their existing tags.
 - **What Rust cannot express** is marked, never silently emitted. The structurer
   manufactures `goto`s as its escape hatch and Rust has no form for one that is
   neither a `break` nor a `continue`; those render as a comment plus a **diverging**

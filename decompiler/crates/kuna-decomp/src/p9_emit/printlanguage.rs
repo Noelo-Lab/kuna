@@ -220,6 +220,8 @@ pub enum TagType {
     CaseToken,
     /// For anonymous types.
     BlankToken,
+    /// A constructed expression, with variable provenance and final language spelling.
+    LiteralToken,
 }
 
 /// Strategies for displaying namespace tokens (C++
