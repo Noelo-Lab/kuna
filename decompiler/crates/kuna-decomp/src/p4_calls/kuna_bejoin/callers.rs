@@ -253,11 +253,11 @@ fn mips_control(w: u32) -> bool {
 
 /// May the MIPS instruction `w` write the general register `r`? Anything
 /// but a store, a branch or a jump that names `r` where an instruction names
-/// what it writes may.
+/// what it writes may; a store conditional (`sc`, `scd`) writes its flag.
 fn mips_writes(w: u32, r: u32) -> bool {
     let op = w >> 26;
     let (rt, rd) = ((w >> 16) & 0x1f, (w >> 11) & 0x1f);
-    if matches!(op, 0x28..=0x2f | 0x38..=0x3f) {
+    if matches!(op, 0x28..=0x2f | 0x39..=0x3b | 0x3d..=0x3f) {
         return false;
     }
     match op {
@@ -316,18 +316,19 @@ fn mips_gp(entry: u64, words: &[u32]) -> Option<(u32, Vec<u32>)> {
 }
 
 /// May the GOT pointer be read through `base` anywhere in the MIPS function
-/// `words` after its prologue (`skip` instructions)? `$gp` itself may be
-/// reloaded from the frame (gcc's `.cprestore` slot) anywhere; another
-/// register may be written again only by a reload from the frame that
-/// returns (`jr $ra`) before any other control transfer, so no path that
-/// leaves that register changed reaches a call.
+/// `words` after its prologue (`skip` instructions)? Only a reload from a
+/// frame slot the function stores `base` to writes it again: `$gp` from
+/// gcc's `.cprestore` slot anywhere, another register only where it returns
+/// (`jr $ra`) before any other control transfer, so no path that leaves that
+/// register changed reaches a call.
 fn mips_base_holds(words: &[u32], skip: usize, base: u32) -> bool {
     let reload = 0x8c00_0000 | (29 << 21) | (base << 16);
+    let saved: BTreeSet<u32> = words.iter().filter(|&&w| w & 0xffff_0000 == (reload | 0x2000_0000)).map(|&w| w & 0xffff).collect();
     let returns = |i: usize| {
         words.iter().skip(i + 1).take(16).find(|&&x| mips_control(x)) == Some(&0x03e0_0008)
     };
     words.iter().enumerate().skip(skip).all(|(i, &w)| {
-        !mips_writes(w, base) || (w & 0xffff_0000 == reload && (base == 28 || returns(i)))
+        !mips_writes(w, base) || (w & 0xffff_0000 == reload && saved.contains(&(w & 0xffff)) && (base == 28 || returns(i)))
     })
 }
 

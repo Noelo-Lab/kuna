@@ -111,3 +111,23 @@ fn a_pic_call_after_a_branch_or_another_write_of_its_register_is_not_read() {
     mips_pic_calls(0x1000, &words, &mut |a| got(a), &mut calls, &mut pic);
     assert!(calls.is_empty(), "{calls:x?}");
 }
+
+#[test]
+fn gp_holds_only_through_reloads_of_the_slot_it_was_saved_to() {
+    let got = |_: u64| Some(0x2e0u32);
+    // `sw $gp,16($sp)` in the prologue, then past a branch `$gp` is written by
+    // the word at 7 before `lw $25,%call16(f)($gp); jalr $25`.
+    let words = |w7: u32| {
+        [0x3c1c_0002, 0x279c_8104, 0x0399_e021, 0x27bd_ffe0, 0xafbc_0010, 0x1000_0001, 0x0, w7, 0x8f99_8018, 0x0320_f809, 0x0]
+    };
+    let (mut calls, mut pic) = (Vec::new(), BTreeMap::new());
+    mips_pic_calls(0x30c, &words(0x8fbc_0010), &mut |a| got(a), &mut calls, &mut pic);
+    assert_eq!(calls, vec![(0x2e0, 0x330)]);
+    // A load from a slot nothing saved `$gp` to, and a store conditional
+    // into `$gp`, leave it holding something else.
+    for w7 in [0x8fbc_0014u32, 0xe09c_0000] {
+        let (mut calls, mut pic) = (Vec::new(), BTreeMap::new());
+        mips_pic_calls(0x30c, &words(w7), &mut |a| got(a), &mut calls, &mut pic);
+        assert!(calls.is_empty(), "{w7:#x}: {calls:x?}");
+    }
+}

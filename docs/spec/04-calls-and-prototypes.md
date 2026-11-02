@@ -2608,8 +2608,11 @@ the GOT pointer: the value the caller's prologue, read over literals and
 `$t9` (the entry, on a PIC call) up to its first control transfer, leaves in
 `$gp` (`lui $28,%hi(_gp_disp); addiu $28,$28,%lo(_gp_disp); addu
 $28,$28,$25`) or, for clang, in the register its first sum of a literal and
-`$t9` writes. `$gp` may be reloaded from the frame anywhere; another such
-register only by a reload that returns before any other control transfer.
+`$t9` writes. The register may be written again only by a load from a
+frame slot the function saves it to: `$gp` (gcc's `.cprestore` slot)
+anywhere, another such register only where the function then returns before
+any other control transfer; a store conditional into it (`sc`) is a write
+like any other.
 The entry is read from the image at the GOT pointer plus the load's offset (a
 linked image's GOT, or the one an object's layout makes), and the site gives
 no evidence when a branch of the caller lands between the load and the call.
