@@ -1400,6 +1400,12 @@ pub trait JumpModel {
     fn as_any(&self) -> &dyn std::any::Any;
     /// Clear any non-permanent aspects of the model (C++ `clear`).
     fn clear(&mut self) {}
+    /// (kuna `switchrunonguard`) Whether the sanity check replaced the
+    /// model's values, so the table must be built again from them; clears
+    /// the request.
+    fn take_rebuild(&mut self) -> bool {
+        false
+    }
     /// Encode \b this model to a stream (C++ `encode`).
     fn encode(&self, _encoder: &mut dyn Encoder) -> KunaResult<()> {
         Ok(())
@@ -2162,6 +2168,9 @@ pub struct JumpBasicModel {
     /// (kuna `switchrunon`) The sanity check cut rows that ran on into other
     /// functions, so no cut row is dispatched.
     run_on: bool,
+    /// (kuna `switchrunonguard`) The sanity check kept a set of values that
+    /// is not a prefix of the range, so the table is built again from them.
+    rebuild: bool,
     /// Position of the normalized switch Varnode within `pathMeld`.
     varnode_index: int4,
     /// Normalized switch Varnode (C++ `normalvn`).
@@ -2191,6 +2200,7 @@ impl JumpBasicModel {
             label_rows: None,
             rows_rejected: false,
             run_on: false,
+            rebuild: false,
             jrange: None,
             path_meld: PathMeld::new(),
             selectguards: Vec::new(),
@@ -4971,6 +4981,10 @@ impl JumpModel for JumpBasicModel {
         }
         self.run_on = false;
         if fd.get_arch().switch_run_on && self.unguarded(fd) {
+            if let Some(kept) = self.own_values(fd, addresstable) {
+                self.keep_values(kept);
+                return Ok(true);
+            }
             if let Some(own) = Self::own_rows(fd, &addresstable[..i]) {
                 i = own;
                 self.run_on = true;
@@ -5005,6 +5019,7 @@ impl JumpModel for JumpBasicModel {
         self.label_rows = None;
         self.rows_rejected = false;
         self.run_on = false;
+        self.rebuild = false;
         self.jrange = None;
         self.path_meld.clear();
         self.selectguards.clear();
@@ -5013,6 +5028,10 @@ impl JumpModel for JumpBasicModel {
         self.extravn = None;
         self.orig_path_meld.clear();
         self.loop_carried_seeds.clear();
+    }
+
+    fn take_rebuild(&mut self) -> bool {
+        std::mem::take(&mut self.rebuild)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
@@ -5045,9 +5064,9 @@ impl JumpBasicModel {
     }
 
     /// (kuna `switchrunon`) Whether no guard bounds the table: the model
-    /// recorded none, or (`switchrunonguard`) none of the ones it recorded
-    /// narrowed the variable the table was sized from below every value its
-    /// width allows.
+    /// recorded none, or (`switchrunonguard`) the variable the table was
+    /// sized from can still take the largest value its width allows, so the
+    /// guards it recorded test other values or only take out a few.
     fn unguarded(&self, fd: &Funcdata) -> bool {
         if self.selectguards.is_empty() {
             return true;
@@ -5059,7 +5078,51 @@ impl JumpBasicModel {
             return false;
         }
         let vn = self.path_meld.get_varnode(self.varnode_index);
-        self.jrange().get_size() >= Self::width_range(fd, vn).0.get_size()
+        let top = Self::width_range(fd, vn).0.get_max();
+        self.jrange().contains(top).unwrap_or(false)
+    }
+
+    /// (kuna `switchrunonguard`) The values to keep when a guard took out a
+    /// value below the range's first one, so the range wraps past its top
+    /// and the rows of the values under it come last: read in value order,
+    /// the function's own rows, then rows that run on into other functions
+    /// ([`Self::own_rows`]). `None` when the range does not wrap or nothing
+    /// is cut.
+    fn own_values(&self, fd: &Funcdata, rows: &[Address]) -> Option<Vec<uintb>> {
+        if !fd.get_arch().switch_run_on_guard || self.is_model2 {
+            return None;
+        }
+        let mut range = self.jrange().clone_box();
+        let mut values = Vec::with_capacity(rows.len());
+        let mut more = range.initialize_for_reading();
+        while more && values.len() <= rows.len() {
+            values.push(range.get_value());
+            more = range.next().unwrap_or(false);
+        }
+        if values.len() != rows.len() {
+            return None;
+        }
+        let wrap = values.iter().position(|&value| value < values[0])?;
+        let ordered: Vec<Address> = rows[wrap..].iter().chain(&rows[..wrap]).cloned().collect();
+        let reasonable = Self::reasonable_rows(fd, &ordered);
+        let own = Self::own_rows(fd, &ordered[..reasonable])?;
+        Some(values[wrap..].iter().chain(&values[..wrap]).take(own).copied().collect())
+    }
+
+    /// (kuna `switchrunonguard`) Replace the range with the `kept` values and
+    /// ask for the table to be built again from them.
+    fn keep_values(&mut self, kept: Vec<uintb>) {
+        let (vn, op) = (self.jrange().get_start_varnode(), self.jrange().get_start_op());
+        let mut exact = JumpValuesRange::new();
+        exact.set_values(kept);
+        if let Some(vn) = vn {
+            exact.set_start_vn(vn);
+        }
+        if let Some(op) = op {
+            exact.set_start_op(op);
+        }
+        self.jrange = Some(Box::new(exact));
+        self.rebuild = true;
     }
 
     /// (kuna `switchrunon`) How many leading rows of an unguarded table belong
@@ -6087,6 +6150,18 @@ impl JumpTable {
                 self.opaddress
             )));
         }
+        let first_load = self.loadpoints.len();
+        self.build_checked_addresses(fd)?;
+        if self.jmodel.as_mut().is_some_and(|model| model.take_rebuild()) {
+            self.loadpoints.truncate(first_load);
+            self.build_checked_addresses(fd)?;
+        }
+        Ok(())
+    }
+
+    /// Build the address table from the model and sanity-check it (the body
+    /// of C++ `JumpTable::recoverAddresses` after the model is recovered).
+    fn build_checked_addresses(&mut self, fd: &mut Funcdata) -> KunaResult<()> {
         let indirect = self.indirect.unwrap();
         if self.collectloads {
             let mut loadcounts: Vec<int4> = Vec::new();

@@ -1771,32 +1771,44 @@ the case targets.
    0x14000a040 prints its four cases in 0.7 s. Off keeps the whole-width
    table.
 
-   **Guards that bound nothing (`option switchrunonguard`, default on).**
-   `jumptable.rs (JumpBasicModel::analyze_guards)` records the conditional
-   branches on the path just before the dispatch as guards whether or not
-   they test the selector, as upstream does; a guard only narrows the table
-   when `kuna_switchguardrange.rs (intersect)` finds it value-matches the
-   variable being sized. A Rust deserializer loop is the common case:
-   `match self.next_key()? { ... }` calls `next_key`, compares the
-   returned Result's tag (`cmp rcx,r13; jnz`) and then dispatches the byte
-   key it holds through an unguarded table. The tag check is recorded, so
-   a rule keyed on "no guard at all" leaves the 256-row table whole, and
+   **Guards that leave the top open (`option switchrunonguard`, default
+   on).** `jumptable.rs (JumpBasicModel::analyze_guards)` records the
+   conditional branches on the path just before the dispatch as guards
+   whether or not they test the selector, as upstream does; a guard only
+   narrows the table when `kuna_switchguardrange.rs (intersect)` finds it
+   value-matches the variable being sized. A Rust deserializer loop is the
+   common case: `match self.next_key()? { ... }` calls `next_key`, compares
+   the returned Result's tag (`cmp rcx,r13; jnz`) and then dispatches the
+   byte key it holds through an unguarded table. The tag check is recorded,
+   so a rule keyed on "no guard at all" leaves the 256-row table whole, and
    the rows past the real four reach the next functions' tables, whose own
-   dispatches carry the same tag check: APoseFix.dll's 600-byte
-   serde-hkx visitors decoded 6,200 to 23,000 instructions of 25 to 111
-   other functions, hit the 60 to 120 s budget at 0.5 to 2.5 GB (one
-   reached 11 GB), and never printed. With the option on, the model counts
-   as unguarded (`jumptable.rs (JumpBasicModel::unguarded)`) when it
-   recorded no guard, or when it is a model-1 table whose range is as wide
-   as the range its sized variable allows from its size and known-zero bits
-   alone (`jumptable.rs (JumpBasicModel::width_range)`, the start of
-   `calc_range`), so no recorded guard narrowed it. The run-on conditions
-   above then decide the cut, unchanged. A table whose recorded guards narrowed
-   its range, by intersection or through an extension (a guard found through
-   a spill or on a reloaded map entry), keeps its rows, and so does a
-   model-2 table, whose default comes from a guard.
-   Those visitors then decode only their own bodies and print in under a
-   second at 110 MB. Off, any recorded guard keeps the table whole.
+   dispatches carry the same tag check: APoseFix.dll's 600-byte serde-hkx
+   visitors decoded 6,200 to 23,000 instructions of 25 to 111 other
+   functions, hit the 60 to 120 s budget at 0.5 to 2.5 GB (one reached
+   11 GB), and never printed. Others first send one key back to the loop
+   head (`cmp eax,1; je`). That guard does test the selector, but it only
+   takes out a value: the range becomes 2..0xff and wraps to 0, 255 rows
+   that run on just the same.
+
+   With the option on, a model-1 table also counts as unguarded
+   (`jumptable.rs (JumpBasicModel::unguarded)`) when the variable it was
+   sized from can still take the largest value its size and known-zero
+   bits allow (`jumptable.rs (JumpBasicModel::width_range)`, the start of
+   `calc_range`), so no recorded guard bounds it from above. The run-on
+   conditions above then decide the cut, unchanged, with one addition for
+   a range that wraps past its top: its rows for the values below the first
+   one (case 0 above) come last in iteration order and would read as rows
+   that return into the function. `jumptable.rs (JumpBasicModel::own_values)`
+   reads such a table in value order instead, takes the leading values the
+   function owns when the rest run on, and replaces the range with exactly
+   those values (`JumpValuesRange` explicit values, which iterate in
+   ascending order); `jumptable.rs (JumpTable::recover_addresses)` then
+   builds and checks the table again from them, so the rows, their loads
+   and the late label pass all follow the kept values. A table a guard
+   bounds from above keeps its rows, and so does a model-2 table, whose
+   default comes from a guard. The visitors then decode only their own
+   bodies and print in about a second at 110 MB. Off, any recorded guard
+   keeps the table whole.
 
 **Model 2 — the default-path variant** (`jumptable.rs
 (JumpBasicModel::recover_model2)`, C++ `JumpBasic2`). Some compilers merge the

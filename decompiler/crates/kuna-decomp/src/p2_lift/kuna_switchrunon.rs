@@ -25,10 +25,13 @@
 //!
 //! The model records the conditional branches just before the dispatch as
 //! guards whether or not they test the selector. With `switchrunonguard`
-//! on, a table also counts as unguarded when the range it was sized from is
-//! as wide as the selector's width allows, so no recorded guard narrowed
-//! it: the `jnz` on a call's Result tag in front of a Rust deserializer's
-//! byte key dispatch limits nothing.
+//! on, a table also counts as unguarded when the variable it was sized
+//! from can still take the largest value its width allows: the `jnz` on a
+//! call's Result tag in front of a Rust deserializer's byte key dispatch
+//! limits nothing, and a `cmp eax,1; je` that sends one key elsewhere only
+//! takes out a value. A range that then wraps past its top (2..0xff, then
+//! 0) is read in value order, so its last row, case 0, is not a row that
+//! comes back into the function.
 
 /// The number of leading rows of `rows` (table destinations) that belong to
 /// the function at `entry`, when the rest run on forward into other
