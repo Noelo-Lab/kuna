@@ -107,10 +107,12 @@ fn a_call_keeps_its_guard_only_next_to_a_read_or_a_write() {
     let calls = [c1, c2, c3, c4, c5];
     let (kept, read_kept) = keep(&fd, &mut MemoryOps::default(), space(&fd), &calls, &[r], &[w], &[]);
     assert!(kept.contains(&c1), "the read sees the call before it");
+    assert!(kept.contains(&c2), "the value read may still be live past the first call after it");
     assert!(kept.contains(&c3), "the last call before the write is the read value's last reader");
     assert!(kept.contains(&c4), "the call after the write reads it");
-    assert_eq!(kept.len(), 3, "c2 and c5 only pass a value along to a reader");
-    assert!(read_kept.contains(&c1) && !read_kept.contains(&c3) && !read_kept.contains(&c4));
+    assert!(!kept.contains(&c5), "c5 only passes a value along to the return");
+    assert!(read_kept.contains(&c1) && read_kept.contains(&c2));
+    assert!(!read_kept.contains(&c3) && !read_kept.contains(&c4));
 }
 
 #[test]
@@ -139,7 +141,7 @@ fn guards_are_kept_across_joins_and_loops() {
     let (kept, read_kept) = keep(&fd, &mut MemoryOps::default(), space(&fd), &[c1, c2, c4], &[r], &[w], &[]);
     assert!(kept.contains(&c1) && kept.contains(&c2), "both arms reach the read and see the write");
     assert!(read_kept.contains(&c1) && read_kept.contains(&c2));
-    assert!(!kept.contains(&c4), "only the return follows the last call");
+    assert!(kept.contains(&c4) && read_kept.contains(&c4), "c4 is the first call after the read on the way out");
 }
 
 #[test]
